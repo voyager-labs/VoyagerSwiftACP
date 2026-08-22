@@ -106,6 +106,7 @@ func (service *UnifiedService) propertyDefinitions(requestedProperties []string)
 			Key: catalogDefinition.CanonicalKey, DisplayName: catalogDefinition.DisplayName, ValueType: catalogDefinition.ValueType,
 			Cardinality: catalogDefinition.Cardinality, Editable: catalogDefinition.Editable, Provenance: catalogDefinition.Provenance,
 			ValidationRules: []domainentry.ValidationRule{}, Unit: catalogDefinition.Unit,
+			DefaultDisplayUnit: catalogDefinition.DefaultDisplayUnit, Units: catalogDefinition.Units,
 		})
 		if err == nil {
 			resolved[requested] = propertyDefinition
@@ -1150,6 +1151,7 @@ func clonePropertyDefinitions(definitions map[string]domainentry.PropertyDefinit
 		copied := definition
 		copied.ValidationRules = make([]domainentry.ValidationRule, len(definition.ValidationRules))
 		copy(copied.ValidationRules, definition.ValidationRules)
+		copied.Units = append([]domainentry.PropertyUnit(nil), definition.Units...)
 		if definition.Unit != nil {
 			unit := *definition.Unit
 			copied.Unit = &unit

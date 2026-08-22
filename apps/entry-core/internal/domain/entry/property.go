@@ -148,19 +148,21 @@ func (rule ValidationRule) Validate(valueType PropertyType, cardinality Property
 }
 
 type PropertyDefinition struct {
-	PropertyID      PropertyID
-	IdentityScheme  PropertyIdentityScheme
-	Namespace       string
-	Key             string
-	DisplayName     string
-	ValueType       PropertyType
-	Cardinality     PropertyCardinality
-	Required        bool
-	Nullable        bool
-	Editable        bool
-	Provenance      PropertyProvenance
-	ValidationRules []ValidationRule
-	Unit            *string
+	PropertyID         PropertyID
+	IdentityScheme     PropertyIdentityScheme
+	Namespace          string
+	Key                string
+	DisplayName        string
+	ValueType          PropertyType
+	Cardinality        PropertyCardinality
+	Required           bool
+	Nullable           bool
+	Editable           bool
+	Provenance         PropertyProvenance
+	ValidationRules    []ValidationRule
+	Unit               *string
+	DefaultDisplayUnit string
+	Units              []PropertyUnit
 }
 
 func NewPropertyDefinition(definition PropertyDefinition) (PropertyDefinition, error) {
@@ -182,6 +184,32 @@ func (definition PropertyDefinition) Validate() error {
 	budget := len(definition.PropertyID.String()) + len(definition.Namespace) + len(definition.Key) + len(definition.DisplayName)
 	if definition.Unit != nil {
 		if !validUTF8Bytes(*definition.Unit, 1, 64) || !addWithin(&budget, len(*definition.Unit), maximumDefinitionBudget) {
+			return ErrInvalidPropertyDefinition
+		}
+	}
+	if !validUTF8Bytes(definition.DefaultDisplayUnit, 0, 64) {
+		return ErrInvalidPropertyDefinition
+	}
+	unitCodes := make(map[string]struct{}, len(definition.Units))
+	for _, unit := range definition.Units {
+		if !validUTF8Bytes(unit.Code, 1, 64) || !validUTF8Bytes(unit.Label, 1, 256) ||
+			!validUTF8Bytes(unit.FactorToCanonical, 1, 64) {
+			return ErrInvalidPropertyDefinition
+		}
+		if _, exists := unitCodes[unit.Code]; exists {
+			return ErrInvalidPropertyDefinition
+		}
+		unitCodes[unit.Code] = struct{}{}
+	}
+	if definition.DefaultDisplayUnit != "" {
+		matched := false
+		for _, unit := range definition.Units {
+			if unit.Code == definition.DefaultDisplayUnit || unit.Label == definition.DefaultDisplayUnit {
+				matched = true
+				break
+			}
+		}
+		if !matched {
 			return ErrInvalidPropertyDefinition
 		}
 	}
@@ -823,6 +851,7 @@ func validReasonCode(code ValidationReasonCode) bool {
 func clonePropertyDefinition(value PropertyDefinition) PropertyDefinition {
 	cloned := value
 	cloned.Unit = cloneString(value.Unit)
+	cloned.Units = append([]PropertyUnit(nil), value.Units...)
 	cloned.ValidationRules = make([]ValidationRule, len(value.ValidationRules))
 	for index, rule := range value.ValidationRules {
 		cloned.ValidationRules[index] = cloneValidationRule(rule)

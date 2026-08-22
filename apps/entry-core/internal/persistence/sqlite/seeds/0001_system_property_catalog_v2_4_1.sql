@@ -14,7 +14,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -35,6 +36,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -56,6 +59,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -67,7 +72,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -88,6 +94,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -109,6 +117,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -120,7 +130,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -141,6 +152,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -162,6 +175,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -173,7 +188,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -194,6 +210,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -215,6 +233,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -226,7 +246,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -247,6 +268,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -268,6 +291,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -279,7 +304,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -300,6 +326,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -321,6 +349,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -332,7 +362,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -353,6 +384,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -374,6 +407,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -385,7 +420,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -406,6 +442,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -427,6 +465,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -438,7 +478,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -459,6 +500,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -480,6 +523,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -491,7 +536,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -512,6 +558,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -533,6 +581,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -544,7 +594,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -565,6 +616,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -586,6 +639,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -597,7 +652,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -618,6 +674,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -639,6 +697,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -650,7 +710,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -671,6 +732,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -692,6 +755,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -703,7 +768,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -724,6 +790,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -745,6 +813,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -756,7 +826,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -777,6 +848,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -798,6 +871,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -809,7 +884,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -830,6 +906,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -851,6 +929,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -862,7 +942,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -883,6 +964,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -904,6 +987,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -915,7 +1000,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -936,6 +1022,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -957,6 +1045,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -968,7 +1058,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -989,6 +1080,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -1010,6 +1103,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -1021,7 +1116,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -1042,6 +1138,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -1063,6 +1161,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -1074,7 +1174,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -1095,6 +1196,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -1116,6 +1219,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -1127,7 +1232,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -1148,6 +1254,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -1169,6 +1277,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -1180,7 +1290,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -1201,6 +1312,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -1222,6 +1335,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -1233,7 +1348,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -1254,6 +1370,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -1275,6 +1393,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -1286,7 +1406,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -1307,6 +1428,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -1328,6 +1451,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -1339,7 +1464,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -1360,6 +1486,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -1381,6 +1509,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -1392,7 +1522,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -1413,6 +1544,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -1434,6 +1567,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -1445,7 +1580,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -1466,6 +1602,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -1487,6 +1625,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -1498,7 +1638,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -1519,6 +1660,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -1540,6 +1683,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -1551,7 +1696,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -1572,6 +1718,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -1593,6 +1741,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -1604,7 +1754,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -1625,6 +1776,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -1646,6 +1799,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -1657,7 +1812,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -1678,6 +1834,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -1699,6 +1857,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -1710,7 +1870,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -1731,6 +1892,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -1752,6 +1915,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -1763,7 +1928,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -1784,6 +1950,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -1805,6 +1973,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -1816,7 +1986,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -1837,6 +2008,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -1858,6 +2031,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -1869,7 +2044,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -1890,6 +2066,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -1911,6 +2089,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -1922,7 +2102,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -1943,6 +2124,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -1964,6 +2147,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -1975,7 +2160,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -1996,6 +2182,8 @@ SELECT
 1,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -2017,6 +2205,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -2028,7 +2218,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -2049,6 +2240,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -2070,6 +2263,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -2081,7 +2276,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -2102,6 +2298,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -2123,6 +2321,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -2134,7 +2334,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -2155,6 +2356,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -2176,6 +2379,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -2187,7 +2392,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -2208,6 +2414,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -2229,6 +2437,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -2240,7 +2450,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -2261,6 +2472,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -2282,6 +2495,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -2293,7 +2508,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -2314,6 +2530,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -2335,6 +2553,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -2346,7 +2566,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -2367,6 +2588,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -2388,6 +2611,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -2399,7 +2624,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -2420,6 +2646,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -2441,6 +2669,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -2452,7 +2682,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -2473,6 +2704,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -2494,6 +2727,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -2505,7 +2740,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -2526,6 +2762,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -2547,6 +2785,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -2558,7 +2798,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -2579,6 +2820,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -2600,6 +2843,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -2611,7 +2856,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -2632,6 +2878,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -2653,6 +2901,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -2664,7 +2914,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -2685,6 +2936,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -2706,6 +2959,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -2717,7 +2972,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -2738,6 +2994,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -2759,6 +3017,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -2770,7 +3030,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -2791,6 +3052,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -2812,6 +3075,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -2823,7 +3088,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -2844,6 +3110,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -2865,6 +3133,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -2876,7 +3146,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -2897,6 +3168,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -2918,6 +3191,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -2929,7 +3204,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -2950,6 +3226,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -2971,6 +3249,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -2982,7 +3262,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -3003,6 +3284,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -3024,6 +3307,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -3035,7 +3320,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -3056,6 +3342,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -3077,6 +3365,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -3088,7 +3378,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -3109,6 +3400,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -3130,6 +3423,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -3141,7 +3436,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -3162,6 +3458,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -3183,6 +3481,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -3194,7 +3494,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -3215,6 +3516,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -3236,6 +3539,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -3247,7 +3552,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -3268,6 +3574,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -3289,6 +3597,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -3300,7 +3610,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -3321,6 +3632,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -3342,6 +3655,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -3353,7 +3668,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -3374,6 +3690,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -3395,6 +3713,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -3406,7 +3726,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -3427,6 +3748,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -3448,6 +3771,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -3459,7 +3784,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -3480,6 +3806,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -3501,6 +3829,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -3512,7 +3842,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -3533,6 +3864,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -3554,6 +3887,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -3565,7 +3900,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -3586,6 +3922,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -3607,6 +3945,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -3618,7 +3958,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -3639,6 +3980,8 @@ SELECT
 1,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -3660,6 +4003,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -3671,7 +4016,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -3692,6 +4038,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -3713,6 +4061,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -3724,7 +4074,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -3745,6 +4096,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -3766,6 +4119,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -3777,7 +4132,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -3798,6 +4154,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -3819,6 +4177,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -3830,7 +4190,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -3851,6 +4212,8 @@ SELECT
 1,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -3872,6 +4235,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -3883,7 +4248,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -3904,6 +4270,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -3925,6 +4293,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -3936,7 +4306,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -3957,6 +4328,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -3978,6 +4351,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -3989,7 +4364,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -4010,6 +4386,8 @@ SELECT
 1,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -4031,6 +4409,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -4042,7 +4422,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -4063,6 +4444,8 @@ SELECT
 1,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -4084,6 +4467,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -4095,7 +4480,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -4116,6 +4502,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -4137,6 +4525,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -4148,7 +4538,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -4169,6 +4560,8 @@ SELECT
 1,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -4190,6 +4583,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -4201,7 +4596,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -4222,6 +4618,8 @@ SELECT
 1,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -4243,6 +4641,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -4254,7 +4654,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -4275,6 +4676,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -4296,6 +4699,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -4307,7 +4712,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -4328,6 +4734,8 @@ SELECT
 1,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -4349,6 +4757,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -4360,7 +4770,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -4381,6 +4792,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -4402,6 +4815,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -4413,7 +4828,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -4434,6 +4850,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -4455,6 +4873,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -4466,7 +4886,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -4487,6 +4908,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -4508,6 +4931,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -4519,7 +4944,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -4540,6 +4966,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -4561,6 +4989,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -4572,7 +5002,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -4593,6 +5024,8 @@ SELECT
 1,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -4614,6 +5047,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -4625,7 +5060,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -4646,6 +5082,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -4667,6 +5105,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -4678,7 +5118,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -4699,6 +5140,8 @@ SELECT
 1,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -4720,6 +5163,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -4731,7 +5176,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -4752,6 +5198,8 @@ SELECT
 1,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -4773,6 +5221,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -4784,7 +5234,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -4805,6 +5256,8 @@ SELECT
 1,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -4826,6 +5279,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -4837,7 +5292,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -4858,6 +5314,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -4879,6 +5337,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -4890,7 +5350,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -4911,6 +5372,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -4932,6 +5395,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -4943,7 +5408,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -4964,6 +5430,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -4985,6 +5453,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -4996,7 +5466,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -5017,6 +5488,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -5038,6 +5511,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -5049,7 +5524,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -5070,6 +5546,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -5091,6 +5569,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -5102,7 +5582,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -5123,6 +5604,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -5144,6 +5627,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -5155,7 +5640,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -5176,6 +5662,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -5197,6 +5685,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -5208,7 +5698,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -5229,6 +5720,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -5250,6 +5743,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -5261,7 +5756,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -5282,6 +5778,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -5303,6 +5801,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -5314,7 +5814,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -5335,6 +5836,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -5356,6 +5859,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -5367,7 +5872,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -5388,6 +5894,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -5409,6 +5917,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -5420,7 +5930,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -5441,6 +5952,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -5462,6 +5975,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -5473,7 +5988,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -5494,6 +6010,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -5515,6 +6033,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -5526,7 +6046,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -5547,6 +6068,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -5568,6 +6091,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -5579,7 +6104,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -5600,6 +6126,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -5621,6 +6149,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -5632,7 +6162,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -5653,6 +6184,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -5674,6 +6207,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -5685,7 +6220,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -5706,6 +6242,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -5727,6 +6265,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -5738,7 +6278,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -5759,6 +6300,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -5780,6 +6323,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -5791,7 +6336,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -5812,6 +6358,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -5833,6 +6381,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -5844,7 +6394,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -5865,6 +6416,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -5886,6 +6439,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -5897,7 +6452,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -5918,6 +6474,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -5939,6 +6497,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -5950,7 +6510,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -5971,6 +6532,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -5992,6 +6555,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -6003,7 +6568,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -6024,6 +6590,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -6045,6 +6613,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -6056,7 +6626,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -6077,6 +6648,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -6098,6 +6671,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -6109,7 +6684,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -6130,6 +6706,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -6151,6 +6729,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -6162,7 +6742,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -6183,6 +6764,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -6204,6 +6787,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -6215,7 +6800,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -6236,6 +6822,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -6257,6 +6845,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -6268,7 +6858,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -6289,6 +6880,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -6310,6 +6903,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -6321,7 +6916,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -6342,6 +6938,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -6363,6 +6961,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -6374,7 +6974,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -6395,6 +6996,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -6416,6 +7019,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -6427,7 +7032,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -6448,6 +7054,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -6469,6 +7077,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -6480,7 +7090,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -6501,6 +7112,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -6522,6 +7135,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -6533,7 +7148,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -6554,6 +7170,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -6575,6 +7193,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -6586,7 +7206,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -6607,6 +7228,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -6628,6 +7251,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -6639,7 +7264,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -6660,6 +7286,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -6681,6 +7309,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -6692,7 +7322,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -6713,6 +7344,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -6734,6 +7367,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -6745,7 +7380,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -6766,6 +7402,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -6787,6 +7425,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -6798,7 +7438,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -6819,6 +7460,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -6840,6 +7483,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -6851,7 +7496,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -6872,6 +7518,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -6893,6 +7541,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -6904,7 +7554,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -6925,6 +7576,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -6946,6 +7599,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -6957,7 +7612,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -6978,6 +7634,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -6999,6 +7657,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -7010,7 +7670,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -7031,6 +7692,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -7052,6 +7715,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -7063,7 +7728,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -7084,6 +7750,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -7105,6 +7773,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -7116,7 +7786,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -7137,6 +7808,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -7158,6 +7831,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -7169,7 +7844,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -7190,6 +7866,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -7211,6 +7889,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -7222,7 +7902,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -7243,6 +7924,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -7264,6 +7947,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -7275,7 +7960,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -7296,6 +7982,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -7317,6 +8005,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -7328,7 +8018,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -7349,6 +8040,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -7370,6 +8063,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -7381,7 +8076,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -7402,6 +8098,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -7423,6 +8121,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -7434,7 +8134,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -7455,6 +8156,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -7476,6 +8179,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -7487,7 +8192,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -7508,6 +8214,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -7529,6 +8237,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -7540,7 +8250,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -7561,6 +8272,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -7582,6 +8295,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -7593,7 +8308,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -7614,6 +8330,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -7635,6 +8353,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -7646,7 +8366,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -7667,6 +8388,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -7688,6 +8411,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -7699,7 +8424,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -7720,6 +8446,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -7741,6 +8469,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -7752,7 +8482,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -7773,6 +8504,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -7794,6 +8527,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -7805,7 +8540,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -7826,6 +8562,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -7847,6 +8585,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -7858,7 +8598,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -7879,6 +8620,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -7900,6 +8643,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -7911,7 +8656,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -7932,6 +8678,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -7953,6 +8701,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -7964,7 +8714,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -7985,6 +8736,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -8006,6 +8759,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -8017,7 +8772,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -8038,6 +8794,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -8059,6 +8817,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -8070,7 +8830,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -8091,6 +8852,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -8112,6 +8875,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -8123,7 +8888,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -8144,6 +8910,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -8165,6 +8933,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -8176,7 +8946,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -8197,6 +8968,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -8218,6 +8991,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -8229,7 +9004,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -8250,6 +9026,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -8271,6 +9049,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -8282,7 +9062,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -8303,6 +9084,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -8324,6 +9107,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -8335,7 +9120,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -8356,6 +9142,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -8377,6 +9165,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -8388,7 +9178,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -8409,6 +9200,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -8430,6 +9223,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -8441,7 +9236,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -8462,6 +9258,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -8483,6 +9281,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -8494,7 +9294,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -8515,6 +9316,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -8536,6 +9339,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -8547,7 +9352,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -8568,6 +9374,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -8589,6 +9397,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -8600,7 +9410,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -8621,6 +9432,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -8642,6 +9455,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -8653,7 +9468,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -8674,6 +9490,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -8695,6 +9513,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -8706,7 +9526,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -8727,6 +9548,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -8748,6 +9571,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -8759,7 +9584,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -8780,6 +9606,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -8801,6 +9629,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -8812,7 +9642,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -8833,6 +9664,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -8854,6 +9687,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -8865,7 +9700,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -8886,6 +9722,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -8907,6 +9745,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -8918,7 +9758,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -8939,6 +9780,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -8960,6 +9803,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -8971,7 +9816,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -8992,6 +9838,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -9013,6 +9861,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -9024,7 +9874,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -9045,6 +9896,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -9066,6 +9919,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -9077,7 +9932,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -9098,6 +9954,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -9119,6 +9977,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -9130,7 +9990,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -9151,6 +10012,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -9172,6 +10035,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -9183,7 +10048,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -9204,6 +10070,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -9225,6 +10093,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -9236,7 +10106,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -9257,6 +10128,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -9278,6 +10151,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -9289,7 +10164,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -9310,6 +10186,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -9331,6 +10209,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -9342,7 +10222,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -9363,6 +10244,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -9384,6 +10267,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -9395,7 +10280,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -9416,6 +10302,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -9437,6 +10325,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -9448,7 +10338,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -9469,6 +10360,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -9490,6 +10383,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -9501,7 +10396,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -9522,6 +10418,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -9543,6 +10441,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -9554,7 +10454,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -9575,6 +10476,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -9596,6 +10499,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -9607,7 +10512,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -9628,6 +10534,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -9649,6 +10557,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -9660,7 +10570,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -9681,6 +10592,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -9702,6 +10615,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -9713,7 +10628,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -9734,6 +10650,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -9755,6 +10673,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -9766,7 +10686,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -9787,6 +10708,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -9808,6 +10731,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -9819,7 +10744,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -9840,6 +10766,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -9861,6 +10789,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -9872,7 +10802,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -9893,6 +10824,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -9914,6 +10847,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -9925,7 +10860,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -9946,6 +10882,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -9967,6 +10905,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -9978,7 +10918,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -9999,6 +10940,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -10020,6 +10963,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -10031,7 +10976,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -10052,6 +10998,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -10073,6 +11021,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -10084,7 +11034,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -10105,6 +11056,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -10126,6 +11079,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -10137,7 +11092,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -10158,6 +11114,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -10179,6 +11137,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -10190,7 +11150,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -10211,6 +11172,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -10232,6 +11195,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -10243,7 +11208,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -10264,6 +11230,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -10285,6 +11253,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -10296,7 +11266,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -10317,6 +11288,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -10338,6 +11311,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -10349,7 +11324,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -10370,6 +11346,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -10391,6 +11369,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -10402,7 +11382,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -10423,6 +11404,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -10444,6 +11427,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -10455,7 +11440,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -10476,6 +11462,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -10497,6 +11485,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -10508,7 +11498,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -10529,6 +11520,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -10550,6 +11543,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -10561,7 +11556,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -10582,6 +11578,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -10603,6 +11601,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -10614,7 +11614,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -10635,6 +11636,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -10656,6 +11659,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -10667,7 +11672,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -10688,6 +11694,8 @@ SELECT
 1,
     'system_property_registry@2.4.1',
     'B',
+    'Byte',
+    '[{"code":"B","label":"Byte","factor_to_canonical":"1"},{"code":"KB","label":"KB","factor_to_canonical":"1024"},{"code":"MB","label":"MB","factor_to_canonical":"1048576"},{"code":"GB","label":"GB","factor_to_canonical":"1073741824"}]',
 1,
     'active',
     'system_property_registry',
@@ -10709,6 +11717,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -10720,7 +11730,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -10741,6 +11752,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -10762,6 +11775,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -10773,7 +11788,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -10794,6 +11810,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -10815,6 +11833,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -10826,7 +11846,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -10847,6 +11868,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -10868,6 +11891,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -10879,7 +11904,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -10900,6 +11926,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -10921,6 +11949,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -10932,7 +11962,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -10953,6 +11984,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -10974,6 +12007,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -10985,7 +12020,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -11006,6 +12042,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -11027,6 +12065,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -11038,7 +12078,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -11059,6 +12100,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -11080,6 +12123,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -11091,7 +12136,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -11112,6 +12158,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -11133,6 +12181,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -11144,7 +12194,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -11165,6 +12216,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -11186,6 +12239,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -11197,7 +12252,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -11218,6 +12274,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -11239,6 +12297,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -11250,7 +12310,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -11271,6 +12332,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -11292,6 +12355,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -11303,7 +12368,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -11324,6 +12390,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -11345,6 +12413,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -11356,7 +12426,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -11377,6 +12448,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -11398,6 +12471,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -11409,7 +12484,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -11430,6 +12506,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -11451,6 +12529,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -11462,7 +12542,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -11483,6 +12564,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -11504,6 +12587,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -11515,7 +12600,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -11536,6 +12622,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -11557,6 +12645,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -11568,7 +12658,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -11589,6 +12680,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -11610,6 +12703,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -11621,7 +12716,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -11642,6 +12738,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -11663,6 +12761,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -11674,7 +12774,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -11695,6 +12796,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -11716,6 +12819,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -11727,7 +12832,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -11748,6 +12854,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -11769,6 +12877,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -11780,7 +12890,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -11801,6 +12912,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -11822,6 +12935,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -11833,7 +12948,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -11854,6 +12970,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -11875,6 +12993,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -11886,7 +13006,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -11907,6 +13028,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -11928,6 +13051,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -11939,7 +13064,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -11960,6 +13086,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -11981,6 +13109,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -11992,7 +13122,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -12013,6 +13144,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -12034,6 +13167,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -12045,7 +13180,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -12066,6 +13202,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -12087,6 +13225,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -12098,7 +13238,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -12119,6 +13260,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -12140,6 +13283,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -12151,7 +13296,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -12172,6 +13318,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -12193,6 +13341,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -12204,7 +13354,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -12225,6 +13376,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -12246,6 +13399,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -12257,7 +13412,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -12278,6 +13434,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -12299,6 +13457,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -12310,7 +13470,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -12331,6 +13492,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -12352,6 +13515,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -12363,7 +13528,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -12384,6 +13550,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -12405,6 +13573,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -12416,7 +13586,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -12437,6 +13608,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -12458,6 +13631,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -12469,7 +13644,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -12490,6 +13666,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -12511,6 +13689,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -12522,7 +13702,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -12543,6 +13724,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -12564,6 +13747,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -12575,7 +13760,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -12596,6 +13782,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -12617,6 +13805,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -12628,7 +13818,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -12649,6 +13840,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -12670,6 +13863,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -12681,7 +13876,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -12702,6 +13898,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -12723,6 +13921,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -12734,7 +13934,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -12755,6 +13956,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -12776,6 +13979,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -12787,7 +13992,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -12808,6 +14014,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -12829,6 +14037,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -12840,7 +14050,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -12861,6 +14072,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -12882,6 +14095,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -12893,7 +14108,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -12914,6 +14130,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -12935,6 +14153,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -12946,7 +14166,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -12967,6 +14188,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -12988,6 +14211,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -12999,7 +14224,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -13020,6 +14246,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -13041,6 +14269,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -13052,7 +14282,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -13073,6 +14304,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -13094,6 +14327,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -13105,7 +14340,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -13126,6 +14362,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -13147,6 +14385,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -13158,7 +14398,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -13179,6 +14420,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -13200,6 +14443,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -13211,7 +14456,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -13232,6 +14478,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -13253,6 +14501,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -13264,7 +14514,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -13285,6 +14536,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -13306,6 +14559,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -13317,7 +14572,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -13338,6 +14594,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -13359,6 +14617,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -13370,7 +14630,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -13391,6 +14652,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -13412,6 +14675,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -13423,7 +14688,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -13444,6 +14710,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -13465,6 +14733,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -13476,7 +14746,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -13497,6 +14768,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -13518,6 +14791,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -13529,7 +14804,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -13550,6 +14826,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -13571,6 +14849,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -13582,7 +14862,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -13603,6 +14884,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -13624,6 +14907,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -13635,7 +14920,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -13656,6 +14942,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -13677,6 +14965,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -13688,7 +14978,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -13709,6 +15000,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -13730,6 +15023,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -13741,7 +15036,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -13762,6 +15058,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -13783,6 +15081,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -13794,7 +15094,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -13815,6 +15116,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -13836,6 +15139,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -13847,7 +15152,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -13868,6 +15174,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -13889,6 +15197,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -13900,7 +15210,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -13921,6 +15232,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -13942,6 +15255,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -13953,7 +15268,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -13974,6 +15290,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -13995,6 +15313,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -14006,7 +15326,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -14027,6 +15348,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -14048,6 +15371,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -14059,7 +15384,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -14080,6 +15406,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     'bps',
+    'bps',
+    '[{"code":"bps","label":"bps","factor_to_canonical":"1"},{"code":"Kbps","label":"Kbps","factor_to_canonical":"1000"},{"code":"Mbps","label":"Mbps","factor_to_canonical":"1000000"}]',
 1,
     'active',
     'system_property_registry',
@@ -14101,6 +15429,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -14112,7 +15442,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -14133,6 +15464,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -14154,6 +15487,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -14165,7 +15500,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -14186,6 +15522,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -14207,6 +15545,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -14218,7 +15558,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -14239,6 +15580,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -14260,6 +15603,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -14271,7 +15616,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -14292,6 +15638,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -14313,6 +15661,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -14324,7 +15674,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -14345,6 +15696,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -14366,6 +15719,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -14377,7 +15732,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -14398,6 +15754,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -14419,6 +15777,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -14430,7 +15790,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -14451,6 +15812,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -14472,6 +15835,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -14483,7 +15848,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -14504,6 +15870,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
+    '',
+    '',
 1,
     'active',
     'system_property_registry',
@@ -14525,6 +15893,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -14536,7 +15906,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -14557,58 +15928,7 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     '',
-1,
-    'active',
-    'system_property_registry',
-1,
-    '2.4.1',
-    '2026-08-20T00:00:00Z',
-    '2026-08-20T00:00:00Z'
-FROM workspace_metadata
-WHERE singleton = 1
-ON CONFLICT (workspace_id, property_id) DO UPDATE SET
-    display_name = excluded.display_name,
-    description = excluded.description,
-    value_type = excluded.value_type,
-    cardinality = excluded.cardinality,
-    nullable = excluded.nullable,
-    editable = excluded.editable,
-    default_hidden = excluded.default_hidden,
-    default_pinned = excluded.default_pinned,
-    db_indexed_hint = excluded.db_indexed_hint,
-    provenance = excluded.provenance,
-    unit = excluded.unit,
-    definition_revision = excluded.definition_revision,
-    lifecycle_state = excluded.lifecycle_state,
-    seed_owner = excluded.seed_owner,
-    seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
-
-INSERT INTO workspace_property_definitions (
-    workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
-    display_name, description, value_type, cardinality, nullable, editable,
-    default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
-    seed_source_version, created_at, updated_at
-)
-SELECT
-    workspace_id,
-    X'a5f70e0b0bbc5e099f2e18aafb04773f',
-    'built_in',
-    'registry_derived',
-    'system',
-    'video.streamable',
-    'Streamable',
-    'Whether the content is prepared for streaming.',
-    'boolean',
-    'one',
-0,
-0,
-0,
-0,
-0,
-    'system_property_registry@2.4.1',
+    '',
     '',
 1,
     'active',
@@ -14631,6 +15951,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -14642,7 +15964,66 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
+    seed_source_version, created_at, updated_at
+)
+SELECT
+    workspace_id,
+    X'a5f70e0b0bbc5e099f2e18aafb04773f',
+    'built_in',
+    'registry_derived',
+    'system',
+    'video.streamable',
+    'Streamable',
+    'Whether the content is prepared for streaming.',
+    'boolean',
+    'one',
+0,
+0,
+0,
+0,
+0,
+    'system_property_registry@2.4.1',
+    '',
+    '',
+    '',
+1,
+    'active',
+    'system_property_registry',
+1,
+    '2.4.1',
+    '2026-08-20T00:00:00Z',
+    '2026-08-20T00:00:00Z'
+FROM workspace_metadata
+WHERE singleton = 1
+ON CONFLICT (workspace_id, property_id) DO UPDATE SET
+    display_name = excluded.display_name,
+    description = excluded.description,
+    value_type = excluded.value_type,
+    cardinality = excluded.cardinality,
+    nullable = excluded.nullable,
+    editable = excluded.editable,
+    default_hidden = excluded.default_hidden,
+    default_pinned = excluded.default_pinned,
+    db_indexed_hint = excluded.db_indexed_hint,
+    provenance = excluded.provenance,
+    unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
+    definition_revision = excluded.definition_revision,
+    lifecycle_state = excluded.lifecycle_state,
+    seed_owner = excluded.seed_owner,
+    seed_version = excluded.seed_version,
+    seed_source_version = excluded.seed_source_version,
+    updated_at = excluded.updated_at;
+
+INSERT INTO workspace_property_definitions (
+    workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
+    display_name, description, value_type, cardinality, nullable, editable,
+    default_hidden, default_pinned, db_indexed_hint, provenance, unit,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -14663,6 +16044,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     'bps',
+    'bps',
+    '[{"code":"bps","label":"bps","factor_to_canonical":"1"},{"code":"Kbps","label":"Kbps","factor_to_canonical":"1000"},{"code":"Mbps","label":"Mbps","factor_to_canonical":"1000000"}]',
 1,
     'active',
     'system_property_registry',
@@ -14684,6 +16067,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
@@ -14695,7 +16080,8 @@ INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
     display_name, description, value_type, cardinality, nullable, editable,
     default_hidden, default_pinned, db_indexed_hint, provenance, unit,
-    definition_revision, lifecycle_state, seed_owner, seed_version,
+    default_display_unit, units_json, definition_revision, lifecycle_state,
+    seed_owner, seed_version,
     seed_source_version, created_at, updated_at
 )
 SELECT
@@ -14716,6 +16102,8 @@ SELECT
 0,
     'system_property_registry@2.4.1',
     'bps',
+    'bps',
+    '[{"code":"bps","label":"bps","factor_to_canonical":"1"},{"code":"Kbps","label":"Kbps","factor_to_canonical":"1000"},{"code":"Mbps","label":"Mbps","factor_to_canonical":"1000000"}]',
 1,
     'active',
     'system_property_registry',
@@ -14737,6 +16125,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     db_indexed_hint = excluded.db_indexed_hint,
     provenance = excluded.provenance,
     unit = excluded.unit,
+    default_display_unit = excluded.default_display_unit,
+    units_json = excluded.units_json,
     definition_revision = excluded.definition_revision,
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,

@@ -171,6 +171,96 @@ func TestSourcePropertyCatalogDigestIncludesDefinitionFields(t *testing.T) {
 	}
 }
 
+func TestSourcePropertyCatalogDigestIncludesUnitContract(t *testing.T) {
+	// baseDefinition returns a fresh deep-valued misc.size contract per call so
+	// every mutation is applied independently: sharing the Units backing array
+	// across iterations would let an earlier in-place mutation mask a missing
+	// framing field of a later one.
+	baseDefinition := func() WorkspacePropertyDefinition {
+		unit := "B"
+		return WorkspacePropertyDefinition{
+			PropertyID: mustRegistryPropertyID("misc.size"), Origin: PropertyOriginBuiltIn,
+			IdentityScheme: PropertyIdentitySchemeRegistryDerived, Namespace: "system",
+			CanonicalKey: "misc.size", DisplayName: "Size",
+			ValueType: PropertyTypeNumber, Cardinality: PropertyCardinalityOne,
+			Provenance: PropertyProvenanceSystem, Lifecycle: PropertyLifecycleActive,
+			Unit: &unit, DefaultDisplayUnit: "Byte",
+			Units: []PropertyUnit{
+				{Code: "B", Label: "Byte", FactorToCanonical: "1"},
+				{Code: "KB", Label: "KB", FactorToCanonical: "1024"},
+				{Code: "MB", Label: "MB", FactorToCanonical: "1048576"},
+			},
+		}
+	}
+	base, err := (PropertyCatalogSnapshot{Definitions: []WorkspacePropertyDefinition{baseDefinition()}}).Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	mutations := []struct {
+		name   string
+		mutate func(*WorkspacePropertyDefinition)
+	}{
+		{"canonical_unit", func(value *WorkspacePropertyDefinition) {
+			changed := "bytes"
+			value.Unit = &changed
+		}},
+		{"default_display_unit", func(value *WorkspacePropertyDefinition) { value.DefaultDisplayUnit = "MB" }},
+		{"unit_code", func(value *WorkspacePropertyDefinition) { value.Units[1].Code = "KIB" }},
+		{"unit_label", func(value *WorkspacePropertyDefinition) { value.Units[1].Label = "KiB" }},
+		{"unit_factor", func(value *WorkspacePropertyDefinition) { value.Units[1].FactorToCanonical = "1000" }},
+		{"unit_order", func(value *WorkspacePropertyDefinition) {
+			value.Units[0], value.Units[1] = value.Units[1], value.Units[0]
+		}},
+		{"unit_count_drop", func(value *WorkspacePropertyDefinition) { value.Units = value.Units[:2] }},
+		{"unit_count_append", func(value *WorkspacePropertyDefinition) {
+			value.Units = append(value.Units, PropertyUnit{Code: "TB", Label: "TB", FactorToCanonical: "1099511627776"})
+		}},
+	}
+	for _, mutation := range mutations {
+		changed := baseDefinition()
+		mutation.mutate(&changed)
+		digest, digestErr := (PropertyCatalogSnapshot{Definitions: []WorkspacePropertyDefinition{changed}}).Digest()
+		if digestErr != nil {
+			t.Fatalf("mutation[%s] Digest: %v", mutation.name, digestErr)
+		}
+		if digest == base {
+			t.Fatalf("mutation[%s] did not change digest", mutation.name)
+		}
+	}
+}
+
+func TestSourcePropertyCatalogRejectsInvalidUnitContract(t *testing.T) {
+	definition := WorkspacePropertyDefinition{
+		PropertyID: mustRegistryPropertyID("misc.size"), Origin: PropertyOriginBuiltIn,
+		IdentityScheme: PropertyIdentitySchemeRegistryDerived, Namespace: "system",
+		CanonicalKey: "misc.size", DisplayName: "Size",
+		ValueType: PropertyTypeNumber, Cardinality: PropertyCardinalityOne,
+		Provenance: PropertyProvenanceSystem, Lifecycle: PropertyLifecycleActive,
+		Units: []PropertyUnit{{Code: "B", Label: "Byte", FactorToCanonical: "1"}},
+	}
+	if definition.Validate() != nil {
+		t.Fatal("valid unit contract rejected")
+	}
+	// default_display_unit must reference a declared unit code.
+	invalid := definition
+	invalid.DefaultDisplayUnit = "KB"
+	if invalid.Validate() == nil {
+		t.Fatal("default_display_unit outside units accepted")
+	}
+	// unit codes must be unique.
+	dup := definition
+	dup.Units = append(dup.Units, PropertyUnit{Code: "B", Label: "Duplicate", FactorToCanonical: "2"})
+	if dup.Validate() == nil {
+		t.Fatal("duplicate unit code accepted")
+	}
+	// empty factor is invalid.
+	emptyFactor := definition
+	emptyFactor.Units[0].FactorToCanonical = ""
+	if emptyFactor.Validate() == nil {
+		t.Fatal("empty unit factor accepted")
+	}
+}
+
 func TestSourcePropertyCatalogContractsRejectInvalidNaturalRef(t *testing.T) {
 	valid := mustSourcePropertyRef(t, "macos.mditem")
 	candidates := []SourcePropertyRef{

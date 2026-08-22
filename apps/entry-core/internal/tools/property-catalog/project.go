@@ -1,6 +1,7 @@
 package propertycatalog
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/voyager-labs/voyager-app/apps/entry-core/internal/domain/entry"
@@ -99,47 +100,51 @@ func ProjectSystemRegistry(registry *SystemPropertyRegistry) (ProjectedCatalog, 
 			}
 
 			projection.Snapshot.Definitions = append(projection.Snapshot.Definitions, entry.WorkspacePropertyDefinition{
-				PropertyID:     propertyID,
-				Origin:         entry.PropertyOriginBuiltIn,
-				IdentityScheme: entry.PropertyIdentitySchemeRegistryDerived,
-				Namespace:      "system",
-				CanonicalKey:   canonicalKey,
-				DisplayName:    descriptor.UILabel,
-				Description:    descriptor.Description,
-				ValueType:      valueType,
-				Cardinality:    cardinality,
-				Nullable:       false,
-				Editable:       false,
-				DefaultHidden:  descriptor.UIHidden,
-				DefaultPinned:  descriptor.UIPinned,
-				DBIndexedHint:  descriptor.DBIndexed,
-				DefinitionRev:  ValueContractRevision,
-				Provenance:     entry.PropertyProvenanceSystem,
-				Unit:           strPtrOrNil(unit),
-				Lifecycle:      entry.PropertyLifecycleActive,
+				PropertyID:         propertyID,
+				Origin:             entry.PropertyOriginBuiltIn,
+				IdentityScheme:     entry.PropertyIdentitySchemeRegistryDerived,
+				Namespace:          "system",
+				CanonicalKey:       canonicalKey,
+				DisplayName:        descriptor.UILabel,
+				Description:        descriptor.Description,
+				ValueType:          valueType,
+				Cardinality:        cardinality,
+				Nullable:           false,
+				Editable:           false,
+				DefaultHidden:      descriptor.UIHidden,
+				DefaultPinned:      descriptor.UIPinned,
+				DBIndexedHint:      descriptor.DBIndexed,
+				DefinitionRev:      ValueContractRevision,
+				Provenance:         entry.PropertyProvenanceSystem,
+				Unit:               strPtrOrNil(unit),
+				DefaultDisplayUnit: defaultDisplayUnit(descriptor.UnitSpec),
+				Units:              propertyUnits(descriptor.UnitSpec),
+				Lifecycle:          entry.PropertyLifecycleActive,
 			})
 			projection.Definitions = append(projection.Definitions, DefinitionRow{
-				PropertyID:        propertyID,
-				Origin:            string(entry.PropertyOriginBuiltIn),
-				IdentityScheme:    string(entry.PropertyIdentitySchemeRegistryDerived),
-				Namespace:         "system",
-				CanonicalKey:      canonicalKey,
-				DisplayName:       descriptor.UILabel,
-				Description:       descriptor.Description,
-				ValueType:         string(valueType),
-				Cardinality:       string(cardinality),
-				Nullable:          false,
-				Editable:          false,
-				DefaultHidden:     descriptor.UIHidden,
-				DefaultPinned:     descriptor.UIPinned,
-				DBIndexedHint:     descriptor.DBIndexed,
-				Provenance:        Provenance,
-				Unit:              unit,
-				DefinitionRev:     ValueContractRevision,
-				LifecycleState:    string(entry.PropertyLifecycleActive),
-				SeedOwner:         SeedOwner,
-				SeedVersion:       SeedVersion,
-				SeedSourceVersion: SeedSourceVersion,
+				PropertyID:         propertyID,
+				Origin:             string(entry.PropertyOriginBuiltIn),
+				IdentityScheme:     string(entry.PropertyIdentitySchemeRegistryDerived),
+				Namespace:          "system",
+				CanonicalKey:       canonicalKey,
+				DisplayName:        descriptor.UILabel,
+				Description:        descriptor.Description,
+				ValueType:          string(valueType),
+				Cardinality:        string(cardinality),
+				Nullable:           false,
+				Editable:           false,
+				DefaultHidden:      descriptor.UIHidden,
+				DefaultPinned:      descriptor.UIPinned,
+				DBIndexedHint:      descriptor.DBIndexed,
+				Provenance:         Provenance,
+				Unit:               unit,
+				DefaultDisplayUnit: defaultDisplayUnit(descriptor.UnitSpec),
+				UnitsJSON:          unitsJSON(descriptor.UnitSpec),
+				DefinitionRev:      ValueContractRevision,
+				LifecycleState:     string(entry.PropertyLifecycleActive),
+				SeedOwner:          SeedOwner,
+				SeedVersion:        SeedVersion,
+				SeedSourceVersion:  SeedSourceVersion,
 			})
 
 			readTransform := readTransformOverride[canonicalKey]
@@ -362,6 +367,57 @@ func strPtrOrNil(value string) *string {
 		return nil
 	}
 	return &value
+}
+
+// defaultDisplayUnit은 UnitSpec의 default_display_unit을 추출한다.
+func defaultDisplayUnit(spec *UnitSpec) string {
+	if spec == nil {
+		return ""
+	}
+	return spec.DefaultDisplayUnit
+}
+
+// propertyUnits은 UnitSpec의 units 변환표를 도메인 값으로 투영한다. Registry
+// 배열 순서가 곧 ordinal 순서다.
+func propertyUnits(spec *UnitSpec) []entry.PropertyUnit {
+	if spec == nil {
+		return nil
+	}
+	units := make([]entry.PropertyUnit, 0, len(spec.Units))
+	for _, unit := range spec.Units {
+		units = append(units, entry.PropertyUnit{
+			Code: unit.Code, Label: unit.Label, FactorToCanonical: unit.FactorToCanonical,
+		})
+	}
+	return units
+}
+
+// unitsJSON은 units 변환표를 canonical JSON 인코딩으로 직렬화한다. 필드 순서는
+// 구조체 태그 순서로 고정되고 배열 순서는 Registry 문서 순서를 따르므로 결정적이다.
+func unitsJSON(spec *UnitSpec) string {
+	units := propertyUnits(spec)
+	if len(units) == 0 {
+		return ""
+	}
+	entries := make([]unitsJSONEntry, 0, len(units))
+	for _, unit := range units {
+		entries = append(entries, unitsJSONEntry{
+			Code: unit.Code, Label: unit.Label, FactorToCanonical: unit.FactorToCanonical,
+		})
+	}
+	data, err := json.Marshal(entries)
+	if err != nil {
+		panic("unitsJSON marshal failed: " + err.Error())
+	}
+	return string(data)
+}
+
+// unitsJSONEntry는 units_json 컬럼의 canonical JSON 항목이다. generator와
+// persistence mapper가 동일한 필드 순서를 공유한다.
+type unitsJSONEntry struct {
+	Code              string `json:"code"`
+	Label             string `json:"label"`
+	FactorToCanonical string `json:"factor_to_canonical"`
 }
 
 // DeriveSourceInstanceID returns the exact canonical built-in macOS source

@@ -280,6 +280,52 @@ func TestCatalogSeedFresh(t *testing.T) {
 	assertLoadedCatalogCounts(t, store, wsctx, freshSeedCounts())
 }
 
+// TestCatalogSeedPreservesUnitContract proves the full unit_spec (canonical
+// unit, default display unit, and the units conversion table) survives the
+// seed apply and is restored from the workspace catalog by Load — so the daemon
+// never needs the Registry JSON at runtime to reproduce misc.size display units.
+func TestCatalogSeedPreservesUnitContract(t *testing.T) {
+	ctx := context.Background()
+	store := migratedStore(t)
+	wsctx := buildCatalogFixture(t, store, 0, 0, 0, 0, noneSeedTrio())
+
+	if err := store.ApplyCatalogSeed(ctx, wsctx); err != nil {
+		t.Fatalf("ApplyCatalogSeed: %v", err)
+	}
+	repo := NewPropertyCatalogRepository(store)
+	loaded, err := repo.Load(ctx, wsctx)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	for _, def := range loaded.Snapshot.Definitions {
+		if def.CanonicalKey != "misc.size" {
+			continue
+		}
+		if def.Unit == nil || *def.Unit != "B" {
+			t.Fatalf("misc.size canonical unit = %v, want B", def.Unit)
+		}
+		if def.DefaultDisplayUnit != "Byte" {
+			t.Fatalf("misc.size default display unit = %q, want Byte", def.DefaultDisplayUnit)
+		}
+		want := []domainentry.PropertyUnit{
+			{Code: "B", Label: "Byte", FactorToCanonical: "1"},
+			{Code: "KB", Label: "KB", FactorToCanonical: "1024"},
+			{Code: "MB", Label: "MB", FactorToCanonical: "1048576"},
+			{Code: "GB", Label: "GB", FactorToCanonical: "1073741824"},
+		}
+		if len(def.Units) != len(want) {
+			t.Fatalf("misc.size units = %d, want %d", len(def.Units), len(want))
+		}
+		for index := range want {
+			if def.Units[index] != want[index] {
+				t.Fatalf("misc.size unit[%d] = %#v, want %#v", index, def.Units[index], want[index])
+			}
+		}
+		return
+	}
+	t.Fatal("misc.size definition not found in loaded catalog")
+}
+
 // TestCatalogSeedOlderUpgrade proves a catalog carrying one older consistent
 // seed tuple applies the current seed and upgrades every seed-owned row to the
 // current tuple, leaving the fresh dataset.
@@ -393,6 +439,48 @@ func TestCatalogSeedSameVersionDriftFailsClosed(t *testing.T) {
 	}
 	if name != drifted {
 		t.Fatalf("drift was auto-repaired: display_name = %q, want untouched %q", name, drifted)
+	}
+}
+
+// TestCatalogSeedUnitDriftFailsClosed proves same-version drift on the
+// definition unit contract columns (default_display_unit / units_json) fails
+// closed with ErrCatalogSeedDigest, so a tampered unit table cannot silently
+// pass startup verification.
+func TestCatalogSeedUnitDriftFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	store := migratedStore(t)
+	wsctx := buildCatalogFixture(t, store, 0, 0, 0, 0, noneSeedTrio())
+	if err := store.ApplyCatalogSeed(ctx, wsctx); err != nil {
+		t.Fatalf("first ApplyCatalogSeed: %v", err)
+	}
+
+	// Tamper the default display unit of one seed-owned definition to a value
+	// that is still valid (matches a declared misc.size unit code) but differs
+	// from the committed seed, so the mapped snapshot remains valid and the
+	// digest-mismatch path is exercised.
+	res := store.db.WithContext(ctx).
+		Model(&WorkspacePropertyDefinitionRow{}).
+		Where("workspace_id = ? AND canonical_key = ?", wsctx.ID.Bytes(), "misc.size").
+		Update("default_display_unit", "MB")
+	if res.Error != nil || res.RowsAffected != 1 {
+		t.Fatalf("tamper default_display_unit: err=%v rows=%d", res.Error, res.RowsAffected)
+	}
+
+	err := store.ApplyCatalogSeed(ctx, wsctx)
+	if !errors.Is(err, ErrCatalogSeedDigest) {
+		t.Fatalf("ApplyCatalogSeed error = %v, want ErrCatalogSeedDigest", err)
+	}
+
+	// Fail closed: the tampered value is not auto-repaired.
+	var got string
+	if err := store.db.WithContext(ctx).
+		Model(&WorkspacePropertyDefinitionRow{}).
+		Where("workspace_id = ? AND canonical_key = ?", wsctx.ID.Bytes(), "misc.size").
+		Pluck("default_display_unit", &got).Error; err != nil {
+		t.Fatalf("read tampered value: %v", err)
+	}
+	if got != "MB" {
+		t.Fatalf("drift was auto-repaired: default_display_unit = %q, want untouched MB", got)
 	}
 }
 

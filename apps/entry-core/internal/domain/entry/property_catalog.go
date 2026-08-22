@@ -197,29 +197,40 @@ func (term WorkspacePropertyTerm) logicalKey() string {
 	return term.PropertyID.String() + "\x00" + term.TermKind + "\x00" + string(rune(term.Ordinal))
 }
 
+// PropertyUnit is one reviewed display-unit conversion of a Workspace
+// Property. FactorToCanonical preserves the reviewed decimal string verbatim;
+// numeric interpretation belongs to the display layer.
+type PropertyUnit struct {
+	Code              string
+	Label             string
+	FactorToCanonical string
+}
+
 // WorkspacePropertyDefinition is the catalog-level definition record carrying
 // the stable seed-owned fields that participate in the dataset digest. It is a
 // separate catalog value from the domain PropertyDefinition because the digest
 // excludes runtime workspace_id/timestamps and includes origin/scheme.
 type WorkspacePropertyDefinition struct {
-	PropertyID     PropertyID
-	Origin         PropertyOrigin
-	IdentityScheme PropertyIdentityScheme
-	Namespace      string
-	CanonicalKey   string
-	DisplayName    string
-	Description    string
-	ValueType      PropertyType
-	Cardinality    PropertyCardinality
-	Nullable       bool
-	Editable       bool
-	DefaultHidden  bool
-	DefaultPinned  bool
-	DBIndexedHint  bool
-	DefinitionRev  int
-	Provenance     PropertyProvenance
-	Unit           *string
-	Lifecycle      PropertyLifecycleState
+	PropertyID         PropertyID
+	Origin             PropertyOrigin
+	IdentityScheme     PropertyIdentityScheme
+	Namespace          string
+	CanonicalKey       string
+	DisplayName        string
+	Description        string
+	ValueType          PropertyType
+	Cardinality        PropertyCardinality
+	Nullable           bool
+	Editable           bool
+	DefaultHidden      bool
+	DefaultPinned      bool
+	DBIndexedHint      bool
+	DefinitionRev      int
+	Provenance         PropertyProvenance
+	Unit               *string
+	DefaultDisplayUnit string
+	Units              []PropertyUnit
+	Lifecycle          PropertyLifecycleState
 }
 
 func (definition WorkspacePropertyDefinition) Validate() error {
@@ -232,6 +243,36 @@ func (definition WorkspacePropertyDefinition) Validate() error {
 	}
 	if definition.Unit != nil && !validUTF8Bytes(*definition.Unit, 1, 64) {
 		return ErrInvalidPropertyCatalogSnapshot
+	}
+	if !validUTF8Bytes(definition.DefaultDisplayUnit, 0, 64) {
+		return ErrInvalidPropertyCatalogSnapshot
+	}
+	unitCodes := make(map[string]struct{}, len(definition.Units))
+	for _, unit := range definition.Units {
+		if !validUTF8Bytes(unit.Code, 1, 64) || !validUTF8Bytes(unit.Label, 1, 256) ||
+			!validUTF8Bytes(unit.FactorToCanonical, 1, 64) {
+			return ErrInvalidPropertyCatalogSnapshot
+		}
+		if _, exists := unitCodes[unit.Code]; exists {
+			return ErrInvalidPropertyCatalogSnapshot
+		}
+		unitCodes[unit.Code] = struct{}{}
+	}
+	// default_display_unit references a unit by its code or display label. The
+	// System Registry uses both forms (misc.size: code "B"/label "Byte"; the
+	// video bit-rate properties use the code), so membership is checked against
+	// either.
+	if definition.DefaultDisplayUnit != "" {
+		matched := false
+		for _, unit := range definition.Units {
+			if unit.Code == definition.DefaultDisplayUnit || unit.Label == definition.DefaultDisplayUnit {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return ErrInvalidPropertyCatalogSnapshot
+		}
 	}
 	return nil
 }
@@ -340,13 +381,18 @@ func (snapshot PropertyCatalogSnapshot) Digest() ([32]byte, error) {
 		if definition.Unit != nil {
 			unit = *definition.Unit
 		}
-		frameFamily(digestFamilyDefinitions,
+		fields := [][]byte{
 			[]byte(definition.PropertyID.String()), []byte(definition.Origin), []byte(definition.IdentityScheme),
 			[]byte(definition.Namespace), []byte(definition.CanonicalKey), []byte(definition.DisplayName), []byte(definition.Description),
 			[]byte(definition.ValueType), []byte(definition.Cardinality), boolByte(definition.Nullable), boolByte(definition.Editable),
 			boolByte(definition.DefaultHidden), boolByte(definition.DefaultPinned), boolByte(definition.DBIndexedHint), uint64Bytes(definition.DefinitionRev),
 			[]byte(definition.Provenance), []byte(unit), []byte(definition.Lifecycle),
-		)
+			[]byte(definition.DefaultDisplayUnit), uint64Bytes(len(definition.Units)),
+		}
+		for _, unitEntry := range definition.Units {
+			fields = append(fields, []byte(unitEntry.Code), []byte(unitEntry.Label), []byte(unitEntry.FactorToCanonical))
+		}
+		frameFamily(digestFamilyDefinitions, fields...)
 	}
 	descriptors := append([]SourcePropertyDescriptor(nil), snapshot.Descriptors...)
 	sort.Slice(descriptors, func(i, j int) bool { return descriptors[i].Ref.logicalKey() < descriptors[j].Ref.logicalKey() })

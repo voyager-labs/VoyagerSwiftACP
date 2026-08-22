@@ -6,30 +6,31 @@ import (
 
 // DefinitionRow carries every column of a workspace_property_definitions row.
 // It is separate from the digest snapshot because the digest intentionally
-// excludes SQL-only presentation/flag columns (description, nullable,
-// default_hidden, ...) and workspace_id.
+// excludes workspace_id and timestamps; every semantic field is covered by both.
 type DefinitionRow struct {
-	PropertyID        entry.PropertyID
-	Origin            string
-	IdentityScheme    string
-	Namespace         string
-	CanonicalKey      string
-	DisplayName       string
-	Description       string
-	ValueType         string
-	Cardinality       string
-	Nullable          bool
-	Editable          bool
-	DefaultHidden     bool
-	DefaultPinned     bool
-	DBIndexedHint     bool
-	Provenance        string
-	Unit              string
-	DefinitionRev     int
-	LifecycleState    string
-	SeedOwner         string
-	SeedVersion       int
-	SeedSourceVersion string
+	PropertyID         entry.PropertyID
+	Origin             string
+	IdentityScheme     string
+	Namespace          string
+	CanonicalKey       string
+	DisplayName        string
+	Description        string
+	ValueType          string
+	Cardinality        string
+	Nullable           bool
+	Editable           bool
+	DefaultHidden      bool
+	DefaultPinned      bool
+	DBIndexedHint      bool
+	Provenance         string
+	Unit               string
+	DefaultDisplayUnit string
+	UnitsJSON          string
+	DefinitionRev      int
+	LifecycleState     string
+	SeedOwner          string
+	SeedVersion        int
+	SeedSourceVersion  string
 }
 
 // DescriptorRow carries every column of a source_property_descriptors row.

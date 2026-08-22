@@ -181,6 +181,53 @@ func TestCatalogMapperPreservesDefinitionDigestFields(t *testing.T) {
 	}
 }
 
+func TestCatalogMapperPreservesUnitContract(t *testing.T) {
+	ctx := context.Background()
+	store := migratedStore(t)
+	wsctx, err := store.BootstrapOrRestoreWorkspace(ctx)
+	if err != nil {
+		t.Fatalf("bootstrap: %v", err)
+	}
+	id := domainentry.MustPropertyID("0198dead-beef-7000-8000-3b9ac9e12345")
+	row := WorkspacePropertyDefinitionRow{
+		WorkspaceID: wsctx.ID.Bytes(), PropertyID: id.Bytes(), Origin: "built_in", IdentityScheme: "voyager_issued",
+		Namespace: "system", CanonicalKey: "size", DisplayName: "Size", Unit: "B",
+		ValueType: "number", Cardinality: "one", Provenance: "system", LifecycleState: "active",
+		DefaultDisplayUnit: "Byte",
+		UnitsJSON:          `[{"code":"B","label":"Byte","factor_to_canonical":"1"},{"code":"KB","label":"KB","factor_to_canonical":"1024"}]`,
+	}
+	definition, err := mapDefinitionRow(row)
+	if err != nil {
+		t.Fatalf("mapDefinitionRow: %v", err)
+	}
+	if definition.DefaultDisplayUnit != "Byte" || len(definition.Units) != 2 {
+		t.Fatalf("mapped unit contract = default=%q units=%d, want Byte/2", definition.DefaultDisplayUnit, len(definition.Units))
+	}
+	if definition.Units[0].Code != "B" || definition.Units[0].FactorToCanonical != "1" ||
+		definition.Units[1].Code != "KB" || definition.Units[1].Label != "KB" || definition.Units[1].FactorToCanonical != "1024" {
+		t.Fatalf("mapped units = %#v", definition.Units)
+	}
+}
+
+func TestCatalogMapperRejectsMalformedUnitsJSON(t *testing.T) {
+	ctx := context.Background()
+	store := migratedStore(t)
+	wsctx, err := store.BootstrapOrRestoreWorkspace(ctx)
+	if err != nil {
+		t.Fatalf("bootstrap: %v", err)
+	}
+	id := domainentry.MustPropertyID("0198dead-beef-7000-8000-3b9ac9e12345")
+	row := WorkspacePropertyDefinitionRow{
+		WorkspaceID: wsctx.ID.Bytes(), PropertyID: id.Bytes(), Origin: "built_in", IdentityScheme: "voyager_issued",
+		Namespace: "system", CanonicalKey: "size", DisplayName: "Size", Unit: "B",
+		ValueType: "number", Cardinality: "one", Provenance: "system", LifecycleState: "active",
+		UnitsJSON: `{not json`,
+	}
+	if _, err := mapDefinitionRow(row); !errors.Is(err, ErrInvalidCatalogRow) {
+		t.Fatalf("mapDefinitionRow with malformed units_json error = %v, want ErrInvalidCatalogRow", err)
+	}
+}
+
 // TestCatalogMapperRejectsPartialSeedMetadata proves the mapper rejects a row
 // whose seed provenance trio is partially populated, and a foreign seed owner.
 func TestCatalogMapperRejectsPartialSeedMetadata(t *testing.T) {

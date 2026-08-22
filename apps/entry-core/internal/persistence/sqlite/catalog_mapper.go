@@ -1,6 +1,7 @@
 package sqlite
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 
@@ -139,10 +140,43 @@ func mapDefinitionRow(row WorkspacePropertyDefinitionRow) (domainentry.Workspace
 		unit := row.Unit
 		definition.Unit = &unit
 	}
+	definition.DefaultDisplayUnit = row.DefaultDisplayUnit
+	units, unitErr := decodeUnitsJSON(row.UnitsJSON)
+	if unitErr != nil {
+		return domainentry.WorkspacePropertyDefinition{}, ErrInvalidCatalogRow
+	}
+	definition.Units = units
 	if err := definition.Validate(); err != nil {
 		return domainentry.WorkspacePropertyDefinition{}, ErrInvalidCatalogRow
 	}
 	return definition, nil
+}
+
+// unitsJSONEntry mirrors the canonical units_json column encoding emitted by
+// the property-catalog generator.
+type unitsJSONEntry struct {
+	Code              string `json:"code"`
+	Label             string `json:"label"`
+	FactorToCanonical string `json:"factor_to_canonical"`
+}
+
+// decodeUnitsJSON decodes the canonical units_json column encoding. An empty
+// string means no display-unit conversions; malformed JSON fails closed.
+func decodeUnitsJSON(raw string) ([]domainentry.PropertyUnit, error) {
+	if raw == "" {
+		return nil, nil
+	}
+	var entries []unitsJSONEntry
+	if err := json.Unmarshal([]byte(raw), &entries); err != nil {
+		return nil, err
+	}
+	units := make([]domainentry.PropertyUnit, 0, len(entries))
+	for _, entry := range entries {
+		units = append(units, domainentry.PropertyUnit{
+			Code: entry.Code, Label: entry.Label, FactorToCanonical: entry.FactorToCanonical,
+		})
+	}
+	return units, nil
 }
 
 // mapDescriptorRow maps a SourcePropertyDescriptorRow to the domain

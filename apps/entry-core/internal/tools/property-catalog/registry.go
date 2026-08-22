@@ -39,10 +39,18 @@ type SystemDescriptor struct {
 	UnitSpec      *UnitSpec
 }
 
+// UnitConversion은 unit_spec.units 배열의 단일 변환 항목이다.
+type UnitConversion struct {
+	Code              string
+	Label             string
+	FactorToCanonical string
+}
+
 // UnitSpec은 descriptor의 reviewed unit metadata를 담는다.
 type UnitSpec struct {
 	CanonicalUnit      string
 	DefaultDisplayUnit string
+	Units              []UnitConversion
 }
 
 // rawSystemRegistry는 디코딩용 on-disk JSON layout을 그대로 반영한다.
@@ -67,8 +75,15 @@ type rawSystemDescriptor struct {
 }
 
 type rawUnitSpec struct {
-	CanonicalUnit      string `json:"canonical_unit"`
-	DefaultDisplayUnit string `json:"default_display_unit"`
+	CanonicalUnit      string              `json:"canonical_unit"`
+	DefaultDisplayUnit string              `json:"default_display_unit"`
+	Units              []rawUnitConversion `json:"units"`
+}
+
+type rawUnitConversion struct {
+	Code              string `json:"code"`
+	Label             string `json:"label"`
+	FactorToCanonical string `json:"factor_to_canonical"`
 }
 
 // LoadSystemRegistry는 path에서 System Property Registry를 읽고 디코드한다.
@@ -102,9 +117,16 @@ func parseSystemRegistry(data []byte) (*SystemPropertyRegistry, error) {
 		for key, descriptor := range descriptors {
 			var unit *UnitSpec
 			if descriptor.UnitSpec != nil {
+				units := make([]UnitConversion, 0, len(descriptor.UnitSpec.Units))
+				for _, raw := range descriptor.UnitSpec.Units {
+					units = append(units, UnitConversion{
+						Code: raw.Code, Label: raw.Label, FactorToCanonical: raw.FactorToCanonical,
+					})
+				}
 				unit = &UnitSpec{
 					CanonicalUnit:      descriptor.UnitSpec.CanonicalUnit,
 					DefaultDisplayUnit: descriptor.UnitSpec.DefaultDisplayUnit,
+					Units:              units,
 				}
 			}
 			converted[key] = SystemDescriptor{

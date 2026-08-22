@@ -364,6 +364,41 @@ func TestNormalizeRequestedPropertiesDeduplicatesSemanticSelectors(t *testing.T)
 	}
 }
 
+func TestPropertyDefinitionsPreserveUnitContract(t *testing.T) {
+	sizeID := domainentry.MustPropertyID("12a1c023-0b61-56b0-aec6-71a2d0d8cc1b")
+	unit := "B"
+	service := &UnifiedService{catalog: domainentry.PropertyCatalogSnapshot{
+		Definitions: []domainentry.WorkspacePropertyDefinition{{
+			PropertyID: sizeID, IdentityScheme: domainentry.PropertyIdentitySchemeRegistryDerived,
+			Namespace: "system", CanonicalKey: "misc.size", DisplayName: "File size",
+			ValueType: domainentry.PropertyTypeNumber, Cardinality: domainentry.PropertyCardinalityOne,
+			Provenance: domainentry.PropertyProvenanceSystem, Unit: &unit,
+			DefaultDisplayUnit: "Byte",
+			Units: []domainentry.PropertyUnit{
+				{Code: "B", Label: "Byte", FactorToCanonical: "1"},
+				{Code: "KB", Label: "KB", FactorToCanonical: "1024"},
+			},
+		}},
+	}}
+	definitions, err := service.propertyDefinitions([]string{"misc.size"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition, ok := definitions["misc.size"]
+	if !ok {
+		t.Fatal("misc.size definition not resolved")
+	}
+	if definition.Unit == nil || *definition.Unit != "B" {
+		t.Fatalf("unit = %v, want B", definition.Unit)
+	}
+	if definition.DefaultDisplayUnit != "Byte" || len(definition.Units) != 2 {
+		t.Fatalf("unit contract = default=%q units=%d, want Byte/2", definition.DefaultDisplayUnit, len(definition.Units))
+	}
+	if definition.Units[1].Code != "KB" || definition.Units[1].FactorToCanonical != "1024" {
+		t.Fatalf("units = %#v", definition.Units)
+	}
+}
+
 // VOY-764 회귀: UUIDv7 PropertyID term은 registry 재해싱 없이 resolve된다.
 func TestPropertyDefinitionsResolveVoyagerIssuedTerm(t *testing.T) {
 	v7ID := domainentry.MustPropertyID("0198c0de-f00d-7000-8000-3b9ac9e12345")

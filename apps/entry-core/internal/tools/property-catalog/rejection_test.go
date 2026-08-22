@@ -119,3 +119,58 @@ func TestRejectRegistryVersionSeedConstantMismatch(t *testing.T) {
 		t.Fatalf("version mismatch error = %v", err)
 	}
 }
+
+// TestDecodeUnitSpec asserts parseSystemRegistry decodes the full unit_spec:
+// canonical_unit, default_display_unit, and the units conversion table (code,
+// label, factor_to_canonical) in document order.
+func TestDecodeUnitSpec(t *testing.T) {
+	raw := `{"$kind":"system_property_registry","$version":"2.4.1","categories":{"misc":{"size":{"ui_label":"Size","type":"number","system_keys":["mditem:kMDItemFSSize"],"unit_spec":{"canonical_unit":"B","default_display_unit":"Byte","units":[{"code":"B","label":"Byte","factor_to_canonical":"1"},{"code":"KB","label":"KB","factor_to_canonical":"1024"},{"code":"MB","label":"MB","factor_to_canonical":"1048576"}]}}}}}`
+	registry, err := parseSystemRegistry([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := registry.Categories["misc"]["size"].UnitSpec
+	if spec == nil {
+		t.Fatal("unit_spec not decoded")
+	}
+	if spec.CanonicalUnit != "B" || spec.DefaultDisplayUnit != "Byte" || len(spec.Units) != 3 {
+		t.Fatalf("unit_spec = %#v", spec)
+	}
+	if spec.Units[0].Code != "B" || spec.Units[0].FactorToCanonical != "1" ||
+		spec.Units[2].Code != "MB" || spec.Units[2].Label != "MB" || spec.Units[2].FactorToCanonical != "1048576" {
+		t.Fatalf("units = %#v", spec.Units)
+	}
+}
+
+// TestProjectUnitSpecIntoCatalog asserts the unit contract flows from the
+// registry through the projection into both the digest snapshot and the SQL row
+// (default_display_unit + canonical units JSON), preserving field order.
+func TestProjectUnitSpecIntoCatalog(t *testing.T) {
+	raw := `{"$kind":"system_property_registry","$version":"2.4.1","categories":{"misc":{"size":{"ui_label":"Size","type":"number","system_keys":["mditem:kMDItemFSSize"],"unit_spec":{"canonical_unit":"B","default_display_unit":"Byte","units":[{"code":"B","label":"Byte","factor_to_canonical":"1"},{"code":"KB","label":"KB","factor_to_canonical":"1024"}]}}}}}`
+	registry, err := parseSystemRegistry([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	projection, err := ProjectSystemRegistry(registry)
+	if err != nil {
+		t.Fatalf("ProjectSystemRegistry: %v", err)
+	}
+	if len(projection.Snapshot.Definitions) != 1 || len(projection.Definitions) != 1 {
+		t.Fatalf("projection definition counts = %d/%d", len(projection.Snapshot.Definitions), len(projection.Definitions))
+	}
+	def := projection.Snapshot.Definitions[0]
+	if def.DefaultDisplayUnit != "Byte" || len(def.Units) != 2 {
+		t.Fatalf("snapshot unit contract = default=%q units=%d", def.DefaultDisplayUnit, len(def.Units))
+	}
+	row := projection.Definitions[0]
+	if row.DefaultDisplayUnit != "Byte" {
+		t.Fatalf("row default_display_unit = %q", row.DefaultDisplayUnit)
+	}
+	if row.UnitsJSON != `[{"code":"B","label":"Byte","factor_to_canonical":"1"},{"code":"KB","label":"KB","factor_to_canonical":"1024"}]` {
+		t.Fatalf("row units_json = %q", row.UnitsJSON)
+	}
+	// The projected snapshot must validate (unit contract + digest framing).
+	if _, err := projection.Snapshot.Digest(); err != nil {
+		t.Fatalf("projected snapshot digest: %v", err)
+	}
+}

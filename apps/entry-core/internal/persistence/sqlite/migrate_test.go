@@ -31,15 +31,16 @@ func TestMigrateCleanReplay(t *testing.T) {
 	// schema_migrations is the single version/dirty ledger (golang-migrate
 	// default); a clean replay reaches the current head version and is not
 	// dirty. The embedded directory now holds 0001 (workspace_metadata), 0002
-	// (workspace property catalog), 0003 (term lifecycle), and 0004 (active term uniqueness), so head is version 4.
+	// (workspace property catalog), 0003 (term lifecycle), 0004 (active term
+	// uniqueness), and 0005 (definition display-unit contract), so head is version 5.
 	var version int
 	var dirty bool
 	if err := store.SQLDB().QueryRowContext(ctx,
 		"SELECT version, dirty FROM schema_migrations").Scan(&version, &dirty); err != nil {
 		t.Fatalf("query schema_migrations: %v", err)
 	}
-	if version != 4 || dirty {
-		t.Fatalf("schema_migrations: got version=%d dirty=%v, want version=4 dirty=false", version, dirty)
+	if version != 5 || dirty {
+		t.Fatalf("schema_migrations: got version=%d dirty=%v, want version=5 dirty=false", version, dirty)
 	}
 
 	// The singleton CHECK (singleton = 1) is satisfied by the row insert, so a
@@ -206,11 +207,11 @@ func TestMigratePopulatedUpgrade(t *testing.T) {
 	defer store.Close()
 
 	// MigrateUp runs the embedded directory through the term lifecycle migration,
-	// reaching head version 4.
+	// reaching head version 5.
 	if err := MigrateUp(ctx, store.SQLDB()); err != nil {
 		t.Fatalf("MigrateUp: %v", err)
 	}
-	assertLedger(t, store.SQLDB(), 4, false)
+	assertLedger(t, store.SQLDB(), 5, false)
 
 	// Insert a populated workspace_metadata singleton row (16-byte UUIDv7 blob
 	// satisfies the length CHECK).
@@ -435,11 +436,13 @@ func catalogFixtureFS(t *testing.T) fstest.MapFS {
 	up2, down2 := embeddedMigration(t, "0002_workspace_property_catalog")
 	up3, down3 := embeddedMigration(t, "0003_workspace_property_term_lifecycle")
 	up4, down4 := embeddedMigration(t, "0004_workspace_property_term_active_unique")
+	up5, down5 := embeddedMigration(t, "0005_property_definition_units")
 	return buildFixtureFS(t,
 		fixtureMigration{base: "0001_workspace_metadata", up: up1, down: down1},
 		fixtureMigration{base: "0002_workspace_property_catalog", up: up2, down: down2},
 		fixtureMigration{base: "0003_workspace_property_term_lifecycle", up: up3, down: down3},
 		fixtureMigration{base: "0004_workspace_property_term_active_unique", up: up4, down: down4},
+		fixtureMigration{base: "0005_property_definition_units", up: up5, down: down5},
 	)
 }
 
@@ -558,9 +561,9 @@ func TestMigrateWorkspacePropertyCatalogFreshReplay(t *testing.T) {
 
 	// Fresh replay applies the workspace metadata, catalog, and term lifecycle migrations.
 	if err := MigrateUpFS(ctx, store.SQLDB(), catalogFixtureFS(t)); err != nil {
-		t.Fatalf("MigrateUpFS fresh 0001→0004: %v", err)
+		t.Fatalf("MigrateUpFS fresh 0001→0005: %v", err)
 	}
-	assertLedger(t, store.SQLDB(), 4, false)
+	assertLedger(t, store.SQLDB(), 5, false)
 	assertTablesPresent(t, store.SQLDB())
 	assertWorkspaceIDUniqueIndex(t, store.SQLDB())
 }
@@ -592,11 +595,11 @@ func TestMigrateWorkspacePropertyCatalogPopulatedReplay(t *testing.T) {
 	}
 	before := readWorkspaceRow(t, ctx, store.SQLDB())
 
-	// Upgrade the populated database to version 4.
+	// Upgrade the populated database to version 5.
 	if err := MigrateUpFS(ctx, store.SQLDB(), catalogFixtureFS(t)); err != nil {
-		t.Fatalf("MigrateUpFS populated 0001→0004: %v", err)
+		t.Fatalf("MigrateUpFS populated 0001→0005: %v", err)
 	}
-	assertLedger(t, store.SQLDB(), 4, false)
+	assertLedger(t, store.SQLDB(), 5, false)
 	assertTablesPresent(t, store.SQLDB())
 	assertWorkspaceIDUniqueIndex(t, store.SQLDB())
 
@@ -606,7 +609,93 @@ func TestMigrateWorkspacePropertyCatalogPopulatedReplay(t *testing.T) {
 	}
 }
 
-// TestCatalogSchemaConstraints asserts the exact physical FK/index/check
+// TestMigratePropertyDefinitionUnitsPopulatedUpgrade proves the 0005
+// migration upgrades a populated database created at version 4 (with an
+// existing definition row) to version 5: the new default_display_unit and
+// units_json columns appear with their DEFAULT ” backfilled and the pre-existing
+// row survives byte-for-byte on its unchanged columns.
+func TestMigratePropertyDefinitionUnitsPopulatedUpgrade(t *testing.T) {
+	ctx := context.Background()
+	path := tempDBPath(t)
+
+	// Fixture that stops at version 4 (the pre-0005 schema).
+	up1, down1 := embeddedMigration(t, "0001_workspace_metadata")
+	up2, down2 := embeddedMigration(t, "0002_workspace_property_catalog")
+	up3, down3 := embeddedMigration(t, "0003_workspace_property_term_lifecycle")
+	up4, down4 := embeddedMigration(t, "0004_workspace_property_term_active_unique")
+	preUpgrade := buildFixtureFS(t,
+		fixtureMigration{base: "0001_workspace_metadata", up: up1, down: down1},
+		fixtureMigration{base: "0002_workspace_property_catalog", up: up2, down: down2},
+		fixtureMigration{base: "0003_workspace_property_term_lifecycle", up: up3, down: down3},
+		fixtureMigration{base: "0004_workspace_property_term_active_unique", up: up4, down: down4},
+	)
+
+	store, err := Open(ctx, path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer store.Close()
+
+	if err := MigrateUpFS(ctx, store.SQLDB(), preUpgrade); err != nil {
+		t.Fatalf("MigrateUpFS to version 4: %v", err)
+	}
+	assertLedger(t, store.SQLDB(), 4, false)
+
+	// Seed a populated workspace_metadata singleton row (parent FK target) as
+	// the 0004 schema would have stored it.
+	wsBytes := []byte("0123456789abcdef")
+	if _, err := store.SQLDB().ExecContext(ctx,
+		`INSERT INTO workspace_metadata (singleton, workspace_id, created_at, updated_at)
+		 VALUES (1, ?, datetime('now'), datetime('now'))`, wsBytes); err != nil {
+		t.Fatalf("insert populated workspace_metadata row: %v", err)
+	}
+
+	// Seed a populated definition row as 0004 would have stored it (no
+	// default_display_unit / units_json columns).
+	if _, err := store.SQLDB().ExecContext(ctx,
+		`INSERT INTO workspace_property_definitions
+		 (workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
+		  display_name, description, value_type, cardinality, nullable, editable,
+		  default_hidden, default_pinned, db_indexed_hint, provenance, unit,
+		  definition_revision, lifecycle_state, seed_owner, seed_version,
+		  seed_source_version, created_at, updated_at)
+		 VALUES (?, X'5f495fc5a1875e6480eca9757f21d64d', 'built_in', 'registry_derived', 'system', 'common.title',
+		  'Title', '', 'text', 'one', 0, 0, 0, 0, 0, 'system', 'B', 1, 'active',
+		  NULL, NULL, NULL, datetime('now'), datetime('now'))`, wsBytes); err != nil {
+		t.Fatalf("insert pre-upgrade definition row: %v", err)
+	}
+
+	// Upgrade to version 5.
+	if err := MigrateUpFS(ctx, store.SQLDB(), catalogFixtureFS(t)); err != nil {
+		t.Fatalf("MigrateUpFS populated 0004→0005: %v", err)
+	}
+	assertLedger(t, store.SQLDB(), 5, false)
+
+	// The new columns exist and are backfilled with the empty default.
+	var defaultDisplay string
+	var unitsJSON string
+	if err := store.SQLDB().QueryRowContext(ctx,
+		`SELECT default_display_unit, units_json FROM workspace_property_definitions
+		 WHERE workspace_id = ? AND canonical_key = 'common.title'`, wsBytes).
+		Scan(&defaultDisplay, &unitsJSON); err != nil {
+		t.Fatalf("query upgraded definition row: %v", err)
+	}
+	if defaultDisplay != "" || unitsJSON != "" {
+		t.Fatalf("upgraded columns = (%q,%q), want empty defaults", defaultDisplay, unitsJSON)
+	}
+
+	// The pre-existing row's unit value survived the column additions.
+	var unit string
+	if err := store.SQLDB().QueryRowContext(ctx,
+		`SELECT unit FROM workspace_property_definitions WHERE workspace_id = ? AND canonical_key = 'common.title'`, wsBytes).
+		Scan(&unit); err != nil {
+		t.Fatalf("query upgraded unit column: %v", err)
+	}
+	if unit != "B" {
+		t.Fatalf("unit = %q, want %q (row corrupted by 0005)", unit, "B")
+	}
+}
+
 // contracts of the four catalog tables through PRAGMA and sqlite_master
 // queries — not by grepping the migration file. It proves:
 //
