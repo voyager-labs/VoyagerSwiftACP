@@ -701,5 +701,5 @@ export const contextMenuActions: readonly ContextMenuAction[] = [
   { id: "quick-look", label: "Quick Look", shortcut: "Space" },
   { id: "chat", label: "Ask Voyager about selection", shortcut: "⌘⇧A" },
   { id: "sep-trash", separator: true },
-  { id: "delete", label: "Move to Trash", shortcut: "⌘⌫", destructive: true },
+  { id: "delete", label: "Move to Trash", shortcut: "⌘⌫" },
 ]

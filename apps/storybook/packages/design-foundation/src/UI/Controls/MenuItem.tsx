@@ -4,7 +4,6 @@ export interface MenuItemProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   label: string
   shortcut?: string
   detail?: string
-  destructive?: boolean
   checked?: boolean
 }
 
@@ -23,15 +22,12 @@ export const MenuItem: FC<MenuItemProps> = ({
   label,
   shortcut,
   detail,
-  destructive,
   checked,
   className = "",
   role = "menuitem",
   ...props
 }) => {
-  const classes = ["fm-menu-item", destructive ? "destructive" : "", className]
-    .filter(Boolean)
-    .join(" ")
+  const classes = ["fm-menu-item", className].filter(Boolean).join(" ")
   const { modifiers, key } = shortcut ? splitShortcut(shortcut) : { modifiers: "", key: "" }
 
   return (

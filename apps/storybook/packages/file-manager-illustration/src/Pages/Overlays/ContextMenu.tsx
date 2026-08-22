@@ -17,7 +17,6 @@ export const ContextMenu: FC<ContextMenuProps> = ({ actions }) => {
             key={action.id}
             label={action.label ?? ""}
             shortcut={action.shortcut}
-            destructive={action.destructive}
             disabled={action.disabled}
           />
         ),

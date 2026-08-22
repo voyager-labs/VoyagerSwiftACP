@@ -42,11 +42,6 @@
 }
 
 :where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
-  .fm-menu-item.destructive {
-  color: var(--macos-system-red);
-}
-
-:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
   .fm-menu-item:disabled {
   opacity: 0.4;
 }

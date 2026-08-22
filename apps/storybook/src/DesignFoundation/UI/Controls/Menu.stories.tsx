@@ -9,7 +9,6 @@ const meta = {
       <MenuItem label="Open" />
       <MenuItem label="Move to Trash" shortcut="⌘⌫" />
       <MenuItem label="Paste" disabled />
-      <MenuItem label="Delete Permanently" destructive />
     </Menu>
   ),
 } satisfies Meta<typeof Menu>

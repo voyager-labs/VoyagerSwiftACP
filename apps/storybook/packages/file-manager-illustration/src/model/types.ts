@@ -80,7 +80,6 @@ export type ContextMenuAction = {
   readonly id: string
   readonly label?: string
   readonly shortcut?: string
-  readonly destructive?: boolean
   readonly disabled?: boolean
   /** 구분선 항목. label 대신 이 플래그를 설정한다 */
   readonly separator?: boolean

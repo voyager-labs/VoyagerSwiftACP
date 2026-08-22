@@ -25,10 +25,6 @@ export const WithShortcut: Story = {
   args: { label: "Move to Trash", shortcut: "⌘⌫" },
 }
 
-export const Destructive: Story = {
-  args: { label: "Delete Permanently", destructive: true },
-}
-
 export const Disabled: Story = {
   args: { label: "Paste", disabled: true },
 }
