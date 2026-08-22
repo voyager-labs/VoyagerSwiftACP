@@ -32,7 +32,10 @@ extension WindowManagerFeature {
             state.authorizedExternalOpenBatchID = nil
             state.externalOpenActivationAttempt = nil
             state.externalOpenActivationBecameKey = false
-            return .send(.delegate(.externalOpenActivationCompleted(batchID: plan.batchID)))
+            return .send(.delegate(.externalOpenActivationFailed(
+                batchID: plan.batchID,
+                failure: .recoveryExhausted,
+            )))
         }
 
         let previousAttempt = state.externalOpenActivationAttempt.flatMap { attempt in
@@ -237,14 +240,18 @@ extension WindowManagerFeature {
                 }
             }
         }
-        guard let request = attempt.plan.request?.retryExcluding(excludedTabIDs),
+        guard let request = attempt.plan.request?.fallbackExcludingPinnedCandidates(excludedTabIDs),
               case let .success(replacementPlan) = ExternalOpenPlacementPlanner.make(
                   request,
                   state: state,
                   generateUUID: uuid(),
               )
         else {
-            return retryExternalOpenActivation(after: attempt, state: &state)
+            state.authorizedExternalOpenBatchID = nil
+            return .send(.delegate(.externalOpenActivationFailed(
+                batchID: attempt.batchID,
+                failure: .recoveryExhausted,
+            )))
         }
         return .send(.placement(.apply(
             plan: replacementPlan,

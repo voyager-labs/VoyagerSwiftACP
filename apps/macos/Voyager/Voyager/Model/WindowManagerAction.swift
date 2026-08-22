@@ -23,11 +23,16 @@ struct ExternalOpenPlacementApplicationCompletion: Equatable {
     let result: Result<ExternalOpenPlacementPlan, ExternalOpenPlacementApplicationFailure>
 }
 
+enum ExternalOpenActivationFailure: Error, Equatable {
+    case recoveryExhausted
+}
+
 struct ExternalOpenPlacementRequest: Equatable {
     let batchID: UUID
     let items: [Item]
     let preferredWindowIDs: [WindowManagerState.WindowID]
-    let retryCount: Int
+    let staleReplanCount: Int
+    let pinnedFallbackCount: Int
     let excludedTabIDs: Set<ContentTabID>
 
     var itemIDs: [UUID] {
@@ -44,27 +49,38 @@ struct ExternalOpenPlacementRequest: Equatable {
         batchID: UUID,
         items: [Item],
         preferredWindowIDs: [WindowManagerState.WindowID],
-        retryCount: Int = 0,
+        staleReplanCount: Int = 0,
+        pinnedFallbackCount: Int = 0,
         excludedTabIDs: Set<ContentTabID> = [],
     ) {
         self.batchID = batchID
         self.items = items
         self.preferredWindowIDs = preferredWindowIDs
-        self.retryCount = retryCount
+        self.staleReplanCount = staleReplanCount
+        self.pinnedFallbackCount = pinnedFallbackCount
         self.excludedTabIDs = excludedTabIDs
     }
 
     var retryRequest: Self? {
-        retryExcluding([])
-    }
-
-    func retryExcluding(_ tabIDs: Set<ContentTabID>) -> Self? {
-        guard retryCount == 0 else { return nil }
+        guard staleReplanCount == 0 else { return nil }
         return .init(
             batchID: batchID,
             items: items,
             preferredWindowIDs: preferredWindowIDs,
-            retryCount: 1,
+            staleReplanCount: 1,
+            pinnedFallbackCount: pinnedFallbackCount,
+            excludedTabIDs: excludedTabIDs,
+        )
+    }
+
+    func fallbackExcludingPinnedCandidates(_ tabIDs: Set<ContentTabID>) -> Self? {
+        guard pinnedFallbackCount == 0 else { return nil }
+        return .init(
+            batchID: batchID,
+            items: items,
+            preferredWindowIDs: preferredWindowIDs,
+            staleReplanCount: staleReplanCount,
+            pinnedFallbackCount: 1,
             excludedTabIDs: excludedTabIDs.union(tabIDs),
         )
     }
@@ -789,6 +805,7 @@ enum WindowManagerAction: CasePathable {
         case externalOpenPlacementCompleted(ExternalOpenPlacementCompletion)
         case externalOpenApplyCompleted(ExternalOpenPlacementApplicationCompletion)
         case externalOpenActivationCompleted(batchID: UUID)
+        case externalOpenActivationFailed(batchID: UUID, failure: ExternalOpenActivationFailure)
         case trackedSingletonCompleted(requestID: UUID)
     }
 

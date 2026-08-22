@@ -9955,7 +9955,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
     }
 
     /// 재사용 대상으로 계획한 tab이 apply 전에 바뀌면 같은 request를 현재 live route로 한 번 다시 계획한다.
-    /// - 검증 내용: stale target 무변경과 retryCount 1 replacement plan의 surviving route 재사용
+    /// - 검증 내용: stale target 무변경과 staleReplanCount 1 replacement plan의 surviving route 재사용
     /// - 사전 조건: 최초 target anchor는 변경됐고 다른 window에 동일 route tab이 생존함
     /// - 기대 결과: 새 reservation 없이 surviving tab identity로 apply가 재시도됨
     func testPlacementApplicationReplansStaleReuseTargetOnce() async {
@@ -10008,7 +10008,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await store.send(.placement(.apply(plan: stalePlan, reservationsByItemID: [:])))
         await store.receive { action in
             guard case let .placement(.apply(plan, reservationsByItemID)) = action else { return false }
-            return plan.request?.retryCount == 1
+            return plan.request?.staleReplanCount == 1
                 && plan.windows.first?.windowID == survivingWindowID
                 && plan.windows.first?.items.first?.tabID == survivingTabID
                 && plan.windows.first?.items.first?.requiresReservation == false
@@ -10023,7 +10023,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
     }
 
     /// activation 전에 유일한 reuse target이 사라지면 동일 request를 새 tab으로 한 번 복구한다.
-    /// - 검증 내용: retryCount 1, 신규 reservation 1개, 새 window/tab application
+    /// - 검증 내용: staleReplanCount 1, 신규 reservation 1개, 새 window/tab application
     /// - 사전 조건: 최초 reuse plan의 window와 tab이 activation 시점에는 존재하지 않음
     /// - 기대 결과: 무한 재시도 없이 새 identity를 생성해 apply 단계로 복귀함
     func testPlacementActivationRecoversMissingOnlyReuseTargetOnce() async {
@@ -10066,7 +10066,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await store.send(.placement(.activate(stalePlan)))
         await store.receive { action in
             guard case let .placement(.apply(plan, reservationsByItemID)) = action else { return false }
-            return plan.request?.retryCount == 1
+            return plan.request?.staleReplanCount == 1
                 && plan.windows.count == 1
                 && plan.windows[0].isNewWindow
                 && plan.windows[0].items.count == 1
@@ -10082,7 +10082,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
     }
 
     /// activation 전에 재사용 tab identity는 남고 route만 바뀌면 동일 request를 새 tab으로 한 번 복구한다.
-    /// - 검증 내용: lastSurvivingWindowID가 exact-anchor 불일치를 거부하고 retryCount 1 신규 reservation을 할당함
+    /// - 검증 내용: lastSurvivingWindowID가 exact-anchor 불일치를 거부하고 staleReplanCount 1 신규 reservation을 할당함
     /// - 사전 조건: 계획된 reuse tab은 존재하지만 runtime anchor가 요청 route와 다름
     /// - 기대 결과: drifted tab을 활성화하지 않고 새 identity apply로 복귀함
     func testPlacementActivationReplansWhenReusedTabRouteDrifted() async {
@@ -10133,7 +10133,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await store.send(.placement(.activate(stalePlan)))
         await store.receive { action in
             guard case let .placement(.apply(plan, reservationsByItemID)) = action else { return false }
-            return plan.request?.retryCount == 1
+            return plan.request?.staleReplanCount == 1
                 && plan.windows.count == 1
                 && plan.windows[0].items.count == 1
                 && plan.windows[0].items[0].tabID != tabID
@@ -10154,7 +10154,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
     }
 
     /// activation 전에 신규 예약 tab identity는 남고 route만 바뀌면 동일 request를 새 tab으로 한 번 복구한다.
-    /// - 검증 내용: lastSurvivingWindowID가 reserved tab exact-anchor 불일치를 거부하고 retryCount 1 신규 reservation을 할당함
+    /// - 검증 내용: lastSurvivingWindowID가 reserved tab exact-anchor 불일치를 거부하고 staleReplanCount 1 신규 reservation을 할당함
     /// - 사전 조건: 계획된 reserved tab은 존재하지만 runtime anchor가 요청 route와 다름
     /// - 기대 결과: drifted reserved tab을 활성화하지 않고 새 identity apply로 복귀함
     func testPlacementActivationReplansWhenReservedTabRouteDrifted() async {
@@ -10205,7 +10205,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await store.send(.placement(.activate(stalePlan)))
         await store.receive { action in
             guard case let .placement(.apply(plan, reservationsByItemID)) = action else { return false }
-            return plan.request?.retryCount == 1
+            return plan.request?.staleReplanCount == 1
                 && plan.windows.count == 1
                 && plan.windows[0].items.count == 1
                 && plan.windows[0].items[0].tabID != tabID
@@ -10228,7 +10228,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
     /// 혼합 batch에서 마지막 route만 drift해도 전체 배치를 한 번 재계획한다.
     /// - 검증 내용: lastSurvivingWindowID가 살아있는 drifted tab을 만나면 nil을 반환하고 retry apply가 전체 request를 재해석함
     /// - 사전 조건: A는 exact reuse, B는 같은 window에서 route drift
-    /// - 기대 결과: A는 기존 tab 재사용, B는 신규 reservation, retryCount 1
+    /// - 기대 결과: A는 기존 tab 재사용, B는 신규 reservation, staleReplanCount 1
     func testPlacementActivationReplansWholeBatchWhenLaterRouteDrifted() async {
         let batchID = UUID()
         let itemAID = UUID()
@@ -10282,7 +10282,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await store.receive { action in
             guard case let .placement(.apply(plan, reservationsByItemID)) = action else { return false }
             let items = plan.orderedItems
-            return plan.request?.retryCount == 1
+            return plan.request?.staleReplanCount == 1
                 && items.count == 2
                 && items[0].tabID == tabA
                 && items[0].requiresReservation == false
@@ -10343,7 +10343,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
     /// pinned Collection 복귀가 실패하면 같은 durable anchor 후보를 모두 제외하고 배치를 한 번 재계획한다.
     /// - 검증 내용: pinnedContentTabRuntimeNavigationFailed 수신 시 같은 anchor의 다른 pinned tab도 건너뜀
     /// - 사전 조건: 두 pinned tab이 같은 durable Collection을 가리키고 첫 후보의 복귀가 실패함
-    /// - 기대 결과: retryCount 1 신규 tab reservation, 두 기존 pinned tab 보존
+    /// - 기대 결과: pinnedFallbackCount 1 신규 tab reservation, 두 기존 pinned tab 보존
     func testPlacementActivationReplansWhenPinnedCollectionReturnFailed() async {
         let fixture = Self.makePinnedCollectionActivationFixture(pendingOpen: false)
         let windowID = fixture.plan.windows[0].windowID
@@ -10405,7 +10405,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         )))
         await store.receive { action in
             guard case let .placement(.apply(plan, reservationsByItemID)) = action else { return false }
-            return plan.request?.retryCount == 1
+            return plan.request?.pinnedFallbackCount == 1
                 && plan.orderedItems.count == 1
                 && plan.orderedItems[0].tabID != fixture.tabID
                 && plan.orderedItems[0].tabID != duplicateTabID
@@ -10425,8 +10425,113 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertEqual(tabs?.map(\.anchor).contains(fixture.plan.orderedItems[0].anchor), true)
     }
 
+    /// stale apply 재계획 예산을 사용한 뒤에도 pinned 후보 실패는 독립 fallback으로 복구한다.
+    /// - 검증 내용: staleReplanCount 1 request에서 pinned 실패 terminal이 신규 reservation apply를 생성함
+    /// - 사전 조건: stale apply 재계획을 마친 durable pinned Collection plan이 activation 중 실패함
+    /// - 기대 결과: stale 재계획 예산과 무관하게 실패 후보를 제외한 신규 tab fallback이 적용됨
+    func testPlacementActivationFallsBackAfterStaleReplanBudgetWasConsumed() async throws {
+        let fixture = Self.makePinnedCollectionActivationFixture(pendingOpen: false)
+        let windowID = fixture.plan.windows[0].windowID
+        let request = try XCTUnwrap(fixture.plan.request)
+        let staleRetriedRequest = ExternalOpenPlacementRequest(
+            batchID: request.batchID,
+            items: request.items,
+            preferredWindowIDs: request.preferredWindowIDs,
+            staleReplanCount: 1,
+            excludedTabIDs: request.excludedTabIDs,
+        )
+        let staleRetriedPlan = ExternalOpenPlacementPlan(
+            batchID: fixture.plan.batchID,
+            windows: fixture.plan.windows,
+            request: staleRetriedRequest,
+        )
+        var state = fixture.state
+        state.externalOpenActivationAttempt = .init(
+            batchID: staleRetriedPlan.batchID,
+            plan: staleRetriedPlan,
+            windowID: windowID,
+            excludedWindowIDs: [],
+        )
+        let store = TestStore(initialState: state) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.fileManagerWindowClient.open = { _ in }
+        }
+        // store.exhaustivity = .off: fallback apply 이후 native window lifecycle은 기존 owner가 검증함.
+        store.exhaustivity = .off
+
+        await store.send(.windows(.element(
+            id: windowID,
+            action: .window(.delegate(.pinnedContentTabRuntimeNavigationFailed(tabID: fixture.tabID))),
+        )))
+        await store.receive { action in
+            guard case let .placement(.apply(plan, reservationsByItemID)) = action else { return false }
+            return plan.request?.staleReplanCount == 1
+                && plan.request?.pinnedFallbackCount == 1
+                && plan.orderedItems.count == 1
+                && plan.orderedItems[0].tabID != fixture.tabID
+                && plan.orderedItems[0].requiresReservation
+                && reservationsByItemID.count == 1
+        }
+        await store.skipReceivedActions()
+        await store.finish()
+    }
+
+    /// stale 재계획과 pinned fallback을 모두 사용한 뒤의 실패는 명시적 terminal로 종료한다.
+    /// - 검증 내용: 두 복구 예산이 소진된 pinned 실패가 activationFailed를 전송함
+    /// - 사전 조건: staleReplanCount와 pinnedFallbackCount가 모두 1인 activation attempt
+    /// - 기대 결과: 기존 plan을 재활성화하지 않고 authorization과 attempt를 해제함
+    func testPlacementActivationFailsExplicitlyWhenRecoveryBudgetsAreExhausted() async throws {
+        let fixture = Self.makePinnedCollectionActivationFixture(pendingOpen: false)
+        let windowID = fixture.plan.windows[0].windowID
+        let request = try XCTUnwrap(fixture.plan.request)
+        let exhaustedRequest = ExternalOpenPlacementRequest(
+            batchID: request.batchID,
+            items: request.items,
+            preferredWindowIDs: request.preferredWindowIDs,
+            staleReplanCount: 1,
+            pinnedFallbackCount: 1,
+            excludedTabIDs: request.excludedTabIDs,
+        )
+        let exhaustedPlan = ExternalOpenPlacementPlan(
+            batchID: fixture.plan.batchID,
+            windows: fixture.plan.windows,
+            request: exhaustedRequest,
+        )
+        var state = fixture.state
+        state.externalOpenActivationAttempt = .init(
+            batchID: exhaustedPlan.batchID,
+            plan: exhaustedPlan,
+            windowID: windowID,
+            excludedWindowIDs: [],
+        )
+        let store = TestStore(initialState: state) {
+            WindowManagerFeature()
+        }
+
+        await store.send(.windows(.element(
+            id: windowID,
+            action: .window(.delegate(.pinnedContentTabRuntimeNavigationFailed(tabID: fixture.tabID))),
+        ))) {
+            $0.authorizedExternalOpenBatchID = nil
+            $0.externalOpenActivationAttempt = nil
+        }
+        await store.receive { action in
+            guard case .delegate(.externalOpenActivationFailed(
+                batchID: exhaustedPlan.batchID,
+                failure: .recoveryExhausted,
+            )) = action else { return false }
+            return true
+        }
+
+        XCTAssertNil(store.state.authorizedExternalOpenBatchID)
+        XCTAssertNil(store.state.externalOpenActivationAttempt)
+    }
+
     /// pinned Collection 복귀 중 예상하지 않은 route가 commit되면 해당 tab을 제외하고 재계획한다.
-    /// - 검증 내용: 다른 사용자 navigation delegate가 retryCount 1 신규 reservation apply를 생성함
+    /// - 검증 내용: 다른 사용자 navigation delegate가 pinnedFallbackCount 1 신규 reservation apply를 생성함
     /// - 사전 조건: durable Collection 재사용 plan 중 같은 pinned tab에 다른 directory navigation이 commit됨
     /// - 기대 결과: 중단된 복귀를 기다리지 않고 기존 tab을 보존한 채 새 identity로 외부 열기를 재시도
     func testPlacementActivationReplansWhenPinnedCollectionReturnCommitsUnexpectedRoute() async {
@@ -10469,7 +10574,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         )))
         await store.receive { action in
             guard case let .placement(.apply(plan, reservationsByItemID)) = action else { return false }
-            return plan.request?.retryCount == 1
+            return plan.request?.pinnedFallbackCount == 1
                 && plan.orderedItems.count == 1
                 && plan.orderedItems[0].tabID != fixture.tabID
                 && plan.orderedItems[0].requiresReservation
@@ -12283,7 +12388,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertNotNil(store.state.windows[id: finalWindowID])
     }
 
-    /// 모든 successful candidate가 닫히면 key event 없이 terminal을 정확히 한 번 보낸다.
+    /// 모든 successful candidate가 닫히면 key event 없이 failure terminal을 정확히 한 번 보낸다.
     func testPlacementActivationWithoutSurvivorSendsOneTerminalAndNoKeyEvent() async {
         let windowID = UUID()
         let plan = ExternalOpenPlacementPlan(
@@ -12306,7 +12411,10 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                 WindowManagerFeature()
                 Reduce { _, action in
                     switch action {
-                    case .delegate(.externalOpenActivationCompleted(batchID: plan.batchID)):
+                    case .delegate(.externalOpenActivationFailed(
+                        batchID: plan.batchID,
+                        failure: .recoveryExhausted,
+                    )):
                         terminalCount.withValue { $0 += 1 }
                     case .event(.windowBecameKey):
                         keyEventCount.withValue { $0 += 1 }
@@ -12329,7 +12437,13 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await store.send(.placement(.activate(plan))) {
             $0.authorizedExternalOpenBatchID = nil
         }
-        await store.receive(\.delegate.externalOpenActivationCompleted, plan.batchID)
+        await store.receive { action in
+            guard case .delegate(.externalOpenActivationFailed(
+                batchID: plan.batchID,
+                failure: .recoveryExhausted,
+            )) = action else { return false }
+            return true
+        }
         await store.finish()
 
         XCTAssertTrue(activatedIDs.value.isEmpty)
