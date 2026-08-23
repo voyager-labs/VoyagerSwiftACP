@@ -1,0 +1,427 @@
+import Foundation
+import os
+import VoyagerShared
+
+/// claim 시점의 inode 신원. 성공 배리어에서 현재 경로를 다시 lstat해
+/// 같은-UID provider의 unlink/rename/symlink 치환을 탐지한다(코멘트 #3835329095).
+/// `lstat` 기반이라 FIFO O_RDONLY open처럼 세션 lock을 잡고 블로킹하지 않는다(P1-C).
+/// regular/directory 외 타입(symlink·FIFO·소켓 등)은 신원으로 고정하지 않고 fail-closed한다.
+struct ClaimedFileIdentity {
+    let deviceID: UInt64
+    let inode: UInt64
+    let fileType: mode_t
+
+    init?(path: String) {
+        var status = stat()
+        guard Darwin.lstat(path, &status) == 0 else { return nil }
+        self.init(status: status)
+    }
+
+    /// 이미 열린(또는 생성 직후 fstat한) descriptor의 신원을 기록한다. 파일 생성과 동시에
+    /// 신원을 고정해, 보관 사본이 관찰 가능해진 뒤 별도 lstat까지의 틈에서 치환이 기록되는
+    /// 경쟁을 없앤다(코멘트 #3835329095).
+    init?(descriptor: Int32) {
+        var status = stat()
+        guard Darwin.fstat(descriptor, &status) == 0 else { return nil }
+        self.init(status: status)
+    }
+
+    /// 걷기 시점에 확보한 stat에서 신원을 만든다. 경로 재판독 없이 스냅숏 순간의 inode를
+    /// 고정하므로, 이후 가시 경로 치환이 신원 기록에 기여할 수 없다.
+    init?(status: stat) {
+        let type = status.st_mode & S_IFMT
+        guard type == S_IFREG || type == S_IFDIR else { return nil }
+        deviceID = UInt64(status.st_dev)
+        inode = UInt64(status.st_ino)
+        fileType = type
+    }
+
+    func matchesCurrentPath(_ path: String) -> Bool {
+        var status = stat()
+        guard Darwin.lstat(path, &status) == 0 else { return false }
+        return matches(status)
+    }
+
+    func matches(_ status: stat) -> Bool {
+        UInt64(status.st_dev) == deviceID
+            && UInt64(status.st_ino) == inode
+            && status.st_mode & S_IFMT == fileType
+    }
+}
+
+/// 세션 staging 디렉터리의 수명주기 소유자. 생성 경로와 제거 상태를 단일 소유해
+/// "정확히 한 번 제거"가 상태 전이로 보장된다.
+final class StagingDirectory {
+    let path: String
+    private let fileManager: FileManagerClient
+    /// callback 시점에 확정한 파일의 보관 디렉터리. staging root는 receive destination으로
+    /// provider에 전달되므로, provider가 root를 계속 쓸 수 있는 동안 claimed 파일을
+    /// symlink로 교체하지 못하게 root 밖에 둔다(코멘트 #3830970683).
+    private let ownedPath: URL
+    private let identityLock = NSLock()
+    /// 성공 배리어용 가시 표면 신원(staged/legacy 등 provider가 경로를 아는 노드).
+    private var claimedIdentities: [String: ClaimedFileIdentity] = [:]
+    /// 격리 콘텐츠 레지스트리. placement는 여기 기록된 무작위 이름 노드를 신원 검증해 열고,
+    /// fd를 저장하지 않으므로 동시 fd는 순회 깊이 수준이다(코멘트 #3835329095).
+    private let pinnedContent: PinnedContentStore
+    /// accept 시점에 동기 고정한 root descriptor(O(1) per URL). 트리 격리와 하위 열거는
+    /// 세션 큐 첫 작업에서 이 fd 기준으로 수행한다(코멘트 #3835329097).
+    private var pinnedImmediateRootDescriptors: [String: Int32] = [:]
+    /// 보관 candidate 경로(canonical) → 격리 레지스트리 루트 label 매핑. 격리는 원본
+    /// canonical 레이블로 수행되고 placement 조회는 candidate 경로로 들어온다.
+    private var placementAliases: [String: String] = [:]
+    private(set) var isRemoved = false
+    /// 파일시스템 관찰 소스. 외부에서 attach/teardown을 관리한다.
+    var observer: DispatchSourceFileSystemObject?
+
+    init(path: String, fileManager: FileManagerClient) {
+        self.path = path
+        self.fileManager = fileManager
+        let rootName = URL(fileURLWithPath: path).lastPathComponent
+        ownedPath = URL(fileURLWithPath: path, isDirectory: true)
+            .deletingLastPathComponent()
+            .appendingPathComponent(".voyager-claimed-\(rootName)", isDirectory: true)
+        try? fileManager.createDirectory(ownedPath, true, nil)
+        pinnedContent = PinnedContentStore(directoryPath: ownedPath.path, fileManager: fileManager)
+    }
+
+    var claimedPath: String {
+        ownedPath.path
+    }
+
+    /// promise callback 파일을 보관 디렉터리로 옮기고 스트리밍 격리한다. provider descriptor를
+    /// move 전에 열어 고정하므로 예측 가능한 candidate 경로명을 다시 열지 않는다
+    /// (코멘트 #3835329095).
+    func claim(_ sourceURL: URL) -> URL? {
+        var candidate = ownedPath.appendingPathComponent(sourceURL.lastPathComponent)
+        var suffix = 2
+        while fileManager.fileExists(candidate.path) {
+            let name = (sourceURL.lastPathComponent as NSString).deletingPathExtension
+            let ext = (sourceURL.lastPathComponent as NSString).pathExtension
+            let suffixedName = ext.isEmpty ? "\(name) \(suffix)" : "\(name) \(suffix).\(ext)"
+            candidate = ownedPath.appendingPathComponent(suffixedName)
+            suffix += 1
+        }
+        let sourceDescriptor = Darwin.open(sourceURL.path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
+        guard sourceDescriptor >= 0 else { return nil }
+        defer { Darwin.close(sourceDescriptor) }
+        do {
+            try fileManager.moveItem(sourceURL, candidate)
+            let claimedCanonical = canonicalClaimPath(candidate.path)
+            // 배리어는 candidate 가시 표면의 신원을 검증한다(격리 snapshot inode가 아님).
+            guard let visibleIdentity = ClaimedFileIdentity(path: candidate.path) else {
+                throw CocoaError(.fileReadUnknown)
+            }
+            guard try isolateTree(
+                from: sourceDescriptor,
+                rootLabel: claimedCanonical,
+            ) != nil else { throw CocoaError(.fileReadUnknown) }
+            identityLock.lock()
+            claimedIdentities[claimedCanonical] = visibleIdentity
+            identityLock.unlock()
+            return candidate
+        } catch {
+            try? fileManager.removeItem(candidate)
+            return nil
+        }
+    }
+
+    /// accept 경계(MainActor)에서는 각 즉시 URL의 root descriptor 고정과 타입 검증만 수행한다
+    /// (O(1) per URL, bounded — 코멘트 #3835329097). 트리 격리와 하위 열거는 모두 세션 큐의
+    /// completeImmediateTreePinning()에서 수행된다. 하나라도 실패하면 all-or-nothing으로
+    /// false를 반환하고 이번 배치에서 연 모든 fd를 닫는다.
+    func pinImmediateRoots(urls: [String]) -> Bool {
+        identityLock.lock()
+        defer { identityLock.unlock() }
+        var builtRoots: [String: Int32] = [:]
+        for path in urls {
+            let canonical = canonicalClaimPath(path)
+            if builtRoots[canonical] != nil || pinnedImmediateRootDescriptors[canonical] != nil { continue }
+            let rootDescriptor = Darwin.open(path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
+            guard rootDescriptor >= 0 else {
+                closeDescriptors(builtRoots.values)
+                return false
+            }
+            // pin 시점 타입 검증: FIFO/symlink 등 regular·directory 외 노드는 여기서 fail-closed.
+            guard ClaimedFileIdentity(descriptor: rootDescriptor) != nil else {
+                Darwin.close(rootDescriptor)
+                closeDescriptors(builtRoots.values)
+                return false
+            }
+            builtRoots[canonical] = rootDescriptor
+        }
+        for (canonicalPath, descriptor) in builtRoots {
+            pinnedImmediateRootDescriptors[canonicalPath] = descriptor
+        }
+        return true
+    }
+
+    /// 세션 큐에서 보류된 root descriptor를 스트리밍 격리해 사유 콘텐츠 레지스트리를 완성한다.
+    /// 신뢰 경계는 이 함수의 완료 시점이다(코멘트 #3835329095, #3835329097). 순회는 부모 체인만
+    /// fd로 보유하고(openat), 각 노드는 즉시 무작위 이름 snapshot으로 relink 후 닫히므로 동시
+    /// fd는 깊이 수준이다. 하나라도 실패하면 all-or-nothing으로 false를 반환하고 이번 배치
+    /// 결과를 모두 폐기한다.
+    func completeImmediateTreePinning() -> Bool {
+        identityLock.lock()
+        defer { identityLock.unlock() }
+        let pending = pinnedImmediateRootDescriptors
+        pinnedImmediateRootDescriptors.removeAll()
+        do {
+            for (canonical, rootDescriptor) in pending {
+                guard let rootIdentity = try isolateTree(
+                    from: rootDescriptor,
+                    rootLabel: canonical,
+                ) else { throw CocoaError(.fileReadUnknown) }
+                _ = rootIdentity
+                Darwin.close(rootDescriptor)
+            }
+            return true
+        } catch {
+            pinnedContent.removeAll()
+            closeDescriptors(pending.values)
+            return false
+        }
+    }
+
+    /// source fd 루트 트리를 레지스트리로 스트리밍 격리한다. 재귀 중 보유 fd는 조상 체인과
+    /// 현재 노드뿐이다. 반환값은 루트 신원(호출자 참조용), 실패 시 nil.
+    private func isolateTree(from sourceDescriptor: Int32, rootLabel: String) throws -> ClaimedFileIdentity? {
+        try isolateNode(sourceDescriptor: sourceDescriptor, label: rootLabel)
+    }
+
+    private func isolateNode(sourceDescriptor: Int32, label: String) throws -> ClaimedFileIdentity {
+        var status = stat()
+        guard Darwin.fstat(sourceDescriptor, &status) == 0 else {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
+        let type = status.st_mode & S_IFMT
+        switch type {
+        case S_IFREG:
+            return try pinnedContent.snapshotFile(from: sourceDescriptor, label: label)
+        case S_IFDIR:
+            _ = try pinnedContent.makeDirectory(label: label, mode: status.st_mode & 0o777)
+            let names = Self.directoryEntryNames(fd: sourceDescriptor) ?? []
+            for name in names {
+                let childDescriptor = Darwin.openat(
+                    sourceDescriptor,
+                    name,
+                    O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC,
+                )
+                guard childDescriptor >= 0 else {
+                    throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+                }
+                defer { Darwin.close(childDescriptor) }
+                _ = try isolateNode(sourceDescriptor: childDescriptor, label: label + "/" + name)
+            }
+            guard let identity = ClaimedFileIdentity(status: status) else {
+                throw CocoaError(.fileReadUnknown)
+            }
+            return identity
+        default:
+            throw CocoaError(.fileReadUnsupportedScheme)
+        }
+    }
+
+    /// 스냅숏 복사가 끝난 뒤 남은 보류 root descriptor를 닫는다. 레지스트리는 placement까지
+    /// 유지된다.
+    func releasePinnedImmediateRoots() {
+        identityLock.lock()
+        closeDescriptors(pinnedImmediateRootDescriptors.values)
+        pinnedImmediateRootDescriptors.removeAll()
+        identityLock.unlock()
+    }
+
+    /// enqueue 시점에 고정한 트리에서 보관 사본을 만든다. 실행 시점에는 어떤 소스 경로도
+    /// 다시 열지 않고, 레지스트리의 검증된 descriptor만 사용한다(코멘트 #3835329095).
+    func copyPinnedImmediate(_ sourceURL: URL) -> URL? {
+        let canonical = canonicalClaimPath(sourceURL.path)
+        identityLock.lock()
+        let isolated = pinnedContent.contains(canonical)
+        identityLock.unlock()
+        guard isolated else { return nil }
+        let candidate = uniqueOwnedCandidate(for: sourceURL)
+        do {
+            try Self.copyFromStore(
+                pinnedContent,
+                rootLabel: canonical,
+                destination: candidate,
+            )
+            identityLock.lock()
+            placementAliases[canonicalClaimPath(candidate.path)] = canonical
+            identityLock.unlock()
+            return candidate
+        } catch {
+            try? fileManager.removeItem(candidate)
+            return nil
+        }
+    }
+
+    /// claim 시점에 캡처한 inode 신원과 현재 경로를 비교한다. 성공 배리어가 false를 받으면
+    /// 세션은 `.fileAbsent` 실패로 강등돼 provider 치환 경로를 넘기지 않는다(코멘트 #3835329095).
+    func verifyClaimedIdentities() -> Bool {
+        identityLock.lock()
+        let identities = claimedIdentities
+        identityLock.unlock()
+        return identities.allSatisfy { path, identity in
+            identity.matchesCurrentPath(path)
+        }
+    }
+
+    /// provider가 경로를 아는 staging 산출물(data flavor 물리화·legacy staged)을 등록한다.
+    /// admission 시점에 포획한 기대 신원과 실제 open 결과를 대조해 lstat→open TOCTOU를
+    /// fail-closed로 닫고, detached snapshot을 레지스트리에 relink한다(코멘트 #3835329095).
+    func stageReceivedFile(_ url: URL, expected: ClaimedFileIdentity?) -> Bool {
+        let descriptor = Darwin.open(url.path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
+        guard descriptor >= 0 else { return false }
+        defer { Darwin.close(descriptor) }
+        var status = stat()
+        guard Darwin.fstat(descriptor, &status) == 0 else { return false }
+        if let expected, !expected.matches(status) {
+            return false
+        }
+        guard let openedIdentity = ClaimedFileIdentity(status: status) else { return false }
+        do {
+            _ = try pinnedContent.snapshotFile(from: descriptor, label: canonicalClaimPath(url.path))
+        } catch {
+            return false
+        }
+        identityLock.lock()
+        claimedIdentities[canonicalClaimPath(url.path)] = openedIdentity
+        identityLock.unlock()
+        return true
+    }
+
+    /// admission 시점(lstat) 신원 포횅. 세션 큐 격리 전 교체를 판정하는 기준이 된다.
+    func capturedIdentity(_ url: URL) -> ClaimedFileIdentity? {
+        ClaimedFileIdentity(path: url.path)
+    }
+
+    /// placement 요청 경로가 모두 격리 레지스트리에 있는지 확인한다. 누락 시 fail-closed.
+    func preparePlacementSources(paths: [String]) -> Bool {
+        identityLock.lock()
+        defer { identityLock.unlock() }
+        return paths.allSatisfy { resolvedLabel(for: $0) != nil }
+    }
+
+    /// candidate 경로면 격리 루트 label로 치환하고, 아니면 canonical을 label로 쓴다.
+    private func resolvedLabel(for path: String) -> String? {
+        let canonical = canonicalClaimPath(path)
+        if let alias = placementAliases[canonical] {
+            return pinnedContent.contains(alias) ? alias : nil
+        }
+        return pinnedContent.contains(canonical) ? canonical : nil
+    }
+
+    func copyPlacementSource(sourcePath: String, destinationPath: String) throws {
+        identityLock.lock()
+        let rootLabel = resolvedLabel(for: sourcePath)
+        identityLock.unlock()
+        guard let rootLabel else { throw CocoaError(.fileNoSuchFile) }
+        try Self.copyFromStore(
+            pinnedContent,
+            rootLabel: rootLabel,
+            destination: URL(fileURLWithPath: destinationPath),
+        )
+    }
+
+    private static func copyFromStore(
+        _ store: PinnedContentStore,
+        rootLabel: String,
+        destination: URL,
+    ) throws {
+        try StablePlacementCopier.copySubtree(
+            rootPath: rootLabel,
+            destination: destination,
+            openVerifiedNode: { label in
+                let opened = try store.openVerified(label)
+                return (opened.fd, opened.isDirectory)
+            },
+            closeVerifiedNode: { Darwin.close($0) },
+            childLabels: { store.childLabels(of: $0) },
+        )
+    }
+
+    private func closeDescriptors(_ descriptors: some Sequence<Int32>) {
+        descriptors.forEach { Darwin.close($0) }
+    }
+
+    /// claim 신원 키를 canonical real path로 통일한다. `/var`→`/private/var`처럼 symlink가
+    /// 풀린 경로가 어느 경로로 기록됐든 placement 조회 키와 일치하게 한다.
+    private func canonicalClaimPath(_ path: String) -> String {
+        URL(fileURLWithPath: path).resolvingSymlinksInPath().path
+    }
+
+    /// 보관 디렉터리 안에서 소스 파일명과 충돌하지 않는 고유 목적지 경로를 만든다.
+    private func uniqueOwnedCandidate(for sourceURL: URL) -> URL {
+        var candidate = ownedPath.appendingPathComponent(sourceURL.lastPathComponent)
+        var suffix = 2
+        while fileManager.fileExists(candidate.path) {
+            let name = (sourceURL.lastPathComponent as NSString).deletingPathExtension
+            let ext = (sourceURL.lastPathComponent as NSString).pathExtension
+            let suffixedName = ext.isEmpty ? "\(name) \(suffix)" : "\(name) \(suffix).\(ext)"
+            candidate = ownedPath.appendingPathComponent(suffixedName)
+            suffix += 1
+        }
+        return candidate
+    }
+
+    /// 부모 fd 기준 readdir로 직계 자식 이름을 읽는다. 경로 재해석이 없다.
+    /// caller는 identityLock을 보유하므로 비재진입 readdir 사용이 안전하다.
+    private static func directoryEntryNames(fd: Int32) -> [String]? {
+        guard let stream = fdopendir(dup(fd)) else { return nil }
+        defer { closedir(stream) }
+        var names: [String] = []
+        while let entry = readdir(stream) {
+            let name = withUnsafeBytes(of: entry.pointee.d_name) { raw -> String in
+                guard let base = raw.baseAddress?.assumingMemoryBound(to: CChar.self) else {
+                    return ""
+                }
+                return String(cString: base)
+            }
+            if name != ".", name != ".." {
+                names.append(name)
+            }
+        }
+        return names
+    }
+
+    /// 이미 제거된 상태가 아니어도 파일시스템 상의 staging/보관 디렉터리를 정리한다.
+    /// 늦은 콜백 재정리 경로에서 사용하며 상태 플래그는 건드리지 않는다.
+    func removeIfPresent() {
+        identityLock.lock()
+        pinnedContent.removeAll()
+        closeDescriptors(pinnedImmediateRootDescriptors.values)
+        pinnedImmediateRootDescriptors.removeAll()
+        placementAliases.removeAll()
+        claimedIdentities.removeAll()
+        identityLock.unlock()
+        try? fileManager.removeItem(URL(fileURLWithPath: path))
+        try? fileManager.removeItem(ownedPath)
+    }
+
+    func attachObserver(_ observer: DispatchSourceFileSystemObject) {
+        self.observer = observer
+        observer.resume()
+    }
+
+    func detachObserver() {
+        observer?.cancel()
+        observer = nil
+    }
+
+    func remove() {
+        identityLock.lock()
+        guard !isRemoved else {
+            identityLock.unlock()
+            return
+        }
+        isRemoved = true
+        closeDescriptors(pinnedImmediateRootDescriptors.values)
+        pinnedImmediateRootDescriptors.removeAll()
+        pinnedContent.removeAll()
+        claimedIdentities.removeAll()
+        identityLock.unlock()
+        try? fileManager.removeItem(URL(fileURLWithPath: path))
+        try? fileManager.removeItem(ownedPath)
+    }
+}

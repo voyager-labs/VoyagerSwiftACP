@@ -36,6 +36,8 @@ public enum EntryOperationsAction: CasePathable, Sendable {
         /// internal: all-promises 성공 시 reducer가 emit하는 import-placement action.
         /// 실제 복사 배치는 Todo 7 seam이 이 action을 소비해 수행한다.
         case applyImport(ExternalDropImportPlan)
+        /// internal: placement 진입 직전 source descriptor 고정 결과.
+        case placementSourcesPrepared(plan: ExternalDropImportPlan, isValid: Bool)
         /// internal: placement의 모든 항목이 종료된 뒤 reducer가 emit하는 종합 완료 action.
         /// 성공 목적지 경로/실패와 종단 상태를 담으며, FileManager가 정확히 한 번 reload한다.
         case importFinished(ExternalDropImportResult)

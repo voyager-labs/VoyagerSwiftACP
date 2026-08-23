@@ -5,6 +5,8 @@ import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
 import VoyagerShared
 
+private typealias SecurePlacementCopy = @Sendable (URL, URL) async throws -> Bool
+
 public struct EntryClipboardOperationsCutClearMonitor: Sendable {
     public var heuristic: EntryOperationsCutClearHeuristic
 
@@ -249,6 +251,30 @@ struct EntryClipboardOperationsReducer {
                 let placementSessionID: ExternalDropSessionID? = operationKind == .externalObjectImportItem
                     ? state.externalDropImportPlacement?.sessionID
                     : nil
+                if operationKind == .externalObjectImportItem, placementSessionID == nil {
+                    // placement 세션이 없는 외부 import는 일반 mutable paste로 강등하지 않고
+                    // 항목별 실패로 닫는다(fail-closed).
+                    return .run { send in
+                        for sourcePath in sourcePaths {
+                            await send(.lifecycle(.operationFinished(
+                                sourcePath,
+                                operationKind,
+                                .failure(.system(message: "외부 drop placement 세션이 없다")),
+                            )))
+                        }
+                    }
+                }
+                let secureCopy: SecurePlacementCopy? = if let placementSessionID {
+                    { [acquisitionClient] sourceURL, destinationURL in
+                        try await acquisitionClient.copyPlacementSource(
+                            placementSessionID,
+                            sourceURL.path,
+                            destinationURL.path,
+                        )
+                    }
+                } else {
+                    nil
+                }
                 var effect = pasteItemsEffect(
                     sourcePaths: sourcePaths,
                     destinationPath: destinationPath,
@@ -258,6 +284,7 @@ struct EntryClipboardOperationsReducer {
                     onCancelCleanup: placementSessionID.map { sessionID in
                         { @MainActor in acquisitionClient.finish(sessionID) }
                     },
+                    secureCopy: secureCopy,
                 )
                 if let placementSessionID {
                     effect = effect.cancellable(id: CancelID.externalDrop(placementSessionID))
@@ -288,6 +315,7 @@ struct EntryClipboardOperationsReducer {
         operationKind: OperationKind,
         mutationImpactDestinationPath: String?,
         onCancelCleanup: (@MainActor @Sendable () -> Void)? = nil,
+        secureCopy: SecurePlacementCopy? = nil,
     ) -> Effect<Action> {
         let destinations = EntryClipboardOperationsSupport.avoidNameCollisions(
             sourcePaths: sourcePaths,
@@ -305,6 +333,7 @@ struct EntryClipboardOperationsReducer {
             entryFileOpsClient: entryFileOpsClient,
             alertClient: alertClient,
             mutationImpactDestinationPath: mutationImpactDestinationPath,
+            secureCopy: secureCopy,
         )
         let copyLoop: @Sendable (Send<Action>) async throws -> Void = { send in
             var targets: [EntryActionRecord.Target] = []
@@ -354,6 +383,7 @@ private enum EntryClipboardOperationsSupport {
         let entryFileOpsClient: EntryFileOpsClient
         let alertClient: EntryOperationsAlertClient
         let mutationImpactDestinationPath: String?
+        let secureCopy: SecurePlacementCopy?
 
         func execute(
             sourceURL: URL,
@@ -364,7 +394,7 @@ private enum EntryClipboardOperationsSupport {
         ) async -> EntryActionRecord.Target? {
             let context = OperationContext(isCopy: isCopy, operationKind: operationKind)
             do {
-                try await mutate(sourceURL: sourceURL, destinationURL: destinationURL, isCopy: isCopy)
+                try await mutate(context: context, sourceURL: sourceURL, destinationURL: destinationURL)
                 return await finishSuccess(
                     sourceURL: sourceURL,
                     destinationURL: destinationURL,
@@ -436,7 +466,7 @@ private enum EntryClipboardOperationsSupport {
             }
             do {
                 try await entryFileOpsClient.deleteImmediately(destinationURL)
-                try await mutate(sourceURL: sourceURL, destinationURL: destinationURL, isCopy: context.isCopy)
+                try await mutate(context: context, sourceURL: sourceURL, destinationURL: destinationURL)
                 return await finishSuccess(
                     sourceURL: sourceURL,
                     destinationURL: destinationURL,
@@ -468,10 +498,26 @@ private enum EntryClipboardOperationsSupport {
             return .lifecycle(.dropOperationFinished(path, operationKind, result))
         }
 
-        private func mutate(sourceURL: URL, destinationURL: URL, isCopy: Bool) async throws {
-            if isCopy {
+        private func mutate(context: OperationContext, sourceURL: URL, destinationURL: URL) async throws {
+            switch (context.isCopy, context.operationKind) {
+            case (true, .externalObjectImportItem):
+                // 외부 import는 고정 descriptor 복사만 허용한다. copier 부재·false 반환을
+                // 일반 paste 경로로 강등하지 않는 fail-closed 계약이다.
+                guard let secureCopy else {
+                    throw FileOpError.system(message: "placement copier가 준비되지 않았다")
+                }
+                do {
+                    guard try await secureCopy(sourceURL, destinationURL) else {
+                        throw FileOpError.system(message: "placement copier가 항목을 처리하지 않았다")
+                    }
+                } catch let error as POSIXError where error.code == .EEXIST {
+                    // descriptor 복사의 O_EXCL 목적지 충돌을 기존 교체 알림 계약으로 정규화한다.
+                    // stop/replace와 per-item 집합 의미는 execute의 fileExists 분기가 소유한다.
+                    throw FileOpError.fileExists(itemName: destinationURL.lastPathComponent)
+                }
+            case (true, _):
                 try await entryFileOpsClient.pasteFile(sourceURL, destinationURL)
-            } else {
+            case (false, _):
                 try await entryFileOpsClient.moveFile(sourceURL, destinationURL)
             }
         }

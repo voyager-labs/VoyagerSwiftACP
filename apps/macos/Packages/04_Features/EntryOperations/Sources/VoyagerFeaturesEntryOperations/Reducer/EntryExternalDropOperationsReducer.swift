@@ -72,6 +72,19 @@ public struct EntryExternalDropOperationsReducer {
             // Todo 7 seam: 실제 복사 배치를 수행한다. 획득된 staged 파일을 순서대로
             // `Clipboard.pasteItems`(.copy + .externalObjectImportItem)로 보내 destination에 복사한다.
             case let .externalDrop(.applyImport(plan)):
+                return verifyPlacementEntry(plan: plan, state: &state)
+
+            case let .externalDrop(.placementSourcesPrepared(plan, isValid)):
+                guard state.externalDropImportPlacement?.sessionID == plan.sessionID else {
+                    return .none
+                }
+                guard isValid else {
+                    state.externalDropImportPlacement = nil
+                    state.externalObjectImportStatus = .failed
+                    return .run { [acquisitionClient, sessionID = plan.sessionID] _ in
+                        await acquisitionClient.finish(sessionID)
+                    }
+                }
                 return startPlacement(plan: plan, state: &state)
 
             // Todo 7: placement 항목의 종단을 추적해 모든 항목이 끝나면 정확히 한 번 종합 완료를 emit한다.
@@ -182,15 +195,60 @@ public struct EntryExternalDropOperationsReducer {
         }
     }
 
-    private func startPlacement(plan: ExternalDropImportPlan, state: inout State) -> Effect<Action> {
-        // 진행 중 placement가 있으면 새 세션으로 덮어써 첫 세션의 복사 완료·staging 정리·
-        // 종합 reload가 유실되지 않도록 차단한다. (전체 취소/직렬화 배선은 별도 이슈로 분리)
+    private func verifyPlacementEntry(
+        plan: ExternalDropImportPlan,
+        state: inout State,
+    ) -> Effect<Action> {
         guard state.externalDropImportPlacement == nil else {
-            // 버려진 plan의 세션도 finish해 두 번째 staging이 남지 않게 정리한다.
             return .run { [acquisitionClient, sessionID = plan.sessionID] _ in
                 await acquisitionClient.finish(sessionID)
             }
         }
+        let orderedSources = orderedSources(for: plan)
+        guard !orderedSources.isEmpty else {
+            state.externalObjectImportStatus = .failed
+            return .run { [acquisitionClient, sessionID = plan.sessionID] _ in
+                await acquisitionClient.finish(sessionID)
+            }
+        }
+        state.externalDropImportPlacement = ExternalDropImportPlacementState(
+            sessionID: plan.sessionID,
+            destination: plan.destination,
+            pendingPaths: Set(orderedSources),
+        )
+        state.externalObjectImportStatus = .pending
+        return .run { [acquisitionClient] send in
+            await withTaskCancellationHandler {
+                let isValid = await acquisitionClient.preparePlacementSources(
+                    plan.sessionID,
+                    orderedSources,
+                )
+                guard !Task.isCancelled else { return }
+                await send(.externalDrop(.placementSourcesPrepared(
+                    plan: plan,
+                    isValid: isValid,
+                )))
+            } onCancel: {
+                Task { @MainActor in
+                    acquisitionClient.finish(plan.sessionID)
+                }
+            }
+        }
+        .cancellable(id: CancelID.externalDrop(plan.sessionID), cancelInFlight: true)
+    }
+
+    private func startPlacement(plan: ExternalDropImportPlan, state: inout State) -> Effect<Action> {
+        guard state.externalDropImportPlacement?.sessionID == plan.sessionID else { return .none }
+        let orderedSources = orderedSources(for: plan)
+        return .send(.clipboard(.pasteItems(
+            sourcePaths: orderedSources,
+            destinationPath: plan.destination,
+            operation: .copy,
+            operationKind: .externalObjectImportItem,
+        )))
+    }
+
+    private func orderedSources(for plan: ExternalDropImportPlan) -> [String] {
         // 표현(promise/data/immediate/legacy) 전체를 원본 pasteboard logical ordinal 하나로
         // 통합 정렬한다(코멘트 #3831133039). data/legacy를 전역 먼저, immediate를 전역 나중에
         // 두지 않고, 동률은 receiver 내 콜백 순번 → 도착 순번으로 결정적 유지한다. ordinal이
@@ -215,30 +273,12 @@ public struct EntryExternalDropOperationsReducer {
                 sourcePath: path,
             ))
         }
-        let orderedSources = orderedEntries
+        return orderedEntries
             .sorted {
                 ($0.pasteboardOrdinal, $0.withinItemOrdinal, $0.arrivalOrdinal)
                     < ($1.pasteboardOrdinal, $1.withinItemOrdinal, $1.arrivalOrdinal)
             }
             .map(\.sourcePath)
-        guard !orderedSources.isEmpty else {
-            state.externalObjectImportStatus = .failed
-            return .run { [acquisitionClient, sessionID = plan.sessionID] _ in
-                await acquisitionClient.finish(sessionID)
-            }
-        }
-        state.externalDropImportPlacement = ExternalDropImportPlacementState(
-            sessionID: plan.sessionID,
-            destination: plan.destination,
-            pendingPaths: Set(orderedSources),
-        )
-        state.externalObjectImportStatus = .pending
-        return .send(.clipboard(.pasteItems(
-            sourcePaths: orderedSources,
-            destinationPath: plan.destination,
-            operation: .copy,
-            operationKind: .externalObjectImportItem,
-        )))
     }
 
     /// 복사 배치가 `.pathsMutated([source, destination])`으로 보고한 경로 쌍에서 source(staging)를

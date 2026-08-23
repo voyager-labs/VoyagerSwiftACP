@@ -40,6 +40,9 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
     /// 발행된 terminal 이벤트. 정확히 한 번 발행을 보장하기 위해 저장한다.
     private var terminalEvent: ExternalDropAcquisitionEvent?
     private var expectedCardinality: Int = 0
+    private var expectedSnapshotCount: Int = 0
+    /// 큐에 등록돼 아직 완료되지 않은 즉시 스냅숏 수. 성공 종단은 이 값이 0일 때만 가능하다.
+    private var pendingSnapshotCount: Int = 0
     private var expectedCardinalityByReceiver: [Int: Int] = [:]
     /// cardinality가 확정됐는지 여부. 확정 전에 도착한 콜백이 성공을 내지 못하게 하는
     /// 최소 수명주기 가드다(receive 시작 후 콜백이 확정보다 먼저 도착할 수 있다).
@@ -126,11 +129,13 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
                 expectedCardinalityByReceiver[index] = count
             }
         }
-        expectedCardinality = determinate
+        // 큐에서 아직 완료되지 않은 즉시 스냅숏 기대 수를 합산한다. 스냅숏 등록이
+        // receivedDeterminateCount를 채우므로 성공 판정은 스냅숏 완료를 포함한다.
+        expectedCardinality = determinate + expectedSnapshotCount
         cardinalityFinalized = true
         let pendingCallbacks = callbacksAwaitingCardinality
         callbacksAwaitingCardinality.removeAll()
-        if determinate == 0, indeterminateReceivers.isEmpty {
+        if expectedCardinality == 0, indeterminateReceivers.isEmpty {
             emitTerminalLocked(.failed(sessionID, .emptyCardinality))
         } else if phase == .acquiring, sessionIsCompleteLocked() {
             // receive 중 동기적으로 도착한 콜백이 이미 받은 수를 채웠을 수 있다. cardinality
@@ -154,32 +159,60 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         guard phase == .acquiring else { return }
-        expectedCardinality = count
+        expectedCardinality = count + expectedSnapshotCount
         cardinalityFinalized = true
-        if count == 0 {
+        if expectedCardinality == 0 {
             emitTerminalLocked(.failed(sessionID, .emptyCardinality))
         } else if phase == .acquiring, sessionIsCompleteLocked() {
             emitTerminalLocked(.succeeded(sessionID))
         }
     }
 
-    /// data flavor 한 건을 staging에 verbatim으로 써서 `.received`를 emit한다.
+    /// data flavor 한 건을 세션 큐에서 staging에 verbatim으로 써서 `.received`를 emit한다.
+    /// begin(MainActor)은 파일명 예약과 작업 선등록(pending 배리어)만 수행하고, 바이트 쓰기와
+    /// snapshot 격리는 세션 OperationQueue에서 수행된다(코멘트 #3835329097).
     /// 쓰기 실패는 타입화 실패(`.dataMaterializationFailed`)로 귀결된다.
     func materialize(dataFlavor: ExternalDropDataFlavor) {
         lock.lock()
-        defer { lock.unlock() }
-        guard phase == .acquiring else { return }
+        guard phase == .acquiring else {
+            lock.unlock()
+            return
+        }
         // 같은 text 첫 줄 + UTI를 가진 data flavor가 같은 파일명을 만들면 두 번째 write가
         // 첫 번째 파일을 덮어쓴다. 세션 내에서 고유한 이름을 예약해 충돌을 회피한다.
         let filename = uniqueStagedFilename(for: dataFlavor.filename)
+        pendingSnapshotCount += 1
+        lock.unlock()
+        queue.addOperation { [weak self] in
+            self?.materializeOnQueue(dataFlavor: dataFlavor, filename: filename)
+        }
+    }
+
+    private func materializeOnQueue(dataFlavor: ExternalDropDataFlavor, filename: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard phase == .acquiring else {
+            pendingSnapshotCount -= 1
+            return
+        }
         let url = URL(fileURLWithPath: staging.path).appendingPathComponent(filename)
         do {
             try dataFlavor.bytes.write(to: url)
         } catch {
+            pendingSnapshotCount -= 1
             emitTerminalLocked(.failed(sessionID, .dataMaterializationFailed))
             return
         }
         receivedStagedPaths.insert(url.standardizedFileURL.path)
+        // 물리화 직후 신원을 포횅하고 같은 신원으로 detached snapshot을 검증해 고정한다.
+        // retained writable fd 임자 내부 재기록이 placement에 기여할 수 없다(코멘트 #3835329095).
+        guard let expected = staging.capturedIdentity(url),
+              staging.stageReceivedFile(url, expected: expected)
+        else {
+            pendingSnapshotCount -= 1
+            emitTerminalLocked(.failed(sessionID, .dataMaterializationFailed))
+            return
+        }
         nextItemOrdinal += 1
         let itemOrdinal = nextItemOrdinal
         receivedCount += 1
@@ -191,13 +224,16 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
             stagedPath: url.path,
             pasteboardOrdinal: dataFlavor.ordinal,
         )))
+        pendingSnapshotCount -= 1
         if sessionIsCompleteLocked() {
             emitTerminalLocked(.succeeded(sessionID))
         }
     }
 
     /// 레거시 폴백: staging에 이미 물리화된 파일 한 건을 received-item으로 등록한다.
-    /// 파일 존재·containment를 재검증하고 실패는 타입화 실패로 승격하지 않는다.
+    /// begin(MainActor)은 containment 검증과 admission 신원 포획, pending 배리어 선등록만
+    /// 수행하고, snapshot 격리는 세션 큐에서 수행된다(코멘트 #3835329097).
+    /// 파일 존재·containment 위반은 타입화 실패로 승격하지 않는다.
     /// 하나의 logical legacy item이 여러 파일을 산출하면 같은 pasteboard ordinal에
     /// 항목 내 순번(0-based `callbackOrdinal`)이 붙는다(P1-C).
     func registerLegacyStagedFile(
@@ -206,11 +242,51 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
         callbackOrdinal: Int = 0,
     ) {
         lock.lock()
-        defer { lock.unlock() }
-        guard phase == .acquiring else { return }
+        guard phase == .acquiring else {
+            lock.unlock()
+            return
+        }
         let url = URL(fileURLWithPath: stagedPath)
         guard fileManager.fileExists(url.path), isInsideStaging(url) else {
+            lock.unlock()
             emitTerminalLocked(.failed(sessionID, .outsideStaging))
+            return
+        }
+        // admission 시점 신원을 포횅해 큐 격리 전 경로 교체를 fail-closed로 판정한다
+        // (lstat→open TOCTOU 차단, 코멘트 #3835329095). symlink 등은 여기서 거부된다.
+        guard let expected = staging.capturedIdentity(url) else {
+            lock.unlock()
+            emitTerminalLocked(.failed(sessionID, .fileAbsent))
+            return
+        }
+        pendingSnapshotCount += 1
+        lock.unlock()
+        queue.addOperation { [weak self] in
+            self?.finalizeLegacyStagedFileOnQueue(
+                url: url,
+                expected: expected,
+                pasteboardOrdinal: pasteboardOrdinal,
+                callbackOrdinal: callbackOrdinal,
+            )
+        }
+    }
+
+    private func finalizeLegacyStagedFileOnQueue(
+        url: URL,
+        expected: ClaimedFileIdentity,
+        pasteboardOrdinal: Int,
+        callbackOrdinal: Int,
+    ) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard phase == .acquiring else {
+            pendingSnapshotCount -= 1
+            return
+        }
+        // 큐 격리: 기대 신원과 open 결과를 대조해 detached snapshot으로 고정한다.
+        guard staging.stageReceivedFile(url, expected: expected) else {
+            pendingSnapshotCount -= 1
+            emitTerminalLocked(.failed(sessionID, .fileAbsent))
             return
         }
         receivedStagedPaths.insert(url.standardizedFileURL.path)
@@ -225,6 +301,7 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
             stagedPath: url.path,
             pasteboardOrdinal: pasteboardOrdinal,
         )))
+        pendingSnapshotCount -= 1
         if sessionIsCompleteLocked() {
             emitTerminalLocked(.succeeded(sessionID))
         }
@@ -265,24 +342,86 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
             .precomposedStringWithCanonicalMapping
     }
 
-    /// mixed drop의 즉시 file URL을 accept 시점에 Voyager 보관 디렉터리로 복사해 identity를
-    /// 고정한다(코멘트 #3831133026). 원본은 source-app 소유로 그대로 둔다. 하나라도 복사에
-    /// 실패하면 전체를 `.fileAbsent`로 종단하고 nil을 반환한다(all-or-nothing).
-    func pinImmediateURLs(_ paths: [String]) -> [String]? {
+    /// mixed drop의 즉시 file URL을 세션 큐에서 보관 디렉터리로 스냅숏한다(코멘트 #3831133026,
+    /// #3835329097). 재귀 `copyItem`(디렉터리 하위 트리 포함)이 main actor를 막지 않게 세션
+    /// OperationQueue에서 실행하고, 완료는 acquisition barrier(expectedCardinality)에 포함해
+    /// acceptDrop이 즉시 반환되도록 한다. 원본은 source-app 소유로 그대로 둔다. 하나라도 복사에
+    /// 실패하면 전체를 `.fileAbsent`로 종단한다(all-or-nothing).
+    func enqueueImmediateSnapshot(immediateURLPaths paths: [String], immediateURLOrdinals ordinals: [Int]) {
+        guard !paths.isEmpty else { return }
+        lock.lock()
+        guard phase == .acquiring else {
+            lock.unlock()
+            return
+        }
+        // MainActor에서는 root descriptor 고정(O(1))만 수행한다. 재귀 하위 트리 열거와 스냅숏
+        // 복사는 모두 세션 큐에서 수행한다(코멘트 #3835329097). root 고정 실패만 동기 실패 종단.
+        guard staging.pinImmediateRoots(urls: paths) else {
+            emitTerminalLocked(.failed(sessionID, .fileAbsent))
+            lock.unlock()
+            return
+        }
+        // 스냅숏 완료를 expectedSnapshotCount로 선집계한다. 미완료 스냅숏이 남아 있으면
+        // 성공 종단이 나오지 않는다(sessionIsCompleteLocked 가드).
+        expectedSnapshotCount += paths.count
+        pendingSnapshotCount += paths.count
+        lock.unlock()
+        queue.addOperation { [weak self] in
+            self?.snapshotImmediateURLs(paths: paths, ordinals: ordinals)
+        }
+    }
+
+    /// 세션 큐에서 실행되는 즉시 URL 스냅숏 본문. enqueue 시점에 고정한 root descriptor에서
+    /// 순서대로 보관 사본을 만들고 각 건을 received-item으로 등록해 `.received`를 emit한다.
+    private func snapshotImmediateURLs(paths: [String], ordinals: [Int]) {
+        // 재귀 하위 트리 열거도 세션 큐에서 수행한다(MainActor bounded, 코멘트 #3835329097).
+        guard staging.completeImmediateTreePinning() else {
+            staging.releasePinnedImmediateRoots()
+            fail(reason: .fileAbsent)
+            return
+        }
+        for (index, path) in paths.enumerated() {
+            lock.lock()
+            guard phase == .acquiring else {
+                lock.unlock()
+                staging.releasePinnedImmediateRoots()
+                return
+            }
+            lock.unlock()
+            guard let claimed = staging.copyPinnedImmediate(URL(fileURLWithPath: path)) else {
+                staging.releasePinnedImmediateRoots()
+                fail(reason: .fileAbsent)
+                return
+            }
+            registerPinnedImmediate(
+                url: claimed,
+                pasteboardOrdinal: ordinals.indices.contains(index) ? ordinals[index] : -1,
+            )
+        }
+        staging.releasePinnedImmediateRoots()
+    }
+
+    /// 큐에서 완료된 즉시 스냅숏 한 건을 received-item으로 등록한다.
+    private func registerPinnedImmediate(url: URL, pasteboardOrdinal: Int) {
         lock.lock()
         defer { lock.unlock() }
-        guard phase == .acquiring else { return nil }
-        var pinned: [String] = []
-        pinned.reserveCapacity(paths.count)
-        for path in paths {
-            guard let claimed = staging.copyClaim(URL(fileURLWithPath: path)) else {
-                emitTerminalLocked(.failed(sessionID, .fileAbsent))
-                return nil
-            }
-            receivedStagedPaths.insert(claimed.standardizedFileURL.path)
-            pinned.append(claimed.path)
+        guard phase == .acquiring else { return }
+        pendingSnapshotCount -= 1
+        receivedStagedPaths.insert(url.standardizedFileURL.path)
+        nextItemOrdinal += 1
+        let itemOrdinal = nextItemOrdinal
+        receivedCount += 1
+        receivedDeterminateCount += 1
+        emitLocked(.received(ExternalDropReceivedFile(
+            sessionID: sessionID,
+            itemOrdinal: itemOrdinal,
+            callbackOrdinal: 0,
+            stagedPath: url.path,
+            pasteboardOrdinal: pasteboardOrdinal,
+        )))
+        if sessionIsCompleteLocked() {
+            emitTerminalLocked(.succeeded(sessionID))
         }
-        return pinned
     }
 
     /// 지연 data-flavor 로드를 세션 전용 큐에서 실행한다. 로드 실패는 타입화 실패로 종단 처리한다.
@@ -668,8 +807,18 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
     /// caller는 lock을 보유해야 한다.
     private func emitTerminalLocked(_ event: ExternalDropAcquisitionEvent) {
         guard terminalEvent == nil else { return }
-        terminalEvent = event
-        switch event {
+        // 성공 배리어: claim 신원 검증(코멘트 #3835329095). claim 시점에 캡처한 inode 신원과
+        // 현재 경로가 어긋나면(치환·삭제·symlink 교체) 결함 있는 drop이 성공으로 확정되지 않게
+        // all-or-nothing 실패로 강등한다.
+        var outgoing = event
+        if case .succeeded = outgoing, !staging.verifyClaimedIdentities() {
+            let demotedSessionID = sessionID.rawValue
+            Self.logger
+                .info("session \(demotedSessionID, privacy: .public) claim identity verification failed")
+            outgoing = .failed(sessionID, .fileAbsent)
+        }
+        terminalEvent = outgoing
+        switch outgoing {
         case .succeeded:
             phase = .succeededAwaitingPlacement
         case .failed, .cancelled:
@@ -679,13 +828,13 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
             break
         }
         teardownLocked()
-        bufferedEvents.append(event)
-        continuation?.yield(event)
+        bufferedEvents.append(outgoing)
+        continuation?.yield(outgoing)
         continuation?.finish()
         continuation = nil
         let loggedSessionID = sessionID.rawValue
         let loggedReceivedCount = receivedCount
-        switch event {
+        switch outgoing {
         case .succeeded:
             Self.logger
                 .info(
@@ -758,6 +907,7 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
     /// caller는 lock을 보유해야 한다.
     private func sessionIsCompleteLocked() -> Bool {
         guard cardinalityFinalized, indeterminateReceivers.isEmpty else { return false }
+        guard pendingSnapshotCount == 0 else { return false }
         return receivedDeterminateCount >= expectedCardinality
             && expectedCardinalityByReceiver.allSatisfy { receiverIndex, expected in
                 callbackCounts[receiverIndex, default: 0] == expected
@@ -774,108 +924,16 @@ extension ExternalDropAcquisitionSession {
         emitTerminalLocked(.failed(sessionID, reason))
     }
 
+    /// placement가 claim path를 다시 열지 않도록 검증된 descriptor를 준비한다.
+    func preparePlacementSources(paths: [String]) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return staging.preparePlacementSources(paths: paths)
+    }
+
+    func copyPlacementSource(sourcePath: String, destinationPath: String) throws {
+        try staging.copyPlacementSource(sourcePath: sourcePath, destinationPath: destinationPath)
+    }
+
     private static let indeterminateNameMarker = "NSFilePromiseUnknown"
-}
-
-/// 세션 staging 디렉터리의 수명주기 소유자. 생성 경로와 제거 상태를 단일 소유해
-/// "정확히 한 번 제거"가 상태 전이로 보장된다.
-private final class StagingDirectory {
-    let path: String
-    private let fileManager: FileManagerClient
-    /// callback 시점에 확정한 파일의 보관 디렉터리. staging root는 receive destination으로
-    /// provider에 전달되므로, provider가 root를 계속 쓸 수 있는 동안 claimed 파일을
-    /// symlink로 교체하지 못하게 root 밖에 둔다(코멘트 #3830970683).
-    private let ownedPath: URL
-    private(set) var isRemoved = false
-    /// 파일시스템 관찰 소스. 외부에서 attach/teardown을 관리한다.
-    var observer: DispatchSourceFileSystemObject?
-
-    init(path: String, fileManager: FileManagerClient) {
-        self.path = path
-        self.fileManager = fileManager
-        let rootName = URL(fileURLWithPath: path).lastPathComponent
-        ownedPath = URL(fileURLWithPath: path, isDirectory: true)
-            .deletingLastPathComponent()
-            .appendingPathComponent(".voyager-claimed-\(rootName)", isDirectory: true)
-        try? fileManager.createDirectory(ownedPath, true, nil)
-    }
-
-    var claimedPath: String {
-        ownedPath.path
-    }
-
-    func claim(_ sourceURL: URL) -> URL? {
-        var candidate = ownedPath.appendingPathComponent(sourceURL.lastPathComponent)
-        var suffix = 2
-        while fileManager.fileExists(candidate.path) {
-            let name = (sourceURL.lastPathComponent as NSString).deletingPathExtension
-            let ext = (sourceURL.lastPathComponent as NSString).pathExtension
-            let suffixedName = ext.isEmpty ? "\(name) \(suffix)" : "\(name) \(suffix).\(ext)"
-            candidate = ownedPath.appendingPathComponent(suffixedName)
-            suffix += 1
-        }
-        do {
-            try fileManager.moveItem(sourceURL, candidate)
-            return candidate
-        } catch {
-            return nil
-        }
-    }
-
-    /// provider가 수정할 수 없는 보관 디렉터리로 원본을 "복사"해 identity를 고정한다.
-    /// claim과 달리 move가 아니므로 source-app 소유 원본은 그대로 유지된다. root regular
-    /// 파일은 파일로, root 디렉터리는 하위 트리째 복사한다(P1-B). symlink는 따라가지 않고
-    /// 거부하고(placement가 Voyager 권한으로 외부 파일을 읽지 않게 한다), 그 외 root
-    /// 타입도 거부한다.
-    func copyClaim(_ sourceURL: URL) -> URL? {
-        var candidate = ownedPath.appendingPathComponent(sourceURL.lastPathComponent)
-        var suffix = 2
-        while fileManager.fileExists(candidate.path) {
-            let name = (sourceURL.lastPathComponent as NSString).deletingPathExtension
-            let ext = (sourceURL.lastPathComponent as NSString).pathExtension
-            let suffixedName = ext.isEmpty ? "\(name) \(suffix)" : "\(name) \(suffix).\(ext)"
-            candidate = ownedPath.appendingPathComponent(suffixedName)
-            suffix += 1
-        }
-        guard let attributes = try? fileManager.attributesOfItem(sourceURL.path),
-              let fileType = attributes[.type] as? FileAttributeType,
-              fileType == .typeRegular || fileType == .typeDirectory
-        else {
-            return nil
-        }
-        do {
-            try fileManager.copyItem(sourceURL, candidate)
-            return candidate
-        } catch {
-            return nil
-        }
-    }
-
-    func attachObserver(_ observer: DispatchSourceFileSystemObject) {
-        self.observer = observer
-    }
-
-    func detachObserver() {
-        observer = nil
-    }
-
-    /// staging root와 보관 디렉터리를 정확히 한 번 제거한다(멱등).
-    func remove() {
-        guard !isRemoved else { return }
-        isRemoved = true
-        removeRoots()
-    }
-
-    /// 이미 제거됐어도 두 경로의 제거를 항상 시도한다(늦은 콜백 재생성 대비).
-    /// `remove()`와 달리 isRemoved 가드로 조기 반환하지 않으므로, finish 후 provider가
-    /// 경로를 재생성해도 늦은 콜백 시 다시 제거된다.
-    func removeIfPresent() {
-        isRemoved = true
-        removeRoots()
-    }
-
-    private func removeRoots() {
-        try? fileManager.removeItem(URL(fileURLWithPath: path))
-        try? fileManager.removeItem(ownedPath)
-    }
 }

@@ -61,6 +61,14 @@ public struct ExternalDropAcquisitionClient: Sendable {
     /// Mail automation(AppleScript)으로 export하고, 테스트는 클로저를 교체해 대체한다.
     public var loadMailSource: @Sendable (MailMessageSourceLookup) -> Data?
 
+    /// placement가 path를 다시 열지 않도록 claim-time inode descriptor를 준비한다
+    /// (코멘트 #3835329095). 하나라도 고정할 수 없으면 false로 실패 폐쇄한다.
+    public var preparePlacementSources: @Sendable (ExternalDropSessionID, [String]) async -> Bool
+
+    /// live session descriptor에서 destination으로 직접 복사한다. true면 복사를 처리했고,
+    /// false면 테스트/default client가 기존 EntryFileOps copy로 fallback한다.
+    public var copyPlacementSource: @Sendable (ExternalDropSessionID, String, String) async throws -> Bool
+
     nonisolated public init(
         begin: @escaping @MainActor @Sendable (
             [NSFilePromiseReceiver], [ExternalDropDataFlavor], String, Bool, [String], [Int], [Int],
@@ -87,6 +95,9 @@ public struct ExternalDropAcquisitionClient: Sendable {
             )
         },
         loadMailSource: @escaping @Sendable (MailMessageSourceLookup) -> Data? = { _ in nil },
+        preparePlacementSources: @escaping @Sendable (ExternalDropSessionID, [String]) async -> Bool = { _, _ in true },
+        copyPlacementSource: @escaping @Sendable (ExternalDropSessionID, String, String) async throws
+            -> Bool = { _, _, _ in false },
     ) {
         self.begin = begin
         self.events = events
@@ -97,6 +108,8 @@ public struct ExternalDropAcquisitionClient: Sendable {
         self.finalizeLegacyStaging = finalizeLegacyStaging
         self.beginDeferred = beginDeferred
         self.loadMailSource = loadMailSource
+        self.preparePlacementSources = preparePlacementSources
+        self.copyPlacementSource = copyPlacementSource
     }
 }
 
@@ -213,15 +226,9 @@ enum ExternalDropAcquisitionLive {
                     receiverOrdinals: receiverOrds,
                 ))
             },
-            events: { sessionID in
-                store.events(for: sessionID)
-            },
-            cancel: { sessionID in
-                store.cancel(sessionID)
-            },
-            finish: { sessionID in
-                store.finish(sessionID)
-            },
+            events: { store.events(for: $0) },
+            cancel: { store.cancel($0) },
+            finish: { store.finish($0) },
             beginLegacy: { paths, stagingDir, destination, forcedCopy, immediates, immOrds, promisedOrds in
                 store.beginLegacy(
                     stagedPaths: paths,
@@ -233,9 +240,7 @@ enum ExternalDropAcquisitionLive {
                     promisedOrdinals: promisedOrds,
                 )
             },
-            prepareLegacyStaging: { destinationPath in
-                store.prepareLegacyStaging(destinationPath: destinationPath)
-            },
+            prepareLegacyStaging: { store.prepareLegacyStaging(destinationPath: $0) },
             finalizeLegacyStaging: { names, stagingDirectory in
                 store.finalizeLegacyStaging(names, stagingDirectory: stagingDirectory)
             },
@@ -247,6 +252,17 @@ enum ExternalDropAcquisitionLive {
                 )
             },
             loadMailSource: { MailMessageSourceExport.load($0) },
+            preparePlacementSources: { sessionID, paths in
+                await store.preparePlacementSources(sessionID, paths: paths)
+            },
+            copyPlacementSource: { sessionID, sourcePath, destinationPath in
+                try await store.copyPlacementSource(
+                    sessionID,
+                    sourcePath: sourcePath,
+                    destinationPath: destinationPath,
+                )
+                return true
+            },
         )
     }
 }
@@ -316,20 +332,12 @@ private final class ExternalDropAcquisitionStore {
             session.startStagingObservation()
         }
 
-        // 즉시 file URL을 accept 시점에 보관 디렉터리로 pinning한다(코멘트 #3831133026).
-        // cardinality 확정·data 물리화처럼 성공 종단(.succeeded)을 낼 수 있는 연산보다
-        // 반드시 먼저 수행한다(P1-A). pinning이 성공 종단 뒤에 오면 실패 종단(.fileAbsent)이
-        // terminalEvent 가드에 묻혀 결함 있는 drop이 성공으로 확정된다. pinning은
-        // all-or-nothing이며, 실패 시 이미 .fileAbsent 종단을 냈으므로 receiver 수신 시작,
-        // cardinality 확정, data 물리화를 진행하지 않고 빈 immediates로 fail-closed한다.
-        guard let pinnedImmediatePaths = session.pinImmediateURLs(immediateURLPaths) else {
-            return failClosedRequest(
-                sessionID: sessionID,
-                destination: destination,
-                forcedCopy: forcedCopy,
-                stagingDirectory: stagingURL.path,
-            )
-        }
+        // 재귀 즉시 URL 스냅숏은 세션 큐에서 수행하고 completion을 cardinality에 포함한다
+        // (코멘트 #3835329097). request에는 미완료 경로를 넣지 않고 `.received` 이벤트로 전달한다.
+        session.enqueueImmediateSnapshot(
+            immediateURLPaths: immediateURLPaths,
+            immediateURLOrdinals: immediateURLOrdinals,
+        )
 
         startDeterminateAcquisition(
             receivers: receivers,
@@ -348,8 +356,6 @@ private final class ExternalDropAcquisitionStore {
             promisedOrdinals: promised.ordinals,
             forcedCopy: forcedCopy,
             stagingDirectory: stagingURL.path,
-            immediateURLPaths: pinnedImmediatePaths,
-            immediateOrdinals: pinnedImmediatePaths.isEmpty ? [] : immediateURLOrdinals,
         )
     }
 
@@ -499,17 +505,6 @@ private final class ExternalDropAcquisitionStore {
         )
         sessions[sessionID] = session
 
-        // 즉시 file URL을 accept 시점에 보관 디렉터리로 pinning한다(코멘트 #3831133026).
-        let pinnedImmediatePaths = session.pinImmediateURLs(immediateURLPaths)
-        guard let pinnedImmediatePaths else {
-            return failClosedRequest(
-                sessionID: sessionID,
-                destination: destination,
-                forcedCopy: forcedCopy,
-                stagingDirectory: stagingDirectory,
-            )
-        }
-
         // flat 이름 목록과 logical promise item의 경계 복구(P1-C). 이름 수 == 항목 수면
         // 1:1 대응, 항목이 하나뿐이면 전체 파일이 그 항목에 속한다. 그 외엔 경계를 복구할
         // 수 없으므로 출력 수로 pasteboard ordinal을 날조하지 않고 fail-closed한다.
@@ -526,6 +521,12 @@ private final class ExternalDropAcquisitionStore {
             )
         }
 
+        // 즉시 URL 스냅숏은 세션 큐에서 수행하고 legacy staged 파일과 같은 성공 배리어에
+        // 합친다. request에는 미완료 경로를 넣지 않고 `.received` 이벤트로 전달한다.
+        session.enqueueImmediateSnapshot(
+            immediateURLPaths: immediateURLPaths,
+            immediateURLOrdinals: immediateURLOrdinals,
+        )
         registerLegacyStagedFiles(stagedPaths, ordinals: mappedOrdinals, on: session)
 
         return ExternalDropAcceptedRequest(
@@ -535,8 +536,6 @@ private final class ExternalDropAcquisitionStore {
             promisedOrdinals: [],
             forcedCopy: forcedCopy,
             stagingDirectory: stagingDirectory,
-            immediateURLPaths: pinnedImmediatePaths,
-            immediateOrdinals: pinnedImmediatePaths.isEmpty ? [] : immediateURLOrdinals,
         )
     }
 
@@ -615,6 +614,33 @@ private final class ExternalDropAcquisitionStore {
             return AsyncStream { $0.finish() }
         }
         return session.events()
+    }
+
+    /// placement가 읽을 descriptor 경로를 준비한다(코멘트 #3835329095). registry에 없는
+    /// 세션은 tombstone 정리 이후 온 요청일 수 있으므로 실패 폐쇄한다.
+    @MainActor
+    func preparePlacementSources(
+        _ sessionID: ExternalDropSessionID,
+        paths: [String],
+    ) -> Bool {
+        guard let session = sessions[sessionID] else {
+            return false
+        }
+        return session.preparePlacementSources(paths: paths)
+    }
+
+    @MainActor
+    func copyPlacementSource(
+        _ sessionID: ExternalDropSessionID,
+        sourcePath: String,
+        destinationPath: String,
+    ) async throws {
+        guard let session = sessions[sessionID] else {
+            throw CocoaError(.fileNoSuchFile)
+        }
+        try await Task.detached {
+            try session.copyPlacementSource(sourcePath: sourcePath, destinationPath: destinationPath)
+        }.value
     }
 
     @MainActor

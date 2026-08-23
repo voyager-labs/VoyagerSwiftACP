@@ -16,9 +16,16 @@ import XCTest
 private func makeImportPlacementStore(
     recorder: FileOpsRecorder,
     cleanup: AcquisitionCleanupRecorder,
+    preparePlacementSources: (@Sendable (ExternalDropSessionID, [String]) async -> Bool)? = nil,
+    copyPlacementSource: (@Sendable (ExternalDropSessionID, String, String) async throws -> Bool)? = nil,
+    showReplaceAlert: (@Sendable (String, EntryOperationsReplaceContext)
+        async -> EntryOperationsReplaceAlertResponse)? = nil,
 ) -> TestStore<EntryOperationsFeature.State, EntryOperationsFeature.Action> {
     let store = EntryOperationsTestSupport.makeStore {
         $0.entryFileOpsClient = makeRecordedFileOpsClient(recorder: recorder)
+        if let showReplaceAlert {
+            $0.entryOperationsAlertClient.showReplaceAlert = showReplaceAlert
+        }
         $0.externalDropAcquisitionClient = ExternalDropAcquisitionClient(
             begin: { _, _, _, _, _, _, _ in fatalError("begin not used") },
             events: { _ in AsyncStream { $0.finish() } },
@@ -27,15 +34,102 @@ private func makeImportPlacementStore(
             beginLegacy: { _, _, _, _, _, _, _ in fatalError("beginLegacy not used") },
             prepareLegacyStaging: { _ in fatalError("prepareLegacyStaging not used") },
             finalizeLegacyStaging: { _, _ in fatalError("finalizeLegacyStaging not used") },
+            preparePlacementSources: preparePlacementSources ?? { _, _ in true },
+            // 기본 copier는 실제로 복사하고 그 순서를 recorder에 남긴다. placement는 일반
+            // paste 경로로 강등되지 않으므로(fail-closed 계약) 관찰점도 secure seam이다.
+            copyPlacementSource: copyPlacementSource ?? { _, sourcePath, destinationPath in
+                try FileManager.default.copyItem(atPath: sourcePath, toPath: destinationPath)
+                recorder.recordCopy(
+                    source: URL(fileURLWithPath: sourcePath),
+                    destination: URL(fileURLWithPath: destinationPath),
+                )
+                return true
+            },
         )
     }
     store.exhaustivity = .off
     return store
 }
 
+private func collisionCopyStub(
+    fileName: String,
+    recorder: FileOpsRecorder? = nil,
+) -> @Sendable (ExternalDropSessionID, String, String) async throws -> Bool {
+    { _, sourcePath, destinationPath in
+        if (destinationPath as NSString).lastPathComponent == fileName {
+            throw POSIXError(.EEXIST)
+        }
+        try FileManager.default.copyItem(atPath: sourcePath, toPath: destinationPath)
+        recorder?.recordCopy(
+            source: URL(fileURLWithPath: sourcePath),
+            destination: URL(fileURLWithPath: destinationPath),
+        )
+        return true
+    }
+}
+
+private func oneShotCollisionCopyStub(
+    fileName: String,
+    flag: OnceFlag,
+) -> @Sendable (ExternalDropSessionID, String, String) async throws -> Bool {
+    { _, sourcePath, destinationPath in
+        if (destinationPath as NSString).lastPathComponent == fileName, flag.consume() {
+            throw POSIXError(.EEXIST)
+        }
+        try FileManager.default.copyItem(atPath: sourcePath, toPath: destinationPath)
+        return true
+    }
+}
+
 private func claimedContainer(_ stagingRoot: URL) -> URL {
     stagingRoot.deletingLastPathComponent()
         .appendingPathComponent(".voyager-claimed-\(stagingRoot.lastPathComponent)", isDirectory: true)
+}
+
+private func waitForPath(_ path: String) async -> Bool {
+    for _ in 0 ..< 200 {
+        if FileManager.default.fileExists(atPath: path) { return true }
+        try? await Task.sleep(nanoseconds: 10_000_000)
+    }
+    return false
+}
+
+/// 경로의 inode(dev+ino)를 가리키는 현재 프로세스의 열린 fd 수(/dev/fd 스캔).
+/// descriptor 고정 계약의 정확히-한-번 close 검증 전용 스냅숏이다.
+private func openDescriptorCount(matchingInodeOf path: String) -> Int {
+    var target = stat()
+    guard Darwin.lstat(path, &target) == 0 else { return -1 }
+    guard let directory = opendir("/dev/fd") else { return -1 }
+    defer { closedir(directory) }
+    var count = 0
+    while let entry = readdir(directory) {
+        let name = withUnsafeBytes(of: entry.pointee.d_name) { raw -> String? in
+            raw.baseAddress.map { String(cString: $0.assumingMemoryBound(to: CChar.self)) }
+        }
+        guard let name, let fd = Int32(name), fd >= 0 else { continue }
+        var status = stat()
+        guard Darwin.fstat(fd, &status) == 0 else { continue }
+        if status.st_dev == target.st_dev, status.st_ino == target.st_ino { count += 1 }
+    }
+    return count
+}
+
+/// release가 완료될 때까지(해당 inode fd가 0이 될 때까지) 짧게 재검사한다.
+private func waitForDescriptorRelease(_ path: String) async -> Bool {
+    for _ in 0 ..< 200 {
+        if openDescriptorCount(matchingInodeOf: path) == 0 { return true }
+        try? await Task.sleep(nanoseconds: 10_000_000)
+    }
+    return openDescriptorCount(matchingInodeOf: path) == 0
+}
+
+/// 보관 사본이 경로 생성 직후 부분 쓰기 상태로 관찰되는 창을 피하기 위해 내용 일치까지 기다린다.
+private func waitForFileContents(_ url: URL, matching expected: Data) async -> Bool {
+    for _ in 0 ..< 200 {
+        if let data = try? Data(contentsOf: url), data == expected { return true }
+        try? await Task.sleep(nanoseconds: 10_000_000)
+    }
+    return false
 }
 
 /// P1 검증 전용 종단 프러브. 획득 계약상 모든 흐름은 정확히 한 번의 종단 이벤트로 끝나므로
@@ -2062,6 +2156,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         let flavor = ExternalDropDataFlavor(uti: "public.json", bytes: bytes, filename: "Clipping 1.json")
         let request = client.begin([], [flavor], "/dest", false, [], [], [])
         let stagedURL = URL(fileURLWithPath: request.stagingDirectory).appendingPathComponent("Clipping 1.json")
+        _ = await waitForPath(stagedURL.path)
         XCTAssertEqual(try Data(contentsOf: stagedURL), bytes)
 
         let events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
@@ -2085,6 +2180,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         let request = client.begin([], [flavor], "/dest", false, [], [], [])
         let stagedURL = URL(fileURLWithPath: request.stagingDirectory)
             .appendingPathComponent("Quarterly Report.txt")
+        _ = await waitForPath(stagedURL.path)
         XCTAssertTrue(FileManager.default.fileExists(atPath: stagedURL.path))
         let events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
         XCTAssertEqual(events.last, .succeeded(request.sessionID))
@@ -2107,6 +2203,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         let request = client.begin([], [flavor], "/dest", false, [], [], [])
         let stagedURL = URL(fileURLWithPath: request.stagingDirectory)
             .appendingPathComponent("Clipping 1.data")
+        _ = await waitForPath(stagedURL.path)
         XCTAssertTrue(FileManager.default.fileExists(atPath: stagedURL.path))
         let events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
         XCTAssertEqual(events.last, .succeeded(request.sessionID))
@@ -2136,6 +2233,8 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         let request = client.begin([], [flavorA, flavorB], "/dest", false, [], [], [])
         let firstURL = URL(fileURLWithPath: request.stagingDirectory).appendingPathComponent("Clip 1.txt")
         let secondURL = URL(fileURLWithPath: request.stagingDirectory).appendingPathComponent("Clip 1 2.txt")
+        _ = await waitForPath(firstURL.path)
+        _ = await waitForPath(secondURL.path)
         XCTAssertEqual(try Data(contentsOf: firstURL), Data("first".utf8))
         XCTAssertEqual(try Data(contentsOf: secondURL), Data("second".utf8))
 
@@ -2169,6 +2268,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
 
         // data flavor는 promise 이름을 피해 고유 이름으로 물리화된다.
         let dataStaged = staging.appendingPathComponent("Clip 1 2.txt")
+        _ = await waitForPath(dataStaged.path)
         XCTAssertEqual(try Data(contentsOf: dataStaged), Data("text".utf8))
 
         // provider가 promise 파일을 쓰고 콜백을 보고한다 (data와 경로가 다르므로 충돌 없음).
@@ -2748,13 +2848,13 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: received[0].stagedPath)), Data("safe".utf8))
     }
 
-    /// EOP-002-import_external_objects (VOY-736 리뷰 #3831133026): mixed drop의 즉시 file URL은
-    /// accept 시점에 Voyager 보관 디렉터리로 복사되어 identity가 고정된다.
-    /// - 검증 내용: begin 직후 request immediates가 원본 경로가 아닌 보관 사본이고, 이후
-    ///   원본을 덮어쓰거나 symlink로 교체해도 placement 입력은 원본 바이트를 유지한다.
+    /// EOP-002-import_external_objects (VOY-736 리뷰 #3835329097): mixed drop의 즉시 file URL은
+    /// 세션 큐에서 스냅숏되고 acquisition barrier의 `.received`로 합류한다.
+    /// - 검증 내용: begin은 미완료 immediate 경로 없이 반환하고, 스냅숏은 원본과 다른 claimed
+    ///   경로·원래 pasteboard ordinal로 수신된 뒤 promise와 함께 성공한다.
     /// - 사전 조건: receiver 1개와 staging 밖 원본 파일 1개로 begin한다.
-    /// - 기대 결과: pinned 경로 ≠ 원본, 내용은 원본과 동일, 원본 변조 후에도 불변.
-    func testExternalDropAcquisition_pinsImmediateURLsAtAccept() throws {
+    /// - 기대 결과: 원본은 그대로 남고, 보관 사본은 `.received`를 거쳐 placement 입력이 된다.
+    func testExternalDropAcquisition_snapshotsImmediateURLsOnSessionQueue() async throws {
         let temporaryRoot = try makeAcquisitionTempRoot("ImmediatePin")
         defer { try? FileManager.default.removeItem(at: temporaryRoot) }
         let client = ExternalDropAcquisitionClient
@@ -2766,23 +2866,167 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         let receiver = FilePromiseReceiverSpy(names: ["b.txt"])
         let request = client.begin([receiver], [], "/dest", false, [original.path], [0], [1])
 
-        // accept 시점에 이미 보관 사본이 request immediates다.
-        XCTAssertEqual(request.immediateURLPaths.count, 1)
-        let pinnedPath = request.immediateURLPaths[0]
-        XCTAssertNotEqual(pinnedPath, original.path)
-        XCTAssertTrue(pinnedPath.hasPrefix(claimedContainer(URL(fileURLWithPath: request.stagingDirectory)).path))
-        XCTAssertEqual(request.immediateOrdinals, [0])
-        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: pinnedPath)), Data("safe".utf8))
-        // source-app 소유 원본은 그대로 유지된다(copy, move 아님).
+        XCTAssertTrue(request.immediateURLPaths.isEmpty)
+        XCTAssertTrue(request.immediateOrdinals.isEmpty)
+        let staging = URL(fileURLWithPath: request.stagingDirectory)
+        let pinned = claimedContainer(staging).appendingPathComponent(original.lastPathComponent)
+        let snapshotReady = await waitForFileContents(pinned, matching: Data("safe".utf8))
+        XCTAssertTrue(snapshotReady)
+        XCTAssertEqual(try Data(contentsOf: pinned), Data("safe".utf8))
         XCTAssertEqual(try Data(contentsOf: original), Data("safe".utf8))
 
-        // promise 완료 전에 원본을 변조하고 symlink로 교체해도 placement 입력은 불변이다.
         try FileManager.default.removeItem(at: original)
         let outside = temporaryRoot.appendingPathComponent("outside.txt")
         try Data("evil".utf8).write(to: outside)
         try FileManager.default.createSymbolicLink(at: original, withDestinationURL: outside)
+        let promised = staging.appendingPathComponent("b.txt")
+        try Data("promised".utf8).write(to: promised)
+        receiver.invokeReaderOnQueue(url: promised)
 
-        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: pinnedPath)), Data("safe".utf8))
+        let events = await collectEventsUntilTerminal(from: client.events(request.sessionID))
+        let received = events.compactMap { event -> ExternalDropReceivedFile? in
+            guard case let .received(file) = event else { return nil }
+            return file
+        }
+        XCTAssertEqual(events.last, .succeeded(request.sessionID))
+        XCTAssertEqual(received.map(\.pasteboardOrdinal).sorted(), [0, 1])
+        XCTAssertTrue(received.contains { $0.stagedPath == pinned.path })
+        XCTAssertEqual(try Data(contentsOf: pinned), Data("safe".utf8))
+    }
+
+    /// EOP-002-import_external_objects (VOY-736 리뷰 #3835329095): 스냅숏 이후 원본 경로는
+    /// source-app이 정당하게 정리할 수 있는 표면이다. placement 바이트는 enqueue 시점 고정
+    /// descriptor에서만 파생되므로, 원본 경로를 다른 inode로 교체해도 세션이 실패하지 않고
+    /// 보관 사본은 enqueue 바이트를 유지한다. 사전 스냅숏 치환은 별도 테스트로 fail-closed를
+    /// 고정한다.
+    /// - 검증 내용: 즉시 URL 스냅숏 뒤 원본 경로를 삭제·재생성("evil")하고 promise를 완료한다.
+    /// - 기대 결과: `.succeeded`로 종단하고 보관 사본은 "safe" 바이트를 유지한다.
+    func testExternalDropAcquisition_immediateSnapshotSurvivesPostSnapshotOriginalReplacement() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("ClaimReplacement")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let original = temporaryRoot.appendingPathComponent("original.txt")
+        try Data("safe".utf8).write(to: original)
+        let receiver = FilePromiseReceiverSpy(names: ["b.txt"])
+        let request = client.begin([receiver], [], "/dest", false, [original.path], [0], [1])
+        let staging = URL(fileURLWithPath: request.stagingDirectory)
+        let pinned = claimedContainer(staging).appendingPathComponent(original.lastPathComponent)
+        let snapshotReady = await waitForPath(pinned.path)
+        XCTAssertTrue(snapshotReady)
+
+        // source-app 소유 표면인 원본 경로를 다른 inode("evil")로 교체한다. 스냅숏 사본과는
+        // 무관하므로 배리어가 이를 감시하지 않는다.
+        try FileManager.default.removeItem(at: original)
+        try Data("evil".utf8).write(to: original)
+        let promised = staging.appendingPathComponent("b.txt")
+        try Data("promised".utf8).write(to: promised)
+        receiver.invokeReaderOnQueue(url: promised)
+
+        let events = await collectEventsUntilTerminal(from: client.events(request.sessionID))
+        XCTAssertEqual(events.last, .succeeded(request.sessionID))
+        XCTAssertEqual(try Data(contentsOf: pinned), Data("safe".utf8))
+    }
+
+    /// EOP-002-import_external_objects (VOY-736 리뷰 #3835329095): 스냅숏 이후 원본 경로를
+    /// 외부 파일 symlink로 바꿔도 placement가 링크 대상을 읽지 않고 세션이 성공한다. 보관
+    /// 사본은 enqueue 시점 "safe" 바이트를 유지한다.
+    /// - 검증 내용: 즉시 URL 스냅숏 후 원본 파일을 외부 파일 symlink로 교체하고 promise를 완료한다.
+    /// - 기대 결과: `.succeeded`로 종단하고 보관 사본은 "safe" 바이트를 유지한다.
+    func testExternalDropAcquisition_immediateSnapshotIgnoresPostSnapshotOriginalSymlink() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("ClaimSymlinkReplacement")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let original = temporaryRoot.appendingPathComponent("original.txt")
+        try Data("safe".utf8).write(to: original)
+        let outside = temporaryRoot.appendingPathComponent("outside.txt")
+        try Data("evil".utf8).write(to: outside)
+        let receiver = FilePromiseReceiverSpy(names: ["b.txt"])
+        let request = client.begin([receiver], [], "/dest", false, [original.path], [0], [1])
+        let staging = URL(fileURLWithPath: request.stagingDirectory)
+        let snapshot = claimedContainer(staging).appendingPathComponent(original.lastPathComponent)
+        let snapshotReady = await waitForPath(snapshot.path)
+        XCTAssertTrue(snapshotReady)
+
+        try FileManager.default.removeItem(at: original)
+        try FileManager.default.createSymbolicLink(at: original, withDestinationURL: outside)
+        let promised = staging.appendingPathComponent("b.txt")
+        try Data("promised".utf8).write(to: promised)
+        receiver.invokeReaderOnQueue(url: promised)
+
+        let events = await collectEventsUntilTerminal(from: client.events(request.sessionID))
+        XCTAssertEqual(events.last, .succeeded(request.sessionID))
+        XCTAssertEqual(try Data(contentsOf: snapshot), Data("safe".utf8))
+    }
+
+    /// EOP-002-import_external_objects (VOY-736 리뷰 #3835329095): 성공 배리어 이후
+    /// placement는 no-follow descriptor로 claim-time inode를 계속 읽는다.
+    /// - 검증 내용: descriptor 준비 뒤 logical path를 다른 inode로 교체해도 descriptor 경로는
+    ///   원래 safe 바이트를 유지하고 교체된 evil path를 다시 열지 않는다.
+    func testExternalDropAcquisition_pinsClaimDescriptorThroughPlacementWindow() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("ClaimPlacementWindow")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let original = temporaryRoot.appendingPathComponent("original.txt")
+        try Data("safe".utf8).write(to: original)
+        let receiver = FilePromiseReceiverSpy(names: ["b.txt"])
+        let request = client.begin([receiver], [], "/dest", false, [original.path], [0], [1])
+        let staging = URL(fileURLWithPath: request.stagingDirectory)
+        let pinned = claimedContainer(staging).appendingPathComponent(original.lastPathComponent)
+        let snapshotReady = await waitForPath(pinned.path)
+        XCTAssertTrue(snapshotReady)
+
+        let promised = staging.appendingPathComponent("b.txt")
+        try Data("promised".utf8).write(to: promised)
+        receiver.invokeReaderOnQueue(url: promised)
+        let events = await collectEventsUntilTerminal(from: client.events(request.sessionID))
+
+        XCTAssertEqual(events.last, .succeeded(request.sessionID))
+        let prepared = await client.preparePlacementSources(request.sessionID, [pinned.path])
+        XCTAssertTrue(prepared)
+        try FileManager.default.removeItem(at: pinned)
+        try Data("evil".utf8).write(to: pinned)
+        let placed = temporaryRoot.appendingPathComponent("placed.txt")
+        let handled = try await client.copyPlacementSource(request.sessionID, pinned.path, placed.path)
+        XCTAssertTrue(handled)
+        XCTAssertEqual(try Data(contentsOf: placed), Data("safe".utf8))
+        client.cancel(request.sessionID)
+    }
+
+    /// EOP-002-import_external_objects (VOY-736 리뷰 #3835329095): staging 루트에
+    /// 물리화한 data flavor도 claim과 같은 descriptor 고정 대상이다.
+    /// - 검증 내용: staged path를 다른 inode로 교체해도 descriptor 경로는 원래 바이트를 읽는다.
+    func testExternalDropAcquisition_pinsMaterializedDataDescriptorThroughPlacement() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("MaterializedPlacementWindow")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+        let flavor = ExternalDropDataFlavor(
+            uti: "public.plain-text",
+            bytes: Data("safe".utf8),
+            filename: "data.txt",
+            ordinal: 0,
+        )
+
+        let request = client.begin([], [flavor], "/dest", false, [], [], [])
+        let events = await collectEventsUntilTerminal(from: client.events(request.sessionID))
+        let staged = URL(fileURLWithPath: request.stagingDirectory).appendingPathComponent("data.txt")
+
+        XCTAssertEqual(events.last, .succeeded(request.sessionID))
+        let prepared = await client.preparePlacementSources(request.sessionID, [staged.path])
+        XCTAssertTrue(prepared)
+        try FileManager.default.removeItem(at: staged)
+        try Data("evil".utf8).write(to: staged)
+        let placed = temporaryRoot.appendingPathComponent("placed.txt")
+        let handled = try await client.copyPlacementSource(request.sessionID, staged.path, placed.path)
+        XCTAssertTrue(handled)
+        XCTAssertEqual(try Data(contentsOf: placed), Data("safe".utf8))
+        client.cancel(request.sessionID)
     }
 
     /// EOP-002-import_external_objects (VOY-736 리뷰 #3831133039): legacy staged 파일에도
@@ -2895,11 +3139,11 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         )
     }
 
-    /// EOP-002-import_external_objects (VOY-736 리뷰 P1-A): 즉시 URL pinning은 data 물리화가
-    /// 동기 성공 종단을 내기 전에 수행돼야 한다.
-    /// - 검증 내용: data + immediate 혼합 drop에서 succeeded 이후에도 request immediates가
-    ///   보관 사본으로 유지된다.
-    func testExternalDropAcquisition_pinsImmediateURLsBeforeDataSuccessTerminal() async throws {
+    /// EOP-002-import_external_objects (VOY-736 리뷰 #3835329097): 즉시 URL 스냅숏 완료는
+    /// data 물리화와 같은 acquisition barrier에 포함돼야 한다.
+    /// - 검증 내용: data + immediate 혼합 drop에서 두 `.received`가 모두 도착한 뒤 성공한다.
+    /// - 기대 결과: request는 즉시 빈 immediate 경로로 반환되고, 보관 사본은 event로 전달된다.
+    func testExternalDropAcquisition_snapshotsImmediateBeforeDataSuccessTerminal() async throws {
         let temporaryRoot = try makeAcquisitionTempRoot("PinBeforeSuccess")
         defer { try? FileManager.default.removeItem(at: temporaryRoot) }
         let client = ExternalDropAcquisitionClient
@@ -2918,10 +3162,17 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
 
         let events = await collectEventsUntilTerminal(from: client.events(request.sessionID))
         XCTAssertEqual(events.last, .succeeded(request.sessionID))
-        XCTAssertEqual(request.immediateURLPaths.count, 1)
-        let pinnedPath = try XCTUnwrap(request.immediateURLPaths.first)
-        XCTAssertNotEqual(pinnedPath, original.path)
-        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: pinnedPath)), Data("safe".utf8))
+        XCTAssertTrue(request.immediateURLPaths.isEmpty)
+        XCTAssertTrue(request.immediateOrdinals.isEmpty)
+        let received = events.compactMap { event -> ExternalDropReceivedFile? in
+            guard case let .received(file) = event else { return nil }
+            return file
+        }
+        XCTAssertEqual(received.count, 2)
+        let claimedRoot = claimedContainer(URL(fileURLWithPath: request.stagingDirectory))
+        let pinned = try XCTUnwrap(received.first { $0.stagedPath.hasPrefix(claimedRoot.path) })
+        XCTAssertEqual(pinned.pasteboardOrdinal, 0)
+        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: pinned.stagedPath)), Data("safe".utf8))
     }
 
     /// EOP-002-import_external_objects (VOY-736 리뷰 P1-A): pinning 실패는 실패 종단만 내고
@@ -2943,7 +3194,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
 
     /// EOP-002-import_external_objects (VOY-736 리뷰 P1-B): 즉시 URL이 디렉터리여도 하위
     /// 내용과 함께 보관 디렉터리로 pinning된다.
-    func testExternalDropAcquisition_pinsImmediateDirectoryWithNestedContent() throws {
+    func testExternalDropAcquisition_pinsImmediateDirectoryWithNestedContent() async throws {
         let temporaryRoot = try makeAcquisitionTempRoot("PinDirectory")
         defer { try? FileManager.default.removeItem(at: temporaryRoot) }
         let client = ExternalDropAcquisitionClient
@@ -2957,17 +3208,45 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         let receiver = FilePromiseReceiverSpy(names: ["b.txt"])
         let request = client.begin([receiver], [], "/dest", false, [sourceDir.path], [0], [1])
 
-        XCTAssertEqual(request.immediateURLPaths.count, 1)
-        let pinnedPath = try XCTUnwrap(request.immediateURLPaths.first)
-        XCTAssertNotEqual(pinnedPath, sourceDir.path)
-        XCTAssertFalse(pinnedPath.hasPrefix(request.stagingDirectory))
+        XCTAssertTrue(request.immediateURLPaths.isEmpty)
+        let staging = URL(fileURLWithPath: request.stagingDirectory)
+        let pinned = claimedContainer(staging).appendingPathComponent(sourceDir.lastPathComponent)
+        let snapshotReady = await waitForPath(pinned.path)
+        XCTAssertTrue(snapshotReady)
+        XCTAssertNotEqual(pinned.path, sourceDir.path)
+        XCTAssertFalse(pinned.path.hasPrefix(request.stagingDirectory))
         var isDir: ObjCBool = false
-        XCTAssertTrue(FileManager.default.fileExists(atPath: pinnedPath, isDirectory: &isDir))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: pinned.path, isDirectory: &isDir))
         XCTAssertTrue(isDir.boolValue)
+        let nestedReady = await waitForFileContents(
+            pinned.appendingPathComponent("inner.txt"),
+            matching: Data("nested".utf8),
+        )
+        XCTAssertTrue(nestedReady)
         XCTAssertEqual(
-            try Data(contentsOf: URL(fileURLWithPath: pinnedPath).appendingPathComponent("inner.txt")),
+            try Data(contentsOf: pinned.appendingPathComponent("inner.txt")),
             Data("nested".utf8),
         )
+        let promised = staging.appendingPathComponent("b.txt")
+        try Data("promised".utf8).write(to: promised)
+        receiver.invokeReaderOnQueue(url: promised)
+        let events = await collectEventsUntilTerminal(from: client.events(request.sessionID))
+        XCTAssertEqual(events.last, .succeeded(request.sessionID))
+
+        let prepared = await client.preparePlacementSources(request.sessionID, [pinned.path])
+        XCTAssertTrue(prepared)
+        let originalPinned = pinned.deletingLastPathComponent().appendingPathComponent("original.bundle")
+        try FileManager.default.moveItem(at: pinned, to: originalPinned)
+        try FileManager.default.createDirectory(at: pinned, withIntermediateDirectories: true)
+        try Data("evil".utf8).write(to: pinned.appendingPathComponent("inner.txt"))
+        let placed = temporaryRoot.appendingPathComponent("Placed.bundle")
+        let handled = try await client.copyPlacementSource(request.sessionID, pinned.path, placed.path)
+        XCTAssertTrue(handled)
+        XCTAssertEqual(
+            try Data(contentsOf: placed.appendingPathComponent("inner.txt")),
+            Data("nested".utf8),
+        )
+        client.finish(request.sessionID)
     }
 
     /// EOP-002-import_external_objects (VOY-736 리뷰 P1-B): symlink immediate는 fail-closed다.
@@ -2988,6 +3267,745 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         let events = await collectEventsUntilTerminal(from: client.events(request.sessionID))
         XCTAssertEqual(events.last, .failed(request.sessionID, .fileAbsent))
         XCTAssertTrue(request.immediateURLPaths.isEmpty)
+    }
+
+    /// EOP-002-import_external_objects (VOY-736 리뷰 #3835329095): claimed 디렉터리의 하위
+    /// 파일만 교체돼도 placement는 descriptor manifest가 고정한 원본 inode를 읽는다.
+    /// - 검증 내용: preparePlacementSources로 하위까지 manifest를 연 뒤 inner.txt만 다른
+    ///   inode("evil")로 교체하고 copyPlacementSource로 배치한다.
+    /// - 기대 결과: 배치된 inner.txt는 여전히 "nested" 바이트이고 교체 바이트는 기여하지 않는다.
+    func testExternalDropAcquisition_pinsDirectoryDescendantsThroughPlacementWindow() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("DescendantPlacementWindow")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let sourceDir = temporaryRoot.appendingPathComponent("Bundle.bundle", isDirectory: true)
+        try FileManager.default.createDirectory(at: sourceDir, withIntermediateDirectories: true)
+        try Data("nested".utf8).write(to: sourceDir.appendingPathComponent("inner.txt"))
+        let receiver = FilePromiseReceiverSpy(names: ["b.txt"])
+        let request = client.begin([receiver], [], "/dest", false, [sourceDir.path], [0], [1])
+        let staging = URL(fileURLWithPath: request.stagingDirectory)
+        let pinned = claimedContainer(staging).appendingPathComponent(sourceDir.lastPathComponent)
+        let snapshotReady = await waitForPath(pinned.appendingPathComponent("inner.txt").path)
+        XCTAssertTrue(snapshotReady)
+
+        let promised = staging.appendingPathComponent("b.txt")
+        try Data("promised".utf8).write(to: promised)
+        receiver.invokeReaderOnQueue(url: promised)
+        let events = await collectEventsUntilTerminal(from: client.events(request.sessionID))
+        XCTAssertEqual(events.last, .succeeded(request.sessionID))
+
+        let prepared = await client.preparePlacementSources(request.sessionID, [pinned.path])
+        XCTAssertTrue(prepared)
+        // 디렉터리 자체는 유지한 채 하위 파일만 다른 inode로 교체한다.
+        try FileManager.default.removeItem(at: pinned.appendingPathComponent("inner.txt"))
+        try Data("evil".utf8).write(to: pinned.appendingPathComponent("inner.txt"))
+        let placed = temporaryRoot.appendingPathComponent("Placed.bundle")
+        _ = try await client.copyPlacementSource(request.sessionID, pinned.path, placed.path)
+        XCTAssertEqual(
+            try Data(contentsOf: placed.appendingPathComponent("inner.txt")),
+            Data("nested".utf8),
+        )
+        client.cancel(request.sessionID)
+    }
+
+    /// EOP-002-import_external_objects (VOY-736 리뷰 #3835329095): detached snapshot 이후에는
+    /// 보관 경로 하위가 다른 inode로 교체돼도 게이트가 불변 descriptor로 통과하고 배치는
+    /// enqueue 시점 원본 바이트를 복제한다. provider는 placement 바이트에 기여할 수 없다.
+    /// - 검증 내용: 성공 종단 뒤 inner.txt를 다른 inode("evil")로 교체하고 게이트를 호출한 뒤 복사한다.
+    /// - 기대 결과: 게이트 true, 복사된 inner.txt는 "nested"(원본)다. finish 뒤 두 디렉터리는 정리된다.
+    func testExternalDropAcquisition_placementGateSurvivesReplacedDescendantFromDetachedSnapshot() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("DescendantGate")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let sourceDir = temporaryRoot.appendingPathComponent("Bundle.bundle", isDirectory: true)
+        try FileManager.default.createDirectory(at: sourceDir, withIntermediateDirectories: true)
+        try Data("nested".utf8).write(to: sourceDir.appendingPathComponent("inner.txt"))
+        let receiver = FilePromiseReceiverSpy(names: ["b.txt"])
+        let request = client.begin([receiver], [], "/dest", false, [sourceDir.path], [0], [1])
+        let staging = URL(fileURLWithPath: request.stagingDirectory)
+        let pinned = claimedContainer(staging).appendingPathComponent(sourceDir.lastPathComponent)
+        let snapshotReady = await waitForPath(pinned.appendingPathComponent("inner.txt").path)
+        XCTAssertTrue(snapshotReady)
+
+        let promised = staging.appendingPathComponent("b.txt")
+        try Data("promised".utf8).write(to: promised)
+        receiver.invokeReaderOnQueue(url: promised)
+        let events = await collectEventsUntilTerminal(from: client.events(request.sessionID))
+        XCTAssertEqual(events.last, .succeeded(request.sessionID))
+
+        // 게이트 호출 전에 보관 경로의 하위 파일을 다른 inode로 교체한다. detached snapshot은
+        // 이 교체를 무시해야 하며, 교체 바이트가 placement에 기여하지 않아야 한다.
+        try FileManager.default.removeItem(at: pinned.appendingPathComponent("inner.txt"))
+        try Data("evil".utf8).write(to: pinned.appendingPathComponent("inner.txt"))
+
+        let prepared = await client.preparePlacementSources(request.sessionID, [pinned.path])
+        XCTAssertTrue(prepared, "detached descriptor가 있으면 게이트는 치환과 무관하게 통과한다")
+
+        let placed = temporaryRoot.appendingPathComponent("Placed.bundle")
+        _ = try await client.copyPlacementSource(request.sessionID, pinned.path, placed.path)
+        XCTAssertEqual(
+            try Data(contentsOf: placed.appendingPathComponent("inner.txt")),
+            Data("nested".utf8),
+            "placement는 enqueue 시점 원본 바이트를 복제해야 한다",
+        )
+
+        client.finish(request.sessionID)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: staging.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: claimedContainer(staging).path))
+    }
+
+    /// EOP-002-import_external_objects (VOY-736 리뷰 P1-A): 즉시 스냅숏은 enqueue 시점의
+    /// root 신원으로 고정돼야 하며, 이후 경로 내용이 바뀌어도 교체 바이트가 기여하지 않는다.
+    /// - 검증 내용: begin 직후 원본 경로를 다른 inode("evil")로 교체하고 promise를 완료한다.
+    /// - 기대 결과: 스냅숏이 enqueue 시점 바이트를 고정하면 보관 사본은 "safe"이고, 신원
+    ///   불일치를 감지하면 `.failed(.fileAbsent)`다. 어느 쪽이든 "evil"은 배치되지 않는다.
+    func testExternalDropAcquisition_immediateSnapshotPinsEnqueueTimeBytesNotLaterPathContent() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("EnqueueIdentity")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let original = temporaryRoot.appendingPathComponent("original.txt")
+        try Data("safe".utf8).write(to: original)
+
+        // receiver 없이 즉시 스냅숏만으로 종단을 구성한다. 실패 시 staging이 빠르게
+        // 정리되므로 begin 이후에는 staging에 쓰지 않는다(청소 경합 회피).
+        let request = client.begin([], [], "/dest", false, [original.path], [0], [])
+
+        // enqueue 직후 원본 경로를 다른 inode·다른 바이트로 교체한다.
+        try FileManager.default.removeItem(at: original)
+        try Data("evil".utf8).write(to: original)
+
+        // 스냅숏이 막혀도 테스트가 매달리지 않게 상한을 둔다.
+        let events = await collectEvents(
+            from: client.events(request.sessionID),
+            timeoutNanoseconds: 5_000_000_000,
+        )
+        XCTAssertTrue(request.immediateURLPaths.isEmpty)
+        let received = events.compactMap { event -> ExternalDropReceivedFile? in
+            guard case let .received(file) = event else { return nil }
+            return file
+        }
+        switch events.last {
+        case .succeeded:
+            // promise 파일(receiver ordinal 1)이 아닌 즉시 스냅숏(ordinal 0)만 검증한다.
+            guard let pinned = received.first(where: { $0.pasteboardOrdinal == 0 }) else {
+                XCTFail("즉시 스냅숏 received 이벤트가 없다")
+                return
+            }
+            XCTAssertEqual(
+                try Data(contentsOf: URL(fileURLWithPath: pinned.stagedPath)),
+                Data("safe".utf8),
+            )
+        case let .failed(_, reason):
+            XCTAssertEqual(reason, .fileAbsent)
+        default:
+            XCTFail("스냅숏 완료 전에는 종단 이벤트가 없어야 한다")
+        }
+        client.cancel(request.sessionID)
+    }
+
+    /// EOP-002-import_external_objects (VOY-736 리뷰 P1-A): 즉시 스냅숏은 enqueue 시점에
+    /// 고정한 root 신원을 기준으로 한다. enqueue 이후 원본 경로가 사라지면 descriptor 고정
+    /// 설계에서는 enqueue 시점 바이트로 성공하고, 복사 시점 신원 검증 설계에서는 실패 폐쇄한다.
+    /// 어느 쪽이든 later-path 내용이 기여하지 않고 스냅숏 해소가 종단을 지배한다.
+    /// - 검증 내용: begin 직후 원본 경로를 제거하고 promise receiver만 완료한 뒤 종단을 확인한다.
+    /// - 기대 결과: 성공 종단이라면 ordinal 0 보관 사본은 "safe" 바이트이고, 실패 종단이라면
+    ///   `.fileAbsent`다. 종단 없이 끝나거나 다른 이유로 끝나면 실패다.
+    func testExternalDropAcquisition_immediateSnapshotResolvesByEnqueueTimeIdentityWhenPathRemovedAfterEnqueue(
+    ) async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("BarrierOwnedSnapshot")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let original = temporaryRoot.appendingPathComponent("original.txt")
+        try Data("safe".utf8).write(to: original)
+
+        // receiver 없이 즉시 스냅숏만으로 종단을 구성한다(청소 경합 회피).
+        let request = client.begin([], [], "/dest", false, [original.path], [0], [])
+
+        // enqueue 직후 원본 경로를 제거한다. 스냅숏은 enqueue 시점 신원으로만 해소된다.
+        try FileManager.default.removeItem(at: original)
+
+        // 스냅숏 해소가 막히면 상한에서 실패한다(매달림 금지).
+        let events = await collectEvents(
+            from: client.events(request.sessionID),
+            timeoutNanoseconds: 5_000_000_000,
+        )
+        XCTAssertTrue(request.immediateURLPaths.isEmpty)
+        let received = events.compactMap { event -> ExternalDropReceivedFile? in
+            guard case let .received(file) = event else { return nil }
+            return file
+        }
+        switch events.last {
+        case .succeeded:
+            guard let pinned = received.first(where: { $0.pasteboardOrdinal == 0 }) else {
+                XCTFail("즉시 스냅숏 received 이벤트가 없다")
+                return
+            }
+            XCTAssertEqual(
+                try Data(contentsOf: URL(fileURLWithPath: pinned.stagedPath)),
+                Data("safe".utf8),
+            )
+        case let .failed(_, reason):
+            XCTAssertEqual(reason, .fileAbsent)
+        default:
+            XCTFail("스냅숏이 종단을 해소하지 않았다")
+        }
+    }
+
+    /// VOY-736 v8b P1 #2 + #3835329097: root descriptor는 enqueue 시점 동기 고정(O(1),
+    /// MainActor bounded)이고 하위 트리 열거는 세션 큐에서 root fd 기준 openat으로 수행된다.
+    /// 열거가 완료된 뒤(보관 디렉터리 생성으로 관측) 가시 트리의 descendant를 다른 inode로
+    /// 교체해도 placement는 열거 시점 고정 descriptor의 바이트를 서브한다.
+    /// - 검증 내용: 보관 디렉터리가 나타나면(=열거 완료 후 복사 시작) inner.txt를 "evil"로
+    ///   치환하고 스냅숏 종단을 기다린다.
+    /// - 기대 결과: 성공 종단이며 보관된 inner.txt는 "nested"다("evil" 미기여).
+    func testExternalDropAcquisition_pinsDirectoryDescendantsAtEnumerationTimeNotLaterPathContent() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("EnqueueDescendantPin")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let sourceDir = temporaryRoot.appendingPathComponent("Bundle.bundle", isDirectory: true)
+        try FileManager.default.createDirectory(at: sourceDir, withIntermediateDirectories: true)
+        try Data("nested".utf8).write(to: sourceDir.appendingPathComponent("inner.txt"))
+
+        let request = client.begin([], [], "/dest", false, [sourceDir.path], [0], [])
+        let staging = URL(fileURLWithPath: request.stagingDirectory)
+        let claimedDir = claimedContainer(staging).appendingPathComponent(sourceDir.lastPathComponent)
+
+        // 세션 큐의 하위 트리 열거 완료를 보관 디렉터리 생성으로 동기화한다. 같은 직렬 큐
+        // 작업 안에서 열거가 복사보다 먼저 끝나므로 경쟁 없이 결정적이다.
+        let enumerated = await waitForPath(claimedDir.path)
+        XCTAssertTrue(enumerated)
+
+        try FileManager.default.removeItem(at: sourceDir.appendingPathComponent("inner.txt"))
+        try Data("evil".utf8).write(to: sourceDir.appendingPathComponent("inner.txt"))
+
+        let events = await collectEvents(
+            from: client.events(request.sessionID),
+            timeoutNanoseconds: 30_000_000_000,
+        )
+        XCTAssertEqual(events.last, .succeeded(request.sessionID))
+        XCTAssertEqual(
+            try Data(contentsOf: claimedDir.appendingPathComponent("inner.txt")),
+            Data("nested".utf8),
+        )
+        client.cancel(request.sessionID)
+    }
+
+    /// VOY-736 P1 신뢰 경계(#3835329095, #3835329097): accept 시점 root fd가 고정되고, 세션
+    /// 큐의 완료(트리 격리)가 신뢰 경계다. begin 반환 직후 가시 디렉터리를 통째로 rename해
+    /// 이름 공간을 바꿔도 고정 inode lineage의 바이트를 서브한다. rename은 원자적이어서
+    /// 결정론적이다(하위 inode·자식 보존).
+    /// - 검증 내용: begin 반환 직후 Bundle.bundle을 다른 이름으로 rename하고 종단을 기다린다.
+    /// - 기대 결과: 성공 종단이며 보관된 inner.txt는 "nested"다.
+    func testExternalDropAcquisition_sourceTreeRenamedImmediatelyAfterAcceptKeepsPinnedLineage() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("AcceptSourceRename")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let sourceDir = temporaryRoot.appendingPathComponent("Bundle.bundle", isDirectory: true)
+        try FileManager.default.createDirectory(at: sourceDir, withIntermediateDirectories: true)
+        try Data("nested".utf8).write(to: sourceDir.appendingPathComponent("inner.txt"))
+
+        let request = client.begin([], [], "/dest", false, [sourceDir.path], [0], [])
+
+        // 큐 격리와의 경쟁 구간에서 가시 트리 전체를 원자적으로 rename한다. 고정 root fd가
+        // 가리키는 inode lineage는 보존되므로 격리·placement가 이 치환의 영향을 받지 않는다.
+        let renamed = temporaryRoot.appendingPathComponent("Renamed.bundle", isDirectory: true)
+        try FileManager.default.moveItem(at: sourceDir, to: renamed)
+
+        let events = await collectEvents(
+            from: client.events(request.sessionID),
+            timeoutNanoseconds: 30_000_000_000,
+        )
+        XCTAssertEqual(events.last, .succeeded(request.sessionID))
+        let claimedDir = claimedContainer(URL(fileURLWithPath: request.stagingDirectory))
+            .appendingPathComponent("Bundle.bundle")
+        XCTAssertEqual(
+            try Data(contentsOf: claimedDir.appendingPathComponent("inner.txt")),
+            Data("nested".utf8),
+        )
+        client.cancel(request.sessionID)
+    }
+
+    /// VOY-736 P1 신뢰 경계(#3835329095, #3835329097): begin 반환 직후 descendant를 다른
+    /// inode로 교체하면 격리 완료(신뢰 경계) 시점까지 큐가 이미 해당 노드를 고정했다면
+    /// accept lineage가, 그 전이라면 교체 후 상태가 스냅숏될 수 있다. 경계 완료 이후의
+    /// 교체는 placement에 기여할 수 없다는 점을 결정론적으로 검증한다.
+    /// - 검증 내용: 보관 디렉터리 생성(=격리 완료 후 복사 시작) 뒤 inner.txt를 교체하고 종단.
+    /// - 기대 결과: 성공 종단이며 보관된 inner.txt는 "nested"다("evil" 미기여).
+    func testExternalDropAcquisition_postIsolationDescendantSwapCannotEnterPlacement() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("PostIsolationSwap")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let sourceDir = temporaryRoot.appendingPathComponent("Bundle.bundle", isDirectory: true)
+        try FileManager.default.createDirectory(at: sourceDir, withIntermediateDirectories: true)
+        try Data("nested".utf8).write(to: sourceDir.appendingPathComponent("inner.txt"))
+
+        let request = client.begin([], [], "/dest", false, [sourceDir.path], [0], [])
+        let staging = URL(fileURLWithPath: request.stagingDirectory)
+        let claimedDir = claimedContainer(staging).appendingPathComponent(sourceDir.lastPathComponent)
+
+        let isolated = await waitForPath(claimedDir.appendingPathComponent("inner.txt").path)
+        XCTAssertTrue(isolated)
+
+        try FileManager.default.removeItem(at: sourceDir.appendingPathComponent("inner.txt"))
+        try Data("evil".utf8).write(to: sourceDir.appendingPathComponent("inner.txt"))
+
+        let events = await collectEvents(
+            from: client.events(request.sessionID),
+            timeoutNanoseconds: 30_000_000_000,
+        )
+        XCTAssertEqual(events.last, .succeeded(request.sessionID))
+        XCTAssertEqual(
+            try Data(contentsOf: claimedDir.appendingPathComponent("inner.txt")),
+            Data("nested".utf8),
+        )
+        client.cancel(request.sessionID)
+    }
+
+    /// VOY-736 P1 생산자 비접근 콘텐츠(#3835329095): 격리(snapshot) 완료 뒤 provider가 여전히
+    /// 쓸 수 있는 원본 트리 콘텐츠를 직접 변조해도 placement는 이미 분리된 detached snapshot
+    /// 바이트를 서브한다.
+    /// - 검증 내용: pin+격리+copyPinnedImmediate(snapshot 고정) 후 원본 inner.txt를 "evil"로
+    ///   덮어쓰고 copyPlacementSource까지 수행한다.
+    /// - 기대 결과: placement의 inner.txt는 "nested"다("evil" 미기여).
+    func testExternalDropAcquisition_originalTreeMutationAfterSnapshotCannotEnterPlacement() throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("CloneMutation")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let fileManager = makeExternalDropFileManager(temporaryRoot: temporaryRoot)
+
+        let stagingDir = temporaryRoot.appendingPathComponent("Staging", isDirectory: true)
+        try FileManager.default.createDirectory(at: stagingDir, withIntermediateDirectories: true)
+        let sourceDir = stagingDir.appendingPathComponent("Bundle.bundle", isDirectory: true)
+        try FileManager.default.createDirectory(at: sourceDir, withIntermediateDirectories: true)
+        try Data("nested".utf8).write(to: sourceDir.appendingPathComponent("inner.txt"))
+
+        let staging = StagingDirectory(path: stagingDir.path, fileManager: fileManager)
+        XCTAssertTrue(staging.pinImmediateRoots(urls: [sourceDir.path]))
+        XCTAssertTrue(staging.completeImmediateTreePinning())
+        // copyPinnedImmediate는 격리 노드에서 detached snapshot을 고정하고 candidate를 반환한다.
+        let candidate = try XCTUnwrap(staging.copyPinnedImmediate(sourceDir))
+
+        // snapshot 완료 후 producer 도달 가능한 원본 트리를 직접 변조한다.
+        try Data("evil".utf8).write(to: sourceDir.appendingPathComponent("inner.txt"))
+
+        let placed = temporaryRoot.appendingPathComponent("Placed.bundle", isDirectory: true)
+        try staging.copyPlacementSource(sourcePath: candidate.path, destinationPath: placed.path)
+        XCTAssertEqual(
+            try Data(contentsOf: placed.appendingPathComponent("inner.txt")),
+            Data("nested".utf8),
+        )
+        staging.remove()
+    }
+
+    /// VOY-736 P1 생산자 비접근 콘텐츠(#3835329095): legacy staged 파일은 등록 시점에 detached
+    /// snapshot으로 고정되므로, 이후 retained writable fd 임자 내부 재기록이 placement에 기여할
+    /// 수 없다.
+    /// - 검증 내용: staged 파일을 갱신 모드로 연 채 beginLegacy하고, 성공 종단 뒤 같은 fd로
+    ///   "evil"을 기록한 다음 gate 복사까지 수행한다.
+    /// - 기대 결과: placement 바이트는 "safe"다("evil" 미기여).
+    func testExternalDropAcquisition_legacyStagedFileRetainedFdMutationAfterRegistrationCannotEnterPlacement(
+    ) async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("LegacyRetainedFd")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let stagingDir = temporaryRoot.appendingPathComponent("Staging", isDirectory: true)
+        try FileManager.default.createDirectory(at: stagingDir, withIntermediateDirectories: true)
+        let staged = stagingDir.appendingPathComponent("legacy.txt")
+        try Data("safe".utf8).write(to: staged)
+        let retainedHandle = try FileHandle(forUpdating: staged)
+        defer { try? retainedHandle.close() }
+
+        let request = client.beginLegacy(
+            [staged.path],
+            stagingDir.path,
+            "/dest",
+            false,
+            [],
+            [],
+            [0],
+        )
+        let events = await collectEventsUntilTerminal(from: client.events(request.sessionID))
+        XCTAssertEqual(events.last, .succeeded(request.sessionID))
+
+        try retainedHandle.truncate(atOffset: 0)
+        try retainedHandle.write(contentsOf: Data("evil".utf8))
+
+        let placed = temporaryRoot.appendingPathComponent("Placed-legacy.txt")
+        let prepared = await client.preparePlacementSources(request.sessionID, [staged.path])
+        XCTAssertTrue(prepared)
+        _ = try await client.copyPlacementSource(request.sessionID, staged.path, placed.path)
+        XCTAssertEqual(try Data(contentsOf: placed), Data("safe".utf8))
+        client.cancel(request.sessionID)
+    }
+
+    /// VOY-736 P1 단일 descriptor 소유(#3835329095): placement 복사 중 cancel/finish가 원본
+    /// manifest를 닫아도 복사 경로는 잠금 보유 중 dup한 사본 fd를 쓰므로 재사용된 fd로 읽지
+    /// 않는다. 바이트가 정확하거나(성공) 세션이 취소로 정리되며(취소) 잘못된 콘텐츠는 없다.
+    /// - 검증 내용: 복사 루프와 병행으로 cancel을 반복 호출하고, 복사 결과가 항상 원본
+    ///   바이트이거나 예외(취소 정리)임을 확인한다.
+    /// - 기대 결과: 성공 시에만 정확한 "nested" 바이트, 실패는 예외로만 표현된다.
+    func testExternalDropAcquisition_placementCopyDuringCancelNeverReadsReusedFd() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("CopyDuringCancel")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let sourceDir = temporaryRoot.appendingPathComponent("Bundle.bundle", isDirectory: true)
+        try FileManager.default.createDirectory(at: sourceDir, withIntermediateDirectories: true)
+        try Data("nested".utf8).write(to: sourceDir.appendingPathComponent("inner.txt"))
+
+        for iteration in 0 ..< 30 {
+            let receiver = FilePromiseReceiverSpy(names: ["b.txt"])
+            let request = client.begin([receiver], [], "/dest", false, [sourceDir.path], [0], [1])
+            let staging = URL(fileURLWithPath: request.stagingDirectory)
+            let claimedDir = claimedContainer(staging).appendingPathComponent(sourceDir.lastPathComponent)
+            let promised = staging.appendingPathComponent("b.txt")
+            try Data("promised".utf8).write(to: promised)
+            receiver.invokeReaderOnQueue(url: promised)
+
+            // 복사와 cancel을 경쟁시킨다. cancel은 MainActor-isolated이므로 명시적 hop.
+            async let cancelling: Void = Task { @MainActor in
+                for _ in 0 ..< 40 {
+                    client.cancel(request.sessionID)
+                }
+            }.value
+            _ = await cancelling
+            let events = await collectEventsUntilTerminal(from: client.events(request.sessionID))
+
+            switch events.last {
+            case .succeeded:
+                let placed = temporaryRoot.appendingPathComponent("Placed-\(iteration).bundle", isDirectory: true)
+                let prepared = await client.preparePlacementSources(request.sessionID, [claimedDir.path])
+                if prepared {
+                    _ = try? await client.copyPlacementSource(request.sessionID, claimedDir.path, placed.path)
+                    if FileManager.default.fileExists(atPath: placed.path) {
+                        XCTAssertEqual(
+                            try Data(contentsOf: placed.appendingPathComponent("inner.txt")),
+                            Data("nested".utf8),
+                            "성공 복사는 항상 accept 바이트를 서브해야 한다",
+                        )
+                    }
+                }
+            case .failed, .cancelled, .none, .received:
+                break
+            }
+        }
+    }
+
+    /// VOY-736 P1 스트리밍 격리(#3835329095, #3835329097): 큐 격리는 고정 root fd에서
+    /// openat 순회로 각 노드를 무작위 이름 사유 snapshot으로 relink한다. 원본이 삭제돼도
+    /// placement는 snapshot 바이트를 서브한다.
+    /// - 검증 내용: pin+격리 뒤 원본 트리를 삭제하고 candidate 복사와 placement 복사를 수행한다.
+    /// - 기대 결과: placement의 inner.txt는 "nested"다.
+    func testExternalDropAcquisition_immediateIsolationWalkServesPinnedSnapshotAfterSourceRemoval() throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("IsolationWalk")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let fileManager = makeExternalDropFileManager(temporaryRoot: temporaryRoot)
+
+        let stagingDir = temporaryRoot.appendingPathComponent("Staging", isDirectory: true)
+        try FileManager.default.createDirectory(at: stagingDir, withIntermediateDirectories: true)
+        let sourceDir = stagingDir.appendingPathComponent("Bundle.bundle", isDirectory: true)
+        try FileManager.default.createDirectory(at: sourceDir, withIntermediateDirectories: true)
+        try Data("nested".utf8).write(to: sourceDir.appendingPathComponent("inner.txt"))
+
+        let staging = StagingDirectory(path: stagingDir.path, fileManager: fileManager)
+        XCTAssertTrue(staging.pinImmediateRoots(urls: [sourceDir.path]))
+        XCTAssertTrue(staging.completeImmediateTreePinning())
+
+        // 원본을 삭제해도 격리 snapshot은 살아 있어야 한다.
+        try FileManager.default.removeItem(at: sourceDir)
+        let candidate = try XCTUnwrap(staging.copyPinnedImmediate(sourceDir))
+        let placed = temporaryRoot.appendingPathComponent("Copied.bundle", isDirectory: true)
+        try staging.copyPlacementSource(sourcePath: candidate.path, destinationPath: placed.path)
+        XCTAssertEqual(
+            try Data(contentsOf: placed.appendingPathComponent("inner.txt")),
+            Data("nested".utf8),
+        )
+        staging.remove()
+    }
+
+    /// VOY-736 P1 bounded fd(#3835329097): 소프트 RLIMIT_NOFILE(기본 256)을 넘는 넓은 트리도
+    /// 스트리밍 격리는 노드 수와 무관하게 깊이 수준 fd만 보유하므로 EMFILE 없이 완료되고,
+    /// 전체 바이트가 보존된다.
+    /// - 검증 내용: 서로 다른 400개 파일을 담은 트리를 pin+격리하고 원본 삭제 뒤 placement
+    ///   복사로 모든 파일 바이트를 검증한다.
+    /// - 기대 결과: 성공 종단이며 모든 파일 내용이 보존된다.
+    func testExternalDropAcquisition_broadTreeBeyondSoftFileLimitIsolatesWithBoundedDescriptors() throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("BroadTree")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let fileManager = makeExternalDropFileManager(temporaryRoot: temporaryRoot)
+
+        let stagingDir = temporaryRoot.appendingPathComponent("Staging", isDirectory: true)
+        try FileManager.default.createDirectory(at: stagingDir, withIntermediateDirectories: true)
+        let sourceDir = stagingDir.appendingPathComponent("Wide.bundle", isDirectory: true)
+        try FileManager.default.createDirectory(at: sourceDir, withIntermediateDirectories: true)
+        let fileCount = 400
+        for index in 0 ..< fileCount {
+            try Data("payload-\(index)".utf8).write(
+                to: sourceDir.appendingPathComponent("file-\(index).txt"),
+            )
+        }
+
+        let staging = StagingDirectory(path: stagingDir.path, fileManager: fileManager)
+        XCTAssertTrue(staging.pinImmediateRoots(urls: [sourceDir.path]))
+        XCTAssertTrue(staging.completeImmediateTreePinning())
+
+        try FileManager.default.removeItem(at: sourceDir)
+        let candidate = try XCTUnwrap(staging.copyPinnedImmediate(sourceDir))
+        let placed = temporaryRoot.appendingPathComponent("Placed-Wide.bundle", isDirectory: true)
+        try staging.copyPlacementSource(sourcePath: candidate.path, destinationPath: placed.path)
+        for index in [0, fileCount / 2, fileCount - 1] {
+            XCTAssertEqual(
+                try Data(contentsOf: placed.appendingPathComponent("file-\(index).txt")),
+                Data("payload-\(index)".utf8),
+            )
+        }
+        staging.remove()
+    }
+
+    /// VOY-736 P1 바이트 동결(#3835329095): provider가 retained writable fd로 스냅숏 완료 뒤
+    /// 같은 inode를 truncate·pwrite해도 placement는 accept 시점 고정 snapshot 바이트를 서브한다.
+    /// - 검증 내용: 원본을 갱신 모드로 연 채 begin하고, 보관 사본 생성 확인 뒤 같은 fd로
+    ///   "evil"을 기록한 다음 promise를 완료하고 gate 복사까지 수행한다.
+    /// - 기대 결과: 성공 종단이며 placement 바이트는 "safe"다("evil" 미기여).
+    func testExternalDropAcquisition_retainedWritableFdMutationAfterSnapshotCannotEnterPlacement() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("RetainedFdMutation")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let original = temporaryRoot.appendingPathComponent("original.txt")
+        try Data("safe".utf8).write(to: original)
+        let retainedHandle = try FileHandle(forUpdating: original)
+        defer { try? retainedHandle.close() }
+
+        let receiver = FilePromiseReceiverSpy(names: ["b.txt"])
+        let request = client.begin([receiver], [], "/dest", false, [original.path], [0], [1])
+        let staging = URL(fileURLWithPath: request.stagingDirectory)
+        let pinned = claimedContainer(staging).appendingPathComponent(original.lastPathComponent)
+
+        let snapshotReady = await waitForPath(pinned.path)
+        XCTAssertTrue(snapshotReady)
+
+        // 같은 inode를 retained fd로 임자 내부 재기록한다. accept 경계 clone과 그로부터 만든
+        // detached snapshot은 별도 inode므로 placement에 기여할 수 없다.
+        try retainedHandle.truncate(atOffset: 0)
+        try retainedHandle.write(contentsOf: Data("evil".utf8))
+
+        let promised = staging.appendingPathComponent("b.txt")
+        try Data("promised".utf8).write(to: promised)
+        receiver.invokeReaderOnQueue(url: promised)
+
+        let events = await collectEventsUntilTerminal(from: client.events(request.sessionID))
+        XCTAssertEqual(events.last, .succeeded(request.sessionID))
+
+        let placed = temporaryRoot.appendingPathComponent("Placed-original.txt")
+        let prepared = await client.preparePlacementSources(request.sessionID, [pinned.path])
+        XCTAssertTrue(prepared)
+        _ = try await client.copyPlacementSource(request.sessionID, pinned.path, placed.path)
+        XCTAssertEqual(try Data(contentsOf: placed), Data("safe".utf8))
+        client.cancel(request.sessionID)
+    }
+
+    /// VOY-736 P1 바이트 동결(#3835329095): nested descendant도 retained writable fd 임자
+    /// 내부 재기록이 placement에 기여할 수 없다.
+    /// - 검증 내용: inner.txt를 갱신 모드로 연 채 begin하고, 보관 디렉터리 확인 뒤 같은 fd로
+    ///   "evil"을 기록한 다음 promise를 완료하고 디렉터리 gate 복사까지 수행한다.
+    /// - 기대 결과: 성공 종단이며 placement의 inner.txt는 "nested"다("evil" 미기여).
+    func testExternalDropAcquisition_retainedWritableFdNestedMutationAfterSnapshotCannotEnterPlacement() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("RetainedFdNestedMutation")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let sourceDir = temporaryRoot.appendingPathComponent("Bundle.bundle", isDirectory: true)
+        try FileManager.default.createDirectory(at: sourceDir, withIntermediateDirectories: true)
+        let innerFile = sourceDir.appendingPathComponent("inner.txt")
+        try Data("nested".utf8).write(to: innerFile)
+        let retainedHandle = try FileHandle(forUpdating: innerFile)
+        defer { try? retainedHandle.close() }
+
+        let receiver = FilePromiseReceiverSpy(names: ["b.txt"])
+        let request = client.begin([receiver], [], "/dest", false, [sourceDir.path], [0], [1])
+        let staging = URL(fileURLWithPath: request.stagingDirectory)
+        let claimedDir = claimedContainer(staging).appendingPathComponent(sourceDir.lastPathComponent)
+
+        let snapshotReady = await waitForPath(claimedDir.appendingPathComponent("inner.txt").path)
+        XCTAssertTrue(snapshotReady)
+
+        try retainedHandle.truncate(atOffset: 0)
+        try retainedHandle.write(contentsOf: Data("evil".utf8))
+
+        let promised = staging.appendingPathComponent("b.txt")
+        try Data("promised".utf8).write(to: promised)
+        receiver.invokeReaderOnQueue(url: promised)
+
+        let events = await collectEventsUntilTerminal(from: client.events(request.sessionID))
+        XCTAssertEqual(events.last, .succeeded(request.sessionID))
+
+        let placed = temporaryRoot.appendingPathComponent("Placed.bundle", isDirectory: true)
+        let prepared = await client.preparePlacementSources(request.sessionID, [claimedDir.path])
+        XCTAssertTrue(prepared)
+        _ = try await client.copyPlacementSource(request.sessionID, claimedDir.path, placed.path)
+        XCTAssertEqual(
+            try Data(contentsOf: placed.appendingPathComponent("inner.txt")),
+            Data("nested".utf8),
+        )
+        client.cancel(request.sessionID)
+    }
+
+    /// VOY-736 v8b P1 #4: 같은 배치 안의 canonical 중복 root는 descriptor를 덮어써 누수시키지
+    /// 않는다. 중복은 기존 고정분과 현재 배치 모두와 대조해 건너뛰고, 열린 descriptor는
+    /// 정확히 한 번 닫힌다.
+    /// - 검증 내용: 트리 내 디렉터리 symlink로 같은 파일을 가리키는 서로 다른 경로 쌍을 한
+    ///   배치로 넣는다(canonicalClaimPath가 둘을 같은 canonical로 접는다). 성공 종단+finish 뒤
+    ///   해당 inode를 가리키는 열린 fd가 0이 될 때까지 확인한다.
+    func testExternalDropAcquisition_duplicateCanonicalAliasesDoNotLeakDescriptors() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("AliasPin")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let realDir = temporaryRoot.appendingPathComponent("real.bundle", isDirectory: true)
+        try FileManager.default.createDirectory(at: realDir, withIntermediateDirectories: true)
+        let inner = realDir.appendingPathComponent("inner.txt")
+        try Data("dup".utf8).write(to: inner)
+        let linkDir = temporaryRoot.appendingPathComponent("link.bundle")
+        try FileManager.default.createSymbolicLink(at: linkDir, withDestinationURL: realDir)
+        // 두 입력 경로는 다르지만 canonicalClaimPath는 같은 canonical로 접는다.
+        XCTAssertEqual(
+            URL(fileURLWithPath: linkDir.appendingPathComponent("inner.txt").path)
+                .resolvingSymlinksInPath().path,
+            inner.standardizedFileURL.resolvingSymlinksInPath().path,
+        )
+
+        let receiver = FilePromiseReceiverSpy(names: ["b.txt"])
+        let request = client.begin(
+            [receiver],
+            [],
+            "/dest",
+            false,
+            [inner.path, linkDir.appendingPathComponent("inner.txt").path],
+            [0, 1],
+            [1],
+        )
+
+        let staging = URL(fileURLWithPath: request.stagingDirectory)
+        let promised = staging.appendingPathComponent("b.txt")
+        try Data("promised".utf8).write(to: promised)
+        receiver.invokeReaderOnQueue(url: promised)
+
+        let events = await collectEventsUntilTerminal(from: client.events(request.sessionID))
+        XCTAssertEqual(events.last, .succeeded(request.sessionID))
+        client.finish(request.sessionID)
+
+        // manifest descriptor release가 정확히 한 번 닫혔는지 확인한다. 중복 open 덮어쓰기가
+        // 있으면 누수된 fd가 남아 0에 도달하지 않는다.
+        let released = await waitForDescriptorRelease(inner.path)
+        XCTAssertTrue(released, "canonical 중복 root descriptor가 누수됐다")
+    }
+
+    /// EOP-002-import_external_objects (VOY-736 리뷰 P1-C): promise callback이 FIFO를
+    /// 전달하면 세션 lock이나 open 블로킹 없이 즉시 fail-closed한다.
+    /// - 검증 내용: staging에 mkfifo로 만든 특수 파일을 reader callback으로 보고한다.
+    /// - 기대 결과: 상한 시간 안에 `.failed(.callbackError)`로 종단하고 staging/보관 디렉터리가 정리된다.
+    func testExternalDropAcquisition_fifoPromiseCallbackFailsPromptlyWithoutBlocking() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("FifoCallback")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let receiver = FilePromiseReceiverSpy(names: ["a.txt"])
+        let request = client.begin([receiver], [], "/dest", false, [], [], [])
+        let staging = URL(fileURLWithPath: request.stagingDirectory)
+        let fifo = staging.appendingPathComponent("a.txt")
+        XCTAssertEqual(Darwin.mkfifo(fifo.path, 0o644), 0)
+
+        receiver.invokeReaderOnQueue(url: fifo)
+
+        // 블로킹 회귀 시 hang 대신 상한에서 실패한다.
+        let events = await collectEvents(
+            from: client.events(request.sessionID),
+            timeoutNanoseconds: 5_000_000_000,
+        )
+        XCTAssertEqual(events.last, .failed(request.sessionID, .callbackError))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: staging.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: claimedContainer(staging).path))
+    }
+
+    /// EOP-002-import_external_objects (VOY-736 detached-snapshot 계약): 성공 종단 뒤 보관
+    /// 사본이 같은 경로 FIFO로 치환돼도 placement 게이트는 detached descriptor만으로 즉시
+    /// 통과하고(FIFO를 열지 않으므로 블로킹이 구조적으로 없다), 배치 복사는 원본 바이트를
+    /// 재현한다. cancel은 staging과 보관 디렉터리를 정리한다.
+    /// - 검증 내용: claimed 파일을 같은 경로 FIFO로 치환하고 상한 경주 안에서 게이트를 호출한 뒤 복사한다.
+    /// - 기대 결과: 게이트는 상한 안에 true, 복사 결과는 "safe"(원본)다. cancel 뒤 두 디렉터리는 정리된다.
+    func testExternalDropAcquisition_fifoClaimedPathServesDetachedSnapshotPromptlyAndStaysCancellable() async throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("FifoPlacementGate")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let original = temporaryRoot.appendingPathComponent("original.txt")
+        try Data("safe".utf8).write(to: original)
+        let receiver = FilePromiseReceiverSpy(names: ["b.txt"])
+        let request = client.begin([receiver], [], "/dest", false, [original.path], [0], [1])
+        let staging = URL(fileURLWithPath: request.stagingDirectory)
+        let pinned = claimedContainer(staging).appendingPathComponent(original.lastPathComponent)
+        let snapshotReady = await waitForPath(pinned.path)
+        XCTAssertTrue(snapshotReady)
+
+        let promised = staging.appendingPathComponent("b.txt")
+        try Data("promised".utf8).write(to: promised)
+        receiver.invokeReaderOnQueue(url: promised)
+        let events = await collectEventsUntilTerminal(from: client.events(request.sessionID))
+        XCTAssertEqual(events.last, .succeeded(request.sessionID))
+
+        // 보관 사본을 같은 경로의 FIFO로 치환한다. detached descriptor는 이 치환과 무관하다.
+        try FileManager.default.removeItem(at: pinned)
+        XCTAssertEqual(Darwin.mkfifo(pinned.path, 0o644), 0)
+
+        // FIFO를 다시 열어야 하는 회귀 시 hang 대신 상한에서 실패한다.
+        let preparedWithinTimeout: Bool? = await withTaskGroup(of: Bool?.self) { group in
+            group.addTask { () -> Bool? in
+                await client.preparePlacementSources(request.sessionID, [pinned.path])
+            }
+            group.addTask { () -> Bool? in
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                return nil
+            }
+            let first = await group.next().flatMap(\.self)
+            group.cancelAll()
+            return first
+        }
+        guard let prepared = preparedWithinTimeout else {
+            XCTFail("placement 게이트가 상한 시간 안에 반환하지 않았다")
+            return
+        }
+        XCTAssertTrue(prepared, "detached descriptor가 있으면 FIFO 치환과 무관하게 게이트가 통과한다")
+
+        // 배치 복사는 FIFO를 열지 않고 detached descriptor의 원본 바이트를 재현한다.
+        let placed = temporaryRoot.appendingPathComponent("Placed-original.txt")
+        _ = try await client.copyPlacementSource(request.sessionID, pinned.path, placed.path)
+        XCTAssertEqual(try Data(contentsOf: placed), Data("safe".utf8))
+
+        client.cancel(request.sessionID)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: staging.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: claimedContainer(staging).path))
     }
 
     /// EOP-002-import_external_objects: mixed drop의 indeterminate receiver는 이름 있는 receiver가
@@ -3901,6 +4919,109 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertTrue(cleanup.cancels.isEmpty)
     }
 
+    /// EOP-002-import_external_objects (VOY-736 리뷰 #3835329095): placement 진입 게이트가
+    /// claim 신원 치환을 감지하면 복사를 시작하지 않고 전체 실패로 종료한다.
+    /// - 검증 내용: 검증 실패 시 pasteItems 배치가 만들어지지 않아 destination에 산출물이
+    ///   없고 status는 `.failed`, finish는 정확히 1회다.
+    func testExternalDropImport_rejectsReplacedClaimBeforePlacementStart() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+
+        let staging = sandbox.root.appendingPathComponent("staging")
+        let dest = sandbox.root.appendingPathComponent("dest")
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
+        let a = staging.appendingPathComponent("a.txt")
+        try Data("a".utf8).write(to: a)
+
+        let recorder = FileOpsRecorder()
+        let cleanup = AcquisitionCleanupRecorder()
+        let sessionID = ExternalDropSessionID()
+        // 성공 배리어 이후 placement 직전에 같은-UID provider가 claim을 치환한 상태를
+        // 세션 검증 실패로 시뮬레이션한다.
+        let store = makeImportPlacementStore(
+            recorder: recorder,
+            cleanup: cleanup,
+            preparePlacementSources: { _, _ in false },
+        )
+
+        let plan = ExternalDropImportPlan(
+            sessionID: sessionID,
+            destination: dest.path,
+            forcedCopy: true,
+            orderedPromisedNames: ["a.txt"],
+            promisedOrdinals: [0],
+            receivedFiles: [
+                .init(sessionID: sessionID, itemOrdinal: 1, callbackOrdinal: 1, stagedPath: a.path),
+            ],
+        )
+
+        await store.send(.externalDrop(.applyImport(plan)))
+        await store.finish()
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(store.state.externalObjectImportStatus, .failed)
+        XCTAssertTrue(recorder.copiedPaths.isEmpty)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: dest.appendingPathComponent("a.txt").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: a.path))
+        XCTAssertEqual(cleanup.finishes, [sessionID])
+        XCTAssertTrue(cleanup.cancels.isEmpty)
+    }
+
+    /// EOP-002-import_external_objects (VOY-736 리뷰 #3835329095): placement는 logical path를
+    /// 이름·lifecycle 키로 유지하면서 고정된 descriptor read path에서 바이트를 복사한다.
+    /// - 검증 내용: logical source가 evil이어도 stable source의 safe 바이트가 logical 이름으로
+    ///   destination에 생성되고 종단은 logical source 기준으로 집계된다.
+    func testExternalDropImport_readsStableDescriptorSourceThroughPlacement() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+
+        let staging = sandbox.root.appendingPathComponent("staging")
+        let dest = sandbox.root.appendingPathComponent("dest")
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
+        let a = staging.appendingPathComponent("a.txt")
+        let stable = sandbox.root.appendingPathComponent("stable.txt")
+        try Data("evil".utf8).write(to: a)
+        try Data("safe".utf8).write(to: stable)
+
+        let recorder = FileOpsRecorder()
+        let cleanup = AcquisitionCleanupRecorder()
+        let sessionID = ExternalDropSessionID()
+        let store = makeImportPlacementStore(
+            recorder: recorder,
+            cleanup: cleanup,
+            copyPlacementSource: { _, _, destinationPath in
+                try FileManager.default.copyItem(atPath: stable.path, toPath: destinationPath)
+                return true
+            },
+        )
+
+        let plan = ExternalDropImportPlan(
+            sessionID: sessionID,
+            destination: dest.path,
+            forcedCopy: true,
+            orderedPromisedNames: ["a.txt"],
+            promisedOrdinals: [0],
+            receivedFiles: [
+                .init(sessionID: sessionID, itemOrdinal: 1, callbackOrdinal: 1, stagedPath: a.path),
+            ],
+        )
+
+        await store.send(.externalDrop(.applyImport(plan)))
+        await store.finish()
+        await store.skipReceivedActions()
+
+        XCTAssertTrue(recorder.copiedPaths.isEmpty)
+        XCTAssertEqual(
+            try Data(contentsOf: dest.appendingPathComponent("a.txt")),
+            Data("safe".utf8),
+        )
+        XCTAssertEqual(store.state.externalObjectImportStatus, .applied)
+        XCTAssertEqual(cleanup.finishes, [sessionID])
+        XCTAssertTrue(cleanup.cancels.isEmpty)
+    }
+
     /// EOP-002-import_external_objects (VOY-736 리뷰 #3830970670): 뒤쪽 receiver의 콜백이
     /// 먼저 도착해도 placement는 pasteboard 순서(pasteboardOrdinal)를 유지한다.
     /// - 검증 내용: B receiver 이벤트가 A보다 먼저 와도 복사 순서는 [a, b]다.
@@ -4256,16 +5377,10 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         let recorder = FileOpsRecorder()
         let cleanup = AcquisitionCleanupRecorder()
         let gate = PasteGate()
-        var fileOps = makeRecordedFileOpsClient(recorder: recorder)
-        let ungatedPaste = fileOps.pasteFile
-        fileOps.pasteFile = { sourceURL, destinationURL in
-            await gate.wait()
-            try await ungatedPaste(sourceURL, destinationURL)
-        }
         let firstSession = ExternalDropSessionID()
         let secondSession = ExternalDropSessionID()
         let store = EntryOperationsTestSupport.makeStore {
-            $0.entryFileOpsClient = fileOps
+            $0.entryFileOpsClient = makeRecordedFileOpsClient(recorder: recorder)
             $0.externalDropAcquisitionClient = ExternalDropAcquisitionClient(
                 begin: { _, _, _, _, _, _, _ in fatalError("begin not used") },
                 events: { _ in AsyncStream { $0.finish() } },
@@ -4274,6 +5389,11 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
                 beginLegacy: { _, _, _, _, _, _, _ in fatalError("beginLegacy not used") },
                 prepareLegacyStaging: { _ in fatalError("prepareLegacyStaging not used") },
                 finalizeLegacyStaging: { _, _ in fatalError("finalizeLegacyStaging not used") },
+                // placement 복사 진행 대기는 secure copier seam에서만 일어난다.
+                copyPlacementSource: { _, _, _ in
+                    await gate.wait()
+                    return true
+                },
             )
         }
         store.exhaustivity = .off
@@ -4331,21 +5451,10 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         let recorder = FileOpsRecorder()
         let cleanup = AcquisitionCleanupRecorder()
         let gate = PasteCancellationGate()
-        var fileOps = makeRecordedFileOpsClient(recorder: recorder)
-        let ungatedPaste = fileOps.pasteFile
-        fileOps.pasteFile = { sourceURL, destinationURL in
-            try await withTaskCancellationHandler {
-                await gate.wait()
-                try Task.checkCancellation()
-            } onCancel: {
-                gate.open()
-            }
-            try await ungatedPaste(sourceURL, destinationURL)
-        }
         let sessionID = ExternalDropSessionID()
         let store = EntryOperationsTestSupport.makeStore {
             $0.uuid = .constant(UUID())
-            $0.entryFileOpsClient = fileOps
+            $0.entryFileOpsClient = makeRecordedFileOpsClient(recorder: recorder)
             $0.externalDropAcquisitionClient = ExternalDropAcquisitionClient(
                 begin: { _, _, _, _, _, _, _ in fatalError("begin not used") },
                 events: { _ in AsyncStream { $0.finish() } },
@@ -4354,6 +5463,16 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
                 beginLegacy: { _, _, _, _, _, _, _ in fatalError("beginLegacy not used") },
                 prepareLegacyStaging: { _ in fatalError("prepareLegacyStaging not used") },
                 finalizeLegacyStaging: { _, _ in fatalError("finalizeLegacyStaging not used") },
+                // placement 복사 진행 대기와 취소 반응은 secure copier seam에서 일어난다.
+                copyPlacementSource: { _, _, _ in
+                    try await withTaskCancellationHandler {
+                        await gate.wait()
+                        try Task.checkCancellation()
+                    } onCancel: {
+                        gate.open()
+                    }
+                    return true
+                },
             )
         }
         store.exhaustivity = .off
@@ -4391,6 +5510,10 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             recorder.copiedPaths.isEmpty,
             "resetForDuplicate 후 placement 복사가 취소돼 destination으로 복사가 없어야 한다",
         )
+        XCTAssertFalse(FileManager.default.fileExists(atPath: dest.appendingPathComponent("a.txt").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: dest.appendingPathComponent("b.txt").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: a.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: b.path))
     }
 
     /// EOP-002-import_external_objects (F2 P1): windowIDChanged가 진행 중 placement 상태를 정리한다.
@@ -4413,21 +5536,10 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         let recorder = FileOpsRecorder()
         let cleanup = AcquisitionCleanupRecorder()
         let gate = PasteCancellationGate()
-        var fileOps = makeRecordedFileOpsClient(recorder: recorder)
-        let ungatedPaste = fileOps.pasteFile
-        fileOps.pasteFile = { sourceURL, destinationURL in
-            try await withTaskCancellationHandler {
-                await gate.wait()
-                try Task.checkCancellation()
-            } onCancel: {
-                gate.open()
-            }
-            try await ungatedPaste(sourceURL, destinationURL)
-        }
         let firstSession = ExternalDropSessionID()
         let secondSession = ExternalDropSessionID()
         let store = EntryOperationsTestSupport.makeStore {
-            $0.entryFileOpsClient = fileOps
+            $0.entryFileOpsClient = makeRecordedFileOpsClient(recorder: recorder)
             $0.externalDropAcquisitionClient = ExternalDropAcquisitionClient(
                 begin: { _, _, _, _, _, _, _ in fatalError("begin not used") },
                 events: { _ in AsyncStream { $0.finish() } },
@@ -4436,6 +5548,16 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
                 beginLegacy: { _, _, _, _, _, _, _ in fatalError("beginLegacy not used") },
                 prepareLegacyStaging: { _ in fatalError("prepareLegacyStaging not used") },
                 finalizeLegacyStaging: { _, _ in fatalError("finalizeLegacyStaging not used") },
+                // placement 복사 진행 대기와 취소 반응은 secure copier seam에서 일어난다.
+                copyPlacementSource: { _, _, _ in
+                    try await withTaskCancellationHandler {
+                        await gate.wait()
+                        try Task.checkCancellation()
+                    } onCancel: {
+                        gate.open()
+                    }
+                    return true
+                },
             )
         }
         store.exhaustivity = .off
@@ -4502,20 +5624,12 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         let recorder = FileOpsRecorder()
         let cleanup = AcquisitionCleanupRecorder()
         let sessionID = ExternalDropSessionID()
-        let store = EntryOperationsTestSupport.makeStore {
-            $0.entryFileOpsClient = makeRecordedFileOpsClient(recorder: recorder)
-            $0.entryOperationsAlertClient.showReplaceAlert = { _, _ in .stop }
-            $0.externalDropAcquisitionClient = ExternalDropAcquisitionClient(
-                begin: { _, _, _, _, _, _, _ in fatalError("begin not used") },
-                events: { _ in AsyncStream { $0.finish() } },
-                cancel: { cleanup.recordCancel($0) },
-                finish: { cleanup.recordFinish($0) },
-                beginLegacy: { _, _, _, _, _, _, _ in fatalError("beginLegacy not used") },
-                prepareLegacyStaging: { _ in fatalError("prepareLegacyStaging not used") },
-                finalizeLegacyStaging: { _, _ in fatalError("finalizeLegacyStaging not used") },
-            )
-        }
-        store.exhaustivity = .off
+        let store = makeImportPlacementStore(
+            recorder: recorder,
+            cleanup: cleanup,
+            copyPlacementSource: collisionCopyStub(fileName: "a.txt", recorder: recorder),
+            showReplaceAlert: { _, _ in .stop },
+        )
 
         let plan = ExternalDropImportPlan(
             sessionID: sessionID,
@@ -4543,6 +5657,240 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertTrue(store.state.undoRecords.isEmpty)
         XCTAssertEqual(cleanup.finishes, [sessionID])
         XCTAssertTrue(cleanup.cancels.isEmpty)
+    }
+
+    /// VOY-736 v8b P1 #1: copier가 false를 반환한 externalObjectImportItem은 일반 mutable
+    /// pasteFile로 강등되지 않고 항목별 실패로 닫힌다.
+    /// - 검증 내용: secure copier가 false를 반환하면 pasteFile(recorder 관찰 경로)이 호출되지
+    ///   않고 destination 산출물이 없으며 원본 staged 파일이 그대로 남는다.
+    /// - 기대 결과: status `.failed`, copiedPaths 비어 있음, finishes 정확히 1회.
+    func testExternalDropImport_copierFalseFailsClosedWithoutPasteFallback() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+
+        let staging = sandbox.root.appendingPathComponent("staging")
+        let dest = sandbox.root.appendingPathComponent("dest")
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
+        let a = staging.appendingPathComponent("a.txt")
+        let b = staging.appendingPathComponent("b.txt")
+        try Data("a".utf8).write(to: a)
+        try Data("b".utf8).write(to: b)
+
+        let recorder = FileOpsRecorder()
+        let cleanup = AcquisitionCleanupRecorder()
+        let sessionID = ExternalDropSessionID()
+        let store = makeImportPlacementStore(
+            recorder: recorder,
+            cleanup: cleanup,
+            copyPlacementSource: { _, _, _ in false },
+        )
+
+        let plan = ExternalDropImportPlan(
+            sessionID: sessionID,
+            destination: dest.path,
+            forcedCopy: true,
+            orderedPromisedNames: ["a.txt", "b.txt"],
+            promisedOrdinals: [0, 1],
+            receivedFiles: [
+                .init(sessionID: sessionID, itemOrdinal: 1, callbackOrdinal: 1, stagedPath: a.path),
+                .init(sessionID: sessionID, itemOrdinal: 2, callbackOrdinal: 1, stagedPath: b.path),
+            ],
+        )
+
+        await store.send(.externalDrop(.applyImport(plan)))
+        await store.finish()
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(store.state.externalObjectImportStatus, .failed)
+        XCTAssertTrue(recorder.copiedPaths.isEmpty, "copier 미처리 항목이 paste fallback으로 복사됐다")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: dest.appendingPathComponent("a.txt").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: dest.appendingPathComponent("b.txt").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: a.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: b.path))
+        XCTAssertEqual(cleanup.finishes, [sessionID])
+        XCTAssertTrue(cleanup.cancels.isEmpty)
+    }
+
+    /// VOY-736 v8b P1 #1: placement 세션 상태 없이 도착한 .externalObjectImportItem 배치는
+    /// mutable 일반 paste로 강등되지 않고 항목별 실패로 닫힌다.
+    /// - 검증 내용: placement 상태 없이 .clipboard(.pasteItems)를 직접 보낸다.
+    /// - 기대 결과: 복사가 실행되지 않고(destination 비어 있음) 원본 staged 파일이 유지된다.
+    func testExternalDropImport_missingPlacementStateFailsClosedWithoutMutablePaste() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+
+        let staging = sandbox.root.appendingPathComponent("staging")
+        let dest = sandbox.root.appendingPathComponent("dest")
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
+        let a = staging.appendingPathComponent("a.txt")
+        try Data("a".utf8).write(to: a)
+
+        let recorder = FileOpsRecorder()
+        let cleanup = AcquisitionCleanupRecorder()
+        let store = makeImportPlacementStore(recorder: recorder, cleanup: cleanup)
+
+        await store.send(.clipboard(.pasteItems(
+            sourcePaths: [a.path],
+            destinationPath: dest.path,
+            operation: .copy,
+            operationKind: .externalObjectImportItem,
+        )))
+        await store.finish()
+        await store.skipReceivedActions()
+
+        XCTAssertTrue(recorder.copiedPaths.isEmpty)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: dest.appendingPathComponent("a.txt").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: a.path))
+    }
+
+    /// VOY-736 v8b P1 #3: descriptor 복사의 O_EXCL 충돌(POSIXError EEXIST)은 기존 교체
+    /// 알림 계약으로 정규화된다. 사용자가 stop을 고르면 해당 항목만 실패하고 나머지는
+    /// 성공해 status는 `.partiallyApplied`다.
+    /// - 검증 내용: copier 스텁이 a.txt에 한해 EEXIST를 던지고 replace alert은 stop을 반환한다.
+    /// - 기대 결과: a.txt에 교체 알림이 정확히 한 번 뜨고, b.txt만 destination에 남는다.
+    func testExternalDropImport_descriptorCollisionNormalizesToReplaceStopContract() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+
+        let staging = sandbox.root.appendingPathComponent("staging")
+        let dest = sandbox.root.appendingPathComponent("dest")
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
+        let a = staging.appendingPathComponent("a.txt")
+        let b = staging.appendingPathComponent("b.txt")
+        try Data("a".utf8).write(to: a)
+        try Data("b".utf8).write(to: b)
+        try Data("existing".utf8).write(to: dest.appendingPathComponent("a.txt"))
+
+        let recorder = FileOpsRecorder()
+        let cleanup = AcquisitionCleanupRecorder()
+        let alertRecorder = ReplaceAlertRecorder()
+        let sessionID = ExternalDropSessionID()
+        let store = makeImportPlacementStore(
+            recorder: recorder,
+            cleanup: cleanup,
+            copyPlacementSource: collisionCopyStub(fileName: "a.txt", recorder: recorder),
+            showReplaceAlert: { itemName, _ in
+                await MainActor.run { alertRecorder.record(itemName) }
+                return .stop
+            },
+        )
+
+        let plan = ExternalDropImportPlan(
+            sessionID: sessionID,
+            destination: dest.path,
+            forcedCopy: true,
+            orderedPromisedNames: ["a.txt", "b.txt"],
+            promisedOrdinals: [0, 1],
+            receivedFiles: [
+                .init(sessionID: sessionID, itemOrdinal: 1, callbackOrdinal: 1, stagedPath: a.path),
+                .init(sessionID: sessionID, itemOrdinal: 2, callbackOrdinal: 1, stagedPath: b.path),
+            ],
+        )
+
+        await store.send(.externalDrop(.applyImport(plan)))
+        await store.finish()
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(alertRecorder.itemNames, ["a.txt"], "EEXIST 충돌이 교체 알림 계약으로 정규화돼야 한다")
+        XCTAssertEqual(recorder.copiedPaths.map(\.source.path), [b.path])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: dest.appendingPathComponent("b.txt").path))
+        XCTAssertEqual(try Data(contentsOf: dest.appendingPathComponent("a.txt")), Data("existing".utf8))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: a.path))
+        XCTAssertEqual(store.state.externalObjectImportStatus, .partiallyApplied)
+        XCTAssertEqual(cleanup.finishes, [sessionID])
+        XCTAssertTrue(cleanup.cancels.isEmpty)
+    }
+
+    /// VOY-736 v8b P1 #3: 교체 알림에서 replace를 고르면 충돌 목적지를 지운 뒤 secure copier를
+    /// 재시도해 해당 항목을 회수한다. stop/replace와 per-item 집계 의미를 함께 보존한다.
+    /// - 검증 내용: copier 스텁이 a.txt 첫 시도에만 EEXIST를 던지고 replace alert은 replace를 반환한다.
+    /// - 기대 결과: dest/a.txt가 deleteImmediately 후 재복사돼 staged 바이트로 존재하고 status는 `.applied`.
+    func testExternalDropImport_descriptorCollisionReplaceRecoversItem() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+
+        let staging = sandbox.root.appendingPathComponent("staging")
+        let dest = sandbox.root.appendingPathComponent("dest")
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
+        let a = staging.appendingPathComponent("a.txt")
+        let b = staging.appendingPathComponent("b.txt")
+        try Data("a".utf8).write(to: a)
+        try Data("b".utf8).write(to: b)
+        try Data("existing".utf8).write(to: dest.appendingPathComponent("a.txt"))
+
+        let thrower = OnceFlag()
+        let recorder = FileOpsRecorder()
+        let cleanup = AcquisitionCleanupRecorder()
+        let sessionID = ExternalDropSessionID()
+        let store = makeImportPlacementStore(
+            recorder: recorder,
+            cleanup: cleanup,
+            copyPlacementSource: oneShotCollisionCopyStub(fileName: "a.txt", flag: thrower),
+            showReplaceAlert: { _, _ in .replace },
+        )
+
+        let plan = ExternalDropImportPlan(
+            sessionID: sessionID,
+            destination: dest.path,
+            forcedCopy: true,
+            orderedPromisedNames: ["a.txt", "b.txt"],
+            promisedOrdinals: [0, 1],
+            receivedFiles: [
+                .init(sessionID: sessionID, itemOrdinal: 1, callbackOrdinal: 1, stagedPath: a.path),
+                .init(sessionID: sessionID, itemOrdinal: 2, callbackOrdinal: 1, stagedPath: b.path),
+            ],
+        )
+
+        await store.send(.externalDrop(.applyImport(plan)))
+        await store.finish()
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(try Data(contentsOf: dest.appendingPathComponent("a.txt")), Data("a".utf8))
+        XCTAssertEqual(try Data(contentsOf: dest.appendingPathComponent("b.txt")), Data("b".utf8))
+        XCTAssertEqual(
+            recorder.deletedPaths,
+            [dest.appendingPathComponent("a.txt")],
+            "replace 수용 시 충돌 목적지가 deleteImmediately돼야 한다",
+        )
+        XCTAssertEqual(store.state.externalObjectImportStatus, .applied)
+        XCTAssertEqual(cleanup.finishes, [sessionID])
+        XCTAssertTrue(cleanup.cancels.isEmpty)
+    }
+}
+
+/// replace alert 노출을 관찰하는 경량 recorder.
+private final class ReplaceAlertRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _itemNames: [String] = []
+
+    func record(_ itemName: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        _itemNames.append(itemName)
+    }
+
+    var itemNames: [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return _itemNames
+    }
+}
+
+/// 한 번만 참을 반환하는 원자 플래그. 재시도 경로 검증에 쓴다.
+private final class OnceFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var consumed = false
+
+    func consume() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        if consumed { return false }
+        consumed = true
+        return true
     }
 }
 
