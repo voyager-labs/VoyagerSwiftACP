@@ -318,6 +318,17 @@
   gap: 3px;
 }
 
+/* 네이티브 규약: 칩 폭이 부족하면 property·연산자는 온전히 유지하고 값 세그먼트만 줄인다 */
+[data-file-manager-illustration] .collection-composer-condition-property,
+[data-file-manager-illustration]
+  .collection-composer-condition-segment:not(.collection-composer-condition-value) {
+  flex-shrink: 0;
+}
+
+[data-file-manager-illustration] .collection-composer-condition-value {
+  min-width: 0;
+}
+
 [data-file-manager-illustration] .collection-composer-condition-label {
   min-width: 0;
   overflow: hidden;

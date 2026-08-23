@@ -57,7 +57,7 @@ export const ComposerConditionChip: FC<ComposerConditionChipProps> = ({
         // 조건 모델에 arity 정보가 없으므로 값 전체를 단일 세그먼트로 렌더한다
         <button
           type="button"
-          className="collection-composer-condition-segment collection-composer-condition-text"
+          className="collection-composer-condition-segment collection-composer-condition-text collection-composer-condition-value"
           aria-expanded={valueExpanded}
           disabled={inactive}
           onClick={() => onValueClick?.(condition.id)}
