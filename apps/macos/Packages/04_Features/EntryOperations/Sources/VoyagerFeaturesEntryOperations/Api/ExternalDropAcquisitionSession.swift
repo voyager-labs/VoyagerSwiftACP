@@ -1009,12 +1009,25 @@ extension ExternalDropAcquisitionSession {
                     ordinal: flavor.ordinal + 1,
                 )
                 : flavor.filename
-            materialize(dataFlavor: ExternalDropDataFlavor(
-                uti: flavor.uti,
-                bytes: bytes,
-                filename: filename,
-                ordinal: flavor.ordinal,
-            ))
+            // 예약과 물리화를 같은 큐 작업에서 실행한다. materialize를 다시 거치면
+            // 큐에 이중으로 예약돼 promise callback보다 물리화가 늦어진다(#3837956591).
+            lock.lock()
+            guard phase == .acquiring else {
+                lock.unlock()
+                return
+            }
+            let reserved = uniqueStagedFilename(for: filename)
+            pendingSnapshotCount += 1
+            lock.unlock()
+            materializeOnQueue(
+                dataFlavor: ExternalDropDataFlavor(
+                    uti: flavor.uti,
+                    bytes: bytes,
+                    filename: reserved,
+                    ordinal: flavor.ordinal,
+                ),
+                filename: reserved,
+            )
         }
     }
 

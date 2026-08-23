@@ -94,6 +94,16 @@ private func waitForPath(_ path: String) async -> Bool {
     return false
 }
 
+/// staging 물리 삭제는 rename-then-detached로 비동기 수행되므로(코멘트 #3837956596)
+/// 제거 완료를 폴링한다. 2초 상한 내에서 사라지지 않으면 false를 반환한다.
+private func waitForRemoval(_ path: String) async -> Bool {
+    for _ in 0 ..< 200 {
+        if !FileManager.default.fileExists(atPath: path) { return true }
+        try? await Task.sleep(nanoseconds: 10_000_000)
+    }
+    return FileManager.default.fileExists(atPath: path) == false
+}
+
 /// 경로의 inode(dev+ino)를 가리키는 현재 프로세스의 열린 fd 수(/dev/fd 스캔).
 /// descriptor 고정 계약의 정확히-한-번 close 검증 전용 스냅숏이다.
 private func openDescriptorCount(matchingInodeOf path: String) -> Int {
@@ -2153,7 +2163,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
 
         let bytes = Data(#"{"k":"v","n":1}"#.utf8)
-        let flavor = ExternalDropDataFlavor(uti: "public.json", bytes: bytes, filename: "Clipping 1.json")
+        let flavor = deferredFlavor(uti: "public.json", bytes: bytes, filename: "Clipping 1.json")
         let request = client.begin([], [flavor], "/dest", false, [], [], [])
         let stagedURL = URL(fileURLWithPath: request.stagingDirectory).appendingPathComponent("Clipping 1.json")
         _ = await waitForPath(stagedURL.path)
@@ -2172,7 +2182,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         let client = ExternalDropAcquisitionClient
             .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
 
-        let flavor = ExternalDropDataFlavor(
+        let flavor = deferredFlavor(
             uti: "public.utf8-plain-text",
             bytes: Data("Quarterly Report\nrevenue up\n".utf8),
             filename: "Quarterly Report.txt",
@@ -2195,7 +2205,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         let client = ExternalDropAcquisitionClient
             .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
 
-        let flavor = ExternalDropDataFlavor(
+        let flavor = deferredFlavor(
             uti: "dyn.a8f9b1c2d3e4f5a6b7c8d9e0",
             bytes: Data("raw".utf8),
             filename: "Clipping 1.data",
@@ -2220,12 +2230,12 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         let client = ExternalDropAcquisitionClient
             .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
 
-        let flavorA = ExternalDropDataFlavor(
+        let flavorA = deferredFlavor(
             uti: "public.utf8-plain-text",
             bytes: Data("first".utf8),
             filename: "Clip 1.txt",
         )
-        let flavorB = ExternalDropDataFlavor(
+        let flavorB = deferredFlavor(
             uti: "public.utf8-plain-text",
             bytes: Data("second".utf8),
             filename: "Clip 1.txt",
@@ -2258,7 +2268,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
 
         let receiver = FilePromiseReceiverSpy(names: ["Clip 1.txt"])
-        let flavor = ExternalDropDataFlavor(
+        let flavor = deferredFlavor(
             uti: "public.utf8-plain-text",
             bytes: Data("text".utf8),
             filename: "Clip 1.txt",
@@ -2351,7 +2361,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
 
         let receiver = FilePromiseReceiverSpy(names: ["promise.txt"])
-        let flavor = ExternalDropDataFlavor(
+        let flavor = deferredFlavor(
             uti: "public.json",
             bytes: Data(#"{"k":1}"#.utf8),
             filename: "Clipping 1.json",
@@ -3006,7 +3016,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: temporaryRoot) }
         let client = ExternalDropAcquisitionClient
             .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
-        let flavor = ExternalDropDataFlavor(
+        let flavor = deferredFlavor(
             uti: "public.plain-text",
             bytes: Data("safe".utf8),
             filename: "data.txt",
@@ -3132,6 +3142,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
 
         let events = await collectEventsUntilTerminal(from: client.events(request.sessionID))
         XCTAssertEqual(events.last, .failed(request.sessionID, .indeterminateCardinality))
+        _ = await waitForRemoval(stagingDir.path)
         XCTAssertFalse(FileManager.default.fileExists(atPath: stagingDir.path))
         XCTAssertFalse(
             FileManager.default.fileExists(atPath: claimedContainer(stagingDir).path),
@@ -3151,7 +3162,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
 
         let original = temporaryRoot.appendingPathComponent("original.txt")
         try Data("safe".utf8).write(to: original)
-        let flavor = ExternalDropDataFlavor(
+        let flavor = deferredFlavor(
             uti: "public.json",
             bytes: Data(#"{"k":1}"#.utf8),
             filename: "Clipping 1.json",
@@ -3354,7 +3365,9 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         )
 
         client.finish(request.sessionID)
+        _ = await waitForRemoval(staging.path)
         XCTAssertFalse(FileManager.default.fileExists(atPath: staging.path))
+        _ = await waitForRemoval(claimedContainer(staging).path)
         XCTAssertFalse(FileManager.default.fileExists(atPath: claimedContainer(staging).path))
     }
 
@@ -3944,6 +3957,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             timeoutNanoseconds: 5_000_000_000,
         )
         XCTAssertEqual(events.last, .failed(request.sessionID, .callbackError))
+        _ = await waitForRemoval(staging.path)
         XCTAssertFalse(FileManager.default.fileExists(atPath: staging.path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: claimedContainer(staging).path))
     }
@@ -4004,6 +4018,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: placed), Data("safe".utf8))
 
         client.cancel(request.sessionID)
+        _ = await waitForRemoval(staging.path)
         XCTAssertFalse(FileManager.default.fileExists(atPath: staging.path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: claimedContainer(staging).path))
     }
@@ -4112,7 +4127,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
 
         let receiver = FilePromiseReceiverSpy(names: [])
-        let flavor = ExternalDropDataFlavor(
+        let flavor = deferredFlavor(
             uti: "public.utf8-plain-text",
             bytes: Data("Fwd: hello".utf8),
             filename: "Fwd hello.txt",
@@ -4313,6 +4328,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: request.stagingDirectory))
 
         client.finish(request.sessionID)
+        _ = await waitForRemoval(request.stagingDirectory)
         XCTAssertFalse(FileManager.default.fileExists(atPath: request.stagingDirectory))
     }
 
@@ -4420,6 +4436,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
 
         // placement 복사 완료로 finish가 staging을 제거한다.
         client.finish(request.sessionID)
+        _ = await waitForRemoval(staging.path)
         XCTAssertFalse(FileManager.default.fileExists(atPath: staging.path))
 
         // finish 후 늦은 콜백이 staging 경로에 파일/디렉터리를 재생성한다.
@@ -4459,6 +4476,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
 
         // placement 복사 완료로 finish가 staging 루트를 제거한다.
         client.finish(request.sessionID)
+        _ = await waitForRemoval(staging.path)
         XCTAssertFalse(FileManager.default.fileExists(atPath: staging.path))
 
         // finish 후 provider가 staging 루트 디렉터리 자체를 재생성하고 늦은 콜백이 그 안에 파일을 보고한다.
@@ -4496,6 +4514,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
 
         client.cancel(request.sessionID)
 
+        _ = await waitForRemoval(request.stagingDirectory)
         XCTAssertFalse(FileManager.default.fileExists(atPath: request.stagingDirectory))
     }
 
@@ -4549,6 +4568,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
 
         let events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
         XCTAssertEqual(events.last, .cancelled(request.sessionID))
+        _ = await waitForRemoval(request.stagingDirectory)
         XCTAssertFalse(FileManager.default.fileExists(atPath: request.stagingDirectory))
     }
 
@@ -4566,6 +4586,8 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         let receiver = FilePromiseReceiverSpy(names: ["a.txt"])
         let request = client.begin([receiver], [], "/dest", false, [], [], [])
         client.cancel(request.sessionID)
+        // 취소의 rename-then-detached 정리가 끝난 뒤 재생성해야 백그라운드 삭제와 경합하지 않는다.
+        _ = await waitForRemoval(request.stagingDirectory)
 
         // 취소 후 늦은 콜백이 새 출력을 보고한다.
         let lateURL = URL(fileURLWithPath: request.stagingDirectory).appendingPathComponent("late.txt")
@@ -5861,6 +5883,17 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertEqual(cleanup.finishes, [sessionID])
         XCTAssertTrue(cleanup.cancels.isEmpty)
     }
+}
+
+/// begin seam이 지연 flavor를 받으므로(코멘트 #3837956591) 고정 바이트 flavor를 감싼다.
+/// 인자 라벨이 기존 ExternalDropDataFlavor 생성과 동일해 호출부는 이름만 바뀐다.
+private func deferredFlavor(
+    uti: String,
+    bytes: Data,
+    filename: String,
+    ordinal: Int = -1,
+) -> ExternalDropDeferredFlavor {
+    ExternalDropDeferredFlavor(uti: uti, filename: filename, ordinal: ordinal) { bytes }
 }
 
 /// replace alert 노출을 관찰하는 경량 recorder.

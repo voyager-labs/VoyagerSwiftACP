@@ -15,7 +15,7 @@ public struct ExternalDropAcquisitionClient: Sendable {
     /// Grid/List `acceptDrop`이 이 진입점을 사용한다. promise receiver와 data flavor를 함께
     /// 받아 물리화하고, 즉시 file URL 경로는 복사 배치에 포함시킨다. Sendable 요청 메타데이터만 반환한다.
     public var begin: @MainActor @Sendable (
-        [NSFilePromiseReceiver], [ExternalDropDataFlavor], String, Bool, [String], [Int], [Int],
+        [NSFilePromiseReceiver], [ExternalDropDeferredFlavor], String, Bool, [String], [Int], [Int],
     ) -> ExternalDropAcceptedRequest
 
     /// 주어진 세션의 종단 획득 이벤트 스트림. reducer가 구독해 소비한다.
@@ -71,7 +71,7 @@ public struct ExternalDropAcquisitionClient: Sendable {
 
     nonisolated public init(
         begin: @escaping @MainActor @Sendable (
-            [NSFilePromiseReceiver], [ExternalDropDataFlavor], String, Bool, [String], [Int], [Int],
+            [NSFilePromiseReceiver], [ExternalDropDeferredFlavor], String, Bool, [String], [Int], [Int],
         ) -> ExternalDropAcceptedRequest,
         events: @escaping @MainActor @Sendable (ExternalDropSessionID) -> AsyncStream<ExternalDropAcquisitionEvent>,
         cancel: @escaping @MainActor @Sendable (ExternalDropSessionID) -> Void,
@@ -271,7 +271,7 @@ enum ExternalDropAcquisitionLive {
 /// function_parameter_count 한도 안으로 유지한다.
 private struct ModernBeginInput {
     let receivers: [NSFilePromiseReceiver]
-    let dataFlavors: [ExternalDropDataFlavor]
+    let dataFlavors: [ExternalDropDeferredFlavor]
     let destination: String
     let forcedCopy: Bool
     let immediateURLPaths: [String]
@@ -377,7 +377,7 @@ private final class ExternalDropAcquisitionStore {
     @MainActor
     private func startDeterminateAcquisition(
         receivers: [NSFilePromiseReceiver],
-        dataFlavors: [ExternalDropDataFlavor],
+        dataFlavors: [ExternalDropDeferredFlavor],
         session: ExternalDropAcquisitionSession,
         sessionID: ExternalDropSessionID,
         stagingURL: URL,
@@ -397,9 +397,10 @@ private final class ExternalDropAcquisitionStore {
         // 것을 방지한다(data-promise 충돌 시 provider 쓰기 실패로 전체 drop이 실패한다).
         session.reserveStagedFilenames(receivers.flatMap(\.fileNames))
 
-        // data flavor 즉시 물리화: 바이트를 verbatim으로 staging에 쓰고 `.received`를 emit한다.
+        // data flavor 물리화: 바이트 로드와 staging 쓰기는 세션 큐에서 수행한다
+        // (코멘트 #3837956591). accept 경계에서는 flavor 선언만 넘긴다.
         for flavor in dataFlavors {
-            session.materialize(dataFlavor: flavor)
+            session.enqueueDeferredLoad(flavor)
         }
     }
 

@@ -9,6 +9,10 @@ import Foundation
 /// 일치하지 않는 이벤트는 무시한다. 실제 복사 배치는 `.applyImport`(Todo 7 seam)가 수행한다.
 public enum CancelID: Hashable, Sendable {
     case externalDrop(ExternalDropSessionID)
+    /// placement 검증·복사 단계 전용 취소 ID. 획득 구독(beginSubscription)과 ID가
+    /// 같으면 성공 직후 placement effect 등록이 구독을 취소해 staging이 placement
+    /// 전에 삭제된다(코멘트 #3837956590).
+    case externalDropPlacement(ExternalDropSessionID)
 }
 
 @Reducer
@@ -234,7 +238,7 @@ public struct EntryExternalDropOperationsReducer {
                 }
             }
         }
-        .cancellable(id: CancelID.externalDrop(plan.sessionID), cancelInFlight: true)
+        .cancellable(id: CancelID.externalDropPlacement(plan.sessionID), cancelInFlight: true)
     }
 
     private func startPlacement(plan: ExternalDropImportPlan, state: inout State) -> Effect<Action> {
@@ -338,6 +342,7 @@ public struct EntryExternalDropOperationsReducer {
         state.externalObjectImportStatus = nil
         return .merge(
             .cancel(id: CancelID.externalDrop(sessionID)),
+            .cancel(id: CancelID.externalDropPlacement(sessionID)),
             cleanup,
         )
     }
@@ -365,6 +370,7 @@ public struct EntryExternalDropOperationsReducer {
             // placement 복사 effect 취소는 onCancelCleanup이 staging finish를 단일 소유한다.
             // 여기서 client.cancel을 호출하면 복사가 읽던 staging을 지워 부분 파일이 생기므로
             // effect 취소만 적용한다.
+            effects.append(.cancel(id: CancelID.externalDropPlacement(placementSessionID)))
             effects.append(.cancel(id: CancelID.externalDrop(placementSessionID)))
         }
         return .merge(effects)

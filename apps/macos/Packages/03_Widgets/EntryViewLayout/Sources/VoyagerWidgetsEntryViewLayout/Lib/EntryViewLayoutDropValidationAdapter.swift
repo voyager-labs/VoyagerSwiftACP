@@ -356,10 +356,12 @@ extension EntryViewLayoutDropValidationAdapter {
     private static func resolvedAcquisitionInputs(
         from draggingInfo: any NSDraggingInfo,
         negotiation: ExternalDropNegotiation,
-    ) -> ([NSFilePromiseReceiver], [ExternalDropDataFlavor])? {
+    ) -> ([NSFilePromiseReceiver], [ExternalDropDeferredFlavor])? {
         guard let receivers = promiseReceivers(from: draggingInfo, promisedOrdinals: negotiation.promisedOrdinals),
-              let combinedDataFlavors = dataFlavorPayloads(
-                  from: draggingInfo.draggingPasteboard,
+              let pasteboard = draggingInfo.draggingPasteboard as NSPasteboard?,
+              let items = pasteboard.pasteboardItems,
+              let combinedDataFlavors = pasteboardDeferredFlavors(
+                  items: items,
                   negotiation: negotiation,
               )
         else {
@@ -372,7 +374,7 @@ extension EntryViewLayoutDropValidationAdapter {
     @MainActor
     private static func logAcquisitionBegin(
         receivers: [NSFilePromiseReceiver],
-        combinedDataFlavors: [ExternalDropDataFlavor],
+        combinedDataFlavors: [ExternalDropDeferredFlavor],
         negotiation: ExternalDropNegotiation,
     ) {
         let emptyReceiverFileNames = receivers.isEmpty || receivers.allSatisfy(\.fileNames.isEmpty)
@@ -599,39 +601,7 @@ extension EntryViewLayoutDropValidationAdapter {
         return receivers
     }
 
-    /// negotiation이 확정한 data-flavor ordinal/UTI 순서대로 pasteboard에서 바이트를 추출해
-    /// Sendable `ExternalDropDataFlavor`로 변환한다. pasteboard item(AppKit)은 여기서 소비하고
-    /// 넘어가는 값은 전부 Sendable이다. 바이트는 그대로(변환 없이) 보존한다.
-    /// negotiation이 확정한 data-flavor 수와 실제 추출된 payload 수가 일치하지 않으면
-    /// 일부 logical item이 조용히 누락되는 것을 막기 위해 nil(전체 거절)을 반환한다.
-    @MainActor
-    static func dataFlavorPayloads(
-        from pasteboard: NSPasteboard,
-        negotiation: ExternalDropNegotiation,
-    ) -> [ExternalDropDataFlavor]? {
-        guard let items = pasteboard.pasteboardItems else { return [] }
-        var result: [ExternalDropDataFlavor] = []
-        result.reserveCapacity(negotiation.dataFlavors.count)
-        for descriptor in negotiation.dataFlavors {
-            guard items.indices.contains(descriptor.ordinal) else { return nil }
-            let item = items[descriptor.ordinal]
-            guard let bytes = item.data(forType: NSPasteboard.PasteboardType(descriptor.uti)) else { return nil }
-            let filename = ExternalDropDataFlavorNaming.filename(
-                uti: descriptor.uti,
-                bytes: bytes,
-                ordinal: descriptor.ordinal + 1,
-            )
-            result.append(ExternalDropDataFlavor(
-                uti: descriptor.uti,
-                bytes: bytes,
-                filename: filename,
-                ordinal: descriptor.ordinal,
-            ))
-        }
-        return result
-    }
-
-    /// data-only 드래그의 pasteboard 바이트 로드를 지연시키는 flavor 목록을 만든다
+    /// pasteboard 바이트 로드를 지연시키는 flavor 목록을 만든다(data-only·혼합 공용,
     /// (코멘트 #3837908192). NSPasteboardItem은 Sendable이고 data(forType:)는 비동기
     /// 격리가 없으므로 load 클로저가 세션 큐에서 안전하게 읽는다. ordinal·선언 타입
     /// 불일치는 기존 dataFlavorPayloads와 동일하게 전체 거절(nil)로 처리한다. 파일명은

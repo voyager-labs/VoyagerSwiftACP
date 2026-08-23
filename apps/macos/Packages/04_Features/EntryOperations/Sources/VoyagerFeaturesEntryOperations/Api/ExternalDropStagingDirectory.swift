@@ -412,8 +412,7 @@ final class StagingDirectory {
         placementAliases.removeAll()
         claimedIdentities.removeAll()
         identityLock.unlock()
-        try? fileManager.removeItem(URL(fileURLWithPath: path))
-        try? fileManager.removeItem(ownedPath)
+        removeTreePayloadOffMainActor()
     }
 
     func attachObserver(_ observer: DispatchSourceFileSystemObject) {
@@ -438,7 +437,29 @@ final class StagingDirectory {
         pinnedContent.removeAll()
         claimedIdentities.removeAll()
         identityLock.unlock()
-        try? fileManager.removeItem(URL(fileURLWithPath: path))
-        try? fileManager.removeItem(ownedPath)
+        removeTreePayloadOffMainActor()
+    }
+
+    /// staging/보관 디렉터리 정리는 두 단계로 나눈다(코멘트 #3837956596). MainActor에서는
+    /// O(1) rename으로 경로를 임시 이름으로 치워 이후 같은 경로 재생성(늦은 콜백 등)과
+    /// 경합하지 않게 하고, 대형 트리 재귀 삭제는 백그라운드에서 수행한다. registry
+    /// 전이는 이미 identityLock으로 완료된 뒤다.
+    private func removeTreePayloadOffMainActor() {
+        let suffix = UUID().uuidString
+        var pending: [URL] = []
+        for url in [URL(fileURLWithPath: path), ownedPath] {
+            let trash = url.deletingLastPathComponent()
+                .appendingPathComponent(".voyager-staging-trash-\(suffix)-\(url.lastPathComponent)")
+            if (try? fileManager.moveItem(url, trash)) != nil {
+                pending.append(trash)
+            }
+        }
+        guard !pending.isEmpty else { return }
+        let manager = fileManager
+        Task.detached {
+            for trashURL in pending {
+                try? manager.removeItem(trashURL)
+            }
+        }
     }
 }

@@ -15,6 +15,17 @@ final class PinnedContentStore {
         let identity: ClaimedFileIdentity
         let isDirectory: Bool
         let mode: mode_t
+        /// 스냅숏 완료 시점의 내용 지문. 같은 inode 재기록을 placement open 시점에
+        /// 대조한다(코멘트 #3837956594).
+        let contentSize: Int
+        let mtimeSeconds: Int
+        let mtimeNanoseconds: Int
+
+        func matchesContent(_ status: stat) -> Bool {
+            Int(status.st_size) == contentSize
+                && Int(status.st_mtimespec.tv_sec) == mtimeSeconds
+                && Int(status.st_mtimespec.tv_nsec) == mtimeNanoseconds
+        }
     }
 
     private(set) var entries: [String: Entry] = [:]
@@ -73,13 +84,17 @@ final class PinnedContentStore {
                 throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
             }
             if Self.isStable(before, after) {
-                lock.lock()
-                entries[label] = Entry(
+                let entry = Entry(
                     name: snapshot.name,
                     identity: snapshot.identity,
                     isDirectory: false,
                     mode: before.st_mode & 0o777,
+                    contentSize: Int(before.st_size),
+                    mtimeSeconds: Int(before.st_mtimespec.tv_sec),
+                    mtimeNanoseconds: Int(before.st_mtimespec.tv_nsec),
                 )
+                lock.lock()
+                entries[label] = entry
                 lock.unlock()
                 return snapshot.identity
             }
@@ -130,8 +145,17 @@ final class PinnedContentStore {
             try? fileManager.removeItem(directoryURL)
             throw CocoaError(.fileReadUnknown)
         }
+        let entry = Entry(
+            name: name,
+            identity: identity,
+            isDirectory: true,
+            mode: mode,
+            contentSize: Int(status.st_size),
+            mtimeSeconds: Int(status.st_mtimespec.tv_sec),
+            mtimeNanoseconds: Int(status.st_mtimespec.tv_nsec),
+        )
         lock.lock()
-        entries[label] = Entry(name: name, identity: identity, isDirectory: true, mode: mode)
+        entries[label] = entry
         lock.unlock()
         return identity
     }
@@ -155,8 +179,11 @@ final class PinnedContentStore {
             throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .ENOENT)
         }
         var status = stat()
+        // inode 일치만으로는 같은 inode 안의 재기록을 잡지 못한다. 스냅숏 완료 시점의
+        // size+mtime과 대조해 mutable inode의 현재 내용 변조를 fail-closed한다(#3837956594).
         guard Darwin.fstat(descriptor, &status) == 0,
-              entry.identity.matches(status)
+              entry.identity.matches(status),
+              entry.matchesContent(status)
         else {
             Darwin.close(descriptor)
             throw CocoaError(.fileReadUnknown)

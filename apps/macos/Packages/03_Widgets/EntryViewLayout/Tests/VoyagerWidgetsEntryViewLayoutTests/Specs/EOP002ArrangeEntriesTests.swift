@@ -54,7 +54,7 @@ private final class ExternalDropAcquisitionRecorder: @unchecked Sendable {
     struct BeginCall {
         var receiverCount: Int
         var dataFlavorCount: Int
-        var dataFlavors: [ExternalDropDataFlavor]
+        var dataFlavors: [ExternalDropDeferredFlavor]
         var destination: String
         var forcedCopy: Bool
     }

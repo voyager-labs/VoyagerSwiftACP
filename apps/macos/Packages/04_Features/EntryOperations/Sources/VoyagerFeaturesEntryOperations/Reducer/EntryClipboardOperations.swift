@@ -475,8 +475,16 @@ private enum EntryClipboardOperationsSupport {
                 do {
                     try await mutate(context: context, sourceURL: sourceURL, destinationURL: destinationURL)
                 } catch {
-                    try? await entryFileOpsClient.deleteImmediately(destinationURL)
-                    try? await entryFileOpsClient.moveFile(backupURL, destinationURL)
+                    // 부분 목적지 정리와 백업 복원을 시도한다. 복원에 실패하면 백업이
+                    // 임시 이름에 남은 채 묻히지 않도록 복구 오류로 전파한다(코멘트 #3837956593).
+                    do {
+                        try await entryFileOpsClient.deleteImmediately(destinationURL)
+                        try await entryFileOpsClient.moveFile(backupURL, destinationURL)
+                    } catch {
+                        throw FileOpError.system(
+                            message: "교체 복구 실패, 원본 백업이 \(backupURL.path)에 보존됐다",
+                        )
+                    }
                     throw error
                 }
                 try? await entryFileOpsClient.deleteImmediately(backupURL)
