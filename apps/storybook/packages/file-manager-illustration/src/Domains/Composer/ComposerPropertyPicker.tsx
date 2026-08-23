@@ -71,9 +71,10 @@ export const ComposerPropertyPicker: FC<ComposerPropertyPickerProps> = ({ picker
   const propertyRow = (item: ComposerPropertyOption) => (
     <button
       type="button"
-      role="menuitem"
+      role="menuitemradio"
       key={item.key}
       className="fm-menu-item"
+      aria-checked={picker.selectedKey === item.key}
       onClick={() => onSelect?.(item.key)}
     >
       {picker.selectedKey === item.key && (

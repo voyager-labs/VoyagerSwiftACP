@@ -25,6 +25,14 @@
   font-size: var(--fm-font-size-body);
 }
 
+/* 높이 상한을 가진 팝업 계열은 세로 스크롤 계약을 유지한다(공용 표면은 모서리 클리핑만 소유) */
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .fm-menu.vc-popup-menu,
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .fm-menu.vc-pulldown-menu {
+  overflow-y: auto;
+}
+
 :where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
   .fm-menu
   .fm-menu-separator {

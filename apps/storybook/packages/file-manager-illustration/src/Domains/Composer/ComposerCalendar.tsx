@@ -1,4 +1,4 @@
-import { type FC, useState } from "react"
+import { type FC, useEffect, useState } from "react"
 import { SFSymbol } from "../../Foundations/SFSymbol"
 
 type ComposerCalendarProps = {
@@ -51,6 +51,16 @@ export const ComposerCalendar: FC<ComposerCalendarProps> = ({
   const [displayedMonth, setDisplayedMonth] = useState(
     () => new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1),
   )
+
+  // 활성 끝점 값이 표시 월 밖으로 바뀌면(예: From/To 전환) 달력을 해당 월로 동기화한다
+  useEffect(() => {
+    setDisplayedMonth((current) =>
+      current.getFullYear() === selectedDate.getFullYear() &&
+      current.getMonth() === selectedDate.getMonth()
+        ? current
+        : new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1),
+    )
+  }, [selectedDate])
 
   const moveMonth = (offset: number) =>
     setDisplayedMonth((current) => new Date(current.getFullYear(), current.getMonth() + offset, 1))
