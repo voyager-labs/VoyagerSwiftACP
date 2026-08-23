@@ -248,15 +248,16 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
         }
         let url = URL(fileURLWithPath: stagedPath)
         guard fileManager.fileExists(url.path), isInsideStaging(url) else {
-            lock.unlock()
+            // lock 보유 하에 종단 상태를 변경한다(코멘트 #3837839017).
             emitTerminalLocked(.failed(sessionID, .outsideStaging))
+            lock.unlock()
             return
         }
         // admission 시점 신원을 포횅해 큐 격리 전 경로 교체를 fail-closed로 판정한다
         // (lstat→open TOCTOU 차단, 코멘트 #3835329095). symlink 등은 여기서 거부된다.
         guard let expected = staging.capturedIdentity(url) else {
-            lock.unlock()
             emitTerminalLocked(.failed(sessionID, .fileAbsent))
+            lock.unlock()
             return
         }
         pendingSnapshotCount += 1

@@ -20,6 +20,8 @@ final class PinnedContentStore {
     private(set) var entries: [String: Entry] = [:]
     private let directoryPath: String
     private let fileManager: FileManagerClient
+    /// entries 접근만 직렬화하고 파일 I/O 중에는 보유하지 않는다(코멘트 #3837839018).
+    private let lock = NSLock()
 
     init(directoryPath: String, fileManager: FileManagerClient) {
         self.directoryPath = directoryPath
@@ -27,19 +29,27 @@ final class PinnedContentStore {
     }
 
     var isEmpty: Bool {
-        entries.isEmpty
+        lock.lock()
+        defer { lock.unlock() }
+        return entries.isEmpty
     }
 
     func contains(_ label: String) -> Bool {
-        entries[label] != nil
+        lock.lock()
+        defer { lock.unlock() }
+        return entries[label] != nil
     }
 
     func entry(at label: String) -> Entry? {
-        entries[label]
+        lock.lock()
+        defer { lock.unlock() }
+        return entries[label]
     }
 
     /// label의 직계 자식 label들을 반환한다(트리 구조 복원용).
     func childLabels(of parentLabel: String) -> [String] {
+        lock.lock()
+        defer { lock.unlock() }
         let prefix = parentLabel + "/"
         return entries.keys.filter { key in
             guard key.hasPrefix(prefix), key != parentLabel else { return false }
@@ -63,12 +73,14 @@ final class PinnedContentStore {
                 throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
             }
             if Self.isStable(before, after) {
+                lock.lock()
                 entries[label] = Entry(
                     name: snapshot.name,
                     identity: snapshot.identity,
                     isDirectory: false,
                     mode: before.st_mode & 0o777,
                 )
+                lock.unlock()
                 return snapshot.identity
             }
             try? fileManager.removeItem(
@@ -118,14 +130,19 @@ final class PinnedContentStore {
             try? fileManager.removeItem(directoryURL)
             throw CocoaError(.fileReadUnknown)
         }
+        lock.lock()
         entries[label] = Entry(name: name, identity: identity, isDirectory: true, mode: mode)
+        lock.unlock()
         return identity
     }
 
     /// 기록된 신원과 대조해 검증된 descriptor를 연다(O_NOFOLLOW). caller가 close한다.
     /// 이름 교체·symlink 치환은 신원 불일치로 fail-closed된다.
     func openVerified(_ label: String) throws -> (fd: Int32, isDirectory: Bool) {
-        guard let entry = entries[label] else {
+        lock.lock()
+        let entry = entries[label]
+        lock.unlock()
+        guard let entry else {
             throw CocoaError(.fileNoSuchFile)
         }
         let nodeURL = URL(fileURLWithPath: directoryPath).appendingPathComponent(entry.name)
@@ -148,12 +165,16 @@ final class PinnedContentStore {
     }
 
     func removeAll() {
-        for entry in entries.values {
+        // 레지스트리를 먼저 비우고 파일 삭제는 lock 밖에서 수행한다(코멘트 #3837839018).
+        lock.lock()
+        let removed = Array(entries.values)
+        entries.removeAll()
+        lock.unlock()
+        for entry in removed {
             try? fileManager.removeItem(
                 URL(fileURLWithPath: directoryPath).appendingPathComponent(entry.name),
             )
         }
-        entries.removeAll()
     }
 
     /// mkstemp로 만든 사유 파일 snapshot의 소유 정보.

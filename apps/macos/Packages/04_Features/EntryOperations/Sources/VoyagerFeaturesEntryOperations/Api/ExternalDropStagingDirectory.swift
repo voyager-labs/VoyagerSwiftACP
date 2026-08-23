@@ -163,9 +163,15 @@ final class StagingDirectory {
     /// 결과를 모두 폐기한다.
     func completeImmediateTreePinning() -> Bool {
         identityLock.lock()
-        defer { identityLock.unlock() }
         let pending = pinnedImmediateRootDescriptors
         pinnedImmediateRootDescriptors.removeAll()
+        // 재귀 격리 동안에는 identityLock을 점유하지 않는다(코멘트 #3837839018).
+        // MainActor의 cancel/remove()가 대형 트리 복사 완료까지 블로킹되지 않게 한다.
+        // 콘텐츠 레지스트리는 PinnedContentStore 내부 lock으로 보호된다.
+        identityLock.unlock()
+        // 처리 완료한 root descriptor는 catch에서 다시 닫지 않는다(코멘트 #3837839021).
+        // close 후 fd 번호가 재사용되면 무관한 descriptor를 닫을 수 있다.
+        var remaining = pending
         do {
             for (canonical, rootDescriptor) in pending {
                 guard let rootIdentity = try isolateTree(
@@ -174,11 +180,12 @@ final class StagingDirectory {
                 ) else { throw CocoaError(.fileReadUnknown) }
                 _ = rootIdentity
                 Darwin.close(rootDescriptor)
+                remaining.removeValue(forKey: canonical)
             }
             return true
         } catch {
             pinnedContent.removeAll()
-            closeDescriptors(pending.values)
+            closeDescriptors(remaining.values)
             return false
         }
     }
@@ -200,7 +207,11 @@ final class StagingDirectory {
             return try pinnedContent.snapshotFile(from: sourceDescriptor, label: label)
         case S_IFDIR:
             _ = try pinnedContent.makeDirectory(label: label, mode: status.st_mode & 0o777)
-            let names = Self.directoryEntryNames(fd: sourceDescriptor) ?? []
+            // 열거 실패(fd 한도 등)를 빈 디렉터리로 치환하면 자식이 누락된 채 스냅숏이
+            // 성공한다. all-or-nothing 계약에 따라 fail-closed로 예외화한다(코멘트 #3837839019).
+            guard let names = Self.directoryEntryNames(fd: sourceDescriptor) else {
+                throw CocoaError(.fileReadUnknown)
+            }
             for name in names {
                 let childDescriptor = Darwin.openat(
                     sourceDescriptor,
@@ -366,7 +377,7 @@ final class StagingDirectory {
     }
 
     /// 부모 fd 기준 readdir로 직계 자식 이름을 읽는다. 경로 재해석이 없다.
-    /// caller는 identityLock을 보유하므로 비재진입 readdir 사용이 안전하다.
+    /// DIR 스트림은 호출마다 dup(fd)에 가져지므로 잠금 없이 호출해도 안전하다(코멘트 #3837839018).
     private static func directoryEntryNames(fd: Int32) -> [String]? {
         guard let stream = fdopendir(dup(fd)) else { return nil }
         defer { closedir(stream) }
