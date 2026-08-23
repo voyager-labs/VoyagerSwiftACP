@@ -5851,11 +5851,12 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
 
         XCTAssertEqual(try Data(contentsOf: dest.appendingPathComponent("a.txt")), Data("a".utf8))
         XCTAssertEqual(try Data(contentsOf: dest.appendingPathComponent("b.txt")), Data("b".utf8))
-        XCTAssertEqual(
-            recorder.deletedPaths,
-            [dest.appendingPathComponent("a.txt")],
-            "replace 수용 시 충돌 목적지가 deleteImmediately돼야 한다",
-        )
+        // 교체는 기존 목적지를 임시 백업으로 치운 뒤 복사 성공 시에만 제거한다
+        // (코멘트 #3837908188). 기존 파일 삭제가 선행하지 않는다.
+        XCTAssertEqual(recorder.movedPaths.count, 1)
+        XCTAssertEqual(recorder.movedPaths.first?.source, dest.appendingPathComponent("a.txt"))
+        XCTAssertEqual(recorder.deletedPaths.count, 1)
+        XCTAssertTrue(recorder.deletedPaths[0].lastPathComponent.hasPrefix(".voyager-replace-"))
         XCTAssertEqual(store.state.externalObjectImportStatus, .applied)
         XCTAssertEqual(cleanup.finishes, [sessionID])
         XCTAssertTrue(cleanup.cancels.isEmpty)

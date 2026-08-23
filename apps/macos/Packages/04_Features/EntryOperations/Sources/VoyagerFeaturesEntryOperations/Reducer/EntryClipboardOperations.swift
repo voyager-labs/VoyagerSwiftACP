@@ -465,8 +465,21 @@ private enum EntryClipboardOperationsSupport {
                 return nil
             }
             do {
-                try await entryFileOpsClient.deleteImmediately(destinationURL)
-                try await mutate(context: context, sourceURL: sourceURL, destinationURL: destinationURL)
+                // 기존 목적지를 먼저 삭제하지 않고 같은 디렉터리 임시 이름으로 치워둔다
+                // (코멘트 #3837908188). 복사가 성공한 뒤에만 임시 항목을 제거하고, 실패 시
+                // 원래 항목을 되돌려 새 파일·기존 파일 이중 상실을 막는다.
+                let backupURL = destinationURL
+                    .deletingLastPathComponent()
+                    .appendingPathComponent(".voyager-replace-\(UUID().uuidString)")
+                try await entryFileOpsClient.moveFile(destinationURL, backupURL)
+                do {
+                    try await mutate(context: context, sourceURL: sourceURL, destinationURL: destinationURL)
+                } catch {
+                    try? await entryFileOpsClient.deleteImmediately(destinationURL)
+                    try? await entryFileOpsClient.moveFile(backupURL, destinationURL)
+                    throw error
+                }
+                try? await entryFileOpsClient.deleteImmediately(backupURL)
                 return await finishSuccess(
                     sourceURL: sourceURL,
                     destinationURL: destinationURL,

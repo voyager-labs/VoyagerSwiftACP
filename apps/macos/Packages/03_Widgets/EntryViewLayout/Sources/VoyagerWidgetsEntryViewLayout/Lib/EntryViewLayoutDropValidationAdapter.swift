@@ -284,6 +284,30 @@ extension EntryViewLayoutDropValidationAdapter {
                 destinationPath: destinationPath,
             )
         }
+        // data-only 드래그는 pasteboard 바이트 로드를 acceptDrop 동기 경로에서 하지 않고
+        // 세션 큐로 지연시킨다(코멘트 #3837908192). 대형 이미지·지연 provider가 source에서
+        // 바이트를 제공하는 동안 MainActor가 정지하지 않게 한다. promise/immediate가 섞인
+        // drop은 통합 cardinality 세션(begin)을 쓰므로 기존 경로를 유지한다.
+        if negotiation.promisedOrdinals.isEmpty, negotiation.immediateURLDescriptors.isEmpty,
+           !negotiation.dataFlavors.isEmpty,
+           let items = draggingInfo.draggingPasteboard.pasteboardItems
+        {
+            guard let deferredFlavors = pasteboardDeferredFlavors(
+                items: items,
+                negotiation: negotiation,
+            ) else {
+                validationLogger.info("acquisition rejected data-flavor count mismatch")
+                context.clearDropState()
+                return false
+            }
+            validationLogger.info("acquisition path data-only-deferred")
+            let request = context.client.beginDeferred(deferredFlavors, destinationPath, true)
+            activeSessionID = request.sessionID
+            context.sendAccepted(request)
+            context.clearDropState()
+            return true
+        }
+
         guard let (receivers, combinedDataFlavors) = resolvedAcquisitionInputs(
             from: draggingInfo,
             negotiation: negotiation,
@@ -603,6 +627,34 @@ extension EntryViewLayoutDropValidationAdapter {
                 filename: filename,
                 ordinal: descriptor.ordinal,
             ))
+        }
+        return result
+    }
+
+    /// data-only 드래그의 pasteboard 바이트 로드를 지연시키는 flavor 목록을 만든다
+    /// (코멘트 #3837908192). NSPasteboardItem은 Sendable이고 data(forType:)는 비동기
+    /// 격리가 없으므로 load 클로저가 세션 큐에서 안전하게 읽는다. ordinal·선언 타입
+    /// 불일치는 기존 dataFlavorPayloads와 동일하게 전체 거절(nil)로 처리한다. 파일명은
+    /// 로드된 바이트에서 결정하므로 nameFromBytes로 표기한다.
+    private static func pasteboardDeferredFlavors(
+        items: [NSPasteboardItem],
+        negotiation: ExternalDropNegotiation,
+    ) -> [ExternalDropDeferredFlavor]? {
+        var result: [ExternalDropDeferredFlavor] = []
+        result.reserveCapacity(negotiation.dataFlavors.count)
+        for descriptor in negotiation.dataFlavors {
+            guard items.indices.contains(descriptor.ordinal) else { return nil }
+            let item = items[descriptor.ordinal]
+            let type = NSPasteboard.PasteboardType(descriptor.uti)
+            guard item.types.contains(type) else { return nil }
+            result.append(ExternalDropDeferredFlavor(
+                uti: descriptor.uti,
+                filename: "",
+                ordinal: descriptor.ordinal,
+                nameFromBytes: true,
+            ) {
+                item.data(forType: type)
+            })
         }
         return result
     }

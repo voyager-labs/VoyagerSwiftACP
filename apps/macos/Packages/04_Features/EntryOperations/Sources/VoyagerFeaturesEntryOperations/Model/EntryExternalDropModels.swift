@@ -139,16 +139,21 @@ public struct ExternalDropDeferredFlavor: Sendable {
     /// 원본 바이트를 비동기로 로드한다. nil을 반환하면 타입화 실패로 종단 처리된다.
     public let load: @Sendable () -> Data?
 
+    /// true이면 로드된 바이트에서 파일명을 결정한다(pasteboard data flavor, 코멘트 #3837908192).
+    public let nameFromBytes: Bool
+
     public init(
         uti: String,
         filename: String,
         ordinal: Int = -1,
+        nameFromBytes: Bool = false,
         load: @escaping @Sendable () -> Data?,
     ) {
         self.uti = uti
         self.filename = filename
         self.ordinal = ordinal
         self.load = load
+        self.nameFromBytes = nameFromBytes
     }
 }
 

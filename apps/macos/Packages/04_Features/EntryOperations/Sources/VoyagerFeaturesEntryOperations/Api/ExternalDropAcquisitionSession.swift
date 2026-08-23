@@ -190,29 +190,37 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
 
     private func materializeOnQueue(dataFlavor: ExternalDropDataFlavor, filename: String) {
         lock.lock()
-        defer { lock.unlock() }
         guard phase == .acquiring else {
             pendingSnapshotCount -= 1
+            lock.unlock()
             return
         }
+        lock.unlock()
+        // 바이트 쓰기·snapshot 격리는 세션 lock 밖에서 수행한다(코멘트 #3837908190).
         let url = URL(fileURLWithPath: staging.path).appendingPathComponent(filename)
         do {
             try dataFlavor.bytes.write(to: url)
         } catch {
-            pendingSnapshotCount -= 1
-            emitTerminalLocked(.failed(sessionID, .dataMaterializationFailed))
+            failMaterializationLocked()
             return
         }
-        receivedStagedPaths.insert(url.standardizedFileURL.path)
         // 물리화 직후 신원을 포횅하고 같은 신원으로 detached snapshot을 검증해 고정한다.
         // retained writable fd 임자 내부 재기록이 placement에 기여할 수 없다(코멘트 #3835329095).
         guard let expected = staging.capturedIdentity(url),
               staging.stageReceivedFile(url, expected: expected)
         else {
-            pendingSnapshotCount -= 1
-            emitTerminalLocked(.failed(sessionID, .dataMaterializationFailed))
+            try? fileManager.removeItem(url)
+            failMaterializationLocked()
             return
         }
+        lock.lock()
+        defer { lock.unlock() }
+        // I/O 사이 종단(취소)이 확정됐다면 결과를 폐기한다.
+        guard phase == .acquiring else {
+            pendingSnapshotCount -= 1
+            return
+        }
+        receivedStagedPaths.insert(url.standardizedFileURL.path)
         nextItemOrdinal += 1
         let itemOrdinal = nextItemOrdinal
         receivedCount += 1
@@ -279,15 +287,27 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
         callbackOrdinal: Int,
     ) {
         lock.lock()
-        defer { lock.unlock() }
         guard phase == .acquiring else {
             pendingSnapshotCount -= 1
+            lock.unlock()
             return
         }
+        lock.unlock()
         // 큐 격리: 기대 신원과 open 결과를 대조해 detached snapshot으로 고정한다.
         guard staging.stageReceivedFile(url, expected: expected) else {
+            lock.lock()
             pendingSnapshotCount -= 1
-            emitTerminalLocked(.failed(sessionID, .fileAbsent))
+            if phase == .acquiring {
+                emitTerminalLocked(.failed(sessionID, .fileAbsent))
+            }
+            lock.unlock()
+            return
+        }
+        lock.lock()
+        defer { lock.unlock() }
+        // I/O 사이 종단(취소)이 확정됐다면 결과를 폐기한다.
+        guard phase == .acquiring else {
+            pendingSnapshotCount -= 1
             return
         }
         receivedStagedPaths.insert(url.standardizedFileURL.path)
@@ -402,6 +422,17 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
         staging.releasePinnedImmediateRoots()
     }
 
+    /// 물리화 실패를 lock 보유 하에 커밋한다. 이미 종단(취소)이 확정된 경우 이중 종단을
+    /// 내지 않는다(emitTerminalLocked의 일회성 가드와 동일 계약, 코멘트 #3837908190).
+    private func failMaterializationLocked() {
+        lock.lock()
+        pendingSnapshotCount -= 1
+        if phase == .acquiring {
+            emitTerminalLocked(.failed(sessionID, .dataMaterializationFailed))
+        }
+        lock.unlock()
+    }
+
     /// 큐에서 완료된 즉시 스냅숏 한 건을 received-item으로 등록한다.
     private func registerPinnedImmediate(url: URL, pasteboardOrdinal: Int) {
         lock.lock()
@@ -422,23 +453,6 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
         )))
         if sessionIsCompleteLocked() {
             emitTerminalLocked(.succeeded(sessionID))
-        }
-    }
-
-    /// 지연 data-flavor 로드를 세션 전용 큐에서 실행한다. 로드 실패는 타입화 실패로 종단 처리한다.
-    func enqueueDeferredLoad(_ flavor: ExternalDropDeferredFlavor) {
-        queue.addOperation { [weak self] in
-            guard let self else { return }
-            guard let bytes = flavor.load() else {
-                fail(reason: .dataMaterializationFailed)
-                return
-            }
-            materialize(dataFlavor: ExternalDropDataFlavor(
-                uti: flavor.uti,
-                bytes: bytes,
-                filename: flavor.filename,
-                ordinal: flavor.ordinal,
-            ))
         }
     }
 
@@ -979,6 +993,31 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
 }
 
 extension ExternalDropAcquisitionSession {
+    /// 지연 data-flavor 로드를 세션 전용 큐에서 실행한다. 로드 실패는 타입화 실패로 종단 처리한다.
+    func enqueueDeferredLoad(_ flavor: ExternalDropDeferredFlavor) {
+        queue.addOperation { [weak self] in
+            guard let self else { return }
+            guard let bytes = flavor.load() else {
+                fail(reason: .dataMaterializationFailed)
+                return
+            }
+            // pasteboard data flavor는 로드된 바이트에서 파일명을 결정한다(코멘트 #3837908192).
+            let filename = flavor.nameFromBytes
+                ? ExternalDropDataFlavorNaming.filename(
+                    uti: flavor.uti,
+                    bytes: bytes,
+                    ordinal: flavor.ordinal + 1,
+                )
+                : flavor.filename
+            materialize(dataFlavor: ExternalDropDataFlavor(
+                uti: flavor.uti,
+                bytes: bytes,
+                filename: filename,
+                ordinal: flavor.ordinal,
+            ))
+        }
+    }
+
     /// 큐에서 실행되는 지연 load가 실패했을 때 세션을 타입화 실패로 종단 처리한다.
     func fail(reason: ExternalDropRejectReason) {
         lock.lock()

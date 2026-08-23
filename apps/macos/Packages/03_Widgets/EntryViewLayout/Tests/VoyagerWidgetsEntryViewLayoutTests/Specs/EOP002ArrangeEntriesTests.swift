@@ -1150,9 +1150,9 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertEqual(grid.externalDropSessionController.activeSessionID, acquisition.sessionID)
     }
 
-    /// 검증 내용: data-only 외부 drag의 Grid acceptDrop이 begin으로 data flavor를 넘겨 획득 세션을 시작한다.
+    /// 검증 내용: data-only 외부 drag의 Grid acceptDrop이 beginDeferred로 바이트 로드를 지연한다(코멘트 #3837908192).
     /// 사전 조건: promise/file URL 없이 임의 UTI(data-flavor)만 노출하는 pasteboard.
-    /// 기대 결과: accepted가 true이고 begin 1회에 dataFlavorCount가 1이며 receiverCount 0이다.
+    /// 기대 결과: accepted가 true이고 beginDeferred 1회에 항목 1개(nameFromBytes)이며 begin은 0회다.
     func testDataOnlyGridAcceptStartsAcquisitionSession() {
         let transport = DragTransport()
         let recorder = DropRecorder()
@@ -1170,19 +1170,23 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         let accepted = driveGridAccept(grid: grid, info: info, transport: transport, acquisition: acquisition.client)
 
         XCTAssertTrue(accepted)
-        XCTAssertEqual(acquisition.beginCalls.count, 1)
-        XCTAssertEqual(acquisition.beginCalls.first?.dataFlavorCount, 1)
-        XCTAssertEqual(acquisition.beginCalls.first?.receiverCount, 0)
-        XCTAssertEqual(acquisition.beginCalls.first?.destination, "/destination")
-        XCTAssertEqual(acquisition.beginCalls.first?.forcedCopy, true)
+        XCTAssertEqual(acquisition.beginCalls.count, 0)
+        XCTAssertEqual(acquisition.deferredCalls.count, 1)
+        XCTAssertEqual(acquisition.deferredCalls.first?.items.count, 1)
+        XCTAssertEqual(acquisition.deferredCalls.first?.items.first?.uti, "public.json")
+        XCTAssertEqual(acquisition.deferredCalls.first?.items.first?.ordinal, 0)
+        XCTAssertEqual(acquisition.deferredCalls.first?.items.first?.nameFromBytes, true)
+        XCTAssertEqual(acquisition.deferredCalls.first?.items.first?.load(), Data(#"{"k":1}"#.utf8))
+        XCTAssertEqual(acquisition.deferredCalls.first?.destination, "/destination")
+        XCTAssertEqual(acquisition.deferredCalls.first?.forcedCopy, true)
         XCTAssertEqual(recorder.emitted.count, 0, "data 세션은 path 기반 dropItems를 내지 않아야 한다")
         XCTAssertEqual(grid.externalDropSessionController.activeSessionID, acquisition.sessionID)
     }
 
     /// 검증 내용: Numbers 셀 드래그 조합(단일 item에 iWork 네이티브 UTI + 텍스트 플레이버)의
-    /// Grid acceptDrop이 begin으로 data flavor를 넘겨 Task 11 materialization으로 흐른다.
+    /// Grid acceptDrop이 beginDeferred로 바이트 로드를 지연한다(코멘트 #3837908192).
     /// 사전 조건: promise/file URL 없이 iWork 네이티브 + 텍스트만 노출하는 Numbers 조합 item.
-    /// 기대 결과: accepted가 true이고 begin 1회에 dataFlavorCount가 1이며 receiverCount 0이다.
+    /// 기대 결과: accepted가 true이고 beginDeferred 1회에 항목 1개(nameFromBytes)이며 begin은 0회다.
     func testNumbersCellGridAcceptFlowsThroughDataMaterialization() {
         let transport = DragTransport()
         let recorder = DropRecorder()
@@ -1200,11 +1204,13 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         let accepted = driveGridAccept(grid: grid, info: info, transport: transport, acquisition: acquisition.client)
 
         XCTAssertTrue(accepted)
-        XCTAssertEqual(acquisition.beginCalls.count, 1)
-        XCTAssertEqual(acquisition.beginCalls.first?.dataFlavorCount, 1, "Numbers 셀 값(text)이 data flavor로 물리화돼야 한다")
-        XCTAssertEqual(acquisition.beginCalls.first?.receiverCount, 0)
-        XCTAssertEqual(acquisition.beginCalls.first?.destination, "/destination")
-        XCTAssertEqual(acquisition.beginCalls.first?.forcedCopy, true)
+        XCTAssertEqual(acquisition.beginCalls.count, 0)
+        XCTAssertEqual(acquisition.deferredCalls.count, 1)
+        XCTAssertEqual(acquisition.deferredCalls.first?.items.count, 1, "Numbers 셀 값(text)이 지연 data flavor로 물리화돼야 한다")
+        XCTAssertEqual(acquisition.deferredCalls.first?.items.first?.nameFromBytes, true)
+        XCTAssertNotNil(acquisition.deferredCalls.first?.items.first?.load())
+        XCTAssertEqual(acquisition.deferredCalls.first?.destination, "/destination")
+        XCTAssertEqual(acquisition.deferredCalls.first?.forcedCopy, true)
         XCTAssertEqual(recorder.emitted.count, 0, "data 세션은 path 기반 dropItems를 내지 않아야 한다")
         XCTAssertEqual(grid.externalDropSessionController.activeSessionID, acquisition.sessionID)
     }
