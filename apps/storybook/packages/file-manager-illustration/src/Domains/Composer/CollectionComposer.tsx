@@ -83,12 +83,17 @@ export const CollectionComposer: FC<CollectionComposerProps> = ({
           <input
             aria-label="Collection query"
             value={fixture.query}
-            readOnly={onQueryChange == null}
+            // 네이티브 ComposerTopRowView.queryInputField의 .disabled(isLocked) 계약: 처리 중에는 입력과 Enter 제출을 잠근다
+            readOnly={onQueryChange == null || fixture.isProcessing}
             placeholder="Describe the collection you want..."
             title={fixture.query}
             onChange={(event) => onQueryChange?.(event.currentTarget.value)}
             onKeyDown={(event) => {
-              if (event.key === "Enter" && fixture.query.trim().length > 0) {
+              if (
+                event.key === "Enter" &&
+                !fixture.isProcessing &&
+                fixture.query.trim().length > 0
+              ) {
                 event.preventDefault()
                 onSubmit?.()
               }
