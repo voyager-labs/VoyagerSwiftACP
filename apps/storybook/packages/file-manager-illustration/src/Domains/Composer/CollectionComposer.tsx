@@ -26,7 +26,7 @@ export type CollectionComposerProps = {
   readonly onAddCondition?: () => void
   readonly onRemoveCondition?: (id: string) => void
   readonly onPropertyClick?: (id: string) => void
-  readonly onDismissDuplicate?: () => void
+  readonly selectedPropertyKey?: string
   readonly onOperatorClick?: (id: string) => void
   readonly onPropertySelect?: (property: string) => void
   readonly onOperatorSelect?: (operator: string) => void
@@ -54,7 +54,6 @@ export const CollectionComposer: FC<CollectionComposerProps> = ({
   onAddCondition,
   onRemoveCondition,
   onPropertyClick,
-  onDismissDuplicate,
   onOperatorClick,
   onPropertySelect,
   onOperatorSelect,
@@ -185,11 +184,7 @@ export const CollectionComposer: FC<CollectionComposerProps> = ({
       </div>
 
       {!fixture.isProcessing && fixture.picker?.kind === "property" && (
-        <ComposerPropertyPicker
-          picker={fixture.picker}
-          onSelect={onPropertySelect}
-          onDismissDuplicate={onDismissDuplicate}
-        />
+        <ComposerPropertyPicker picker={fixture.picker} onSelect={onPropertySelect} />
       )}
       {!fixture.isProcessing && fixture.picker?.kind === "operator" && (
         <ComposerOperatorPicker picker={fixture.picker} onSelect={onOperatorSelect} />

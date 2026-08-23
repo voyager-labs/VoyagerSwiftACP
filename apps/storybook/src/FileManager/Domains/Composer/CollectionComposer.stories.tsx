@@ -87,7 +87,6 @@ const ComposerSelectionFlow = ({
   const [toast, setToast] = useState<
     { readonly type: "info" | "error"; readonly message: string } | undefined
   >()
-  const [duplicateMessage, setDuplicateMessage] = useState<string>()
   const [editingPropertyId, setEditingPropertyId] = useState<string>()
   // 네이티브 cancelSearch/cancelFilters: Stop은 진행 중 타이머를 취소한다
   const submitTimer = useRef<number | undefined>(undefined)
@@ -165,7 +164,6 @@ const ComposerSelectionFlow = ({
 
   const addCondition = () => {
     // 네이티브 ComposerHistoryReducer: 실제 변경 시에만 스냅샷을 기록한다 (피커 열기는 step만 변경)
-    setDuplicateMessage(undefined)
     setEditingPropertyId(undefined)
     setStep("property")
   }
@@ -264,7 +262,8 @@ const ComposerSelectionFlow = ({
               .map((condition) => condition.id)
               .filter((id) => id !== editingPropertyId),
             editingKey: editingPropertyId,
-            duplicateMessage,
+            // 네이티브 selectedKey: 편집 중 조건의 현재 property에 체크마크를 표시한다
+            selectedKey: editingPropertyId,
           }
         : step === "operator" && property != null
           ? {
@@ -373,21 +372,12 @@ const ComposerSelectionFlow = ({
         setEditingPropertyId(id)
         setStep("property")
       }}
-      onDismissDuplicate={() => setDuplicateMessage(undefined)}
       onPropertySelect={(propertyKey) => {
         const selectedProperty = composerPropertyOption(propertyKey)
         if (selectedProperty == null) return
-        // 네이티브 handleAddCondition: 중복 키면 경고를 띄우고 picker를 유지한다 (편집 대상은 예외)
-        if (
-          propertyKey !== editingPropertyId &&
-          draft.conditions.some((condition) => condition.id === propertyKey)
-        ) {
-          setDuplicateMessage(`"${selectedProperty.label}" is already added.`)
-          return
-        }
+        // 네이티브 startEditing: 편집 컨텍스트에서는 기존 조건을 교체한다
         setProperty(selectedProperty)
         setOperator(undefined)
-        setDuplicateMessage(undefined)
         // 네이티브 startEditing: 편집 컨텍스트에서는 기존 조건을 교체한다
         const replacing =
           editingPropertyId != null

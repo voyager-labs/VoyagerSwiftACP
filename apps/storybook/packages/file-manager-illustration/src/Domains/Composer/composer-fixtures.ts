@@ -40,7 +40,8 @@ export type ComposerPropertyPicker = {
   readonly items: readonly ComposerPropertyOption[]
   readonly existingKeys?: readonly string[]
   readonly editingKey?: string
-  readonly duplicateMessage?: string
+  // 편집 중인 조건의 현재 property: 네이티브 selectedKey 체크마크 계약
+  readonly selectedKey?: string
 }
 
 export type ComposerOperatorPicker = {
