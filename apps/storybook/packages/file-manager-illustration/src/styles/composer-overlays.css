@@ -426,9 +426,10 @@
   opacity: 0.64;
 }
 
+/* 네이티브 NSMenu 선택 하이라이트 계약: accent fill + on-accent 라벨(AA 대비) */
 [data-file-manager-illustration] .collection-composer-calendar-grid button[aria-pressed="true"] {
-  background: var(--fm-composer-control-hover);
-  color: var(--fm-selection-label);
+  background: var(--macos-control-accent-color);
+  color: var(--fm-text-on-accent);
   font-weight: 600;
 }
 

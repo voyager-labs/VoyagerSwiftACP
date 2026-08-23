@@ -139,10 +139,19 @@ export const ComposerPropertyPicker: FC<ComposerPropertyPickerProps> = ({ picker
                       const menuEl = groupEl?.querySelector<HTMLElement>(
                         ".collection-composer-property-picker",
                       )
-                      setSubmenuOrigin({
-                        top: event.currentTarget.offsetTop,
-                        left: menuEl != null ? menuEl.offsetWidth : 0,
-                      })
+                      if (menuEl != null) {
+                        const rowRect = event.currentTarget.getBoundingClientRect()
+                        const menuRect = menuEl.getBoundingClientRect()
+                        // 보이는 행 위치 기준 배치(offsetTop은 스크롤 전 콘텐츠 좌표라 사용 불가)
+                        const desired = rowRect.top - menuRect.top
+                        // ponytail: 320은 .collection-composer-property-submenu max-height와 짝이 맞는 상수, CSS 변경 시 함께 조정
+                        const submenuMaxHeight = 320
+                        const overflowBelow =
+                          menuRect.top + desired + submenuMaxHeight - window.innerHeight
+                        const clamped =
+                          overflowBelow > 0 ? Math.max(0, desired - overflowBelow) : desired
+                        setSubmenuOrigin({ top: clamped, left: menuRect.width })
+                      }
                       setOpenCategory(group.key)
                     }}
                   >
