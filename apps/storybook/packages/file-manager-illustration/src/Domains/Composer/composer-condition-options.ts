@@ -18,7 +18,7 @@ export type ComposerPropertyOption = {
   readonly key: string
   readonly label: string
   readonly symbol: string
-  readonly category: "common" | "date" | "filesystem" | "misc"
+  readonly category: "common" | "date" | "filesystem" | "image" | "video" | "audio" | "misc"
   readonly pinned: boolean
   readonly operators: readonly ComposerOperatorOption[]
 }
@@ -85,11 +85,40 @@ const categoricalOperators = [
   { code: "empty", label: "Is empty", editor: { kind: "none" } },
 ] as const satisfies readonly ComposerOperatorOption[]
 
+const booleanOperator = [
+  { code: "eq", label: "Is", editor: { kind: "boolean" } },
+] as const satisfies readonly ComposerOperatorOption[]
+
+// 네이티브 프로퍼티 세트 번역: Recommended(pinned)는 참고 이미지와 동일한 알파벳 순서로 배치한다
 export const composerPropertyOptions = [
   {
-    key: "name_stem",
-    label: "Name",
-    symbol: "doc.text",
+    key: "modification_date",
+    label: "Content modification date",
+    symbol: "calendar.badge.clock",
+    category: "date",
+    pinned: true,
+    operators: dateOperators,
+  },
+  {
+    key: "creation_date",
+    label: "Creation date",
+    symbol: "calendar.badge.plus",
+    category: "date",
+    pinned: true,
+    operators: dateOperators,
+  },
+  {
+    key: "date_added",
+    label: "Date added",
+    symbol: "calendar.badge.plus",
+    category: "date",
+    pinned: true,
+    operators: dateOperators,
+  },
+  {
+    key: "extension",
+    label: "Extension",
+    symbol: "textformat",
     category: "filesystem",
     pinned: true,
     operators: textOperators,
@@ -103,6 +132,14 @@ export const composerPropertyOptions = [
     operators: numberOperators(["Byte", "KB", "MB", "GB"]),
   },
   {
+    key: "name_stem",
+    label: "Name",
+    symbol: "doc.text",
+    category: "filesystem",
+    pinned: true,
+    operators: textOperators,
+  },
+  {
     key: "number_of_pages",
     label: "Number of pages",
     symbol: "doc.richtext",
@@ -111,20 +148,12 @@ export const composerPropertyOptions = [
     operators: numberOperators(),
   },
   {
-    key: "modification_date",
-    label: "Content modification date",
-    symbol: "calendar.badge.clock",
-    category: "date",
-    pinned: true,
-    operators: dateOperators,
-  },
-  {
     key: "is_invisible",
     label: "Is hidden",
     symbol: "eye.slash",
     category: "filesystem",
     pinned: false,
-    operators: [{ code: "eq", label: "Is", editor: { kind: "boolean" } }],
+    operators: booleanOperator,
   },
   {
     key: "keywords",
@@ -141,6 +170,126 @@ export const composerPropertyOptions = [
     category: "common",
     pinned: false,
     operators: categoricalOperators,
+  },
+  {
+    key: "title",
+    label: "Title",
+    symbol: "text.book.closed",
+    category: "common",
+    pinned: false,
+    operators: textOperators,
+  },
+  {
+    key: "creator",
+    label: "Creator",
+    symbol: "person",
+    category: "common",
+    pinned: false,
+    operators: textOperators,
+  },
+  {
+    key: "last_used_date",
+    label: "Last used date",
+    symbol: "clock",
+    category: "date",
+    pinned: false,
+    operators: dateOperators,
+  },
+  {
+    key: "pixel_width",
+    label: "Pixel width",
+    symbol: "arrow.left.and.right",
+    category: "image",
+    pinned: false,
+    operators: numberOperators(),
+  },
+  {
+    key: "pixel_height",
+    label: "Pixel height",
+    symbol: "rectangle.expand.vertical",
+    category: "image",
+    pinned: false,
+    operators: numberOperators(),
+  },
+  {
+    key: "color_space",
+    label: "Color space",
+    symbol: "paintpalette",
+    category: "image",
+    pinned: false,
+    operators: categoricalOperators,
+  },
+  {
+    key: "has_alpha_channel",
+    label: "Alpha channel",
+    symbol: "circle.lefthalf.filled",
+    category: "image",
+    pinned: false,
+    operators: booleanOperator,
+  },
+  {
+    key: "duration_seconds",
+    label: "Duration",
+    symbol: "clock",
+    category: "video",
+    pinned: false,
+    operators: numberOperators(),
+  },
+  {
+    key: "video_bit_rate",
+    label: "Video bit rate",
+    symbol: "waveform.path.ecg",
+    category: "video",
+    pinned: false,
+    operators: numberOperators(),
+  },
+  {
+    key: "audio_bit_rate",
+    label: "Audio bit rate",
+    symbol: "waveform.path.ecg",
+    category: "audio",
+    pinned: false,
+    operators: numberOperators(),
+  },
+  {
+    key: "audio_sample_rate",
+    label: "Audio sample rate",
+    symbol: "waveform",
+    category: "audio",
+    pinned: false,
+    operators: numberOperators(),
+  },
+  {
+    key: "audio_channel_count",
+    label: "Audio channels",
+    symbol: "speaker.wave.2",
+    category: "audio",
+    pinned: false,
+    operators: numberOperators(),
+  },
+  {
+    key: "latitude",
+    label: "Latitude",
+    symbol: "location",
+    category: "misc",
+    pinned: false,
+    operators: numberOperators(),
+  },
+  {
+    key: "longitude",
+    label: "Longitude",
+    symbol: "location",
+    category: "misc",
+    pinned: false,
+    operators: numberOperators(),
+  },
+  {
+    key: "content_type",
+    label: "Content type",
+    symbol: "doc.text.magnifyingglass",
+    category: "misc",
+    pinned: false,
+    operators: textOperators,
   },
 ] as const satisfies readonly ComposerPropertyOption[]
 
