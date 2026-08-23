@@ -78,7 +78,9 @@ export const ComposerCalendar: FC<ComposerCalendarProps> = ({
       aria-label="Calendar"
     >
       <div className="collection-composer-calendar-header">
-        <strong>{displayedMonth.toLocaleDateString("en-US", { month: "short" })}</strong>
+        <strong>
+          {displayedMonth.toLocaleDateString("en-US", { month: "short", year: "numeric" })}
+        </strong>
         <button
           type="button"
           aria-label="Previous month"

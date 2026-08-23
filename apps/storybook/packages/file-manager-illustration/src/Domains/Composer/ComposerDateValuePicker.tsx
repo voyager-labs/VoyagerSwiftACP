@@ -43,7 +43,7 @@ export const ComposerDateValuePicker: FC<ComposerDateValuePickerProps> = ({
   const [relativeAmount, setRelativeAmount] = useState(initial.amount)
   const [relativeUnit, setRelativeUnit] = useState<RelativeUnit>(initial.unit)
   // 네이티브는 future 방향 상태를 유지한다(프리셋 UI는 past 전용)
-  const [relativeDirection] = useState<"past" | "future">(initial.direction)
+  const [relativeDirection, setRelativeDirection] = useState<"past" | "future">(initial.direction)
   const [error, setError] = useState<string | undefined>(initialError)
   // 범위 편집 중인 끝점. prop은 스토리 arg 호환을 위한 초기값으로만 존중한다
   const [editingEndpoint, setEditingEndpoint] = useState<0 | 1>(editingIndex)
@@ -182,12 +182,14 @@ export const ComposerDateValuePicker: FC<ComposerDateValuePickerProps> = ({
             <select
               aria-label="Preset"
               value={relativePreset}
-              onChange={(event) =>
+              onChange={(event) => {
+                // 네이티브 applyRelativePreset 계약: ago 프리셋 선택 시 방향을 past로 재설정한다
+                setRelativeDirection("past")
                 setRelativePreset(
                   relativePresets.find((preset) => preset === event.currentTarget.value) ??
                     "7 days ago",
                 )
-              }
+              }}
             >
               {relativePresets.map((preset) => (
                 <option key={preset}>{preset}</option>

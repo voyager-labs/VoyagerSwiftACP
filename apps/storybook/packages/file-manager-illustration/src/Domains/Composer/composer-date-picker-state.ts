@@ -74,9 +74,11 @@ export const parseDatePickerInitialValue = (
   if (preferredMode === "absolute") return absoluteDateState(trimmed)
   const literal = parseRelativeLiteral(trimmed)
   if (literal != null) {
+    // 네이티브 prepareDateValueState 계약: 명명된 ago 프리셋은 past 리터럴에만 매칭한다
     const matchedPreset = relativePresets.find(
       (preset) =>
         isNamedPreset(preset) &&
+        literal.direction === "past" &&
         presetValues[preset].amount === literal.amount &&
         presetValues[preset].unit === nativeToUnit[literal.unit],
     )
