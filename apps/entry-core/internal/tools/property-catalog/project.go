@@ -184,6 +184,7 @@ func ProjectSystemRegistry(registry *SystemPropertyRegistry) (ProjectedCatalog, 
 						SourceReadable:    true,
 						SourceQueryable:   sourceQueryable,
 						SourceWritable:    false,
+						AvailabilityNote:  descriptor.Availability,
 						Lifecycle:         entry.PropertyLifecycleActive,
 					}
 					descriptorRowByRef[refKey] = DescriptorRow{

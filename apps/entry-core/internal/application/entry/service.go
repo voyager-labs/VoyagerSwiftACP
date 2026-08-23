@@ -101,16 +101,17 @@ func (service *UnifiedService) propertyDefinitions(requestedProperties []string)
 		if !found {
 			continue
 		}
-		propertyDefinition, err := domainentry.NewPropertyDefinition(domainentry.PropertyDefinition{
+		propertyDefinition, definitionErr := domainentry.NewPropertyDefinition(domainentry.PropertyDefinition{
 			PropertyID: catalogDefinition.PropertyID, IdentityScheme: catalogDefinition.IdentityScheme, Namespace: catalogDefinition.Namespace,
 			Key: catalogDefinition.CanonicalKey, DisplayName: catalogDefinition.DisplayName, ValueType: catalogDefinition.ValueType,
 			Cardinality: catalogDefinition.Cardinality, Editable: catalogDefinition.Editable, Provenance: catalogDefinition.Provenance,
 			ValidationRules: []domainentry.ValidationRule{}, Unit: catalogDefinition.Unit,
 			DefaultDisplayUnit: catalogDefinition.DefaultDisplayUnit, Units: catalogDefinition.Units,
 		})
-		if err == nil {
-			resolved[requested] = propertyDefinition
+		if definitionErr != nil {
+			return nil, newApplicationError("internal_error", "invalid_catalog_definition", definitionErr)
 		}
+		resolved[requested] = propertyDefinition
 	}
 	return resolved, nil
 }
@@ -541,7 +542,7 @@ func (service *UnifiedService) ResolveEntry(ctx context.Context, request Resolve
 	if item.EntryRef.SourceInstanceID != binding.SourceRef.SourceInstanceID || item.EntrySnapshot.EntryRef.SourceInstanceID != binding.SourceRef.SourceInstanceID {
 		return ResolveResult{}, newApplicationError("context_mismatch", "context_mismatch", ErrContextMismatch)
 	}
-	if !propertiesWithinRequest(item.EntrySnapshot.CanonicalProperties, request.RequestedProperties, definitions) {
+	if !propertiesWithinRequest(item.EntrySnapshot.CanonicalProperties, requestedProperties, definitions) {
 		return ResolveResult{}, newApplicationError("adapter_failure", "adapter_failure", ErrApplicationAdapterFailure)
 	}
 	if entryRef != nil && item.EntryRef.EntryID != entryRef.EntryID {

@@ -261,6 +261,49 @@ func TestSourcePropertyCatalogRejectsInvalidUnitContract(t *testing.T) {
 	}
 }
 
+func TestSourcePropertyCatalogDigestIncludesAvailabilityNote(t *testing.T) {
+	descriptor := SourcePropertyDescriptor{
+		Ref: mustSourcePropertyRef(t, "macos.mditem"), NativeKey: "mditem:kMDItemFSSize",
+		NativeType: "number", NativeCardinality: PropertyCardinalityOne,
+		Authority: AuthorityKindSystem, SourceReadable: true, SourceQueryable: true,
+		AvailabilityNote: "available", Lifecycle: PropertyLifecycleActive,
+	}
+	base, err := (PropertyCatalogSnapshot{Descriptors: []SourcePropertyDescriptor{descriptor}}).Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed := descriptor
+	changed.AvailabilityNote = "requires_spotlight_index"
+	digest, digestErr := (PropertyCatalogSnapshot{Descriptors: []SourcePropertyDescriptor{changed}}).Digest()
+	if digestErr != nil {
+		t.Fatalf("changed Digest: %v", digestErr)
+	}
+	if digest == base {
+		t.Fatal("availability_note mutation did not change digest")
+	}
+}
+
+func TestSourcePropertyCatalogRejectsIdentitySchemeVersionMismatch(t *testing.T) {
+	definition := WorkspacePropertyDefinition{
+		PropertyID: mustRegistryPropertyID("misc.size"), Origin: PropertyOriginBuiltIn,
+		IdentityScheme: PropertyIdentitySchemeVoyagerIssued, Namespace: "system",
+		CanonicalKey: "misc.size", DisplayName: "Size",
+		ValueType: PropertyTypeNumber, Cardinality: PropertyCardinalityOne,
+		Provenance: PropertyProvenanceSystem, Lifecycle: PropertyLifecycleActive,
+	}
+	// registry-derived UUIDv5 paired with voyager_issued must fail closed so a
+	// hand-built catalog cannot smuggle a definition whose runtime conversion
+	// would later be dropped silently.
+	if definition.Validate() == nil {
+		t.Fatal("scheme/version mismatch accepted")
+	}
+	matched := definition
+	matched.IdentityScheme = PropertyIdentitySchemeRegistryDerived
+	if matched.Validate() != nil {
+		t.Fatal("consistent scheme/version rejected")
+	}
+}
+
 func TestSourcePropertyCatalogContractsRejectInvalidNaturalRef(t *testing.T) {
 	valid := mustSourcePropertyRef(t, "macos.mditem")
 	candidates := []SourcePropertyRef{

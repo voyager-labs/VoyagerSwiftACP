@@ -187,6 +187,46 @@ func TestResolveEntryAcceptsAliasResolvedCatalogProperties(t *testing.T) {
 	}
 }
 
+// TestResolveEntryOutputValidationUsesNormalizedSelectors proves the resolve
+// output validation runs on the same normalized selector slice as the adapter
+// request: a property carrying the raw registry-derived ID of a selector that
+// normalization dropped (alias "title" of common.title) must fail closed
+// instead of being published through the unbound-name fallback.
+func TestResolveEntryOutputValidationUsesNormalizedSelectors(t *testing.T) {
+	registry, bindings := unifiedFixture(t)
+	external := bindings[0].Adapter.(*recordingResourceAdapter)
+	item := adapterEntryFixture(t, bindings[0].SourceRef, "item", "item")
+	rawID, err := domainentry.RegistryPropertyID("title")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rawDefinition, err := domainentry.NewPropertyDefinition(domainentry.PropertyDefinition{
+		PropertyID: rawID, IdentityScheme: domainentry.PropertyIdentitySchemeRegistryDerived,
+		Namespace: "test", Key: "title", DisplayName: "Raw Title",
+		ValueType: domainentry.PropertyTypeText, Cardinality: domainentry.PropertyCardinalityOne,
+		Editable: true, Provenance: domainentry.PropertyProvenanceSystem, ValidationRules: []domainentry.ValidationRule{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rawValue, err := domainentry.NewPropertyValue(rawDefinition, item.EntryRef.EntryID, domainentry.PropertyStateValue,
+		domainentry.PropertyProvenanceSystem, item.EntrySnapshot.ObservedAt, item.EntrySnapshot.SourceRevision, false, domainentry.TextPayload("raw"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	item.EntrySnapshot.CanonicalProperties = []domainentry.PropertyValue{rawValue}
+	external.resolveResult = adapterResolveResultFixture(t, item)
+	service := mustUnifiedServiceWithCatalog(t, registry, bindings, titleCatalogFixture())
+	path := "/external/item"
+
+	_, err = service.ResolveEntry(context.Background(), ResolveRequest{
+		WorkspaceID: "workspace", VirtualPath: &path, RequestedProperties: []string{"common.title", "title"},
+	})
+	if !errors.Is(err, ErrApplicationAdapterFailure) {
+		t.Fatalf("ResolveEntry() error = %v, want adapter_failure for dropped-selector property", err)
+	}
+}
+
 // VOY-764 회귀(review 3831189763): canonical key는 alias와 같은 카탈로그 정의와 타입·cardinality 계약을 공유한다.
 func TestResolveEntryCanonicalKeySharesAliasCatalogDefinition(t *testing.T) {
 	registry, bindings := unifiedFixture(t)

@@ -213,6 +213,7 @@ func mapDescriptorRow(row SourcePropertyDescriptorRow) (domainentry.SourceProper
 		SourceReadable:    row.SourceReadable,
 		SourceQueryable:   row.SourceQueryable,
 		SourceWritable:    row.SourceWritable,
+		AvailabilityNote:  row.AvailabilityNote,
 		Lifecycle:         domainentry.PropertyLifecycleState(row.LifecycleState),
 	}
 	if err := descriptor.Validate(); err != nil {

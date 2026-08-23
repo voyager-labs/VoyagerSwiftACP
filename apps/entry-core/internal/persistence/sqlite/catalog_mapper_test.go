@@ -209,6 +209,30 @@ func TestCatalogMapperPreservesUnitContract(t *testing.T) {
 	}
 }
 
+func TestCatalogMapperPreservesAvailabilityNote(t *testing.T) {
+	ctx := context.Background()
+	store := migratedStore(t)
+	wsctx, err := store.BootstrapOrRestoreWorkspace(ctx)
+	if err != nil {
+		t.Fatalf("bootstrap: %v", err)
+	}
+	row := SourcePropertyDescriptorRow{
+		WorkspaceID: wsctx.ID.Bytes(), ProviderID: "macos.mditem",
+		SourceInstanceID: "src:m-KQdBGV6oTOo0uNavbxU6UH9heJBwQTseDcv_utLsE", ScopeKind: "system",
+		ScopeExternalID: "macos", ExternalPropertyID: "kMDItemFSSize",
+		AuthorityKind: "system", NativeType: "number", NativeCardinality: "one",
+		SourceReadable: true, LifecycleState: "active",
+		AvailabilityNote: "requires_spotlight_index",
+	}
+	descriptor, err := mapDescriptorRow(row)
+	if err != nil {
+		t.Fatalf("mapDescriptorRow: %v", err)
+	}
+	if descriptor.AvailabilityNote != row.AvailabilityNote {
+		t.Fatalf("AvailabilityNote = %q, want %q (dropped by mapper)", descriptor.AvailabilityNote, row.AvailabilityNote)
+	}
+}
+
 func TestCatalogMapperRejectsMalformedUnitsJSON(t *testing.T) {
 	ctx := context.Background()
 	store := migratedStore(t)

@@ -399,6 +399,25 @@ func TestPropertyDefinitionsPreserveUnitContract(t *testing.T) {
 	}
 }
 
+func TestPropertyDefinitionsPropagatesInvalidCatalogDefinition(t *testing.T) {
+	sizeID := domainentry.MustPropertyID("12a1c023-0b61-56b0-aec6-71a2d0d8cc1b")
+	service := &UnifiedService{catalog: domainentry.PropertyCatalogSnapshot{
+		Definitions: []domainentry.WorkspacePropertyDefinition{{
+			PropertyID: sizeID, IdentityScheme: domainentry.PropertyIdentitySchemeVoyagerIssued,
+			Namespace: "system", CanonicalKey: "misc.size", DisplayName: "File size",
+			ValueType: domainentry.PropertyTypeNumber, Cardinality: domainentry.PropertyCardinalityOne,
+			Provenance: domainentry.PropertyProvenanceSystem,
+		}},
+	}}
+	definitions, err := service.propertyDefinitions([]string{"misc.size"})
+	if err == nil || !errors.Is(err, domainentry.ErrInvalidPropertyDefinition) {
+		t.Fatalf("propertyDefinitions() error = %v, want wrapped ErrInvalidPropertyDefinition", err)
+	}
+	if definitions != nil {
+		t.Fatalf("definitions = %#v, want nil on conversion failure", definitions)
+	}
+}
+
 // VOY-764 회귀: UUIDv7 PropertyID term은 registry 재해싱 없이 resolve된다.
 func TestPropertyDefinitionsResolveVoyagerIssuedTerm(t *testing.T) {
 	v7ID := domainentry.MustPropertyID("0198c0de-f00d-7000-8000-3b9ac9e12345")

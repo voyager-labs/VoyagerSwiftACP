@@ -126,13 +126,15 @@ type SourcePropertyDescriptor struct {
 	SourceReadable    bool
 	SourceQueryable   bool
 	SourceWritable    bool
+	AvailabilityNote  string
 	Lifecycle         PropertyLifecycleState
 }
 
 func (descriptor SourcePropertyDescriptor) Validate() error {
 	if descriptor.Ref.Validate() != nil || !validUTF8Bytes(descriptor.NativeKey, 1, 256) ||
 		!validUTF8Bytes(descriptor.NativeType, 1, 64) || !descriptor.NativeCardinality.valid() ||
-		!descriptor.Authority.valid() || !descriptor.Lifecycle.valid() {
+		!descriptor.Authority.valid() || !validUTF8Bytes(descriptor.AvailabilityNote, 0, 256) ||
+		!descriptor.Lifecycle.valid() {
 		return ErrInvalidSourcePropertyDescriptor
 	}
 	return nil
@@ -235,6 +237,7 @@ type WorkspacePropertyDefinition struct {
 
 func (definition WorkspacePropertyDefinition) Validate() error {
 	if !definition.PropertyID.valid() || !definition.Origin.valid() || !definition.IdentityScheme.valid() ||
+		!definition.IdentityScheme.acceptsVersion(definition.PropertyID.version()) ||
 		!validUTF8Bytes(definition.Namespace, 1, 128) || !validUTF8Bytes(definition.CanonicalKey, 1, 128) ||
 		!validUTF8Bytes(definition.DisplayName, 1, 256) || !validUTF8Bytes(definition.Description, 0, 4096) ||
 		!canonicalPropertyType(definition.ValueType) || definition.DefinitionRev < 0 ||
@@ -401,7 +404,7 @@ func (snapshot PropertyCatalogSnapshot) Digest() ([32]byte, error) {
 			[]byte(descriptor.Ref.logicalKey()), []byte(descriptor.NativeKey), []byte(descriptor.NativeType),
 			[]byte(descriptor.NativeCardinality), []byte(descriptor.Authority),
 			boolByte(descriptor.SourceReadable), boolByte(descriptor.SourceQueryable), boolByte(descriptor.SourceWritable),
-			[]byte(descriptor.Lifecycle),
+			[]byte(descriptor.AvailabilityNote), []byte(descriptor.Lifecycle),
 		)
 	}
 	bindings := append([]PropertyBinding(nil), snapshot.Bindings...)
