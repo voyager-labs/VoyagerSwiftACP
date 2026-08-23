@@ -67,12 +67,13 @@ const (
 
 // applyCatalogSeedInTx runs the transactional seed state machine on a
 // transaction-scoped *gorm.DB. Order: SQL SHA-256 gate, read the SEED-OWNED
-// state, classify (fresh/older -> apply; same+digest -> no-op; drift/mixed/
-// newer -> fail closed), then apply + reconcile + seed read-back digest
-// verification, all before the enclosing transaction commits. State and digest
-// are scoped to seed_owner = system_property_registry rows only, because
-// preserved NULL-seed user/provider rows are never part of the seed dataset
-// digest.
+// state, refuse a fully-tombstoned current-seed catalog (fresh misclassification
+// would silently reactivate corrupt rows), classify (fresh/older -> apply;
+// same+digest -> no-op; drift/mixed/newer -> fail closed), then apply +
+// reconcile + seed read-back digest verification, all before the enclosing
+// transaction commits. State and digest are scoped to seed_owner =
+// system_property_registry rows only, because preserved NULL-seed user/provider
+// rows are never part of the seed dataset digest.
 func applyCatalogSeedInTx(tx *gorm.DB, wsctx domainentry.WorkspaceContext, meta seeds.SeedMetadata) error {
 	// SQL SHA-256 gate BEFORE any write.
 	if sha256Hex(meta.SQLBody) != meta.SQLSHA256 {
@@ -91,6 +92,20 @@ func applyCatalogSeedInTx(tx *gorm.DB, wsctx domainentry.WorkspaceContext, meta 
 	seedState, err := deriveSeedState(defs, descs, bindings, terms)
 	if err != nil {
 		return err
+	}
+	// An empty ACTIVE seed set is only fresh when no seed-owned row of the
+	// CURRENT tuple exists at any lifecycle: a catalog whose definition,
+	// descriptor, binding, and term rows are all tombstoned is corruption, and
+	// re-applying would reactivate it through ON CONFLICT instead of failing
+	// closed.
+	if !seedState.HasSeed {
+		history, historyErr := currentTupleHistoryExists(tx, wsctx.ID.Bytes(), meta)
+		if historyErr != nil {
+			return historyErr
+		}
+		if history {
+			return ErrCatalogSeedStateCorrupt
+		}
 	}
 	currentSeedDigest, err := catalogDigest(snapshot)
 	if err != nil {
@@ -131,6 +146,32 @@ func applyCatalogSeedInTx(tx *gorm.DB, wsctx domainentry.WorkspaceContext, meta 
 		return ErrCatalogSeedDigest
 	}
 	return nil
+}
+
+// currentTupleHistoryExists reports whether any seed-owned row of any family
+// carries the CURRENT seed tuple regardless of lifecycle state. It is the
+// fresh-vs-corrupted discriminator for an empty active seed set.
+func currentTupleHistoryExists(tx *gorm.DB, wsBytes []byte, meta seeds.SeedMetadata) (bool, error) {
+	owner := seedOwnerSystemPropertyRegistry
+	families := []any{
+		&WorkspacePropertyDefinitionRow{},
+		&SourcePropertyDescriptorRow{},
+		&PropertyBindingRow{},
+		&WorkspacePropertyTermRow{},
+	}
+	for _, family := range families {
+		var count int64
+		if err := tx.Model(family).
+			Where("workspace_id = ? AND seed_owner = ? AND seed_version = ? AND seed_source_version = ?",
+				wsBytes, owner, meta.SeedOrdinal, meta.SystemRegistryVersion).
+			Count(&count).Error; err != nil {
+			return false, err
+		}
+		if count > 0 {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // classifySeedState maps the existing seed state to an apply/no-op outcome,

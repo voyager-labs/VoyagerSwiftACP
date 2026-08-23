@@ -521,6 +521,90 @@ func TestCatalogSeedProvenanceDriftFailsClosed(t *testing.T) {
 	}
 }
 
+// TestCatalogSeedFullyTombstonedFailsClosed proves a catalog whose current
+// seed-owned definition, descriptor, binding, and term rows are ALL tombstoned
+// is rejected as corruption instead of being misread as fresh and silently
+// reactivated through the seed SQL ON CONFLICT path.
+func TestCatalogSeedFullyTombstonedFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	store := migratedStore(t)
+	wsctx := buildCatalogFixture(t, store, 0, 0, 0, 0, noneSeedTrio())
+	if err := store.ApplyCatalogSeed(ctx, wsctx); err != nil {
+		t.Fatalf("first ApplyCatalogSeed: %v", err)
+	}
+
+	// Corrupt every seed-owned family to tombstoned at the current tuple.
+	wsBytes := wsctx.ID.Bytes()
+	for _, family := range []any{
+		&WorkspacePropertyDefinitionRow{},
+		&SourcePropertyDescriptorRow{},
+		&PropertyBindingRow{},
+		&WorkspacePropertyTermRow{},
+	} {
+		res := store.db.WithContext(ctx).Model(family).
+			Where("workspace_id = ? AND seed_owner = ?", wsBytes, "system_property_registry").
+			Update("lifecycle_state", "tombstoned")
+		if res.Error != nil || res.RowsAffected == 0 {
+			t.Fatalf("tombstone %T: err=%v rows=%d", family, res.Error, res.RowsAffected)
+		}
+	}
+
+	err := store.ApplyCatalogSeed(ctx, wsctx)
+	if !errors.Is(err, ErrCatalogSeedStateCorrupt) {
+		t.Fatalf("ApplyCatalogSeed error = %v, want ErrCatalogSeedStateCorrupt", err)
+	}
+
+	// Fail closed: no row was reactivated by a re-apply.
+	var activeDefs, activeTerms int64
+	if err := store.db.WithContext(ctx).Model(&WorkspacePropertyDefinitionRow{}).
+		Where("workspace_id = ? AND seed_owner = ? AND lifecycle_state = ?", wsBytes, "system_property_registry", "active").
+		Count(&activeDefs).Error; err != nil {
+		t.Fatalf("count active defs: %v", err)
+	}
+	if err := store.db.WithContext(ctx).Model(&WorkspacePropertyTermRow{}).
+		Where("workspace_id = ? AND seed_owner = ? AND lifecycle_state = ?", wsBytes, "system_property_registry", "active").
+		Count(&activeTerms).Error; err != nil {
+		t.Fatalf("count active terms: %v", err)
+	}
+	if activeDefs != 0 || activeTerms != 0 {
+		t.Fatalf("corruption auto-repaired: active defs=%d terms=%d, want 0/0", activeDefs, activeTerms)
+	}
+}
+
+// TestCatalogSeedPartiallyTombstonedTermsFailClosed proves the sibling
+// mixed-history case: current-tuple terms tombstoned while the other families
+// stay active keep HasSeed=true, so the digest drift path refuses the apply.
+func TestCatalogSeedPartiallyTombstonedTermsFailClosed(t *testing.T) {
+	ctx := context.Background()
+	store := migratedStore(t)
+	wsctx := buildCatalogFixture(t, store, 0, 0, 0, 0, noneSeedTrio())
+	if err := store.ApplyCatalogSeed(ctx, wsctx); err != nil {
+		t.Fatalf("first ApplyCatalogSeed: %v", err)
+	}
+
+	res := store.db.WithContext(ctx).Model(&WorkspacePropertyTermRow{}).
+		Where("workspace_id = ? AND seed_owner = ?", wsctx.ID.Bytes(), "system_property_registry").
+		Update("lifecycle_state", "tombstoned")
+	if res.Error != nil || res.RowsAffected == 0 {
+		t.Fatalf("tombstone terms: err=%v rows=%d", res.Error, res.RowsAffected)
+	}
+
+	err := store.ApplyCatalogSeed(ctx, wsctx)
+	if !errors.Is(err, ErrCatalogSeedDigest) {
+		t.Fatalf("ApplyCatalogSeed error = %v, want ErrCatalogSeedDigest", err)
+	}
+
+	var activeTerms int64
+	if err := store.db.WithContext(ctx).Model(&WorkspacePropertyTermRow{}).
+		Where("workspace_id = ? AND seed_owner = ? AND lifecycle_state = ?", wsctx.ID.Bytes(), "system_property_registry", "active").
+		Count(&activeTerms).Error; err != nil {
+		t.Fatalf("count active terms: %v", err)
+	}
+	if activeTerms != 0 {
+		t.Fatalf("corruption auto-repaired: active terms=%d, want 0", activeTerms)
+	}
+}
+
 // TestCatalogSeedMixedFailsClosed proves mixed seed tuples fail closed before
 // any mutation.
 func TestCatalogSeedMixedFailsClosed(t *testing.T) {
