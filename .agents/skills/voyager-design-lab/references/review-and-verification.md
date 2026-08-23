@@ -25,6 +25,16 @@ A Storybook browser capture proves only the inspected Storybook presentation or 
 
 If browser verification is intentionally run, prove readiness with `lsof` and `curl`, then stop the server and re-check the port. If the acceptance criteria do not require browser or native evidence, stop after the focused checks and record those evidence classes as not applicable. OMO and Hephaestus handoffs must state the required evidence, out-of-scope checks, and stop condition; do not introduce named verification profiles.
 
+## Authoring acceptance baseline
+
+A story batch is reviewable only if its acceptance criteria cover interaction states, not just visuals. Declare per interactive element before implementation converges:
+
+- Trigger → state transition mapping, including guard/disabled conditions (e.g. completed-state skip gating).
+- Native-parity behavior contract the story must match (`native-evidence-contract.md` owns the evidence classes).
+- Accessibility attributes (label, role) shipped with the primitive in the same batch, not patched afterward.
+
+Layout and composition decisions are recorded in the package's `DESIGN.md` when made. A late fix cluster of transition/wiring defects after visual convergence signals this baseline was skipped.
+
 ## Review record
 
 For a material state, leave a concise record in the issue, PR, or the existing native-evidence document:
