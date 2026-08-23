@@ -517,11 +517,24 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
         // 트리 격리(claim)는 세션 lock 밖에서 수행한다(코멘트 #3837880884).
         lock.unlock()
         guard let claimedURL = claimCallbackURL(resolvedURL) else { return }
+        finishCallback(
+            receiverIndex: receiverIndex,
+            claimedURL: claimedURL,
+            callbackOrdinal: callbackOrdinal,
+            error: error,
+        )
+    }
+
+    /// claim 완료 콜백을 lock 보유 하에 등록하고 종단을 판정한다(코멘트 #3837880884).
+    private func finishCallback(
+        receiverIndex: Int,
+        claimedURL: URL,
+        callbackOrdinal: Int,
+        error: Error?,
+    ) {
         lock.lock()
-        guard phase == .acquiring else {
-            lock.unlock()
-            return
-        }
+        defer { lock.unlock() }
+        guard phase == .acquiring else { return }
         if error != nil { Self.logger.info("callback error reconciled by staged file") }
 
         // 결정적 수신기에서 마지막 콜백이 URL과 error를 함께 전달하면, registerReceivedFile이
@@ -539,7 +552,6 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
         if let error, phase == .acquiring, !shouldAwaitStagedFile(error: error, receiverIndex: receiverIndex) {
             emitTerminalLocked(.failed(sessionID, .callbackError))
         }
-        lock.unlock()
     }
 
     /// 콜백 URL의 저가 검증(존재·containment·중복)만 수행한다. caller는 lock을 보유해야
