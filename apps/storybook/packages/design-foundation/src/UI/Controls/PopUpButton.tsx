@@ -49,6 +49,7 @@ export const PopUpButton: FC<PopUpButtonProps> = <Value,>({
       if (opt.disabled) return
       onChange(opt.value)
       setOpen(false)
+      triggerRef.current?.focus()
     },
     [onChange],
   )

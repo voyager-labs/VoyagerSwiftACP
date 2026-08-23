@@ -42,6 +42,7 @@ export const PullDownButton: FC<PullDownButtonProps> = <Value,>({
       if (opt.disabled) return
       onSelect(opt.value)
       setOpen(false)
+      triggerRef.current?.focus()
     },
     [onSelect],
   )
