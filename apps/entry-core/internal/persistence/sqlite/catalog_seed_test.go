@@ -484,6 +484,43 @@ func TestCatalogSeedUnitDriftFailsClosed(t *testing.T) {
 	}
 }
 
+// TestCatalogSeedProvenanceDriftFailsClosed proves same-version drift on the
+// persisted definition provenance string fails closed with ErrCatalogSeedDigest
+// even though the seed-owned enum provenance is a constant: MappingProvenance
+// carries the verbatim column into the dataset digest.
+func TestCatalogSeedProvenanceDriftFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	store := migratedStore(t)
+	wsctx := buildCatalogFixture(t, store, 0, 0, 0, 0, noneSeedTrio())
+	if err := store.ApplyCatalogSeed(ctx, wsctx); err != nil {
+		t.Fatalf("first ApplyCatalogSeed: %v", err)
+	}
+
+	res := store.db.WithContext(ctx).
+		Model(&WorkspacePropertyDefinitionRow{}).
+		Where("workspace_id = ? AND canonical_key = ?", wsctx.ID.Bytes(), "misc.size").
+		Update("provenance", "system_property_registry@9.9.9-drifted")
+	if res.Error != nil || res.RowsAffected != 1 {
+		t.Fatalf("tamper provenance: err=%v rows=%d", res.Error, res.RowsAffected)
+	}
+
+	err := store.ApplyCatalogSeed(ctx, wsctx)
+	if !errors.Is(err, ErrCatalogSeedDigest) {
+		t.Fatalf("ApplyCatalogSeed error = %v, want ErrCatalogSeedDigest", err)
+	}
+
+	var got string
+	if err := store.db.WithContext(ctx).
+		Model(&WorkspacePropertyDefinitionRow{}).
+		Where("workspace_id = ? AND canonical_key = ?", wsctx.ID.Bytes(), "misc.size").
+		Pluck("provenance", &got).Error; err != nil {
+		t.Fatalf("read tampered value: %v", err)
+	}
+	if got != "system_property_registry@9.9.9-drifted" {
+		t.Fatalf("drift was auto-repaired: provenance = %q, want untouched drifted value", got)
+	}
+}
+
 // TestCatalogSeedMixedFailsClosed proves mixed seed tuples fail closed before
 // any mutation.
 func TestCatalogSeedMixedFailsClosed(t *testing.T) {

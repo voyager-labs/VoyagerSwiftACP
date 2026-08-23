@@ -229,6 +229,7 @@ type WorkspacePropertyDefinition struct {
 	DBIndexedHint      bool
 	DefinitionRev      int
 	Provenance         PropertyProvenance
+	MappingProvenance  string
 	Unit               *string
 	DefaultDisplayUnit string
 	Units              []PropertyUnit
@@ -241,6 +242,7 @@ func (definition WorkspacePropertyDefinition) Validate() error {
 		!validUTF8Bytes(definition.Namespace, 1, 128) || !validUTF8Bytes(definition.CanonicalKey, 1, 128) ||
 		!validUTF8Bytes(definition.DisplayName, 1, 256) || !validUTF8Bytes(definition.Description, 0, 4096) ||
 		!canonicalPropertyType(definition.ValueType) || definition.DefinitionRev < 0 ||
+		!validUTF8Bytes(definition.MappingProvenance, 0, 128) ||
 		!definition.Cardinality.valid() || !definition.Provenance.valid() || !definition.Lifecycle.valid() {
 		return ErrInvalidPropertyCatalogSnapshot
 	}
@@ -389,7 +391,7 @@ func (snapshot PropertyCatalogSnapshot) Digest() ([32]byte, error) {
 			[]byte(definition.Namespace), []byte(definition.CanonicalKey), []byte(definition.DisplayName), []byte(definition.Description),
 			[]byte(definition.ValueType), []byte(definition.Cardinality), boolByte(definition.Nullable), boolByte(definition.Editable),
 			boolByte(definition.DefaultHidden), boolByte(definition.DefaultPinned), boolByte(definition.DBIndexedHint), uint64Bytes(definition.DefinitionRev),
-			[]byte(definition.Provenance), []byte(unit), []byte(definition.Lifecycle),
+			[]byte(definition.Provenance), []byte(definition.MappingProvenance), []byte(unit), []byte(definition.Lifecycle),
 			[]byte(definition.DefaultDisplayUnit), uint64Bytes(len(definition.Units)),
 		}
 		for _, unitEntry := range definition.Units {

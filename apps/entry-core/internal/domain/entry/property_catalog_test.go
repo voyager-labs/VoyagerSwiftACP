@@ -157,6 +157,7 @@ func TestSourcePropertyCatalogDigestIncludesDefinitionFields(t *testing.T) {
 		func(value *WorkspacePropertyDefinition) { value.DefaultPinned = !value.DefaultPinned },
 		func(value *WorkspacePropertyDefinition) { value.DBIndexedHint = !value.DBIndexedHint },
 		func(value *WorkspacePropertyDefinition) { value.DefinitionRev++ },
+		func(value *WorkspacePropertyDefinition) { value.MappingProvenance = "system_property_registry@9.9.9" },
 	}
 	for index, mutate := range mutations {
 		changed := definition

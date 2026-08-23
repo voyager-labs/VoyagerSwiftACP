@@ -113,28 +113,31 @@ func mapDefinitionRow(row WorkspacePropertyDefinitionRow) (domainentry.Workspace
 	// in the SQL provenance column, but the domain definition provenance is an
 	// enum. Every seed-owned definition is a system-provided built-in, so its
 	// domain provenance is always system; non-seed rows keep their enum value.
+	// The persisted string itself is preserved verbatim in MappingProvenance and
+	// framed by the dataset digest, so provenance-only corruption fails closed.
 	provenance := domainentry.PropertyProvenance(row.Provenance)
 	if isSeedOwned(row.SeedOwner) {
 		provenance = domainentry.PropertyProvenanceSystem
 	}
 	definition := domainentry.WorkspacePropertyDefinition{
-		PropertyID:     id,
-		Origin:         domainentry.PropertyOrigin(row.Origin),
-		IdentityScheme: scheme,
-		Namespace:      row.Namespace,
-		CanonicalKey:   row.CanonicalKey,
-		DisplayName:    row.DisplayName,
-		Description:    row.Description,
-		ValueType:      domainentry.PropertyValueType(row.ValueType),
-		Cardinality:    domainentry.PropertyCardinality(row.Cardinality),
-		Nullable:       row.Nullable,
-		Editable:       row.Editable,
-		DefaultHidden:  row.DefaultHidden,
-		DefaultPinned:  row.DefaultPinned,
-		DBIndexedHint:  row.DBIndexedHint,
-		DefinitionRev:  row.DefinitionRev,
-		Provenance:     provenance,
-		Lifecycle:      domainentry.PropertyLifecycleState(row.LifecycleState),
+		PropertyID:        id,
+		Origin:            domainentry.PropertyOrigin(row.Origin),
+		IdentityScheme:    scheme,
+		Namespace:         row.Namespace,
+		CanonicalKey:      row.CanonicalKey,
+		DisplayName:       row.DisplayName,
+		Description:       row.Description,
+		ValueType:         domainentry.PropertyValueType(row.ValueType),
+		Cardinality:       domainentry.PropertyCardinality(row.Cardinality),
+		Nullable:          row.Nullable,
+		Editable:          row.Editable,
+		DefaultHidden:     row.DefaultHidden,
+		DefaultPinned:     row.DefaultPinned,
+		DBIndexedHint:     row.DBIndexedHint,
+		DefinitionRev:     row.DefinitionRev,
+		Provenance:        provenance,
+		MappingProvenance: row.Provenance,
+		Lifecycle:         domainentry.PropertyLifecycleState(row.LifecycleState),
 	}
 	if row.Unit != "" {
 		unit := row.Unit

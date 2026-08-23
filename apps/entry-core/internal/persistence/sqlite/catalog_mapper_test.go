@@ -179,6 +179,38 @@ func TestCatalogMapperPreservesDefinitionDigestFields(t *testing.T) {
 		definition.DBIndexedHint != row.DBIndexedHint || definition.DefinitionRev != row.DefinitionRev {
 		t.Fatalf("mapped definition dropped digest fields: %#v", definition)
 	}
+	if definition.MappingProvenance != row.Provenance {
+		t.Fatalf("MappingProvenance = %q, want verbatim %q", definition.MappingProvenance, row.Provenance)
+	}
+}
+
+func TestCatalogMapperPreservesSeedOwnedMappingProvenance(t *testing.T) {
+	ctx := context.Background()
+	store := migratedStore(t)
+	wsctx, err := store.BootstrapOrRestoreWorkspace(ctx)
+	if err != nil {
+		t.Fatalf("bootstrap: %v", err)
+	}
+	id := domainentry.MustPropertyID("0198dead-beef-7000-8000-3b9ac9e12345")
+	seedOwner := "system_property_registry"
+	seedVersion := 1
+	seedSourceVersion := "2.4.1"
+	row := WorkspacePropertyDefinitionRow{
+		WorkspaceID: wsctx.ID.Bytes(), PropertyID: id.Bytes(), Origin: "built_in", IdentityScheme: "voyager_issued",
+		Namespace: "system", CanonicalKey: "size", DisplayName: "Size",
+		ValueType: "number", Cardinality: "one", Provenance: "system_property_registry@2.4.1",
+		LifecycleState: "active", SeedOwner: &seedOwner, SeedVersion: &seedVersion, SeedSourceVersion: &seedSourceVersion,
+	}
+	definition, err := mapDefinitionRow(row)
+	if err != nil {
+		t.Fatalf("mapDefinitionRow: %v", err)
+	}
+	if definition.Provenance != domainentry.PropertyProvenanceSystem {
+		t.Fatalf("seed-owned provenance enum = %q, want system", definition.Provenance)
+	}
+	if definition.MappingProvenance != "system_property_registry@2.4.1" {
+		t.Fatalf("MappingProvenance = %q, want verbatim system_property_registry@2.4.1", definition.MappingProvenance)
+	}
 }
 
 func TestCatalogMapperPreservesUnitContract(t *testing.T) {
