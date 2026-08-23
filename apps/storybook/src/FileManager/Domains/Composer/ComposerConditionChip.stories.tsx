@@ -23,8 +23,10 @@ const dateCondition = {
   id: "modification_date",
   property: "Content modification date",
   propertySymbol: "calendar.badge.clock",
-  operator: "Is after",
-  value: "This month",
+  // 정규 date gt 계약(registry singleDate): 카탈로그 dateOperators의 라벨과 YYYY-MM-DD 값 사용
+  operator: "Is greater than",
+  value: "2024-06-01",
+  editorKind: "date",
 } as const
 
 const meta = {
