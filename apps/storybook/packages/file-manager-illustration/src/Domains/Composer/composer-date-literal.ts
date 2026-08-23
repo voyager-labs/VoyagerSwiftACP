@@ -45,14 +45,20 @@ export const resolveRelativeDate = (
   unit: ParsedRelativeLiteral["unit"],
 ): string => {
   const offset = direction === "past" ? -amount : amount
-  const date = new Date()
-  if (unit === "day") date.setDate(date.getDate() + offset)
-  else if (unit === "week") date.setDate(date.getDate() + offset * 7)
-  else if (unit === "month") date.setMonth(date.getMonth() + offset)
-  else date.setFullYear(date.getFullYear() + offset)
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
-    date.getDate(),
-  ).padStart(2, "0")}`
+  const now = new Date()
+  const format = (year: number, monthIndex: number, day: number): string =>
+    `${year}-${String(monthIndex + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`
+
+  if (unit === "day" || unit === "week") {
+    const date = new Date(now)
+    date.setDate(date.getDate() + offset * (unit === "week" ? 7 : 1))
+    return format(date.getFullYear(), date.getMonth(), date.getDate())
+  }
+  // 네이티브 Calendar.date(byAdding:)의 말일 보정 대응: JS 오버플로(예: 5/31 - 3개월 = 3/3)를 목표 월 말일 클램프로 대체한다
+  const targetYear = unit === "year" ? now.getFullYear() + offset : now.getFullYear()
+  const targetMonth = unit === "month" ? now.getMonth() + offset : now.getMonth()
+  const lastDay = new Date(targetYear, targetMonth + 1, 0).getDate()
+  return format(targetYear, targetMonth, Math.min(now.getDate(), lastDay))
 }
 
 export const todayLiteral = (): string => {
