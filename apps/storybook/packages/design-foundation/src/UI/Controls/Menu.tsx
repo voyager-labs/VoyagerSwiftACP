@@ -11,9 +11,10 @@ export const Menu: FC<MenuProps> = ({ className = "", focusOnMount, ...props }) 
   useEffect(() => {
     if (!focusOnMount) return
     const container = containerRef.current
+    // 활성 항목만 포커스한다: disabled 버튼은 focus()가 무시되어 키보드 진입이 막힌다
     const target =
-      container?.querySelector<HTMLButtonElement>('button[aria-checked="true"]') ??
-      container?.querySelector<HTMLButtonElement>("button")
+      container?.querySelector<HTMLButtonElement>('button[aria-checked="true"]:not(:disabled)') ??
+      container?.querySelector<HTMLButtonElement>("button:not(:disabled)")
     target?.focus()
   }, [focusOnMount])
 
