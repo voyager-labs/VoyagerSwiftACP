@@ -40,9 +40,16 @@ export const ComposerDateValuePicker: FC<ComposerDateValuePickerProps> = ({
   // 네이티브는 future 방향 상태를 유지한다(프리셋 UI는 past 전용)
   const [relativeDirection] = useState<"past" | "future">(initial.direction)
   const [error, setError] = useState<string | undefined>(initialError)
+  // 범위 편집 중인 끝점. prop은 스토리 arg 호환을 위한 초기값으로만 존중한다
+  const [editingEndpoint, setEditingEndpoint] = useState<0 | 1>(editingIndex)
 
-  const setSelectedDate = (value: string) =>
-    setValues((current) => current.map((item, index) => (index === editingIndex ? value : item)))
+  const setSelectedDate = (value: string) => {
+    setValues((current) => current.map((item, index) => (index === editingEndpoint ? value : item)))
+    // 첫 끝점을 채운 직후 To가 비어 있으면 다음 끝점으로 자동 이동
+    if (isRange && editingEndpoint === 0 && (values[1]?.trim().length ?? 0) === 0) {
+      setEditingEndpoint(1)
+    }
+  }
 
   const commitAbsolute = (nextValues: readonly string[]) => {
     if (nextValues.some((value) => value.trim().length === 0)) {
@@ -144,6 +151,27 @@ export const ComposerDateValuePicker: FC<ComposerDateValuePickerProps> = ({
             </div>
           </fieldset>
         )}
+        {isRange && (
+          <fieldset className="collection-composer-date-type">
+            <legend>Editing date</legend>
+            <div>
+              <button
+                type="button"
+                aria-pressed={editingEndpoint === 0}
+                onClick={() => setEditingEndpoint(0)}
+              >
+                {`From ${values[0]?.trim() || "—"}`}
+              </button>
+              <button
+                type="button"
+                aria-pressed={editingEndpoint === 1}
+                onClick={() => setEditingEndpoint(1)}
+              >
+                {`To ${values[1]?.trim() || "—"}`}
+              </button>
+            </div>
+          </fieldset>
+        )}
         {kind === "date" && dateMode === "relative" ? (
           <div className="collection-composer-relative-date-fields">
             <select
@@ -191,7 +219,11 @@ export const ComposerDateValuePicker: FC<ComposerDateValuePickerProps> = ({
               value={
                 relativePreset === "Today"
                   ? todayLiteral()
-                  : (values[editingIndex] ?? todayLiteral())
+                  : (encodeRelativeLiteral(
+                      relativeDirection,
+                      resolvedRelative.amount,
+                      unitToNative[resolvedRelative.unit],
+                    ) ?? todayLiteral())
               }
               previewOnly
               onChange={setSelectedDate}
@@ -200,7 +232,7 @@ export const ComposerDateValuePicker: FC<ComposerDateValuePickerProps> = ({
           </div>
         ) : (
           <ComposerCalendar
-            value={values[editingIndex] ?? todayLiteral()}
+            value={values[editingEndpoint] ?? todayLiteral()}
             onChange={setSelectedDate}
           />
         )}
