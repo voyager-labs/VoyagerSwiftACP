@@ -52,15 +52,16 @@ export const ComposerCalendar: FC<ComposerCalendarProps> = ({
     () => new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1),
   )
 
-  // 활성 끝점 값이 표시 월 밖으로 바뀌면(예: From/To 전환) 달력을 해당 월로 동기화한다
+  // 활성 끝점 값(value 문자열)이 표시 월 밖으로 바뀌면 달력을 해당 월로 동기화한다.
+  // 의존성은 안정적인 value여야 한다: Date 객체에 의존하면 매 렌더마다 실행되어 월 탐색이 되돌려진다
   useEffect(() => {
+    const selected = parseDate(value)
     setDisplayedMonth((current) =>
-      current.getFullYear() === selectedDate.getFullYear() &&
-      current.getMonth() === selectedDate.getMonth()
+      current.getFullYear() === selected.getFullYear() && current.getMonth() === selected.getMonth()
         ? current
-        : new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1),
+        : new Date(selected.getFullYear(), selected.getMonth(), 1),
     )
-  }, [selectedDate])
+  }, [value])
 
   const moveMonth = (offset: number) =>
     setDisplayedMonth((current) => new Date(current.getFullYear(), current.getMonth() + offset, 1))

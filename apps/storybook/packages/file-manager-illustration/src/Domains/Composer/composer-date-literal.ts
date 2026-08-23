@@ -38,6 +38,23 @@ export const encodeRelativeLiteral = (
   return `voyager.relativeDate:v1:${direction}:${amount}:${unit}:${todayLiteral()}`
 }
 
+// 앵커(오늘)와 amount/unit으로 상대 날짜를 YYYY-MM-DD로 계산한다 (네이티브 syncRelativeSelectedDate 대응)
+export const resolveRelativeDate = (
+  direction: "past" | "future",
+  amount: number,
+  unit: ParsedRelativeLiteral["unit"],
+): string => {
+  const offset = direction === "past" ? -amount : amount
+  const date = new Date()
+  if (unit === "day") date.setDate(date.getDate() + offset)
+  else if (unit === "week") date.setDate(date.getDate() + offset * 7)
+  else if (unit === "month") date.setMonth(date.getMonth() + offset)
+  else date.setFullYear(date.getFullYear() + offset)
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
+    date.getDate(),
+  ).padStart(2, "0")}`
+}
+
 export const todayLiteral = (): string => {
   const now = new Date()
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(

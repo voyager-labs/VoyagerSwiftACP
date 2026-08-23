@@ -1,6 +1,11 @@
 import { type FC, useState } from "react"
 import { ComposerCalendar } from "./ComposerCalendar"
-import { encodeRelativeLiteral, relativeDisplay, todayLiteral } from "./composer-date-literal"
+import {
+  encodeRelativeLiteral,
+  relativeDisplay,
+  resolveRelativeDate,
+  todayLiteral,
+} from "./composer-date-literal"
 import {
   type RelativePreset,
   type RelativeUnit,
@@ -219,11 +224,11 @@ export const ComposerDateValuePicker: FC<ComposerDateValuePickerProps> = ({
               value={
                 relativePreset === "Today"
                   ? todayLiteral()
-                  : (encodeRelativeLiteral(
+                  : resolveRelativeDate(
                       relativeDirection,
                       resolvedRelative.amount,
                       unitToNative[resolvedRelative.unit],
-                    ) ?? todayLiteral())
+                    )
               }
               previewOnly
               onChange={setSelectedDate}
