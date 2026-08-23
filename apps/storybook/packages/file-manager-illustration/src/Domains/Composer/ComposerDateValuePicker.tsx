@@ -183,12 +183,15 @@ export const ComposerDateValuePicker: FC<ComposerDateValuePickerProps> = ({
               aria-label="Preset"
               value={relativePreset}
               onChange={(event) => {
-                // 네이티브 applyRelativePreset 계약: ago 프리셋 선택 시 방향을 past로 재설정한다
-                setRelativeDirection("past")
-                setRelativePreset(
+                const next =
                   relativePresets.find((preset) => preset === event.currentTarget.value) ??
-                    "7 days ago",
-                )
+                  "7 days ago"
+                // 네이티브 applyRelativePreset 계약: 프리셋마다 amount·unit도 저장해 Custom 전환 시 이어받는다
+                const resolved = resolveRelativeValue(next, Number(relativeAmount), relativeUnit)
+                setRelativeAmount(String(resolved.amount))
+                setRelativeUnit(resolved.unit)
+                setRelativeDirection("past")
+                setRelativePreset(next)
               }}
             >
               {relativePresets.map((preset) => (
