@@ -108,7 +108,7 @@ export const composerPropertyOptions = [
     operators: dateOperators,
   },
   {
-    key: "date_added",
+    key: "added_date",
     label: "Date added",
     symbol: "calendar.badge.plus",
     category: "date",
@@ -121,7 +121,7 @@ export const composerPropertyOptions = [
     symbol: "textformat",
     category: "filesystem",
     pinned: true,
-    operators: textOperators,
+    operators: categoricalOperators,
   },
   {
     key: "size",
@@ -217,7 +217,7 @@ export const composerPropertyOptions = [
     symbol: "paintpalette",
     category: "image",
     pinned: false,
-    operators: categoricalOperators,
+    operators: textOperators,
   },
   {
     key: "has_alpha_channel",
@@ -273,7 +273,7 @@ export const composerPropertyOptions = [
     symbol: "location",
     category: "misc",
     pinned: false,
-    operators: numberOperators(),
+    operators: textOperators,
   },
   {
     key: "longitude",
@@ -281,11 +281,11 @@ export const composerPropertyOptions = [
     symbol: "location",
     category: "misc",
     pinned: false,
-    operators: numberOperators(),
+    operators: textOperators,
   },
   {
-    key: "content_type",
-    label: "Content type",
+    key: "content_type_tree",
+    label: "Content type tree",
     symbol: "doc.text.magnifyingglass",
     category: "misc",
     pinned: false,
