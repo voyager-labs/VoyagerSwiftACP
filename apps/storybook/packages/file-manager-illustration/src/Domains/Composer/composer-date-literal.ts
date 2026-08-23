@@ -55,10 +55,12 @@ export const resolveRelativeDate = (
     return format(date.getFullYear(), date.getMonth(), date.getDate())
   }
   // 네이티브 Calendar.date(byAdding:)의 말일 보정 대응: JS 오버플로(예: 5/31 - 3개월 = 3/3)를 목표 월 말일 클램프로 대체한다
+  // Date 생성자로 연·월을 먼저 정규화해야 연도 경계(음수·13+ 월)에서 포맷이 깨지지 않는다
   const targetYear = unit === "year" ? now.getFullYear() + offset : now.getFullYear()
   const targetMonth = unit === "month" ? now.getMonth() + offset : now.getMonth()
-  const lastDay = new Date(targetYear, targetMonth + 1, 0).getDate()
-  return format(targetYear, targetMonth, Math.min(now.getDate(), lastDay))
+  const normalized = new Date(targetYear, targetMonth, 1)
+  const lastDay = new Date(normalized.getFullYear(), normalized.getMonth() + 1, 0).getDate()
+  return format(normalized.getFullYear(), normalized.getMonth(), Math.min(now.getDate(), lastDay))
 }
 
 export const todayLiteral = (): string => {

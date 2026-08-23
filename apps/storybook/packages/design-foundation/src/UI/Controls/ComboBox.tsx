@@ -167,7 +167,7 @@ export const ComboBox: FC<ComboBoxProps> = <Value = string>({
       <button
         ref={triggerRef}
         type="button"
-        aria-haspopup="listbox"
+        aria-haspopup="menu"
         aria-expanded={isOpen}
         aria-controls={listboxId}
         aria-labelledby={labelId}
@@ -199,6 +199,7 @@ export const ComboBox: FC<ComboBoxProps> = <Value = string>({
         <div
           ref={listboxRef}
           id={listboxId}
+          role="menu"
           aria-labelledby={labelId}
           className="vc-combo-box-popover"
         >
@@ -208,8 +209,7 @@ export const ComboBox: FC<ComboBoxProps> = <Value = string>({
               <MenuItem
                 key={String(option.value)}
                 className="vc-combo-box-option"
-                role="option"
-                aria-selected={isSelected}
+                role="menuitemradio"
                 label={option.label}
                 detail={option.detail}
                 checked={isSelected}
