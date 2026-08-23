@@ -510,7 +510,15 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
             lock.unlock()
             return
         }
-        guard let claimedURL = validateAndReserveCallbackURL(resolvedURL) else {
+        guard validateCallbackURL(reservedURL: resolvedURL) != nil else {
+            lock.unlock()
+            return
+        }
+        // 트리 격리(claim)는 세션 lock 밖에서 수행한다(코멘트 #3837880884).
+        lock.unlock()
+        guard let claimedURL = claimCallbackURL(resolvedURL) else { return }
+        lock.lock()
+        guard phase == .acquiring else {
             lock.unlock()
             return
         }
@@ -534,7 +542,9 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
         lock.unlock()
     }
 
-    private func validateAndReserveCallbackURL(_ url: URL) -> URL? {
+    /// 콜백 URL의 저가 검증(존재·containment·중복)만 수행한다. caller는 lock을 보유해야
+    /// 한다. 트리 격리는 claimCallbackURL에서 세션 lock 없이 수행한다(코멘트 #3837880884).
+    private func validateCallbackURL(reservedURL url: URL) -> URL? {
         guard fileManager.fileExists(url.path) else {
             emitTerminalLocked(.failed(sessionID, .fileAbsent))
             return nil
@@ -547,8 +557,25 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
             emitTerminalLocked(.failed(sessionID, .callbackError))
             return nil
         }
+        return url
+    }
+
+    /// claim(파일 이동 + 트리 격리)을 세션 lock 없이 수행하고 결과 등록만 lock 보유 하에
+    /// 커밋한다. 대형 promise 트리 격리 동안 MainActor cancel이 세션 lock을 기다리지
+    /// 않게 한다(코멘트 #3837880884).
+    private func claimCallbackURL(_ url: URL) -> URL? {
         guard let claimedURL = staging.claim(url) else {
-            emitTerminalLocked(.failed(sessionID, .callbackError))
+            lock.lock()
+            if phase == .acquiring {
+                emitTerminalLocked(.failed(sessionID, .callbackError))
+            }
+            lock.unlock()
+            return nil
+        }
+        lock.lock()
+        defer { lock.unlock() }
+        guard phase == .acquiring else {
+            try? fileManager.removeItem(claimedURL)
             return nil
         }
         guard isInsideClaimed(claimedURL) else {
@@ -643,25 +670,48 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
 
     private func handleStagingWrite() {
         lock.lock()
-        defer { lock.unlock() }
-        guard phase == .acquiring else { return }
+        guard phase == .acquiring else {
+            lock.unlock()
+            return
+        }
         stagingScanWorkItem = nil
 
         let pending = pendingCancelledCallbacks.sorted { $0.key < $1.key }
         let candidates = unregisteredStagingURLs()
-        guard !pending.isEmpty, pending.count == candidates.count else { return }
+        guard !pending.isEmpty, pending.count == candidates.count else {
+            lock.unlock()
+            return
+        }
 
+        var reserved: [(receiverIndex: Int, callbackOrdinal: Int, url: URL)] = []
         for ((receiverIndex, callbackOrdinal), url) in zip(pending, candidates) {
             pendingCancelledCallbacks.removeValue(forKey: receiverIndex)
             callbackErrorTimeouts.removeValue(forKey: receiverIndex)?.cancel()
-            guard let claimedURL = validateAndReserveCallbackURL(url) else { return }
+            reserved.append((receiverIndex, callbackOrdinal, url))
+        }
+        lock.unlock()
+
+        // 재조정 항목도 claim 격리를 lock 밖에서 수행한다(코멘트 #3837880884).
+        for item in reserved {
+            lock.lock()
+            guard phase == .acquiring, validateCallbackURL(reservedURL: item.url) != nil else {
+                lock.unlock()
+                return
+            }
+            lock.unlock()
+            guard let claimedURL = claimCallbackURL(item.url) else { return }
+            lock.lock()
+            guard phase == .acquiring else {
+                lock.unlock()
+                return
+            }
             registerReceivedFile(
-                receiverIndex: receiverIndex,
+                receiverIndex: item.receiverIndex,
                 url: claimedURL,
-                callbackOrdinal: callbackOrdinal,
+                callbackOrdinal: item.callbackOrdinal,
                 cancelReconciled: true,
             )
-            if phase != .acquiring { return }
+            lock.unlock()
         }
     }
 

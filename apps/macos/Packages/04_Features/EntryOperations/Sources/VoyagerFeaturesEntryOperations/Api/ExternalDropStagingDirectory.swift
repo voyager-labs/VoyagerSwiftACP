@@ -382,7 +382,11 @@ final class StagingDirectory {
         guard let stream = fdopendir(dup(fd)) else { return nil }
         defer { closedir(stream) }
         var names: [String] = []
-        while let entry = readdir(stream) {
+        while true {
+            // readdir는 EOF와 오류 모두 nil을 반환한다. 호출마다 errno를 초기화해
+            // 루프 종료 시의 errno만 오류 신호로 해석한다(코멘트 #3837880886).
+            errno = 0
+            guard let entry = readdir(stream) else { break }
             let name = withUnsafeBytes(of: entry.pointee.d_name) { raw -> String in
                 guard let base = raw.baseAddress?.assumingMemoryBound(to: CChar.self) else {
                     return ""
@@ -393,6 +397,8 @@ final class StagingDirectory {
                 names.append(name)
             }
         }
+        // 부분 열거(중간 I/O 오류)를 성공 배열로 반환하지 않는다(코멘트 #3837880886).
+        if errno != 0 { return nil }
         return names
     }
 
