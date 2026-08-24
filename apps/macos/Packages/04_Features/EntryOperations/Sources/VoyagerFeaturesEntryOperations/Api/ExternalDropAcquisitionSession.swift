@@ -61,6 +61,10 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
     private var callbacksAwaitingCardinality: [PendingCallback] = []
     private var pendingCancelledCallbacks: [Int: Int] = [:]
     private var callbackErrorTimeouts: [Int: DispatchWorkItem] = [:]
+    /// 빈 fileNames 수신기만 있는 세션의 종단 보류 워치독(코멘트 #3840460024).
+    private var indeterminateWatchdog: DispatchWorkItem?
+    /// 워치독 대기 시간. 실제 provider의 첫 콜백 지연을 감안한 상한값이다.
+    private static let indeterminateReceiverTimeoutSeconds: TimeInterval = 60
     private var stagingScanWorkItem: DispatchWorkItem?
     private var bufferedEvents: [ExternalDropAcquisitionEvent] = []
     private var continuation: AsyncStream<ExternalDropAcquisitionEvent>.Continuation?
@@ -141,6 +145,10 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
             // receive 중 동기적으로 도착한 콜백이 이미 받은 수를 채웠을 수 있다. cardinality
             // 확정 후에야 성공 판정이 가능하므로 lock을 보유한 채 재평가한다.
             emitTerminalLocked(.succeeded(sessionID))
+        } else if expectedCardinality == 0, !indeterminateReceivers.isEmpty {
+            // 결정적 입력이 전혀 없는 세션은 provider가 콜백을 아예 호출하지 않으면
+            // 영구 .acquiring에 남는다. 상한 시간 내 종료를 보장한다(#3840460024).
+            scheduleIndeterminateWatchdogLocked()
         }
         lock.unlock()
 
@@ -649,24 +657,23 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
         return true
     }
 
-    private func isUserCancelled(_ error: Error?) -> Bool {
-        guard let nsError = error as NSError? else { return false }
-        return nsError.domain == NSCocoaErrorDomain
-            && nsError.code == CocoaError.Code.userCancelled.rawValue
-    }
-
-    private func logCallbackError(_ error: Error) {
-        let nsError = error as NSError
-        Self.logger.error(
-            "callback error domain=\(nsError.domain, privacy: .public) code=\(nsError.code)",
+    /// 순수 무결 구성(모든 수신기 빈 fileNames + 데이터·immediate 없음)에서 콜백이
+    /// 끝내 오지 않는 경우를 위한 종단 워치독이다. 어떤 종단이든 teardownLocked가
+    /// 해제한다(코멘트 #3840460024).
+    private func scheduleIndeterminateWatchdogLocked() {
+        indeterminateWatchdog?.cancel()
+        let item = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            lock.lock()
+            defer { self.lock.unlock() }
+            guard phase == .acquiring else { return }
+            emitTerminalLocked(.failed(sessionID, .callbackError))
+        }
+        indeterminateWatchdog = item
+        observationQueue.asyncAfter(
+            deadline: .now() + Self.indeterminateReceiverTimeoutSeconds,
+            execute: item,
         )
-    }
-
-    private func shouldAwaitStagedFile(error: Error, receiverIndex: Int) -> Bool {
-        let nsError = error as NSError
-        return nsError.domain == NSCocoaErrorDomain
-            && nsError.code == CocoaError.Code.userCancelled.rawValue
-            && indeterminateReceivers.contains(receiverIndex)
     }
 
     private func scheduleCallbackErrorTimeoutLocked(receiverIndex: Int) {
@@ -941,6 +948,8 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
         stagingScanWorkItem = nil
         callbackErrorTimeouts.values.forEach { $0.cancel() }
         callbackErrorTimeouts.removeAll()
+        indeterminateWatchdog?.cancel()
+        indeterminateWatchdog = nil
         pendingCancelledCallbacks.removeAll()
         queue.cancelAllOperations()
     }
@@ -1070,4 +1079,24 @@ extension ExternalDropAcquisitionSession {
     }
 
     private static let indeterminateNameMarker = "NSFilePromiseUnknown"
+
+    private func isUserCancelled(_ error: Error?) -> Bool {
+        guard let nsError = error as NSError? else { return false }
+        return nsError.domain == NSCocoaErrorDomain
+            && nsError.code == CocoaError.Code.userCancelled.rawValue
+    }
+
+    private func logCallbackError(_ error: Error) {
+        let nsError = error as NSError
+        Self.logger.error(
+            "callback error domain=\(nsError.domain, privacy: .public) code=\(nsError.code)",
+        )
+    }
+
+    private func shouldAwaitStagedFile(error: Error, receiverIndex: Int) -> Bool {
+        let nsError = error as NSError
+        return nsError.domain == NSCocoaErrorDomain
+            && nsError.code == CocoaError.Code.userCancelled.rawValue
+            && indeterminateReceivers.contains(receiverIndex)
+    }
 }

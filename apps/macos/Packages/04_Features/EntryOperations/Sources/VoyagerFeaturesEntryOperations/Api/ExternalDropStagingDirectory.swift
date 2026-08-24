@@ -212,6 +212,12 @@ final class StagingDirectory {
             guard let names = Self.directoryEntryNames(fd: sourceDescriptor) else {
                 throw CocoaError(.fileReadUnknown)
             }
+            // 열거·하위 격리 전후로 디렉터리 상태(size+mtime)를 대조해 스냅숏 도중
+            // 추가·삭제로 인한 부분 트리 성공을 막는다(코멘트 #3840460034). 자체 격리는
+            // source 디렉터리를 건드리지 않으므로 변화는 외부 변경뿐이다.
+            let beforeSize = status.st_size
+            let beforeSec = status.st_mtimespec.tv_sec
+            let beforeNsec = status.st_mtimespec.tv_nsec
             for name in names {
                 let childDescriptor = Darwin.openat(
                     sourceDescriptor,
@@ -223,6 +229,14 @@ final class StagingDirectory {
                 }
                 defer { Darwin.close(childDescriptor) }
                 _ = try isolateNode(sourceDescriptor: childDescriptor, label: label + "/" + name)
+            }
+            var afterDirectory = stat()
+            guard Darwin.fstat(sourceDescriptor, &afterDirectory) == 0,
+                  afterDirectory.st_size == beforeSize,
+                  afterDirectory.st_mtimespec.tv_sec == beforeSec,
+                  afterDirectory.st_mtimespec.tv_nsec == beforeNsec
+            else {
+                throw CocoaError(.fileReadUnknown)
             }
             guard let identity = ClaimedFileIdentity(status: status) else {
                 throw CocoaError(.fileReadUnknown)
