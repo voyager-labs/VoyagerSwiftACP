@@ -350,6 +350,57 @@ final class PinnedContentStore {
             && lhs.st_mtimespec.tv_nsec == rhs.st_mtimespec.tv_nsec
     }
 
+    /// data fork 스트림을 해시에 포함한다. 오프셋은 0으로 되감는다.
+    private static func hashDataFork(
+        ofDescriptor descriptor: Int32,
+        into hasher: inout SHA256,
+    ) -> Bool {
+        guard Darwin.lseek(descriptor, 0, SEEK_SET) >= 0 else { return false }
+        let bufferSize = 1 << 20
+        let buffer = UnsafeMutableRawPointer.allocate(
+            byteCount: bufferSize,
+            alignment: MemoryLayout<UInt8>.alignment,
+        )
+        defer { buffer.deallocate() }
+        while true {
+            let readCount = Darwin.read(descriptor, buffer, bufferSize)
+            if readCount < 0 {
+                if errno == EINTR { continue }
+                return false
+            }
+            if readCount == 0 { break }
+            hasher.update(bufferPointer: UnsafeRawBufferPointer(start: buffer, count: readCount))
+        }
+        return true
+    }
+
+    /// xattr 이름을 정렬해 반환한다. xattr이 없으면 빈 배열을 반환한다.
+    private static func sortedXattrNames(ofDescriptor descriptor: Int32) -> [String]? {
+        let listLength32 = flistxattr(descriptor, nil, 0, 0)
+        guard listLength32 >= 0 else { return nil }
+        guard listLength32 > 0 else { return [] }
+        let buffer = UnsafeMutableRawPointer.allocate(
+            byteCount: listLength32,
+            alignment: MemoryLayout<CChar>.alignment,
+        )
+        defer { buffer.deallocate() }
+        let listed = flistxattr(
+            descriptor,
+            buffer.assumingMemoryBound(to: CChar.self),
+            listLength32,
+            0,
+        )
+        guard listed == listLength32 else { return nil }
+        var names: [String] = []
+        var cursor = buffer.assumingMemoryBound(to: CChar.self)
+        let end = cursor + Int(listLength32)
+        while cursor < end, cursor.pointee != 0 {
+            names.append(String(cString: cursor))
+            cursor = cursor + strlen(cursor) + 1
+        }
+        return names.sorted()
+    }
+
     private static func decodingNullTerminated(_ bytes: [CChar]) -> String? {
         bytes.withUnsafeBufferPointer { buffer in
             guard let baseAddress = buffer.baseAddress else { return nil }
