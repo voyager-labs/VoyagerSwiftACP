@@ -358,23 +358,8 @@ extension WindowManagerFeature {
                 effects.append(trackedSingletonCompletionEffect(trackedWindow.requestID))
             }
         }
-        if let attempt = state.externalOpenActivationAttempt,
-           state.authorizedExternalOpenBatchID == attempt.batchID,
-           let removedPlanWindow = attempt.plan.windows.first(where: { $0.windowID == id })
-        {
-            let unsettledPinnedTabID = removedPlanWindow.items.last(where: {
-                $0.requiresPinnedAnchorReturn
-                    && !attempt.settledPinnedReturnTabIDs.contains($0.tabID)
-            })?.tabID
-            if let unsettledPinnedTabID {
-                effects.append(replanExternalOpenActivationExcluding(
-                    windowID: id,
-                    tabID: unsettledPinnedTabID,
-                    state: &state,
-                ))
-            } else if attempt.windowID == id {
-                effects.append(retryExternalOpenActivation(after: attempt, state: &state))
-            }
+        if let effect = externalOpenWindowRemovalEffect(id, state: &state) {
+            effects.append(effect)
         }
         if state.defaultWindowBootstrapWindowIDs.isEmpty, state.defaultWindowBootstrapRequestID != nil {
             state.defaultWindowBootstrapRequestID = nil
@@ -382,6 +367,29 @@ extension WindowManagerFeature {
         }
         state.refreshContentTabMoveTargets()
         return effects.isEmpty ? .none : .merge(effects)
+    }
+
+    func externalOpenWindowRemovalEffect(
+        _ id: State.WindowID,
+        state: inout State,
+    ) -> Effect<Action>? {
+        guard let attempt = state.externalOpenActivationAttempt,
+              state.authorizedExternalOpenBatchID == attempt.batchID,
+              let removedPlanWindow = attempt.plan.windows.first(where: { $0.windowID == id })
+        else { return nil }
+        let unsettledPinnedTabID = removedPlanWindow.items.last(where: {
+            $0.requiresPinnedAnchorReturn
+                && !attempt.settledPinnedReturnTabIDs.contains($0.tabID)
+        })?.tabID
+        if let unsettledPinnedTabID {
+            return replanExternalOpenActivationExcluding(
+                windowID: id,
+                tabID: unsettledPinnedTabID,
+                state: &state,
+            )
+        }
+        guard attempt.windowID == id else { return nil }
+        return retryExternalOpenActivation(after: attempt, state: &state)
     }
 
     func isWindowReady(_ id: State.WindowID, state: State) -> Bool {

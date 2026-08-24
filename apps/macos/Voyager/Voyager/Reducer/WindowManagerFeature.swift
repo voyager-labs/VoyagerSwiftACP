@@ -453,28 +453,17 @@ struct WindowManagerFeature {
                 id: windowID,
                 action: .window(.delegate(.pinnedContentTabRuntimeNavigationChanged(tabID, _))),
             )):
-                guard var attempt = state.externalOpenActivationAttempt,
-                      state.authorizedExternalOpenBatchID == attempt.batchID,
-                      let item = attempt.plan.windows.first(where: { $0.windowID == windowID })?.items.first(where: {
-                          $0.tabID == tabID && $0.requiresPinnedAnchorReturn
-                      })
-                else { return completeExternalOpenActivationIfSettled(state: &state) }
-                guard state.windows[id: windowID]?.window.contentTabs.tabs[id: tabID]?.anchor == item.anchor else {
-                    return replanExternalOpenActivationExcluding(
-                        windowID: windowID,
-                        tabID: tabID,
-                        state: &state,
-                    )
-                }
-                attempt.settledPinnedReturnTabIDs.insert(tabID)
-                state.externalOpenActivationAttempt = attempt
-                return completeExternalOpenActivationIfSettled(state: &state)
+                return handlePinnedContentTabRuntimeNavigationChanged(
+                    windowID: windowID,
+                    tabID: tabID,
+                    state: &state,
+                )
 
             case let .windows(.element(
                 id: windowID,
                 action: .window(.delegate(.pinnedContentTabRuntimeNavigationFailed(tabID))),
             )):
-                return replanExternalOpenActivationExcluding(
+                return handlePinnedContentTabRuntimeNavigationFailed(
                     windowID: windowID,
                     tabID: tabID,
                     state: &state,
@@ -502,6 +491,33 @@ struct WindowManagerFeature {
 }
 
 private extension WindowManagerFeature {
+    func handlePinnedContentTabRuntimeNavigationChanged(
+        windowID: State.WindowID,
+        tabID: ContentTabID,
+        state: inout State,
+    ) -> Effect<Action> {
+        guard var attempt = state.externalOpenActivationAttempt,
+              state.authorizedExternalOpenBatchID == attempt.batchID,
+              let item = attempt.plan.windows.first(where: { $0.windowID == windowID })?.items.first(where: {
+                  $0.tabID == tabID && $0.requiresPinnedAnchorReturn
+              })
+        else { return completeExternalOpenActivationIfSettled(state: &state) }
+        guard state.windows[id: windowID]?.window.contentTabs.tabs[id: tabID]?.anchor == item.anchor else {
+            return replanExternalOpenActivationExcluding(windowID: windowID, tabID: tabID, state: &state)
+        }
+        attempt.settledPinnedReturnTabIDs.insert(tabID)
+        state.externalOpenActivationAttempt = attempt
+        return completeExternalOpenActivationIfSettled(state: &state)
+    }
+
+    func handlePinnedContentTabRuntimeNavigationFailed(
+        windowID: State.WindowID,
+        tabID: ContentTabID,
+        state: inout State,
+    ) -> Effect<Action> {
+        replanExternalOpenActivationExcluding(windowID: windowID, tabID: tabID, state: &state)
+    }
+
     func requestAttachmentPicker(
         for windowID: WindowManagerState.WindowID,
         originSessionID: AiChatSessionID,
