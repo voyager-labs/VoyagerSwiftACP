@@ -215,27 +215,25 @@ extension WindowManagerFeature {
 
     /// pinned route 복귀 실패 delegate를 받으면 native 재시도에서 제외된 window의 실패도 소비해 배치를 한 번 재계획한다.
     func replanExternalOpenActivationExcluding(
+        windowID: State.WindowID,
         tabID: ContentTabID,
         state: inout State,
     ) -> Effect<Action> {
         guard let attempt = state.externalOpenActivationAttempt,
               state.authorizedExternalOpenBatchID == attempt.batchID,
-              attempt.plan.orderedItems.contains(where: { $0.tabID == tabID && $0.requiresPinnedAnchorReturn })
+              let failedItem = attempt.plan.windows.first(where: { $0.windowID == windowID })?.items.last(where: {
+                  $0.tabID == tabID && $0.requiresPinnedAnchorReturn
+              })
         else { return .none }
         state.externalOpenActivationAttempt = nil
         state.externalOpenActivationBecameKey = false
-        let failedItem = attempt.plan.orderedItems.last(where: {
-            $0.tabID == tabID && $0.requiresPinnedAnchorReturn
-        })
         var excludedTabIDs = Set([tabID])
-        if let failedAnchor = failedItem?.anchor {
-            for window in state.windows {
-                for tab in window.window.contentTabs.tabs
-                    where tab.isPinned
-                    && window.window.contentTabs.pinnedRecords[tab.id]?.anchor == failedAnchor
-                {
-                    excludedTabIDs.insert(tab.id)
-                }
+        for window in state.windows {
+            for tab in window.window.contentTabs.tabs
+                where tab.isPinned
+                && window.window.contentTabs.pinnedRecords[tab.id]?.anchor == failedItem.anchor
+            {
+                excludedTabIDs.insert(tab.id)
             }
         }
         guard let request = attempt.plan.request?.fallbackExcludingPinnedCandidates(excludedTabIDs),

@@ -10580,6 +10580,63 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertEqual(tabs?.map(\.anchor).contains(fixture.plan.orderedItems[0].anchor), true)
     }
 
+    /// 다른 window에 복제된 동일 ContentTabID의 실패 terminal은 현재 activation plan을 오염시키지 않는다.
+    /// - 검증 내용: pinned 실패가 plan의 정확한 windowID와 tabID 쌍에 속할 때만 fallback 재계획을 시작함
+    /// - 사전 조건: W1의 pinned tab이 activation plan에 있고 W2에 동일 ContentTabID가 복제되어 있음
+    /// - 기대 결과: W2 실패는 무시되고 W1 실패만 pinnedFallbackCount 1 replacement plan을 생성함
+    func testPlacementIgnoresPinnedReturnFailureFromForeignWindowWithSameTabID() async throws {
+        let fixture = Self.makePinnedCollectionActivationFixture(pendingOpen: false)
+        let plannedWindowID = fixture.plan.windows[0].windowID
+        let foreignWindowID = UUID()
+        let sharedTabID = fixture.tabID
+        let runtimeAnchor = try XCTUnwrap(fixture.state.windows[id: plannedWindowID]?.window.contentTabs
+            .tabs[id: sharedTabID]?.anchor)
+        var state = fixture.state
+        state.windows.append(Self.makeRouteWindow(
+            id: foreignWindowID,
+            tabs: [(sharedTabID, runtimeAnchor)],
+            activeTabID: sharedTabID,
+        ))
+        state.externalOpenActivationAttempt = .init(
+            batchID: fixture.plan.batchID,
+            plan: fixture.plan,
+            windowID: plannedWindowID,
+            excludedWindowIDs: [],
+        )
+        let store = TestStore(initialState: state) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.fileManagerWindowClient.open = { _ in }
+        }
+        // store.exhaustivity = .off: replacement apply 이후 native window lifecycle은 기존 owner가 검증함.
+        store.exhaustivity = .off
+
+        await store.send(.windows(.element(
+            id: foreignWindowID,
+            action: .window(.delegate(.pinnedContentTabRuntimeNavigationFailed(tabID: sharedTabID))),
+        )))
+        XCTAssertEqual(store.state.externalOpenActivationAttempt?.plan, fixture.plan)
+        XCTAssertEqual(store.state.externalOpenActivationAttempt?.settledPinnedReturnTabIDs, [])
+        XCTAssertEqual(store.state.authorizedExternalOpenBatchID, fixture.plan.batchID)
+
+        await store.send(.windows(.element(
+            id: plannedWindowID,
+            action: .window(.delegate(.pinnedContentTabRuntimeNavigationFailed(tabID: sharedTabID))),
+        )))
+        await store.receive { action in
+            guard case let .placement(.apply(replacementPlan, reservationsByItemID)) = action else { return false }
+            return replacementPlan.request?.staleReplanCount == 0
+                && replacementPlan.request?.pinnedFallbackCount == 1
+                && replacementPlan.orderedItems.first?.tabID != sharedTabID
+                && replacementPlan.orderedItems.first?.requiresReservation == true
+                && reservationsByItemID.count == 1
+        }
+        await store.skipReceivedActions()
+        await store.finish()
+    }
+
     /// native activation에서 제외된 window의 pinned 복귀 실패도 correlated terminal로 소비한다.
     /// - 검증 내용: excluded window failure가 pinnedFallbackCount 1 replacement plan을 생성함
     /// - 사전 조건: 다른 survivor로 native activation을 재시도한 뒤 제외된 window의 pinned Collection 복귀가 실패함

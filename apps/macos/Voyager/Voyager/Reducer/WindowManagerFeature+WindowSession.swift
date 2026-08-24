@@ -367,10 +367,12 @@ extension WindowManagerFeature {
                     && !attempt.settledPinnedReturnTabIDs.contains($0.tabID)
             })?.tabID
             if let unsettledPinnedTabID {
-                // 창 제거로 terminal을 받을 수 없는 미정착 pinned 복귀는 실패로 소비해 재계획한다.
-                effects.append(replanExternalOpenActivationExcluding(tabID: unsettledPinnedTabID, state: &state))
+                effects.append(replanExternalOpenActivationExcluding(
+                    windowID: id,
+                    tabID: unsettledPinnedTabID,
+                    state: &state,
+                ))
             } else if attempt.windowID == id {
-                // .discarded 재시도와 같이 attempt를 유지해 settled 상태와 pinned 재시작 억제를 보존한다.
                 effects.append(retryExternalOpenActivation(after: attempt, state: &state))
             }
         }

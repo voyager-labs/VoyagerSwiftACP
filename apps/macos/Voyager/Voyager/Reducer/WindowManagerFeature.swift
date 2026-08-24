@@ -460,17 +460,22 @@ struct WindowManagerFeature {
                       })
                 else { return completeExternalOpenActivationIfSettled(state: &state) }
                 guard state.windows[id: windowID]?.window.contentTabs.tabs[id: tabID]?.anchor == item.anchor else {
-                    return replanExternalOpenActivationExcluding(tabID: tabID, state: &state)
+                    return replanExternalOpenActivationExcluding(
+                        windowID: windowID,
+                        tabID: tabID,
+                        state: &state,
+                    )
                 }
                 attempt.settledPinnedReturnTabIDs.insert(tabID)
                 state.externalOpenActivationAttempt = attempt
                 return completeExternalOpenActivationIfSettled(state: &state)
 
             case let .windows(.element(
-                id: _,
+                id: windowID,
                 action: .window(.delegate(.pinnedContentTabRuntimeNavigationFailed(tabID))),
             )):
                 return replanExternalOpenActivationExcluding(
+                    windowID: windowID,
                     tabID: tabID,
                     state: &state,
                 )
