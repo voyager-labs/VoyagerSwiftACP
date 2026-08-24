@@ -365,6 +365,28 @@ func TestPropertyValue(t *testing.T) {
 	}
 }
 
+func TestDecimalPropertyValue(t *testing.T) {
+	value, err := NewDecimalPropertyValue("10.5")
+	if err != nil {
+		t.Fatalf("NewDecimalPropertyValue() error = %v", err)
+	}
+	if value.Type != PropertyValueTypeDecimal || value.DecimalValue == nil || *value.DecimalValue != "10.5" {
+		t.Fatalf("decimal value = %#v", value)
+	}
+
+	for _, invalid := range []string{"", "10.50", "1e1", "-0"} {
+		if _, err := NewDecimalPropertyValue(invalid); !errors.Is(err, ErrInvalidPropertyValue) {
+			t.Errorf("NewDecimalPropertyValue(%q) error = %v, want %v", invalid, err, ErrInvalidPropertyValue)
+		}
+	}
+
+	extra := "extra"
+	value.StringValue = &extra
+	if err := value.Validate(); !errors.Is(err, ErrInvalidPropertyValue) {
+		t.Fatalf("mixed decimal payload error = %v, want %v", err, ErrInvalidPropertyValue)
+	}
+}
+
 func TestPropertyValueDuplicateKeyRejection(t *testing.T) {
 	value, err := NewStringPropertyValue("value")
 	if err != nil {

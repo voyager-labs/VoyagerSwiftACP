@@ -403,7 +403,7 @@ func (value PropertyValue) ValidateAgainst(definition PropertyDefinition) Valida
 }
 
 func (value PropertyValue) validateCanonicalShape() error {
-	if value.StringValue != nil || value.Int64Value != nil || value.BoolValue != nil || value.TimestampValue != nil || value.StringListValue != nil {
+	if value.StringValue != nil || value.Int64Value != nil || value.DecimalValue != nil || value.BoolValue != nil || value.TimestampValue != nil || value.StringListValue != nil {
 		return ErrInvalidPropertyValue
 	}
 	if !canonicalPropertyType(value.Type) || !value.PropertyID.valid() || !validPrefixedDigest(value.EntryID, entryIDPrefix) ||

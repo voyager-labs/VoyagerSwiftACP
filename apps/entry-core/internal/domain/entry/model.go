@@ -399,6 +399,7 @@ type PropertyValueType string
 const (
 	PropertyValueTypeString     PropertyValueType = "string"
 	PropertyValueTypeInt64      PropertyValueType = "int64"
+	PropertyValueTypeDecimal    PropertyValueType = "decimal"
 	PropertyValueTypeBool       PropertyValueType = "bool"
 	PropertyValueTypeTimestamp  PropertyValueType = "timestamp"
 	PropertyValueTypeStringList PropertyValueType = "string_list"
@@ -412,7 +413,7 @@ const (
 
 func (valueType PropertyValueType) valid() bool {
 	switch valueType {
-	case PropertyValueTypeString, PropertyValueTypeInt64, PropertyValueTypeBool, PropertyValueTypeTimestamp, PropertyValueTypeStringList, PropertyTypeText, PropertyTypeNumber, PropertyTypeDate, PropertyTypeDateTime, PropertyTypeBoolean, PropertyTypeSelect:
+	case PropertyValueTypeString, PropertyValueTypeInt64, PropertyValueTypeDecimal, PropertyValueTypeBool, PropertyValueTypeTimestamp, PropertyValueTypeStringList, PropertyTypeText, PropertyTypeNumber, PropertyTypeDate, PropertyTypeDateTime, PropertyTypeBoolean, PropertyTypeSelect:
 		return true
 	default:
 		return false
@@ -433,6 +434,7 @@ type PropertyValue struct {
 	Cardinality     PropertyCardinality
 	StringValue     *string
 	Int64Value      *int64
+	DecimalValue    *string
 	BoolValue       *bool
 	TimestampValue  *time.Time
 	StringListValue *[]string
@@ -445,6 +447,11 @@ func NewStringPropertyValue(value string) (PropertyValue, error) {
 
 func NewInt64PropertyValue(value int64) (PropertyValue, error) {
 	propertyValue := PropertyValue{Type: PropertyValueTypeInt64, Int64Value: &value}
+	return validatedPropertyValue(propertyValue)
+}
+
+func NewDecimalPropertyValue(value string) (PropertyValue, error) {
+	propertyValue := PropertyValue{Type: PropertyValueTypeDecimal, DecimalValue: &value}
 	return validatedPropertyValue(propertyValue)
 }
 
@@ -492,6 +499,10 @@ func (value PropertyValue) Validate() error {
 		if value.Int64Value == nil {
 			return ErrInvalidPropertyValue
 		}
+	case PropertyValueTypeDecimal:
+		if value.DecimalValue == nil || !validCanonicalDecimal(*value.DecimalValue) {
+			return ErrInvalidPropertyValue
+		}
 	case PropertyValueTypeBool:
 		if value.BoolValue == nil {
 			return ErrInvalidPropertyValue
@@ -521,6 +532,7 @@ func (value PropertyValue) payloadCount() int {
 	for _, present := range []bool{
 		value.StringValue != nil,
 		value.Int64Value != nil,
+		value.DecimalValue != nil,
 		value.BoolValue != nil,
 		value.TimestampValue != nil,
 		value.StringListValue != nil,
@@ -538,6 +550,8 @@ func (value PropertyValue) payloadMatchesType() bool {
 		return value.StringValue != nil
 	case PropertyValueTypeInt64:
 		return value.Int64Value != nil
+	case PropertyValueTypeDecimal:
+		return value.DecimalValue != nil
 	case PropertyValueTypeBool:
 		return value.BoolValue != nil
 	case PropertyValueTypeTimestamp:
@@ -770,6 +784,7 @@ func clonePropertyValue(value PropertyValue) PropertyValue {
 
 		StringValue:    cloneString(value.StringValue),
 		Int64Value:     cloneInt64(value.Int64Value),
+		DecimalValue:   cloneString(value.DecimalValue),
 		TimestampValue: cloneTime(value.TimestampValue),
 	}
 	if value.BoolValue != nil {
@@ -1269,6 +1284,10 @@ func legacyPropertyBudget(property Property) (int, bool) {
 	switch property.Value.Type {
 	case PropertyValueTypeString:
 		if property.Value.StringValue != nil && !addWithin(&budget, len(*property.Value.StringValue), maximumSnapshotPropertyBudget) {
+			return 0, false
+		}
+	case PropertyValueTypeDecimal:
+		if property.Value.DecimalValue != nil && !addWithin(&budget, len(*property.Value.DecimalValue), maximumSnapshotPropertyBudget) {
 			return 0, false
 		}
 	case PropertyValueTypeTimestamp, PropertyValueTypeInt64, PropertyValueTypeBool:
