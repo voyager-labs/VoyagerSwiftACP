@@ -31,6 +31,8 @@ func TestCatalogSeed(t *testing.T) {
 	t.Run("PreservesNonSeed", TestCatalogSeedPreservesNonSeed)
 	t.Run("TamperedHashFailsBeforeWrite", TestCatalogSeedTamperedHashFailsBeforeWrite)
 	t.Run("PartialSQLRollback", TestCatalogSeedPartialSQLRollback)
+	t.Run("FullyTombstonedFailsClosed", TestCatalogSeedFullyTombstonedFailsClosed)
+	t.Run("MarkerBlocksDeletedFamilies", TestCatalogSeedMarkerBlocksDeletedFamilies)
 	t.Run("SecondOpenRejected", TestCatalogSeedSecondOpenRejected)
 	t.Run("ConcurrentSerialized", TestCatalogSeedConcurrentSerialized)
 	t.Run("ProviderOwnedCollisionFailsClosed", TestCatalogSeedApplyFailsClosedOnProviderOwnedCollision)
@@ -572,6 +574,80 @@ func TestCatalogSeedFullyTombstonedFailsClosed(t *testing.T) {
 	}
 	if activeDefs != 0 || activeTerms != 0 {
 		t.Fatalf("corruption auto-repaired: active defs=%d terms=%d, want 0/0", activeDefs, activeTerms)
+	}
+}
+
+// TestCatalogSeedMarkerBlocksDeletedFamilies는 workspace_metadata의 시드 적용
+// 마커가 seed-owned 카탈로그의 물리 삭제를 corrupt로 판정함을 증명한다. 마커가
+// 무장된 상태에서 active seed 집합이 비어 있으면 fresh로 재분류되어 시드 SQL을
+// 재실행할 수 없다. 마커 이전 DB가 no-op 재조정 경로로 마커를 무장함도 함께
+// 증명한다.
+func TestCatalogSeedMarkerBlocksDeletedFamilies(t *testing.T) {
+	ctx := context.Background()
+	store := migratedStore(t)
+	wsctx := buildCatalogFixture(t, store, 0, 0, 0, 0, noneSeedTrio())
+	if err := store.ApplyCatalogSeed(ctx, wsctx); err != nil {
+		t.Fatalf("first ApplyCatalogSeed: %v", err)
+	}
+
+	readMarker := func() (int, string) {
+		t.Helper()
+		var row WorkspaceMetadataRow
+		if err := store.db.WithContext(ctx).Where("singleton = ?", 1).First(&row).Error; err != nil {
+			t.Fatalf("read workspace_metadata: %v", err)
+		}
+		if row.CatalogSeedOrdinal == nil || row.CatalogSeedSourceVersion == nil {
+			t.Fatalf("seed marker not armed after apply: ordinal=%v source=%v", row.CatalogSeedOrdinal, row.CatalogSeedSourceVersion)
+		}
+		return *row.CatalogSeedOrdinal, *row.CatalogSeedSourceVersion
+	}
+
+	// fresh 적용은 적용된 튜플로 마커를 무장한다.
+	if ordinal, source := readMarker(); ordinal != 1 || source != "2.4.1" {
+		t.Fatalf("armed marker = (%d,%q), want (1,\"2.4.1\")", ordinal, source)
+	}
+
+	// 마커 컬럼이 NULL인 0006 이전 DB를 시뮬레이션한다. 데이터가 온전하면
+	// no-op 재조정이 재적용 없이 마커를 무장해야 한다.
+	if err := store.db.WithContext(ctx).Model(&WorkspaceMetadataRow{}).
+		Where("singleton = ?", 1).
+		Updates(map[string]any{"catalog_seed_ordinal": nil, "catalog_seed_source_version": nil}).Error; err != nil {
+		t.Fatalf("clear marker: %v", err)
+	}
+	if err := store.ApplyCatalogSeed(ctx, wsctx); err != nil {
+		t.Fatalf("no-op ApplyCatalogSeed after marker clear: %v", err)
+	}
+	readMarker()
+
+	// 네 family의 seed-owned row를 전부 물리 삭제한다. FK 제약이 있으므로
+	// 자식(terms, bindings)부터 삭제한다. 마커가 무장된 상태면 반드시 corrupt로
+	// 실패 닫기하며 절대 재적용하지 않는다.
+	wsBytes := wsctx.ID.Bytes()
+	for _, family := range []any{
+		&WorkspacePropertyTermRow{},
+		&PropertyBindingRow{},
+		&SourcePropertyDescriptorRow{},
+		&WorkspacePropertyDefinitionRow{},
+	} {
+		res := store.db.WithContext(ctx).Where("workspace_id = ? AND seed_owner = ?", wsBytes, "system_property_registry").Delete(family)
+		if res.Error != nil || res.RowsAffected == 0 {
+			t.Fatalf("delete %T: err=%v rows=%d", family, res.Error, res.RowsAffected)
+		}
+	}
+
+	if err := store.ApplyCatalogSeed(ctx, wsctx); !errors.Is(err, ErrCatalogSeedStateCorrupt) {
+		t.Fatalf("ApplyCatalogSeed after wipe error = %v, want ErrCatalogSeedStateCorrupt", err)
+	}
+
+	// 실패 닫기: 재적용으로 어떤 seed row도 되살아나지 않는다.
+	var activeDefs int64
+	if err := store.db.WithContext(ctx).Model(&WorkspacePropertyDefinitionRow{}).
+		Where("workspace_id = ? AND seed_owner = ?", wsBytes, "system_property_registry").
+		Count(&activeDefs).Error; err != nil {
+		t.Fatalf("count seed defs after wipe: %v", err)
+	}
+	if activeDefs != 0 {
+		t.Fatalf("wipe auto-repaired: active seed definitions = %d, want 0", activeDefs)
 	}
 }
 

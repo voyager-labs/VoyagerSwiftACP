@@ -101,6 +101,17 @@ func applyCatalogSeedInTx(tx *gorm.DB, wsctx domainentry.WorkspaceContext, meta 
 	if err := rejectNonFreshSeedHistory(tx, wsctx.ID.Bytes(), meta, seedState.HasSeed); err != nil {
 		return err
 	}
+	// 시드 적용 마커가 무장된 DB에서 active seed 집합과 이력 어느 쪽도 없으면
+	// seed-owned row가 물리 삭제된 것이다. fresh 재분류로 시드 SQL을 재실행해
+	// 손상을 은닉하는 대신 실패 닫기한다. 이력 분류 뒤에 실행하므로 newer/drift
+	// 이력은 여전히 ErrCatalogSeedState로 분류된다.
+	marker, err := readCatalogSeedMarker(tx)
+	if err != nil {
+		return err
+	}
+	if marker.applied() && !seedState.HasSeed {
+		return ErrCatalogSeedStateCorrupt
+	}
 	currentSeedDigest, err := catalogDigest(snapshot)
 	if err != nil {
 		return err
@@ -111,7 +122,12 @@ func applyCatalogSeedInTx(tx *gorm.DB, wsctx domainentry.WorkspaceContext, meta 
 		return err
 	}
 	if outcome == seedOutcomeNoOp {
-		return nil
+		// no-op 재조정은 마커가 아직 이 튜플을 가리키지 않을 때만(0006 이전
+		// DB의 첫 재조정) 마커를 무장한다. 이미 무장됐으면 write 없이 통과한다.
+		if marker.matches(meta) {
+			return nil
+		}
+		return writeCatalogSeedMarker(tx, meta)
 	}
 
 	if err := reconcileSeedOwned(tx, wsctx.ID.Bytes(), meta); err != nil {
@@ -139,7 +155,47 @@ func applyCatalogSeedInTx(tx *gorm.DB, wsctx domainentry.WorkspaceContext, meta 
 	if hexEncode(afterDigest[:]) != meta.DatasetSHA256 {
 		return ErrCatalogSeedDigest
 	}
-	return nil
+	// 적용 성공과 같은 트랜잭션에서 마커를 기록한다. 이 커밋 없이는 마커가
+	// 무장되지 않는다.
+	return writeCatalogSeedMarker(tx, meta)
+}
+
+// catalogSeedMarker는 workspace_metadata에 기록된 시드 적용 마커 상태다.
+type catalogSeedMarker struct {
+	ordinal       *int
+	sourceVersion *string
+}
+
+// applied는 마커가 무장되었는지를 나타낸다. 두 컬럼은 항상 함께 기록되므로 둘
+// 다 비어 있으면 미적용이다.
+func (m catalogSeedMarker) applied() bool {
+	return m.ordinal != nil && m.sourceVersion != nil
+}
+
+// matches는 마커가 이미 메타데이터의 적용 튜플과 일치하는지를 나타낸다.
+func (m catalogSeedMarker) matches(meta seeds.SeedMetadata) bool {
+	return m.applied() && *m.ordinal == meta.SeedOrdinal && *m.sourceVersion == meta.SystemRegistryVersion
+}
+
+// readCatalogSeedMarker는 workspace_metadata에서 시드 적용 마커를 읽는다.
+func readCatalogSeedMarker(tx *gorm.DB) (catalogSeedMarker, error) {
+	var row WorkspaceMetadataRow
+	if err := tx.Where("singleton = ?", 1).First(&row).Error; err != nil {
+		return catalogSeedMarker{}, err
+	}
+	return catalogSeedMarker{ordinal: row.CatalogSeedOrdinal, sourceVersion: row.CatalogSeedSourceVersion}, nil
+}
+
+// writeCatalogSeedMarker는 시드 적용 튜플을 workspace_metadata에 기록한다. 호출
+// 시점은 항상 ApplyCatalogSeed 트랜잭션 안이므로 마커와 시드는 원자적으로 함께
+// 커밋되거나 함께 롤백된다.
+func writeCatalogSeedMarker(tx *gorm.DB, meta seeds.SeedMetadata) error {
+	return tx.Model(&WorkspaceMetadataRow{}).
+		Where("singleton = ?", 1).
+		Updates(map[string]any{
+			"catalog_seed_ordinal":        meta.SeedOrdinal,
+			"catalog_seed_source_version": meta.SystemRegistryVersion,
+		}).Error
 }
 
 // rejectNonFreshSeedHistory classifies every seed-owned history tuple at any
