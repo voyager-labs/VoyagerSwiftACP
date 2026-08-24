@@ -174,3 +174,20 @@ func TestProjectUnitSpecIntoCatalog(t *testing.T) {
 		t.Fatalf("projected snapshot digest: %v", err)
 	}
 }
+
+// TestRejectUnmappedTypeAtProjection asserts projection fails closed when a
+// hand-constructed registry carries a type that parse validation would have
+// rejected, instead of silently projecting an unknown contract as text/one.
+func TestRejectUnmappedTypeAtProjection(t *testing.T) {
+	registry := &SystemPropertyRegistry{
+		Version: "2.4.1",
+		Categories: map[string]map[string]SystemDescriptor{
+			"test": {
+				"key": {UILabel: "X", Type: "banana", SystemKeys: []string{"mditem:kMDItemX"}},
+			},
+		},
+	}
+	if _, err := ProjectSystemRegistry(registry); err == nil {
+		t.Errorf("expected unmapped type to be rejected at projection")
+	}
+}

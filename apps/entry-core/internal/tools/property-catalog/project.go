@@ -94,7 +94,10 @@ func ProjectSystemRegistry(registry *SystemPropertyRegistry) (ProjectedCatalog, 
 				return ProjectedCatalog{}, fmt.Errorf("derive id for %s: %w", canonicalKey, err)
 			}
 
-			valueType, cardinality := canonicalTypeMapping(descriptor.Type, canonicalKey)
+			valueType, cardinality, mapped := canonicalTypeMapping(descriptor.Type, canonicalKey)
+			if !mapped {
+				return ProjectedCatalog{}, fmt.Errorf("registry type %q for %s has no canonical mapping; add a reviewed mapping or fix the registry", descriptor.Type, canonicalKey)
+			}
 			unit := ""
 			if descriptor.UnitSpec != nil {
 				unit = descriptor.UnitSpec.CanonicalUnit
@@ -325,32 +328,34 @@ func workspaceTerm(propertyID entry.PropertyID, termKind string, ordinal int, te
 }
 
 // canonicalTypeMapping maps a Registry native type to the canonical Workspace
-// value type and cardinality, applying reviewed overrides.
-func canonicalTypeMapping(registryType, canonicalKey string) (entry.PropertyType, entry.PropertyCardinality) {
+// value type and cardinality, applying reviewed overrides. An unmapped type
+// reports ok=false so projection fails closed instead of silently projecting
+// an unknown contract as text/one.
+func canonicalTypeMapping(registryType, canonicalKey string) (entry.PropertyType, entry.PropertyCardinality, bool) {
 	switch registryType {
 	case "string":
 		if canonicalKey == "misc.keys_of_unset_values" {
 			// reviewed override: nsurl:NSURLKeysOfUnsetValuesKey returns an
 			// array of NSString keys, so the canonical contract is text/many.
-			return entry.PropertyTypeText, entry.PropertyCardinalityMany
+			return entry.PropertyTypeText, entry.PropertyCardinalityMany, true
 		}
-		return entry.PropertyTypeText, entry.PropertyCardinalityOne
+		return entry.PropertyTypeText, entry.PropertyCardinalityOne, true
 	case "number":
-		return entry.PropertyTypeNumber, entry.PropertyCardinalityOne
+		return entry.PropertyTypeNumber, entry.PropertyCardinalityOne, true
 	case "boolean":
-		return entry.PropertyTypeBoolean, entry.PropertyCardinalityOne
+		return entry.PropertyTypeBoolean, entry.PropertyCardinalityOne, true
 	case "date":
-		return entry.PropertyTypeDateTime, entry.PropertyCardinalityOne
+		return entry.PropertyTypeDateTime, entry.PropertyCardinalityOne, true
 	case "string_list":
-		return entry.PropertyTypeText, entry.PropertyCardinalityMany
+		return entry.PropertyTypeText, entry.PropertyCardinalityMany, true
 	case "categorical":
 		if canonicalKey == "misc.tag_names" {
 			// reviewed override: source tag array is select + many
-			return entry.PropertyTypeSelect, entry.PropertyCardinalityMany
+			return entry.PropertyTypeSelect, entry.PropertyCardinalityMany, true
 		}
-		return entry.PropertyTypeSelect, entry.PropertyCardinalityOne
+		return entry.PropertyTypeSelect, entry.PropertyCardinalityOne, true
 	default:
-		return entry.PropertyTypeText, entry.PropertyCardinalityOne
+		return entry.PropertyTypeText, entry.PropertyCardinalityOne, false
 	}
 }
 
