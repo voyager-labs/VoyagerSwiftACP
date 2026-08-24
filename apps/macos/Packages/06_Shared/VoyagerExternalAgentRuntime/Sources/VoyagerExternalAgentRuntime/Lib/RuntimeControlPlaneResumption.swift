@@ -183,7 +183,13 @@ public extension RuntimeControlPlane {
         restoredContext: RuntimeRestoredResumeContext,
     ) async throws -> RuntimeResult? {
         if pendingPersistenceMutations[host, default: 0] > 0 {
-            _ = try await mutateAfterPersistedTransitions { _ in () }
+            do {
+                _ = try await mutateAfterPersistedTransitions { _ in () }
+            } catch is CancellationError {
+                // 직렬화 경계에서 즉시 탈출한 취소도 기존 checkCancellation 경로와 동일하게 복구한다.
+                try? await restoreResumptionClaimIfNeeded(host, lease: claim.lease)
+                throw CancellationError()
+            }
         }
         do {
             try Task.checkCancellation()
@@ -1093,9 +1099,12 @@ public extension RuntimeControlPlane {
             try await recovery.value
             return
         }
-        try await mutateAfterPersistedTransitions { plane in
-            plane.restoreLocalResumptionClaimIfNeeded(hostReference, lease: lease)
-        }
+        // 호출자가 이미 취소된 경우에도 복구 저장은 반드시 반영되어야 한다(비구조 태스크로 취소 전파 차단).
+        try await Task { [self] in
+            try await mutateAfterPersistedTransitions { plane in
+                plane.restoreLocalResumptionClaimIfNeeded(hostReference, lease: lease)
+            }
+        }.value
     }
 
     private func fencePersistedOwner(

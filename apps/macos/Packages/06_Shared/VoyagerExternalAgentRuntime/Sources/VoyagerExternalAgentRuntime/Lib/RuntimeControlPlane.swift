@@ -113,7 +113,7 @@ public actor RuntimeControlPlane {
     var hydrationInstallCount = 0
     var hydrated = false
     var persistenceMutationLocked = false
-    var persistenceMutationWaiters: [CheckedContinuation<Void, Never>] = []
+    var persistenceMutationWaiters: [PersistenceMutationWaiterHandle] = []
     var pendingPersistenceMutations: [ExternalAgentSessionReference: Int] = [:]
     var cleanupFailureEvidenceByHost: [ExternalAgentSessionReference: RuntimeCleanupFailureEvidence] = [:]
     var nextRestoredResumeAttemptID: UInt64 = 0
@@ -121,6 +121,10 @@ public actor RuntimeControlPlane {
 
     var hydrationWaiterCount: Int {
         hydrationWaiterCounts.values.reduce(0, +)
+    }
+
+    var persistenceMutationWaiterCount: Int {
+        persistenceMutationWaiters.count
     }
 
     public init(store: any RuntimeStateStore) {
