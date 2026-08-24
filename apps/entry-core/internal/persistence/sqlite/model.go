@@ -16,7 +16,7 @@ type WorkspaceMetadataRow struct {
 	Singleton int `gorm:"primaryKey;column:singleton;type:integer;not null;default:1;check:singleton = 1"`
 
 	// WorkspaceID is the 16-byte UUIDv7 blob (CHECK length(workspace_id) = 16).
-	WorkspaceID []byte `gorm:"column:workspace_id;type:blob;not null;check:length(workspace_id) = 16"`
+	WorkspaceID []byte `gorm:"column:workspace_id;type:blob;not null;uniqueIndex:uni_workspace_metadata_workspace_id;check:length(workspace_id) = 16"`
 
 	// CreatedAt and UpdatedAt are auto-maintained by GORM on insert/update.
 	CreatedAt time.Time `gorm:"column:created_at;type:datetime;not null"`
