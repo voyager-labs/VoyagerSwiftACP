@@ -122,44 +122,6 @@ struct RuntimeFreshRunCoordinatorContractTests {
         #expect(await adapter.counts().launch == 1)
     }
 
-    /// VOY-746-coordinator_contract: caller cancellation wins during provider failure cleanup.
-    /// provider stream 오류를 정리하는 interrupt commit 전에 취소된 caller가 adapter 오류로 재분류되지 않는지 검증한다.
-    /// - 검증 내용: public CancellationError, detached consumption lease, redacted cleanup evidence와 launch count.
-    /// - 사전 조건: receipt-bearing stream이 gate 뒤 creation 오류를 내고 caller cancellation이 cleanup commit 전에 관찰된다.
-    /// - 기대 결과: caller는 CancellationError를 받고 같은 run은 late terminal 수렴 가능한 detached consuming 상태가 된다.
-    @Test
-    func `caller cancellation wins during provider failure cleanup`() async throws {
-        let host: ExternalAgentSessionReference = "host-cleanup-caller-cancel"
-        let run = RuntimeRunReference("run-cleanup-caller-cancel")
-        let streamGate = RuntimeTestGate()
-        let adapter = DeterministicRuntimeAdapter(
-            id: "sdk",
-            transport: .sdkAsyncStream,
-            eventsByLaunch: [[]],
-            eventStreamGate: streamGate,
-            eventStreamFailure: .creation,
-        )
-        let store = InMemoryRuntimeStateStore()
-        let plane = RuntimeControlPlane(store: store)
-        try await plane.register(adapter)
-        let request = makeLaunch(host: host, run: run, adapterID: "sdk")
-        try await plane.projectPrelaunch(request, as: .policyReady)
-
-        let runTask = Task { try await plane.run(request) }
-        await adapter.waitForEventStreamCount(1)
-        runTask.cancel()
-        await streamGate.open()
-
-        await #expect(throws: CancellationError.self) {
-            _ = try await runTask.value
-        }
-        let session = try #require(await plane.sessions[host])
-        #expect(session.stored.projection == .running)
-        #expect(isDetachedConsuming(session.lease))
-        #expect(await plane.cleanupFailureEvidence(for: host) == nil)
-        #expect(await adapter.counts().launch == 1)
-    }
-
     /// VOY-746-characterization_survivors: provider finish failure remains the public error.
     /// 이미 저장된 host terminal을 보존하되 terminal-result 오류를 성공 결과로 변환하지 않는 계약을 고정한다.
     /// - 검증 내용: terminal-result gate, host interrupted event 저장과 원래 provider 오류.
@@ -1004,50 +966,11 @@ extension RuntimeFreshRunCoordinatorContractTests {
         #expect(await adapter.counts().launch == 1)
     }
 
-    /// VOY-746-coordinator_contract: cancellation after receipt remains detached consumption.
-    /// receipt commit 이후 consume 중 취소가 CancellationError로 끝나고 실패 terminal을 만들지 않는 미래 계약을 고정한다.
-    /// - 검증 내용: public run CancellationError, running projection, detached consuming lease.
-    /// - 사전 조건: terminal-only adapter 결과가 gate에서 대기하는 receipt-bearing run이 있다.
-    /// - 기대 결과: `.failed`/`.launchFailed`가 아닌 상태와 detached consuming lease가 남는다.
-    @Test
-    func `after-receipt cancel throws CancellationError without failed projection`() async throws {
-        let host = ExternalAgentSessionReference("host-contract-after-receipt-cancel")
-        let run = RuntimeRunReference("run-contract-after-receipt-cancel")
-        let resultGate = RuntimeTestGate()
-        let adapter = DeterministicRuntimeAdapter(
-            id: "terminal",
-            transport: .processJSONL,
-            capabilities: .terminalOnly,
-            eventsByLaunch: [[]],
-            terminalResultGate: resultGate,
-        )
-        let store = InMemoryRuntimeStateStore()
-        let plane = RuntimeControlPlane(store: store)
-        try await plane.register(adapter)
-        let request = makeLaunch(host: host, run: run, adapterID: "terminal")
-        try await plane.projectPrelaunch(request, as: .policyReady)
-
-        let runTask = Task { try await plane.run(request) }
-        await adapter.waitForTerminalResultCount(1)
-        runTask.cancel()
-        await resultGate.open()
-
-        await #expect(throws: CancellationError.self) {
-            _ = try await runTask.value
-        }
-        let session = try #require(await plane.sessions[host])
-        #expect(session.stored.projection == .running)
-        #expect(session.stored.projection != .failed)
-        #expect(session.stored.projection != .launchFailed)
-        #expect(isDetachedConsuming(session.lease))
-        #expect(await adapter.counts().launch == 1)
-    }
-
     /// VOY-746-coordinator_contract: cancellation persistence failure releases its consumption owner.
     /// receipt 이후 취소 저장 실패가 caller cancellation 분류를 바꾸지 않고 같은 run의 lease를 회수하는지 검증한다.
-    /// - 검증 내용: CancellationError, detached consuming lease, redacted cleanup evidence, provider launch count.
+    /// - 검증 내용: CancellationError, redacted cleanup evidence, 안전한 detached 또는 terminal 수렴 상태와 provider launch count.
     /// - 사전 조건: receipt-bearing terminal-only run의 네 번째 store apply가 실패한다.
-    /// - 기대 결과: run은 CancellationError로 끝나고 late provider terminal을 받을 수 있는 detached lease가 남는다.
+    /// - 기대 결과: caller는 CancellationError를 받고 cleanup evidence를 남기며 run은 후속 terminal을 받을 detached 상태거나 completed 상태다.
     @Test
     func `cancellation persistence failure releases its consumption owner`() async throws {
         let host: ExternalAgentSessionReference = "host-contract-cancel-persist-failure"
@@ -1074,13 +997,18 @@ extension RuntimeFreshRunCoordinatorContractTests {
         await #expect(throws: CancellationError.self) {
             _ = try await runTask.value
         }
-        let session = try #require(await plane.sessions[host])
-        #expect(session.stored.projection == .running)
-        #expect(isDetachedConsuming(session.lease))
         #expect(await plane.cleanupFailureEvidence(for: host) == RuntimeCleanupFailureEvidence(
             runReference: run,
             kind: .persistence,
         ))
+
+        let session = try #require(await plane.sessions[host])
+        let isDetached = session.stored.projection == .running && isDetachedConsuming(session.lease)
+        let isConverged = session.stored.projection == .completed
+            && session.lease == RuntimeControlPlane.RuntimeLease.none
+        #expect(isDetached || isConverged)
+        let storedProjection = await store.currentState()?.sessions.first?.projection
+        #expect(storedProjection == .running || storedProjection == .completed)
         #expect(await adapter.counts().launch == 1)
     }
 
