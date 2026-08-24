@@ -150,10 +150,12 @@ enum EntryViewLayoutDropValidationAdapter {
             // move-only/빈 mask source의 계약을 존중해 .none으로 거절한다(코멘트 #3830663082).
             return allowedOperations.contains(.copy) ? .copy : .none
         }
-        // 빈 source는 항상 no-op으로 처리한다. 단, 외부 drag가 pasteboard에 지원 표현을 노출하면
-        // `.copy`를 제안해 acceptDrop이 획득 세션을 시작할 수 있게 한다.
+        // 빈 source는 항상 no-op으로 처리한다. 외부 drag가 pasteboard에 지원 표현을 노출하고
+        // source가 copy를 허용할 때만 `.copy`를 제안한다. move-only·빈 mask source의
+        // 계약도 존중한다(코멘트 #3840709287).
         if sourcePaths.isEmpty {
             let hasRepresentation = !isInternalDrag
+                && allowedOperations.contains(.copy)
                 && ExternalDropNegotiation.hasSupportedExternalRepresentation(in: draggingInfo.draggingPasteboard)
             let operationRawValue = hasRepresentation ? NSDragOperation.copy.rawValue : NSDragOperation().rawValue
             validationLogger.info(

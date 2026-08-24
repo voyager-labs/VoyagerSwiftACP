@@ -206,9 +206,37 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
         lock.unlock()
         // 바이트 쓰기·snapshot 격리는 세션 lock 밖에서 수행한다(코멘트 #3837908190).
         let url = URL(fileURLWithPath: staging.path).appendingPathComponent(filename)
-        do {
-            try dataFlavor.bytes.write(to: url)
-        } catch {
+        // 예측 가능한 data 파일명은 provider가 symlink·hard link로 먼저 만들 수 있다.
+        // O_NOFOLLOW|O_EXCL 생성으로 이를 차단하고, 이름이 이미 존재하면 전체 세션을
+        // 실패 종단한다(코멘트 #3840709285).
+        let descriptor = Darwin.open(
+            url.path,
+            O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC,
+            S_IRUSR | S_IWUSR,
+        )
+        guard descriptor >= 0 else {
+            failMaterializationLocked()
+            return
+        }
+        defer { Darwin.close(descriptor) }
+        let writeError = dataFlavor.bytes.withUnsafeBytes { raw -> Int32 in
+            guard !raw.isEmpty else { return 0 }
+            var written = 0
+            while written < raw.count {
+                let writeCount = Darwin.write(
+                    descriptor,
+                    raw.baseAddress! + written,
+                    raw.count - written,
+                )
+                if writeCount <= 0 {
+                    if writeCount < 0, errno == EINTR { continue }
+                    return -1
+                }
+                written += writeCount
+            }
+            return 0
+        }
+        guard writeError == 0 else {
             failMaterializationLocked()
             return
         }
@@ -685,72 +713,6 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
         observationQueue.asyncAfter(deadline: .now() + 1, execute: timeout)
     }
 
-    private func scheduleStagingScan() {
-        lock.lock()
-        defer { lock.unlock() }
-        guard phase == .acquiring else { return }
-
-        stagingScanWorkItem?.cancel()
-        let scan = DispatchWorkItem { [weak self] in
-            self?.handleStagingWrite()
-        }
-        stagingScanWorkItem = scan
-        observationQueue.asyncAfter(deadline: .now() + 0.25, execute: scan)
-    }
-
-    private func handleStagingWrite() {
-        lock.lock()
-        guard phase == .acquiring else {
-            lock.unlock()
-            return
-        }
-        stagingScanWorkItem = nil
-        // 물리화 진행 중에는 미등록 파일이 우리 출력과 구분되지 않으므로 재조정을 건너뛴다.
-        // 실제 provider 쓰기는 새 옵저버 이벤트로 재스캔을 유발한다(코멘트 #3837956591).
-        guard pendingSnapshotCount == 0 else {
-            lock.unlock()
-            return
-        }
-
-        let pending = pendingCancelledCallbacks.sorted { $0.key < $1.key }
-        let candidates = unregisteredStagingURLs()
-        guard !pending.isEmpty, pending.count == candidates.count else {
-            lock.unlock()
-            return
-        }
-
-        var reserved: [(receiverIndex: Int, callbackOrdinal: Int, url: URL)] = []
-        for ((receiverIndex, callbackOrdinal), url) in zip(pending, candidates) {
-            pendingCancelledCallbacks.removeValue(forKey: receiverIndex)
-            callbackErrorTimeouts.removeValue(forKey: receiverIndex)?.cancel()
-            reserved.append((receiverIndex, callbackOrdinal, url))
-        }
-        lock.unlock()
-
-        // 재조정 항목도 claim 격리를 lock 밖에서 수행한다(코멘트 #3837880884).
-        for item in reserved {
-            lock.lock()
-            guard phase == .acquiring, validateCallbackURL(reservedURL: item.url) != nil else {
-                lock.unlock()
-                return
-            }
-            lock.unlock()
-            guard let claimedURL = claimCallbackURL(item.url) else { return }
-            lock.lock()
-            guard phase == .acquiring else {
-                lock.unlock()
-                return
-            }
-            registerReceivedFile(
-                receiverIndex: item.receiverIndex,
-                url: claimedURL,
-                callbackOrdinal: item.callbackOrdinal,
-                cancelReconciled: true,
-            )
-            lock.unlock()
-        }
-    }
-
     private func failPendingCallback(receiverIndex: Int) {
         lock.lock()
         defer { lock.unlock() }
@@ -1098,5 +1060,71 @@ extension ExternalDropAcquisitionSession {
         return nsError.domain == NSCocoaErrorDomain
             && nsError.code == CocoaError.Code.userCancelled.rawValue
             && indeterminateReceivers.contains(receiverIndex)
+    }
+
+    private func scheduleStagingScan() {
+        lock.lock()
+        defer { lock.unlock() }
+        guard phase == .acquiring else { return }
+
+        stagingScanWorkItem?.cancel()
+        let scan = DispatchWorkItem { [weak self] in
+            self?.handleStagingWrite()
+        }
+        stagingScanWorkItem = scan
+        observationQueue.asyncAfter(deadline: .now() + 0.25, execute: scan)
+    }
+
+    private func handleStagingWrite() {
+        lock.lock()
+        guard phase == .acquiring else {
+            lock.unlock()
+            return
+        }
+        stagingScanWorkItem = nil
+        // 물리화 진행 중에는 미등록 파일이 우리 출력과 구분되지 않으므로 재조정을 건너뛴다.
+        // 실제 provider 쓰기는 새 옵저버 이벤트로 재스캔을 유발한다(코멘트 #3837956591).
+        guard pendingSnapshotCount == 0 else {
+            lock.unlock()
+            return
+        }
+
+        let pending = pendingCancelledCallbacks.sorted { $0.key < $1.key }
+        let candidates = unregisteredStagingURLs()
+        guard !pending.isEmpty, pending.count == candidates.count else {
+            lock.unlock()
+            return
+        }
+
+        var reserved: [(receiverIndex: Int, callbackOrdinal: Int, url: URL)] = []
+        for ((receiverIndex, callbackOrdinal), url) in zip(pending, candidates) {
+            pendingCancelledCallbacks.removeValue(forKey: receiverIndex)
+            callbackErrorTimeouts.removeValue(forKey: receiverIndex)?.cancel()
+            reserved.append((receiverIndex, callbackOrdinal, url))
+        }
+        lock.unlock()
+
+        // 재조정 항목도 claim 격리를 lock 밖에서 수행한다(코멘트 #3837880884).
+        for item in reserved {
+            lock.lock()
+            guard phase == .acquiring, validateCallbackURL(reservedURL: item.url) != nil else {
+                lock.unlock()
+                return
+            }
+            lock.unlock()
+            guard let claimedURL = claimCallbackURL(item.url) else { return }
+            lock.lock()
+            guard phase == .acquiring else {
+                lock.unlock()
+                return
+            }
+            registerReceivedFile(
+                receiverIndex: item.receiverIndex,
+                url: claimedURL,
+                callbackOrdinal: item.callbackOrdinal,
+                cancelReconciled: true,
+            )
+            lock.unlock()
+        }
     }
 }
