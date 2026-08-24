@@ -477,8 +477,11 @@ private enum EntryClipboardOperationsSupport {
                 } catch {
                     // 부분 목적지 정리와 백업 복원을 시도한다. 복원에 실패하면 백업이
                     // 임시 이름에 남은 채 묻히지 않도록 복구 오류로 전파한다(코멘트 #3837956593).
+                    // 부분 목적지는 copier가 생성 전에 실패하면 존재하지 않는다. 정리는
+                    // 선택적으로 처리하고 백업 복원은 항상 시도하며, 복원 자체가 실패할
+                    // 때만 복구 오류로 전파한다(코멘트 #3840293881).
+                    try? await entryFileOpsClient.deleteImmediately(destinationURL)
                     do {
-                        try await entryFileOpsClient.deleteImmediately(destinationURL)
                         try await entryFileOpsClient.moveFile(backupURL, destinationURL)
                     } catch {
                         throw FileOpError.system(

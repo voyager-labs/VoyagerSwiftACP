@@ -214,6 +214,14 @@ final class PinnedContentStore {
         return (descriptor, entry.isDirectory)
     }
 
+    /// entries 레지스트리만 O(1)로 비운다. 개별 스냅숏 파일 삭제는 보관 디렉터리 통째
+    /// tombstone-rename 이후 백그라운드 재귀 삭제가 단일 소유한다(코멘트 #3840293889).
+    func clearRegistry() {
+        lock.lock()
+        entries.removeAll()
+        lock.unlock()
+    }
+
     func removeAll() {
         // 레지스트리를 먼저 비우고 파일 삭제는 lock 밖에서 수행한다(코멘트 #3837839018).
         lock.lock()

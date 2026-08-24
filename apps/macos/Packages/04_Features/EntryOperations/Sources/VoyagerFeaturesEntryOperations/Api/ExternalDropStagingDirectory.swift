@@ -424,7 +424,8 @@ final class StagingDirectory {
     /// 늦은 콜백 재정리 경로에서 사용하며 상태 플래그는 건드리지 않는다.
     func removeIfPresent() {
         identityLock.lock()
-        pinnedContent.removeAll()
+        // 늦은 콜백 경로도 항목별 동기 삭제 없이 레지스트리만 비운다(#3840293889).
+        pinnedContent.clearRegistry()
         closeDescriptors(pinnedImmediateRootDescriptors.values)
         pinnedImmediateRootDescriptors.removeAll()
         placementAliases.removeAll()
@@ -452,7 +453,8 @@ final class StagingDirectory {
         isRemoved = true
         closeDescriptors(pinnedImmediateRootDescriptors.values)
         pinnedImmediateRootDescriptors.removeAll()
-        pinnedContent.removeAll()
+        // 레지스트리만 비우고 실제 파일은 통째 rename+백그라운드 삭제로 정리한다.
+        pinnedContent.clearRegistry()
         claimedIdentities.removeAll()
         identityLock.unlock()
         removeTreePayloadOffMainActor()
