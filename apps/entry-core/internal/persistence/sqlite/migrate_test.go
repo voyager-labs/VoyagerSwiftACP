@@ -7,7 +7,10 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"io/fs"
+	"reflect"
+	"sort"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -857,5 +860,65 @@ func TestSharedSQLiteDriverLockRejectsAheadLedgerUnderLock(t *testing.T) {
 	}
 	if err := driverB.Unlock(); err != nil {
 		t.Fatalf("driverB.Unlock: %v", err)
+	}
+}
+
+// TestMigrationsPreserveCatalogForeignKeys pins the hand-written catalog
+// foreign-key constraints in migration 0002. The GORM Atlas loader cannot
+// express these composite references (they target the non-PK unique
+// workspace_id index), so desired schema and migration head intentionally
+// diverge here and a naive `atlas migrate diff` run proposes dropping them.
+// This guard fails closed the moment a committed migration loses any FK.
+func TestMigrationsPreserveCatalogForeignKeys(t *testing.T) {
+	store := migratedStore(t)
+	db := store.SQLDB()
+
+	expected := map[string]map[string][]string{
+		// child table -> parent table -> (from column -> to column) pairs
+		"workspace_property_definitions": {
+			"workspace_metadata": {"workspace_id:workspace_id"},
+		},
+		"source_property_descriptors": {
+			"workspace_metadata": {"workspace_id:workspace_id"},
+		},
+		"property_bindings": {
+			"workspace_metadata":             {"workspace_id:workspace_id"},
+			"workspace_property_definitions": {"workspace_id:workspace_id", "property_id:property_id"},
+			"source_property_descriptors": {
+				"workspace_id:workspace_id", "provider_id:provider_id",
+				"source_instance_id:source_instance_id", "scope_kind:scope_kind",
+				"scope_external_id:scope_external_id", "external_property_id:external_property_id",
+			},
+		},
+		"workspace_property_terms": {
+			"workspace_metadata":             {"workspace_id:workspace_id"},
+			"workspace_property_definitions": {"workspace_id:workspace_id", "property_id:property_id"},
+		},
+	}
+
+	for child, parents := range expected {
+		rows, err := db.Query(fmt.Sprintf("PRAGMA foreign_key_list(%q)", child))
+		if err != nil {
+			t.Fatalf("foreign_key_list(%s): %v", child, err)
+		}
+		got := map[string][]string{}
+		for rows.Next() {
+			var id, seq int
+			var parent, fromCol, toCol, onUpdate, onDelete, match string
+			if err := rows.Scan(&id, &seq, &parent, &fromCol, &toCol, &onUpdate, &onDelete, &match); err != nil {
+				rows.Close()
+				t.Fatalf("scan fk row (%s): %v", child, err)
+			}
+			got[parent] = append(got[parent], fromCol+":"+toCol)
+		}
+		rows.Close()
+		for parent, wantPairs := range parents {
+			sort.Strings(wantPairs)
+			gotPairs := got[parent]
+			sort.Strings(gotPairs)
+			if !reflect.DeepEqual(gotPairs, wantPairs) {
+				t.Fatalf("%s -> %s foreign key = %v, want %v (a migration dropped or altered catalog FKs)", child, parent, gotPairs, wantPairs)
+			}
+		}
 	}
 }
