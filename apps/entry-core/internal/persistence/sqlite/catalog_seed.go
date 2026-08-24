@@ -93,17 +93,13 @@ func applyCatalogSeedInTx(tx *gorm.DB, wsctx domainentry.WorkspaceContext, meta 
 	if err != nil {
 		return err
 	}
-	// An empty ACTIVE seed set is only fresh when NO seed-owned row of any
-	// lifecycle exists at all: a catalog whose definition, descriptor, binding,
-	// and term rows are all tombstoned is corruption, and a catalog left with
-	// only non-current historical tuples (newer ordinal or same-ordinal
-	// source-version drift) must not bypass classifySeedState's drift
-	// rejection. Either way, re-applying would reactivate rows through ON
-	// CONFLICT instead of failing closed.
-	if !seedState.HasSeed {
-		if err := rejectNonFreshSeedHistory(tx, wsctx.ID.Bytes(), meta); err != nil {
-			return err
-		}
+	// Seed-owned history is classified at every lifecycle regardless of the
+	// active set: a newer ordinal or same-ordinal source-version drift must
+	// fail closed even when the active current tuple would otherwise be a
+	// no-op, and a fully tombstoned current tuple is corruption. Only older
+	// tombstoned tuples (normal upgrade leftovers) are allowed through.
+	if err := rejectNonFreshSeedHistory(tx, wsctx.ID.Bytes(), meta, seedState.HasSeed); err != nil {
+		return err
 	}
 	currentSeedDigest, err := catalogDigest(snapshot)
 	if err != nil {
@@ -146,13 +142,15 @@ func applyCatalogSeedInTx(tx *gorm.DB, wsctx domainentry.WorkspaceContext, meta 
 	return nil
 }
 
-// rejectNonFreshSeedHistory is the fresh-vs-corrupted discriminator for an
-// empty active seed set. A fresh catalog carries no seed-owned row at any
-// lifecycle. History at the CURRENT tuple means the catalog was fully
-// tombstoned (corruption); history at any other tuple would let a fresh
-// apply bypass classifySeedState's newer/source-version drift rejection and
-// reactivate rows through ON CONFLICT. Both fail closed.
-func rejectNonFreshSeedHistory(tx *gorm.DB, wsBytes []byte, meta seeds.SeedMetadata) error {
+// rejectNonFreshSeedHistory classifies every seed-owned history tuple at any
+// lifecycle, regardless of the active set. A fresh catalog carries no
+// seed-owned row at all. History at the CURRENT tuple with an empty active set
+// means the catalog was fully tombstoned (corruption). A NEWER ordinal or a
+// same-ordinal/different-source tuple means downgrade or drift history that
+// classifySeedState's no-op path would otherwise ignore. A NULL seed trio on a
+// seed-owned row is corruption. Only strictly older tuples - the tombstones a
+// normal upgrade leaves behind - are allowed.
+func rejectNonFreshSeedHistory(tx *gorm.DB, wsBytes []byte, meta seeds.SeedMetadata, hasActiveSeed bool) error {
 	owner := seedOwnerSystemPropertyRegistry
 	families := []any{
 		&WorkspacePropertyDefinitionRow{},
@@ -177,15 +175,19 @@ func rejectNonFreshSeedHistory(tx *gorm.DB, wsBytes []byte, meta seeds.SeedMetad
 			if tuple.SeedVersion == nil || tuple.SeedSourceVersion == nil {
 				return ErrCatalogSeedStateCorrupt
 			}
-			if *tuple.SeedVersion == meta.SeedOrdinal && *tuple.SeedSourceVersion == meta.SystemRegistryVersion {
+			switch {
+			case *tuple.SeedVersion == meta.SeedOrdinal && *tuple.SeedSourceVersion == meta.SystemRegistryVersion:
 				currentTupleSeen = true
-				continue
+			case *tuple.SeedVersion > meta.SeedOrdinal:
+				return fmt.Errorf("%w: newer historical seed tuple %d/%s",
+					ErrCatalogSeedState, *tuple.SeedVersion, *tuple.SeedSourceVersion)
+			case *tuple.SeedVersion == meta.SeedOrdinal && *tuple.SeedSourceVersion != meta.SystemRegistryVersion:
+				return fmt.Errorf("%w: historical seed source-version drift %d/%s",
+					ErrCatalogSeedState, *tuple.SeedVersion, *tuple.SeedSourceVersion)
 			}
-			return fmt.Errorf("%w: historical seed tuple %d/%s with empty active set",
-				ErrCatalogSeedState, *tuple.SeedVersion, *tuple.SeedSourceVersion)
 		}
 	}
-	if currentTupleSeen {
+	if currentTupleSeen && !hasActiveSeed {
 		return ErrCatalogSeedStateCorrupt
 	}
 	return nil

@@ -209,3 +209,5 @@ func mutateDefinitionDisplayName(t *testing.T, store *Store, wsctx domainentry.W
 		t.Fatalf("update display_name affected %d rows, want 1", res.RowsAffected)
 	}
 }
+
+func ptrInt(value int) *int { return &value }

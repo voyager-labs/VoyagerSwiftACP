@@ -1210,3 +1210,40 @@ func TestCatalogSeedApplyFailsClosedOnProviderOwnedCollision(t *testing.T) {
 		t.Fatalf("seed-owned rows leaked after rollback: %d", seedOwned)
 	}
 }
+
+// TestCatalogSeedActiveCurrentWithNewerHistoryFailsClosed proves a healthy
+// active current seed (otherwise a no-op) is still rejected when seed-owned
+// history carries a newer ordinal: the downgrade/corrupt history must not be
+// ignored while the daemon reports ready.
+func TestCatalogSeedActiveCurrentWithNewerHistoryFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	store := migratedStore(t)
+	wsctx := buildCatalogFixture(t, store, 0, 0, 0, 0, noneSeedTrio())
+	if err := store.ApplyCatalogSeed(ctx, wsctx); err != nil {
+		t.Fatalf("first ApplyCatalogSeed: %v", err)
+	}
+
+	// Inject one tombstoned definition row from a FUTURE seed tuple; the
+	// active current set and its digest stay untouched.
+	futureID, err := domainentry.RegistryPropertyID("corrupt.future")
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner := "system_property_registry"
+	source := seeds.Current().SystemRegistryVersion
+	future := WorkspacePropertyDefinitionRow{
+		WorkspaceID: wsctx.ID.Bytes(), PropertyID: futureID.Bytes(),
+		Origin: "built_in", IdentityScheme: "registry_derived", Namespace: "system",
+		CanonicalKey: "corrupt.future", DisplayName: "Future", Description: "",
+		ValueType: "text", Cardinality: "one", Nullable: false, Editable: false,
+		DefinitionRev: 1, LifecycleState: "tombstoned",
+		SeedOwner: &owner, SeedVersion: ptrInt(2), SeedSourceVersion: &source,
+	}
+	if err := store.db.WithContext(ctx).Create(&future).Error; err != nil {
+		t.Fatalf("inject future tuple row: %v", err)
+	}
+
+	if err := store.ApplyCatalogSeed(ctx, wsctx); !errors.Is(err, ErrCatalogSeedState) {
+		t.Fatalf("ApplyCatalogSeed error = %v, want ErrCatalogSeedState", err)
+	}
+}
