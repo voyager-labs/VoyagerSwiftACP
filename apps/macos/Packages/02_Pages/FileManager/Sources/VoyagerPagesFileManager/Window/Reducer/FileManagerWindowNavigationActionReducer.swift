@@ -405,6 +405,7 @@ private func handleCollectionFileLoaded(
           state.pendingCollectionOpenRequest?.url == request.url,
           state.content.navigation.navigationState == request.sourceRoute
     else { return .none }
+    let pinnedReturnTabID = state.pendingPinnedCollectionReturnTabID
     state.pendingCollectionOpenRequest = nil
 
     switch result {
@@ -414,7 +415,7 @@ private func handleCollectionFileLoaded(
         if file.isEmptyDefinition(resolvedFilters: resolved) {
             return handleEmptyCollectionFile(
                 request: request,
-                tabID: state.contentTabs.activeTabID,
+                tabID: pinnedReturnTabID,
                 state: &state,
                 collectionAlertClient: environment.collectionAlertClient,
             )
@@ -437,7 +438,7 @@ private func handleCollectionFileLoaded(
         return handleCollectionFileLoadedFailure(
             error,
             request: request,
-            tabID: state.contentTabs.activeTabID,
+            tabID: pinnedReturnTabID,
             collectionAlertClient: environment.collectionAlertClient,
         )
     }
