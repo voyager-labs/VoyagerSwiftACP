@@ -412,7 +412,8 @@ extension RuntimeRestoreResumeCoordinatorContractTests {
         #expect(persisted.projection == .eventProjected)
         #expect(persisted.restorationClaim?.ownerToken == ownerToken)
         #expect(await store.applyCount == 4)
-        #expect(await store.loadCount == 4)
+        // 단말 우선권 수선: 경합 실패 노출 전 durable terminal 재조회 1회가 추가된다.
+        #expect(await store.loadCount == 5)
         #expect(await (adapter.counts()).stream == 1)
         #expect(await (adapter.counts()).terminalResult == 0)
     }
@@ -473,7 +474,8 @@ extension RuntimeRestoreResumeCoordinatorContractTests {
         #expect(persisted.restorationClaim?.ownerToken == ownerToken)
         #expect(await plane.sessions[host]?.lease.isAwaitingResumption == true)
         #expect(await store.applyCount == 3)
-        #expect(await store.loadCount == 2)
+        // 단말 우선권 수선: 경합 실패 노출 전 durable terminal 재조회 1회가 추가된다.
+        #expect(await store.loadCount == 3)
         #expect(await (adapter.counts()).stream == 1)
         #expect(await (adapter.counts()).terminalResult == 0)
     }

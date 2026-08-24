@@ -342,6 +342,75 @@ extension RuntimeRestoreResumeCoordinatorContractTests {
         #expect(await adapter.counts().stream == 1)
     }
 
+    /// VOY-747-restore_resume_ownership: heartbeat renewal conflict yields to same-run durable terminal.
+    /// renewal 성공 뒤 cross-plane durable completed가 저장되면 다음 renewal conflict가
+    /// attemptLost/persistenceConflict로 노출되기 전에 같은 run의 durable terminal이 이겨야 한다.
+    /// - 검증 내용: gate/clock으로 renewal→terminal저장→conflict 순서를 고정하고 resume가 completed로 수렴하는지 검증.
+    /// - 사전 조건: restored 소유자의 첫 heartbeat renewal이 성공한 뒤 provider stream은 gate에서 대기한다.
+    /// - 기대 결과: 두 번째 renewal conflict 중에도 resume는 persistenceConflict 대신 durable completed를 반환한다.
+    @Test
+    func `heartbeat renewal conflict yields to same-run durable terminal`() async throws {
+        let host = ExternalAgentSessionReference("host-heartbeat-renewal-terminal")
+        let run = RuntimeRunReference("run-heartbeat-renewal-terminal")
+        let context = makeContext()
+        let streamGate = RuntimeTestGate()
+        let stored = makeEqualitySession(
+            storedContext: RuntimeStoredContext(contextPolicy: context),
+            externalAgentSessionReference: host,
+            providerInternalSessionReference: ProviderInternalSessionReference("opaque-heartbeat-renewal"),
+            runReference: run,
+            projection: .running,
+        )
+        let store = InMemoryRuntimeStateStore(state: makeState([stored]))
+        let clock = DeterministicRuntimeRestorationClock(currentDate: Date(timeIntervalSince1970: 4_102_444_800))
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            capabilities: .allSupported,
+            eventsByLaunch: [[]],
+            eventStreamGate: streamGate,
+        )
+        let resumingPlane = RuntimeControlPlane(
+            store: store,
+            restorationHeartbeatInterval: .seconds(20),
+            restorationClock: clock.runtimeClock,
+        )
+        try await resumingPlane.register(adapter)
+        #expect(try await resumingPlane.restore(hostReference: host, expectedContext: context) == .restored)
+
+        let resume = Task { try await resumingPlane.resumeRestoredRun(hostReference: host) }
+        await adapter.waitForEventStreamCount(1)
+
+        // 1차 heartbeat 갱신이 cross-plane 저장 없이 성공하고 루프가 다시 잠들 때까지 대기한다.
+        await clock.waitUntilSleeping()
+        await clock.releaseSleepers()
+        await clock.waitUntilSleeping()
+
+        // 같은 run의 durable terminal이 cross-plane에서 저장된다.
+        let hostPlane = RuntimeControlPlane(store: store)
+        #expect(try await hostPlane.ingestHostEvent(ownershipMakeHostTerminal(
+            host: host,
+            run: run,
+            sequence: 1,
+        ))?.outcome == .completed)
+
+        // 2차 heartbeat 갱신은 conflict지만 노출 전 durable terminal 수렴이 우선해야 한다.
+        await clock.releaseSleepers()
+        do {
+            #expect(try await resume.value.outcome == .completed)
+        } catch {
+            await streamGate.open()
+            Issue.record("durable terminal은 heartbeat conflict 노출보다 우선해야 한다: \(error)")
+            return
+        }
+        #expect(await resumingPlane.projection(for: host) == .completed)
+        #expect(await resumingPlane.sessions[host]?.lease == RuntimeControlPlane.RuntimeLease.none)
+        #expect(await store.currentState()?.sessions.first?.projection == .completed)
+        #expect(await adapter.counts().stream == 1)
+
+        await streamGate.open()
+    }
+
     /// VOY-747-restore_resume_ownership: heartbeat persistence failure preserves resume claim.
     /// provider 소비 중 heartbeat conflict와 저장 실패를 run interruption으로 오인하지 않는지 검증한다.
     /// - 검증 내용: persistenceConflict/persistenceFailure 구분, running projection과 재개 가능한 claim 보존.
