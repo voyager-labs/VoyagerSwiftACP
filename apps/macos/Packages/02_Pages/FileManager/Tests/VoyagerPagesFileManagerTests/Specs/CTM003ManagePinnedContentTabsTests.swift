@@ -6959,6 +6959,104 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         XCTAssertEqual(store.state.contentTabs.pinnedRecords[inactiveID], inactiveRecord)
     }
 
+    /// CTM-003-go_to_anchored_path_of_pinned_tab: 비활성 pinned Directory의 loaded selection도 canonical delegate를 받는다.
+    /// 이미 로드된 비활성 pinned Directory 탭에 외부 reveal을 적용하면 child 선택 projection이 갱신되는지 검증한다.
+    /// - 검증 내용: 스냅샷 pending 소비와 tabContent selectionChanged delegate 전달
+    /// - 사전 조건: runtime과 durable이 같은 비활성 pinned Directory 탭에 loaded 항목과 pending reveal이 있음
+    /// - 기대 결과: 스냅샷 selectedIds가 대상 파일로 바뀌고 같은 tabID의 tabContent selectionChanged 수신
+    func testReturnInactivePinnedDirectoryConsumesSelectionAndNotifiesTabContent() async {
+        let activeID = ContentTabID(rawValue: "active-directory")
+        let inactiveID = ContentTabID(rawValue: "inactive-pinned-directory")
+        let durablePath = "/tmp/inactive-dir"
+        let revealPath = durablePath + "/report.txt"
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: activeID,
+                    page: .directory,
+                    anchor: .directory(path: "/tmp/active-dir"),
+                    isPinned: false,
+                ),
+                ContentTabItem(
+                    id: inactiveID,
+                    page: .directory,
+                    anchor: .directory(path: durablePath),
+                    isPinned: true,
+                ),
+            ],
+            activeTabID: activeID,
+            pinnedRecords: [
+                inactiveID: Self.pinnedRecord(
+                    id: inactiveID,
+                    anchor: .directory(path: durablePath),
+                    title: "Durable Directory",
+                    iconName: "folder",
+                ),
+            ],
+        )
+        state.content = .initialContent(for: .directory(path: "/tmp/active-dir"))
+        let loadedEntry = EntryModel(
+            name: "report.txt",
+            fullPath: revealPath,
+            isFolder: false,
+            isHidden: false,
+            size: 1,
+            modifiedDate: Date(timeIntervalSince1970: 0),
+            fileExtension: "txt",
+            facets: .init(
+                createdDate: Date(timeIntervalSince1970: 0),
+                addedDate: Date(timeIntervalSince1970: 0),
+                lastOpenedDate: nil,
+                kind: "Text",
+                creatorApplication: nil,
+                tags: nil,
+                supplementaryMetadata: nil,
+            ),
+        )
+        state.tabContentStates[inactiveID] = .initialContent(for: .directory(path: durablePath))
+        state.tabContentStates[inactiveID]?.entryViewLayout.entryOperations.items = IdentifiedArrayOf(
+            uniqueElements: [loadedEntry],
+        )
+        state.syncActiveTabContentState()
+        state.syncContentTabSidebarItems()
+        let notifiedTabIDs = LockIsolated<[ContentTabID]>([])
+        let store = TestStore(initialState: state) {
+            Reduce<FileManagerWindowState, FileManagerWindowAction> { state, action in
+                if case let .tabContent(
+                    tabID: notifiedTabID,
+                    action: .entryViewLayout(.delegate(.selectionChanged)),
+                ) = action {
+                    // projection 갱신까지 검증하기 위해 기록 후 child reducer로 계속 전달한다.
+                    notifiedTabIDs.withValue { $0.append(notifiedTabID) }
+                }
+                return FileManagerFeature().reduce(into: &state, action: action)
+            }
+        } withDependencies: {
+            $0.date = .constant(Self.pinnedAt)
+            $0.fileManagerClient.fileExistsWithIsDirectory = { _, isDirectory in
+                isDirectory?.pointee = true
+                return true
+            }
+        }
+        // store.exhaustivity = .off: directory child action보다 비활성 selection projection 전달을 검증한다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.returnContentTabToPinnedLocation(
+            inactiveID,
+            pendingSelectEntryID: revealPath,
+            activateIfNeeded: false,
+        ))
+        await store.skipReceivedActions(strict: false)
+        await store.finish()
+
+        XCTAssertEqual(notifiedTabIDs.value, [inactiveID])
+        XCTAssertEqual(
+            store.state.tabContentStates[inactiveID]?.entryViewLayout.entryOperations.selectedEntryIDs,
+            [revealPath],
+        )
+    }
+
     /// CTM-003-go_to_anchored_path_of_pinned_tab: Collection 복귀 중 tab close는 typed failure terminal을 전달한다.
     /// 외부 열기 activation이 취소된 Collection load를 계속 기다리지 않도록 실제 close 완료 경계를 검증한다.
     /// - 검증 내용: pending Collection open을 가진 active tab의 commitClose가 pinned 복귀 실패 delegate를 보냄

@@ -303,9 +303,16 @@ struct FileManagerWindowRoutingReducer {
             pinnedAnchor: { pinnedAnchor(for: $0) },
             state: &state,
         )
-        let selectionChangedEffect: Effect<Action> = isActiveTab && didApplyLoadedSelection
-            ? .send(.content(.entryViewLayout(.delegate(.selectionChanged))))
-            : .none
+        // loaded 항목에 selection을 반영한 탭은 활성 여부와 무관하게 canonical projection 갱신을 받는다.
+        let selectionChangedEffect: Effect<Action> = if isActiveTab, didApplyLoadedSelection {
+            .send(.content(.entryViewLayout(.delegate(.selectionChanged))))
+        } else if didApplyLoadedSelection {
+            .send(
+                .tabContent(tabID: tabID, action: .entryViewLayout(.delegate(.selectionChanged))),
+            )
+        } else {
+            .none
+        }
         let targetContentState: FileManagerContentState? = isActiveTab ? state.content : state.tabContentStates[tabID]
         let currentNavigationState = targetContentState?.navigation.navigationState
         let currentAnchor = currentNavigationState.flatMap(pinnedAnchor)
