@@ -144,12 +144,18 @@ enum FileManagerContentEntryOpsCoordinator {
         // loadingContext.generation은 이미 이 명령의 reload 세대다. 외부 일치 이벤트가
         // 이후에 도달해도 같은 세대로 판정되어 전이가 selection migration까지 유지된다.
         // 중간에 다른 reload가 끼면 generation 불일치로 전이가 만료된다.
+        let projectionOwner = identityTransitionProjectionOwner(
+            afterPath: move.after,
+            rootPath: normalizedRoot,
+            state: state,
+        )
         state.pendingIdentityTransition = FileManagerContentState.EntryIdentityTransition(
             recordID: record.id,
             beforePath: move.before,
             afterPath: move.after,
             rootPath: normalizedRoot,
             refreshGeneration: state.entryViewLayout.entryOperations.loadingContext.generation,
+            projectionOwner: projectionOwner,
         )
         return .none
     }
@@ -177,6 +183,7 @@ enum FileManagerContentEntryOpsCoordinator {
     @discardableResult
     static func migrateSelectionAlongIdentityTransition(
         entries: [EntryModel],
+        projectionOwner: FileManagerContentState.EntryIdentityTransitionProjectionOwner,
         state: inout FileManagerContentState,
     ) -> Bool {
         guard let transition = state.pendingIdentityTransition else { return false }
@@ -187,9 +194,19 @@ enum FileManagerContentEntryOpsCoordinator {
             state.pendingIdentityTransition = nil
             return false
         }
-        guard state.entryViewLayout.entryOperations.loadingContext.generation == transition.refreshGeneration else {
-            // 세대가 어긋난 전이도 만료시킨다(뒤늦은 batch가 stale 선택을 잘못 옮기지 않게).
-            state.pendingIdentityTransition = nil
+        switch (transition.projectionOwner, projectionOwner) {
+        case let (.root(expectedGeneration), .root(actualGeneration)):
+            guard expectedGeneration == actualGeneration else {
+                state.pendingIdentityTransition = nil
+                return false
+            }
+        case let (.folder(expectedID, expectedGeneration), .folder(actualID, actualGeneration)):
+            guard canonicalizedPath(expectedID) == canonicalizedPath(actualID) else { return false }
+            guard expectedGeneration == actualGeneration else {
+                state.pendingIdentityTransition = nil
+                return false
+            }
+        case (.root, .folder), (.folder, .root):
             return false
         }
         let matchedBeforeID = state.entryViewLayout.selectedIds.first {
@@ -209,6 +226,40 @@ enum FileManagerContentEntryOpsCoordinator {
         state.entryViewLayout.rangeAnchorId = matchedAfterID
         state.pendingIdentityTransition = nil
         return true
+    }
+
+    static func identityTransitionOwnerIsCurrent(
+        _ owner: FileManagerContentState.EntryIdentityTransitionProjectionOwner,
+        state: FileManagerContentState,
+    ) -> Bool {
+        switch owner {
+        case let .root(generation):
+            return state.entryViewLayout.entryOperations.loadingContext.generation == generation
+        case let .folder(id, generation):
+            guard let node = state.entryViewLayout.hierarchy.nodesByID[id] else { return false }
+            return node.generation == generation || node.generation &+ 1 == generation
+        }
+    }
+
+    private static func identityTransitionProjectionOwner(
+        afterPath: String,
+        rootPath: String,
+        state: FileManagerContentState,
+    ) -> FileManagerContentState.EntryIdentityTransitionProjectionOwner {
+        let rootOwner = FileManagerContentState.EntryIdentityTransitionProjectionOwner.root(
+            generation: state.entryViewLayout.entryOperations.loadingContext.generation,
+        )
+        let directParentPath = canonicalizedPath(parentPath(for: afterPath))
+        if directParentPath == rootPath {
+            return rootOwner
+        }
+        guard let folderID = state.entryViewLayout.hierarchy.nodesByID.keys.first(where: {
+            canonicalizedPath($0) == directParentPath
+        }),
+            state.entryViewLayout.hierarchy.expandedFolderIDs.contains(folderID),
+            let node = state.entryViewLayout.hierarchy.nodesByID[folderID]
+        else { return rootOwner }
+        return .folder(id: folderID, generation: node.generation &+ 1)
     }
 
     private static func setTagsRefreshEffect(
@@ -346,7 +397,13 @@ enum FileManagerContentEntryOpsCoordinator {
         state: inout FileManagerContentState,
     ) -> Effect<FileManagerContentAction> {
         let pendingSelectionApplied = applyPendingSelectionForLoadedEntries(entries: entries, state: &state)
-        let identityMigrated = migrateSelectionAlongIdentityTransition(entries: entries, state: &state)
+        let identityMigrated = migrateSelectionAlongIdentityTransition(
+            entries: entries,
+            projectionOwner: .root(
+                generation: state.entryViewLayout.entryOperations.loadingContext.generation,
+            ),
+            state: &state,
+        )
         guard pendingSelectionApplied || identityMigrated else {
             return .none
         }

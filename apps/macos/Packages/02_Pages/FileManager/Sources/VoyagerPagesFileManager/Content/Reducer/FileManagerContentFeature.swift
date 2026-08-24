@@ -90,7 +90,9 @@ public struct FileManagerContentFeature {
 
         Reduce { state, action in
             let effect = handlePendingSelectionAfterEntryLayoutLoaded(action, state: &state)
+            rebaseFolderIdentityTransitionAfterRootSnapshot(on: action, state: &state)
             resolvePreserveSelectionForReplacementProjection(on: action, state: &state)
+            resolveFolderIdentityTransition(on: action, state: &state)
             return effect
         }
 
@@ -327,10 +329,14 @@ public struct FileManagerContentFeature {
         state: inout State,
     ) -> Effect<Action> {
         let entries: [EntryModel]
+        let projectionOwner: FileManagerContentState.EntryIdentityTransitionProjectionOwner
         let appliesPendingExternalSelection: Bool
         switch action {
         case let .entryViewLayout(.entryOperations(.loading(.itemsLoaded(items)))):
             entries = items
+            projectionOwner = .root(
+                generation: state.entryViewLayout.entryOperations.loadingContext.generation,
+            )
             appliesPendingExternalSelection = true
 
         case let .entryViewLayout(.entryOperations(.loading(.streamEvent(streamEvent)))):
@@ -339,6 +345,7 @@ public struct FileManagerContentFeature {
                   batchIndex == state.entryViewLayout.entryOperations.loadingContext.expectedCoreBatchIndex
             else { return .none }
             entries = items
+            projectionOwner = .root(generation: streamEvent.generation)
             appliesPendingExternalSelection = true
 
         case let .entryViewLayout(.hierarchy(.folderChildrenResponse(
@@ -355,6 +362,7 @@ public struct FileManagerContentFeature {
                   batchIndex == node.folder.expectedBatchIndex
             else { return .none }
             entries = items
+            projectionOwner = .folder(id: folderID, generation: folderGeneration)
             appliesPendingExternalSelection = false
 
         default:
@@ -368,6 +376,7 @@ public struct FileManagerContentFeature {
             )
         let identityMigrated = FileManagerContentEntryOpsCoordinator.migrateSelectionAlongIdentityTransition(
             entries: entries,
+            projectionOwner: projectionOwner,
             state: &state,
         )
         guard pendingSelectionApplied || identityMigrated else { return .none }
@@ -404,27 +413,41 @@ public struct FileManagerContentFeature {
         on action: Action,
         state: inout State,
     ) {
-        guard case .entryViewLayout(.view(.applyContentProjection)) = action else { return }
         guard var transition = state.pendingIdentityTransition else { return }
-        // 루트·세대가 어긋난 stale 전이는 이 projection에서 만료한다(이후 되살리지 않게).
+        guard isIdentityReplacementProjection(action, owner: transition.projectionOwner) else { return }
         guard case let .folder(currentPath) = state.navigation.navigationState,
               canonicalizedPath(currentPath) == transition.rootPath,
-              state.entryViewLayout.entryOperations.loadingContext.generation == transition.refreshGeneration
+              FileManagerContentEntryOpsCoordinator.identityTransitionOwnerIsCurrent(
+                  transition.projectionOwner,
+                  state: state,
+              )
         else {
             state.pendingIdentityTransition = nil
             return
         }
-        guard !state.entryViewLayout.entryOperations.loadingContext.coreFinished else { return }
+        if case .root = transition.projectionOwner,
+           state.entryViewLayout.entryOperations.loadingContext.coreFinished
+        {
+            return
+        }
         let beforePath = canonicalizedPath(transition.beforePath)
         let afterPath = canonicalizedPath(transition.afterPath)
         let selectedPaths = Set(state.entryViewLayout.selectedIds.map(canonicalizedPath))
         guard selectedPaths.contains(beforePath),
               !selectedPaths.contains(afterPath)
         else { return }
-        // 이 projection에 after-path가 없으면 reconcile이 before-path를 지우므로 보존 표시를 남긴다.
-        let loadedPaths = Set(
-            state.entryViewLayout.entryOperations.loadingContext.items.map { canonicalizedPath($0.id) },
-        )
+        let loadedPaths: Set<String> = switch transition.projectionOwner {
+        case .root:
+            Set(
+                state.entryViewLayout.entryOperations.loadingContext.items.map { canonicalizedPath($0.id) },
+            )
+        case let .folder(id, _):
+            Set(
+                state.entryViewLayout.hierarchy.nodesByID[id]?.folder.children.map {
+                    canonicalizedPath($0.id)
+                } ?? [],
+            )
+        }
         guard !loadedPaths.contains(afterPath) else { return }
         // 재선택은 canonical이 아닌 현재 선택의 원본 lexical ID로 수행해야 표기가 유지된다.
         transition.preservedLexicalBeforeID = state.entryViewLayout.selectedIds.first {
@@ -440,8 +463,8 @@ public struct FileManagerContentFeature {
         on action: Action,
         state: inout State,
     ) {
-        guard case .entryViewLayout(.view(.applyContentProjection)) = action else { return }
         guard var transition = state.pendingIdentityTransition else { return }
+        guard isIdentityReplacementProjection(action, owner: transition.projectionOwner) else { return }
         let afterPath = canonicalizedPath(transition.afterPath)
         let selectedPaths = Set(state.entryViewLayout.selectedIds.map(canonicalizedPath))
 
@@ -460,11 +483,83 @@ public struct FileManagerContentFeature {
             return
         }
 
-        // 종료 projection에서 after-path가 없으면 전이를 소비하고 선택 reconcile이 이긴다.
-        guard state.entryViewLayout.entryOperations.loadingContext.coreFinished else { return }
+        guard case .root = transition.projectionOwner,
+              state.entryViewLayout.entryOperations.loadingContext.coreFinished
+        else { return }
         let visiblePaths = visibleEntryPaths(in: state)
         guard !visiblePaths.contains(afterPath), !selectedPaths.contains(afterPath) else { return }
         state.pendingIdentityTransition = nil
+    }
+
+    private func isIdentityReplacementProjection(
+        _ action: Action,
+        owner: FileManagerContentState.EntryIdentityTransitionProjectionOwner,
+    ) -> Bool {
+        switch action {
+        case .entryViewLayout(.view(.applyContentProjection)):
+            true
+        case .entryViewLayout(.hierarchy(.rootSnapshotCompleted)):
+            if case .folder = owner { true } else { false }
+        case let .entryViewLayout(.hierarchy(.folderChildrenResponse(
+            _,
+            folderID,
+            folderGeneration,
+            .event(.coreBatch),
+        ))):
+            if case let .folder(expectedID, expectedGeneration) = owner {
+                canonicalizedPath(folderID) == canonicalizedPath(expectedID)
+                    && folderGeneration == expectedGeneration
+            } else {
+                false
+            }
+        default:
+            false
+        }
+    }
+
+    private func rebaseFolderIdentityTransitionAfterRootSnapshot(
+        on action: Action,
+        state: inout State,
+    ) {
+        guard case .entryViewLayout(.hierarchy(.rootSnapshotCompleted)) = action,
+              var transition = state.pendingIdentityTransition,
+              case let .folder(id, generation) = transition.projectionOwner,
+              let currentGeneration = state.entryViewLayout.hierarchy.nodesByID[id]?.generation,
+              currentGeneration == generation &+ 1
+        else { return }
+        transition.projectionOwner = .folder(id: id, generation: currentGeneration)
+        state.pendingIdentityTransition = transition
+    }
+
+    private func resolveFolderIdentityTransition(
+        on action: Action,
+        state: inout State,
+    ) {
+        guard let transition = state.pendingIdentityTransition,
+              case let .folder(expectedID, expectedGeneration) = transition.projectionOwner
+        else { return }
+        guard FileManagerContentEntryOpsCoordinator.identityTransitionOwnerIsCurrent(
+            transition.projectionOwner,
+            state: state,
+        ) else {
+            state.pendingIdentityTransition = nil
+            return
+        }
+        guard case let .entryViewLayout(.hierarchy(.folderChildrenResponse(
+            _,
+            folderID,
+            folderGeneration,
+            response,
+        ))) = action,
+            canonicalizedPath(folderID) == canonicalizedPath(expectedID)
+        else { return }
+        guard folderGeneration == expectedGeneration else { return }
+        switch response {
+        case .failed, .streamCompleted, .event(.coreFinished):
+            state.pendingIdentityTransition = nil
+        case .event(.coreBatch), .event(.metadataPatches):
+            break
+        }
     }
 
     private func visibleEntryPaths(in state: State) -> Set<String> {

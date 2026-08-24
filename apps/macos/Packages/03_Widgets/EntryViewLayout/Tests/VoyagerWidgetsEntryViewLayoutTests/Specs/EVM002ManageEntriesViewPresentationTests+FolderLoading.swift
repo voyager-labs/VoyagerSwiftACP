@@ -985,6 +985,56 @@ extension EVM002ManageEntriesViewPresentationTests {
         XCTAssertEqual(node?.generation, 5)
     }
 
+    /// EVM-002-replacement_reload_snapshot_retention: 빈 core batch를 소진한 retained snapshot도 실패 재시도에 유지한다.
+    /// batch cursor가 증가했어도 content provenance가 없으면 이전 완전 세대 children임을 검증한다.
+    /// - 검증 내용: coreBatch([], 0) → failed → retry 뒤 children, selection, 새 generation 상태
+    /// - 사전 조건: 선택된 child를 가진 완료 snapshot이 교체 재로드에서 빈 batch 하나만 수신한다.
+    /// - 기대 결과: hasAppliedContentBatch=false provenance가 children/selection을 유지하고 cursor만 0으로 초기화한다.
+    func testRetryAfterRetainedEmptyBatchFailureKeepsCompleteSnapshotAndSelection() {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let retainedChild = hierarchyFile(id: "/root/a/retained", name: "retained")
+        var state = hierarchyState(roots: [folder])
+        state.hierarchy.nodesByID[folder.id as String] = .init(
+            children: [retainedChild], loadPhase: .loaded, generation: 3,
+        )
+        state.hierarchy.setExpandedIDs([folder.id as String])
+        state.selectedIds = [retainedChild.id]
+        state.lastSelectedId = retainedChild.id
+        state.rangeAnchorId = retainedChild.id
+        let reducer = EntryListHierarchyReducer()
+
+        _ = reducer.reduce(
+            into: &state,
+            action: .hierarchy(.hierarchyInvalidated(affectedPaths: [folder.id as String], removedPrefixes: [])),
+        )
+        _ = reducer.reduce(
+            into: &state,
+            action: folderResponse(
+                folder.id,
+                .event(.coreBatch(items: [], batchIndex: 0)),
+                folderGeneration: 4,
+            ),
+        )
+        XCTAssertEqual(state.hierarchy.nodesByID[folder.id as String]?.folder.expectedBatchIndex, 1)
+        XCTAssertFalse(state.hierarchy.nodesByID[folder.id as String]?.folder.hasAppliedContentBatch ?? true)
+
+        _ = reducer.reduce(
+            into: &state,
+            action: folderResponse(folder.id, .failed(.permissionDenied), folderGeneration: 4),
+        )
+        _ = reducer.reduce(into: &state, action: .hierarchy(.folderRetryRequested(id: folder.id)))
+
+        let node = state.hierarchy.nodesByID[folder.id as String]
+        XCTAssertEqual(node?.folder.children, [retainedChild])
+        XCTAssertEqual(node?.folder.expectedBatchIndex, 0)
+        XCTAssertFalse(node?.folder.hasAppliedContentBatch ?? true)
+        XCTAssertEqual(node?.loadPhase, .loadingCore)
+        XCTAssertEqual(node?.generation, 5)
+        XCTAssertEqual(state.selectedIds, [retainedChild.id])
+        XCTAssertEqual(state.lastSelectedId, retainedChild.id)
+        XCTAssertEqual(state.rangeAnchorId, retainedChild.id)
+    }
+
     /// EVM-002-replacement_reload_snapshot_retention: 초기 확장과 실패 재시도는 여전히 빈 스냅샷으로 시작한다.
     /// 보존 정책이 캐시 없는 확장 동작을 바꾸지 않는지 검증한다.
     /// - 검증 내용: idle 노드의 startLoad와 failed 노드의 retry startLoad 모두 children을 비운다.
@@ -1003,7 +1053,11 @@ extension EVM002ManageEntriesViewPresentationTests {
         var failedState = hierarchyState(roots: [folder])
         failedState.hierarchy.setExpandedIDs([folder.id as String])
         failedState.hierarchy.nodesByID[folder.id as String] = .init(
-            children: [staleChild], loadPhase: .failed(.permissionDenied), generation: 2, expectedBatchIndex: 1,
+            children: [staleChild],
+            loadPhase: .failed(.permissionDenied),
+            generation: 2,
+            expectedBatchIndex: 1,
+            hasAppliedContentBatch: true,
         )
         _ = reducer.reduce(into: &failedState, action: .hierarchy(.folderRetryRequested(id: folder.id)))
         XCTAssertEqual(failedState.hierarchy.nodesByID[folder.id as String]?.folder.children, [], "재시도는 부분 결과를 버린다")

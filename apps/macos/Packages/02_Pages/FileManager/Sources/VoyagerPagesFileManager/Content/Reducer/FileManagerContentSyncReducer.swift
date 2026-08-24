@@ -66,8 +66,10 @@ struct FileManagerContentSyncReducer {
            events.contains(where: { transitionOverlaps(normalizedPath(for: $0.path), transition) })
         {
             let rootMatches = transition.rootPath == normalizedPath(for: currentPath)
-            let generationMatches = state.entryViewLayout.entryOperations.loadingContext.generation == transition
-                .refreshGeneration
+            let generationMatches = FileManagerContentEntryOpsCoordinator.identityTransitionOwnerIsCurrent(
+                transition.projectionOwner,
+                state: state,
+            )
             if rootMatches, generationMatches {
                 // 일치 이벤트는 명령이 이미 예약한 refresh로 병합한다(중복 refresh 억제).
                 // 전이는 소비하지 않는다: after-path projection이 도착해 선택을 옮길 때까지

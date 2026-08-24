@@ -11,6 +11,13 @@ import VoyagerShared
 import VoyagerWidgetsEntryViewLayout
 import XCTest
 
+private struct ExpandedChildTransitionFixture {
+    let state: FileManagerContentState
+    let folder: EntryModel
+    let before: EntryModel
+    let after: EntryModel
+}
+
 @MainActor
 final class EVM001FileManagerNavigationTests: XCTestCase {
     // MARK: - EVM-001-dau_navigation_metrics
@@ -1495,6 +1502,45 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         return state
     }
 
+    private func makeExpandedChildTransitionFixture() -> ExpandedChildTransitionFixture {
+        let rootPath = "/tmp/voyager-correlation"
+        let folder = EntryModel.temporaryFolder(id: "\(rootPath)/folder", name: "folder")
+        let before = makeCorrelationEntry(id: "\(folder.id)/before.txt", name: "before.txt")
+        let after = makeCorrelationEntry(id: "\(folder.id)/after.txt", name: "after.txt")
+        var state = FileManagerContentState()
+        state.navigation.seedInitialFolderPath(rootPath)
+        state.navigation.navigationState = .folder(rootPath)
+        state.entryViewLayout.mode = .list
+        state.entryViewLayout.entries = [folder]
+        state.entryViewLayout.entryOperations.items = [folder]
+        state.entryViewLayout.entryOperations.loadingContext.items = [folder]
+        state.entryViewLayout.entryOperations.loadingContext.generation = 7
+        state.entryViewLayout.entryOperations.loadingContext.expectedCoreBatchIndex = 1
+        state.entryViewLayout.hierarchy = .init(rootPath: rootPath)
+        state.entryViewLayout.hierarchy.nodesByID[folder.id] = .init(
+            children: [before],
+            loadPhase: .loaded,
+            generation: 1,
+            expectedBatchIndex: 1,
+            coreFinished: true,
+        )
+        state.entryViewLayout.hierarchy.setExpandedIDs([folder.id])
+        state.entryViewLayout.selectedIds = [before.id]
+        state.entryViewLayout.lastSelectedId = before.id
+        state.entryViewLayout.rangeAnchorId = before.id
+        let record = EntryActionRecord(
+            operationKind: .rename,
+            targets: [.init(beforePath: before.id, afterPath: after.id)],
+        )
+        _ = FileManagerContentEntryOpsCoordinator.recordIdentityTransitionIfEligible(record, state: &state)
+        state.entryViewLayout.hierarchy.nodesByID[folder.id]?.generation = 2
+        state.entryViewLayout.hierarchy.nodesByID[folder.id]?.loadPhase = .loadingCore
+        state.entryViewLayout.hierarchy.nodesByID[folder.id]?.folder.coreFinished = false
+        state.entryViewLayout.hierarchy.nodesByID[folder.id]?.folder.expectedBatchIndex = 0
+        state.entryViewLayout.hierarchy.nodesByID[folder.id]?.folder.hasAppliedContentBatch = false
+        return ExpandedChildTransitionFixture(state: state, folder: folder, before: before, after: after)
+    }
+
     /// EVM-001-reload_directory_page_on_external_change: folder route entry operation 완료 시 directory reload forwarding
     /// FileManager content entry operation lifecycle bridge가 navigation route별 reload/restore boundary를 지키는지 검증.
     /// - 검증 내용: folder route에서 entry operation 완료 액션이 현재 folder loader로 전달되는지 검증
@@ -2858,6 +2904,121 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             "세대가 어긋난 전이는 선택을 옮기지 않는다",
         )
         XCTAssertNil(store.state.content.pendingIdentityTransition, "세대 불일치 전이는 만료된다")
+    }
+
+    /// EVM-001-command_external_refresh_correlation: expanded child 전이는 root 완료보다 owning folder 응답을 기다린다.
+    /// root coreFinished가 먼저 투영되어도 child rename 선택과 전이가 조기 소비되지 않는지 검증한다.
+    /// - 검증 내용: root 완료 projection 뒤 before 선택·전이 유지, matching folder batch 뒤 after로 1회 migration
+    /// - 사전 조건: generation 1의 expanded folder child가 선택되고 root generation 7에서 rename 완료 전이가 기록된다.
+    /// - 기대 결과: root 완료는 child 전이를 generation 3으로 넘기고 해당 folder 응답만 선택을 옮기고 소비한다.
+    func testExpandedChildTransitionWaitsForOwningFolderResponseAfterRootCompletion() async {
+        let fixture = makeExpandedChildTransitionFixture()
+        let store = TestStore(initialState: fixture.state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.entryOpenClient = .testValue
+            $0.entryQuickLookClient = .previewValue
+            $0.entryLoadingClient.stagedLoadItems = { _, _, _ in
+                AsyncThrowingStream { continuation in
+                    continuation.finish()
+                }
+            }
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+        }
+        store.exhaustivity = .off
+
+        await store.send(.entryViewLayout(.entryOperations(.loading(.streamEvent(.init(
+            generation: 7,
+            event: .coreFinished(batchCount: 1),
+        ))))))
+        await store.receive { action in
+            guard case .entryViewLayout(.view(.applyContentProjection)) = action else { return false }
+            return true
+        }
+        await store.receive(\.entryViewLayout.hierarchy.rootSnapshotCompleted)
+
+        XCTAssertEqual(
+            store.state.pendingIdentityTransition?.projectionOwner,
+            .folder(id: fixture.folder.id, generation: 3),
+        )
+        XCTAssertEqual(store.state.entryViewLayout.selectedIds, [fixture.before.id])
+
+        await store.receive { action in
+            guard case let .entryViewLayout(.delegate(.expandRequested(id))) = action else { return false }
+            return id == fixture.folder.id
+        }
+        await store.receive { action in
+            guard case let .entryViewLayout(.entryOperations(.loading(.loadFolderItems(request)))) = action
+            else { return false }
+            return request.id.folderID == fixture.folder.id && request.folderGeneration == 3
+        }
+        await store.receive { action in
+            guard case let .entryViewLayout(.entryOperations(.loading(.folderStreamFinished(request)))) = action
+            else { return false }
+            return request.id.folderID == fixture.folder.id && request.folderGeneration == 3
+        }
+        await store.send(.entryViewLayout(.hierarchy(.folderChildrenResponse(
+            rootContextGeneration: store.state.entryViewLayout.hierarchy.rootContextGeneration,
+            folderID: fixture.folder.id,
+            folderGeneration: 3,
+            .event(.coreBatch(items: [fixture.after], batchIndex: 0)),
+        ))))
+
+        XCTAssertEqual(store.state.entryViewLayout.selectedIds, [fixture.after.id])
+        XCTAssertNil(store.state.pendingIdentityTransition, "owning folder 응답이 전이를 한 번 소비한다")
+    }
+
+    /// EVM-001-command_external_refresh_correlation: owning folder 중간 batch가 before 선택을 보존한다.
+    /// - 검증 내용: after-path 없는 batch 0 뒤 선택·전이 유지, batch 1에서 after로 단 한 번 migration
+    /// - 사전 조건: expanded folder generation 2가 rename 전이를 소유하고 두 core batch를 순차 수신한다.
+    /// - 기대 결과: stale generation은 무시되고 terminal 뒤에도 after 선택과 소비된 전이가 유지된다.
+    func testExpandedChildTransitionSurvivesIntermediateOwningFolderBatch() async {
+        let fixture = makeExpandedChildTransitionFixture()
+        let unrelated = makeCorrelationEntry(id: "\(fixture.folder.id)/unrelated.txt", name: "unrelated.txt")
+        let store = TestStore(initialState: fixture.state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.entryOpenClient = .testValue
+            $0.entryQuickLookClient = .previewValue
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+        }
+        store.exhaustivity = .off
+
+        await store.send(.entryViewLayout(.hierarchy(.folderChildrenResponse(
+            rootContextGeneration: store.state.entryViewLayout.hierarchy.rootContextGeneration,
+            folderID: fixture.folder.id,
+            folderGeneration: 1,
+            .event(.coreBatch(items: [fixture.after], batchIndex: 0)),
+        ))))
+        XCTAssertEqual(store.state.entryViewLayout.selectedIds, [fixture.before.id])
+        XCTAssertNotNil(store.state.pendingIdentityTransition)
+
+        await store.send(.entryViewLayout(.hierarchy(.folderChildrenResponse(
+            rootContextGeneration: store.state.entryViewLayout.hierarchy.rootContextGeneration,
+            folderID: fixture.folder.id,
+            folderGeneration: 2,
+            .event(.coreBatch(items: [unrelated], batchIndex: 0)),
+        ))))
+        XCTAssertEqual(store.state.entryViewLayout.selectedIds, [fixture.before.id])
+        XCTAssertNotNil(store.state.pendingIdentityTransition, "중간 owning batch는 전이를 소비하지 않는다")
+
+        await store.send(.entryViewLayout(.hierarchy(.folderChildrenResponse(
+            rootContextGeneration: store.state.entryViewLayout.hierarchy.rootContextGeneration,
+            folderID: fixture.folder.id,
+            folderGeneration: 2,
+            .event(.coreBatch(items: [fixture.after], batchIndex: 1)),
+        ))))
+        XCTAssertEqual(store.state.entryViewLayout.selectedIds, [fixture.after.id])
+        XCTAssertNil(store.state.pendingIdentityTransition)
+
+        await store.send(.entryViewLayout(.hierarchy(.folderChildrenResponse(
+            rootContextGeneration: store.state.entryViewLayout.hierarchy.rootContextGeneration,
+            folderID: fixture.folder.id,
+            folderGeneration: 2,
+            .event(.coreFinished(batchCount: 2)),
+        ))))
+        XCTAssertEqual(store.state.entryViewLayout.selectedIds, [fixture.after.id])
+        XCTAssertNil(store.state.pendingIdentityTransition, "folder terminal은 소비된 전이를 되살리지 않는다")
     }
 
     /// EVM-001-command_external_refresh_correlation: 포함 디렉터리(현재 root의 조상) 경로의

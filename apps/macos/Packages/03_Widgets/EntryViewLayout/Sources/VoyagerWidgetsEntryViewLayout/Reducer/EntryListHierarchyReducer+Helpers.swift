@@ -12,9 +12,8 @@ extension EntryListHierarchyReducer {
         var nodeState = state.hierarchy.nodesByID[id] ?? FolderNodeState()
         var retainsCompleteSnapshot = nodeState.folder.coreFinished || nodeState.loadPhase == .loaded
         if case .failed = nodeState.loadPhase {
-            // 실패 재시도에서 커서 0 + children 존재는 이전 완전 세대의 retained 스냅샷이다.
-            // 부분 수신은 내용 배치를 받을 때마다 커서를 올리므로(생산자 계약) 커서 > 0이면 진짜 partial로 폐기한다.
-            retainsCompleteSnapshot = nodeState.folder.expectedBatchIndex == 0 && !nodeState.folder.children.isEmpty
+            // 실패 재시도는 cursor가 아니라 content provenance로 이전 완전 세대와 부분 수신을 구분한다.
+            retainsCompleteSnapshot = !nodeState.folder.children.isEmpty && !nodeState.folder.hasAppliedContentBatch
         }
         nodeState.generation &+= 1
         nodeState.loadPhase = FolderLoadPhase.loadingCore
