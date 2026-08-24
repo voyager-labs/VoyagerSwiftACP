@@ -191,3 +191,37 @@ func TestRejectUnmappedTypeAtProjection(t *testing.T) {
 		t.Errorf("expected unmapped type to be rejected at projection")
 	}
 }
+
+// TestRejectInvalidConditionShapeAndCount asserts the Condition Registry
+// validation enumerates value_shape/value_count and their combinations
+// instead of letting the renderer silently map unknown shapes to none and
+// unparseable counts to 0 (review 3840724962).
+func TestRejectInvalidConditionShapeAndCount(t *testing.T) {
+	base := func(shape, count string) *PropertyConditionRegistry {
+		return &PropertyConditionRegistry{
+			Version:       "2.2.0",
+			PropertyTypes: []string{"text"},
+			Operators: map[string]ConditionOperatorSpec{
+				"eq": {UISource: "Is", ValueShape: shape, ValueCount: count,
+					AllowedTypes:   []string{"text"},
+					UISourceByType: map[string]string{"text": "singleText"}},
+			},
+		}
+	}
+	for name, spec := range map[string]struct {
+		shape, count string
+	}{
+		"unknown shape":     {"singlee", "1"},
+		"unknown count":     {"single", "3"},
+		"empty count":       {"none", ""},
+		"mismatched combo":  {"range", "1"},
+		"unparseable count": {"single", "x"},
+	} {
+		if err := base(spec.shape, spec.count).Validate(); err == nil {
+			t.Errorf("%s: expected validation failure for shape=%q count=%q", name, spec.shape, spec.count)
+		}
+	}
+	if err := base("single", "1").Validate(); err != nil {
+		t.Fatalf("valid combo rejected: %v", err)
+	}
+}

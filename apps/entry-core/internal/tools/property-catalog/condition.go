@@ -111,8 +111,15 @@ func (registry *PropertyConditionRegistry) Validate() error {
 		types[propertyType] = struct{}{}
 	}
 	for name, operator := range registry.Operators {
-		if name == "" || operator.UISource == "" || operator.ValueShape == "" {
+		if name == "" || operator.UISource == "" || operator.ValueShape == "" || operator.ValueCount == "" {
 			return fmt.Errorf("operator %q missing required fields", name)
+		}
+		expectedCount, shapeKnown := conditionShapeValueCount[operator.ValueShape]
+		if !shapeKnown {
+			return fmt.Errorf("operator %q has unknown value_shape %q", name, operator.ValueShape)
+		}
+		if parseValueCount(operator.ValueCount) != expectedCount {
+			return fmt.Errorf("operator %q value_shape %q does not match value_count %q", name, operator.ValueShape, operator.ValueCount)
 		}
 		for _, allowedType := range operator.AllowedTypes {
 			if _, exists := types[allowedType]; !exists {
@@ -194,6 +201,14 @@ func parseValueCount(value string) int {
 		return 0
 	}
 	return parsed
+}
+
+// conditionShapeValueCount는 검토된 (value_shape, value_count) 조합의 전수 집합이다.
+var conditionShapeValueCount = map[string]int{
+	"none":   0,
+	"single": 1,
+	"range":  2,
+	"list":   -1,
 }
 
 // valueCountToString normalizes mixed-type value_count (integer or "n") to string.
