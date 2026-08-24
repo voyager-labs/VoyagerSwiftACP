@@ -276,8 +276,8 @@ func TestDaemonDatabaseLifecycleLog(t *testing.T) {
 			if !strings.Contains(stderr.String(), test.wantLog) {
 				t.Fatalf("stderr = %q, want it to contain %q", stderr.String(), test.wantLog)
 			}
-			if got := store.callOrder(); !slices.Equal(got, []string{"open", "migrate", "bootstrap", "close"}) {
-				t.Fatalf("call order = %v, want [open migrate bootstrap close]", got)
+			if got := store.callOrder(); !slices.Equal(got, []string{"open", "migrate", "bootstrap", "seed", "validate", "close"}) {
+				t.Fatalf("call order = %v, want [open migrate bootstrap seed validate close]", got)
 			}
 		})
 	}
@@ -366,8 +366,8 @@ func TestDaemonGracefulShutdownStoreCloseFailure(t *testing.T) {
 	if !strings.Contains(stderr.String(), "store close failed") {
 		t.Fatalf("stderr = %q, want it to contain the store close failure", stderr.String())
 	}
-	if got := store.callOrder(); !slices.Equal(got, []string{"open", "migrate", "bootstrap", "close"}) {
-		t.Fatalf("call order = %v, want [open migrate bootstrap close]", got)
+	if got := store.callOrder(); !slices.Equal(got, []string{"open", "migrate", "bootstrap", "seed", "validate", "close"}) {
+		t.Fatalf("call order = %v, want [open migrate bootstrap seed validate close]", got)
 	}
 }
 
@@ -707,14 +707,16 @@ func inertSignalSource() (<-chan os.Signal, func()) {
 }
 
 // fakeDaemonStore is the named seam for all store failure injections. It
-// records its call order (open, migrate, bootstrap, close) so tests can assert
-// the daemon's startup/shutdown ordering exactly.
+// records its call order (open, migrate, bootstrap, seed, close) so tests can
+// assert the daemon's startup/shutdown ordering exactly.
 type fakeDaemonStore struct {
 	mu           sync.Mutex
 	calls        []string
 	openErr      error
 	migrateErr   error
 	bootstrapErr error
+	seedErr      error
+	validateErr  error
 	closeErr     error
 }
 
@@ -749,6 +751,16 @@ func (f *fakeDaemonStore) BootstrapOrRestoreWorkspace(context.Context) (domainen
 		return domainentry.WorkspaceContext{}, f.bootstrapErr
 	}
 	return domainentry.WorkspaceContext{}, nil
+}
+
+func (f *fakeDaemonStore) ApplyCatalogSeed(context.Context, domainentry.WorkspaceContext) error {
+	f.record("seed")
+	return f.seedErr
+}
+
+func (f *fakeDaemonStore) ValidateActiveCatalog(context.Context, domainentry.WorkspaceContext) error {
+	f.record("validate")
+	return f.validateErr
 }
 
 func (f *fakeDaemonStore) Close() error {

@@ -365,6 +365,28 @@ func TestPropertyValue(t *testing.T) {
 	}
 }
 
+func TestDecimalPropertyValue(t *testing.T) {
+	value, err := NewDecimalPropertyValue("10.5")
+	if err != nil {
+		t.Fatalf("NewDecimalPropertyValue() error = %v", err)
+	}
+	if value.Type != PropertyValueTypeDecimal || value.DecimalValue == nil || *value.DecimalValue != "10.5" {
+		t.Fatalf("decimal value = %#v", value)
+	}
+
+	for _, invalid := range []string{"", "10.50", "1e1", "-0"} {
+		if _, err := NewDecimalPropertyValue(invalid); !errors.Is(err, ErrInvalidPropertyValue) {
+			t.Errorf("NewDecimalPropertyValue(%q) error = %v, want %v", invalid, err, ErrInvalidPropertyValue)
+		}
+	}
+
+	extra := "extra"
+	value.StringValue = &extra
+	if err := value.Validate(); !errors.Is(err, ErrInvalidPropertyValue) {
+		t.Fatalf("mixed decimal payload error = %v, want %v", err, ErrInvalidPropertyValue)
+	}
+}
+
 func TestPropertyValueDuplicateKeyRejection(t *testing.T) {
 	value, err := NewStringPropertyValue("value")
 	if err != nil {
@@ -573,7 +595,7 @@ func TestEntrySnapshotCanonical(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	properties[0].PropertyID = "mutated"
+	properties[0].PropertyID = mustRegistryPropertyID("property.mutated")
 	if snapshot.CanonicalProperties[0].PropertyID != definition.PropertyID {
 		t.Fatal("snapshot aliases property input")
 	}
@@ -624,7 +646,7 @@ func TestEntrySnapshotAggregateBudget(t *testing.T) {
 	}
 	first := mustCanonicalPropertyValue(t, definition, ref.EntryID, TextManyPayload(items))
 	secondDefinition := definition
-	secondDefinition.PropertyID = "property.second"
+	secondDefinition.PropertyID = mustRegistryPropertyID("property.second")
 	secondDefinition.Key = "second"
 	second := mustCanonicalPropertyValue(t, secondDefinition, ref.EntryID, TextManyPayload(items))
 	observedAt := time.Date(2026, 8, 3, 0, 0, 0, 0, time.UTC)
@@ -648,7 +670,7 @@ func TestEntrySnapshotNestedBudgetWithinCanonicalRevisionLimit(t *testing.T) {
 	properties := make([]PropertyValue, 256)
 	for index := range properties {
 		definition := validTextDefinition()
-		definition.PropertyID = fmt.Sprintf("property.%03d", index)
+		definition.PropertyID = mustRegistryPropertyID(fmt.Sprintf("property.%03d", index))
 		definition.Key = fmt.Sprintf("p%03d", index)
 		properties[index], err = NewPropertyValue(definition, ref.EntryID, PropertyStateValue, PropertyProvenanceSystem, observedAt, sourceRevision, false, TextPayload(strings.Repeat("x", 16384)))
 		if err != nil {
