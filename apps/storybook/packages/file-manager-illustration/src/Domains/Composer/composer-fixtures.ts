@@ -1,4 +1,4 @@
-import { composerPropertyOptions } from "./composer-condition-options"
+import { composerPropertyOption, composerPropertyOptions } from "./composer-condition-options"
 import type {
   ComposerOperatorOption,
   ComposerPropertyOption,
@@ -93,14 +93,21 @@ export type ComposerFixture = {
     | ComposerValuePicker
 }
 
+const fixtureOption = (key: string) => {
+  const option = composerPropertyOption(key)
+  if (option == null) throw new Error(`Unknown property key: ${key}`)
+  return option
+}
+
 const populatedDraft = {
   query: "Find files named Voyager",
   scopes: ["/Fixture/Documents"],
   conditions: [
     {
       id: "name_stem",
-      property: "Name",
-      propertySymbol: "textformat",
+      // 카탈로그 단일 소스: 라벨·심볼을 드리프트 없이 파생한다
+      property: fixtureOption("name_stem").label,
+      propertySymbol: fixtureOption("name_stem").symbol,
       operator: "Is",
       value: "Voyager",
     },
