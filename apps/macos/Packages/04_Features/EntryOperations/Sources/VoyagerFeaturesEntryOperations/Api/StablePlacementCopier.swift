@@ -57,6 +57,7 @@ enum StablePlacementCopier {
             try copyDirectory(
                 label: label,
                 mode: status.st_mode & 0o777,
+                sourceDirectoryDescriptor: node.fd,
                 destination: destination,
                 openVerifiedNode: openVerifiedNode,
                 closeVerifiedNode: closeVerifiedNode,
@@ -83,13 +84,19 @@ enum StablePlacementCopier {
         defer { Darwin.close(destinationDescriptor) }
 
         do {
-            guard Darwin.lseek(sourceDescriptor, 0, SEEK_SET) >= 0 else { throw posixError() }
+            // destination을 논리 크기로 먼저 확보하면 전체가 0인 구간을 건너뛸 때 hole이
+            // 그대로 유지돼 sparse 파일의 물리적 팽창을 막는다(#3841132162).
+            guard Darwin.ftruncate(destinationDescriptor, status.st_size) == 0 else { throw posixError() }
             let bufferSize = 1 << 20
             let buffer = UnsafeMutableRawPointer.allocate(
                 byteCount: bufferSize,
                 alignment: MemoryLayout<UInt8>.alignment,
             )
-            defer { buffer.deallocate() }
+            let zeroBuffer = UnsafeMutableRawPointer.allocate(
+                byteCount: bufferSize,
+                alignment: MemoryLayout<UInt8>.alignment,
+            )
+            defer { zeroBuffer.deallocate() }
             while true {
                 try Task.checkCancellation()
                 let readCount = Darwin.read(sourceDescriptor, buffer, bufferSize)
@@ -98,6 +105,8 @@ enum StablePlacementCopier {
                     throw posixError()
                 }
                 if readCount == 0 { break }
+                // 전체가 0인 청크는 쓰기를 생략해 destination에 hole로 남긴다.
+                if memcmp(buffer, zeroBuffer, readCount) == 0 { continue }
                 var written = 0
                 while written < readCount {
                     let writeCount = Darwin.write(
@@ -169,6 +178,7 @@ enum StablePlacementCopier {
     private static func copyDirectory(
         label: String,
         mode: mode_t,
+        sourceDirectoryDescriptor: Int32,
         destination: URL,
         openVerifiedNode: (String) throws -> (fd: Int32, isDirectory: Bool),
         closeVerifiedNode: (Int32) -> Void,
@@ -178,8 +188,15 @@ enum StablePlacementCopier {
         // 읽기 전용 모드(예: 0555) 디렉터리도 자식 쓰기를 위해 생성 시에만 소유자
         // 쓰기·실행 권한을 더하고, 전체 복사 뒤 하단 chmod가 원본 모드로 되돌린다
         // (코멘트 #3840396992).
+        // 빈 디렉터리도 포함해 생성 전에 취소를 확인한다(#3841132154).
+        try Task.checkCancellation()
         guard Darwin.mkdir(destination.path, mode | 0o700) == 0 else { throw posixError() }
         do {
+            // 자식 쓰기와 구분하기 위해 source dir 시각을 진입 시 포착한다.
+            var sourceDirStatus = stat()
+            guard Darwin.fstat(sourceDirectoryDescriptor, &sourceDirStatus) == 0 else {
+                throw posixError()
+            }
             for childLabel in childLabels(label).sorted() {
                 // 대형 트리에서 노드 사이에 취소를 확인해 즉시 중단한다(#3840396987).
                 try Task.checkCancellation()
@@ -195,6 +212,17 @@ enum StablePlacementCopier {
                 )
             }
             guard Darwin.chmod(destination.path, mode) == 0 else { throw posixError() }
+
+            // placement가 새 파일을 생성하므로 원본 스냅숏의 mtime/atime을 복원해야
+            // Finder 날짜 정렬·메타데이터가 유지된다(#3840962273과 동일 계약).
+            var dirTimes = [timeval](repeating: timeval(tv_sec: 0, tv_usec: 0), count: 2)
+            dirTimes[0].tv_sec = sourceDirStatus.st_atimespec.tv_sec
+            dirTimes[0].tv_usec = Int32(sourceDirStatus.st_atimespec.tv_nsec / 1000)
+            dirTimes[1].tv_sec = sourceDirStatus.st_mtimespec.tv_sec
+            dirTimes[1].tv_usec = Int32(sourceDirStatus.st_mtimespec.tv_nsec / 1000)
+            utimes(destination.path, dirTimes)
+            // 최종 chmod 이후에도 취소를 확인한다(#3841132154).
+            try Task.checkCancellation()
         } catch {
             // 오류 경로 정리만 수행하므로 DI client 대신 FileManager.default를 쓴다.
             try? FileManager.default.removeItem(at: destination)
