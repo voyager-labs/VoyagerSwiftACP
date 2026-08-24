@@ -300,20 +300,45 @@ final class PinnedContentStore {
     static func sha256(ofDescriptor descriptor: Int32) -> Data? {
         var hasher = SHA256()
         guard hashDataFork(ofDescriptor: descriptor, into: &hasher) else { return nil }
+        let buffer = UnsafeMutableRawPointer.allocate(
+            byteCount: xattrStreamChunkBytes,
+            alignment: MemoryLayout<UInt8>.alignment,
+        )
+        defer { buffer.deallocate() }
         for name in sortedXattrNames(ofDescriptor: descriptor) ?? [] {
-            hasher.update(data: Data(name.utf8))
-            hasher.update(data: Data([0]))
-            let valueSize = fgetxattr(descriptor, name, nil, 0, 0, 0)
-            guard valueSize >= 0 else { return nil }
-            if valueSize > 0 {
-                var value = Data(count: valueSize)
-                let got = value.withUnsafeMutableBytes { mutable -> Int in
-                    fgetxattr(descriptor, name, mutable.baseAddress, valueSize, 0, 0)
+            // 이름과 값은 성격이 다르므로 각각 길이 접두 프레이밍한다. NUL 연결은
+            // 값 내부 NUL로 경계를 위조할 수 있었다(#3840824707).
+            let nameBytes = Data(name.utf8)
+            appendFramedLength(Int64(nameBytes.count), into: &hasher)
+            hasher.update(data: nameBytes)
+            let valueSize32 = fgetxattr(descriptor, name, nil, 0, 0, 0)
+            guard valueSize32 >= 0 else { return nil }
+            let valueSize = Int(valueSize32)
+            appendFramedLength(Int64(valueSize), into: &hasher)
+            // resource fork는 position 기반 청크 스트리밍으로 메모리 상한을 고정하고,
+            // 일반 xattr은 128KiB(AppKit xattr 상한) 초과 시 실패 폐쇄한다.
+            if name == Self.resourceForkXattrName {
+                var offset = 0
+                while offset < valueSize {
+                    let chunk = min(xattrStreamChunkBytes, valueSize - offset)
+                    let got = fgetxattr(
+                        descriptor,
+                        name,
+                        buffer,
+                        chunk,
+                        UInt32(offset),
+                        0,
+                    )
+                    guard got == chunk else { return nil }
+                    hasher.update(bufferPointer: UnsafeRawBufferPointer(start: buffer, count: got))
+                    offset += chunk
                 }
+            } else {
+                guard valueSize <= regularXattrMaxBytes else { return nil }
+                let got = fgetxattr(descriptor, name, buffer, valueSize, 0, 0)
                 guard got == valueSize else { return nil }
-                hasher.update(data: value)
+                hasher.update(bufferPointer: UnsafeRawBufferPointer(start: buffer, count: got))
             }
-            hasher.update(data: Data([0]))
         }
         return Data(hasher.finalize())
     }
@@ -322,6 +347,18 @@ final class PinnedContentStore {
         lhs.st_size == rhs.st_size
             && lhs.st_mtimespec.tv_sec == rhs.st_mtimespec.tv_sec
             && lhs.st_mtimespec.tv_nsec == rhs.st_mtimespec.tv_nsec
+    }
+
+    /// provider가 전달하는 resource fork 크기 직결 메모리 할당을 막기 위한 청크 크기다
+    /// (#3840824707).
+    static let resourceForkXattrName = "com.apple.ResourceFork"
+    static let xattrStreamChunkBytes = 1 << 20
+    /// 일반 xattr의 명시적 상한. 초과 시 실패 폐쇄한다(#3840824707).
+    static let regularXattrMaxBytes = 128 * 1024
+
+    /// 길이 접두 프레이밍: 8바이트 big-endian 길이를 해시에 넣는다(#3840824707).
+    private static func appendFramedLength(_ length: Int64, into hasher: inout SHA256) {
+        withUnsafeBytes(of: UInt64(bitPattern: length).bigEndian) { hasher.update(bufferPointer: $0) }
     }
 
     /// data fork 스트림을 해시에 포함한다. 오프셋은 0으로 되감는다.
