@@ -94,7 +94,7 @@ export const composerPropertyOptions = [
   {
     key: "modification_date",
     label: "Content modification date",
-    symbol: "calendar.badge.clock",
+    symbol: "calendar",
     category: "date",
     pinned: true,
     operators: dateOperators,
@@ -110,7 +110,7 @@ export const composerPropertyOptions = [
   {
     key: "added_date",
     label: "Date added",
-    symbol: "calendar.badge.plus",
+    symbol: "calendar",
     category: "date",
     pinned: true,
     operators: dateOperators,
@@ -118,7 +118,7 @@ export const composerPropertyOptions = [
   {
     key: "extension",
     label: "Extension",
-    symbol: "textformat",
+    symbol: "folder",
     category: "filesystem",
     pinned: true,
     operators: categoricalOperators,
@@ -134,7 +134,7 @@ export const composerPropertyOptions = [
   {
     key: "name_stem",
     label: "Name",
-    symbol: "doc.text",
+    symbol: "folder",
     category: "filesystem",
     pinned: true,
     operators: textOperators,
@@ -142,7 +142,7 @@ export const composerPropertyOptions = [
   {
     key: "number_of_pages",
     label: "Number of pages",
-    symbol: "doc.richtext",
+    symbol: "doc.text",
     category: "common",
     pinned: false,
     operators: numberOperators(),
@@ -150,7 +150,7 @@ export const composerPropertyOptions = [
   {
     key: "is_invisible",
     label: "Is hidden",
-    symbol: "eye.slash",
+    symbol: "folder",
     category: "filesystem",
     pinned: false,
     operators: booleanOperator,
@@ -158,7 +158,7 @@ export const composerPropertyOptions = [
   {
     key: "keywords",
     label: "Keywords",
-    symbol: "text.badge.checkmark",
+    symbol: "list.bullet.rectangle",
     category: "common",
     pinned: false,
     operators: stringListOperators,
@@ -166,7 +166,7 @@ export const composerPropertyOptions = [
   {
     key: "file_kind",
     label: "Kind",
-    symbol: "tag",
+    symbol: "list.bullet.rectangle",
     category: "common",
     pinned: false,
     operators: categoricalOperators,
@@ -286,7 +286,7 @@ export const composerPropertyOptions = [
   {
     key: "content_type_tree",
     label: "Content type tree",
-    symbol: "doc.text.magnifyingglass",
+    symbol: "questionmark.circle",
     category: "misc",
     pinned: false,
     operators: textOperators,
