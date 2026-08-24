@@ -8573,14 +8573,16 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         let loadGate = AsyncStream<Void>.makeStream()
         var state = FileManagerFeature.State()
         state.contentTabs = ContentTabState(
-            tabs: [ContentTabItem(
-                id: pinnedID,
-                page: .collection,
-                anchor: .collectionFile(url: targetBURL),
-                isPinned: true,
-                title: "B",
-                iconName: "rectangle.stack",
-            )],
+            tabs: [
+                ContentTabItem(
+                    id: pinnedID,
+                    page: .collection,
+                    anchor: .directory(path: sourcePath),
+                    isPinned: true,
+                    title: "B",
+                    iconName: "rectangle.stack",
+                ),
+            ],
             activeTabID: pinnedID,
             pinnedRecords: [pinnedID: recordB],
         )
@@ -8592,18 +8594,29 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         state.syncActiveTabContentState()
         state.syncContentTabSidebarItems()
         let authoritative = ContentTabState(
-            tabs: [ContentTabItem(
-                id: pinnedID,
-                page: .collection,
-                anchor: .collectionFile(url: targetCURL),
-                isPinned: true,
-                title: "C",
-                iconName: "rectangle.stack",
-            )],
+            tabs: [
+                ContentTabItem(
+                    id: pinnedID,
+                    page: .collection,
+                    anchor: .collectionFile(url: targetCURL),
+                    isPinned: true,
+                    title: "C",
+                    iconName: "rectangle.stack",
+                ),
+            ],
             activeTabID: pinnedID,
             pinnedRecords: [pinnedID: recordC],
         )
-        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
+        let failedTabIDs = LockIsolated<[ContentTabID]>([])
+        let store = TestStore(initialState: state) {
+            Reduce<FileManagerWindowState, FileManagerWindowAction> { state, action in
+                if case let .delegate(.pinnedContentTabRuntimeNavigationFailed(failedTabID)) = action {
+                    failedTabIDs.withValue { $0.append(failedTabID) }
+                    return .none
+                }
+                return FileManagerFeature().reduce(into: &state, action: action)
+            }
+        } withDependencies: {
             $0.date = .constant(Self.pinnedAt)
             $0.uuid = .constant(UUID(751))
             $0.fileManagerClient.fileExistsWithIsDirectory = { _, _ in true }
@@ -8630,6 +8643,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         await fulfillment(of: [loadStarted], timeout: 1)
         await store.skipReceivedActions(strict: false)
 
+        XCTAssertEqual(failedTabIDs.value, [pinnedID])
         XCTAssertEqual(store.state.pendingCollectionOpenRequest?.url, targetCURL)
         XCTAssertEqual(store.state.pendingCollectionOpenRequest?.prePrepareBackHistory, originalBackHistory)
         XCTAssertEqual(store.state.pendingCollectionOpenRequest?.prePrepareForwardHistory, originalForwardHistory)
