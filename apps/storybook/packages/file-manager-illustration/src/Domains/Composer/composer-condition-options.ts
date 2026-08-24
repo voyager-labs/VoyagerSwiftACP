@@ -286,7 +286,7 @@ export const composerPropertyOptions = [
   {
     key: "content_type_tree",
     label: "Content type tree",
-    symbol: "questionmark.circle",
+    symbol: "textformat",
     category: "misc",
     pinned: false,
     operators: textOperators,
