@@ -33,6 +33,7 @@ func TestCatalogSeed(t *testing.T) {
 	t.Run("PartialSQLRollback", TestCatalogSeedPartialSQLRollback)
 	t.Run("FullyTombstonedFailsClosed", TestCatalogSeedFullyTombstonedFailsClosed)
 	t.Run("MarkerBlocksDeletedFamilies", TestCatalogSeedMarkerBlocksDeletedFamilies)
+	t.Run("MarkerMismatchFailsClosed", TestCatalogSeedMarkerMismatchFailsClosed)
 	t.Run("SecondOpenRejected", TestCatalogSeedSecondOpenRejected)
 	t.Run("ConcurrentSerialized", TestCatalogSeedConcurrentSerialized)
 	t.Run("ProviderOwnedCollisionFailsClosed", TestCatalogSeedApplyFailsClosedOnProviderOwnedCollision)
@@ -650,6 +651,80 @@ func TestCatalogSeedMarkerBlocksDeletedFamilies(t *testing.T) {
 		t.Fatalf("wipe auto-repaired: active seed definitions = %d, want 0", activeDefs)
 	}
 }
+
+// TestCatalogSeedMarkerMismatchFailsClosed는 무장된 마커가 활성 seed 튜플과도
+// 메타데이터와도 불일치할 때(더 높은 ordinal, drift source version, 부분
+// 기록) 재조정이 마커를 현재 tuple로 덮어써 증거를 지우지 못하게 함을
+// 증명한다. 정상 no-op 경로는 회복 후에도 유지된다.
+func TestCatalogSeedMarkerMismatchFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	store := migratedStore(t)
+	wsctx := buildCatalogFixture(t, store, 0, 0, 0, 0, noneSeedTrio())
+	if err := store.ApplyCatalogSeed(ctx, wsctx); err != nil {
+		t.Fatalf("first ApplyCatalogSeed: %v", err)
+	}
+	wsBytes := wsctx.ID.Bytes()
+	wantDefs := freshSeedCounts().definitions
+
+	readMarker := func() (*int, *string) {
+		t.Helper()
+		var row WorkspaceMetadataRow
+		if err := store.db.WithContext(ctx).Where("singleton = ?", 1).First(&row).Error; err != nil {
+			t.Fatalf("read workspace_metadata: %v", err)
+		}
+		return row.CatalogSeedOrdinal, row.CatalogSeedSourceVersion
+	}
+	setMarker := func(ordinal *int, source *string) {
+		t.Helper()
+		if err := store.db.WithContext(ctx).Model(&WorkspaceMetadataRow{}).
+			Where("singleton = ?", 1).
+			Updates(map[string]any{"catalog_seed_ordinal": ordinal, "catalog_seed_source_version": source}).Error; err != nil {
+			t.Fatalf("set marker: %v", err)
+		}
+	}
+
+	for _, tc := range []struct {
+		name    string
+		ordinal *int
+		source  *string
+	}{
+		{name: "newer ordinal", ordinal: ptrInt(2), source: ptrString("2.4.1")},
+		{name: "same ordinal drifted source", ordinal: ptrInt(1), source: ptrString("2.4.2")},
+		{name: "partial ordinal only", ordinal: ptrInt(1), source: nil},
+		{name: "partial source only", ordinal: nil, source: ptrString("2.4.1")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			setMarker(tc.ordinal, tc.source)
+
+			if err := store.ApplyCatalogSeed(ctx, wsctx); !errors.Is(err, ErrCatalogSeedStateCorrupt) {
+				t.Fatalf("ApplyCatalogSeed error = %v, want ErrCatalogSeedStateCorrupt", err)
+			}
+			gotOrdinal, gotSource := readMarker()
+			if (gotOrdinal == nil) != (tc.ordinal == nil) || (gotOrdinal != nil && *gotOrdinal != *tc.ordinal) ||
+				(gotSource == nil) != (tc.source == nil) || (gotSource != nil && *gotSource != *tc.source) {
+				t.Fatalf("marker overwritten to (%v,%v), want preserved (%v,%v)",
+					gotOrdinal, gotSource, tc.ordinal, tc.source)
+			}
+			var activeDefs int64
+			if err := store.db.WithContext(ctx).Model(&WorkspacePropertyDefinitionRow{}).
+				Where("workspace_id = ? AND seed_owner = ? AND lifecycle_state = ?", wsBytes, "system_property_registry", "active").
+				Count(&activeDefs).Error; err != nil {
+				t.Fatalf("count active defs: %v", err)
+			}
+			if int(activeDefs) != wantDefs {
+				t.Fatalf("active seed definitions = %d, want %d", activeDefs, wantDefs)
+			}
+		})
+	}
+
+	// 올바른 튜플 복원 후에는 정상 no-op으로 회복한다.
+	setMarker(ptrInt(1), ptrString("2.4.1"))
+	if err := store.ApplyCatalogSeed(ctx, wsctx); err != nil {
+		t.Fatalf("recovered ApplyCatalogSeed: %v", err)
+	}
+}
+
+func ptrString(value string) *string { return &value }
 
 // TestCatalogSeedHistoricalNewerTupleFailsClosed proves an empty active seed
 // set whose only history carries a NEWER seed ordinal is rejected as seed

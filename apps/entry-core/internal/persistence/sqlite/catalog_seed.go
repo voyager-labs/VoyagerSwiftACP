@@ -109,8 +109,18 @@ func applyCatalogSeedInTx(tx *gorm.DB, wsctx domainentry.WorkspaceContext, meta 
 	if err != nil {
 		return err
 	}
-	if marker.applied() && !seedState.HasSeed {
+	// 한쪽 컬럼만 기록된 마커는 변조 상태다.
+	if marker.partiallyApplied() {
 		return ErrCatalogSeedStateCorrupt
+	}
+	// 무장된 마커는 활성 seed 튜플과 일치할 때만 신뢰한다. 활성 데이터와도
+	// 메타데이터와도 불일치하는 마커(더 높은 ordinal, drift 버전)는 복원·변조
+	// 증거이므로 현재 tuple로 덮어쓰지 않고 실패 닫기한다. 활성 튜플과 일치하는
+	// 경우(정상 업그레이드 연속성)만 적용을 허용한다.
+	if marker.applied() {
+		if !seedState.HasSeed || !marker.agreesWith(seedState) {
+			return ErrCatalogSeedStateCorrupt
+		}
 	}
 	currentSeedDigest, err := catalogDigest(snapshot)
 	if err != nil {
@@ -175,6 +185,18 @@ func (m catalogSeedMarker) applied() bool {
 // matches는 마커가 이미 메타데이터의 적용 튜플과 일치하는지를 나타낸다.
 func (m catalogSeedMarker) matches(meta seeds.SeedMetadata) bool {
 	return m.applied() && *m.ordinal == meta.SeedOrdinal && *m.sourceVersion == meta.SystemRegistryVersion
+}
+
+// partiallyApplied는 마커 컬럼이 한쪽만 채워졌는지를 나타낸다. 두 컬럼은 항상
+// 함께 기록되므로 부분 기록은 변조 상태다.
+func (m catalogSeedMarker) partiallyApplied() bool {
+	return (m.ordinal != nil) != (m.sourceVersion != nil)
+}
+
+// agreesWith는 무장된 마커가 로드된 활성 seed 튜플과 일치하는지를 나타낸다.
+func (m catalogSeedMarker) agreesWith(state SeedState) bool {
+	return state.HasSeed && m.ordinal != nil && m.sourceVersion != nil &&
+		*m.ordinal == state.Version && *m.sourceVersion == state.SourceVersion
 }
 
 // readCatalogSeedMarker는 workspace_metadata에서 시드 적용 마커를 읽는다.
