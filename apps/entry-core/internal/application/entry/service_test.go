@@ -399,6 +399,41 @@ func TestPropertyDefinitionsPreserveUnitContract(t *testing.T) {
 	}
 }
 
+// TestPropertyDefinitionsPreserveNullableContract proves the catalog Nullable
+// contract survives the runtime definition conversion: a nullable catalog
+// definition must keep Nullable=true so a canonical null from an adapter
+// validates instead of failing as null_not_allowed.
+func TestPropertyDefinitionsPreserveNullableContract(t *testing.T) {
+	sizeID := domainentry.MustPropertyID("12a1c023-0b61-56b0-aec6-71a2d0d8cc1b")
+	service := &UnifiedService{catalog: domainentry.PropertyCatalogSnapshot{
+		Definitions: []domainentry.WorkspacePropertyDefinition{{
+			PropertyID: sizeID, IdentityScheme: domainentry.PropertyIdentitySchemeRegistryDerived,
+			Namespace: "system", CanonicalKey: "misc.size", DisplayName: "File size",
+			ValueType: domainentry.PropertyTypeNumber, Cardinality: domainentry.PropertyCardinalityOne,
+			Nullable: true, Editable: false,
+			Provenance: domainentry.PropertyProvenanceSystem,
+		}},
+	}}
+	definitions, err := service.propertyDefinitions([]string{"misc.size"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition, ok := definitions["misc.size"]
+	if !ok {
+		t.Fatal("misc.size definition not resolved")
+	}
+	if !definition.Nullable {
+		t.Fatal("Nullable was dropped by the runtime definition conversion")
+	}
+	nullValue := domainentry.PropertyValue{
+		Type: domainentry.PropertyTypeNumber, PropertyID: sizeID,
+		State: domainentry.PropertyStateNull, Cardinality: domainentry.PropertyCardinalityOne,
+	}
+	if result := nullValue.ValidateAgainst(definition); !result.Valid {
+		t.Fatalf("canonical null against nullable definition = %+v, want valid", result)
+	}
+}
+
 func TestPropertyDefinitionsPropagatesInvalidCatalogDefinition(t *testing.T) {
 	sizeID := domainentry.MustPropertyID("12a1c023-0b61-56b0-aec6-71a2d0d8cc1b")
 	service := &UnifiedService{catalog: domainentry.PropertyCatalogSnapshot{

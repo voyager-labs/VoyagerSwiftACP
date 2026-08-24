@@ -104,7 +104,8 @@ func (service *UnifiedService) propertyDefinitions(requestedProperties []string)
 		propertyDefinition, definitionErr := domainentry.NewPropertyDefinition(domainentry.PropertyDefinition{
 			PropertyID: catalogDefinition.PropertyID, IdentityScheme: catalogDefinition.IdentityScheme, Namespace: catalogDefinition.Namespace,
 			Key: catalogDefinition.CanonicalKey, DisplayName: catalogDefinition.DisplayName, ValueType: catalogDefinition.ValueType,
-			Cardinality: catalogDefinition.Cardinality, Editable: catalogDefinition.Editable, Provenance: catalogDefinition.Provenance,
+			Cardinality: catalogDefinition.Cardinality, Editable: catalogDefinition.Editable, Nullable: catalogDefinition.Nullable,
+			Provenance:      catalogDefinition.Provenance,
 			ValidationRules: []domainentry.ValidationRule{}, Unit: catalogDefinition.Unit,
 			DefaultDisplayUnit: catalogDefinition.DefaultDisplayUnit, Units: catalogDefinition.Units,
 		})
