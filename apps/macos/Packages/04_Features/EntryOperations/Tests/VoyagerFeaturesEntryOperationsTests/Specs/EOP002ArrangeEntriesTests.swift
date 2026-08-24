@@ -2390,6 +2390,43 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertEqual(events.last, .succeeded(request.sessionID))
     }
 
+    /// 검증 내용: finalizeLegacyStaging의 중복 경로 거절과 정상 경로 수용을 검증한다(#3840576139).
+    /// 사전 조건: staging에 a.txt·c.txt가 존재한다.
+    /// 기대 결과: 서로 다른 두 이름은 수용되고, 같은 파일의 다른 표기(c.txt vs ./c.txt)는
+    /// nil(전체 거절) + staging 제거다.
+    func testExternalDropAcquisition_finalizeLegacyStagingRejectsDuplicateStandardizedPaths() throws {
+        let temporaryRoot = try makeAcquisitionTempRoot("LegacyDedupe")
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        let client = ExternalDropAcquisitionClient
+            .live(fileManager: makeExternalDropFileManager(temporaryRoot: temporaryRoot))
+
+        let stagingDir = temporaryRoot.appendingPathComponent("ExternalDrop-LegacyDedupe")
+        try FileManager.default.createDirectory(at: stagingDir, withIntermediateDirectories: true)
+        try Data("a".utf8).write(to: stagingDir.appendingPathComponent("a.txt"))
+        try Data("c".utf8).write(to: stagingDir.appendingPathComponent("c.txt"))
+
+        // 정상: 서로 다른 두 경로는 모두 수용된다.
+        let accepted = client.finalizeLegacyStaging(
+            ["a.txt", "c.txt"],
+            stagingDir.path,
+        )
+        XCTAssertEqual(
+            accepted,
+            [
+                stagingDir.appendingPathComponent("a.txt").path,
+                stagingDir.appendingPathComponent("c.txt").path,
+            ],
+        )
+
+        // 중복 표기(file vs ./file)는 전체 거절 + staging 제거다.
+        let rejected = client.finalizeLegacyStaging(
+            ["c.txt", "./c.txt"],
+            stagingDir.path,
+        )
+        XCTAssertNil(rejected)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: stagingDir.path))
+    }
+
     /// 검증 내용: 레거시 폴백 beginLegacy가 staging에 이미 물리화된 파일들을 received-item으로 등록하고
     /// cardinality만큼 모두 등록되면 `.succeeded`를 emit한다.
     /// 사전 조건: staging에 존재하는 파일 2개 경로를 beginLegacy로 넘긴다.

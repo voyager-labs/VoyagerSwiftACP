@@ -471,10 +471,12 @@ private final class ExternalDropAcquisitionStore {
         // 동일 파일을 다른 표기(file vs ./file)로 중복 반환하는 provider를 거절한다.
         // 중복 경로는 placement pendingPaths Set에서 한 항목으로 합쳐져 첫 복사
         // 완료만으로 세션이 종료되는 조기 종단을 유발한다(코멘트 #3840534607).
-        var seenPaths = Set<String>()
+        // 항목마다 canonical 경로를 한 번만 삽입한다. raw·canonical을 같은 집합에
+        // 연속 삽입하면 path == canonical인 정상 경로도 항상 거절된다(#3840576139).
+        var seenCanonicalPaths = Set<String>()
         for path in stagedPaths {
             let canonical = URL(fileURLWithPath: path).resolvingSymlinksInPath().path
-            guard seenPaths.insert(path).inserted, seenPaths.insert(canonical).inserted else {
+            guard seenCanonicalPaths.insert(canonical).inserted else {
                 try? fileManager.removeItem(stagingURL)
                 return nil
             }
