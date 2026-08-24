@@ -160,17 +160,28 @@ extension WindowManagerFeature {
         shouldBootstrapDefaultWindow: Bool,
     ) -> Effect<Action> {
         .run { [fileManagerWindowClient] send in
-            await fileManagerWindowClient.open(id)
-            guard !Task.isCancelled else { return }
-            let registeredWindowIDs = await fileManagerWindowClient.registeredWindowIDs()
-            guard !Task.isCancelled else { return }
+            guard let isRegistered = await Self.openAndVerifyWindowRegistration(
+                id,
+                client: fileManagerWindowClient,
+            ) else { return }
             await send(.windowOpenCompleted(
                 id: id,
                 shouldBootstrapDefaultWindow: shouldBootstrapDefaultWindow,
-                isRegistered: registeredWindowIDs.contains(id),
+                isRegistered: isRegistered,
             ))
         }
         .cancellable(id: CancelID.windowOpen(id))
+    }
+
+    static func openAndVerifyWindowRegistration(
+        _ id: State.WindowID,
+        client: FileManagerWindowClient,
+    ) async -> Bool? {
+        await client.open(id)
+        guard !Task.isCancelled else { return nil }
+        let registeredWindowIDs = await client.registeredWindowIDs()
+        guard !Task.isCancelled else { return nil }
+        return registeredWindowIDs.contains(id)
     }
 
     func readyToOpenWindow(_ id: State.WindowID, state: inout State) -> Effect<Action> {
@@ -200,14 +211,14 @@ extension WindowManagerFeature {
         shouldBootstrapDefaultWindow: Bool,
     ) -> Effect<Action> {
         .run { [fileManagerWindowClient] send in
-            await fileManagerWindowClient.open(id)
-            guard !Task.isCancelled else { return }
-            let registeredWindowIDs = await fileManagerWindowClient.registeredWindowIDs()
-            guard !Task.isCancelled else { return }
+            guard let isRegistered = await Self.openAndVerifyWindowRegistration(
+                id,
+                client: fileManagerWindowClient,
+            ) else { return }
             await send(.windowOpenCompleted(
                 id: id,
                 shouldBootstrapDefaultWindow: shouldBootstrapDefaultWindow,
-                isRegistered: registeredWindowIDs.contains(id),
+                isRegistered: isRegistered,
             ))
             guard !Task.isCancelled else { return }
             await send(.trackedSingletonNativeOpenCompleted(requestID: requestID))

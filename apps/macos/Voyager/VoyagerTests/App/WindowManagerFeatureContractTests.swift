@@ -10058,7 +10058,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         } withDependencies: {
             $0.uuid = .incrementing
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
-            $0.fileManagerWindowClient.open = { _ in }
+            Self.configureAutoRegisteringWindowOpen(&$0.fileManagerWindowClient)
         }
         // store.exhaustivity = .off: 복구 apply 이후 native open lifecycle은 기존 new-window owner가 검증함.
         store.exhaustivity = .off
@@ -10125,7 +10125,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         } withDependencies: {
             $0.uuid = .incrementing
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
-            $0.fileManagerWindowClient.open = { _ in }
+            Self.configureAutoRegisteringWindowOpen(&$0.fileManagerWindowClient)
         }
         // store.exhaustivity = .off: 복구 apply 이후 native open lifecycle은 기존 new-window owner가 검증함.
         store.exhaustivity = .off
@@ -10197,7 +10197,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         } withDependencies: {
             $0.uuid = .incrementing
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
-            $0.fileManagerWindowClient.open = { _ in }
+            Self.configureAutoRegisteringWindowOpen(&$0.fileManagerWindowClient)
         }
         // store.exhaustivity = .off: 복구 apply 이후 native open lifecycle은 기존 new-window owner가 검증함.
         store.exhaustivity = .off
@@ -10273,7 +10273,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         } withDependencies: {
             $0.uuid = .incrementing
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
-            $0.fileManagerWindowClient.open = { _ in }
+            Self.configureAutoRegisteringWindowOpen(&$0.fileManagerWindowClient)
         }
         // store.exhaustivity = .off: 복구 apply 이후 native open lifecycle은 기존 new-window owner가 검증함.
         store.exhaustivity = .off
@@ -10386,7 +10386,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                 XCTFail("lifecycle-ineligible plan은 native activation 전에 전체 재계획해야 한다")
                 return .becameKey
             }
-            $0.fileManagerWindowClient.open = { _ in }
+            Self.configureAutoRegisteringWindowOpen(&$0.fileManagerWindowClient)
         }
         // store.exhaustivity = .off: replacement apply 이후 window lifecycle은 기존 owner가 검증함.
         store.exhaustivity = .off
@@ -10544,7 +10544,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             $0.fileManagerWindowClient.activate = { _ in .becameKey }
             $0.uuid = .incrementing
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
-            $0.fileManagerWindowClient.open = { _ in }
+            Self.configureAutoRegisteringWindowOpen(&$0.fileManagerWindowClient)
         }
         // store.exhaustivity = .off: 복구 apply 이후 native open lifecycle은 기존 new-window owner가 검증함.
         store.exhaustivity = .off
@@ -10608,7 +10608,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         } withDependencies: {
             $0.uuid = .incrementing
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
-            $0.fileManagerWindowClient.open = { _ in }
+            Self.configureAutoRegisteringWindowOpen(&$0.fileManagerWindowClient)
         }
         // store.exhaustivity = .off: replacement apply 이후 native window lifecycle은 기존 owner가 검증함.
         store.exhaustivity = .off
@@ -10691,7 +10691,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         } withDependencies: {
             $0.uuid = .incrementing
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
-            $0.fileManagerWindowClient.open = { _ in }
+            Self.configureAutoRegisteringWindowOpen(&$0.fileManagerWindowClient)
         }
         // store.exhaustivity = .off: replacement apply 이후 native window lifecycle은 기존 owner가 검증함.
         store.exhaustivity = .off
@@ -10768,7 +10768,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         } withDependencies: {
             $0.uuid = .incrementing
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
-            $0.fileManagerWindowClient.open = { _ in }
+            Self.configureAutoRegisteringWindowOpen(&$0.fileManagerWindowClient)
         }
         // store.exhaustivity = .off: window 제거 후 native lifecycle은 기존 owner가 검증함.
         store.exhaustivity = .off
@@ -10867,7 +10867,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             $0.uuid = .incrementing
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
             $0.fileManagerWindowClient.activate = { _ in .becameKey }
-            $0.fileManagerWindowClient.open = { _ in }
+            Self.configureAutoRegisteringWindowOpen(&$0.fileManagerWindowClient)
         }
         // store.exhaustivity = .off: 창 제거 후 native lifecycle은 기존 owner가 검증함.
         store.exhaustivity = .off
@@ -10938,7 +10938,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             $0.uuid = .incrementing
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
             $0.fileManagerWindowClient.activate = { _ in .becameKey }
-            $0.fileManagerWindowClient.open = { _ in }
+            Self.configureAutoRegisteringWindowOpen(&$0.fileManagerWindowClient)
         }
         // store.exhaustivity = .off: 창 제거 후 replacement apply 이후 lifecycle은 기존 owner가 검증함.
         store.exhaustivity = .off
@@ -10990,7 +10990,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         } withDependencies: {
             $0.uuid = .incrementing
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
-            $0.fileManagerWindowClient.open = { _ in }
+            Self.configureAutoRegisteringWindowOpen(&$0.fileManagerWindowClient)
         }
         // store.exhaustivity = .off: fallback apply 이후 native window lifecycle은 기존 owner가 검증함.
         store.exhaustivity = .off
@@ -11083,7 +11083,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             $0.fileManagerWindowClient.activate = { _ in .becameKey }
             $0.uuid = .incrementing
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
-            $0.fileManagerWindowClient.open = { _ in }
+            Self.configureAutoRegisteringWindowOpen(&$0.fileManagerWindowClient)
         }
         // store.exhaustivity = .off: 복구 apply 이후 native open lifecycle은 기존 new-window owner가 검증함.
         store.exhaustivity = .off
@@ -11141,7 +11141,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             $0.fileManagerWindowClient.activate = { _ in .becameKey }
             $0.uuid = .incrementing
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
-            $0.fileManagerWindowClient.open = { _ in }
+            Self.configureAutoRegisteringWindowOpen(&$0.fileManagerWindowClient)
         }
         // store.exhaustivity = .off: 성공 delegate 이후 window lifecycle은 기존 activation owner가 검증함.
         store.exhaustivity = .off
@@ -11314,7 +11314,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             }
         } withDependencies: {
             $0.fileManagerWindowClient.activate = { _ in .becameKey }
-            $0.fileManagerWindowClient.open = { _ in }
+            Self.configureAutoRegisteringWindowOpen(&$0.fileManagerWindowClient)
             $0.collectionFileClient.load = { url in
                 openedURLs.withValue { $0.append(url) }
                 if url == durableURL {
@@ -12080,6 +12080,93 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await store.finish()
     }
 
+    /// FMW-003: 새 external window가 native registry에 등록되지 않으면 apply를 실패로 종료한다.
+    /// open 반환만으로 placement 성공을 확정하지 않고 batch-owned window를 정리하는 경계를 검증한다.
+    /// - 검증 내용: registration 조회, typed failure terminal, logical/native window cleanup
+    /// - 사전 조건: external placement가 새 window를 만들지만 registeredWindowIDs는 빈 set을 반환함
+    /// - 기대 결과: success terminal 없이 failure가 한 번 방출되고 현재 batch ownership이 완전히 제거됨
+    func testPlacementApplicationNativeRegistrationFailureRollsBackOwnedNewWindowsAndEmitsFailure() async {
+        let batchID = UUID()
+        let windowID = UUID()
+        let itemID = UUID()
+        let tabID = ContentTabID(rawValue: "unregistered-external-window")
+        let plan = ExternalOpenPlacementPlan(
+            batchID: batchID,
+            windows: [
+                .init(
+                    windowID: windowID,
+                    isNewWindow: true,
+                    items: [
+                        .init(
+                            itemID: itemID,
+                            tabID: tabID,
+                            anchor: .directory(path: "/tmp/unregistered-external"),
+                        ),
+                    ],
+                ),
+            ],
+        )
+        let openedWindowIDs = LockIsolated<[UUID]>([])
+        let registrationCheckCount = LockIsolated(0)
+        let closedWindowIDs = LockIsolated<[UUID]>([])
+        let finalizedWindowIDs = LockIsolated<[UUID]>([])
+        let completions = LockIsolated<[ExternalOpenPlacementApplicationCompletion]>([])
+        let terminalReceived = expectation(description: "external open apply terminal received")
+        var initialState = WindowManagerFeature.State()
+        initialState.authorizedExternalOpenBatchID = batchID
+        let store = TestStore(initialState: initialState) {
+            CombineReducers {
+                WindowManagerFeature()
+                Reduce { _, action in
+                    if case let .delegate(.externalOpenApplyCompleted(completion)) = action {
+                        completions.withValue { $0.append(completion) }
+                        terminalReceived.fulfill()
+                    }
+                    return .none
+                }
+            }
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.fileManagerWindowClient.open = { id in
+                openedWindowIDs.withValue { $0.append(id) }
+            }
+            $0.fileManagerWindowClient.registeredWindowIDs = {
+                registrationCheckCount.withValue { $0 += 1 }
+                return []
+            }
+            $0.fileManagerWindowClient.close = { id in
+                closedWindowIDs.withValue { $0.append(id) }
+            }
+            $0.fileManagerWindowClient.finalizeClose = { id in
+                finalizedWindowIDs.withValue { $0.append(id) }
+            }
+        }
+        // store.exhaustivity = .off: child 준비 action보다 native registration failure와 batch cleanup 경계를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.placement(.apply(
+            plan: plan,
+            reservationsByItemID: [
+                itemID: .init(id: tabID, anchor: .directory(path: "/tmp/unregistered-external")),
+            ],
+        )))
+        await fulfillment(of: [terminalReceived], timeout: 1)
+        await store.skipReceivedActions()
+        await store.finish()
+
+        XCTAssertEqual(openedWindowIDs.value, [windowID])
+        XCTAssertEqual(registrationCheckCount.value, 1)
+        XCTAssertEqual(closedWindowIDs.value, [windowID])
+        XCTAssertEqual(finalizedWindowIDs.value, [windowID])
+        XCTAssertEqual(completions.value, [
+            .init(batchID: batchID, result: .failure(.validationFailed)),
+        ])
+        XCTAssertNil(store.state.windows[id: windowID])
+        XCTAssertNil(store.state.authorizedExternalOpenBatchID)
+        XCTAssertNil(store.state.retainedExternalOpenPlacementOwnership)
+        XCTAssertNil(store.state.externalWindowBatchIDs[windowID])
+    }
+
     /// 새 external no-Home window의 active Collection은 canonical open을 정확히 한 번 시작한다.
     /// Collection load가 장기 실행 중이어도 apply terminal은 load 완료를 기다리지 않는 경계를 검증한다.
     /// - 검증 내용: active Collection load 1회, suspended load 전 terminal 1회, 모든 tab의 window context 보존이다.
@@ -12150,6 +12237,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             }
             $0.collectionAlertClient.showCollectionOpenErrorAlert = { _, _ in }
             $0.fileManagerWindowClient.open = { _ in }
+            $0.fileManagerWindowClient.registeredWindowIDs = { [windowID] }
         }
         // store.exhaustivity = .off: child Collection action보다 새 window commit/open/terminal 경계를 검증한다.
         store.exhaustivity = .off
@@ -12231,6 +12319,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
             $0.fileManagerWindowClient.open = { id in openedIDs.withValue { $0.append(id) } }
+            $0.fileManagerWindowClient.registeredWindowIDs = { [firstWindowID, secondWindowID] }
             $0.fileManagerWindowClient.activate = { _ in .becameKey }
         }
         // store.exhaustivity = .off: window별 초기화 child action보다 외부 window 생성 경계와 bootstrap 제외를 검증한다.
@@ -13855,6 +13944,16 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             activeTabID: tabs.first?.id,
         )
         return WindowSessionState(id: id, window: window)
+    }
+
+    private static func configureAutoRegisteringWindowOpen(
+        _ client: inout FileManagerWindowClient,
+    ) {
+        let registeredWindowIDs = LockIsolated<Set<UUID>>([])
+        client.open = { (id: UUID) in
+            registeredWindowIDs.withValue { _ = $0.insert(id) }
+        }
+        client.registeredWindowIDs = { registeredWindowIDs.value }
     }
 
     private struct PinnedCollectionActivationFixture {

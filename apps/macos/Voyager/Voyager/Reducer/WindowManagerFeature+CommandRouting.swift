@@ -53,6 +53,34 @@ extension WindowManagerFeature {
             ))))
         }
 
+        commitExternalOpenApplication(application, plan: plan, state: &state)
+
+        var effects = externalOpenCommitEffects(application, state: state)
+        if state.defaultWindowBootstrapWindowIDs.isEmpty,
+           state.defaultWindowBootstrapRequestID != nil
+        {
+            state.defaultWindowBootstrapRequestID = nil
+            effects.append(.cancel(id: CancelID.defaultWindowBootstrap))
+        }
+        if application.newWindowIDs.isEmpty {
+            effects.append(.send(.delegate(.externalOpenApplyCompleted(.init(
+                batchID: plan.batchID,
+                result: .success(plan),
+            )))))
+        } else {
+            effects.append(externalOpenWindowRegistrationEffect(
+                plan: plan,
+                windowIDs: application.newWindowIDs,
+            ))
+        }
+        return .concatenate(effects)
+    }
+
+    private func commitExternalOpenApplication(
+        _ application: ExternalOpenPlacementApplication.Result,
+        plan: ExternalOpenPlacementPlan,
+        state: inout State,
+    ) {
         state.windows = application.windows
         state.refreshContentTabMoveTargets()
         retainExternalOpenPlacementOwnership(plan.batchID, application.newWindowIDs, state: &state)
@@ -62,19 +90,24 @@ extension WindowManagerFeature {
         for windowID in plan.windows.map(\.windowID) {
             state.defaultWindowBootstrapWindowIDs.remove(windowID)
         }
+    }
 
-        var effects = externalOpenCommitEffects(application, state: state)
-        if state.defaultWindowBootstrapWindowIDs.isEmpty,
-           state.defaultWindowBootstrapRequestID != nil
-        {
-            state.defaultWindowBootstrapRequestID = nil
-            effects.append(.cancel(id: CancelID.defaultWindowBootstrap))
+    func handleExternalOpenApplyCompletion(
+        _ completion: ExternalOpenPlacementApplicationCompletion,
+        state: inout State,
+    ) -> Effect<Action> {
+        switch completion.result {
+        case .failure:
+            cancelExternalOpenPlacement(batchID: completion.batchID, state: &state)
+        case let .success(plan):
+            .merge(plan.windows.compactMap { window in
+                guard window.isNewWindow else { return nil }
+                return .send(.windows(.element(
+                    id: window.windowID,
+                    action: .window(.resyncActiveCollectionNavigation),
+                )))
+            })
         }
-        effects.append(.send(.delegate(.externalOpenApplyCompleted(.init(
-            batchID: plan.batchID,
-            result: .success(plan),
-        )))))
-        return .concatenate(effects)
     }
 
     private func externalOpenCommitEffects(
@@ -82,18 +115,34 @@ extension WindowManagerFeature {
         state: State,
     ) -> [Effect<Action>] {
         externalOpenActivationEffects(application.existingWindowActivations)
-            + application.newWindowIDs.flatMap { windowID in
-                [
-                    appPreferencesEffect(for: windowID, preferences: state.appPreferences),
-                    Effect.run { [fileManagerWindowClient] _ in
-                        await fileManagerWindowClient.open(windowID)
-                    },
-                    Effect.send(.windows(.element(
-                        id: windowID,
-                        action: .window(.resyncActiveCollectionNavigation),
-                    ))),
-                ]
+            + application.newWindowIDs.map { windowID in
+                appPreferencesEffect(for: windowID, preferences: state.appPreferences)
             }
+    }
+
+    private func externalOpenWindowRegistrationEffect(
+        plan: ExternalOpenPlacementPlan,
+        windowIDs: [State.WindowID],
+    ) -> Effect<Action> {
+        .run { [fileManagerWindowClient] send in
+            for windowID in windowIDs {
+                guard let isRegistered = await Self.openAndVerifyWindowRegistration(
+                    windowID,
+                    client: fileManagerWindowClient,
+                ) else { return }
+                guard isRegistered else {
+                    await send(.delegate(.externalOpenApplyCompleted(.init(
+                        batchID: plan.batchID,
+                        result: .failure(.validationFailed),
+                    ))))
+                    return
+                }
+            }
+            await send(.delegate(.externalOpenApplyCompleted(.init(
+                batchID: plan.batchID,
+                result: .success(plan),
+            ))))
+        }
     }
 
     func routeFindCommand(_ state: State) -> Effect<Action> {

@@ -237,6 +237,9 @@ struct WindowManagerFeature {
             case let .placement(.cancel(batchID)):
                 return cancelExternalOpenPlacement(batchID: batchID, state: &state)
 
+            case let .delegate(.externalOpenApplyCompleted(completion)):
+                return handleExternalOpenApplyCompletion(completion, state: &state)
+
             case let .externalOpenActivationResult(attempt, result):
                 guard state.authorizedExternalOpenBatchID == attempt.batchID,
                       let currentAttempt = state.externalOpenActivationAttempt,
