@@ -78,11 +78,10 @@ export const ComposerDateValuePicker: FC<ComposerDateValuePickerProps> = ({
       Number.isInteger(Number(relativeAmount)) &&
       Number(relativeAmount) > 0)
 
-  const resolvedRelative = resolveRelativeValue(
-    relativePreset,
-    Number(relativeAmount),
-    relativeUnit,
-  )
+  // 네이티브는 파싱 불가능한 수량을 상태에 반영하지 않는다: 유효하지 않으면 앵커·프리뷰 계산에서 제외한다
+  const rawAmount = Number(relativeAmount)
+  const safeAmount = Number.isInteger(rawAmount) && rawAmount > 0 ? rawAmount : 1
+  const resolvedRelative = resolveRelativeValue(relativePreset, safeAmount, relativeUnit)
 
   // 네이티브 displayText: Today는 별도 mode로 표시하고, 나머지는 "N unit(s) ago" 형식
   const relativePreview =
@@ -153,8 +152,10 @@ export const ComposerDateValuePicker: FC<ComposerDateValuePickerProps> = ({
                 type="button"
                 aria-pressed={dateMode === "absolute"}
                 onClick={() => {
-                  // 네이티브 syncRelativeSelectedDate 계약: relative→absolute 전환 시 현재 프리뷰 날짜를 공유 선택값으로 복사한다(빈 값 여부와 무관)
-                  setSelectedDate(relativeAnchorDate)
+                  // 네이티브 syncRelativeSelectedDate 계약: 실제 relative→absolute 전환에서만 현재 프리뷰 날짜를 복사한다
+                  if (dateMode === "relative") {
+                    setSelectedDate(relativeAnchorDate)
+                  }
                   setDateMode("absolute")
                 }}
               >
