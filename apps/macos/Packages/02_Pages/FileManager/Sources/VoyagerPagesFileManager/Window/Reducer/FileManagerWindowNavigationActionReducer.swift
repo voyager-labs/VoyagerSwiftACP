@@ -7,6 +7,20 @@ import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
 import VoyagerShared
 
+extension FileManagerWindowState {
+    var pendingPinnedCollectionReturnTabID: ContentTabID? {
+        guard let tabID = contentTabs.activeTabID,
+              let tab = contentTabs.tabs[id: tabID],
+              tab.isPinned,
+              let record = contentTabs.pinnedRecords[tabID],
+              case let .collectionFile(durableURL) = record.anchor,
+              pendingCollectionOpenRequest?.url.standardizedFileURL == durableURL.standardizedFileURL,
+              tab.anchor != record.anchor
+        else { return nil }
+        return tabID
+    }
+}
+
 @Reducer
 struct FileManagerNavigationActionReducer {
     typealias State = FileManagerWindowState
@@ -72,7 +86,7 @@ struct FileManagerNavigationActionReducer {
              .showTag,
              .showAiChat,
              .showAiChatSessions:
-            let failedPinnedReturnTabID = pendingPinnedCollectionReturnTabID(state: state)
+            let failedPinnedReturnTabID = state.pendingPinnedCollectionReturnTabID
             return .concatenate(
                 cancelPendingCollectionOpen(
                     state: &state,
@@ -85,7 +99,7 @@ struct FileManagerNavigationActionReducer {
              .goForward,
              .goToHistoryIndex,
              .goToEnclosingDirectory:
-            let failedPinnedReturnTabID = pendingPinnedCollectionReturnTabID(state: state)
+            let failedPinnedReturnTabID = state.pendingPinnedCollectionReturnTabID
             return .concatenate(
                 cancelPendingCollectionOpen(
                     state: &state,
@@ -103,18 +117,6 @@ struct FileManagerNavigationActionReducer {
                 uuid: uuid,
             )
         }
-    }
-
-    private func pendingPinnedCollectionReturnTabID(state: State) -> ContentTabID? {
-        guard let tabID = state.contentTabs.activeTabID,
-              let tab = state.contentTabs.tabs[id: tabID],
-              tab.isPinned,
-              let record = state.contentTabs.pinnedRecords[tabID],
-              case let .collectionFile(durableURL) = record.anchor,
-              state.pendingCollectionOpenRequest?.url.standardizedFileURL == durableURL.standardizedFileURL,
-              tab.anchor != record.anchor
-        else { return nil }
-        return tabID
     }
 
     private func handleInternalAction(
