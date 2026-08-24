@@ -848,6 +848,12 @@ func validReasonCode(code ValidationReasonCode) bool {
 	}
 }
 
+// ClonePropertyDefinition은 정의를 깊은 복제한다. 호출자가 어댑터에 정의를
+// 넘기거나 보관할 때 권위 원본과의 별칭을 끊는 용도로 쓴다.
+func ClonePropertyDefinition(value PropertyDefinition) PropertyDefinition {
+	return clonePropertyDefinition(value)
+}
+
 func clonePropertyDefinition(value PropertyDefinition) PropertyDefinition {
 	cloned := value
 	cloned.Unit = cloneString(value.Unit)

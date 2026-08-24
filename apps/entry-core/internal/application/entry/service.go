@@ -1150,15 +1150,7 @@ func longestMatchingMount(mounts []domainentry.MountRef, path string) *domainent
 func clonePropertyDefinitions(definitions map[string]domainentry.PropertyDefinition) map[string]domainentry.PropertyDefinition {
 	cloned := make(map[string]domainentry.PropertyDefinition, len(definitions))
 	for name, definition := range definitions {
-		copied := definition
-		copied.ValidationRules = make([]domainentry.ValidationRule, len(definition.ValidationRules))
-		copy(copied.ValidationRules, definition.ValidationRules)
-		copied.Units = append([]domainentry.PropertyUnit(nil), definition.Units...)
-		if definition.Unit != nil {
-			unit := *definition.Unit
-			copied.Unit = &unit
-		}
-		cloned[name] = copied
+		cloned[name] = domainentry.ClonePropertyDefinition(definition)
 	}
 	return cloned
 }
