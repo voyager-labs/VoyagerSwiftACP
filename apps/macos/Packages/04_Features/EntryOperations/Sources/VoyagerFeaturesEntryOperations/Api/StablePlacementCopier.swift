@@ -118,6 +118,15 @@ enum StablePlacementCopier {
                 try Task.checkCancellation()
                 let valueSize = fgetxattr(sourceDescriptor, name, nil, 0, 0, 0)
                 guard valueSize >= 0 else { throw posixError() }
+                // #3840962269: 빈 값 속성도 생성한다
+                if valueSize == 0 {
+                    var placeholder: UInt8 = 0
+                    let setResult = withUnsafeBytes(of: &placeholder) { immutable -> Int32 in
+                        fsetxattr(destinationDescriptor, name, immutable.baseAddress, 0, 0, 0)
+                    }
+                    guard setResult == 0 else { throw posixError() }
+                    continue
+                }
                 var offset = 0
                 while offset < Int(valueSize) {
                     try Task.checkCancellation()
@@ -138,6 +147,14 @@ enum StablePlacementCopier {
 
             // 원본 mode 복원: open 시점 umask가 제거한 비트를 되돌린다(코멘트 #3840914586).
             guard Darwin.fchmod(destinationDescriptor, mode) == 0 else { throw posixError() }
+
+            // 시가 정보(mtime/atime)도 COPYFILE_STAT 계약을 유지한다.
+            var times = [timeval](repeating: timeval(tv_sec: 0, tv_usec: 0), count: 2)
+            times[0].tv_sec = status.st_atimespec.tv_sec
+            times[0].tv_usec = Int32(status.st_atimespec.tv_nsec / 1000)
+            times[1].tv_sec = status.st_mtimespec.tv_sec
+            times[1].tv_usec = Int32(status.st_mtimespec.tv_nsec / 1000)
+            futimes(destinationDescriptor, times)
 
             // 성공 반환 전 최종 취소 확인(#3840637309).
             try Task.checkCancellation()
