@@ -474,7 +474,7 @@
 }
 
 /* ============================================================
- * PopUpButton / PullDownButton — base container & menu
+ * PopUpButton / PullDownButton — base container & trigger
  * ============================================================ */
 
 :where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
@@ -497,77 +497,22 @@
   gap: var(--fm-space-5);
 }
 
+/* ============================================================
+ * PopUpButton / PullDownButton — panel placement & scroll
+ * (surface와 row는 공통 Menu/MenuItem이 소유한다)
+ * ============================================================ */
+
 :where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
   .vc-popup-menu,
 :where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
   .vc-pulldown-menu {
-  display: grid;
   position: absolute;
   z-index: 10;
   top: calc(100% + var(--fm-space-2));
   left: 0;
   min-width: 100%;
-  border: 1px solid var(--fm-window-border);
-  border-radius: var(--fm-radius-sm);
-  background: var(--fm-elevated);
-  padding: var(--fm-space-2);
-  box-shadow: var(--fm-shadow-card);
-  backdrop-filter: var(--fm-backdrop-blur);
-}
-
-:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
-  .vc-popup-option,
-:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
-  .vc-pulldown-option {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--fm-space-5);
-  border-radius: var(--fm-radius-sm);
-  padding: var(--fm-space-3) var(--fm-space-4);
-  color: var(--fm-text-primary);
-  font-size: var(--fm-font-size-body);
-  white-space: nowrap;
-}
-
-:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
-  .vc-popup-option.selected,
-:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
-  .vc-popup-option:not([aria-disabled="true"]):hover,
-:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
-  .vc-pulldown-option:not([aria-disabled="true"]):hover {
-  background: var(--fm-selection);
-  color: var(--fm-selection-label);
-}
-
-:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
-  .vc-popup-option-label,
-:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
-  .vc-pulldown-option-label {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
-  .vc-popup-option-check {
-  color: currentColor;
-  font-size: var(--fm-font-size-caption);
-  font-weight: var(--fm-weight-bold);
-}
-
-:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
-  .vc-popup-option[aria-disabled="true"],
-:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
-  .vc-pulldown-option[aria-disabled="true"] {
-  cursor: default;
-  opacity: 0.55;
-}
-
-:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
-  .vc-pulldown-option
-  small {
-  color: var(--fm-text-tertiary);
+  max-height: 320px;
+  overflow-y: auto;
 }
 
 /* ============================================================
