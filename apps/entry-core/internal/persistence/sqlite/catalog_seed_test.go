@@ -575,6 +575,86 @@ func TestCatalogSeedFullyTombstonedFailsClosed(t *testing.T) {
 	}
 }
 
+// TestCatalogSeedHistoricalNewerTupleFailsClosed proves an empty active seed
+// set whose only history carries a NEWER seed ordinal is rejected as seed
+// state, not misclassified as fresh and silently reactivated.
+func TestCatalogSeedHistoricalNewerTupleFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	store := migratedStore(t)
+	wsctx := buildCatalogFixture(t, store, 0, 0, 0, 0, noneSeedTrio())
+	if err := store.ApplyCatalogSeed(ctx, wsctx); err != nil {
+		t.Fatalf("first ApplyCatalogSeed: %v", err)
+	}
+	wsBytes := wsctx.ID.Bytes()
+	for _, family := range []any{
+		&WorkspacePropertyDefinitionRow{},
+		&SourcePropertyDescriptorRow{},
+		&PropertyBindingRow{},
+		&WorkspacePropertyTermRow{},
+	} {
+		res := store.db.WithContext(ctx).Model(family).
+			Where("workspace_id = ? AND seed_owner = ?", wsBytes, "system_property_registry").
+			Updates(map[string]any{"lifecycle_state": "tombstoned", "seed_version": 2})
+		if res.Error != nil || res.RowsAffected == 0 {
+			t.Fatalf("retuple %T: err=%v rows=%d", family, res.Error, res.RowsAffected)
+		}
+	}
+
+	err := store.ApplyCatalogSeed(ctx, wsctx)
+	if !errors.Is(err, ErrCatalogSeedState) {
+		t.Fatalf("ApplyCatalogSeed error = %v, want ErrCatalogSeedState", err)
+	}
+	var active int64
+	if err := store.db.WithContext(ctx).Model(&WorkspacePropertyDefinitionRow{}).
+		Where("workspace_id = ? AND seed_owner = ? AND lifecycle_state = ?", wsBytes, "system_property_registry", "active").
+		Count(&active).Error; err != nil {
+		t.Fatalf("count active defs: %v", err)
+	}
+	if active != 0 {
+		t.Fatalf("newer-tuple history auto-reactivated: %d active defs", active)
+	}
+}
+
+// TestCatalogSeedHistoricalSourceVersionDriftFailsClosed proves an empty
+// active seed set whose history carries the same ordinal under a different
+// registry source version is rejected as drift instead of a fresh apply.
+func TestCatalogSeedHistoricalSourceVersionDriftFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	store := migratedStore(t)
+	wsctx := buildCatalogFixture(t, store, 0, 0, 0, 0, noneSeedTrio())
+	if err := store.ApplyCatalogSeed(ctx, wsctx); err != nil {
+		t.Fatalf("first ApplyCatalogSeed: %v", err)
+	}
+	wsBytes := wsctx.ID.Bytes()
+	for _, family := range []any{
+		&WorkspacePropertyDefinitionRow{},
+		&SourcePropertyDescriptorRow{},
+		&PropertyBindingRow{},
+		&WorkspacePropertyTermRow{},
+	} {
+		res := store.db.WithContext(ctx).Model(family).
+			Where("workspace_id = ? AND seed_owner = ?", wsBytes, "system_property_registry").
+			Updates(map[string]any{"lifecycle_state": "tombstoned", "seed_source_version": "9.9.9"})
+		if res.Error != nil || res.RowsAffected == 0 {
+			t.Fatalf("retuple %T: err=%v rows=%d", family, res.Error, res.RowsAffected)
+		}
+	}
+
+	err := store.ApplyCatalogSeed(ctx, wsctx)
+	if !errors.Is(err, ErrCatalogSeedState) {
+		t.Fatalf("ApplyCatalogSeed error = %v, want ErrCatalogSeedState", err)
+	}
+	var active int64
+	if err := store.db.WithContext(ctx).Model(&WorkspacePropertyTermRow{}).
+		Where("workspace_id = ? AND seed_owner = ? AND lifecycle_state = ?", wsBytes, "system_property_registry", "active").
+		Count(&active).Error; err != nil {
+		t.Fatalf("count active terms: %v", err)
+	}
+	if active != 0 {
+		t.Fatalf("source-version drift auto-reactivated: %d active terms", active)
+	}
+}
+
 // TestCatalogSeedPartiallyTombstonedTermsFailClosed proves the sibling
 // mixed-history case: current-tuple terms tombstoned while the other families
 // stay active keep HasSeed=true, so the digest drift path refuses the apply.
