@@ -252,7 +252,7 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
         receivedStagedPaths.insert(url.standardizedFileURL.path)
         lock.unlock()
         guard let expected = staging.capturedIdentity(url),
-              staging.stageReceivedFile(url, expected: expected)
+              staging.stageReceivedFile(url, expected: expected, shouldAbort: acquisitionAborted)
         else {
             lock.lock()
             receivedStagedPaths.remove(url.standardizedFileURL.path)
@@ -344,7 +344,7 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
         }
         lock.unlock()
         // 큐 격리: 기대 신원과 open 결과를 대조해 detached snapshot으로 고정한다.
-        guard staging.stageReceivedFile(url, expected: expected) else {
+        guard staging.stageReceivedFile(url, expected: expected, shouldAbort: acquisitionAborted) else {
             lock.lock()
             pendingSnapshotCount -= 1
             if phase == .acquiring {
@@ -1041,12 +1041,24 @@ extension ExternalDropAcquisitionSession {
     }
 
     func copyPlacementSource(sourcePath: String, destinationPath: String) throws {
-        try staging.copyPlacementSource(sourcePath: sourcePath, destinationPath: destinationPath)
-        // 디렉터리 원본 시각 복원(#3841341519).
-        staging.restoreOriginalDirectoryTimes(
-            claimedPath: sourcePath,
+        let rootLabel = try staging.copyPlacementSource(
+            sourcePath: sourcePath,
             destinationPath: destinationPath,
         )
+        // 디렉터리 원본 시각 복원(#3841341519). immediate URL은 candidate 경로이므로
+        // 복사 때 해석된 원본 label로 기록을 조회한다(#3842246337).
+        staging.restoreOriginalDirectoryTimes(
+            claimedPath: rootLabel,
+            destinationPath: destinationPath,
+        )
+    }
+
+    /// 스냅숏 I/O 경계에서 세션 종단 여부를 폴링한다(#3842246328). 세션 큐 블록이
+    /// lock을 보유하지 않은 구간에서만 호출된다.
+    private func acquisitionAborted() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return phase != .acquiring
     }
 
     private static let indeterminateNameMarker = "NSFilePromiseUnknown"

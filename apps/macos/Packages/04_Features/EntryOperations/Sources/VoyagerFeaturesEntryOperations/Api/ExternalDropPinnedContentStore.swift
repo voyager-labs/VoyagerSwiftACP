@@ -75,15 +75,25 @@ final class PinnedContentStore {
     /// source fd의 현재 콘텐츠를 사유 파일 snapshot으로 복사해 relink한다.
     /// 복사 전후 size+mtime 대조로 임자 내부 재기록 찢어짐을 탐지하고, 불안정 시 1회
     /// 재시도 후 fail-closed 예외를 던진다(코멘트 #3835329095).
-    func snapshotFile(from sourceDescriptor: Int32, label: String) throws -> ClaimedFileIdentity {
+    /// - Parameters:
+    ///   - shouldAbort: 세션 종단(취소) 폴링 클로저. 복사·digest 경계마다 확인해
+    ///     이미 무의해진 대형 I/O가 staging 제거 뒤에도 지속되지 않게 한다(#3842246328).
+    func snapshotFile(
+        from sourceDescriptor: Int32,
+        label: String,
+        shouldAbort: (() -> Bool)? = nil,
+    ) throws -> ClaimedFileIdentity {
         var before = stat()
         guard Darwin.fstat(sourceDescriptor, &before) == 0 else {
             throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
         }
         for _ in 0 ..< 2 {
+            if let shouldAbort, shouldAbort() {
+                throw POSIXError(.ECANCELED)
+            }
             let snapshot = try createSnapshotFile(from: sourceDescriptor, mode: before.st_mode & 0o777)
             // 내용 digest는 descriptor를 닫기 전에 계산한다(코멘트 #3838035179).
-            let digest = Self.sha256(ofDescriptor: snapshot.descriptor)
+            let digest = Self.sha256(ofDescriptor: snapshot.descriptor, shouldAbort: shouldAbort)
             Darwin.close(snapshot.descriptor)
             var after = stat()
             guard Darwin.fstat(sourceDescriptor, &after) == 0 else {
@@ -297,7 +307,7 @@ final class PinnedContentStore {
     /// 이름·값 쌍을 포함해 resource fork·확장 속성 재작성까지 탐지한다 — COPYFILE_ALL
     /// 복사 범위와 검증 범위를 일치시킨다(코멘트 #3840534608). 오프셋은 0으로 되감고
     /// caller가 검증 후 되감기를 담당한다.
-    static func sha256(ofDescriptor descriptor: Int32) -> Data? {
+    static func sha256(ofDescriptor descriptor: Int32, shouldAbort: (() -> Bool)? = nil) -> Data? {
         var hasher = SHA256()
         var headerStatus = stat()
         guard Darwin.fstat(descriptor, &headerStatus) == 0 else { return nil }
@@ -308,7 +318,8 @@ final class PinnedContentStore {
         appendFramedLength(Int64(headerStatus.st_size), into: &hasher)
         let names = sortedXattrNames(ofDescriptor: descriptor) ?? []
         appendFramedLength(Int64(names.count), into: &hasher)
-        guard hashDataFork(ofDescriptor: descriptor, into: &hasher) else { return nil }
+        guard hashDataFork(ofDescriptor: descriptor, into: &hasher, shouldAbort: shouldAbort) else { return nil }
+        if let shouldAbort, shouldAbort() { return nil }
         let buffer = UnsafeMutableRawPointer.allocate(
             byteCount: xattrStreamChunkBytes,
             alignment: MemoryLayout<UInt8>.alignment,
@@ -329,6 +340,7 @@ final class PinnedContentStore {
             if name == Self.resourceForkXattrName {
                 var offset = 0
                 while offset < valueSize {
+                    if let shouldAbort, shouldAbort() { return nil }
                     let chunk = min(xattrStreamChunkBytes, valueSize - offset)
                     let got = fgetxattr(
                         descriptor,
@@ -374,6 +386,7 @@ final class PinnedContentStore {
     private static func hashDataFork(
         ofDescriptor descriptor: Int32,
         into hasher: inout SHA256,
+        shouldAbort: (() -> Bool)? = nil,
     ) -> Bool {
         guard Darwin.lseek(descriptor, 0, SEEK_SET) >= 0 else { return false }
         let bufferSize = 1 << 20
@@ -383,6 +396,7 @@ final class PinnedContentStore {
         )
         defer { buffer.deallocate() }
         while true {
+            if let shouldAbort, shouldAbort() { return false }
             let readCount = Darwin.read(descriptor, buffer, bufferSize)
             if readCount < 0 {
                 if errno == EINTR { continue }

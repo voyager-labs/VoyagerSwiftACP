@@ -305,7 +305,11 @@ final class StagingDirectory {
     /// provider가 경로를 아는 staging 산출물(data flavor 물리화·legacy staged)을 등록한다.
     /// admission 시점에 포획한 기대 신원과 실제 open 결과를 대조해 lstat→open TOCTOU를
     /// fail-closed로 닫고, detached snapshot을 레지스트리에 relink한다(코멘트 #3835329095).
-    func stageReceivedFile(_ url: URL, expected: ClaimedFileIdentity?) -> Bool {
+    func stageReceivedFile(
+        _ url: URL,
+        expected: ClaimedFileIdentity?,
+        shouldAbort: (() -> Bool)? = nil,
+    ) -> Bool {
         let descriptor = Darwin.open(url.path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
         guard descriptor >= 0 else { return false }
         defer { Darwin.close(descriptor) }
@@ -316,7 +320,19 @@ final class StagingDirectory {
         }
         guard let openedIdentity = ClaimedFileIdentity(status: status) else { return false }
         do {
-            _ = try pinnedContent.snapshotFile(from: descriptor, label: canonicalClaimPath(url.path))
+            let label = canonicalClaimPath(url.path)
+            if status.st_mode & S_IFMT == S_IFDIR {
+                // 레거시 provider가 반환한 폴더·package도 modern claim과 같은 재귀 격리로
+                // 스냅숏한다. regular-file 전용 snapshotFile은 fcopyfile 실패로 유효한
+                // drop을 .fileAbsent로 누락했다(#3842246322).
+                _ = try isolateTree(from: descriptor, rootLabel: label)
+            } else {
+                _ = try pinnedContent.snapshotFile(
+                    from: descriptor,
+                    label: label,
+                    shouldAbort: shouldAbort,
+                )
+            }
         } catch {
             return false
         }
@@ -347,7 +363,10 @@ final class StagingDirectory {
         return pinnedContent.contains(canonical) ? canonical : nil
     }
 
-    func copyPlacementSource(sourcePath: String, destinationPath: String) throws {
+    /// 복사에 사용한 격리 루트 label을 반환한다. immediate URL은 candidate 경로라
+    /// 시각 기록 조회가 원본 label을 필요로 한다(#3842246337).
+    @discardableResult
+    func copyPlacementSource(sourcePath: String, destinationPath: String) throws -> String {
         identityLock.lock()
         let rootLabel = resolvedLabel(for: sourcePath)
         identityLock.unlock()
@@ -357,6 +376,7 @@ final class StagingDirectory {
             rootLabel: rootLabel,
             destination: URL(fileURLWithPath: destinationPath),
         )
+        return rootLabel
     }
 
     private static func copyFromStore(
