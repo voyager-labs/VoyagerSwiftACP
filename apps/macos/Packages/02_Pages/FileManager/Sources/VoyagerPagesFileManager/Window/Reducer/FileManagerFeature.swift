@@ -108,7 +108,7 @@ private extension FileManagerFeature {
                         outcome: .remaining,
                     ))
                 }
-                return pinnedReturnInvalidationEffect(tabID: tabID, state: state)
+                return pinnedReturnInvalidationEffect(tabID: tabID, state: &state)
 
             case let .performSelectedContentTabPinMutation(
                 operationID, tabID, .delegate(.persistPinnedRecord(request)),
@@ -204,7 +204,7 @@ private extension FileManagerFeature {
                       state.pendingSelectedContentTabPinMutation == nil
                 else { return .none }
                 _ = prepareTopNavigationUnpin(tabID: tabID, placement: placement, state: &state)
-                return pinnedReturnInvalidationEffect(tabID: tabID, state: state)
+                return pinnedReturnInvalidationEffect(tabID: tabID, state: &state)
 
             case let .contentTabs(.updateActivePageAnchor(tabID, anchor)):
                 guard state.contentTabMoveParticipantRequestID == nil else { return .none }
@@ -505,10 +505,13 @@ private extension FileManagerFeature {
 
     private func pinnedReturnInvalidationEffect(
         tabID: ContentTabID,
-        state: State,
+        state: inout State,
     ) -> Effect<Action> {
         guard state.pendingPinnedCollectionReturnTabID == tabID else { return .none }
-        return .send(.delegate(.pinnedContentTabRuntimeNavigationFailed(tabID: tabID)))
+        return cancelPendingCollectionOpen(
+            state: &state,
+            failedPinnedReturnTabID: tabID,
+        )
     }
 
     private func isContentTabMoveParticipantActionAllowed(_ action: Action) -> Bool {

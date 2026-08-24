@@ -7452,9 +7452,9 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
 
     /// CTM-003-go_to_anchored_path_of_pinned_tab: Collection 복귀 중 Unpin은 typed failure terminal을 전달한다.
     /// active pinned Collection의 persistence 상태가 바뀌어 success terminal이 불가능해지는 시점에 외부 열기 대기를 해제하는지 검증한다.
-    /// - 검증 내용: 단일 Unpin과 선택 일괄 Unpin 시작 시 active tabID의 failure delegate 전달
+    /// - 검증 내용: 단일 Unpin과 선택 일괄 Unpin 시작 시 Collection load 취소 및 active tabID의 failure delegate 전달
     /// - 사전 조건: runtime과 durable Collection이 다른 active pinned tab에서 복귀 load가 진행 중임
-    /// - 기대 결과: 두 Unpin 진입점 모두 pinnedContentTabRuntimeNavigationFailed terminal 수신
+    /// - 기대 결과: 두 Unpin 진입점 모두 pending request 제거 및 pinnedContentTabRuntimeNavigationFailed terminal 수신
     func testUnpinDuringPinnedCollectionReturnEmitsFailureTerminalForSingleAndBatch() async {
         let tabID = ContentTabID(rawValue: "unpin-pinned-collection-return")
         let runtimeURL = URL(fileURLWithPath: "/tmp/runtime-unpinning.voycoll")
@@ -7517,6 +7517,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         await singleStore.skipReceivedActions(strict: false)
         await singleStore.finish()
         XCTAssertEqual(singleFailures.value, [tabID])
+        XCTAssertNil(singleStore.state.pendingCollectionOpenRequest)
 
         var batchState = makeState()
         batchState.pendingSelectedContentTabPinMutation = PendingSelectedContentTabPinMutation(
@@ -7548,6 +7549,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         await batchStore.skipReceivedActions(strict: false)
         await batchStore.finish()
         XCTAssertEqual(batchFailures.value, [tabID])
+        XCTAssertNil(batchStore.state.pendingCollectionOpenRequest)
     }
 
     /// CTM-003-go_to_anchored_path_of_pinned_tab: active pinned Directory 재선택 시 durable anchor로 복귀
