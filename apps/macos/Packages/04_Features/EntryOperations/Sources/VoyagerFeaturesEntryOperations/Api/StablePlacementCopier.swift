@@ -103,9 +103,14 @@ enum StablePlacementCopier {
         childLabels: (String) -> [String],
         verifyCopiedFile: ((String, URL) throws -> Void)? = nil,
     ) throws {
-        guard Darwin.mkdir(destination.path, mode) == 0 else { throw posixError() }
+        // 읽기 전용 모드(예: 0555) 디렉터리도 자식 쓰기를 위해 생성 시에만 소유자
+        // 쓰기·실행 권한을 더하고, 전체 복사 뒤 하단 chmod가 원본 모드로 되돌린다
+        // (코멘트 #3840396992).
+        guard Darwin.mkdir(destination.path, mode | 0o700) == 0 else { throw posixError() }
         do {
             for childLabel in childLabels(label).sorted() {
+                // 대형 트리에서 노드 사이에 취소를 확인해 즉시 중단한다(#3840396987).
+                try Task.checkCancellation()
                 try copyNode(
                     label: childLabel,
                     destination: destination.appendingPathComponent(

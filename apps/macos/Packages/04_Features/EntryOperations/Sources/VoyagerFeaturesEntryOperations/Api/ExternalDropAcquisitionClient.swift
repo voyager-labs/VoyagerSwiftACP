@@ -639,9 +639,18 @@ private final class ExternalDropAcquisitionStore {
         guard let session = sessions[sessionID] else {
             throw CocoaError(.fileNoSuchFile)
         }
-        try await Task.detached {
+        // detached 복사는 부모 effect 취소를 상속하지 않으므로 핸들을 보관했다가
+        // 호출자(effect) 취소 시 즉시 전파한다. 재귀 copier의 checkCancellation이
+        // 이 신호로 중단하고 기존 실패-시-제거 계약으로 부분 목적지를 정리한다
+        // (코멘트 #3840396987).
+        let copyTask = Task.detached {
             try session.copyPlacementSource(sourcePath: sourcePath, destinationPath: destinationPath)
-        }.value
+        }
+        return try await withTaskCancellationHandler {
+            try await copyTask.value
+        } onCancel: {
+            copyTask.cancel()
+        }
     }
 
     @MainActor
