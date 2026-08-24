@@ -299,6 +299,15 @@ final class PinnedContentStore {
     /// caller가 검증 후 되감기를 담당한다.
     static func sha256(ofDescriptor descriptor: Int32) -> Data? {
         var hasher = SHA256()
+        var headerStatus = stat()
+        guard Darwin.fstat(descriptor, &headerStatus) == 0 else { return nil }
+        // \ub3c4\uba54\uc778 \ud0dc\uadf8\u00b7data fork \uae38\uc774·xattr \uac1c\uc218\ub97c \uba3c\uc800
+        // \ud504\ub808\uc784\ud574
+        // \uacbd\uacc4 \ubaa8\ud638\ub97c \ucc28\ub2e8\ud55c\ub2e4(#3841565531).
+        hasher.update(data: Data("VOY-CAT-DIGEST-v2".utf8))
+        appendFramedLength(Int64(headerStatus.st_size), into: &hasher)
+        let names = sortedXattrNames(ofDescriptor: descriptor) ?? []
+        appendFramedLength(Int64(names.count), into: &hasher)
         guard hashDataFork(ofDescriptor: descriptor, into: &hasher) else { return nil }
         let buffer = UnsafeMutableRawPointer.allocate(
             byteCount: xattrStreamChunkBytes,
