@@ -16,7 +16,11 @@ const fixedTimestamp = "2026-08-20T00:00:00Z"
 // transaction statements, no runtime path, no secret, and no Registry JSON
 // blob. Each row is an idempotent INSERT ... SELECT FROM workspace_metadata
 // WHERE singleton = 1 ... ON CONFLICT DO UPDATE so the WorkspaceID is injected
-// at apply time without placeholder or JSON input.
+// at apply time without placeholder or JSON input. Every ON CONFLICT DO UPDATE
+// is guarded by WHERE seed_owner = excluded.seed_owner so a conflicting
+// NULL-seed provider row is skipped instead of having its ownership taken
+// over; the post-apply read-back digest gate in applyCatalogSeedInTx then
+// fails the whole transaction closed.
 func RenderSQL(projection ProjectedCatalog) (string, error) {
 	var builder strings.Builder
 	builder.WriteString(sqlHeader())
@@ -109,7 +113,8 @@ func renderDefinition(row DefinitionRow) string {
 	builder.WriteString("    seed_owner = excluded.seed_owner,\n")
 	builder.WriteString("    seed_version = excluded.seed_version,\n")
 	builder.WriteString("    seed_source_version = excluded.seed_source_version,\n")
-	builder.WriteString("    updated_at = excluded.updated_at;\n\n")
+	builder.WriteString("    updated_at = excluded.updated_at\n")
+	builder.WriteString("WHERE seed_owner = excluded.seed_owner;\n\n")
 	return builder.String()
 }
 
@@ -154,7 +159,8 @@ func renderDescriptor(row DescriptorRow) string {
 	builder.WriteString("    seed_owner = excluded.seed_owner,\n")
 	builder.WriteString("    seed_version = excluded.seed_version,\n")
 	builder.WriteString("    seed_source_version = excluded.seed_source_version,\n")
-	builder.WriteString("    updated_at = excluded.updated_at;\n\n")
+	builder.WriteString("    updated_at = excluded.updated_at\n")
+	builder.WriteString("WHERE seed_owner = excluded.seed_owner;\n\n")
 	return builder.String()
 }
 
@@ -211,7 +217,8 @@ func renderBinding(row BindingRow) string {
 	builder.WriteString("    seed_owner = excluded.seed_owner,\n")
 	builder.WriteString("    seed_version = excluded.seed_version,\n")
 	builder.WriteString("    seed_source_version = excluded.seed_source_version,\n")
-	builder.WriteString("    updated_at = excluded.updated_at;\n\n")
+	builder.WriteString("    updated_at = excluded.updated_at\n")
+	builder.WriteString("WHERE seed_owner = excluded.seed_owner;\n\n")
 	return builder.String()
 }
 
@@ -236,7 +243,8 @@ func renderTerm(row TermRow) string {
 	builder.WriteString("    lifecycle_state = excluded.lifecycle_state,\n")
 	builder.WriteString("    seed_owner = excluded.seed_owner,\n")
 	builder.WriteString("    seed_version = excluded.seed_version,\n")
-	builder.WriteString("    seed_source_version = excluded.seed_source_version;\n\n")
+	builder.WriteString("    seed_source_version = excluded.seed_source_version\n")
+	builder.WriteString("WHERE seed_owner = excluded.seed_owner;\n\n")
 	return builder.String()
 }
 

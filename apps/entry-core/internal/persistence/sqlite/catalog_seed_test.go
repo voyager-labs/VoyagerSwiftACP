@@ -2,7 +2,10 @@ package sqlite
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
+	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -30,6 +33,7 @@ func TestCatalogSeed(t *testing.T) {
 	t.Run("PartialSQLRollback", TestCatalogSeedPartialSQLRollback)
 	t.Run("SecondOpenRejected", TestCatalogSeedSecondOpenRejected)
 	t.Run("ConcurrentSerialized", TestCatalogSeedConcurrentSerialized)
+	t.Run("ProviderOwnedCollisionFailsClosed", TestCatalogSeedApplyFailsClosedOnProviderOwnedCollision)
 }
 
 // seedCatalogCounts are the committed fresh seed row counts.
@@ -1041,4 +1045,88 @@ func derefStr(p *string) string {
 		return "<nil>"
 	}
 	return *p
+}
+
+// TestCatalogSeedApplyFailsClosedOnProviderOwnedCollision proves the upsert
+// ownership guard: a restored DB may hold a provider-authored row (NULL
+// seed_owner) whose natural key the incoming seed also claims. The ON CONFLICT
+// DO UPDATE clauses are guarded by `WHERE seed_owner = excluded.seed_owner`,
+// so the colliding row must NOT be overwritten; the seed read-back digest then
+// mismatches and the whole transaction rolls back fail-closed, leaving the
+// provider row byte-for-byte intact (comment #3837853209).
+func TestCatalogSeedApplyFailsClosedOnProviderOwnedCollision(t *testing.T) {
+	ctx := context.Background()
+	store := migratedStore(t)
+	wsctx := buildCatalogFixture(t, store, 0, 0, 0, 0, noneSeedTrio())
+
+	meta := seeds.Current()
+
+	// First incoming seed definition's property_id hex becomes the collision key.
+	marker := "INSERT INTO workspace_property_definitions"
+	start := strings.Index(meta.SQLBody, marker)
+	if start < 0 {
+		t.Fatalf("seed body missing definitions statement")
+	}
+	rest := meta.SQLBody[start:]
+	hx := strings.Index(rest, "X'")
+	if hx < 0 {
+		t.Fatalf("seed body missing property_id literal")
+	}
+	hxStart := hx + 2
+	hxEnd := strings.Index(rest[hxStart:], "'")
+	if hxEnd < 0 {
+		t.Fatalf("unterminated property_id literal")
+	}
+	propertyIDHex := rest[hxStart : hxStart+hxEnd]
+	propertyIDBytes, err := hex.DecodeString(propertyIDHex)
+	if err != nil {
+		t.Fatalf("decode property_id: %v", err)
+	}
+
+	// Provider-authored row occupying that exact natural key, seed_owner NULL.
+	insertSQL := "INSERT INTO workspace_property_definitions " +
+		"(workspace_id, property_id, origin, identity_scheme, namespace, canonical_key, " +
+		"display_name, description, value_type, cardinality, nullable, editable, " +
+		"default_hidden, default_pinned, db_indexed_hint, provenance, unit, " +
+		"default_display_unit, units_json, definition_revision, lifecycle_state, " +
+		"seed_owner, seed_version, seed_source_version, created_at, updated_at) VALUES (" +
+		"X'" + fmt.Sprintf("%x", wsctx.ID.Bytes()) + "', X'" + propertyIDHex + "', " +
+		"'built_in', 'registry_derived', 'system', 'provider.colliding', " +
+		"'Provider Owned', 'p', 'text', 'one', 0, 1, 0, 0, 0, " +
+		"'system_property_registry@2.4.1', '', '', '', 1, 'active', " +
+		"NULL, NULL, NULL, '2026-08-20T00:00:00Z', '2026-08-20T00:00:00Z')"
+	if err := store.db.WithContext(ctx).Exec(insertSQL).Error; err != nil {
+		t.Fatalf("insert provider row: %v", err)
+	}
+
+	// Fail-closed contract: the apply must NOT succeed and must NOT overwrite the
+	// provider-owned row. Which internal gate trips first (read-back digest vs
+	// orphan-reference assembly check) depends on whether the collided seed
+	// definition has dependents, so only the outcome is pinned here.
+	if err := store.applyCatalogSeedMeta(ctx, wsctx, meta); err == nil {
+		t.Fatalf("apply succeeded despite provider-owned collision; want fail-closed")
+	}
+
+	var providerRow WorkspacePropertyDefinitionRow
+	if err := store.db.WithContext(ctx).
+		Where("workspace_id = ? AND property_id = ?", wsctx.ID.Bytes(), propertyIDBytes).
+		First(&providerRow).Error; err != nil {
+		t.Fatalf("provider row vanished after failed apply: %v", err)
+	}
+	if providerRow.SeedOwner != nil {
+		t.Fatalf("provider row was taken over: seed_owner=%q", *providerRow.SeedOwner)
+	}
+	if providerRow.DisplayName != "Provider Owned" {
+		t.Fatalf("provider display_name = %q, want preserved", providerRow.DisplayName)
+	}
+
+	var seedOwned int64
+	if err := store.db.WithContext(ctx).Model(&WorkspacePropertyDefinitionRow{}).
+		Where("workspace_id = ? AND seed_owner = ?", wsctx.ID.Bytes(), "system_property_registry").
+		Count(&seedOwned).Error; err != nil {
+		t.Fatalf("count seed-owned rows: %v", err)
+	}
+	if seedOwned != 0 {
+		t.Fatalf("seed-owned rows leaked after rollback: %d", seedOwned)
+	}
 }

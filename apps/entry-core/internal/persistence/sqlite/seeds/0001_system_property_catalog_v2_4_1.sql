@@ -66,7 +66,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -124,7 +125,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -182,7 +184,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -240,7 +243,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -298,7 +302,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -356,7 +361,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -414,7 +420,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -472,7 +479,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -530,7 +538,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -588,7 +597,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -646,7 +656,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -704,7 +715,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -762,7 +774,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -820,7 +833,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -878,7 +892,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -936,7 +951,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -994,7 +1010,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -1052,7 +1069,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -1110,7 +1128,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -1168,7 +1187,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -1226,7 +1246,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -1284,7 +1305,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -1342,7 +1364,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -1400,7 +1423,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -1458,7 +1482,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -1516,7 +1541,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -1574,7 +1600,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -1632,7 +1659,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -1690,7 +1718,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -1748,7 +1777,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -1806,7 +1836,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -1864,7 +1895,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -1922,7 +1954,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -1980,7 +2013,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -2038,7 +2072,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -2096,7 +2131,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -2154,7 +2190,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -2212,7 +2249,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -2270,7 +2308,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -2328,7 +2367,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -2386,7 +2426,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -2444,7 +2485,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -2502,7 +2544,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -2560,7 +2603,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -2618,7 +2662,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -2676,7 +2721,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -2734,7 +2780,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -2792,7 +2839,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -2850,7 +2898,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -2908,7 +2957,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -2966,7 +3016,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -3024,7 +3075,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -3082,7 +3134,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -3140,7 +3193,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -3198,7 +3252,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -3256,7 +3311,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -3314,7 +3370,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -3372,7 +3429,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -3430,7 +3488,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -3488,7 +3547,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -3546,7 +3606,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -3604,7 +3665,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -3662,7 +3724,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -3720,7 +3783,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -3778,7 +3842,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -3836,7 +3901,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -3894,7 +3960,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -3952,7 +4019,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -4010,7 +4078,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -4068,7 +4137,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -4126,7 +4196,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -4184,7 +4255,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -4242,7 +4314,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -4300,7 +4373,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -4358,7 +4432,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -4416,7 +4491,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -4474,7 +4550,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -4532,7 +4609,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -4590,7 +4668,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -4648,7 +4727,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -4706,7 +4786,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -4764,7 +4845,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -4822,7 +4904,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -4880,7 +4963,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -4938,7 +5022,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -4996,7 +5081,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -5054,7 +5140,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -5112,7 +5199,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -5170,7 +5258,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -5228,7 +5317,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -5286,7 +5376,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -5344,7 +5435,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -5402,7 +5494,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -5460,7 +5553,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -5518,7 +5612,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -5576,7 +5671,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -5634,7 +5730,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -5692,7 +5789,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -5750,7 +5848,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -5808,7 +5907,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -5866,7 +5966,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -5924,7 +6025,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -5982,7 +6084,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -6040,7 +6143,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -6098,7 +6202,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -6156,7 +6261,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -6214,7 +6320,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -6272,7 +6379,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -6330,7 +6438,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -6388,7 +6497,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -6446,7 +6556,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -6504,7 +6615,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -6562,7 +6674,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -6620,7 +6733,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -6678,7 +6792,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -6736,7 +6851,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -6794,7 +6910,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -6852,7 +6969,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -6910,7 +7028,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -6968,7 +7087,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -7026,7 +7146,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -7084,7 +7205,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -7142,7 +7264,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -7200,7 +7323,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -7258,7 +7382,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -7316,7 +7441,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -7374,7 +7500,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -7432,7 +7559,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -7490,7 +7618,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -7548,7 +7677,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -7606,7 +7736,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -7664,7 +7795,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -7722,7 +7854,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -7780,7 +7913,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -7838,7 +7972,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -7896,7 +8031,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -7954,7 +8090,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -8012,7 +8149,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -8070,7 +8208,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -8128,7 +8267,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -8186,7 +8326,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -8244,7 +8385,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -8302,7 +8444,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -8360,7 +8503,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -8418,7 +8562,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -8476,7 +8621,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -8534,7 +8680,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -8592,7 +8739,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -8650,7 +8798,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -8708,7 +8857,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -8766,7 +8916,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -8824,7 +8975,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -8882,7 +9034,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -8940,7 +9093,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -8998,7 +9152,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -9056,7 +9211,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -9114,7 +9270,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -9172,7 +9329,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -9230,7 +9388,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -9288,7 +9447,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -9346,7 +9506,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -9404,7 +9565,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -9462,7 +9624,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -9520,7 +9683,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -9578,7 +9742,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -9636,7 +9801,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -9694,7 +9860,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -9752,7 +9919,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -9810,7 +9978,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -9868,7 +10037,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -9926,7 +10096,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -9984,7 +10155,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -10042,7 +10214,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -10100,7 +10273,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -10158,7 +10332,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -10216,7 +10391,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -10274,7 +10450,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -10332,7 +10509,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -10390,7 +10568,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -10448,7 +10627,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -10506,7 +10686,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -10564,7 +10745,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -10622,7 +10804,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -10680,7 +10863,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -10738,7 +10922,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -10796,7 +10981,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -10854,7 +11040,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -10912,7 +11099,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -10970,7 +11158,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -11028,7 +11217,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -11086,7 +11276,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -11144,7 +11335,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -11202,7 +11394,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -11260,7 +11453,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -11318,7 +11512,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -11376,7 +11571,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -11434,7 +11630,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -11492,7 +11689,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -11550,7 +11748,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -11608,7 +11807,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -11666,7 +11866,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -11724,7 +11925,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -11782,7 +11984,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -11840,7 +12043,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -11898,7 +12102,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -11956,7 +12161,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -12014,7 +12220,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -12072,7 +12279,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -12130,7 +12338,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -12188,7 +12397,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -12246,7 +12456,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -12304,7 +12515,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -12362,7 +12574,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -12420,7 +12633,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -12478,7 +12692,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -12536,7 +12751,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -12594,7 +12810,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -12652,7 +12869,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -12710,7 +12928,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -12768,7 +12987,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -12826,7 +13046,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -12884,7 +13105,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -12942,7 +13164,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -13000,7 +13223,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -13058,7 +13282,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -13116,7 +13341,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -13174,7 +13400,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -13232,7 +13459,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -13290,7 +13518,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -13348,7 +13577,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -13406,7 +13636,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -13464,7 +13695,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -13522,7 +13754,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -13580,7 +13813,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -13638,7 +13872,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -13696,7 +13931,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -13754,7 +13990,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -13812,7 +14049,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -13870,7 +14108,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -13928,7 +14167,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -13986,7 +14226,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -14044,7 +14285,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -14102,7 +14344,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -14160,7 +14403,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -14218,7 +14462,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -14276,7 +14521,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -14334,7 +14580,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -14392,7 +14639,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -14450,7 +14698,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -14508,7 +14757,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -14566,7 +14816,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -14624,7 +14875,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -14682,7 +14934,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -14740,7 +14993,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -14798,7 +15052,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -14856,7 +15111,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -14914,7 +15170,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -14972,7 +15229,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -15030,7 +15288,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -15088,7 +15347,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -15146,7 +15406,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -15204,7 +15465,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -15262,7 +15524,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -15320,7 +15583,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -15378,7 +15642,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -15436,7 +15701,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -15494,7 +15760,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -15552,7 +15819,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -15610,7 +15878,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -15668,7 +15937,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -15726,7 +15996,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -15784,7 +16055,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -15842,7 +16114,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -15900,7 +16173,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -15958,7 +16232,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -16016,7 +16291,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -16074,7 +16350,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_definitions (
     workspace_id, property_id, origin, identity_scheme, namespace, canonical_key,
@@ -16132,7 +16409,8 @@ ON CONFLICT (workspace_id, property_id) DO UPDATE SET
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -16175,7 +16453,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -16218,7 +16497,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -16261,7 +16541,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -16304,7 +16585,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -16347,7 +16629,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -16390,7 +16673,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -16433,7 +16717,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -16476,7 +16761,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -16519,7 +16805,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -16562,7 +16849,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -16605,7 +16893,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -16648,7 +16937,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -16691,7 +16981,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -16734,7 +17025,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -16777,7 +17069,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -16820,7 +17113,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -16863,7 +17157,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -16906,7 +17201,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -16949,7 +17245,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -16992,7 +17289,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -17035,7 +17333,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -17078,7 +17377,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -17121,7 +17421,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -17164,7 +17465,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -17207,7 +17509,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -17250,7 +17553,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -17293,7 +17597,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -17336,7 +17641,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -17379,7 +17685,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -17422,7 +17729,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -17465,7 +17773,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -17508,7 +17817,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -17551,7 +17861,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -17594,7 +17905,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -17637,7 +17949,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -17680,7 +17993,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -17723,7 +18037,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -17766,7 +18081,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -17809,7 +18125,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -17852,7 +18169,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -17895,7 +18213,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -17938,7 +18257,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -17981,7 +18301,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -18024,7 +18345,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -18067,7 +18389,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -18110,7 +18433,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -18153,7 +18477,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -18196,7 +18521,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -18239,7 +18565,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -18282,7 +18609,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -18325,7 +18653,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -18368,7 +18697,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -18411,7 +18741,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -18454,7 +18785,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -18497,7 +18829,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -18540,7 +18873,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -18583,7 +18917,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -18626,7 +18961,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -18669,7 +19005,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -18712,7 +19049,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -18755,7 +19093,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -18798,7 +19137,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -18841,7 +19181,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -18884,7 +19225,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -18927,7 +19269,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -18970,7 +19313,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -19013,7 +19357,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -19056,7 +19401,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -19099,7 +19445,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -19142,7 +19489,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -19185,7 +19533,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -19228,7 +19577,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -19271,7 +19621,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -19314,7 +19665,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -19357,7 +19709,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -19400,7 +19753,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -19443,7 +19797,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -19486,7 +19841,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -19529,7 +19885,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -19572,7 +19929,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -19615,7 +19973,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -19658,7 +20017,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -19701,7 +20061,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -19744,7 +20105,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -19787,7 +20149,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -19830,7 +20193,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -19873,7 +20237,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -19916,7 +20281,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -19959,7 +20325,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -20002,7 +20369,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -20045,7 +20413,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -20088,7 +20457,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -20131,7 +20501,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -20174,7 +20545,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -20217,7 +20589,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -20260,7 +20633,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -20303,7 +20677,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -20346,7 +20721,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -20389,7 +20765,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -20432,7 +20809,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -20475,7 +20853,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -20518,7 +20897,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -20561,7 +20941,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -20604,7 +20985,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -20647,7 +21029,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -20690,7 +21073,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -20733,7 +21117,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -20776,7 +21161,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -20819,7 +21205,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -20862,7 +21249,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -20905,7 +21293,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -20948,7 +21337,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -20991,7 +21381,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -21034,7 +21425,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -21077,7 +21469,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -21120,7 +21513,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -21163,7 +21557,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -21206,7 +21601,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -21249,7 +21645,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -21292,7 +21689,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -21335,7 +21733,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -21378,7 +21777,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -21421,7 +21821,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -21464,7 +21865,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -21507,7 +21909,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -21550,7 +21953,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -21593,7 +21997,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -21636,7 +22041,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -21679,7 +22085,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -21722,7 +22129,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -21765,7 +22173,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -21808,7 +22217,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -21851,7 +22261,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -21894,7 +22305,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -21937,7 +22349,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -21980,7 +22393,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -22023,7 +22437,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -22066,7 +22481,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -22109,7 +22525,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -22152,7 +22569,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -22195,7 +22613,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -22238,7 +22657,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -22281,7 +22701,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -22324,7 +22745,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -22367,7 +22789,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -22410,7 +22833,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -22453,7 +22877,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -22496,7 +22921,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -22539,7 +22965,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -22582,7 +23009,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -22625,7 +23053,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -22668,7 +23097,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -22711,7 +23141,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -22754,7 +23185,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -22797,7 +23229,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -22840,7 +23273,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -22883,7 +23317,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -22926,7 +23361,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -22969,7 +23405,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -23012,7 +23449,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -23055,7 +23493,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -23098,7 +23537,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -23141,7 +23581,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -23184,7 +23625,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -23227,7 +23669,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -23270,7 +23713,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -23313,7 +23757,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -23356,7 +23801,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -23399,7 +23845,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -23442,7 +23889,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -23485,7 +23933,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -23528,7 +23977,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -23571,7 +24021,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -23614,7 +24065,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -23657,7 +24109,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -23700,7 +24153,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -23743,7 +24197,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -23786,7 +24241,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -23829,7 +24285,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -23872,7 +24329,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -23915,7 +24373,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -23958,7 +24417,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -24001,7 +24461,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -24044,7 +24505,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -24087,7 +24549,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -24130,7 +24593,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -24173,7 +24637,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -24216,7 +24681,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -24259,7 +24725,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -24302,7 +24769,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -24345,7 +24813,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -24388,7 +24857,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -24431,7 +24901,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -24474,7 +24945,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -24517,7 +24989,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -24560,7 +25033,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -24603,7 +25077,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -24646,7 +25121,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -24689,7 +25165,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -24732,7 +25209,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -24775,7 +25253,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -24818,7 +25297,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -24861,7 +25341,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -24904,7 +25385,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -24947,7 +25429,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -24990,7 +25473,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -25033,7 +25517,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -25076,7 +25561,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -25119,7 +25605,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -25162,7 +25649,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -25205,7 +25693,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -25248,7 +25737,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -25291,7 +25781,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -25334,7 +25825,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -25377,7 +25869,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -25420,7 +25913,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -25463,7 +25957,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -25506,7 +26001,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -25549,7 +26045,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -25592,7 +26089,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -25635,7 +26133,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -25678,7 +26177,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -25721,7 +26221,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -25764,7 +26265,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -25807,7 +26309,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -25850,7 +26353,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -25893,7 +26397,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -25936,7 +26441,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -25979,7 +26485,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -26022,7 +26529,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -26065,7 +26573,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -26108,7 +26617,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -26151,7 +26661,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -26194,7 +26705,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -26237,7 +26749,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -26280,7 +26793,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -26323,7 +26837,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -26366,7 +26881,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -26409,7 +26925,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -26452,7 +26969,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -26495,7 +27013,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -26538,7 +27057,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -26581,7 +27101,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -26624,7 +27145,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -26667,7 +27189,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -26710,7 +27233,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -26753,7 +27277,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -26796,7 +27321,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -26839,7 +27365,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -26882,7 +27409,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -26925,7 +27453,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -26968,7 +27497,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -27011,7 +27541,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -27054,7 +27585,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -27097,7 +27629,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -27140,7 +27673,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -27183,7 +27717,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -27226,7 +27761,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -27269,7 +27805,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -27312,7 +27849,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -27355,7 +27893,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -27398,7 +27937,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -27441,7 +27981,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -27484,7 +28025,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -27527,7 +28069,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -27570,7 +28113,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -27613,7 +28157,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -27656,7 +28201,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -27699,7 +28245,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -27742,7 +28289,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -27785,7 +28333,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -27828,7 +28377,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -27871,7 +28421,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -27914,7 +28465,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -27957,7 +28509,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -28000,7 +28553,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -28043,7 +28597,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -28086,7 +28641,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -28129,7 +28685,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -28172,7 +28729,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -28215,7 +28773,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -28258,7 +28817,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -28301,7 +28861,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -28344,7 +28905,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -28387,7 +28949,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -28430,7 +28993,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -28473,7 +29037,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -28516,7 +29081,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -28559,7 +29125,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -28602,7 +29169,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -28645,7 +29213,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -28688,7 +29257,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -28731,7 +29301,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO source_property_descriptors (
     workspace_id, provider_id, source_instance_id, scope_kind, scope_external_id,
@@ -28774,7 +29345,8 @@ ON CONFLICT (workspace_id, provider_id, source_instance_id, scope_kind, scope_ex
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -28829,7 +29401,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -28884,7 +29457,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -28939,7 +29513,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -28994,7 +29569,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -29049,7 +29625,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -29104,7 +29681,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -29159,7 +29737,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -29214,7 +29793,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -29269,7 +29849,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -29324,7 +29905,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -29379,7 +29961,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -29434,7 +30017,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -29489,7 +30073,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -29544,7 +30129,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -29599,7 +30185,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -29654,7 +30241,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -29709,7 +30297,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -29764,7 +30353,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -29819,7 +30409,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -29874,7 +30465,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -29929,7 +30521,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -29984,7 +30577,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -30039,7 +30633,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -30094,7 +30689,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -30149,7 +30745,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -30204,7 +30801,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -30259,7 +30857,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -30314,7 +30913,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -30369,7 +30969,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -30424,7 +31025,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -30479,7 +31081,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -30534,7 +31137,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -30589,7 +31193,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -30644,7 +31249,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -30699,7 +31305,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -30754,7 +31361,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -30809,7 +31417,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -30864,7 +31473,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -30919,7 +31529,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -30974,7 +31585,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -31029,7 +31641,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -31084,7 +31697,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -31139,7 +31753,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -31194,7 +31809,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -31249,7 +31865,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -31304,7 +31921,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -31359,7 +31977,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -31414,7 +32033,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -31469,7 +32089,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -31524,7 +32145,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -31579,7 +32201,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -31634,7 +32257,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -31689,7 +32313,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -31744,7 +32369,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -31799,7 +32425,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -31854,7 +32481,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -31909,7 +32537,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -31964,7 +32593,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -32019,7 +32649,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -32074,7 +32705,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -32129,7 +32761,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -32184,7 +32817,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -32239,7 +32873,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -32294,7 +32929,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -32349,7 +32985,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -32404,7 +33041,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -32459,7 +33097,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -32514,7 +33153,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -32569,7 +33209,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -32624,7 +33265,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -32679,7 +33321,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -32734,7 +33377,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -32789,7 +33433,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -32844,7 +33489,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -32899,7 +33545,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -32954,7 +33601,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -33009,7 +33657,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -33064,7 +33713,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -33119,7 +33769,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -33174,7 +33825,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -33229,7 +33881,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -33284,7 +33937,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -33339,7 +33993,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -33394,7 +34049,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -33449,7 +34105,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -33504,7 +34161,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -33559,7 +34217,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -33614,7 +34273,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -33669,7 +34329,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -33724,7 +34385,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -33779,7 +34441,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -33834,7 +34497,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -33889,7 +34553,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -33944,7 +34609,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -33999,7 +34665,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -34054,7 +34721,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -34109,7 +34777,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -34164,7 +34833,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -34219,7 +34889,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -34274,7 +34945,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -34329,7 +35001,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -34384,7 +35057,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -34439,7 +35113,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -34494,7 +35169,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -34549,7 +35225,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -34604,7 +35281,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -34659,7 +35337,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -34714,7 +35393,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -34769,7 +35449,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -34824,7 +35505,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -34879,7 +35561,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -34934,7 +35617,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -34989,7 +35673,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -35044,7 +35729,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -35099,7 +35785,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -35154,7 +35841,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -35209,7 +35897,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -35264,7 +35953,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -35319,7 +36009,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -35374,7 +36065,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -35429,7 +36121,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -35484,7 +36177,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -35539,7 +36233,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -35594,7 +36289,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -35649,7 +36345,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -35704,7 +36401,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -35759,7 +36457,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -35814,7 +36513,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -35869,7 +36569,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -35924,7 +36625,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -35979,7 +36681,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -36034,7 +36737,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -36089,7 +36793,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -36144,7 +36849,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -36199,7 +36905,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -36254,7 +36961,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -36309,7 +37017,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -36364,7 +37073,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -36419,7 +37129,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -36474,7 +37185,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -36529,7 +37241,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -36584,7 +37297,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -36639,7 +37353,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -36694,7 +37409,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -36749,7 +37465,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -36804,7 +37521,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -36859,7 +37577,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -36914,7 +37633,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -36969,7 +37689,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -37024,7 +37745,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -37079,7 +37801,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -37134,7 +37857,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -37189,7 +37913,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -37244,7 +37969,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -37299,7 +38025,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -37354,7 +38081,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -37409,7 +38137,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -37464,7 +38193,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -37519,7 +38249,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -37574,7 +38305,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -37629,7 +38361,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -37684,7 +38417,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -37739,7 +38473,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -37794,7 +38529,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -37849,7 +38585,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -37904,7 +38641,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -37959,7 +38697,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -38014,7 +38753,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -38069,7 +38809,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -38124,7 +38865,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -38179,7 +38921,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -38234,7 +38977,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -38289,7 +39033,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -38344,7 +39089,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -38399,7 +39145,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -38454,7 +39201,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -38509,7 +39257,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -38564,7 +39313,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -38619,7 +39369,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -38674,7 +39425,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -38729,7 +39481,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -38784,7 +39537,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -38839,7 +39593,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -38894,7 +39649,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -38949,7 +39705,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -39004,7 +39761,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -39059,7 +39817,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -39114,7 +39873,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -39169,7 +39929,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -39224,7 +39985,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -39279,7 +40041,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -39334,7 +40097,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -39389,7 +40153,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -39444,7 +40209,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -39499,7 +40265,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -39554,7 +40321,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -39609,7 +40377,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -39664,7 +40433,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -39719,7 +40489,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -39774,7 +40545,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -39829,7 +40601,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -39884,7 +40657,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -39939,7 +40713,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -39994,7 +40769,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -40049,7 +40825,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -40104,7 +40881,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -40159,7 +40937,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -40214,7 +40993,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -40269,7 +41049,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -40324,7 +41105,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -40379,7 +41161,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -40434,7 +41217,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -40489,7 +41273,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -40544,7 +41329,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -40599,7 +41385,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -40654,7 +41441,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -40709,7 +41497,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -40764,7 +41553,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -40819,7 +41609,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -40874,7 +41665,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -40929,7 +41721,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -40984,7 +41777,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -41039,7 +41833,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -41094,7 +41889,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -41149,7 +41945,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -41204,7 +42001,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -41259,7 +42057,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -41314,7 +42113,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -41369,7 +42169,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -41424,7 +42225,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -41479,7 +42281,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -41534,7 +42337,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -41589,7 +42393,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -41644,7 +42449,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -41699,7 +42505,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -41754,7 +42561,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -41809,7 +42617,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -41864,7 +42673,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -41919,7 +42729,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -41974,7 +42785,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -42029,7 +42841,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -42084,7 +42897,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -42139,7 +42953,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -42194,7 +43009,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -42249,7 +43065,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -42304,7 +43121,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -42359,7 +43177,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -42414,7 +43233,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -42469,7 +43289,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -42524,7 +43345,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -42579,7 +43401,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -42634,7 +43457,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -42689,7 +43513,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -42744,7 +43569,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -42799,7 +43625,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -42854,7 +43681,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -42909,7 +43737,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -42964,7 +43793,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -43019,7 +43849,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -43074,7 +43905,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -43129,7 +43961,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -43184,7 +44017,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -43239,7 +44073,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -43294,7 +44129,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -43349,7 +44185,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -43404,7 +44241,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -43459,7 +44297,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -43514,7 +44353,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -43569,7 +44409,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -43624,7 +44465,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -43679,7 +44521,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -43734,7 +44577,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -43789,7 +44633,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -43844,7 +44689,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -43899,7 +44745,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -43954,7 +44801,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -44009,7 +44857,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -44064,7 +44913,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -44119,7 +44969,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -44174,7 +45025,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -44229,7 +45081,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -44284,7 +45137,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -44339,7 +45193,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -44394,7 +45249,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -44449,7 +45305,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -44504,7 +45361,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -44559,7 +45417,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -44614,7 +45473,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -44669,7 +45529,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -44724,7 +45585,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -44779,7 +45641,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -44834,7 +45697,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -44889,7 +45753,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -44944,7 +45809,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -44999,7 +45865,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO property_bindings (
     workspace_id, property_id, provider_id, source_instance_id, scope_kind,
@@ -45054,7 +45921,8 @@ ON CONFLICT (workspace_id, property_id, provider_id, source_instance_id, scope_k
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
     seed_source_version = excluded.seed_source_version,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -45077,7 +45945,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -45100,7 +45969,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -45123,7 +45993,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -45146,7 +46017,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -45169,7 +46041,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -45192,7 +46065,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -45215,7 +46089,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -45238,7 +46113,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -45261,7 +46137,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -45284,7 +46161,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -45307,7 +46185,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -45330,7 +46209,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -45353,7 +46233,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -45376,7 +46257,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -45399,7 +46281,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -45422,7 +46305,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -45445,7 +46329,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -45468,7 +46353,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -45491,7 +46377,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -45514,7 +46401,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -45537,7 +46425,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -45560,7 +46449,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -45583,7 +46473,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -45606,7 +46497,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -45629,7 +46521,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -45652,7 +46545,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -45675,7 +46569,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -45698,7 +46593,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -45721,7 +46617,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -45744,7 +46641,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -45767,7 +46665,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -45790,7 +46689,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -45813,7 +46713,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -45836,7 +46737,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -45859,7 +46761,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -45882,7 +46785,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -45905,7 +46809,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -45928,7 +46833,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -45951,7 +46857,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -45974,7 +46881,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -45997,7 +46905,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -46020,7 +46929,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -46043,7 +46953,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -46066,7 +46977,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -46089,7 +47001,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -46112,7 +47025,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -46135,7 +47049,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -46158,7 +47073,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -46181,7 +47097,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -46204,7 +47121,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -46227,7 +47145,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -46250,7 +47169,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -46273,7 +47193,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -46296,7 +47217,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -46319,7 +47241,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -46342,7 +47265,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -46365,7 +47289,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -46388,7 +47313,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -46411,7 +47337,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -46434,7 +47361,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -46457,7 +47385,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -46480,7 +47409,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -46503,7 +47433,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -46526,7 +47457,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -46549,7 +47481,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -46572,7 +47505,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -46595,7 +47529,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -46618,7 +47553,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -46641,7 +47577,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -46664,7 +47601,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -46687,7 +47625,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -46710,7 +47649,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -46733,7 +47673,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -46756,7 +47697,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -46779,7 +47721,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -46802,7 +47745,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -46825,7 +47769,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -46848,7 +47793,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -46871,7 +47817,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -46894,7 +47841,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -46917,7 +47865,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -46940,7 +47889,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -46963,7 +47913,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -46986,7 +47937,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -47009,7 +47961,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -47032,7 +47985,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -47055,7 +48009,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -47078,7 +48033,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -47101,7 +48057,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -47124,7 +48081,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -47147,7 +48105,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -47170,7 +48129,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -47193,7 +48153,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -47216,7 +48177,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -47239,7 +48201,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -47262,7 +48225,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -47285,7 +48249,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -47308,7 +48273,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -47331,7 +48297,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -47354,7 +48321,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -47377,7 +48345,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -47400,7 +48369,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -47423,7 +48393,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -47446,7 +48417,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -47469,7 +48441,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -47492,7 +48465,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -47515,7 +48489,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -47538,7 +48513,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -47561,7 +48537,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -47584,7 +48561,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -47607,7 +48585,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -47630,7 +48609,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -47653,7 +48633,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -47676,7 +48657,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -47699,7 +48681,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -47722,7 +48705,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -47745,7 +48729,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -47768,7 +48753,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -47791,7 +48777,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -47814,7 +48801,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -47837,7 +48825,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -47860,7 +48849,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -47883,7 +48873,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -47906,7 +48897,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -47929,7 +48921,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -47952,7 +48945,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -47975,7 +48969,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -47998,7 +48993,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -48021,7 +49017,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -48044,7 +49041,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -48067,7 +49065,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -48090,7 +49089,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -48113,7 +49113,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -48136,7 +49137,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -48159,7 +49161,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -48182,7 +49185,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -48205,7 +49209,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -48228,7 +49233,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -48251,7 +49257,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -48274,7 +49281,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -48297,7 +49305,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -48320,7 +49329,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -48343,7 +49353,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -48366,7 +49377,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -48389,7 +49401,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -48412,7 +49425,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -48435,7 +49449,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -48458,7 +49473,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -48481,7 +49497,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -48504,7 +49521,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -48527,7 +49545,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -48550,7 +49569,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -48573,7 +49593,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -48596,7 +49617,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -48619,7 +49641,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -48642,7 +49665,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -48665,7 +49689,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -48688,7 +49713,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -48711,7 +49737,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -48734,7 +49761,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -48757,7 +49785,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -48780,7 +49809,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -48803,7 +49833,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -48826,7 +49857,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -48849,7 +49881,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -48872,7 +49905,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -48895,7 +49929,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -48918,7 +49953,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -48941,7 +49977,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -48964,7 +50001,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -48987,7 +50025,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -49010,7 +50049,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -49033,7 +50073,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -49056,7 +50097,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -49079,7 +50121,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -49102,7 +50145,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -49125,7 +50169,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -49148,7 +50193,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -49171,7 +50217,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -49194,7 +50241,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -49217,7 +50265,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -49240,7 +50289,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -49263,7 +50313,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -49286,7 +50337,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -49309,7 +50361,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -49332,7 +50385,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -49355,7 +50409,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -49378,7 +50433,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -49401,7 +50457,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -49424,7 +50481,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -49447,7 +50505,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -49470,7 +50529,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -49493,7 +50553,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -49516,7 +50577,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -49539,7 +50601,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -49562,7 +50625,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -49585,7 +50649,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -49608,7 +50673,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -49631,7 +50697,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -49654,7 +50721,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -49677,7 +50745,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -49700,7 +50769,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -49723,7 +50793,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -49746,7 +50817,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -49769,7 +50841,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -49792,7 +50865,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -49815,7 +50889,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -49838,7 +50913,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -49861,7 +50937,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -49884,7 +50961,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -49907,7 +50985,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -49930,7 +51009,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -49953,7 +51033,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -49976,7 +51057,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -49999,7 +51081,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -50022,7 +51105,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -50045,7 +51129,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -50068,7 +51153,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -50091,7 +51177,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -50114,7 +51201,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -50137,7 +51225,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -50160,7 +51249,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -50183,7 +51273,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -50206,7 +51297,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -50229,7 +51321,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -50252,7 +51345,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -50275,7 +51369,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -50298,7 +51393,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -50321,7 +51417,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -50344,7 +51441,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -50367,7 +51465,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -50390,7 +51489,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -50413,7 +51513,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -50436,7 +51537,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -50459,7 +51561,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -50482,7 +51585,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -50505,7 +51609,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -50528,7 +51633,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -50551,7 +51657,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -50574,7 +51681,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -50597,7 +51705,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -50620,7 +51729,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -50643,7 +51753,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -50666,7 +51777,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -50689,7 +51801,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -50712,7 +51825,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -50735,7 +51849,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -50758,7 +51873,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -50781,7 +51897,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -50804,7 +51921,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -50827,7 +51945,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -50850,7 +51969,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -50873,7 +51993,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -50896,7 +52017,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -50919,7 +52041,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -50942,7 +52065,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -50965,7 +52089,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -50988,7 +52113,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -51011,7 +52137,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -51034,7 +52161,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -51057,7 +52185,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -51080,7 +52209,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -51103,7 +52233,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -51126,7 +52257,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -51149,7 +52281,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -51172,7 +52305,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -51195,7 +52329,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -51218,7 +52353,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -51241,7 +52377,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -51264,7 +52401,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -51287,7 +52425,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -51310,7 +52449,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -51333,7 +52473,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -51356,7 +52497,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -51379,7 +52521,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -51402,7 +52545,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -51425,7 +52569,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -51448,7 +52593,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -51471,7 +52617,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -51494,7 +52641,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -51517,7 +52665,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -51540,7 +52689,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -51563,7 +52713,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -51586,7 +52737,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -51609,7 +52761,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -51632,7 +52785,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -51655,7 +52809,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -51678,7 +52833,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -51701,7 +52857,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -51724,7 +52881,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -51747,7 +52905,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -51770,7 +52929,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -51793,7 +52953,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -51816,7 +52977,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -51839,7 +53001,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -51862,7 +53025,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -51885,7 +53049,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -51908,7 +53073,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -51931,7 +53097,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -51954,7 +53121,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -51977,7 +53145,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -52000,7 +53169,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -52023,7 +53193,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -52046,7 +53217,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -52069,7 +53241,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -52092,7 +53265,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -52115,7 +53289,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -52138,7 +53313,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -52161,7 +53337,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -52184,7 +53361,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -52207,7 +53385,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -52230,7 +53409,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -52253,7 +53433,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -52276,7 +53457,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -52299,7 +53481,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -52322,7 +53505,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -52345,7 +53529,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -52368,7 +53553,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -52391,7 +53577,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -52414,7 +53601,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -52437,7 +53625,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -52460,7 +53649,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -52483,7 +53673,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -52506,7 +53697,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -52529,7 +53721,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -52552,7 +53745,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -52575,7 +53769,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -52598,7 +53793,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -52621,7 +53817,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -52644,7 +53841,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -52667,7 +53865,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -52690,7 +53889,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -52713,7 +53913,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -52736,7 +53937,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -52759,7 +53961,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -52782,7 +53985,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -52805,7 +54009,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -52828,7 +54033,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -52851,7 +54057,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -52874,7 +54081,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -52897,7 +54105,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -52920,7 +54129,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -52943,7 +54153,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -52966,7 +54177,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -52989,7 +54201,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -53012,7 +54225,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -53035,7 +54249,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -53058,7 +54273,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -53081,7 +54297,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -53104,7 +54321,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -53127,7 +54345,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -53150,7 +54369,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -53173,7 +54393,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -53196,7 +54417,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -53219,7 +54441,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -53242,7 +54465,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -53265,7 +54489,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -53288,7 +54513,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -53311,7 +54537,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -53334,7 +54561,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -53357,7 +54585,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -53380,7 +54609,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -53403,7 +54633,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -53426,7 +54657,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -53449,7 +54681,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -53472,7 +54705,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -53495,7 +54729,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -53518,7 +54753,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -53541,7 +54777,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -53564,7 +54801,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -53587,7 +54825,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -53610,7 +54849,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -53633,7 +54873,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -53656,7 +54897,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -53679,7 +54921,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -53702,7 +54945,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -53725,7 +54969,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -53748,7 +54993,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -53771,7 +55017,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -53794,7 +55041,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -53817,7 +55065,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -53840,7 +55089,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -53863,7 +55113,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -53886,7 +55137,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -53909,7 +55161,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -53932,7 +55185,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -53955,7 +55209,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -53978,7 +55233,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -54001,7 +55257,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -54024,7 +55281,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -54047,7 +55305,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -54070,7 +55329,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -54093,7 +55353,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -54116,7 +55377,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -54139,7 +55401,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -54162,7 +55425,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -54185,7 +55449,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -54208,7 +55473,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -54231,7 +55497,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -54254,7 +55521,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -54277,7 +55545,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -54300,7 +55569,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -54323,7 +55593,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -54346,7 +55617,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -54369,7 +55641,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -54392,7 +55665,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -54415,7 +55689,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -54438,7 +55713,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -54461,7 +55737,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -54484,7 +55761,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -54507,7 +55785,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -54530,7 +55809,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -54553,7 +55833,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -54576,7 +55857,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -54599,7 +55881,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -54622,7 +55905,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -54645,7 +55929,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -54668,7 +55953,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -54691,7 +55977,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -54714,7 +56001,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -54737,7 +56025,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -54760,7 +56049,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -54783,7 +56073,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -54806,7 +56097,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -54829,7 +56121,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -54852,7 +56145,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -54875,7 +56169,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -54898,7 +56193,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -54921,7 +56217,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -54944,7 +56241,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -54967,7 +56265,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -54990,7 +56289,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -55013,7 +56313,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -55036,7 +56337,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -55059,7 +56361,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -55082,7 +56385,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -55105,7 +56409,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -55128,7 +56433,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -55151,7 +56457,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -55174,7 +56481,8 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
 
 INSERT INTO workspace_property_terms (
     workspace_id, property_id, term_kind, ordinal, term_value, lifecycle_state,
@@ -55197,4 +56505,5 @@ ON CONFLICT (workspace_id, property_id, term_kind, ordinal) DO UPDATE SET
     lifecycle_state = excluded.lifecycle_state,
     seed_owner = excluded.seed_owner,
     seed_version = excluded.seed_version,
-    seed_source_version = excluded.seed_source_version;
+    seed_source_version = excluded.seed_source_version
+WHERE seed_owner = excluded.seed_owner;
