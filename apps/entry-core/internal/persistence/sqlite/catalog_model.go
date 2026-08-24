@@ -143,7 +143,7 @@ type WorkspacePropertyTermRow struct {
 	TermKind       string `gorm:"column:term_kind;type:text;not null;check:term_kind in ('search_alias','legacy_alias');primaryKey"`
 	Ordinal        int    `gorm:"column:ordinal;type:integer;not null;check:ordinal >= 0;primaryKey"`
 	TermValue      string `gorm:"column:term_value;type:text;not null;uniqueIndex:idx_term_value,where:lifecycle_state = 'active'"`
-	LifecycleState string `gorm:"column:lifecycle_state;type:text;not null;check:lifecycle_state in ('active','tombstoned')"`
+	LifecycleState string `gorm:"column:lifecycle_state;type:text;not null;default:'active';check:lifecycle_state in ('active','tombstoned')"`
 
 	SeedOwner         *string `gorm:"column:seed_owner;type:text"`
 	SeedVersion       *int    `gorm:"column:seed_version;type:integer"`
