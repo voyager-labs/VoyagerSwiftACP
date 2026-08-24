@@ -197,7 +197,10 @@ final class PinnedContentStore {
         // size+mtime과 대조해 mutable inode의 현재 내용 변조를 fail-closed한다(#3837956594).
         guard Darwin.fstat(descriptor, &status) == 0,
               entry.identity.matches(status),
-              entry.matchesContent(status)
+              entry.matchesContent(status),
+              // 스냅샷 시점에 기록한 mode도 대조해 chmod변조를
+              // 탐지한다(#3840637312).
+              status.st_mode & 0o777 == entry.mode
         else {
             Darwin.close(descriptor)
             throw CocoaError(.fileReadUnknown)
@@ -346,7 +349,7 @@ final class PinnedContentStore {
     }
 
     /// xattr 이름을 정렬해 반환한다. xattr이 없으면 빈 배열을 반환한다.
-    private static func sortedXattrNames(ofDescriptor descriptor: Int32) -> [String]? {
+    static func sortedXattrNames(ofDescriptor descriptor: Int32) -> [String]? {
         let listLength32 = flistxattr(descriptor, nil, 0, 0)
         guard listLength32 >= 0 else { return nil }
         guard listLength32 > 0 else { return [] }
