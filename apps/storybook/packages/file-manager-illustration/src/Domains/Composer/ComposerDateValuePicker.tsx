@@ -152,8 +152,8 @@ export const ComposerDateValuePicker: FC<ComposerDateValuePickerProps> = ({
                 type="button"
                 aria-pressed={dateMode === "absolute"}
                 onClick={() => {
-                  // 네이티브 syncRelativeSelectedDate 계약: 실제 relative→absolute 전환에서만 현재 프리뷰 날짜를 복사한다
-                  if (dateMode === "relative") {
+                  // 네이티브 syncRelativeSelectedDate 계약: 실제 relative→absolute 전환에서 유효한 수량일 때만 프리뷰 날짜를 복사한다
+                  if (dateMode === "relative" && relativeAmountValid) {
                     setSelectedDate(relativeAnchorDate)
                   }
                   setDateMode("absolute")
