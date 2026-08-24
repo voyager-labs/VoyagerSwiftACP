@@ -1,19 +1,27 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
 import { ComposerConditionChip } from "../../../../packages/file-manager-illustration/src/Domains/Composer/ComposerConditionChip"
+import { composerPropertyOption } from "../../../../packages/file-manager-illustration/src/Domains/Composer/composer-condition-options"
+
+// 카탈로그 단일 소스: 칩 픽스처의 라벨·심볼을 정규 카탈로그에서 파생한다
+const catalogEntry = (key: string) => {
+  const option = composerPropertyOption(key)
+  if (option == null) throw new Error(`Unknown property key: ${key}`)
+  return option
+}
 
 // 네이티브 composerPropertyOptions 라벨·심볼과 동일한 결정적 픽스처만 사용한다
 const textCondition = {
   id: "name_stem",
-  property: "Name",
-  propertySymbol: "doc.text",
+  property: catalogEntry("name_stem").label,
+  propertySymbol: catalogEntry("name_stem").symbol,
   operator: "Contains",
   value: "Voyager",
 } as const
 
 const kindCondition = {
   id: "file_kind",
-  property: "Kind",
-  propertySymbol: "tag",
+  property: catalogEntry("file_kind").label,
+  propertySymbol: catalogEntry("file_kind").symbol,
   operator: "Contains any",
   value: '["PDF", "Image"]',
   editorKind: "list",
@@ -21,8 +29,8 @@ const kindCondition = {
 
 const dateCondition = {
   id: "modification_date",
-  property: "Content modification date",
-  propertySymbol: "calendar.badge.clock",
+  property: catalogEntry("modification_date").label,
+  propertySymbol: catalogEntry("modification_date").symbol,
   // 정규 date gt 계약(registry singleDate): 카탈로그 dateOperators의 라벨과 YYYY-MM-DD 값 사용
   operator: "Is greater than",
   value: "2024-06-01",
@@ -59,8 +67,8 @@ export const NumberCondition: Story = {
   args: {
     condition: {
       id: "number_of_pages",
-      property: "Number of pages",
-      propertySymbol: "doc.richtext",
+      property: catalogEntry("number_of_pages").label,
+      propertySymbol: catalogEntry("number_of_pages").symbol,
       operator: "Is greater than",
       value: "24",
     },
@@ -71,8 +79,8 @@ export const SizeUnitCondition: Story = {
   args: {
     condition: {
       id: "size_unit",
-      property: "File size",
-      propertySymbol: "arrow.up.left.and.arrow.down.right",
+      property: catalogEntry("size").label,
+      propertySymbol: catalogEntry("size").symbol,
       operator: "Is greater than",
       value: "10 MB",
     },
@@ -83,8 +91,8 @@ export const SizeRangeCondition: Story = {
   args: {
     condition: {
       id: "size_range",
-      property: "File size",
-      propertySymbol: "arrow.up.left.and.arrow.down.right",
+      property: catalogEntry("size").label,
+      propertySymbol: catalogEntry("size").symbol,
       operator: "Is between",
       value: "1 MB – 500 MB",
     },
@@ -100,8 +108,8 @@ export const RelativeDateCondition: Story = {
     condition: {
       // 고정 앵커 날짜로 시계 비의존성을 유지하고 리터럴 디코딩 경로를 검증한다
       id: "date_relative",
-      property: "Content modification date",
-      propertySymbol: "calendar.badge.clock",
+      property: catalogEntry("modification_date").label,
+      propertySymbol: catalogEntry("modification_date").symbol,
       operator: "Is greater than",
       value: "voyager.relativeDate:v1:past:7:day:2024-06-01",
       editorKind: "date",
@@ -113,8 +121,8 @@ export const DateRangeCondition: Story = {
   args: {
     condition: {
       id: "date_range",
-      property: "Content modification date",
-      propertySymbol: "calendar.badge.clock",
+      property: catalogEntry("modification_date").label,
+      propertySymbol: catalogEntry("modification_date").symbol,
       operator: "Is between",
       value: "2024-01-01 – 2024-03-31",
       editorKind: "dateRange",
@@ -126,8 +134,8 @@ export const BooleanCondition: Story = {
   args: {
     condition: {
       id: "is_invisible",
-      property: "Is hidden",
-      propertySymbol: "eye.slash",
+      property: catalogEntry("is_invisible").label,
+      propertySymbol: catalogEntry("is_invisible").symbol,
       operator: "Is",
       value: "True",
     },
@@ -138,8 +146,8 @@ export const StringListCondition: Story = {
   args: {
     condition: {
       id: "keywords",
-      property: "Keywords",
-      propertySymbol: "text.badge.checkmark",
+      property: catalogEntry("keywords").label,
+      propertySymbol: catalogEntry("keywords").symbol,
       operator: "Contains any",
       value: '["pdf", "docx"]',
       editorKind: "list",
@@ -157,8 +165,8 @@ export const ArityZeroOperatorCondition: Story = {
   args: {
     condition: {
       id: "date_today",
-      property: "Content modification date",
-      propertySymbol: "calendar.badge.clock",
+      property: catalogEntry("modification_date").label,
+      propertySymbol: catalogEntry("modification_date").symbol,
       operator: "Is today",
       value: "",
     },
@@ -169,8 +177,8 @@ export const ArityZeroListCondition: Story = {
   args: {
     condition: {
       id: "keywords_exists",
-      property: "Keywords",
-      propertySymbol: "text.badge.checkmark",
+      property: catalogEntry("keywords").label,
+      propertySymbol: catalogEntry("keywords").symbol,
       operator: "Exists",
       value: "",
     },
@@ -181,8 +189,8 @@ export const OperatorPlaceholderCondition: Story = {
   args: {
     condition: {
       id: "name_unspecified",
-      property: "Name",
-      propertySymbol: "doc.text",
+      property: catalogEntry("name_stem").label,
+      propertySymbol: catalogEntry("name_stem").symbol,
       operator: "",
       value: "",
     },
@@ -195,8 +203,8 @@ export const TruncatedValue: Story = {
   args: {
     condition: {
       id: "name_long",
-      property: "Name",
-      propertySymbol: "doc.text",
+      property: catalogEntry("name_stem").label,
+      propertySymbol: catalogEntry("name_stem").symbol,
       operator: "Contains",
       value: "Voyager release notes draft for the upcoming quarterly review document",
     },

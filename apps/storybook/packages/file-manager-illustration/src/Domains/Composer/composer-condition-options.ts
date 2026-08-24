@@ -70,20 +70,23 @@ const stringListOperators = [
   { code: "empty", label: "Is empty", editor: { kind: "none" } },
 ] as const satisfies readonly ComposerOperatorOption[]
 
-const categoricalOperators = [
-  {
-    code: "any",
-    label: "Contains any",
-    editor: { kind: "list", suggestions: ["PDF", "Document", "Image", "Folder"] },
-  },
-  {
-    code: "none",
-    label: "Contains none",
-    editor: { kind: "list", suggestions: ["PDF", "Document", "Image", "Folder"] },
-  },
-  { code: "exists", label: "Exists", editor: { kind: "none" } },
-  { code: "empty", label: "Is empty", editor: { kind: "none" } },
-] as const satisfies readonly ComposerOperatorOption[]
+const fileKindSuggestions = ["PDF", "Document", "Image", "Folder"]
+
+const categoricalOperators = (suggestions?: readonly string[]): readonly ComposerOperatorOption[] =>
+  [
+    {
+      code: "any",
+      label: "Contains any",
+      editor: { kind: "list", suggestions },
+    },
+    {
+      code: "none",
+      label: "Contains none",
+      editor: { kind: "list", suggestions },
+    },
+    { code: "exists", label: "Exists", editor: { kind: "none" } },
+    { code: "empty", label: "Is empty", editor: { kind: "none" } },
+  ] as const satisfies readonly ComposerOperatorOption[]
 
 const booleanOperator = [
   { code: "eq", label: "Is", editor: { kind: "boolean" } },
@@ -121,7 +124,7 @@ export const composerPropertyOptions = [
     symbol: "folder",
     category: "filesystem",
     pinned: true,
-    operators: categoricalOperators,
+    operators: categoricalOperators(),
   },
   {
     key: "size",
@@ -169,7 +172,7 @@ export const composerPropertyOptions = [
     symbol: "list.bullet.rectangle",
     category: "common",
     pinned: false,
-    operators: categoricalOperators,
+    operators: categoricalOperators(fileKindSuggestions),
   },
   {
     key: "title",
@@ -241,7 +244,7 @@ export const composerPropertyOptions = [
     symbol: "waveform.path.ecg",
     category: "video",
     pinned: false,
-    operators: numberOperators(),
+    operators: numberOperators(["bps", "Kbps", "Mbps"]),
   },
   {
     key: "audio_bit_rate",
@@ -249,7 +252,7 @@ export const composerPropertyOptions = [
     symbol: "waveform.path.ecg",
     category: "video",
     pinned: false,
-    operators: numberOperators(),
+    operators: numberOperators(["bps", "Kbps", "Mbps"]),
   },
   {
     key: "audio_sample_rate",
