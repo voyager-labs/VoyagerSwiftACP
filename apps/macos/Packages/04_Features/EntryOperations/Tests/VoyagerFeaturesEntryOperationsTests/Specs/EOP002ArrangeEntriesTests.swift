@@ -2380,7 +2380,13 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             guard case let .received(file) = event else { return nil }
             return file
         }
-        XCTAssertEqual(received.map(\.stagedPath), [stagedData.path, claimedPromise.path])
+        // promise/data는 서로 다른 경로(콜백 vs 지연 로드)로 등록되므로 .received 도착
+        // 순서는 스케줄링 의존이다. 배치 계약은 pasteboard ordinal 정렬이 담당하며
+        // 이 테스트는 두 항목 모두 물리화됨과 종단만 고정한다.
+        XCTAssertEqual(
+            received.map(\.stagedPath).sorted(),
+            [stagedData.path, claimedPromise.path].sorted(),
+        )
         XCTAssertEqual(events.last, .succeeded(request.sessionID))
     }
 
