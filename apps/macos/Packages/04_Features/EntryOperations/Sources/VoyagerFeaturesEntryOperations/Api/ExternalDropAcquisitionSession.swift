@@ -701,6 +701,7 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
         // 물리화 진행 중에는 미등록 파일이 우리 출력과 구분되지 않으므로 재조정을 건너뛴다.
         // 실제 provider 쓰기는 새 옵저버 이벤트로 재스캔을 유발한다(코멘트 #3837956591).
         guard pendingSnapshotCount == 0 else {
+            lock.unlock()
             return
         }
 

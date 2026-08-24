@@ -16,6 +16,7 @@ enum StablePlacementCopier {
         openVerifiedNode: (String) throws -> (fd: Int32, isDirectory: Bool),
         closeVerifiedNode: (Int32) -> Void,
         childLabels: (String) -> [String],
+        verifyCopiedFile: ((String, URL) throws -> Void)? = nil,
     ) throws {
         try copyNode(
             label: rootPath,
@@ -23,6 +24,7 @@ enum StablePlacementCopier {
             openVerifiedNode: openVerifiedNode,
             closeVerifiedNode: closeVerifiedNode,
             childLabels: childLabels,
+            verifyCopiedFile: verifyCopiedFile,
         )
     }
 
@@ -32,6 +34,7 @@ enum StablePlacementCopier {
         openVerifiedNode: (String) throws -> (fd: Int32, isDirectory: Bool),
         closeVerifiedNode: (Int32) -> Void,
         childLabels: (String) -> [String],
+        verifyCopiedFile: ((String, URL) throws -> Void)? = nil,
     ) throws {
         let node = try openVerifiedNode(label)
         defer { closeVerifiedNode(node.fd) }
@@ -40,6 +43,16 @@ enum StablePlacementCopier {
         switch status.st_mode & S_IFMT {
         case S_IFREG:
             try copyFile(node.fd, status: status, destination: destination)
+            // 검증과 실제 fcopyfile 사이 같은 inode 재기록 TOCTOU를 닫는다:
+            // destination에 실제로 기록된 바이트의 digest를 대조한다(코멘트 #3840108372).
+            if let verifyCopiedFile {
+                do {
+                    try verifyCopiedFile(label, destination)
+                } catch {
+                    try? FileManager.default.removeItem(at: destination)
+                    throw error
+                }
+            }
         case S_IFDIR:
             try copyDirectory(
                 label: label,
@@ -48,6 +61,7 @@ enum StablePlacementCopier {
                 openVerifiedNode: openVerifiedNode,
                 closeVerifiedNode: closeVerifiedNode,
                 childLabels: childLabels,
+                verifyCopiedFile: verifyCopiedFile,
             )
         default:
             throw CocoaError(.fileReadUnsupportedScheme)
@@ -87,6 +101,7 @@ enum StablePlacementCopier {
         openVerifiedNode: (String) throws -> (fd: Int32, isDirectory: Bool),
         closeVerifiedNode: (Int32) -> Void,
         childLabels: (String) -> [String],
+        verifyCopiedFile: ((String, URL) throws -> Void)? = nil,
     ) throws {
         guard Darwin.mkdir(destination.path, mode) == 0 else { throw posixError() }
         do {
@@ -99,6 +114,7 @@ enum StablePlacementCopier {
                     openVerifiedNode: openVerifiedNode,
                     closeVerifiedNode: closeVerifiedNode,
                     childLabels: childLabels,
+                    verifyCopiedFile: verifyCopiedFile,
                 )
             }
             guard Darwin.chmod(destination.path, mode) == 0 else { throw posixError() }

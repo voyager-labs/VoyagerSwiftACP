@@ -284,7 +284,7 @@ final class PinnedContentStore {
 
     /// descriptor 전체 내용의 SHA-256. 오프셋은 0으로 되감고 원래 위치는 보존하지 않는다
     /// (caller가 검증 후 되감기를 담당한다).
-    private static func sha256(ofDescriptor descriptor: Int32) -> Data? {
+    static func sha256(ofDescriptor descriptor: Int32) -> Data? {
         guard Darwin.lseek(descriptor, 0, SEEK_SET) >= 0 else { return nil }
         var hasher = SHA256()
         let bufferSize = 1 << 20

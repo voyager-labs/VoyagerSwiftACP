@@ -349,6 +349,24 @@ final class StagingDirectory {
             },
             closeVerifiedNode: { Darwin.close($0) },
             childLabels: { store.childLabels(of: $0) },
+            // placement가 읽은 바이트와 스냅숏 digest를 대조해 검증-복사 사이
+            // 재기록 TOCTOU를 fail-closed한다(코멘트 #3840108372).
+            verifyCopiedFile: { label, copiedDestination in
+                guard let entry = store.entry(at: label), !entry.isDirectory else { return }
+                let descriptor = Darwin.open(
+                    copiedDestination.path,
+                    O_RDONLY | O_NOFOLLOW | O_CLOEXEC,
+                )
+                guard descriptor >= 0 else {
+                    throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+                }
+                defer { Darwin.close(descriptor) }
+                guard let actual = PinnedContentStore.sha256(ofDescriptor: descriptor),
+                      actual == entry.contentDigest
+                else {
+                    throw CocoaError(.fileReadUnknown)
+                }
+            },
         )
     }
 
