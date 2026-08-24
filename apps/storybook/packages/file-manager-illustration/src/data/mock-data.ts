@@ -697,9 +697,14 @@ export const thumbnailComparisonEntries: readonly EntryThumbnailComparisonEntry[
 ]
 
 export const contextMenuActions: readonly ContextMenuAction[] = [
-  { id: "open", label: "Open" },
-  { id: "quick-look", label: "Quick Look", shortcut: "Space" },
-  { id: "chat", label: "Ask Voyager about selection", shortcut: "⌘⇧A" },
-  { id: "sep-trash", separator: true },
-  { id: "delete", label: "Move to Trash", shortcut: "⌘⌫" },
+  { kind: "item", id: "open", label: "Open" },
+  { kind: "item", id: "quick-look", label: "Quick Look", shortcut: "Space" },
+  {
+    kind: "item",
+    id: "chat",
+    label: "Ask Voyager about selection",
+    shortcut: "⌘⇧A",
+  },
+  { kind: "separator", id: "sep-trash" },
+  { kind: "item", id: "delete", label: "Move to Trash", shortcut: "⌘⌫" },
 ]

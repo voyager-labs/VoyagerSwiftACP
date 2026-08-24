@@ -10,12 +10,12 @@ export const ContextMenu: FC<ContextMenuProps> = ({ actions }) => {
   return (
     <Menu className="fm-context-menu" aria-label="File context menu">
       {actions.map((action) =>
-        action.separator ? (
+        action.kind === "separator" ? (
           <MenuSeparator key={action.id} />
         ) : (
           <MenuItem
             key={action.id}
-            label={action.label ?? ""}
+            label={action.label}
             shortcut={action.shortcut}
             disabled={action.disabled}
           />

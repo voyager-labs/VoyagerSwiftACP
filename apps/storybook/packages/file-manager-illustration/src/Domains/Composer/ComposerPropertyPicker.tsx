@@ -175,6 +175,7 @@ export const ComposerPropertyPicker: FC<ComposerPropertyPickerProps> = ({ picker
       {/* 네이티브 submenu 번역: 루트 메뉴를 유지한 채 부모 행 높이에 인접 배치한다 */}
       {openGroup != null && (
         <Menu
+          key={openGroup.key}
           className="collection-composer-property-submenu"
           aria-label={`${openGroup.label} properties`}
           focusOnMount
