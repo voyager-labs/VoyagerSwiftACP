@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import VoyagerShared
 
@@ -20,6 +21,9 @@ final class PinnedContentStore {
         let contentSize: Int
         let mtimeSeconds: Int
         let mtimeNanoseconds: Int
+        /// 스냅숏 바이트의 SHA-256. size/mtime은 provider가 복원할 수 있으므로 내용
+        /// 자체를 고정한다(코멘트 #3838035179). 디렉터리는 빈 값으로 건너뛴다.
+        let contentDigest: Data
 
         func matchesContent(_ status: stat) -> Bool {
             Int(status.st_size) == contentSize
@@ -78,10 +82,18 @@ final class PinnedContentStore {
         }
         for _ in 0 ..< 2 {
             let snapshot = try createSnapshotFile(from: sourceDescriptor, mode: before.st_mode & 0o777)
+            // 내용 digest는 descriptor를 닫기 전에 계산한다(코멘트 #3838035179).
+            let digest = Self.sha256(ofDescriptor: snapshot.descriptor)
             Darwin.close(snapshot.descriptor)
             var after = stat()
             guard Darwin.fstat(sourceDescriptor, &after) == 0 else {
                 throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+            }
+            guard let digest else {
+                try? fileManager.removeItem(
+                    URL(fileURLWithPath: directoryPath).appendingPathComponent(snapshot.name),
+                )
+                throw CocoaError(.fileReadUnknown)
             }
             if Self.isStable(before, after) {
                 let entry = Entry(
@@ -92,6 +104,7 @@ final class PinnedContentStore {
                     contentSize: Int(before.st_size),
                     mtimeSeconds: Int(before.st_mtimespec.tv_sec),
                     mtimeNanoseconds: Int(before.st_mtimespec.tv_nsec),
+                    contentDigest: digest,
                 )
                 lock.lock()
                 entries[label] = entry
@@ -153,6 +166,7 @@ final class PinnedContentStore {
             contentSize: Int(status.st_size),
             mtimeSeconds: Int(status.st_mtimespec.tv_sec),
             mtimeNanoseconds: Int(status.st_mtimespec.tv_nsec),
+            contentDigest: Data(),
         )
         lock.lock()
         entries[label] = entry
@@ -187,6 +201,15 @@ final class PinnedContentStore {
         else {
             Darwin.close(descriptor)
             throw CocoaError(.fileReadUnknown)
+        }
+        // 동일 길이·동일 mtime 재작성까지 차단한다: 스냅숏 바이트의 digest를 다시 계산해
+        // 대조한 뒤 caller가 읽을 수 있게 되감는다(코멘트 #3838035179).
+        if !entry.isDirectory {
+            guard let digest = Self.sha256(ofDescriptor: descriptor), digest == entry.contentDigest else {
+                Darwin.close(descriptor)
+                throw CocoaError(.fileReadUnknown)
+            }
+            Darwin.lseek(descriptor, 0, SEEK_SET)
         }
         return (descriptor, entry.isDirectory)
     }
@@ -257,6 +280,26 @@ final class PinnedContentStore {
         let name = try requiredSnapshotName(Self.decodingNullTerminated(template))
             .split(separator: "/").last.map(String.init) ?? ""
         return SnapshotFile(descriptor: descriptor, name: name, identity: identity)
+    }
+
+    /// descriptor 전체 내용의 SHA-256. 오프셋은 0으로 되감고 원래 위치는 보존하지 않는다
+    /// (caller가 검증 후 되감기를 담당한다).
+    private static func sha256(ofDescriptor descriptor: Int32) -> Data? {
+        guard Darwin.lseek(descriptor, 0, SEEK_SET) >= 0 else { return nil }
+        var hasher = SHA256()
+        let bufferSize = 1 << 20
+        let buffer = UnsafeMutableRawPointer.allocate(byteCount: bufferSize, alignment: MemoryLayout<UInt8>.alignment)
+        defer { buffer.deallocate() }
+        while true {
+            let readCount = Darwin.read(descriptor, buffer, bufferSize)
+            if readCount < 0 {
+                if errno == EINTR { continue }
+                return nil
+            }
+            if readCount == 0 { break }
+            hasher.update(bufferPointer: UnsafeRawBufferPointer(start: buffer, count: readCount))
+        }
+        return Data(hasher.finalize())
     }
 
     private static func isStable(_ lhs: stat, _ rhs: stat) -> Bool {

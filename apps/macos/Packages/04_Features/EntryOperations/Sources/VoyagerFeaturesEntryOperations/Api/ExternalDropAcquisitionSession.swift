@@ -206,11 +206,22 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
         }
         // 물리화 직후 신원을 포횅하고 같은 신원으로 detached snapshot을 검증해 고정한다.
         // retained writable fd 임자 내부 재기록이 placement에 기여할 수 없다(코멘트 #3835329095).
+        // 수신 경로를 쓰기 직후 선등록한다(#3837956591 회귀 방지). snapshot 격리가
+        // 길어져도 느은 취소 콜백이 같은 경로를 재조정·이중 등록하지 않게 하는 창이다.
+        lock.lock()
+        receivedStagedPaths.insert(url.standardizedFileURL.path)
+        lock.unlock()
         guard let expected = staging.capturedIdentity(url),
               staging.stageReceivedFile(url, expected: expected)
         else {
+            lock.lock()
+            receivedStagedPaths.remove(url.standardizedFileURL.path)
+            pendingSnapshotCount -= 1
+            if phase == .acquiring {
+                emitTerminalLocked(.failed(sessionID, .dataMaterializationFailed))
+            }
+            lock.unlock()
             try? fileManager.removeItem(url)
-            failMaterializationLocked()
             return
         }
         lock.lock()
@@ -220,7 +231,6 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
             pendingSnapshotCount -= 1
             return
         }
-        receivedStagedPaths.insert(url.standardizedFileURL.path)
         nextItemOrdinal += 1
         let itemOrdinal = nextItemOrdinal
         receivedCount += 1
@@ -652,19 +662,6 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
         )
     }
 
-    private func reconciledCallbackURL(reportedURL: URL?) -> URL? {
-        if let reportedURL,
-           fileManager.fileExists(reportedURL.path),
-           isInsideStaging(reportedURL),
-           !receivedStagedPaths.contains(reportedURL.standardizedFileURL.path)
-        {
-            return reportedURL
-        }
-        let candidates = unregisteredStagingURLs()
-        guard candidates.count == 1 else { return nil }
-        return candidates[0]
-    }
-
     private func shouldAwaitStagedFile(error: Error, receiverIndex: Int) -> Bool {
         let nsError = error as NSError
         return nsError.domain == NSCocoaErrorDomain
@@ -701,6 +698,11 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
             return
         }
         stagingScanWorkItem = nil
+        // 물리화 진행 중에는 미등록 파일이 우리 출력과 구분되지 않으므로 재조정을 건너뛴다.
+        // 실제 provider 쓰기는 새 옵저버 이벤트로 재스캔을 유발한다(코멘트 #3837956591).
+        guard pendingSnapshotCount == 0 else {
+            return
+        }
 
         let pending = pendingCancelledCallbacks.sorted { $0.key < $1.key }
         let candidates = unregisteredStagingURLs()
@@ -993,6 +995,22 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
 }
 
 extension ExternalDropAcquisitionSession {
+    private func reconciledCallbackURL(reportedURL: URL?) -> URL? {
+        // 물리화가 진행 중이면 staging 파일이 우리 출력일 수 있으니 재조정을 보류한다.
+        // 호출자는 await-staged로 대기하고, 확정 후 스캔이 재평가한다(코멘트 #3837956591).
+        guard pendingSnapshotCount == 0 else { return nil }
+        if let reportedURL,
+           fileManager.fileExists(reportedURL.path),
+           isInsideStaging(reportedURL),
+           !receivedStagedPaths.contains(reportedURL.standardizedFileURL.path)
+        {
+            return reportedURL
+        }
+        let candidates = unregisteredStagingURLs()
+        guard candidates.count == 1 else { return nil }
+        return candidates[0]
+    }
+
     /// 지연 data-flavor 로드를 세션 전용 큐에서 실행한다. 로드 실패는 타입화 실패로 종단 처리한다.
     func enqueueDeferredLoad(_ flavor: ExternalDropDeferredFlavor) {
         queue.addOperation { [weak self] in

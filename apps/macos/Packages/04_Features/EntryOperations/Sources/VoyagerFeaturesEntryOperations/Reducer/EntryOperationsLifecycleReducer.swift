@@ -49,8 +49,14 @@ struct EntryOperationsLifecycleReducer {
                 // placement 복사(.pasteItemsEffect)가 진행 중일 때 staging을 지우면 읽던 원본이
                 // 사라져 부분 파일/복사 실패가 생긴다. placement staging 정리는 pasteItemsEffect의
                 // onCancelCleanup 지연 finish 경로가 단일 소유한다.
-                var effects: [Effect<Action>] = sessionIDs.map {
-                    .cancel(id: CancelID.externalDrop($0))
+                // placement 준비 effect(.externalDropPlacement)도 함께 취소해야
+                // onCancel의 finish가 세션/staging을 정리한다. 미취소면 준비 결과가
+                // 초기화된 상태에서 무시되고 세션이 영구 잔류한다(코멘트 #3838035175).
+                var effects: [Effect<Action>] = sessionIDs.flatMap {
+                    [
+                        .cancel(id: CancelID.externalDrop($0)),
+                        .cancel(id: CancelID.externalDropPlacement($0)),
+                    ]
                 }
                 if let externalDropSessionID {
                     effects.append(.run { [externalDropAcquisitionClient] _ in
