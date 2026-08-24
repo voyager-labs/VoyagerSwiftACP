@@ -61,9 +61,10 @@ var queryProfileOverride = map[string]string{
 }
 
 var nativeTypeOverride = map[string]string{
-	"mditem:kMDItemFSName":   "string",
-	"mditem:kMDItemUserTags": "string_list",
-	"nsurl:NSURLTagNamesKey": "string_list",
+	"mditem:kMDItemFSName":            "string",
+	"mditem:kMDItemUserTags":          "string_list",
+	"nsurl:NSURLTagNamesKey":          "string_list",
+	"nsurl:NSURLKeysOfUnsetValuesKey": "string_list",
 }
 
 // ProjectSystemRegistry는 System Registry를 정확한 active-set
@@ -328,6 +329,11 @@ func workspaceTerm(propertyID entry.PropertyID, termKind string, ordinal int, te
 func canonicalTypeMapping(registryType, canonicalKey string) (entry.PropertyType, entry.PropertyCardinality) {
 	switch registryType {
 	case "string":
+		if canonicalKey == "misc.keys_of_unset_values" {
+			// reviewed override: nsurl:NSURLKeysOfUnsetValuesKey returns an
+			// array of NSString keys, so the canonical contract is text/many.
+			return entry.PropertyTypeText, entry.PropertyCardinalityMany
+		}
 		return entry.PropertyTypeText, entry.PropertyCardinalityOne
 	case "number":
 		return entry.PropertyTypeNumber, entry.PropertyCardinalityOne

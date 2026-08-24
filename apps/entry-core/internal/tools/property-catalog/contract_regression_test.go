@@ -38,6 +38,35 @@ func TestProjectedTagNamesDescriptorsPreserveSelectManyContract(t *testing.T) {
 	t.Fatal("misc.tag_names definition not projected")
 }
 
+func TestProjectedKeysOfUnsetValuesPreserveTextManyContract(t *testing.T) {
+	projection, err := ProjectSystemRegistry(loadSystemRegistry(t))
+	if err != nil {
+		t.Fatalf("project: %v", err)
+	}
+	var foundDescriptor bool
+	for _, descriptor := range projection.Snapshot.Descriptors {
+		if descriptor.NativeKey != "nsurl:NSURLKeysOfUnsetValuesKey" {
+			continue
+		}
+		foundDescriptor = true
+		if descriptor.NativeType != "string_list" || descriptor.NativeCardinality != entry.PropertyCardinalityMany {
+			t.Fatalf("descriptor = type %q cardinality %q, want string_list/many", descriptor.NativeType, descriptor.NativeCardinality)
+		}
+	}
+	if !foundDescriptor {
+		t.Fatal("nsurl:NSURLKeysOfUnsetValuesKey descriptor not projected")
+	}
+	for _, definition := range projection.Snapshot.Definitions {
+		if definition.CanonicalKey == "misc.keys_of_unset_values" {
+			if definition.ValueType != entry.PropertyTypeText || definition.Cardinality != entry.PropertyCardinalityMany {
+				t.Fatalf("misc.keys_of_unset_values definition = type %q cardinality %q, want text/many", definition.ValueType, definition.Cardinality)
+			}
+			return
+		}
+	}
+	t.Fatal("misc.keys_of_unset_values definition not projected")
+}
+
 func TestProjectedBindingOrdinalsFollowSystemKeyOrder(t *testing.T) {
 	projection, err := ProjectSystemRegistry(loadSystemRegistry(t))
 	if err != nil {
