@@ -399,13 +399,24 @@ final class StagingDirectory {
     }
 
     /// placement 완료 후 원본 디렉터리 시각을 복원한다(#3841341519). 기록이 없으면
-    /// 아무 것도 하지 않는다.
+    /// 아무 것도 하지 않는다. 격리 때 기록된 중첩 디렉터리 레이블도 목적지 하위
+    /// 경로에 복원해 폴더 트리의 mtime/atime 손상을 막는다(#3841991804).
     func restoreOriginalDirectoryTimes(claimedPath: String, destinationPath: String) {
         identityLock.lock()
-        let times = preservedDirectoryTimes[canonicalClaimPath(claimedPath)]
+        let timesByLabel = preservedDirectoryTimes
         identityLock.unlock()
-        guard let times else { return }
-        utimes(destinationPath, times)
+        guard !timesByLabel.isEmpty else { return }
+        let rootKey = canonicalClaimPath(claimedPath)
+        if let times = timesByLabel[rootKey] {
+            utimes(destinationPath, times)
+        }
+        // 레이블은 캐노니컬 소스 경로이므로 루트 접두를 벗긴 상대 경로가 목적지 트리의
+        // 동일 위치에 대응한다. 복사가 실패해 하위 경로가 없으면 utimes가 조용히
+        // 실패하며 세션 종단에는 영향을 주지 않는다.
+        let rootPrefix = rootKey + "/"
+        for (label, times) in timesByLabel where label.hasPrefix(rootPrefix) {
+            utimes(destinationPath + "/" + label.dropFirst(rootPrefix.count), times)
+        }
     }
 
     /// claim 신원 키를 canonical real path로 통일한다. `/var`→`/private/var`처럼 symlink가

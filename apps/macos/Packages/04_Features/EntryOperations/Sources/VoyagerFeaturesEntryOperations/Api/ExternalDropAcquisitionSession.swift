@@ -145,9 +145,10 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
             // receive 중 동기적으로 도착한 콜백이 이미 받은 수를 채웠을 수 있다. cardinality
             // 확정 후에야 성공 판정이 가능하므로 lock을 보유한 채 재평가한다.
             emitTerminalLocked(.succeeded(sessionID))
-        } else if expectedCardinality == 0, !indeterminateReceivers.isEmpty {
-            // 결정적 입력이 전혀 없는 세션은 provider가 콜백을 아예 호출하지 않으면
-            // 영구 .acquiring에 남는다. 상한 시간 내 종료를 보장한다(#3840460024).
+        } else if phase == .acquiring {
+            // 결정적 receiver의 콜백 누락 역시 세션을 영구 .acquiring에 남긴다
+            // (#3841991794). 어떤 종단이든 teardownLocked가 워치독을 해제하므로
+            // acquiring이 지속되면 종단 타이머를 예약한다(#3840460024).
             scheduleIndeterminateWatchdogLocked()
         }
         lock.unlock()
@@ -173,6 +174,9 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
             emitTerminalLocked(.failed(sessionID, .emptyCardinality))
         } else if phase == .acquiring, sessionIsCompleteLocked() {
             emitTerminalLocked(.succeeded(sessionID))
+        } else {
+            // 레거시 경로의 콜백·스냅숏 누락도 영구 .acquiring을 만들지 않는다(#3841991794).
+            scheduleIndeterminateWatchdogLocked()
         }
     }
 
@@ -685,9 +689,9 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
         return true
     }
 
-    /// 순수 무결 구성(모든 수신기 빈 fileNames + 데이터·immediate 없음)에서 콜백이
-    /// 끝내 오지 않는 경우를 위한 종단 워치독이다. 어떤 종단이든 teardownLocked가
-    /// 해제한다(코멘트 #3840460024).
+    /// cardinality 확정 후 완료에 필요한 콜백이 끝내 오지 않는 경우를 위한 종단
+    /// 워치독이다(결정적 receiver 누락 포함, #3841991794). 어떤 종단이든
+    /// teardownLocked가 해제한다(코멘트 #3840460024).
     private func scheduleIndeterminateWatchdogLocked() {
         indeterminateWatchdog?.cancel()
         let item = DispatchWorkItem { [weak self] in
