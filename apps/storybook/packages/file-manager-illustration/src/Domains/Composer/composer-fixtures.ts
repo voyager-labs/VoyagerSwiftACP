@@ -156,8 +156,8 @@ export const composerFixtures = {
       ...populatedDraft.conditions,
       {
         id: "is_invisible",
-        property: "Is hidden",
-        propertySymbol: "eye.slash",
+        property: fixtureOption("is_invisible").label,
+        propertySymbol: fixtureOption("is_invisible").symbol,
         operator: "Is",
         value: "True",
       },
