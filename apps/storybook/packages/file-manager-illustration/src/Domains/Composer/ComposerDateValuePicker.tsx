@@ -164,7 +164,13 @@ export const ComposerDateValuePicker: FC<ComposerDateValuePickerProps> = ({
               <button
                 type="button"
                 aria-pressed={dateMode === "relative"}
-                onClick={() => setDateMode("relative")}
+                onClick={() => {
+                  // 네이티브 setDateMode(.relative) 계약: 절대→상대 전환은 Custom 프리셋으로 진입한다(기본 프리셋 은닉 방지)
+                  if (dateMode === "absolute") {
+                    setRelativePreset("Custom")
+                  }
+                  setDateMode("relative")
+                }}
               >
                 Relative
               </button>
