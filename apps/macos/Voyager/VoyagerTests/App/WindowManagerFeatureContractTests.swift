@@ -10407,6 +10407,61 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await store.finish()
     }
 
+    /// 같은 plan window가 소유한 pending pinned Collection 복귀는 형제 planned route의 activation 자격을 막지 않는다.
+    /// - 검증 내용: pending URL이 같은 window의 pinned-return 항목과 일치하면 window ownership은 유효하고 각 item route는 별도로 검증됨
+    /// - 사전 조건: 같은 plan window에 pending pinned Collection 항목과 exact directory 형제 항목이 있음
+    /// - 기대 결과: 두 route가 맞으면 survivor이고 directory route만 drift하면 전체 plan이 stale로 판정됨
+    func testPlacementSurvivorEligibilityTreatsPendingPinnedReturnAsPlanWindowOwned() throws {
+        let fixture = Self.makePinnedCollectionActivationFixture(pendingOpen: true)
+        let windowID = fixture.plan.windows[0].windowID
+        let pinnedItem = try XCTUnwrap(fixture.plan.orderedItems.first)
+        let directoryItemID = UUID()
+        let directoryTabID = ContentTabID(rawValue: "pending-owner-directory")
+        let directoryAnchor = ContentTabPageAnchor.directory(path: "/tmp/pending-owner-directory")
+        let request = try ExternalOpenPlacementRequest(
+            batchID: fixture.plan.batchID,
+            items: [
+                XCTUnwrap(fixture.plan.request?.items.first),
+                .init(itemID: directoryItemID, anchor: directoryAnchor, pendingSelectEntryID: nil),
+            ],
+            preferredWindowIDs: [],
+        )
+        let plan = ExternalOpenPlacementPlan(
+            batchID: fixture.plan.batchID,
+            windows: [.init(
+                windowID: windowID,
+                isNewWindow: false,
+                items: [
+                    pinnedItem,
+                    .init(
+                        itemID: directoryItemID,
+                        tabID: directoryTabID,
+                        anchor: directoryAnchor,
+                        requiresReservation: false,
+                    ),
+                ],
+            )],
+            request: request,
+        )
+        var state = fixture.state
+        state.windows[id: windowID]?.window.contentTabs.tabs.append(ContentTabItem(
+            id: directoryTabID,
+            page: .directory,
+            anchor: directoryAnchor,
+            isPinned: false,
+        ))
+
+        XCTAssertEqual(
+            ExternalOpenPlacementApplication.lastSurvivingWindowID(for: plan, state: state),
+            windowID,
+        )
+
+        state.windows[id: windowID]?.window.contentTabs.tabs[id: directoryTabID]?.anchor = .directory(
+            path: "/tmp/pending-owner-drifted",
+        )
+        XCTAssertNil(ExternalOpenPlacementApplication.lastSurvivingWindowID(for: plan, state: state))
+    }
+
     /// pinned Collection 복귀가 아직 pending이면 becameKey만으로 activation을 끝내지 않는다.
     /// - 검증 내용: pendingCollectionOpenRequest가 있으면 batch authorization이 유지됨
     /// - 사전 조건: durable collection 재사용 plan, runtime은 다른 collection, open request pending

@@ -591,10 +591,9 @@ enum ExternalOpenPlacementApplication {
             {
                 continue
             }
+            guard window.isExternalOpenActivationEligible(for: placementWindow.items) else { return nil }
             if window.contentTabs.tabs[id: item.tabID] != nil {
-                guard window.isExternalOpenActivationEligible(for: item),
-                      window.stillMatchesExternalOpenItem(item)
-                else { return nil }
+                guard window.stillMatchesExternalOpenItem(item) else { return nil }
                 lastMatch = placementWindow.windowID
             }
         }
@@ -718,14 +717,16 @@ private extension FileManagerWindowState {
         isExternalOpenLifecycleEligible && pendingCollectionOpenRequest == nil
     }
 
-    func isExternalOpenActivationEligible(for item: ExternalOpenPlacementPlan.Item) -> Bool {
+    func isExternalOpenActivationEligible(for items: [ExternalOpenPlacementPlan.Item]) -> Bool {
         guard isExternalOpenLifecycleEligible,
               let pendingCollectionOpenRequest
         else { return isExternalOpenLifecycleEligible }
-        guard item.requiresPinnedAnchorReturn,
-              case let .collectionFile(expectedURL) = item.anchor
-        else { return false }
-        return pendingCollectionOpenRequest.url.standardizedFileURL == expectedURL.standardizedFileURL
+        return items.contains { item in
+            guard item.requiresPinnedAnchorReturn,
+                  case let .collectionFile(expectedURL) = item.anchor
+            else { return false }
+            return pendingCollectionOpenRequest.url.standardizedFileURL == expectedURL.standardizedFileURL
+        }
     }
 
     func stillMatchesExternalOpenItem(_ item: ExternalOpenPlacementPlan.Item) -> Bool {
