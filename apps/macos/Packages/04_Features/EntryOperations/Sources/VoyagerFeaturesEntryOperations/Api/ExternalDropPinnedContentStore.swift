@@ -290,8 +290,10 @@ final class PinnedContentStore {
         return SnapshotFile(descriptor: descriptor, name: name, identity: identity)
     }
 
-    /// descriptor 전체 내용의 SHA-256. 오프셋은 0으로 되감고 원래 위치는 보존하지 않는다
-    /// (caller가 검증 후 되감기를 담당한다).
+    /// descriptor 콘텐츠의 canonical SHA-256이다. data fork 스트림 뒤 정렬된 xattr
+    /// 이름·값 쌍을 포함해 resource fork·확장 속성 재작성까지 탐지한다 — COPYFILE_ALL
+    /// 복사 범위와 검증 범위를 일치시킨다(코멘트 #3840534608). 오프셋은 0으로 되감고
+    /// caller가 검증 후 되감기를 담당한다.
     static func sha256(ofDescriptor descriptor: Int32) -> Data? {
         guard Darwin.lseek(descriptor, 0, SEEK_SET) >= 0 else { return nil }
         var hasher = SHA256()
@@ -306,6 +308,38 @@ final class PinnedContentStore {
             }
             if readCount == 0 { break }
             hasher.update(bufferPointer: UnsafeRawBufferPointer(start: buffer, count: readCount))
+        }
+        // xattr 이름을 정렬 순회하며 이름\0값\0 시퀀스를 해시에 포함한다. resource
+        // fork도 APFS에서는 xattr(com.apple.ResourceFork)로 표현되어 함께 커버된다.
+        let listLength = flistxattr(descriptor, nil, 0, 0)
+        guard listLength >= 0 else { return nil }
+        if listLength > 0 {
+            var nameBuffer = [CChar](repeating: 0, count: listLength)
+            guard flistxattr(descriptor, &nameBuffer, listLength, 0) == listLength else { return nil }
+            var names: [String] = []
+            nameBuffer.withUnsafeBufferPointer { buf in
+                var cursor = buf.baseAddress!
+                let end = buf.baseAddress! + listLength
+                while cursor < end, cursor.pointee != 0 {
+                    names.append(String(cString: cursor))
+                    cursor = cursor + strlen(cursor) + 1
+                }
+            }
+            for name in names.sorted() {
+                hasher.update(data: Data(name.utf8))
+                hasher.update(data: Data([0]))
+                let valueSize = fgetxattr(descriptor, name, nil, 0, 0, 0)
+                guard valueSize >= 0 else { return nil }
+                if valueSize > 0 {
+                    var value = Data(count: valueSize)
+                    let got = value.withUnsafeMutableBytes { mutable -> Int in
+                        fgetxattr(descriptor, name, mutable.baseAddress, valueSize, 0, 0)
+                    }
+                    guard got == valueSize else { return nil }
+                    hasher.update(data: value)
+                }
+                hasher.update(data: Data([0]))
+            }
         }
         return Data(hasher.finalize())
     }

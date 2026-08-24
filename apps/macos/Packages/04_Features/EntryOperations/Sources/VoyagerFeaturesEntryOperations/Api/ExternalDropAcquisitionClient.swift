@@ -468,6 +468,17 @@ private final class ExternalDropAcquisitionStore {
             try? fileManager.removeItem(stagingURL)
             return nil
         }
+        // 동일 파일을 다른 표기(file vs ./file)로 중복 반환하는 provider를 거절한다.
+        // 중복 경로는 placement pendingPaths Set에서 한 항목으로 합쳐져 첫 복사
+        // 완료만으로 세션이 종료되는 조기 종단을 유발한다(코멘트 #3840534607).
+        var seenPaths = Set<String>()
+        for path in stagedPaths {
+            let canonical = URL(fileURLWithPath: path).resolvingSymlinksInPath().path
+            guard seenPaths.insert(path).inserted, seenPaths.insert(canonical).inserted else {
+                try? fileManager.removeItem(stagingURL)
+                return nil
+            }
+        }
         return stagedPaths
     }
 
