@@ -94,6 +94,16 @@ export const ComposerDateValuePicker: FC<ComposerDateValuePickerProps> = ({
           unitToNative[resolvedRelative.unit],
         )
 
+  // 상대 프리뷰·달력·절대 전환 공유 앵커 날짜
+  const relativeAnchorDate =
+    relativePreset === "Today"
+      ? todayLiteral()
+      : resolveRelativeDate(
+          relativeDirection,
+          resolvedRelative.amount,
+          unitToNative[resolvedRelative.unit],
+        )
+
   const submit = () => {
     if (kind === "date" && dateMode === "relative") {
       if (!relativeAmountValid) {
@@ -142,7 +152,14 @@ export const ComposerDateValuePicker: FC<ComposerDateValuePickerProps> = ({
               <button
                 type="button"
                 aria-pressed={dateMode === "absolute"}
-                onClick={() => setDateMode("absolute")}
+                onClick={() => {
+                  // 네이티브 prepareDateValueState 계약: 모드 전환 시 선택 날짜를 보존한다.
+                  // 상대 리터럴은 values를 비워 두므로 절대 전환 시 현재 상대 프리뷰 날짜를 채운다
+                  if ((values[0]?.trim().length ?? 0) === 0) {
+                    setSelectedDate(relativeAnchorDate)
+                  }
+                  setDateMode("absolute")
+                }}
               >
                 On date
               </button>
@@ -225,19 +242,7 @@ export const ComposerDateValuePicker: FC<ComposerDateValuePickerProps> = ({
               </div>
             )}
             <small>{relativePreview}</small>
-            <ComposerCalendar
-              value={
-                relativePreset === "Today"
-                  ? todayLiteral()
-                  : resolveRelativeDate(
-                      relativeDirection,
-                      resolvedRelative.amount,
-                      unitToNative[resolvedRelative.unit],
-                    )
-              }
-              previewOnly
-              onChange={setSelectedDate}
-            />
+            <ComposerCalendar value={relativeAnchorDate} previewOnly onChange={setSelectedDate} />
             <small>Preview based on today</small>
           </div>
         ) : (
