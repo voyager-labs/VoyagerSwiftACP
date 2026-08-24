@@ -182,6 +182,24 @@ func catalogTitleDefinition(t *testing.T) entry.PropertyDefinition {
 	return definition
 }
 
+func catalogDurationDefinition(t *testing.T) entry.PropertyDefinition {
+	t.Helper()
+	definition, err := entry.NewPropertyDefinition(entry.PropertyDefinition{
+		PropertyID:     entry.MustPropertyID("5f495fc5-a187-5e64-80ec-a9757f21d650"),
+		IdentityScheme: entry.PropertyIdentitySchemeRegistryDerived,
+		Namespace:      "system",
+		Key:            "common.duration_seconds",
+		DisplayName:    "Duration seconds",
+		ValueType:      entry.PropertyTypeNumber,
+		Cardinality:    entry.PropertyCardinalityOne,
+		Provenance:     entry.PropertyProvenanceSystem,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return definition
+}
+
 func TestCanonicalPropertyValuePreservesCatalogContract(t *testing.T) {
 	intValue := int64(7)
 	token := "rev-1"
@@ -279,6 +297,7 @@ func canonicalizeWithDescriptorContract(t *testing.T, sourceRef entry.SourceRef,
 	}
 	selectors := map[string]entry.SourcePropertyDescriptor{}
 	transforms := map[string]entry.PropertyBinding{}
+	requestName := definition.Key
 	if bound {
 		selector := descriptorContractSelector(t, sourceRef, nativeType, cardinality)
 		binding := entry.PropertyBinding{
@@ -286,10 +305,10 @@ func canonicalizeWithDescriptorContract(t *testing.T, sourceRef entry.SourceRef,
 			ReadTransform: "identity", Direction: "read",
 			EffectiveReadable: true, ApprovalState: "approved", Lifecycle: entry.PropertyLifecycleActive,
 		}
-		selectors["common.title"] = selector
-		transforms["common.title"] = binding
+		selectors[requestName] = selector
+		transforms[requestName] = binding
 	}
-	return CanonicalizeSourceItemWithLocator(item, locatorRef, []string{"common.title"}, map[string]entry.PropertyDefinition{"common.title": definition}, selectors, transforms, time.Unix(10, 0).UTC(), revision, entry.Availability{State: entry.AvailabilityStateAvailable}, freshness, entry.PropertyProvenanceFilesystem)
+	return CanonicalizeSourceItemWithLocator(item, locatorRef, []string{requestName}, map[string]entry.PropertyDefinition{requestName: definition}, selectors, transforms, time.Unix(10, 0).UTC(), revision, entry.Availability{State: entry.AvailabilityStateAvailable}, freshness, entry.PropertyProvenanceFilesystem)
 }
 
 // VOY-764 P1 복구(review v4 결함 3): 바인딩된 요청 이름은 변환 전에 디스크립터의
@@ -363,6 +382,57 @@ func TestCanonicalizeWithLocatorValidatesNativeDescriptorContract(t *testing.T) 
 				t.Fatalf("properties = %#v, want exactly one", result.EntrySnapshot.CanonicalProperties)
 			}
 		})
+	}
+}
+
+func TestCanonicalizeWithLocatorPreservesDecimalNumber(t *testing.T) {
+	sourceRef, _ := adapterContractRefs(t)
+	property := mustProperty(t, "title", mustDecimalValue(t, "10.5"))
+	result, err := canonicalizeWithDescriptorContract(
+		t,
+		sourceRef,
+		[]entry.Property{property},
+		"number",
+		entry.PropertyCardinalityOne,
+		catalogDurationDefinition(t),
+		true,
+	)
+	if err != nil {
+		t.Fatalf("canonicalize error = %v", err)
+	}
+	if len(result.EntrySnapshot.CanonicalProperties) != 1 {
+		t.Fatalf("properties = %#v, want exactly one", result.EntrySnapshot.CanonicalProperties)
+	}
+	value := result.EntrySnapshot.CanonicalProperties[0]
+	if value.Payload.Number == nil || *value.Payload.Number != "10.5" {
+		t.Fatalf("canonical number = %#v, want 10.5", value.Payload.Number)
+	}
+}
+
+func TestResolveRevisionFingerprintsDecimalNumberDeterministically(t *testing.T) {
+	profile := MetadataProfile{
+		ProfileName: "local", ResourceType: "audio", Name: "Track.m4a", RelativePath: "Track.m4a",
+		Properties: []entry.Property{mustProperty(t, "duration", mustDecimalValue(t, "10.5"))},
+	}
+	first, err := ResolveRevision(nil, &profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := ResolveRevision(nil, &profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Strength != entry.RevisionStrengthMetadata || first.Token == nil || second.Token == nil || *first.Token != *second.Token {
+		t.Fatalf("decimal metadata revisions = %#v, %#v", first, second)
+	}
+
+	profile.Properties = []entry.Property{mustProperty(t, "duration", mustDecimalValue(t, "10.6"))}
+	changed, err := ResolveRevision(nil, &profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed.Token == nil || *changed.Token == *first.Token {
+		t.Fatalf("changed decimal metadata token = %#v, want distinct from %q", changed.Token, *first.Token)
 	}
 }
 
@@ -441,6 +511,15 @@ func mustStringListValue(t *testing.T, values []string) entry.PropertyValue {
 func mustTimestampValue(t *testing.T, value time.Time) entry.PropertyValue {
 	t.Helper()
 	propertyValue, err := entry.NewTimestampPropertyValue(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return propertyValue
+}
+
+func mustDecimalValue(t *testing.T, value string) entry.PropertyValue {
+	t.Helper()
+	propertyValue, err := entry.NewDecimalPropertyValue(value)
 	if err != nil {
 		t.Fatal(err)
 	}

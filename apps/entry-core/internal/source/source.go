@@ -399,6 +399,8 @@ func encodePropertyValue(value entry.PropertyValue) ([]byte, bool) {
 		payload := make([]byte, 8)
 		binary.BigEndian.PutUint64(payload, uint64(*value.Int64Value))
 		return appendFrame(nil, 0x31, payload), true
+	case entry.PropertyValueTypeDecimal:
+		return appendFrame(nil, 0x36, []byte(*value.DecimalValue)), true
 	case entry.PropertyValueTypeBool:
 		payload := byte(0)
 		if *value.BoolValue {
@@ -853,7 +855,7 @@ func nativeValueMatchesDescriptor(value entry.PropertyValue, descriptor entry.So
 	case "string_list":
 		return value.Type == entry.PropertyValueTypeStringList
 	case "number":
-		return value.Type == entry.PropertyValueTypeInt64
+		return value.Type == entry.PropertyValueTypeInt64 || value.Type == entry.PropertyValueTypeDecimal
 	case "boolean":
 		return value.Type == entry.PropertyValueTypeBool
 	case "date", "datetime":
@@ -909,6 +911,9 @@ func canonicalPropertyValue(property entry.Property, transform string, definitio
 	case entry.PropertyValueTypeInt64:
 		valueType = entry.PropertyTypeNumber
 		payload = entry.NumberPayload(strconv.FormatInt(*value.Int64Value, 10))
+	case entry.PropertyValueTypeDecimal:
+		valueType = entry.PropertyTypeNumber
+		payload = entry.NumberPayload(*value.DecimalValue)
 	case entry.PropertyValueTypeBool:
 		valueType = entry.PropertyTypeBoolean
 		payload = entry.BooleanPayload(*value.BoolValue)
