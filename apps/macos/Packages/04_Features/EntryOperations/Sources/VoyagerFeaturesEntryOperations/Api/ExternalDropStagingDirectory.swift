@@ -59,6 +59,9 @@ final class StagingDirectory {
     /// symlink로 교체하지 못하게 root 밖에 둔다(코멘트 #3830970683).
     private let ownedPath: URL
     private let identityLock = NSLock()
+    /// \uc774\uc804 \ub514\ub809\ud1a0\ub9ac\uc758 mtime/atime\uc744 \ub77c\ubca8\ubcc4\ub85c \ubcf4\uad00\ud574
+    /// placement \uc2dc \ubcf5\uc6d0\ud55c\ub2e4(#3841341519).
+    private var preservedDirectoryTimes: [String: [timeval]] = [:]
     /// 성공 배리어용 가시 표면 신원(staged/legacy 등 provider가 경로를 아는 노드).
     private var claimedIdentities: [String: ClaimedFileIdentity] = [:]
     /// 격리 콘텐츠 레지스트리. placement는 여기 기록된 무작위 이름 노드를 신원 검증해 열고,
@@ -207,6 +210,13 @@ final class StagingDirectory {
             return try pinnedContent.snapshotFile(from: sourceDescriptor, label: label)
         case S_IFDIR:
             _ = try pinnedContent.makeDirectory(label: label, mode: status.st_mode & 0o777)
+            // 원본 디렉토리의 mtime/atime을 보존해 placement 시 복원한다(#3841341519).
+            identityLock.lock()
+            preservedDirectoryTimes[label] = [
+                timeval(tv_sec: status.st_atimespec.tv_sec, tv_usec: Int32(status.st_atimespec.tv_nsec / 1000)),
+                timeval(tv_sec: status.st_mtimespec.tv_sec, tv_usec: Int32(status.st_mtimespec.tv_nsec / 1000)),
+            ]
+            identityLock.unlock()
             // 열거 실패(fd 한도 등)를 빈 디렉터리로 치환하면 자식이 누락된 채 스냅숏이
             // 성공한다. all-or-nothing 계약에 따라 fail-closed로 예외화한다(코멘트 #3837839019).
             guard let names = Self.directoryEntryNames(fd: sourceDescriptor) else {
@@ -386,6 +396,16 @@ final class StagingDirectory {
 
     private func closeDescriptors(_ descriptors: some Sequence<Int32>) {
         descriptors.forEach { Darwin.close($0) }
+    }
+
+    /// placement 완료 후 원본 디렉터리 시각을 복원한다(#3841341519). 기록이 없으면
+    /// 아무 것도 하지 않는다.
+    func restoreOriginalDirectoryTimes(claimedPath: String, destinationPath: String) {
+        identityLock.lock()
+        let times = preservedDirectoryTimes[canonicalClaimPath(claimedPath)]
+        identityLock.unlock()
+        guard let times else { return }
+        utimes(destinationPath, times)
     }
 
     /// claim 신원 키를 canonical real path로 통일한다. `/var`→`/private/var`처럼 symlink가

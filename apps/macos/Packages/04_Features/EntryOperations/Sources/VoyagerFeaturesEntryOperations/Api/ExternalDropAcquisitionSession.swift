@@ -1038,6 +1038,11 @@ extension ExternalDropAcquisitionSession {
 
     func copyPlacementSource(sourcePath: String, destinationPath: String) throws {
         try staging.copyPlacementSource(sourcePath: sourcePath, destinationPath: destinationPath)
+        // 디렉터리 원본 시각 복원(#3841341519).
+        staging.restoreOriginalDirectoryTimes(
+            claimedPath: sourcePath,
+            destinationPath: destinationPath,
+        )
     }
 
     private static let indeterminateNameMarker = "NSFilePromiseUnknown"
