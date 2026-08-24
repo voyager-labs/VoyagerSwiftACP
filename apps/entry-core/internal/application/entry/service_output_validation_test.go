@@ -912,3 +912,50 @@ func TestUnifiedListKeepsRegistryFallbackForUnboundTerms(t *testing.T) {
 		t.Fatalf("entries = %#v", result.Entries)
 	}
 }
+
+// TestUnifiedListExcludesUnboundCatalogPropertyFromScope proves a catalog
+// definition that carries bindings, but none applicable to a given source
+// scope, never reaches that scope's adapter as a raw-key fallback: the name is
+// unsupported on the scope instead of being exposed without an approved
+// binding (review 3840724956).
+func TestUnifiedListExcludesUnboundCatalogPropertyFromScope(t *testing.T) {
+	registry, bindings := unifiedFixture(t)
+	external := bindings[0].Adapter.(*recordingResourceAdapter)
+	local := bindings[1].Adapter.(*recordingResourceAdapter)
+	external.listResults = []source.AdapterListResult{adapterListResultFixture(t, bindings[0].SourceRef, "external-item", "item", nil)}
+	local.listResults = []source.AdapterListResult{adapterListResultFixture(t, bindings[1].SourceRef, "local-item", "item", nil)}
+
+	catalog := titleCatalogFixture()
+	bindingRef := domainentry.SourcePropertyRef{
+		ProviderID: "fakeexternal", SourceInstanceID: externalSourceID,
+		ScopeKind: domainentry.SourceScopeKindSystem, ScopeExternalID: "macos",
+		ExternalPropertyID: "kMDItemTitle",
+	}
+	catalog.Descriptors = append(catalog.Descriptors, domainentry.SourcePropertyDescriptor{
+		Ref: bindingRef, NativeKey: "kMDItemTitle", NativeType: "string",
+		NativeCardinality: domainentry.PropertyCardinalityOne, Authority: domainentry.AuthorityKindSystem,
+		SourceReadable: true, SourceQueryable: true, Lifecycle: domainentry.PropertyLifecycleActive,
+	})
+	catalog.Bindings = append(catalog.Bindings, domainentry.PropertyBinding{
+		PropertyID: catalogTitleID, SourceRef: bindingRef, ReadTransform: "identity",
+		Direction: "read", EffectiveReadable: true, EffectiveQueryable: true,
+		QueryProfile: "identity", MappingVersion: 1, ValueContractRevision: 1,
+		Provenance: "system", ApprovalState: "approved", Lossiness: "none",
+		Lifecycle: domainentry.PropertyLifecycleActive,
+	})
+	service := mustUnifiedServiceWithCatalog(t, registry, bindings, catalog)
+	path := "/"
+
+	if _, err := service.UnifiedList(context.Background(), UnifiedListRequest{
+		WorkspaceID: "workspace", VirtualPath: &path, PageSize: 2, RequestedProperties: []string{"common.title"},
+	}); err != nil {
+		t.Fatalf("UnifiedList() error = %v", err)
+	}
+
+	if requests := external.listRequests; len(requests) != 1 || len(requests[0].RequestedProperties) != 1 || requests[0].RequestedProperties[0] != "common.title" {
+		t.Fatalf("external scope requested properties = %#v, want [common.title]", external.listRequests)
+	}
+	if requests := local.listRequests; len(requests) != 1 || len(requests[0].RequestedProperties) != 0 {
+		t.Fatalf("local scope requested properties = %#v, want [] (no applicable binding)", local.listRequests)
+	}
+}

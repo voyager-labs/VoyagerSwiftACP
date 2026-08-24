@@ -197,23 +197,35 @@ func (service *UnifiedService) catalogDefinitionFor(requested string, definition
 // 계층 하나를 선택하고 그 계층에 후보가 둘 이상 남으면 reviewed precedence가 런타임
 // 계약에 없으므로 ErrAmbiguousSourceBinding으로 카탈로그 순회 순서와 무관하게 실패
 // 닫기한다.
+// sourcePropertyContracts는 요청 이름별로 현재 소스 인스턴스에 적용 가능한 실행
+// 계약(승인·활성 binding → native descriptor + transform)을 선택한다. catalog
+// definition이 binding을 하나라도 가졌지만 이 소스/스코프에 적용되는 binding이 없으면
+// 해당 이름은 unsupported로 보고되며, 호출자는 그 이름을 이 스코프의 어댑터
+// 요청에서 제외해야 한다(권한 없는 raw-key fallback 노출 차단). binding 자체가
+// 없는 definition은 기존대로 raw fallback을 유지한다.
 func (service *UnifiedService) sourcePropertyContracts(
 	definitions map[string]domainentry.PropertyDefinition,
 	sourceInstanceID, workspaceID, repositoryID string,
-) (map[string]domainentry.SourcePropertyDescriptor, map[string]domainentry.PropertyBinding, error) {
+) (map[string]domainentry.SourcePropertyDescriptor, map[string]domainentry.PropertyBinding, map[string]struct{}, error) {
 	selectors := make(map[string]domainentry.SourcePropertyDescriptor)
 	transforms := make(map[string]domainentry.PropertyBinding)
-	if len(definitions) == 0 || len(service.catalog.Bindings) == 0 {
-		return selectors, transforms, nil
+	unsupported := make(map[string]struct{})
+	if len(definitions) == 0 {
+		return selectors, transforms, unsupported, nil
 	}
 	descriptorByRef := make(map[domainentry.SourcePropertyRef]domainentry.SourcePropertyDescriptor, len(service.catalog.Descriptors))
 	for _, descriptor := range service.catalog.Descriptors {
 		descriptorByRef[descriptor.Ref] = descriptor
 	}
 	for requested, definition := range definitions {
+		hasAnyBinding := false
 		var candidates []domainentry.PropertyBinding
 		for _, binding := range service.catalog.Bindings {
-			if binding.PropertyID != definition.PropertyID || binding.SourceRef.SourceInstanceID != sourceInstanceID {
+			if binding.PropertyID != definition.PropertyID {
+				continue
+			}
+			hasAnyBinding = true
+			if binding.SourceRef.SourceInstanceID != sourceInstanceID {
 				continue
 			}
 			if !sourceBindingApplies(binding.SourceRef, workspaceID, repositoryID) {
@@ -222,6 +234,9 @@ func (service *UnifiedService) sourcePropertyContracts(
 			candidates = append(candidates, binding)
 		}
 		if len(candidates) == 0 {
+			if hasAnyBinding {
+				unsupported[requested] = struct{}{}
+			}
 			continue
 		}
 		executable := candidates[:0]
@@ -231,16 +246,32 @@ func (service *UnifiedService) sourcePropertyContracts(
 			}
 		}
 		if len(executable) == 0 {
-			return nil, nil, newApplicationError("internal_error", "binding_not_executable", ErrNoExecutableSourceBinding)
+			return nil, nil, nil, newApplicationError("internal_error", "binding_not_executable", ErrNoExecutableSourceBinding)
 		}
 		selected, selectErr := selectExecutableSourceBinding(executable)
 		if selectErr != nil {
-			return nil, nil, selectErr
+			return nil, nil, nil, selectErr
 		}
 		selectors[requested] = descriptorByRef[selected.SourceRef]
 		transforms[requested] = selected
 	}
-	return selectors, transforms, nil
+	return selectors, transforms, unsupported, nil
+}
+
+// supportedScopeProperties는 이 스코프가 승인된 binding으로 제공할 수 없는
+// 이름을 요청 목록에서 제외한다.
+func supportedScopeProperties(requestedProperties []string, unsupported map[string]struct{}) []string {
+	if len(unsupported) == 0 {
+		return requestedProperties
+	}
+	supported := make([]string, 0, len(requestedProperties))
+	for _, requested := range requestedProperties {
+		if _, isUnsupported := unsupported[requested]; isUnsupported {
+			continue
+		}
+		supported = append(supported, requested)
+	}
+	return supported
 }
 
 func sourceBindingApplies(ref domainentry.SourcePropertyRef, workspaceID, repositoryID string) bool {
@@ -397,12 +428,14 @@ func (service *UnifiedService) UnifiedList(ctx context.Context, request UnifiedL
 		if requestErr != nil {
 			return UnifiedListResult{}, newApplicationError("internal_error", "internal_error", ErrApplicationAdapterFailure)
 		}
-		scopeSelectors, scopeTransforms, contractsErr := service.sourcePropertyContracts(
+		scopeSelectors, scopeTransforms, scopeUnsupported, contractsErr := service.sourcePropertyContracts(
 			definitions, scope.sourceRef.SourceInstanceID, scope.mount.WorkspaceID, scope.mount.MountID,
 		)
 		if contractsErr != nil {
 			return UnifiedListResult{}, contractsErr
 		}
+		scopeRequested := supportedScopeProperties(requestedProperties, scopeUnsupported)
+		adapterRequest.RequestedProperties = scopeRequested
 		adapterRequest.SourceSelectors, adapterRequest.ReadTransforms = scopeSelectors, scopeTransforms
 		adapterRequest.PropertyDefinitions = clonePropertyDefinitions(definitions)
 		adapterResult, adapterErr := scope.adapter.List(ctx, adapterRequest)
@@ -412,7 +445,7 @@ func (service *UnifiedService) UnifiedList(ctx context.Context, request UnifiedL
 			}
 			adapterResult = adapterErrorListResult(adapterErr, service.clock())
 		}
-		pages[index], err = service.consumeScopePage(snapshot, scope, uint8(index), adapterResult, quotas[index], requestedProperties, definitions)
+		pages[index], err = service.consumeScopePage(snapshot, scope, uint8(index), adapterResult, quotas[index], scopeRequested, definitions)
 		if err != nil {
 			pages[index] = service.adapterFailureScope(snapshot, scope, uint8(index))
 			pages[index].failure = err
@@ -515,12 +548,14 @@ func (service *UnifiedService) ResolveEntry(ctx context.Context, request Resolve
 	if definitionsErr != nil {
 		return ResolveResult{}, definitionsErr
 	}
-	resolveSelectors, resolveTransforms, contractsErr := service.sourcePropertyContracts(
+	resolveSelectors, resolveTransforms, resolveUnsupported, contractsErr := service.sourcePropertyContracts(
 		definitions, binding.SourceRef.SourceInstanceID, mountRef.WorkspaceID, mountRef.MountID,
 	)
 	if contractsErr != nil {
 		return ResolveResult{}, contractsErr
 	}
+	resolveRequested := supportedScopeProperties(requestedProperties, resolveUnsupported)
+	adapterRequest.RequestedProperties = resolveRequested
 	adapterRequest.SourceSelectors, adapterRequest.ReadTransforms = resolveSelectors, resolveTransforms
 	adapterRequest.PropertyDefinitions = clonePropertyDefinitions(definitions)
 	adapterResult, adapterErr := binding.Adapter.Resolve(ctx, adapterRequest)
@@ -543,7 +578,7 @@ func (service *UnifiedService) ResolveEntry(ctx context.Context, request Resolve
 	if item.EntryRef.SourceInstanceID != binding.SourceRef.SourceInstanceID || item.EntrySnapshot.EntryRef.SourceInstanceID != binding.SourceRef.SourceInstanceID {
 		return ResolveResult{}, newApplicationError("context_mismatch", "context_mismatch", ErrContextMismatch)
 	}
-	if !propertiesWithinRequest(item.EntrySnapshot.CanonicalProperties, requestedProperties, definitions) {
+	if !propertiesWithinRequest(item.EntrySnapshot.CanonicalProperties, resolveRequested, definitions) {
 		return ResolveResult{}, newApplicationError("adapter_failure", "adapter_failure", ErrApplicationAdapterFailure)
 	}
 	if entryRef != nil && item.EntryRef.EntryID != entryRef.EntryID {
@@ -640,12 +675,13 @@ func (service *UnifiedService) resolveParentPaths(ctx context.Context, scopes []
 		if err != nil {
 			return newApplicationError("invalid_selector", "invalid_selector", ErrInvalidSelector)
 		}
-		parentSelectors, parentTransforms, contractsErr := service.sourcePropertyContracts(
+		parentSelectors, parentTransforms, parentUnsupported, contractsErr := service.sourcePropertyContracts(
 			definitions, scopes[index].sourceRef.SourceInstanceID, scopes[index].mount.WorkspaceID, scopes[index].mount.MountID,
 		)
 		if contractsErr != nil {
 			return contractsErr
 		}
+		request.RequestedProperties = supportedScopeProperties(requested, parentUnsupported)
 		request.SourceSelectors, request.ReadTransforms = parentSelectors, parentTransforms
 		request.PropertyDefinitions = clonePropertyDefinitions(definitions)
 		result, err := scopes[index].adapter.Resolve(ctx, request)
