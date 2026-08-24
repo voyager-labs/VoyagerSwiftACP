@@ -24,6 +24,8 @@ func readEmbeddedDir(t *testing.T) fstest.MapFS {
 		"migrations/0004_workspace_property_term_active_unique.down.sql",
 		"migrations/0005_property_definition_units.up.sql",
 		"migrations/0005_property_definition_units.down.sql",
+		"migrations/0006_catalog_seed_marker.up.sql",
+		"migrations/0006_catalog_seed_marker.down.sql",
 		"migrations/atlas.sum",
 	} {
 		b, err := fs.ReadFile(migrationsFS, name)
