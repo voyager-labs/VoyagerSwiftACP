@@ -68,6 +68,31 @@ export const ComposerPropertyPicker: FC<ComposerPropertyPickerProps> = ({ picker
 
   const openGroup = categories.find((group) => group.key === openCategory)
 
+  // 서브메뉴를 닫을 때 포커스를 돌려줄 부모 카테고리 행
+  const lastCategoryRowRef = useRef<HTMLButtonElement>(null)
+
+  const toggleGroup = (key: CategoryKey, row: HTMLButtonElement) => {
+    if (openCategory === key) {
+      setOpenCategory(null)
+      return
+    }
+    lastCategoryRowRef.current = row
+    const groupEl = row.closest(".collection-composer-property-picker-group")
+    const menuEl = groupEl?.querySelector<HTMLElement>(".collection-composer-property-picker")
+    if (menuEl != null) {
+      const rowRect = row.getBoundingClientRect()
+      const menuRect = menuEl.getBoundingClientRect()
+      // 보이는 행 위치 기준 배치(offsetTop은 스크롤 전 콘텐츠 좌표라 사용 불가)
+      const desired = rowRect.top - menuRect.top
+      // ponytail: 320은 .collection-composer-property-submenu max-height와 짝이 맞는 상수, CSS 변경 시 함께 조정
+      const submenuMaxHeight = 320
+      const overflowBelow = menuRect.top + desired + submenuMaxHeight - window.innerHeight
+      const clamped = overflowBelow > 0 ? Math.max(0, desired - overflowBelow) : desired
+      setSubmenuOrigin({ top: clamped, left: menuRect.width })
+    }
+    setOpenCategory(key)
+  }
+
   const propertyRow = (item: ComposerPropertyOption) => (
     <button
       type="button"
@@ -128,31 +153,13 @@ export const ComposerPropertyPicker: FC<ComposerPropertyPickerProps> = ({ picker
                     className="fm-menu-item"
                     aria-haspopup="menu"
                     aria-expanded={openCategory === group.key}
-                    onClick={(event) => {
-                      if (openCategory === group.key) {
-                        setOpenCategory(null)
-                        return
+                    onClick={(event) => toggleGroup(group.key, event.currentTarget)}
+                    onKeyDown={(event) => {
+                      // 네이티브 NSMenu 계약: ArrowRight로 서브메뉴에 진입한다
+                      if (event.key === "ArrowRight" && openCategory !== group.key) {
+                        event.preventDefault()
+                        toggleGroup(group.key, event.currentTarget)
                       }
-                      const groupEl = event.currentTarget.closest(
-                        ".collection-composer-property-picker-group",
-                      )
-                      const menuEl = groupEl?.querySelector<HTMLElement>(
-                        ".collection-composer-property-picker",
-                      )
-                      if (menuEl != null) {
-                        const rowRect = event.currentTarget.getBoundingClientRect()
-                        const menuRect = menuEl.getBoundingClientRect()
-                        // 보이는 행 위치 기준 배치(offsetTop은 스크롤 전 콘텐츠 좌표라 사용 불가)
-                        const desired = rowRect.top - menuRect.top
-                        // ponytail: 320은 .collection-composer-property-submenu max-height와 짝이 맞는 상수, CSS 변경 시 함께 조정
-                        const submenuMaxHeight = 320
-                        const overflowBelow =
-                          menuRect.top + desired + submenuMaxHeight - window.innerHeight
-                        const clamped =
-                          overflowBelow > 0 ? Math.max(0, desired - overflowBelow) : desired
-                        setSubmenuOrigin({ top: clamped, left: menuRect.width })
-                      }
-                      setOpenCategory(group.key)
                     }}
                   >
                     <SFSymbol name={group.symbol} size={14} />
@@ -170,6 +177,16 @@ export const ComposerPropertyPicker: FC<ComposerPropertyPickerProps> = ({ picker
         <Menu
           className="collection-composer-property-submenu"
           aria-label={`${openGroup.label} properties`}
+          focusOnMount
+          onKeyDown={(event) => {
+            // 네이티브 NSMenu 계약: ArrowLeft·Escape로 부모 행에 포커스를 복원하며 닫는다
+            if (event.key === "ArrowLeft" || event.key === "Escape") {
+              event.preventDefault()
+              event.stopPropagation()
+              setOpenCategory(null)
+              lastCategoryRowRef.current?.focus()
+            }
+          }}
           style={{ top: submenuOrigin.top, left: submenuOrigin.left }}
         >
           {openGroup.items.map(propertyRow)}

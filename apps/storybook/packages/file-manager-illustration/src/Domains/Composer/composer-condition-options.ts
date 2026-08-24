@@ -221,7 +221,7 @@ export const composerPropertyOptions = [
   },
   {
     key: "has_alpha_channel",
-    label: "Alpha channel",
+    label: "Has alpha channel",
     symbol: "circle.lefthalf.filled",
     category: "image",
     pinned: false,
@@ -229,9 +229,9 @@ export const composerPropertyOptions = [
   },
   {
     key: "duration_seconds",
-    label: "Duration",
+    label: "Duration seconds",
     symbol: "clock",
-    category: "video",
+    category: "common",
     pinned: false,
     operators: numberOperators(),
   },
@@ -247,7 +247,7 @@ export const composerPropertyOptions = [
     key: "audio_bit_rate",
     label: "Audio bit rate",
     symbol: "waveform.path.ecg",
-    category: "audio",
+    category: "video",
     pinned: false,
     operators: numberOperators(),
   },
@@ -261,7 +261,7 @@ export const composerPropertyOptions = [
   },
   {
     key: "audio_channel_count",
-    label: "Audio channels",
+    label: "Audio channel count",
     symbol: "speaker.wave.2",
     category: "audio",
     pinned: false,
