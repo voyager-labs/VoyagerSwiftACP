@@ -153,11 +153,8 @@ export const ComposerDateValuePicker: FC<ComposerDateValuePickerProps> = ({
                 type="button"
                 aria-pressed={dateMode === "absolute"}
                 onClick={() => {
-                  // 네이티브 prepareDateValueState 계약: 모드 전환 시 선택 날짜를 보존한다.
-                  // 상대 리터럴은 values를 비워 두므로 절대 전환 시 현재 상대 프리뷰 날짜를 채운다
-                  if ((values[0]?.trim().length ?? 0) === 0) {
-                    setSelectedDate(relativeAnchorDate)
-                  }
+                  // 네이티브 syncRelativeSelectedDate 계약: relative→absolute 전환 시 현재 프리뷰 날짜를 공유 선택값으로 복사한다(빈 값 여부와 무관)
+                  setSelectedDate(relativeAnchorDate)
                   setDateMode("absolute")
                 }}
               >
