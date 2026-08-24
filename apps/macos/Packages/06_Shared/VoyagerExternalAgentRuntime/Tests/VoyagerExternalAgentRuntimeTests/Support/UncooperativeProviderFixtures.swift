@@ -256,6 +256,59 @@ enum ResumeProbeOutcome: Equatable {
     case failure(String)
 }
 
+struct UncooperativeProviderFreshRunFixture {
+    let host: ExternalAgentSessionReference
+    let run: RuntimeRunReference
+    let replacementRun: RuntimeRunReference
+    let invocationGate: RuntimeTestGate
+    let store: InMemoryRuntimeStateStore
+    let adapter: DeterministicRuntimeAdapter
+    let plane: RuntimeControlPlane
+    let request: RuntimeLaunchRequest
+    let replacementRequest: RuntimeLaunchRequest
+}
+
+func makeUncooperativeProviderFreshRunFixture() -> UncooperativeProviderFreshRunFixture {
+    let host: ExternalAgentSessionReference = "uncooperative-fresh-host"
+    let run = RuntimeRunReference("uncooperative-fresh-run")
+    let replacementRun = RuntimeRunReference("uncooperative-fresh-replacement")
+    let invocationGate = RuntimeTestGate()
+    let oldCompleted = makeEvent(
+        host: host,
+        run: run,
+        sequence: 1,
+        idempotencyKey: "uncooperative-fresh-completed",
+        kind: .completed,
+    )
+    let replacementCompleted = makeEvent(
+        host: host,
+        run: replacementRun,
+        sequence: 1,
+        idempotencyKey: "uncooperative-fresh-replacement-completed",
+        kind: .completed,
+    )
+    let store = InMemoryRuntimeStateStore()
+    let adapter = DeterministicRuntimeAdapter(
+        id: "sdk",
+        transport: .sdkAsyncStream,
+        capabilities: uncooperativeStreamCapabilities,
+        eventsByEventStream: [[oldCompleted], [replacementCompleted]],
+        eventStreamInvocationGate: invocationGate,
+    )
+    let plane = RuntimeControlPlane(store: store)
+    return UncooperativeProviderFreshRunFixture(
+        host: host,
+        run: run,
+        replacementRun: replacementRun,
+        invocationGate: invocationGate,
+        store: store,
+        adapter: adapter,
+        plane: plane,
+        request: makeLaunch(host: host, run: run, adapterID: "sdk"),
+        replacementRequest: makeLaunch(host: host, run: replacementRun, adapterID: "sdk"),
+    )
+}
+
 actor ResumeProbeRecorder {
     private var recordedValue: ResumeProbeOutcome?
 

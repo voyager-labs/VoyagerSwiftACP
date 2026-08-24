@@ -158,7 +158,11 @@ extension RuntimeControlPlane {
         guard var session = registry[host], session.stored.runReference == result.runReference else {
             throw RuntimeHostError.invalidEvent
         }
-        guard session.lease == .consuming(lease) || session.lease == .resuming(lease) else {
+        // detached consuming 소유자의 배경 수렴도 결과 저장을 허용한다(탈출 뒤 단말 완주 계약).
+        guard session.lease == .consuming(lease)
+            || session.lease == .resuming(lease)
+            || session.lease == .detachedConsuming(lease)
+        else {
             throw RuntimeHostError.invalidEvent
         }
         if let terminal = terminalResult(for: session.stored) {
@@ -168,7 +172,7 @@ extension RuntimeControlPlane {
             return terminal.outcome == result.outcome ? result : terminal
         }
         switch session.lease {
-        case .consuming:
+        case .consuming, .detachedConsuming:
             let decision = RuntimeFreshRunDecisionTable.decide(
                 .providerResult(result.outcome),
                 on: session.freshRunSnapshot(),
@@ -179,7 +183,7 @@ extension RuntimeControlPlane {
             session.stored = session.stored.withProjection(projection(for: result.outcome))
             session.lease = .none
             session.revision += 1
-        case .none, .launching, .detachedLaunching, .detachedConsuming, .restored:
+        case .none, .launching, .detachedLaunching, .restored:
             throw RuntimeHostError.invalidEvent
         }
         registry[host] = session
@@ -307,9 +311,11 @@ extension RuntimeControlPlane {
             )
         }
         if let lease {
+            // 탈출한 consuming 소유자의 배경 실패 수렴도 interrupt 반영을 허용한다.
             guard session.lease == .launching(lease)
                 || session.lease == .consuming(lease)
                 || session.lease == .resuming(lease)
+                || session.lease == .detachedConsuming(lease)
             else { return nil }
         }
         if let receipt {
