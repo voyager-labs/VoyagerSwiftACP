@@ -28,13 +28,14 @@ public struct EntryOperationsLoadingReducer {
         Reduce { state, action in
             switch action {
             case let .loading(.loadItems(path, showHidden, priority)):
+                let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
                 let generation = state.loadingContext.begin(
                     sourceKind: .directory,
-                    preservesSnapshot: state.isReloading,
+                    preservesSnapshot: state.loadingContext.shouldBufferDirectoryReload(at: url.path),
+                    directoryPath: url.path,
                 )
                 state.isLoading = true
                 return .run { [entryLoadingClient] send in
-                    let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
                     do {
                         for try await event in entryLoadingClient.loadItems(url, showHidden, priority) {
                             await send(.loading(.streamEvent(.init(generation: generation, event: event))))
@@ -148,6 +149,7 @@ public struct EntryOperationsLoadingReducer {
                 )
 
             case let .loading(.itemsLoaded(items)):
+                state.loadingContext.preservedDirectoryReloadItems = nil
                 state.loadingContext.items = IdentifiedArray(uniqueElements: items)
                 state.isLoading = false
                 state.isReloading = false
@@ -166,14 +168,22 @@ public struct EntryOperationsLoadingReducer {
                     else {
                         return .none
                     }
-                    if batchIndex == 0, state.isReloading {
-                        state.loadingContext.items = []
+                    if var candidate = state.loadingContext.preservedDirectoryReloadItems {
+                        let existingIDs = Set(candidate.map(\.id))
+                        candidate.append(contentsOf: items.filter { !existingIDs.contains($0.id) })
+                        state.loadingContext.preservedDirectoryReloadItems = candidate
+                    } else {
+                        if batchIndex == 0, state.isReloading {
+                            state.loadingContext.items = []
+                        }
+                        let existingIDs = Set(state.loadingContext.items.map(\.id))
+                        state.loadingContext.items.append(contentsOf: items.filter { !existingIDs.contains($0.id) })
                     }
-                    let existingIDs = Set(state.loadingContext.items.map(\.id))
-                    state.loadingContext.items.append(contentsOf: items.filter { !existingIDs.contains($0.id) })
                     state.loadingContext.expectedCoreBatchIndex += 1
-                    state.isLoading = false
-                    state.isReloading = false
+                    if !state.loadingContext.isBufferingPreservedDirectoryReload {
+                        state.isLoading = false
+                        state.isReloading = false
+                    }
                     return .none
 
                 case let .coreFinished(batchCount):
@@ -182,20 +192,30 @@ public struct EntryOperationsLoadingReducer {
                     else {
                         return .none
                     }
-                    if batchCount == 0 {
+                    if batchCount == 0, !state.loadingContext.isBufferingPreservedDirectoryReload {
                         state.loadingContext.items = []
                     }
                     state.loadingContext.coreFinished = true
                     state.loadingContext.acceptedCoreFinishedGeneration = streamEvent.generation
-                    state.isLoading = false
-                    state.isReloading = false
+                    if !state.loadingContext.isBufferingPreservedDirectoryReload {
+                        state.isLoading = false
+                        state.isReloading = false
+                    }
                     return .none
 
                 case let .metadataPatches(patches):
                     guard state.loadingContext.coreFinished else { return .none }
-                    for patch in patches {
-                        guard let current = state.loadingContext.items[id: patch.entryID] else { continue }
-                        state.loadingContext.items[id: current.id] = current.applying(patch)
+                    if var candidate = state.loadingContext.preservedDirectoryReloadItems {
+                        for patch in patches {
+                            guard let current = candidate[id: patch.entryID] else { continue }
+                            candidate[id: current.id] = current.applying(patch)
+                        }
+                        state.loadingContext.preservedDirectoryReloadItems = candidate
+                    } else {
+                        for patch in patches {
+                            guard let current = state.loadingContext.items[id: patch.entryID] else { continue }
+                            state.loadingContext.items[id: current.id] = current.applying(patch)
+                        }
                     }
                     return .none
                 }
@@ -207,6 +227,19 @@ public struct EntryOperationsLoadingReducer {
                 else {
                     return .none
                 }
+                if let candidate = state.loadingContext.preservedDirectoryReloadItems {
+                    state.loadingContext.items = candidate
+                    state.loadingContext.preservedDirectoryReloadItems = nil
+                    let committedIDs = Set(candidate.map(\.id))
+                    state.selectedEntryIDs.formIntersection(committedIDs)
+                    if let renamingItemID = state.renamingItemId, !committedIDs.contains(renamingItemID) {
+                        state.renamingItemId = nil
+                        state.renamingText = ""
+                        state.renamingItem = nil
+                    }
+                    state.isLoading = false
+                    state.isReloading = false
+                }
                 state.loadingContext.streamTerminal = true
                 return .none
 
@@ -217,11 +250,13 @@ public struct EntryOperationsLoadingReducer {
                     return .none
                 }
                 let emittedCoreBatch = state.loadingContext.expectedCoreBatchIndex > 0
+                let wasBufferingPreservedDirectoryReload = state.loadingContext.isBufferingPreservedDirectoryReload
+                state.loadingContext.preservedDirectoryReloadItems = nil
                 state.loadingContext.streamTerminal = true
                 state.loadingContext.isIncomplete = true
                 state.isLoading = false
                 state.isReloading = false
-                guard emittedCoreBatch else {
+                guard emittedCoreBatch || wasBufferingPreservedDirectoryReload else {
                     state.loadingContext.items = []
                     state.renamingItemId = nil
                     state.renamingText = ""
@@ -231,6 +266,7 @@ public struct EntryOperationsLoadingReducer {
                 return .none
 
             case .loading(.itemsLoadFailed):
+                state.loadingContext.preservedDirectoryReloadItems = nil
                 state.loadingContext.items = []
                 state.isLoading = false
                 state.isReloading = false

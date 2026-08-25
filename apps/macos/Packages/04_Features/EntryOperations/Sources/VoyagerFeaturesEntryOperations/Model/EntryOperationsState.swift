@@ -172,6 +172,7 @@ public struct EntryFolderLoadingContext: Equatable, Sendable {
 
 public struct EntryLoadingContextState: Equatable, Sendable {
     public var items: IdentifiedArrayOf<EntryModel> = []
+    var preservedDirectoryReloadItems: IdentifiedArrayOf<EntryModel>?
     public var generation = 0
     public var expectedCoreBatchIndex = 0
     public var coreFinished = false
@@ -179,8 +180,25 @@ public struct EntryLoadingContextState: Equatable, Sendable {
     public var streamTerminal = false
     public var isIncomplete = false
     public var sourceKind: EntryLoadingSourceKind?
+    var directoryPath: String?
 
-    public mutating func begin(sourceKind: EntryLoadingSourceKind, preservesSnapshot: Bool) -> Int {
+    public var isBufferingPreservedDirectoryReload: Bool {
+        preservedDirectoryReloadItems != nil
+    }
+
+    /// 동일 경로에 복원 가능한 committed snapshot이 있어 원자 reload buffering을 적용할 수 있는지 판단한다.
+    /// isReloading 여부는 판단에서 제외되며, 경로가 다른 load는 후보 없이 progressive flow로 진행된다.
+    func shouldBufferDirectoryReload(at path: String) -> Bool {
+        sourceKind == .directory
+            && directoryPath == path
+            && (!items.isEmpty || coreFinished && streamTerminal)
+    }
+
+    mutating func begin(
+        sourceKind: EntryLoadingSourceKind,
+        preservesSnapshot: Bool,
+        directoryPath: String? = nil,
+    ) -> Int {
         generation &+= 1
         expectedCoreBatchIndex = 0
         coreFinished = false
@@ -188,6 +206,8 @@ public struct EntryLoadingContextState: Equatable, Sendable {
         streamTerminal = false
         isIncomplete = false
         self.sourceKind = sourceKind
+        self.directoryPath = sourceKind == .directory ? directoryPath : nil
+        preservedDirectoryReloadItems = sourceKind == .directory && preservesSnapshot ? [] : nil
         if !preservesSnapshot {
             items = []
         }
@@ -202,6 +222,8 @@ public struct EntryLoadingContextState: Equatable, Sendable {
         streamTerminal = false
         isIncomplete = false
         sourceKind = nil
+        directoryPath = nil
+        preservedDirectoryReloadItems = nil
     }
 }
 
