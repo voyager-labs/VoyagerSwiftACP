@@ -156,13 +156,15 @@ extension FileManagerWindowRoutingReducer {
         if keepPendingContentTabCloseFocusedAfterOpen(state: &state) {
             return .none
         }
-        let openedTabID = state.activeTabContentStateMissing
-            ? state.contentTabs.activeTabID
-            : nil
+        let openedTabID = state.activeTabContentStateMissing ? state.contentTabs.activeTabID : nil
+        let openedTabAnchor = openedTabID.flatMap { state.contentTabs.tabs[id: $0]?.anchor }
+        let preservesSourceSession = openedTabAnchor.map {
+            if case .directory = $0 { true } else { false }
+        } ?? false
         let shouldResyncContentNavigation = state.contentTabs.previousActiveTabID != nil
             || state.activeTabContentStateMissing
         let handoffCleanupEffect: Effect<Action>
-        if shouldResyncContentNavigation {
+        if shouldResyncContentNavigation, !preservesSourceSession {
             let aiChatLifecycleSessionIDs = aiChatLifecycleSessionIDsToPreserve(state.content.aiChat)
             if aiChatLifecycleSessionIDs.isEmpty {
                 handoffCleanupEffect = prepareContentForActiveTabHandoff(state: &state.content)
@@ -194,10 +196,10 @@ extension FileManagerWindowRoutingReducer {
         return .merge(
             handoffCleanupEffect,
             activeTabHandoffEffect(
-                shouldResyncContentNavigation,
+                shouldResyncContentNavigation && !preservesSourceSession,
                 state: &state,
                 aiConnectionsFileClient: aiConnectionsFileClient,
-                skipAiChatCancel: true,
+                skipAiChatCancel: preservesSourceSession,
             ),
             closeInspectorForActiveAiChatEffect(state: state),
             openedTabID.map { activateUndoManagerScopeEffect(tabID: $0, state: state) } ?? .none,

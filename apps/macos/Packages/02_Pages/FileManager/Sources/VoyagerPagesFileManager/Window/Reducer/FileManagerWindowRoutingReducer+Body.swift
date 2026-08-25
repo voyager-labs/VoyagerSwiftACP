@@ -192,7 +192,7 @@ extension FileManagerWindowRoutingReducer {
                       state.pendingSelectedContentTabClose == nil,
                       state.contentTabs.tabs.count < ContentTabConstants.maxTabs
                 else { return .none }
-                return .send(.contentTabs(.open(.homeDefault)))
+                return .send(.request(.openNewContentTab))
 
             case let .sidebar(.delegate(.duplicateContentTab(sourceID))):
                 guard state.pendingSelectedContentTabClose == nil else { return .none }

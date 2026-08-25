@@ -713,7 +713,11 @@ final class CTM001SelectContentTabsTests: XCTestCase {
                         .reduce(into: &state.contentTabs, action: contentTabAction)
                         .map { .contentTabs($0) }
                 }
-                return FileManagerWindowRoutingReducer().reduce(into: &state, action: action)
+                // 프로덕션 조합과 동일하게 Routing 다음 Command reducer를 실행한다.
+                // Sidebar new tab은 .request(.openNewContentTab) 경로로 라우팅된다.
+                let routingEffect = FileManagerWindowRoutingReducer().reduce(into: &state, action: action)
+                let commandEffect = FileManagerWindowCommandRoutingReducer().reduce(into: &state, action: action)
+                return .merge(routingEffect, commandEffect)
             }
         }
         // store.exhaustivity = .off: open이 생성하는 무작위 ContentTabID는 최종 canonical state로 검증한다.
