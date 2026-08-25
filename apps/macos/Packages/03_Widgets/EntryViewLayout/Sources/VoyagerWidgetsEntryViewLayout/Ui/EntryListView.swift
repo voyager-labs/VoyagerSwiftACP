@@ -30,6 +30,10 @@ public struct EntryListViewRepresentable: NSViewRepresentable {
         context.coordinator.updateRootView(view)
         view.tableView.blankSpaceContextMenuProvider = blankSpaceMenuProvider
     }
+
+    public static func dismantleNSView(_: EntryListView, coordinator: EntryListCoordinator) {
+        coordinator.externalDropSessionController.cancel()
+    }
 }
 
 final class EntryListSelectionRowView: NSTableRowView {
@@ -233,7 +237,7 @@ public final class EntryListView: NSView {
         tableView.allowsEmptySelection = true
         tableView.usesAlternatingRowBackgroundColors = false
         tableView.intercellSpacing = NSSize(width: 4, height: 0)
-        tableView.registerForDraggedTypes([.fileURL])
+        tableView.registerForDraggedTypes(EntryViewLayoutDropValidationAdapter.registeredDraggedTypes)
         tableView.setDraggingSourceOperationMask([.copy, .move], forLocal: true)
         tableView.setDraggingSourceOperationMask([.copy], forLocal: false)
         tableView.autoresizesOutlineColumn = false

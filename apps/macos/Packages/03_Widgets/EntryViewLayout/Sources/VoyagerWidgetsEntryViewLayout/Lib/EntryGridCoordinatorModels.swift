@@ -1,5 +1,6 @@
 @preconcurrency import AppKit
 import VoyagerEntitiesEntry
+import VoyagerFeaturesEntryOperations
 
 struct EntryGridSection {
     let title: String?
@@ -26,6 +27,7 @@ struct EntryGridRenderSnapshot: Equatable {
     let pendingTypeScrollTargetId: EntryModel.ID?
     let currentPath: String
     let outlineProjectionRevision: Int
+    let activeExternalDrop: ExternalDropActiveSession?
 
     init(state: EntryViewLayoutState) {
         presentation = state.presentation
@@ -46,5 +48,6 @@ struct EntryGridRenderSnapshot: Equatable {
         pendingTypeScrollTargetId = state.pendingTypeScrollTargetId
         currentPath = state.currentPath
         outlineProjectionRevision = state.outlineProjectionRevision
+        activeExternalDrop = state.entryOperations.activeExternalDrop
     }
 }
