@@ -699,6 +699,13 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
             lock.lock()
             defer { self.lock.unlock() }
             guard phase == .acquiring else { return }
+            // 스냅숏·data load가 진행 중이면 종단하지 않고 재무장한다. 대형 immediate
+            // 스냅숏이나 느린 promise 디렉터리가 유휴 대기와 무관하게 60초에 잘리는
+            // 것을 막는다(#3849011293). I/O가 끝난 뒤의 다음 경계에서만 종단한다.
+            guard pendingSnapshotCount == 0 else {
+                scheduleIndeterminateWatchdogLocked()
+                return
+            }
             emitTerminalLocked(.failed(sessionID, .callbackError))
         }
         indeterminateWatchdog = item

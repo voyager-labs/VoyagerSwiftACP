@@ -6,6 +6,26 @@ import VoyagerShared
 /// inode 신원과 대조한 descriptor를 반환하며, 각 노드는 사용 직후 닫힌다. 동시 fd는
 /// 순회 깊이 수준으로 제한된다(RLIMIT_NOFILE 안전).
 enum StablePlacementCopier {
+    /// 트리 순회에 필요한 검증 콜백 묶음. 재귀 호출의 파라미터 수를 고정한다.
+    private struct Traversal {
+        let openVerifiedNode: (String) throws -> (fd: Int32, isDirectory: Bool)
+        let closeVerifiedNode: (Int32) -> Void
+        let childLabels: (String) -> [String]
+        let verifyCopiedFile: ((String, URL) throws -> Void)?
+
+        init(
+            openVerifiedNode: @escaping (String) throws -> (fd: Int32, isDirectory: Bool),
+            closeVerifiedNode: @escaping (Int32) -> Void,
+            childLabels: @escaping (String) -> [String],
+            verifyCopiedFile: ((String, URL) throws -> Void)?,
+        ) {
+            self.openVerifiedNode = openVerifiedNode
+            self.closeVerifiedNode = closeVerifiedNode
+            self.childLabels = childLabels
+            self.verifyCopiedFile = verifyCopiedFile
+        }
+    }
+
     /// `rootPath`(포함)를 루트로 하는 하위 트리를 `destination`으로 복사한다.
     /// - `openVerifiedNode(label)`: label의 검증된 descriptor와 디렉터리 여부를 반환한다.
     /// - `closeVerifiedNode(fd)`: opener가 연 descriptor를 닫는다.
@@ -13,43 +33,61 @@ enum StablePlacementCopier {
     static func copySubtree(
         rootPath: String,
         destination: URL,
-        openVerifiedNode: (String) throws -> (fd: Int32, isDirectory: Bool),
-        closeVerifiedNode: (Int32) -> Void,
-        childLabels: (String) -> [String],
+        openVerifiedNode: @escaping (String) throws -> (fd: Int32, isDirectory: Bool),
+        closeVerifiedNode: @escaping (Int32) -> Void,
+        childLabels: @escaping (String) -> [String],
         verifyCopiedFile: ((String, URL) throws -> Void)? = nil,
     ) throws {
-        try copyNode(
-            label: rootPath,
-            destination: destination,
+        // 최상위 목적지 부모를 fd로 고정한다. 이후 모든 자식 생성은 이 fd(와 하위
+        // 고정 fd) 기준 openat/mkdirat으로 수행되어, 검사 직후 부모가 rename·치환
+        // 돼도 자식이 symlink 밖으로 빠지지 않는다(#3849087644).
+        let parentDescriptor = Darwin.open(
+            destination.deletingLastPathComponent().path,
+            O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC,
+        )
+        guard parentDescriptor >= 0 else { throw posixError() }
+        defer { Darwin.close(parentDescriptor) }
+        let traversal = Traversal(
             openVerifiedNode: openVerifiedNode,
             closeVerifiedNode: closeVerifiedNode,
             childLabels: childLabels,
             verifyCopiedFile: verifyCopiedFile,
         )
+        try copyNode(
+            label: rootPath,
+            parentDescriptor: parentDescriptor,
+            displayURL: destination,
+            traversal: traversal,
+        )
     }
 
+    /// `parentDescriptor`가 가리키는 디렉터리 안에 `displayURL` 마지막 성분으로 노드를
+    /// 생성한다. `displayURL`은 검증 콜백과 오류 정리(경로 기반, best-effort)에만 쓰인다.
     private static func copyNode(
         label: String,
-        destination: URL,
-        openVerifiedNode: (String) throws -> (fd: Int32, isDirectory: Bool),
-        closeVerifiedNode: (Int32) -> Void,
-        childLabels: (String) -> [String],
-        verifyCopiedFile: ((String, URL) throws -> Void)? = nil,
+        parentDescriptor: Int32,
+        displayURL: URL,
+        traversal: Traversal,
     ) throws {
-        let node = try openVerifiedNode(label)
-        defer { closeVerifiedNode(node.fd) }
+        let node = try traversal.openVerifiedNode(label)
+        defer { traversal.closeVerifiedNode(node.fd) }
         var status = stat()
         guard Darwin.fstat(node.fd, &status) == 0 else { throw posixError() }
         switch status.st_mode & S_IFMT {
         case S_IFREG:
-            try copyFile(node.fd, status: status, destination: destination)
+            try copyFile(
+                node.fd,
+                status: status,
+                parentDescriptor: parentDescriptor,
+                displayURL: displayURL,
+            )
             // 검증과 실제 fcopyfile 사이 같은 inode 재기록 TOCTOU를 닫는다:
             // destination에 실제로 기록된 바이트의 digest를 대조한다(코멘트 #3840108372).
-            if let verifyCopiedFile {
+            if let verifyCopiedFile = traversal.verifyCopiedFile {
                 do {
-                    try verifyCopiedFile(label, destination)
+                    try verifyCopiedFile(label, displayURL)
                 } catch {
-                    try? FileManager.default.removeItem(at: destination)
+                    try? FileManager.default.removeItem(at: displayURL)
                     throw error
                 }
             }
@@ -58,11 +96,9 @@ enum StablePlacementCopier {
                 label: label,
                 mode: status.st_mode & 0o777,
                 sourceDirectoryDescriptor: node.fd,
-                destination: destination,
-                openVerifiedNode: openVerifiedNode,
-                closeVerifiedNode: closeVerifiedNode,
-                childLabels: childLabels,
-                verifyCopiedFile: verifyCopiedFile,
+                parentDescriptor: parentDescriptor,
+                displayURL: displayURL,
+                traversal: traversal,
             )
         default:
             throw CocoaError(.fileReadUnsupportedScheme)
@@ -72,11 +108,14 @@ enum StablePlacementCopier {
     private static func copyFile(
         _ sourceDescriptor: Int32,
         status: stat,
-        destination: URL,
+        parentDescriptor: Int32,
+        displayURL: URL,
     ) throws {
         let mode = status.st_mode & 0o777
-        let destinationDescriptor = Darwin.open(
-            destination.path,
+        // 고정된 부모 fd 상대 생성. 경로 재해석으로 치환된 대상에 쓰지 않는다(#3849087644).
+        let destinationDescriptor = Darwin.openat(
+            parentDescriptor,
+            displayURL.lastPathComponent,
             O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC,
             mode,
         )
@@ -109,8 +148,8 @@ enum StablePlacementCopier {
             try Task.checkCancellation()
         } catch {
             // 취소를 포함한 모든 실패에서 부분 destination을 제거한 뒤 전파한다
-            // (코멘트 #3840914579).
-            try? FileManager.default.removeItem(at: destination)
+            // (코멘트 #3840914579). 경로 기반 best-effort 정리다.
+            try? FileManager.default.removeItem(at: displayURL)
             throw error
         }
     }
@@ -198,65 +237,49 @@ enum StablePlacementCopier {
         label: String,
         mode: mode_t,
         sourceDirectoryDescriptor: Int32,
-        destination: URL,
-        openVerifiedNode: (String) throws -> (fd: Int32, isDirectory: Bool),
-        closeVerifiedNode: (Int32) -> Void,
-        childLabels: (String) -> [String],
-        verifyCopiedFile: ((String, URL) throws -> Void)? = nil,
+        parentDescriptor: Int32,
+        displayURL: URL,
+        traversal: Traversal,
     ) throws {
         // 읽기 전용 모드(예: 0555) 디렉터리도 자식 쓰기를 위해 생성 시에만 소유자
         // 쓰기·실행 권한을 더하고, 전체 복사 뒤 하단 chmod가 원본 모드로 되돌린다
         // (코멘트 #3840396992).
         // 빈 디렉터리도 포함해 생성 전에 취소를 확인한다(#3841132154).
         try Task.checkCancellation()
-        guard Darwin.mkdir(destination.path, mode | 0o700) == 0 else { throw posixError() }
-        // mkdir 직후 목적지를 O_DIRECTORY|O_NOFOLLOW로 고정하고 신원(dev+ino)을 포착한다.
-        // 부모 쓰기 권한자가 디렉터리를 rename하고 같은 이름의 symlink를 설치해도 자식
-        // 생성·메타데이터가 그 symlink를 따라가지 않는다(#3845390804).
-        let destinationDescriptor = Darwin.open(
-            destination.path,
+        // 고정 부모 fd 상대 생성 직후 NOFOLLOW로 다시 열어 자식 생성·메타데이터의
+        // 기준 fd로 삼는다. 부모 쓰기 권한자의 rename·symlink 치환과 무관하게 우리가
+        // 만든 디렉터리 안에서만 자식이 생성된다(#3849087644, #3845390804).
+        let name = displayURL.lastPathComponent
+        guard Darwin.mkdirat(parentDescriptor, name, mode | 0o700) == 0 else { throw posixError() }
+        let destinationDescriptor = Darwin.openat(
+            parentDescriptor,
+            name,
             O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC,
         )
         guard destinationDescriptor >= 0 else {
-            try? FileManager.default.removeItem(at: destination)
+            try? FileManager.default.removeItem(at: displayURL)
             throw posixError()
         }
         defer { Darwin.close(destinationDescriptor) }
-        var pinnedStatus = stat()
-        guard Darwin.fstat(destinationDescriptor, &pinnedStatus) == 0 else { throw posixError() }
-        func ensureDestinationUnswapped() throws {
-            var current = stat()
-            guard Darwin.lstat(destination.path, &current) == 0,
-                  current.st_dev == pinnedStatus.st_dev,
-                  current.st_ino == pinnedStatus.st_ino
-            else {
-                throw POSIXError(.EBUSY)
-            }
-        }
         do {
             // 자식 쓰기와 구분하기 위해 source dir 시각을 진입 시 포착한다.
             var sourceDirStatus = stat()
             guard Darwin.fstat(sourceDirectoryDescriptor, &sourceDirStatus) == 0 else {
                 throw posixError()
             }
-            for childLabel in childLabels(label).sorted() {
+            for childLabel in traversal.childLabels(label).sorted() {
                 // 대형 트리에서 노드 사이에 취소를 확인해 즉시 중단한다(#3840396987).
                 try Task.checkCancellation()
-                // 각 자식 쓰기 전에 경로 뒤가 여전히 고정된 디렉터리인지 확인한다.
-                try ensureDestinationUnswapped()
                 try copyNode(
                     label: childLabel,
-                    destination: destination.appendingPathComponent(
+                    parentDescriptor: destinationDescriptor,
+                    displayURL: displayURL.appendingPathComponent(
                         (childLabel as NSString).lastPathComponent,
                     ),
-                    openVerifiedNode: openVerifiedNode,
-                    closeVerifiedNode: closeVerifiedNode,
-                    childLabels: childLabels,
-                    verifyCopiedFile: verifyCopiedFile,
+                    traversal: traversal,
                 )
             }
             // 메타데이터는 경로 대신 고정 fd에 적용한다(#3845390804).
-            try ensureDestinationUnswapped()
             guard Darwin.fchmod(destinationDescriptor, mode) == 0 else { throw posixError() }
 
             // placement가 새 파일을 생성하므로 원본 스냅숏의 mtime/atime을 복원해야
@@ -271,7 +294,7 @@ enum StablePlacementCopier {
             try Task.checkCancellation()
         } catch {
             // 오류 경로 정리만 수행하므로 DI client 대신 FileManager.default를 쓴다.
-            try? FileManager.default.removeItem(at: destination)
+            try? FileManager.default.removeItem(at: displayURL)
             throw error
         }
     }

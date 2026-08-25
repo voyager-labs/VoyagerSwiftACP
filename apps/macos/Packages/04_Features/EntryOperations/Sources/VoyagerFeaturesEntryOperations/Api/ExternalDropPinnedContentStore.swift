@@ -318,7 +318,12 @@ final class PinnedContentStore {
         appendFramedLength(Int64(headerStatus.st_size), into: &hasher)
         let names = sortedXattrNames(ofDescriptor: descriptor) ?? []
         appendFramedLength(Int64(names.count), into: &hasher)
-        guard hashDataFork(ofDescriptor: descriptor, into: &hasher, shouldAbort: shouldAbort) else { return nil }
+        guard hashDataFork(
+            ofDescriptor: descriptor,
+            expectedBytes: Int(headerStatus.st_size),
+            into: &hasher,
+            shouldAbort: shouldAbort,
+        ) else { return nil }
         if let shouldAbort, shouldAbort() { return nil }
         let buffer = UnsafeMutableRawPointer.allocate(
             byteCount: xattrStreamChunkBytes,
@@ -385,6 +390,7 @@ final class PinnedContentStore {
     /// data fork 스트림을 해시에 포함한다. 오프셋은 0으로 되감는다.
     private static func hashDataFork(
         ofDescriptor descriptor: Int32,
+        expectedBytes: Int,
         into hasher: inout SHA256,
         shouldAbort: (() -> Bool)? = nil,
     ) -> Bool {
@@ -395,16 +401,21 @@ final class PinnedContentStore {
             alignment: MemoryLayout<UInt8>.alignment,
         )
         defer { buffer.deallocate() }
-        while true {
+        // 프레이밍한 선언 길이만큼만 읽는다. 조기 EOF나 초과 바이트는 data fork와
+        // xattr 프레임의 경계가 선언과 어긋난 것이므로 실패 폐쇄한다(#3849011298).
+        var remaining = expectedBytes
+        while remaining > 0 {
             if let shouldAbort, shouldAbort() { return false }
-            let readCount = Darwin.read(descriptor, buffer, bufferSize)
+            let readCount = Darwin.read(descriptor, buffer, min(bufferSize, remaining))
             if readCount < 0 {
                 if errno == EINTR { continue }
                 return false
             }
-            if readCount == 0 { break }
+            if readCount == 0 { return false }
             hasher.update(bufferPointer: UnsafeRawBufferPointer(start: buffer, count: readCount))
+            remaining -= readCount
         }
+        if Darwin.read(descriptor, buffer, 1) != 0 { return false }
         return true
     }
 
