@@ -14,6 +14,7 @@ enum EntryOperationsExecutionSupport {
 
     private actor EntryActionTargetAccumulator {
         private var storage: [EntryActionRecord.Target] = []
+        private var failures = 0
 
         func append(_ target: EntryActionRecord.Target) {
             storage.append(target)
@@ -21,6 +22,14 @@ enum EntryOperationsExecutionSupport {
 
         var targets: [EntryActionRecord.Target] {
             storage
+        }
+
+        func recordFailure() {
+            failures += 1
+        }
+
+        var failedCount: Int {
+            failures
         }
     }
 
@@ -99,6 +108,7 @@ enum EntryOperationsExecutionSupport {
                             }
                             await send(.lifecycle(.operationFinished(path, kind, .success(()))))
                         } catch {
+                            await accumulator.recordFailure()
                             await send(.lifecycle(.operationFinished(
                                 path,
                                 kind,
@@ -110,8 +120,13 @@ enum EntryOperationsExecutionSupport {
             }
 
             let targets = await accumulator.targets
+            let failedCount = await accumulator.failedCount
             guard !targets.isEmpty, operationKind.isUndoable else { return }
-            let record = EntryActionRecord(operationKind: operationKind, targets: targets)
+            let record = EntryActionRecord(
+                operationKind: operationKind,
+                targets: targets,
+                failedCount: failedCount,
+            )
             await send(.lifecycle(.entryActionCompleted(record)))
         }
     }

@@ -291,6 +291,7 @@ struct EntryClipboardOperationsReducer {
         )
         return .run { send in
             var targets: [EntryActionRecord.Target] = []
+            var failedCount = 0
             for (sourceURL, destinationURL) in destinations {
                 await send(.lifecycle(.operationStarted(sourceURL.path, operationKind)))
                 if let target = await executor.execute(
@@ -301,9 +302,16 @@ struct EntryClipboardOperationsReducer {
                     send: send,
                 ) {
                     targets.append(target)
+                } else {
+                    failedCount += 1
                 }
             }
-            await executor.finishBatch(targets, operationKind: operationKind, send: send)
+            await executor.finishBatch(
+                targets,
+                failedCount: failedCount,
+                operationKind: operationKind,
+                send: send,
+            )
         }
     }
 }
@@ -354,12 +362,17 @@ private enum EntryClipboardOperationsSupport {
 
         func finishBatch(
             _ targets: [EntryActionRecord.Target],
+            failedCount: Int,
             operationKind: OperationKind,
             send: Send<EntryOperationsAction>,
         ) async {
             guard !targets.isEmpty else { return }
             if operationKind.isUndoable {
-                let record = EntryActionRecord(operationKind: operationKind, targets: targets)
+                let record = EntryActionRecord(
+                    operationKind: operationKind,
+                    targets: targets,
+                    failedCount: failedCount,
+                )
                 await send(.lifecycle(.entryActionCompleted(record)))
             }
             guard let mutationImpactDestinationPath else { return }

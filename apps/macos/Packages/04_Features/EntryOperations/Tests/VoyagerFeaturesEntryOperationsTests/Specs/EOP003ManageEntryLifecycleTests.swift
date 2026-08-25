@@ -2259,6 +2259,30 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
 }
 
 extension EOP003ManageEntryLifecycleTests {
+    // MARK: - EOP-003-product_batch_metrics
+
+    /// EOP-003-product_batch_metrics: batch records preserve failed target count.
+    /// successful targets alone must not imply an all-success batch terminal.
+    /// - 검증 내용: attempted/succeeded/failed aggregate source values
+    /// - 사전 조건: two successful targets and one failed target
+    /// - 기대 결과: aggregate remains 3 attempted, 2 succeeded, 1 failed
+    func testEntryActionRecordPreservesPartialFailureAggregate() {
+        let record = EntryActionRecord(
+            operationKind: .pasteFileCopy,
+            targets: [
+                .init(beforePath: "/a", afterPath: "/b"),
+                .init(beforePath: "/c", afterPath: "/d"),
+            ],
+            failedCount: 1,
+        )
+
+        XCTAssertEqual(record.attemptedCount, 3)
+        XCTAssertEqual(record.targets.count, 2)
+        XCTAssertEqual(record.failedCount, 1)
+    }
+}
+
+extension EOP003ManageEntryLifecycleTests {
     // MARK: - EOP-003-load_entry_items
 
     /// EOP-003-load_entry_items: 단계적 root stream 완료는 Trash metadata projection을 새로 읽는다.

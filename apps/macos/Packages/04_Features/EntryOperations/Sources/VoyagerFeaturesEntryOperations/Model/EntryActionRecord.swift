@@ -5,6 +5,11 @@ public struct EntryActionRecord: Equatable, Identifiable, Sendable {
     public let operationKind: OperationKind
     public let timestamp: Date
     public let targets: [Target]
+    public let failedCount: Int
+
+    public var attemptedCount: Int {
+        targets.count + failedCount
+    }
 
     public struct Target: Equatable, Sendable {
         public let beforePath: String?
@@ -28,6 +33,7 @@ public struct EntryActionRecord: Equatable, Identifiable, Sendable {
     nonisolated public init(
         operationKind: OperationKind,
         targets: [Target],
+        failedCount: Int = 0,
         id: UUID = UUID(),
         timestamp: Date = Date(),
     ) {
@@ -35,5 +41,6 @@ public struct EntryActionRecord: Equatable, Identifiable, Sendable {
         self.operationKind = operationKind
         self.timestamp = timestamp
         self.targets = targets
+        self.failedCount = max(0, failedCount)
     }
 }
