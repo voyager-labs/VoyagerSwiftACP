@@ -128,6 +128,7 @@ final class ControlFileManagerWindowFlowTests: XCTestCase {
         await store.send(.event(.windowClosed(firstID))) {
             $0.closingWindowIDs.insert(firstID)
             $0.invalidatingWindowIDs.insert(firstID)
+            $0.windows[id: firstID]?.window.isFocused = false
             $0.refreshContentTabMoveTargets()
         }
         await store.receive(\.windowInvalidationFinished) {
@@ -166,6 +167,8 @@ final class ControlFileManagerWindowFlowTests: XCTestCase {
         await store.send(.window(.closeAllWindows)) {
             $0.closingWindowIDs = [firstID, secondID]
             $0.focusedWindowID = nil
+            $0.windows[id: firstID]?.window.isFocused = false
+            $0.windows[id: secondID]?.window.isFocused = false
             $0.refreshContentTabMoveTargets()
         }
 
