@@ -2357,6 +2357,7 @@ struct ATI006CoordinateExternalAgentSessionsTests {
             queuedInput: .unsupported,
             terminalResult: .supported,
         )
+        let streamGate = RuntimeTestGate()
         let adapter = DeterministicRuntimeAdapter(
             id: "sdk",
             transport: .sdkAsyncStream,
@@ -2369,11 +2370,13 @@ struct ATI006CoordinateExternalAgentSessionsTests {
                 kind: .completed,
             )]],
             launchDelay: .milliseconds(100),
+            eventStreamGate: streamGate,
         )
         let plane = RuntimeControlPlane(store: InMemoryRuntimeStateStore())
         try await plane.register(adapter)
         let task = Task { try await runPolicyReady(plane, makeLaunch(host: host, run: run, adapterID: "sdk")) }
-        await adapter.waitForLaunchCount(1)
+        // 라이브 consuming 소유자 기준: receipt 저장까지 대기해 running projection으로 수렴시킨다.
+        try await waitForProjection(.running, host: host, on: plane)
 
         await #expect(throws: RuntimeHostError.capabilityUnknown(.cancellation)) {
             try await plane.requestCancellation(
@@ -2381,7 +2384,8 @@ struct ATI006CoordinateExternalAgentSessionsTests {
                 operationID: RuntimeOperationID("cancel-1"),
             )
         }
-        #expect(await plane.projection(for: host) == .launching)
+        #expect(await plane.projection(for: host) == .running)
+        await streamGate.open()
         _ = try await task.value
         #expect(await adapter.counts().cancellation == 0)
     }
