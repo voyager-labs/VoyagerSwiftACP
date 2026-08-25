@@ -98,7 +98,7 @@ public struct FileManagerContentFeature {
 
         // Feature → Widget projection (replaces catch-all sync)
         Reduce { state, action in
-            let shouldProject = FileManagerContentFeature.shouldProjectContent(action)
+            let shouldProject = FileManagerContentFeature.shouldProjectContent(action, state: state)
             guard shouldProject else { return .none }
 
             let isClearingCollection = FileManagerContentFeature.isClearingCollectionMode(action)
@@ -334,7 +334,16 @@ public struct FileManagerContentFeature {
 
     // MARK: - Projection Bridge
 
-    static func shouldProjectContent(_ action: Action) -> Bool {
+    static func shouldProjectContent(_ action: Action, state: State) -> Bool {
+        // 보존 디렉터리 reload buffering 중에는 core stream 진행 상황을 projection에 노출하지 않는다.
+        if state.entryViewLayout.entryOperations.loadingContext.isBufferingPreservedDirectoryReload,
+           case let .entryViewLayout(.entryOperations(.loading(.streamEvent(streamEvent)))) = action
+        {
+            switch streamEvent.event {
+            case .coreBatch, .coreFinished, .metadataPatches:
+                return false
+            }
+        }
         switch action {
         case .entryViewLayout(.entryOperations(.loading(.loadItems))),
              .entryViewLayout(.entryOperations(.loading(.loadRecentItems))),
@@ -371,9 +380,9 @@ public struct FileManagerContentFeature {
              .externalFileSystemChanged,
              .internal(.clearCollectionMode),
              .internal(.exitCollectionMode):
-            true
+            return true
         default:
-            false
+            return false
         }
     }
 
@@ -384,7 +393,13 @@ public struct FileManagerContentFeature {
         case let .entryViewLayout(.entryOperations(.loading(.streamEvent(streamEvent)))):
             guard case .coreFinished = streamEvent.event,
                   state.entryViewLayout.entryOperations.loadingContext.acceptedCoreFinishedGeneration == streamEvent
-                  .generation
+                  .generation,
+                  !state.entryViewLayout.entryOperations.loadingContext.isBufferingPreservedDirectoryReload
+            else { return false }
+            state.entryViewLayout.entryOperations.loadingContext.acceptedCoreFinishedGeneration = nil
+            return true
+        case let .entryViewLayout(.entryOperations(.loading(.streamFinished(generation)))):
+            guard state.entryViewLayout.entryOperations.loadingContext.acceptedCoreFinishedGeneration == generation
             else { return false }
             state.entryViewLayout.entryOperations.loadingContext.acceptedCoreFinishedGeneration = nil
             return true

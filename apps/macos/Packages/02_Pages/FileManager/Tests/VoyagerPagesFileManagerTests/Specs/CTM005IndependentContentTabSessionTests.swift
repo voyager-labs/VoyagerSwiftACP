@@ -8,7 +8,7 @@ import VoyagerEntitiesEntry
 import VoyagerFeaturesAiChat
 import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
-import VoyagerFeaturesEntryOperations
+@testable import VoyagerFeaturesEntryOperations
 @testable import VoyagerPagesFileManager
 import VoyagerShared
 import XCTest
@@ -183,6 +183,12 @@ private struct InactiveDirectoryRestoreFixture {
         state.tabContentStates[directoryID]?.entryViewLayout.mode = .grid
         state.tabContentStates[directoryID]?.entryViewLayout.entries = [stale]
         state.tabContentStates[directoryID]?.entryViewLayout.entryOperations.items = [stale]
+        // 저장 시점의 완료된 directory session을 재현한다: buffering 허용 판단은 loadingContext의
+        // 동일 경로 committed snapshot 여부로 결정된다.
+        state.tabContentStates[directoryID]?.entryViewLayout.entryOperations.loadingContext.sourceKind = .directory
+        state.tabContentStates[directoryID]?.entryViewLayout.entryOperations.loadingContext.directoryPath = path
+        state.tabContentStates[directoryID]?.entryViewLayout.entryOperations.loadingContext.coreFinished = true
+        state.tabContentStates[directoryID]?.entryViewLayout.entryOperations.loadingContext.streamTerminal = true
         let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
             $0.entryLoadingClient.loadItems = { url, _ in
@@ -242,6 +248,12 @@ private struct SupersededDirectoryLoadFixture {
         state.tabContentStates[secondID]?.entryViewLayout.mode = .grid
         state.tabContentStates[secondID]?.entryViewLayout.entries = [preserved]
         state.tabContentStates[secondID]?.entryViewLayout.entryOperations.items = [preserved]
+        // 저장 시점의 완료된 directory session을 재현한다: buffering 허용 판단은 loadingContext의
+        // 동일 경로 committed snapshot 여부로 결정된다.
+        state.tabContentStates[secondID]?.entryViewLayout.entryOperations.loadingContext.sourceKind = .directory
+        state.tabContentStates[secondID]?.entryViewLayout.entryOperations.loadingContext.directoryPath = secondPath
+        state.tabContentStates[secondID]?.entryViewLayout.entryOperations.loadingContext.coreFinished = true
+        state.tabContentStates[secondID]?.entryViewLayout.entryOperations.loadingContext.streamTerminal = true
         let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
             $0.entryLoadingClient.loadItems = { url, _ in
@@ -629,9 +641,9 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
 
     /// CTM-005-independent_content_tab_session (VOY-578): 진행 중 Directory snapshot은 재진입마다 reload함
     /// 경로 전환 load가 취소된 snapshot과 성공한 빈 snapshot 모두 다음 복원에서 다시 검증되는지 확인한다.
-    /// - 검증 내용: B load 보류·이탈·재진입 성공·재이탈·재진입의 세 번 load
+    /// - 검증 내용: 다른 경로 진입 시 기존 entries 즉시 제거, B load 보류·이탈·재진입의 세 번 load
     /// - 사전 조건: A entries가 보이는 상태에서 B 첫 load가 checked continuation에서 대기함
-    /// - 기대 결과: 취소 응답은 저장 snapshot을 덮지 않고 B 복원마다 loadItems가 실행됨
+    /// - 기대 결과: A entries는 B 경로에 노출되지 않고 취소 응답은 저장 snapshot을 덮지 않으며 B 복원마다 loadItems가 실행됨
     func testInFlightDirectorySnapshotReloadsOnEveryRoundTrip() async throws {
         let homeID = ContentTabID()
         let directoryID = ContentTabID()
@@ -658,17 +670,15 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         await gate.waitUntilWaiting()
         XCTAssertEqual(store.state.contentTabs.tabs[id: directoryID]?.anchor, .directory(path: secondPath))
         XCTAssertEqual(store.state.content.entryViewLayout.entries.map(\.fullPath), [firstEntry.fullPath])
+        XCTAssertTrue(store.state.content.entryViewLayout.entryOperations.items.isEmpty)
 
         await store.send(.contentTabs(.setCurrent(homeID)))
         let savedInFlightSnapshot = try XCTUnwrap(store.state.tabContentStates[directoryID])
         XCTAssertEqual(savedInFlightSnapshot.navigation.currentPath, secondPath)
-        XCTAssertEqual(savedInFlightSnapshot.entryViewLayout.entries.map(\.fullPath), [firstEntry.fullPath])
+        XCTAssertTrue(savedInFlightSnapshot.entryViewLayout.entries.isEmpty)
         await gate.resume(with: .entries([lateEntry]))
         await store.skipReceivedActions()
-        XCTAssertEqual(
-            store.state.tabContentStates[directoryID]?.entryViewLayout.entries.map(\.fullPath),
-            [firstEntry.fullPath],
-        )
+        XCTAssertTrue(store.state.tabContentStates[directoryID]?.entryViewLayout.entries.isEmpty == true)
 
         await store.send(.contentTabs(.setCurrent(directoryID)))
         await store.receiveTabContent(\.internal.applyNavigationState, .folder(secondPath))
@@ -1819,6 +1829,10 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         fallbackContent.entryViewLayout.mode = .grid
         fallbackContent.entryViewLayout.entries = [preservedEntry]
         fallbackContent.entryViewLayout.entryOperations.items = [preservedEntry]
+        fallbackContent.entryViewLayout.entryOperations.loadingContext.sourceKind = .directory
+        fallbackContent.entryViewLayout.entryOperations.loadingContext.directoryPath = fallbackPath
+        fallbackContent.entryViewLayout.entryOperations.loadingContext.coreFinished = true
+        fallbackContent.entryViewLayout.entryOperations.loadingContext.streamTerminal = true
         var activeContent = FileManagerContentFeature.State()
         activeContent.navigation.seedInitialFolderPath(activePath)
         var state = FileManagerFeature.State()
