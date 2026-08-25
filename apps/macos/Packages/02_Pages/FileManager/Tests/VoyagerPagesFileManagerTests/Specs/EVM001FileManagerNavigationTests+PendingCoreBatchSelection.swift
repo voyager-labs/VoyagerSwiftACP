@@ -51,6 +51,33 @@ extension EVM001FileManagerNavigationTests {
         await store.finish()
     }
 
+    /// EVM-001-route_entry_selection_commands: 라우트 변경 직후 도착하는 이전 세대 터미널은 새 pending selection을 소비하지 않는다.
+    /// 목적지 loadItems가 아직 세대를 증가시키기 전에 이전 로딩의 streamFinished가 도착해도 네비게이션 요청 선택을 유지하는지 검증한다.
+    /// - 검증 내용: 라우트 /a와 destination /a가 일치하는 pending pair가 미바인딩 상태일 때 streamFinished(7)를 무시하고
+    /// pendingSelectEntryID/pendingSelectEntryDestinationPath와 빈 selection을 유지한다.
+    /// - 사전 조건: route=/a, pending entry=/a/b, destination=/a, loadingContext.generation=7이며 목적지 loadItems는 아직 통과하지 않았다.
+    /// - 기대 결과: pending ID/destination이 유지되고 selection은 빈 채로 남는다.
+    func testStaleTerminalBeforeDestinationLoadDoesNotConsumePendingSelection() async {
+        var state = FileManagerContentState()
+        state.navigation.navigationState = .folder("/a")
+        state.setPendingEntrySelection(entryID: "/a/b", destinationPath: "/a")
+        state.entryViewLayout.entryOperations.loadingContext.generation = 7
+
+        let store = TestStore(initialState: state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        // store.exhaustivity = .off: EntryViewLayout progressive loading의 부수 상태는 stale terminal의 선택 불변성 범위가 아님
+        store.exhaustivity = .off
+
+        await store.send(.entryViewLayout(.entryOperations(.loading(.streamFinished(generation: 7)))))
+        XCTAssertEqual(store.state.pendingSelectEntryID, "/a/b")
+        XCTAssertEqual(store.state.pendingSelectEntryDestinationPath, "/a")
+        XCTAssertTrue(store.state.entryViewLayout.selectedIds.isEmpty)
+        await store.finish()
+    }
+
     /// EVM-001-route_entry_selection_commands: current coreBatch는 pending selection을 적용한다.
     /// 현재 로딩 세대의 기대한 배치가 대상 entry를 전달하면 네비게이션 요청 선택을 복원하는지 검증한다.
     /// - 검증 내용: generation과 batchIndex가 loadingContext와 일치하는 coreBatch가 pendingSelectEntryID를 소비하고 selectionChanged를

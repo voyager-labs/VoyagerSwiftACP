@@ -18,6 +18,8 @@ public struct FileManagerContentState: Equatable {
     /// 외부에서 오픈 요청된 파일의 선택 focus ID (itemsLoaded 후 소비됨)
     public var pendingSelectEntryID: String?
     public var pendingSelectEntryDestinationPath: String?
+    /// 네비게이션 기원 pending selection이 바인딩된 목적지 로딩 세대. nil이면 미바인딩(외부 기원 또는 로드 전) 상태다.
+    var pendingSelectEntryLoadGeneration: Int?
 
     var homeFavoriteItems: [FileManagerHomeFavoriteItem] = []
     var homeLocationItems: [FileManagerFixedLocationItem] = []
@@ -33,9 +35,10 @@ public struct FileManagerContentState: Equatable {
         entryViewLayout.isCollectionMode
     }
 
-    mutating func setPendingEntrySelection(entryID: String?, destinationPath: String?) {
+    mutating func setPendingEntrySelection(entryID: String?, destinationPath: String?, generation: Int? = nil) {
         pendingSelectEntryID = entryID
         pendingSelectEntryDestinationPath = destinationPath
+        pendingSelectEntryLoadGeneration = generation
     }
 
     var isOrdinaryDirectoryLoading: Bool {

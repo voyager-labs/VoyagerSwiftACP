@@ -48,10 +48,11 @@ final class FMW003PendingSelectionTests: XCTestCase {
     private func makeNavigationSelectionState(
         entryID: String = "/test/target.txt",
         destinationPath: String = "/test",
+        loadGeneration: Int? = nil,
     ) -> FileManagerContentState {
         var state = FileManagerContentState()
         state.navigation.navigationState = .folder(destinationPath)
-        state.setPendingEntrySelection(entryID: entryID, destinationPath: destinationPath)
+        state.setPendingEntrySelection(entryID: entryID, destinationPath: destinationPath, generation: loadGeneration)
         return state
     }
 
@@ -373,10 +374,11 @@ final class FMW003PendingSelectionTests: XCTestCase {
     /// FMW-003-handle_external_file_open_requests: a navigation-origin streamFinished miss clears the pair.
     /// The terminal stream result proves that no later retry can arrive for this load.
     /// - Verification: a current streamFinished miss clears both pending-selection fields.
-    /// - Preconditions: the guarded destination route is current and the partial rows do not contain the target.
+    /// - Preconditions: the guarded destination route is current, the pending pair is bound to the
+    ///   current loading generation 4, and the partial rows do not contain the target.
     /// - Expected result: both pending-selection fields are nil and no selection delegate is emitted.
     func test_contentFeature_navigationStreamFinishedMissClearsPendingPair() async {
-        var state = makeNavigationSelectionState()
+        var state = makeNavigationSelectionState(loadGeneration: 4)
         state.entryViewLayout.entryOperations.loadingContext.generation = 4
         state.entryViewLayout.entryOperations.loadingContext.coreFinished = true
 
@@ -393,11 +395,12 @@ final class FMW003PendingSelectionTests: XCTestCase {
     /// FMW-003-handle_external_file_open_requests: streamFailed matches preserved partial rows before cleanup.
     /// A failed stream can still expose a valid target from its accepted core batches.
     /// - Verification: the partial-row matcher consumes the pair and applies selection before failure cleanup.
-    /// - Preconditions: current generation has a preserved partial row containing the target.
+    /// - Preconditions: current generation 4 has a preserved partial row containing the target and
+    ///   the pending pair is bound to that generation.
     /// - Expected result: target selection is applied, both pending fields clear, and selectionChanged is emitted.
     func test_contentFeature_navigationStreamFailedPartialMatchConsumesPendingPair() async {
         let targetID = "/test/target.txt"
-        var state = makeNavigationSelectionState(entryID: targetID)
+        var state = makeNavigationSelectionState(entryID: targetID, loadGeneration: 4)
         state.entryViewLayout.entryOperations.loadingContext.generation = 4
         state.entryViewLayout.entryOperations.loadingContext.items = [Self.makeEntry(fullPath: targetID)]
         state.entryViewLayout.entryOperations.loadingContext.expectedCoreBatchIndex = 1
@@ -421,10 +424,11 @@ final class FMW003PendingSelectionTests: XCTestCase {
 
     /// FMW-003-handle_external_file_open_requests: streamFailed without a match clears navigation provenance.
     /// - Verification: a current-generation failure with no matching partial row clears both fields.
-    /// - Preconditions: current generation has partial rows that omit the target.
+    /// - Preconditions: current generation 4 has partial rows that omit the target and the pending
+    ///   pair is bound to that generation.
     /// - Expected result: both pending-selection fields are nil and selection remains unchanged.
     func test_contentFeature_navigationStreamFailedPartialMissClearsPendingPair() async {
-        var state = makeNavigationSelectionState()
+        var state = makeNavigationSelectionState(loadGeneration: 4)
         state.entryViewLayout.entryOperations.loadingContext.generation = 4
         state.entryViewLayout.entryOperations.loadingContext.items = [Self.makeEntry(fullPath: "/test/other.txt")]
         state.entryViewLayout.entryOperations.loadingContext.expectedCoreBatchIndex = 1
@@ -440,11 +444,14 @@ final class FMW003PendingSelectionTests: XCTestCase {
     }
 
     /// FMW-003-handle_external_file_open_requests: itemsLoadFailed ends navigation-origin selection.
-    /// - Verification: the unversioned load failure clears both pending-selection fields.
-    /// - Preconditions: the guarded destination route is current.
+    /// - Verification: the unversioned load failure clears both pending-selection fields when the
+    ///   pending pair is bound to the current loading generation.
+    /// - Preconditions: the guarded destination route is current and the pair is bound to generation 4.
     /// - Expected result: both pending-selection fields are nil.
     func test_contentFeature_navigationItemsLoadFailedClearsPendingPair() async {
-        let store = makeFileManagerContentFeatureStore(initialState: makeNavigationSelectionState())
+        var state = makeNavigationSelectionState(loadGeneration: 4)
+        state.entryViewLayout.entryOperations.loadingContext.generation = 4
+        let store = makeFileManagerContentFeatureStore(initialState: state)
         store.exhaustivity = .off
 
         await store.send(.entryViewLayout(.entryOperations(.loading(.itemsLoadFailed)))) {
