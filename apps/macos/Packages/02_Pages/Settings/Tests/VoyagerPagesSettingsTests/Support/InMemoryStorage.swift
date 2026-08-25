@@ -5,6 +5,7 @@ final class InMemoryStorage: @unchecked Sendable {
     private var bools: [String: Bool] = [:]
     private var strings: [String: String] = [:]
     private var objects: [String: Any] = [:]
+    private(set) var stringWriteCount = 0
 
     func setBool(_ value: Bool, forKey key: String) {
         lock.lock()
@@ -22,6 +23,7 @@ final class InMemoryStorage: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         strings[key] = value
+        stringWriteCount += 1
     }
 
     func getString(_ key: String) -> String? {
