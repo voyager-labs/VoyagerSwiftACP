@@ -17,6 +17,7 @@ final class RCL003CollectionSearchExecutionTests: XCTestCase {
     /// - 기대 결과: SearchClient가 filter request를 받고 성공 response가 reducer 상태에 반영됨
     func testExecuteFilteredCollectionRetrieval_withPreparedFilters_callsSearchClientAndStoresResponse() async throws {
         let recorder = ApplyFiltersRecorder()
+        let metricRecorder = ComposerMetricRecorder()
         var initialState = ComposerState()
         initialState.scopes = ["/VoyagerFixtures/Documents"]
         let conditionID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000020"))
@@ -29,6 +30,7 @@ final class RCL003CollectionSearchExecutionTests: XCTestCase {
             ComposerFeature()
         } withDependencies: {
             $0.registryClient = makeRegistryClient()
+            $0.composerMetricClient = ComposerMetricClient(recordProductMetric: metricRecorder.record)
             $0.searchClient.applyFilters = { request in
                 recorder.record(request)
                 return SearchResponsePayload(
@@ -51,6 +53,40 @@ final class RCL003CollectionSearchExecutionTests: XCTestCase {
         XCTAssertEqual(store.state.lastFiltersResponse?.itemCount, 2)
         XCTAssertFalse(store.state.isLoadingFilters)
         XCTAssertFalse(store.state.isFilteringInFlight)
+        XCTAssertEqual(metricRecorder.names, [ComposerCollectionFilterMetrics.applyResult])
+        XCTAssertEqual(metricRecorder.callsSnapshot.first?.tags?["result_status"], "success")
+    }
+
+    /// RCL-003-execute_filtered_collection_retrieval: 빈 query terminal은 query event 하나를 기록함
+    /// accepted query가 빈 결과로 종료될 때 submit/duration 분리 없이 terminal event 하나만 기록하는지 검증한다.
+    /// - 검증 내용: empty status, bounded duration, operation identity, 원문 property 부재
+    /// - 사전 조건: 활성 search request와 빈 결과 response
+    /// - 기대 결과: query result event 하나가 terminal payload로 기록됨
+    func testExecuteFilteredCollectionRetrieval_emptyQueryResult_recordsOneTerminalEvent() throws {
+        let recorder = ComposerMetricRecorder()
+        let requestID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000022"))
+        var state = ComposerState()
+        state.activeSearchRequestID = requestID
+        state.searchStartedAt = Date(timeIntervalSinceNow: -0.1)
+
+        withDependencies {
+            $0.registryClient = makeRegistryClient()
+            $0.composerMetricClient = ComposerMetricClient(recordProductMetric: recorder.record)
+        } operation: {
+            _ = ComposerFeature().reduce(
+                into: &state,
+                action: .searchResponse(requestID, .success(SearchResponsePayload(itemCount: 0))),
+            )
+        }
+
+        XCTAssertEqual(recorder.names, [ComposerCollectionFilterMetrics.queryResult])
+        let call = try XCTUnwrap(recorder.callsSnapshot.first)
+        XCTAssertEqual(call.tags?["result_status"], "empty")
+        XCTAssertEqual(call.tags?["source_surface"], "composer")
+        XCTAssertEqual(call.tags?["operation_id"], requestID.uuidString.lowercased())
+        XCTAssertNotNil(Int(call.tags?["duration_ms"] ?? ""))
+        XCTAssertNil(call.tags?["query"])
+        XCTAssertNil(call.tags?["filters"])
     }
 
     /// RCL-003-execute_filtered_collection_retrieval: condition 없는 scope-only filter는 검색 실행을 시작하지 않음
@@ -125,29 +161,52 @@ final class RCL003CollectionSearchExecutionTests: XCTestCase {
 
     // MARK: - RCL-003-execute_filtered_collection_retrieval
 
-    /// RCL-003-execute_filtered_collection_retrieval: 검색 취소는 canonical metric만 기록함
-    /// 취소 action이 legacy alias와 canonical event를 중복 기록하지 않는지 검증한다.
-    /// - 검증 내용: canonical cancel capture 1건, legacy capture 0건, 검색 상태 초기화
+    /// RCL-003-execute_filtered_collection_retrieval: 검색 취소는 terminal query event를 기록함
+    /// 활성 query 취소가 bounded terminal payload를 한 번만 기록하는지 검증한다.
+    /// - 검증 내용: query event 1건, cancelled status, opaque operation ID와 duration
     /// - 사전 조건: 검색 요청이 진행 중인 Composer 상태와 실제 metric recorder
     /// - 기대 결과: 취소 후 canonical metric만 관찰되고 활성 요청이 해제됨
-    func testCancelSearch_recordsCanonicalMetricOnceWithoutLegacyAlias() {
+    func testCancelSearch_recordsCanonicalMetricOnceWithoutLegacyAlias() throws {
         let recorder = ComposerMetricRecorder()
         var state = ComposerState()
         state.isLoadingSearch = true
         state.activeSearchRequestID = UUID()
+        state.searchStartedAt = Date(timeIntervalSinceNow: -0.1)
 
         withDependencies {
-            $0.composerMetricClient = ComposerMetricClient { name, value, tags, level in
-                recorder.record(name: name, value: value, tags: tags, level: level)
-            }
+            $0.composerMetricClient = ComposerMetricClient(recordProductMetric: recorder.record)
         } operation: {
             _ = ComposerFeature().reduce(into: &state, action: .view(.cancelSearch))
         }
 
         XCTAssertEqual(recorder.names, [ComposerCollectionFilterMetrics.queryResult])
-        XCTAssertFalse(recorder.names.contains(ComposerCollectionFilterMetrics.legacySearchCancel))
+        let call = try XCTUnwrap(recorder.callsSnapshot.first)
+        XCTAssertEqual(call.tags?["result_status"], "cancelled")
+        XCTAssertEqual(call.tags?["source_surface"], "composer")
+        XCTAssertNotNil(UUID(uuidString: call.tags?["operation_id"] ?? ""))
+        XCTAssertNotNil(Int(call.tags?["duration_ms"] ?? ""))
+        XCTAssertNil(call.tags?["query"])
+        XCTAssertNil(call.tags?["filters"])
         XCTAssertNil(state.activeSearchRequestID)
         XCTAssertFalse(state.isLoadingSearch)
+    }
+
+    /// RCL-003-execute_filtered_collection_retrieval: 활성 query 없는 취소는 event를 기록하지 않음
+    /// stale 또는 이미 종료된 query 취소가 terminal product event를 만들지 않는지 검증한다.
+    /// - 검증 내용: active request 없는 cancel의 capture 0건
+    /// - 사전 조건: Composer에 활성 search request가 없음
+    /// - 기대 결과: 상태와 metric 모두 변경되지 않음
+    func testCancelSearch_withoutActiveRequest_recordsNoMetric() {
+        let recorder = ComposerMetricRecorder()
+        var state = ComposerState()
+
+        withDependencies {
+            $0.composerMetricClient = ComposerMetricClient(recordProductMetric: recorder.record)
+        } operation: {
+            _ = ComposerFeature().reduce(into: &state, action: .view(.cancelSearch))
+        }
+
+        XCTAssertTrue(recorder.names.isEmpty)
     }
 
     /// RCL-003-execute_filtered_collection_retrieval: value commit은 filter 실행을 한 번만 시작한다.
@@ -265,15 +324,55 @@ private final class ApplyFiltersRecorder: @unchecked Sendable {
 
 final class ComposerMetricRecorder: @unchecked Sendable {
     private let lock = NSLock()
-    private var calls: [String] = []
+    private var calls: [(name: String, tags: [String: String]?)] = []
 
-    func record(name: String, value _: Double, tags _: [String: String]?, level _: ComposerMetricLevel) {
+    func record(_ metric: ComposerProductMetric) {
+        let call: (name: String, tags: [String: String]) = switch metric {
+        case let .queryResult(operationID, result, durationMilliseconds):
+            (
+                ComposerCollectionFilterMetrics.queryResult,
+                tags(result: result, operationID: operationID, durationMilliseconds: durationMilliseconds),
+            )
+        case let .applyResult(operationID, result, durationMilliseconds):
+            (
+                ComposerCollectionFilterMetrics.applyResult,
+                tags(result: result, operationID: operationID, durationMilliseconds: durationMilliseconds),
+            )
+        }
         lock.lock()
-        calls.append(name)
+        calls.append(call)
         lock.unlock()
     }
 
+    func record(name: String, value _: Double, tags: [String: String]?, level _: ComposerMetricLevel) {
+        lock.lock()
+        calls.append((name, tags))
+        lock.unlock()
+    }
+
+    private func tags(
+        result: ComposerProductMetricResult,
+        operationID: UUID,
+        durationMilliseconds: Int?,
+    ) -> [String: String] {
+        var tags = [
+            "result_status": result.rawValue,
+            "source_surface": ComposerCollectionFilterMetrics.sourceSurface,
+            "operation_id": operationID.uuidString.lowercased(),
+        ]
+        if let durationMilliseconds {
+            tags["duration_ms"] = String(durationMilliseconds)
+        }
+        return tags
+    }
+
     var names: [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return calls.map(\.name)
+    }
+
+    var callsSnapshot: [(name: String, tags: [String: String]?)] {
         lock.lock()
         defer { lock.unlock() }
         return calls
