@@ -49,6 +49,7 @@ public enum ProductAnalyticsPropertyValue: Codable, Equatable, Sendable {
 public struct ProductAnalyticsEvent: Codable, Equatable, Sendable {
     public let eventName: ProductAnalyticsEventName
     public let eventVersion: ProductAnalyticsEventVersion
+    public let operationID: UUID
     public let occurredAtUTC: Date
     public let environment: String
     public let distinctID: String?
@@ -69,11 +70,13 @@ public struct ProductAnalyticsEvent: Codable, Equatable, Sendable {
         source: String,
         properties: [String: ProductAnalyticsPropertyValue],
         eventVersion: ProductAnalyticsEventVersion = .init(rawValue: "1"),
+        operationID: UUID = UUID(),
         sourceProject: String = "app",
         identifiers: ProductAnalyticsIdentifiers? = nil,
     ) {
         self.eventName = eventName
         self.eventVersion = eventVersion
+        self.operationID = operationID
         self.occurredAtUTC = occurredAtUTC
         self.environment = environment
         self.distinctID = distinctID
