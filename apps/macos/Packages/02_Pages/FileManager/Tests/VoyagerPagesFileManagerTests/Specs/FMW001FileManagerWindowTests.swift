@@ -2750,7 +2750,10 @@ extension FMW001FileManagerWindowTests {
         )))) {
             $0.sidebar.contentTabDragSnapshot = nil
             $0.sidebar.pendingContentTabMoveRequest = fixture.request
-            $0.pendingContentTabMove = FileManagerWindowContentTabMovePending(request: fixture.request)
+            $0.pendingContentTabMove = FileManagerWindowContentTabMovePending(
+                request: fixture.request,
+                metricSource: .dragAndDrop,
+            )
         }
         await store.receive(\.sidebar.delegate.requestContentTabMove, fixture.request) {
             $0.pendingContentTabMove?.lifecycle = .inFlight
