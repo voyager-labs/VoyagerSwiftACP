@@ -411,6 +411,77 @@ extension RuntimeRestoreResumeCoordinatorContractTests {
         await streamGate.open()
     }
 
+    /// VOY-747-restore_admission_repair: provider result admission loss yields to same-run durable terminal.
+    /// provider 결과 승인 경계에서 claim 만료 복구가 fencing으로 durable terminal을 채택한 뒤에도
+    /// persistenceConflict가 노출되지 않고 같은 run의 durable terminal이 이겨야 한다.
+    /// - 검증 내용: 만료 복구 저장 gate 중 cross-plane terminal 저장, admission loss 이후 completed 수렴,
+    /// exact owner lease/claim 정리, provider 호출 횟수.
+    /// - 사전 조건: restored 소유자의 claim이 clock 진행으로 만료되고 provider 결과는 heartbeat보다 먼저 도달한다.
+    /// - 기대 결과: resume은 persistenceConflict 대신 durable completed를 반환하고 lease와 claim은 정리된다.
+    @Test
+    func `provider result admission loss yields to same-run durable terminal`() async throws {
+        let now = Date(timeIntervalSince1970: 4_102_444_800)
+        let clock = DeterministicRuntimeRestorationClock(currentDate: now)
+        let host = ExternalAgentSessionReference("host-admission-repair")
+        let run = RuntimeRunReference("run-admission-repair")
+        let context = makeContext()
+        let streamGate = RuntimeTestGate()
+        let recoverySaveGate = RuntimeTestGate()
+        let stored = makeEqualitySession(
+            storedContext: RuntimeStoredContext(contextPolicy: context),
+            externalAgentSessionReference: host,
+            providerInternalSessionReference: ProviderInternalSessionReference("opaque-admission-repair"),
+            runReference: run,
+            projection: .running,
+        )
+        let store = InMemoryRuntimeStateStore(
+            state: makeState([stored]),
+            saveGates: [3: recoverySaveGate],
+        )
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            capabilities: .allSupported,
+            eventsByLaunch: [[]],
+            eventStreamGate: streamGate,
+        )
+        let plane = RuntimeControlPlane(
+            store: store,
+            restorationHeartbeatInterval: .seconds(20),
+            restorationClock: clock.runtimeClock,
+        )
+        try await plane.register(adapter)
+        #expect(try await plane.restore(hostReference: host, expectedContext: context) == .restored)
+
+        let resume = Task { try await plane.resumeRestoredRun(hostReference: host) }
+        await adapter.waitForEventStreamCount(1)
+
+        // 승인 경계에서 claim이 만료되도록 clock을 진행하고 heartbeat보다 provider 결과를 먼저 도달시킨다.
+        clock.advance(by: 61)
+        await streamGate.open()
+
+        // 만료 복구 저장이 gate에서 대기하는 동안 같은 run의 durable terminal을 저장한다.
+        await store.waitForSaveCount(3)
+        let hostPlane = RuntimeControlPlane(store: store)
+        #expect(try await hostPlane.ingestHostEvent(ownershipMakeHostTerminal(
+            host: host,
+            run: run,
+            sequence: 1,
+        ))?.outcome == .completed)
+        await recoverySaveGate.open()
+
+        #expect(try await resume.value.outcome == .completed)
+        #expect(await plane.projection(for: host) == .completed)
+        #expect(await plane.sessions[host]?.lease == RuntimeControlPlane.RuntimeLease.none)
+        #expect(await plane.sessions[host]?.stored.restorationClaim == nil)
+        let persisted = try #require(await store.currentState()?.sessions.first)
+        #expect(persisted.projection == .completed)
+        #expect(persisted.restorationClaim == nil)
+        let counts = await adapter.counts()
+        #expect(counts.stream == 1)
+        #expect(counts.terminalResult == 1)
+    }
+
     /// VOY-747-restore_resume_ownership: heartbeat persistence failure preserves resume claim.
     /// provider 소비 중 heartbeat conflict와 저장 실패를 run interruption으로 오인하지 않는지 검증한다.
     /// - 검증 내용: persistenceConflict/persistenceFailure 구분, running projection과 재개 가능한 claim 보존.
