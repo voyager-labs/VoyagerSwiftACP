@@ -90,7 +90,7 @@ public struct FileManagerContentFeature {
 
         Reduce { state, action in
             let effect = handlePendingSelectionAfterEntryLayoutLoaded(action, state: &state)
-            rebaseFolderIdentityTransitionAfterRootSnapshot(on: action, state: &state)
+            rebaseFolderIdentityTransitionOwnersAfterRootSnapshot(on: action, state: &state)
             resolvePreserveSelectionForReplacementProjection(on: action, state: &state)
             resolveFolderIdentityTransition(on: action, state: &state)
             return effect
@@ -414,11 +414,15 @@ public struct FileManagerContentFeature {
         state: inout State,
     ) {
         guard var transition = state.pendingIdentityTransition else { return }
-        guard isIdentityReplacementProjection(action, owner: transition.projectionOwner) else { return }
+        guard let trigger = identityReplacementTrigger(action, transition: transition) else { return }
+        let triggerOwner = switch trigger {
+        case .migration: transition.projectionOwner
+        case .preservation: transition.preservationOwner ?? transition.projectionOwner
+        }
         guard case let .folder(currentPath) = state.navigation.navigationState,
               canonicalizedPath(currentPath) == transition.rootPath,
               FileManagerContentEntryOpsCoordinator.identityTransitionOwnerIsCurrent(
-                  transition.projectionOwner,
+                  triggerOwner,
                   state: state,
               )
         else {
@@ -436,18 +440,7 @@ public struct FileManagerContentFeature {
         guard selectedPaths.contains(beforePath),
               !selectedPaths.contains(afterPath)
         else { return }
-        let loadedPaths: Set<String> = switch transition.projectionOwner {
-        case .root:
-            Set(
-                state.entryViewLayout.entryOperations.loadingContext.items.map { canonicalizedPath($0.id) },
-            )
-        case let .folder(id, _):
-            Set(
-                state.entryViewLayout.hierarchy.nodesByID[id]?.folder.children.map {
-                    canonicalizedPath($0.id)
-                } ?? [],
-            )
-        }
+        let loadedPaths = replacementProjectionPaths(owner: triggerOwner, state: state)
         guard !loadedPaths.contains(afterPath) else { return }
         // 재선택은 canonical이 아닌 현재 선택의 원본 lexical ID로 수행해야 표기가 유지된다.
         transition.preservedLexicalBeforeID = state.entryViewLayout.selectedIds.first {
@@ -464,7 +457,7 @@ public struct FileManagerContentFeature {
         state: inout State,
     ) {
         guard var transition = state.pendingIdentityTransition else { return }
-        guard isIdentityReplacementProjection(action, owner: transition.projectionOwner) else { return }
+        guard identityReplacementTrigger(action, transition: transition) != nil else { return }
         let afterPath = canonicalizedPath(transition.afterPath)
         let selectedPaths = Set(state.entryViewLayout.selectedIds.map(canonicalizedPath))
 
@@ -491,43 +484,86 @@ public struct FileManagerContentFeature {
         state.pendingIdentityTransition = nil
     }
 
-    private func isIdentityReplacementProjection(
+    /// action이 전이 관련 replacement projection인지와 어느 소유자 기준인지 판정한다.
+    /// applyContentProjection은 root 투영을 대표하고, folderChildrenResponse coreBatch는
+    /// migration 소유자 또는 preservation(소스) 소유자 세대와 일치할 때만 관련이다.
+    private func identityReplacementTrigger(
         _ action: Action,
-        owner: FileManagerContentState.EntryIdentityTransitionProjectionOwner,
-    ) -> Bool {
+        transition: FileManagerContentState.EntryIdentityTransition,
+    ) -> IdentityReplacementTrigger? {
         switch action {
         case .entryViewLayout(.view(.applyContentProjection)):
-            true
+            return .migration
         case .entryViewLayout(.hierarchy(.rootSnapshotCompleted)):
-            if case .folder = owner { true } else { false }
+            if case .folder = transition.projectionOwner { return .migration }
+            return nil
         case let .entryViewLayout(.hierarchy(.folderChildrenResponse(
             _,
             folderID,
             folderGeneration,
             .event(.coreBatch),
         ))):
-            if case let .folder(expectedID, expectedGeneration) = owner {
-                canonicalizedPath(folderID) == canonicalizedPath(expectedID)
-                    && folderGeneration == expectedGeneration
-            } else {
-                false
+            if case let .folder(expectedID, expectedGeneration) = transition.projectionOwner,
+               canonicalizedPath(folderID) == canonicalizedPath(expectedID),
+               folderGeneration == expectedGeneration
+            {
+                return .migration
             }
+            if let preservationOwner = transition.preservationOwner,
+               case let .folder(preservedID, preservedGeneration) = preservationOwner,
+               canonicalizedPath(folderID) == canonicalizedPath(preservedID),
+               folderGeneration == preservedGeneration
+            {
+                return .preservation
+            }
+            return nil
         default:
-            false
+            return nil
         }
     }
 
-    private func rebaseFolderIdentityTransitionAfterRootSnapshot(
+    /// 소유자별 현재 투영 경로 집합. after-path 부재가 reconcile 삭제를 유발하는지 판정한다.
+    private func replacementProjectionPaths(
+        owner: FileManagerContentState.EntryIdentityTransitionProjectionOwner,
+        state: State,
+    ) -> Set<String> {
+        switch owner {
+        case .root:
+            Set(state.entryViewLayout.entryOperations.loadingContext.items.map { canonicalizedPath($0.id) })
+        case let .folder(id, _):
+            Set(state.entryViewLayout.hierarchy.nodesByID[id]?.folder.children.map {
+                canonicalizedPath($0.id)
+            } ?? [])
+        }
+    }
+
+    private enum IdentityReplacementTrigger {
+        case migration
+        case preservation
+    }
+
+    private func rebaseFolderIdentityTransitionOwnersAfterRootSnapshot(
         on action: Action,
         state: inout State,
     ) {
         guard case .entryViewLayout(.hierarchy(.rootSnapshotCompleted)) = action,
-              var transition = state.pendingIdentityTransition,
-              case let .folder(id, generation) = transition.projectionOwner,
-              let currentGeneration = state.entryViewLayout.hierarchy.nodesByID[id]?.generation,
-              currentGeneration == generation &+ 1
+              var transition = state.pendingIdentityTransition
         else { return }
-        transition.projectionOwner = .folder(id: id, generation: currentGeneration)
+
+        func rebasedOwner(
+            _ owner: FileManagerContentState.EntryIdentityTransitionProjectionOwner,
+        ) -> FileManagerContentState.EntryIdentityTransitionProjectionOwner {
+            guard case let .folder(id, generation) = owner,
+                  let currentGeneration = state.entryViewLayout.hierarchy.nodesByID[id]?.generation,
+                  currentGeneration == generation &+ 1
+            else { return owner }
+            return .folder(id: id, generation: currentGeneration)
+        }
+
+        transition.projectionOwner = rebasedOwner(transition.projectionOwner)
+        if let preservationOwner = transition.preservationOwner {
+            transition.preservationOwner = rebasedOwner(preservationOwner)
+        }
         state.pendingIdentityTransition = transition
     }
 

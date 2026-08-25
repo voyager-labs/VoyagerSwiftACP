@@ -1064,6 +1064,88 @@ extension EVM002ManageEntriesViewPresentationTests {
         XCTAssertEqual(failedState.hierarchy.nodesByID[folder.id as String]?.loadPhase, .loadingCore)
     }
 
+    /// EVM-002-replacement_reload_snapshot_retention: root 완료 재시작도 완전 child snapshot을 유지한다.
+    /// root coreFinished가 확장 폴더 응답보다 먼저 도착하는 root-first 순서에서,
+    /// enriching 폴더 재시작이 retained children을 비우지 않는지 검증한다.
+    /// - 검증 내용: rootSnapshotCompleted 재시작 뒤 children 유지 + cursor/provenance 초기화
+    /// - 사전 조건: coreFinished=true인 enriching 폴더가 expanded 상태
+    /// - 기대 결과: generation 증가·loadingCore 전환과 함께 children 유지, 첫 새 배치가 교체
+    func testRootSnapshotRestartRetainsCompleteChildSnapshot() {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let old1 = hierarchyFile(id: "/root/a/old-1", name: "old-1")
+        let old2 = hierarchyFile(id: "/root/a/old-2", name: "old-2")
+        var state = hierarchyState(roots: [folder])
+        state.hierarchy.nodesByID[folder.id as String] = .init(
+            children: [old1, old2],
+            loadPhase: .enriching,
+            generation: 3,
+            expectedBatchIndex: 1,
+            coreFinished: true,
+            hasAppliedContentBatch: true,
+        )
+        state.hierarchy.setExpandedIDs([folder.id as String])
+        let reducer = EntryListHierarchyReducer()
+
+        _ = reducer.reduce(
+            into: &state,
+            action: .hierarchy(.rootSnapshotCompleted(rootContextGeneration: 0, rootFolders: [folder])),
+        )
+
+        guard let node = state.hierarchy.nodesByID[folder.id as String] else {
+            return XCTFail("restarted node is missing")
+        }
+        XCTAssertEqual(node.generation, 4)
+        XCTAssertEqual(node.loadPhase, .loadingCore)
+        XCTAssertEqual(node.folder.children, [old1, old2], "root-first 재시작은 retained children을 유지한다")
+        XCTAssertFalse(node.folder.coreFinished)
+        XCTAssertEqual(node.folder.expectedBatchIndex, 0)
+        XCTAssertFalse(node.folder.hasAppliedContentBatch)
+
+        // cursor 리셋 검증: 첫 새 내용 배치가 retained children을 한 번에 교체한다.
+        _ = reducer.reduce(into: &state, action: folderResponse(
+            folder.id,
+            .event(.coreBatch(items: [hierarchyFile(id: "/root/a/new-1", name: "new-1")], batchIndex: 0)),
+            folderGeneration: 4,
+        ))
+        XCTAssertEqual(
+            state.hierarchy.nodesByID[folder.id as String]?.folder.children.map(\.id),
+            ["/root/a/new-1"],
+        )
+    }
+
+    /// EVM-002-replacement_reload_snapshot_retention: root 완료 재시작은 부분 수신 중인 스냅샷은 여전히 비운다.
+    /// 보존 정책이 이번 세대 부분 결과까지 유지하지 않는 경계를 검증한다.
+    /// - 검증 내용: loadingCore에서 내용 배치를 이미 적용한 폴더의 root 재시작
+    /// - 사전 조건: coreFinished=false, hasAppliedContentBatch=true인 loadingCore 폴더
+    /// - 기대 결과: children이 비우고 loadingCore로 재시작한다
+    func testRootSnapshotRestartStillClearsPartialMidStreamChildren() {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let partialChild = hierarchyFile(id: "/root/a/partial", name: "partial")
+        var state = hierarchyState(roots: [folder])
+        state.hierarchy.nodesByID[folder.id as String] = .init(
+            children: [partialChild],
+            loadPhase: .loadingCore,
+            generation: 2,
+            expectedBatchIndex: 1,
+            hasAppliedContentBatch: true,
+        )
+        state.hierarchy.setExpandedIDs([folder.id as String])
+        let reducer = EntryListHierarchyReducer()
+
+        _ = reducer.reduce(
+            into: &state,
+            action: .hierarchy(.rootSnapshotCompleted(rootContextGeneration: 0, rootFolders: [folder])),
+        )
+
+        guard let node = state.hierarchy.nodesByID[folder.id as String] else {
+            return XCTFail("restarted node is missing")
+        }
+        XCTAssertEqual(node.generation, 3)
+        XCTAssertEqual(node.loadPhase, .loadingCore)
+        XCTAssertEqual(node.folder.children, [], "부분 수신 결과는 재시작 시 버려진다")
+        XCTAssertFalse(node.folder.hasAppliedContentBatch)
+    }
+
     private func hierarchyState(roots: [EntryModel]) -> EntryViewLayoutState {
         var state = EntryViewLayoutState()
         state.entries = roots

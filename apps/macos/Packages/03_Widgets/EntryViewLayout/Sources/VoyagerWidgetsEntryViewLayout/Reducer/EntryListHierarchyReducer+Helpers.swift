@@ -4,29 +4,38 @@ import VoyagerEntitiesEntry
 import VoyagerShared
 
 extension EntryListHierarchyReducer {
+    /// 재로드 세대를 위한 공통 node 상태 전이. 모든 재시작 경로(explicit startLoad,
+    /// root snapshot 완료 시 unfinished-folder 재시작)가 이 경로를 사용해야 한다.
+    ///
+    /// 마지막 완전 스냅샷(coreFinished 또는 loaded)이 있으면 유지하고, 배치 커서만 0으로
+    /// 되돌려 다음 유효 배치가 retained children을 교체하게 표시한다(중간 빈 투영 방지).
+    /// 초기 확장(idle)·부분 수신(loadingCore 중간)처럼 캐시가 없으면 오늘과 같이 비운다.
+    /// 실패 재시도는 cursor가 아니라 content provenance로 이전 완전 세대와 부분 수신을 구분한다.
+    func reloadedNodeState(for nodeState: FolderNodeState) -> FolderNodeState {
+        var refreshedNode = nodeState
+        var retainsCompleteSnapshot = refreshedNode.folder.coreFinished || refreshedNode.loadPhase == .loaded
+        if case .failed = refreshedNode.loadPhase {
+            retainsCompleteSnapshot = !refreshedNode.folder.children.isEmpty && !refreshedNode.folder
+                .hasAppliedContentBatch
+        }
+        refreshedNode.generation &+= 1
+        refreshedNode.loadPhase = FolderLoadPhase.loadingCore
+        if retainsCompleteSnapshot {
+            refreshedNode.folder.coreFinished = false
+            refreshedNode.folder.expectedBatchIndex = 0
+            refreshedNode.folder.hasAppliedContentBatch = false
+        } else {
+            refreshedNode.folder = FolderSnapshot()
+        }
+        return refreshedNode
+    }
+
     func startLoad(
         folder _: EntryModel,
         id: EntryModel.ID,
         state: inout State,
     ) -> Effect<Action> {
-        var nodeState = state.hierarchy.nodesByID[id] ?? FolderNodeState()
-        var retainsCompleteSnapshot = nodeState.folder.coreFinished || nodeState.loadPhase == .loaded
-        if case .failed = nodeState.loadPhase {
-            // 실패 재시도는 cursor가 아니라 content provenance로 이전 완전 세대와 부분 수신을 구분한다.
-            retainsCompleteSnapshot = !nodeState.folder.children.isEmpty && !nodeState.folder.hasAppliedContentBatch
-        }
-        nodeState.generation &+= 1
-        nodeState.loadPhase = FolderLoadPhase.loadingCore
-        // 대체 재로드는 마지막 완전 스냅샷을 유지하고, 배치 커서만 0으로 되돌려
-        // 다음 유효 배치가 retained children을 교체하게 표시한다(중간 빈 투영 방지).
-        // 초기 확장(idle)·실패 재시도(failed)처럼 캐시가 없으면 오늘과 같이 비운다.
-        if retainsCompleteSnapshot {
-            nodeState.folder.coreFinished = false
-            nodeState.folder.expectedBatchIndex = 0
-            nodeState.folder.hasAppliedContentBatch = false
-        } else {
-            nodeState.folder = FolderSnapshot()
-        }
+        var nodeState = reloadedNodeState(for: state.hierarchy.nodesByID[id] ?? FolderNodeState())
         // parentID를 설정한다: nodesByID에서 이 node를 children으로 포함하는 node를 찾는다.
         if nodeState.parentID == nil {
             nodeState.parentID = state.hierarchy.nodesByID.first(where: { _, node in

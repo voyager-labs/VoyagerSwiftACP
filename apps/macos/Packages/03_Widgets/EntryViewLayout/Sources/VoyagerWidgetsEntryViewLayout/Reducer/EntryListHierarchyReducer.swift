@@ -74,17 +74,15 @@ struct EntryListHierarchyReducer {
                     state.hierarchy.nodesByID[folder.id] = FolderNodeState()
                 }
                 // visible expanded intent 중 reload가 필요한 folder를 restart한다.
+                // startLoad와 같은 retained-snapshot 초기화 경로: root-first 응답 순서에서
+                // 완전 child snapshot을 비우지 않는다(중간 blank/flicker 방지).
                 var effects: [Effect<Action>] = []
                 for folder in rootFolders {
                     guard let nodeState = state.hierarchy.nodesByID[folder.id],
                           nodeState.expansionIntent,
                           nodeState.loadPhase != .loaded
                     else { continue }
-                    var refreshedNode = nodeState
-                    refreshedNode.generation &+= 1
-                    refreshedNode.loadPhase = .loadingCore
-                    refreshedNode.folder = FolderSnapshot()
-                    state.hierarchy.nodesByID[folder.id] = refreshedNode
+                    state.hierarchy.nodesByID[folder.id] = reloadedNodeState(for: nodeState)
                     effects.append(.send(.delegate(.expandRequested(folder.id))))
                 }
                 state.reconcileSelectionWithVisibleEntries()

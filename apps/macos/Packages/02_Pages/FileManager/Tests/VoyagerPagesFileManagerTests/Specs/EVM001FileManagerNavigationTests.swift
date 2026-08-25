@@ -18,6 +18,14 @@ private struct ExpandedChildTransitionFixture {
     let after: EntryModel
 }
 
+private struct CrossFolderMoveFixture {
+    let state: FileManagerContentState
+    let source: EntryModel
+    let destination: EntryModel
+    let before: EntryModel
+    let after: EntryModel
+}
+
 @MainActor
 final class EVM001FileManagerNavigationTests: XCTestCase {
     // MARK: - EVM-001-dau_navigation_metrics
@@ -1541,6 +1549,61 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         return ExpandedChildTransitionFixture(state: state, folder: folder, before: before, after: after)
     }
 
+    private func makeCrossFolderMoveFixture() -> CrossFolderMoveFixture {
+        let rootPath = "/tmp/voyager-cross-move"
+        let source = EntryModel.temporaryFolder(id: "\(rootPath)/src", name: "src")
+        let destination = EntryModel.temporaryFolder(id: "\(rootPath)/dst", name: "dst")
+        let before = makeCorrelationEntry(id: "\(source.id)/before.txt", name: "before.txt")
+        let after = makeCorrelationEntry(id: "\(destination.id)/after.txt", name: "after.txt")
+        var state = FileManagerContentState()
+        state.navigation.seedInitialFolderPath(rootPath)
+        state.navigation.navigationState = .folder(rootPath)
+        state.entryViewLayout.mode = .list
+        state.entryViewLayout.entries = [source, destination]
+        state.entryViewLayout.entryOperations.items = [source, destination]
+        state.entryViewLayout.entryOperations.loadingContext.items = [source, destination]
+        state.entryViewLayout.entryOperations.loadingContext.generation = 7
+        state.entryViewLayout.entryOperations.loadingContext.expectedCoreBatchIndex = 1
+        state.entryViewLayout.hierarchy = .init(rootPath: rootPath)
+        state.entryViewLayout.hierarchy.nodesByID[source.id] = .init(
+            children: [before],
+            loadPhase: .loaded,
+            generation: 1,
+            expectedBatchIndex: 1,
+            coreFinished: true,
+        )
+        state.entryViewLayout.hierarchy.nodesByID[destination.id] = .init(
+            children: [],
+            loadPhase: .loaded,
+            generation: 1,
+            expectedBatchIndex: 0,
+            coreFinished: true,
+        )
+        state.entryViewLayout.hierarchy.setExpandedIDs([source.id, destination.id])
+        state.entryViewLayout.selectedIds = [before.id]
+        state.entryViewLayout.lastSelectedId = before.id
+        state.entryViewLayout.rangeAnchorId = before.id
+        let record = EntryActionRecord(
+            operationKind: .pasteFileMove,
+            targets: [.init(beforePath: before.id, afterPath: after.id)],
+        )
+        _ = FileManagerContentEntryOpsCoordinator.recordIdentityTransitionIfEligible(record, state: &state)
+        for id in [source.id, destination.id] {
+            state.entryViewLayout.hierarchy.nodesByID[id]?.generation = 2
+            state.entryViewLayout.hierarchy.nodesByID[id]?.loadPhase = .loadingCore
+            state.entryViewLayout.hierarchy.nodesByID[id]?.folder.coreFinished = false
+            state.entryViewLayout.hierarchy.nodesByID[id]?.folder.expectedBatchIndex = 0
+            state.entryViewLayout.hierarchy.nodesByID[id]?.folder.hasAppliedContentBatch = false
+        }
+        return CrossFolderMoveFixture(
+            state: state,
+            source: source,
+            destination: destination,
+            before: before,
+            after: after,
+        )
+    }
+
     /// EVM-001-reload_directory_page_on_external_change: folder route entry operation 완료 시 directory reload forwarding
     /// FileManager content entry operation lifecycle bridge가 navigation route별 reload/restore boundary를 지키는지 검증.
     /// - 검증 내용: folder route에서 entry operation 완료 액션이 현재 folder loader로 전달되는지 검증
@@ -1600,6 +1663,104 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             )))) = action else { return false }
             return affectedPaths == [folderPath] && removedPrefixes == [deletedPath]
         }
+    }
+
+    /// EVM-001-reload_directory_page_on_external_change: paste 실패도 교체 선삭제 이후라면 reload한다.
+    /// replace-existing 파이프라인은 목적지를 먼저 삭제한 뒤 move/copy하므로,
+    /// 취소 아닌 실패는 이미 파일시스템이 변경됐을 수 있다.
+    /// - 검증 내용: pasteFileMove system 실패 수신 시 현재 folder loader로 reload 전달
+    /// - 사전 조건: folder route의 LifecycleBridgeHarness
+    /// - 기대 결과: loadItems forwarding이 발생해 삭제된 목적지 항목이 화면에서 정리된다
+    func testPasteMoveFailureReloadsContentForDestructivePreStep() async {
+        let folderPath = "/tmp/voyager-paste-failure"
+        let store = TestStore(initialState: makeInitialState(folderPath: folderPath)) {
+            LifecycleBridgeHarness()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.bridge(.lifecycle(.operationFinished(
+            "\(folderPath)/source.txt",
+            .pasteFileMove,
+            .failure(.system(message: "post-delete failure")),
+        ))))
+        await store.receive { action in
+            guard case let .forwarded(.entryViewLayout(.entryOperations(.loading(.loadItems(
+                path,
+                showHidden,
+                priority,
+            ))))) =
+                action else { return false }
+            return path == folderPath && showHidden == false && priority == .none
+        }
+        await store.finish()
+    }
+
+    /// EVM-001-reload_directory_page_on_external_change: 취소된 paste 실패는 mutation 전이므로 reload하지 않는다.
+    /// - 검증 내용: pasteFileMove cancelled 실패 수신 시 forwarding 없음
+    /// - 사전 조건: folder route의 LifecycleBridgeHarness
+    /// - 기대 결과: reload effect 미발생
+    func testCancelledPasteFailureDoesNotReloadContent() async {
+        let folderPath = "/tmp/voyager-paste-cancel"
+        let store = TestStore(initialState: makeInitialState(folderPath: folderPath)) {
+            LifecycleBridgeHarness()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.bridge(.lifecycle(.operationFinished(
+            "\(folderPath)/source.txt",
+            .pasteFileMove,
+            .failure(.cancelled),
+        ))))
+        await store.finish()
+    }
+
+    /// EVM-001-reload_directory_page_on_external_change: drop 실패도 교체 선삭제 이후라면 reload한다.
+    /// drop은 성공 시 entriesMutated impact로 갱신되지만, 전체 실패 배치는 impact가 없어
+    /// operationFinished와 같은 destructive pre-step 분류로 보완한다.
+    /// - 검증 내용: dropOperationFinished pasteFileMove system 실패 수신 시 reload 전달
+    /// - 사전 조건: folder route의 LifecycleBridgeHarness
+    /// - 기대 결과: loadItems forwarding이 발생한다
+    func testDropMoveFailureReloadsContentForDestructivePreStep() async {
+        let folderPath = "/tmp/voyager-drop-failure"
+        let store = TestStore(initialState: makeInitialState(folderPath: folderPath)) {
+            LifecycleBridgeHarness()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.bridge(.lifecycle(.dropOperationFinished(
+            "\(folderPath)/source.txt",
+            .pasteFileMove,
+            .failure(.system(message: "post-delete failure")),
+        ))))
+        await store.receive { action in
+            guard case let .forwarded(.entryViewLayout(.entryOperations(.loading(.loadItems(
+                path,
+                showHidden,
+                priority,
+            ))))) =
+                action else { return false }
+            return path == folderPath && showHidden == false && priority == .none
+        }
+        await store.finish()
+    }
+
+    /// EVM-001-reload_directory_page_on_external_change: 취소된 drop 실패는 reload하지 않는다.
+    /// - 검증 내용: dropOperationFinished pasteFileCopy cancelled 실패 수신 시 forwarding 없음
+    /// - 사전 조건: folder route의 LifecycleBridgeHarness
+    /// - 기대 결과: reload effect 미발생
+    func testCancelledDropFailureDoesNotReloadContent() async {
+        let folderPath = "/tmp/voyager-drop-cancel"
+        let store = TestStore(initialState: makeInitialState(folderPath: folderPath)) {
+            LifecycleBridgeHarness()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.bridge(.lifecycle(.dropOperationFinished(
+            "\(folderPath)/source.txt",
+            .pasteFileCopy,
+            .failure(.cancelled),
+        ))))
+        await store.finish()
     }
 
     /// EVM-001-reload_directory_page_on_external_change: recents route entry operation 완료 시 recents reload forwarding
@@ -3019,6 +3180,86 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         ))))
         XCTAssertEqual(store.state.entryViewLayout.selectedIds, [fixture.after.id])
         XCTAssertNil(store.state.pendingIdentityTransition, "folder terminal은 소비된 전이를 되살리지 않는다")
+    }
+
+    /// EVM-001-command_external_refresh_correlation: 교차 폴더 move는 소스 폴더 배치에서 before 선택을 보존한다.
+    /// - 검증 내용: 소스 폴더 replacement batch가 before 선택을 지우기 전 보존, 목적지 batch에서 1회 migration,
+    ///   이후 terminal·stale sibling 이벤트가 전이를 되살리지 않음
+    /// - 사전 조건: 두 expanded folder가 rename 전이를 source(보존)·destination(migration) 소유로 나눠 갖는다.
+    /// - 기대 결과: 소스 배치 뒤에도 선택·전이 유지, 목적지 배치 뒤 after 선택과 소비 확정
+    func testCrossFolderMoveSurvivesSourceFolderBatchBeforeDestinationMigration() async {
+        let fixture = makeCrossFolderMoveFixture()
+        let kept = makeCorrelationEntry(id: "\(fixture.source.id)/kept.txt", name: "kept.txt")
+        let store = TestStore(initialState: fixture.state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.entryOpenClient = .testValue
+            $0.entryQuickLookClient = .previewValue
+            // root 완료 재시작의 자동 폴더 재로드가 실제 파일시스템(픽스처 경로 미존재)을
+            // 읽지 않게 한다. 실패 스트림은 dst terminal(.failed) 브리지로 이어져 소유자
+            // 세대 종료로 전이를 조기 만료시킨다. 배치는 본문의 수동 주입으로만 공급한다.
+            $0.entryLoadingClient.stagedLoadItems = { _, _, _ in AsyncThrowingStream { $0.finish() } }
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+        }
+        store.exhaustivity = .off
+        let rootContextGeneration = fixture.state.entryViewLayout.hierarchy.rootContextGeneration
+
+        await store.send(.entryViewLayout(.hierarchy(.rootSnapshotCompleted(
+            rootContextGeneration: rootContextGeneration,
+            rootFolders: [fixture.source, fixture.destination],
+        ))))
+        XCTAssertEqual(
+            store.state.pendingIdentityTransition?.projectionOwner,
+            .folder(id: fixture.destination.id, generation: 3),
+        )
+        XCTAssertEqual(
+            store.state.pendingIdentityTransition?.preservationOwner,
+            .folder(id: fixture.source.id, generation: 3),
+        )
+        XCTAssertEqual(store.state.entryViewLayout.selectedIds, [fixture.before.id])
+
+        await store.send(.entryViewLayout(.hierarchy(.folderChildrenResponse(
+            rootContextGeneration: rootContextGeneration,
+            folderID: fixture.source.id,
+            folderGeneration: 3,
+            .event(.coreBatch(items: [kept], batchIndex: 0)),
+        ))))
+        XCTAssertEqual(
+            store.state.entryViewLayout.selectedIds,
+            [fixture.before.id],
+            "소스 폴더 replacement batch는 before 선택을 보존해야 한다",
+        )
+        XCTAssertEqual(
+            store.state.pendingIdentityTransition?.projectionOwner,
+            .folder(id: fixture.destination.id, generation: 3),
+        )
+
+        await store.send(.entryViewLayout(.hierarchy(.folderChildrenResponse(
+            rootContextGeneration: rootContextGeneration,
+            folderID: fixture.destination.id,
+            folderGeneration: 3,
+            .event(.coreBatch(items: [fixture.after], batchIndex: 0)),
+        ))))
+        XCTAssertEqual(store.state.entryViewLayout.selectedIds, [fixture.after.id])
+        XCTAssertNil(store.state.pendingIdentityTransition)
+
+        await store.send(.entryViewLayout(.hierarchy(.folderChildrenResponse(
+            rootContextGeneration: rootContextGeneration,
+            folderID: fixture.destination.id,
+            folderGeneration: 3,
+            .event(.coreFinished(batchCount: 1)),
+        ))))
+        XCTAssertEqual(store.state.entryViewLayout.selectedIds, [fixture.after.id])
+        XCTAssertNil(store.state.pendingIdentityTransition)
+
+        await store.send(.entryViewLayout(.hierarchy(.folderChildrenResponse(
+            rootContextGeneration: rootContextGeneration,
+            folderID: fixture.source.id,
+            folderGeneration: 5,
+            .event(.coreBatch(items: [fixture.after], batchIndex: 0)),
+        ))))
+        XCTAssertEqual(store.state.entryViewLayout.selectedIds, [fixture.after.id])
+        XCTAssertNil(store.state.pendingIdentityTransition, "stale sibling은 전이를 되살리거나 다시 소비하지 않는다")
     }
 
     /// EVM-001-command_external_refresh_correlation: 포함 디렉터리(현재 root의 조상) 경로의

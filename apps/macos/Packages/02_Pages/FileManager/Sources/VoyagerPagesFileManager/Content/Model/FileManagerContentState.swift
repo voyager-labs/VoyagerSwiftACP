@@ -42,6 +42,10 @@ public struct FileManagerContentState: Equatable {
         let refreshGeneration: Int
         /// after-path를 실제로 투영하는 root 또는 expanded folder 세대
         var projectionOwner: EntryIdentityTransitionProjectionOwner
+        /// before-path가 사라지는 원본 projection 소유자(교차 폴더 이동의 소스).
+        /// migration 소유자와 동일하면 nil이며, 소스 배치가 먼저 도착할 때
+        /// 선택 보존 트리거를 판정하는 데만 쓰인다.
+        var preservationOwner: EntryIdentityTransitionProjectionOwner?
         /// 비종료 대체 projection이 reconcile로 before-path 선택을 지우기 직전에
         /// 한 action cycle 동안만 설정되는 transient 표시. 다음 reconcile에서
         /// before-path를 복원하고 즉시 해제된다(사용자 deselect와 구분).
@@ -58,6 +62,7 @@ public struct FileManagerContentState: Equatable {
             rootPath: String,
             refreshGeneration: Int,
             projectionOwner: EntryIdentityTransitionProjectionOwner? = nil,
+            preservationOwner: EntryIdentityTransitionProjectionOwner? = nil,
         ) {
             self.recordID = recordID
             self.beforePath = beforePath
@@ -65,6 +70,7 @@ public struct FileManagerContentState: Equatable {
             self.rootPath = rootPath
             self.refreshGeneration = refreshGeneration
             self.projectionOwner = projectionOwner ?? .root(generation: refreshGeneration)
+            self.preservationOwner = preservationOwner
         }
     }
 

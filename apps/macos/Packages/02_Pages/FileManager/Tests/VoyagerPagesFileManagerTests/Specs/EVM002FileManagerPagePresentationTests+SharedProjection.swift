@@ -983,6 +983,7 @@ extension EVM002FileManagerPagePresentationTests {
             afterPath: after.id,
             rootPath: rootPath,
             refreshGeneration: 3,
+            projectionOwner: .folder(id: folder.id, generation: 4),
         )
         _ = FileManagerContentFeature().reduce(
             into: &state,
@@ -995,6 +996,125 @@ extension EVM002FileManagerPagePresentationTests {
         )
 
         XCTAssertEqual(state.entryViewLayout.hierarchy.nodesByID[folder.id]?.folder.children, [after])
+        XCTAssertEqual(state.entryViewLayout.selectedIds, [after.id])
+        XCTAssertNil(state.pendingIdentityTransition)
+    }
+
+    /// EVM-002-command_external_refresh_correlation: source folder의 중간 batch가 destination owner보다 먼저 와도
+    /// cross-folder move의 before 선택을 유지한다.
+    /// - 검증 내용: source A 교체 batch 뒤 before 선택 보존, destination B owner batch에서 after로 migration
+    /// - 사전 조건: source/destination이 모두 expanded이고 destination folder가 transition projection owner다.
+    /// - 기대 결과: 중간 projection은 전이를 소비하지 않으며 owner batch가 선택을 after로 옮기고 전이를 소비한다.
+    func testCrossFolderMovePreservesSelectionThroughSourceBatchBeforeDestinationOwner() {
+        let source = EntryModel.temporaryFolder(id: "/root/source", name: "source")
+        let destination = EntryModel.temporaryFolder(id: "/root/destination", name: "destination")
+        let before = hierarchyFile(id: "/root/source/before.txt", name: "before.txt")
+        let sibling = hierarchyFile(id: "/root/source/sibling.txt", name: "sibling.txt")
+        let after = hierarchyFile(id: "/root/destination/after.txt", name: "after.txt")
+        var state = FileManagerContentState()
+        state.navigation.seedInitialFolderPath("/root")
+        state.entryViewLayout.mode = .list
+        state.entryViewLayout.entries = [source, destination]
+        state.entryViewLayout.hierarchy.replaceRoot(path: "/root")
+        state.entryViewLayout.hierarchy.nodesByID[source.id] = makeExpandedLoadingFolderNode(children: [before])
+        state.entryViewLayout.hierarchy.nodesByID[destination.id] = makeExpandedLoadingFolderNode(children: [])
+        state.entryViewLayout.hierarchy.setExpandedIDs([source.id, destination.id])
+        state.entryViewLayout.selectedIds = [before.id]
+        state.entryViewLayout.lastSelectedId = before.id
+        state.entryViewLayout.rangeAnchorId = before.id
+        state.pendingIdentityTransition = .init(
+            recordID: UUID(),
+            beforePath: before.id,
+            afterPath: after.id,
+            rootPath: "/root",
+            refreshGeneration: 3,
+            projectionOwner: .folder(id: destination.id, generation: 4),
+            preservationOwner: .folder(id: source.id, generation: 4),
+        )
+        let feature = FileManagerContentFeature()
+        let rootGeneration = state.entryViewLayout.hierarchy.rootContextGeneration
+
+        _ = feature.reduce(into: &state, action: makeCrossMoveFolderBatch(source.id, [sibling], rootGeneration))
+        XCTAssertEqual(state.entryViewLayout.selectedIds, [before.id], "source 중간 batch는 before 선택을 보존한다")
+        XCTAssertEqual(
+            state.pendingIdentityTransition?.projectionOwner,
+            .folder(id: destination.id, generation: 4),
+            "non-owner batch는 destination owner 전이를 소비하지 않는다",
+        )
+
+        _ = feature.reduce(into: &state, action: makeCrossMoveFolderBatch(destination.id, [after], rootGeneration))
+
+        XCTAssertEqual(state.entryViewLayout.selectedIds, [after.id])
+        XCTAssertNil(state.pendingIdentityTransition)
+    }
+
+    /// EVM-002-command_external_refresh_correlation: nested source의 중간 batch가 root owner보다 먼저 와도
+    /// nested-to-root move의 before 선택을 유지한다.
+    /// - 검증 내용: nested source 교체 batch 뒤 before 선택 보존, root owner batch에서 after로 migration
+    /// - 사전 조건: expanded source child가 선택되어 있고 root loading generation이 transition owner다.
+    /// - 기대 결과: 중간 folder projection은 전이를 유지하고 root batch가 선택을 after로 옮겨 소비한다.
+    func testNestedToRootMovePreservesSelectionThroughSourceBatchBeforeRootOwner() {
+        let rootPath = "/root"
+        let source = EntryModel.temporaryFolder(id: "/root/source", name: "source")
+        let before = hierarchyFile(id: "/root/source/before.txt", name: "before.txt")
+        let sourceSibling = hierarchyFile(id: "/root/source/sibling.txt", name: "sibling.txt")
+        let after = hierarchyFile(id: "/root/after.txt", name: "after.txt")
+        var state = FileManagerContentState()
+        state.navigation.seedInitialFolderPath(rootPath)
+        state.entryViewLayout.mode = .list
+        state.entryViewLayout.entries = [source]
+        state.entryViewLayout.entryOperations.items = [source]
+        state.entryViewLayout.entryOperations.loadingContext.generation = 7
+        state.entryViewLayout.entryOperations.loadingContext.expectedCoreBatchIndex = 0
+        state.entryViewLayout.entryOperations.isReloading = true
+        state.entryViewLayout.hierarchy.replaceRoot(path: rootPath)
+        state.entryViewLayout.hierarchy.nodesByID[source.id] = FolderNodeState(
+            folder: FolderSnapshot(children: [before]),
+            expansionIntent: true,
+            generation: 4,
+            loadPhase: .loadingCore,
+        )
+        state.entryViewLayout.hierarchy.setExpandedIDs([source.id])
+        state.entryViewLayout.selectedIds = [before.id]
+        state.entryViewLayout.lastSelectedId = before.id
+        state.entryViewLayout.rangeAnchorId = before.id
+        state.pendingIdentityTransition = .init(
+            recordID: UUID(),
+            beforePath: before.id,
+            afterPath: after.id,
+            rootPath: rootPath,
+            refreshGeneration: 7,
+            projectionOwner: .root(generation: 7),
+            preservationOwner: .folder(id: source.id, generation: 4),
+        )
+        let feature = FileManagerContentFeature()
+
+        _ = feature.reduce(
+            into: &state,
+            action: .entryViewLayout(.hierarchy(.folderChildrenResponse(
+                rootContextGeneration: state.entryViewLayout.hierarchy.rootContextGeneration,
+                folderID: source.id,
+                folderGeneration: 4,
+                .event(.coreBatch(items: [sourceSibling], batchIndex: 0)),
+            ))),
+        )
+
+        XCTAssertEqual(state.entryViewLayout.hierarchy.nodesByID[source.id]?.folder.children, [sourceSibling])
+        XCTAssertEqual(state.entryViewLayout.selectedIds, [before.id], "nested 중간 batch는 before 선택을 보존한다")
+        XCTAssertEqual(state.pendingIdentityTransition?.projectionOwner, .root(generation: 7))
+
+        _ = withDependencies {
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+        } operation: {
+            feature.reduce(
+                into: &state,
+                action: .entryViewLayout(.entryOperations(.loading(.streamEvent(.init(
+                    generation: 7,
+                    event: .coreBatch(items: [source, after], batchIndex: 0),
+                ))))),
+            )
+        }
+
         XCTAssertEqual(state.entryViewLayout.selectedIds, [after.id])
         XCTAssertNil(state.pendingIdentityTransition)
     }
@@ -1097,6 +1217,28 @@ extension EVM002FileManagerPagePresentationTests {
             ),
         )
     }
+}
+
+private func makeExpandedLoadingFolderNode(children: [EntryModel]) -> FolderNodeState {
+    FolderNodeState(
+        folder: FolderSnapshot(children: children),
+        expansionIntent: true,
+        generation: 4,
+        loadPhase: .loadingCore,
+    )
+}
+
+private func makeCrossMoveFolderBatch(
+    _ folderID: String,
+    _ items: [EntryModel],
+    _ rootContextGeneration: Int,
+) -> FileManagerContentAction {
+    .entryViewLayout(.hierarchy(.folderChildrenResponse(
+        rootContextGeneration: rootContextGeneration,
+        folderID: folderID,
+        folderGeneration: 4,
+        .event(.coreBatch(items: items, batchIndex: 0)),
+    )))
 }
 
 private func makeSharedProjectionFile(path: String = "/root/file.txt", tags: [Tag]? = nil) -> EntryModel {

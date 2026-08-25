@@ -41,8 +41,8 @@ enum FileManagerContentEntryOpsCoordinator {
             // 편집 취소는 이미 완료된 identity 연산과 무관하므로 대기 전이를 만료하지 않는다.
             .none
 
-        case .lifecycle(.dropOperationFinished):
-            .none
+        case let .lifecycle(.dropOperationFinished(path, kind, result)):
+            handleDropOperationFinished(path: path, kind: kind, result: result, state: state)
 
         case .lifecycle(.emptyTrashCompleted):
             .send(.delegate(.closeWindow))
@@ -149,6 +149,12 @@ enum FileManagerContentEntryOpsCoordinator {
             rootPath: normalizedRoot,
             state: state,
         )
+        let preservationOwner = identityTransitionPreservationOwner(
+            beforePath: move.before,
+            projectionOwner: projectionOwner,
+            rootPath: normalizedRoot,
+            state: state,
+        )
         state.pendingIdentityTransition = FileManagerContentState.EntryIdentityTransition(
             recordID: record.id,
             beforePath: move.before,
@@ -156,6 +162,7 @@ enum FileManagerContentEntryOpsCoordinator {
             rootPath: normalizedRoot,
             refreshGeneration: state.entryViewLayout.entryOperations.loadingContext.generation,
             projectionOwner: projectionOwner,
+            preservationOwner: preservationOwner,
         )
         return .none
     }
@@ -260,6 +267,22 @@ enum FileManagerContentEntryOpsCoordinator {
             let node = state.entryViewLayout.hierarchy.nodesByID[folderID]
         else { return rootOwner }
         return .folder(id: folderID, generation: node.generation &+ 1)
+    }
+
+    /// 교차 폴더 move에서 before-path가 사라지는 소스 projection의 소유자를 계산한다.
+    /// migration 소유자와 동일하면 nil이고, 판정 불가한 소스는 root 소유자로 귀결된다.
+    private static func identityTransitionPreservationOwner(
+        beforePath: String,
+        projectionOwner: FileManagerContentState.EntryIdentityTransitionProjectionOwner,
+        rootPath: String,
+        state: FileManagerContentState,
+    ) -> FileManagerContentState.EntryIdentityTransitionProjectionOwner? {
+        let sourceOwner = identityTransitionProjectionOwner(
+            afterPath: beforePath,
+            rootPath: rootPath,
+            state: state,
+        )
+        return sourceOwner == projectionOwner ? nil : sourceOwner
     }
 
     private static func setTagsRefreshEffect(
@@ -377,18 +400,43 @@ enum FileManagerContentEntryOpsCoordinator {
         } else {
             .none
         }
-        // 실패한 연산은 파일시스템을 바꾸지 않으므로 reload가 필요 없다. 무관한 실패의
-        // reload가 로딩 세대를 올려 대기 중인 identity 전이를 간접적으로 만료하지 않게 한다.
+        // 취소와 목록을 바꾸지 않는 종류의 실패는 파일시스템을 바꾸지 않는다. 무관한
+        // 실패의 reload가 로딩 세대를 올려 대기 중인 identity 전이를 간접적으로 만료하지
+        // 않게 한다. paste move/copy는 교체 확인 후 목적지 선삭제(destructive pre-step)를
+        // 포함하므로, 취소 아닌 실패는 선삭제가 반영됐을 수 있어 route 재로드로 수렴시킨다.
         let shouldReload: Bool = switch result {
         case .success:
             kind != .setTags
-        case .failure:
-            false
+        case let .failure(error):
+            shouldReloadOnFailure(kind: kind, error: error)
         }
         return .merge(
             removedPathEffect,
             shouldReload ? reloadEntryItemsEffect(state: state) : .none,
         )
+    }
+
+    /// drop 성공은 finishBatch의 entriesMutated impact가 담당하므로 여기서 reload하지
+    /// 않는다. 실패는 clipboard paste와 같은 교체-선삭제 파이프라인을 공유하므로 동일
+    /// 분류를 적용한다.
+    private static func handleDropOperationFinished(
+        path _: String,
+        kind: OperationKind,
+        result: Result<Void, FileOpError>,
+        state: FileManagerContentState,
+    ) -> Effect<FileManagerContentAction> {
+        guard case let .failure(error) = result,
+              shouldReloadOnFailure(kind: kind, error: error)
+        else { return .none }
+        return reloadEntryItemsEffect(state: state)
+    }
+
+    private static func shouldReloadOnFailure(
+        kind: OperationKind,
+        error: FileOpError,
+    ) -> Bool {
+        guard case .cancelled = error else { return kind.mayMutateBeforeFailure }
+        return false
     }
 
     /// itemsLoaded 후 pendingSelectEntryID가 있으면 해당 엔트리를 선택 focus
@@ -467,6 +515,17 @@ private extension OperationKind {
     var removesSourceAtOrigin: Bool {
         switch self {
         case .pasteFileMove, .rename, .moveToTrash, .putBack:
+            true
+        default:
+            false
+        }
+    }
+
+    /// 교체 확인 후 목적지 선삭제를 포함하는 다단계 파이프라인 종류.
+    /// 취소 아닌 실패도 선삭제가 이미 반영됐을 수 있다.
+    var mayMutateBeforeFailure: Bool {
+        switch self {
+        case .pasteFileMove, .pasteFileCopy:
             true
         default:
             false
