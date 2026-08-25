@@ -264,4 +264,210 @@ extension RuntimeFreshRunCoordinatorContractTests {
         await fixture.invocationGate.open()
         _ = await monitor.value
     }
+
+    /// VOY-747-fresh_uncooperative_provider: voy696 mailbox pressure regression.
+    /// caller 취소와 provider deliver가 우편함에서 경합할 때 단말 복사본이 유실되지 않는지 압력으로 고정한다.
+    /// - 검증 내용: 400개 사례 각각에서 cancel 직후 gate를 열어 deliver와 cancelWaiter 재개 경합을 유도하고,
+    ///   durable completed 수렴, detached 소유권 해제(lease none), launch/stream 정확히 1회,
+    ///   수렴 이후 교체 prelaunch 승인을 집계해 유실 사례 0건을 요구한다.
+    /// - 사전 조건: 각 사례는 독립된 plane/adapter와 비협조 invocation gate를 가지며,
+    ///   provider event stream이 gate에서 대기 중인 상태로 caller를 취소한다.
+    /// - 기대 결과: 경합 순서(deliver 선승/cancelWaiter 선승)와 무관하게 모든 사례가 배경 수렴으로 완주된다.
+    @Test
+    func `fresh provider race mailbox hands terminal to abandoned convergence under pressure`() async {
+        let caseCount = 400
+        let batchSize = 16
+        var observations: [MailboxPressureCaseObservation] = []
+        var nextIndex = 0
+        while nextIndex < caseCount {
+            let batchEnd = min(nextIndex + batchSize, caseCount)
+            await withTaskGroup(of: MailboxPressureCaseObservation.self) { group in
+                for caseIndex in nextIndex ..< batchEnd {
+                    group.addTask {
+                        await runFreshMailboxPressureCase(caseIndex)
+                    }
+                }
+                for await observation in group {
+                    observations.append(observation)
+                }
+            }
+            nextIndex = batchEnd
+        }
+
+        let staleCases = observations.filter { !$0.converged }
+        #expect(
+            staleCases.isEmpty,
+            "우편함 경합에서 단말이 유실된 사례가 없어야 한다: 유실 \(staleCases.count)건, 예시 \(staleCases.prefix(3))",
+        )
+        let unreleasedCases = observations.filter { $0.converged && !$0.leaseReleased }
+        #expect(
+            unreleasedCases.isEmpty,
+            "수렴한 사례의 detached 소유권은 해제되어야 한다: 미해제 \(unreleasedCases.count)건, 예시 \(unreleasedCases.prefix(3))",
+        )
+        let doubleRunCases = observations.filter {
+            $0.converged && ($0.launchCount != 1 || $0.streamCount != 1)
+        }
+        #expect(
+            doubleRunCases.isEmpty,
+            "provider launch/stream은 사례당 정확히 한 번이어야 한다: 위반 \(doubleRunCases.count)건, 예시 \(doubleRunCases.prefix(3))",
+        )
+        let unadmittedCases = observations.filter { $0.converged && !$0.replacementAdmitted }
+        #expect(
+            unadmittedCases.isEmpty,
+            "수렴 이후 같은 host 교체 prelaunch는 승인되어야 한다: 미승인 \(unadmittedCases.count)건, 예시 \(unadmittedCases.prefix(3))",
+        )
+    }
+}
+
+/// 우편함 압력 회귀의 사례별 관찰 결과다. 집계 단계에서 문자열로 요약해 진단한다.
+private struct MailboxPressureCaseObservation: Equatable {
+    let index: Int
+    let converged: Bool
+    let leaseReleased: Bool
+    let launchCount: Int?
+    let streamCount: Int?
+    let replacementAdmitted: Bool
+    let finalProjection: String?
+    let finalLease: String?
+    let callerOutcome: String?
+}
+
+/// voy696 압력 사례 1건이다. cancel 직후 gate를 열어 deliver/cancelWaiter 경합을 최대화한다.
+private func runFreshMailboxPressureCase(_ index: Int) async -> MailboxPressureCaseObservation {
+    let host = ExternalAgentSessionReference("voy696-mailbox-pressure-host-\(index)")
+    let run = RuntimeRunReference("voy696-mailbox-pressure-run-\(index)")
+    let replacementRun = RuntimeRunReference("voy696-mailbox-pressure-replacement-\(index)")
+    let invocationGate = RuntimeTestGate()
+    let oldCompleted = makeEvent(
+        host: host,
+        run: run,
+        sequence: 1,
+        idempotencyKey: "voy696-mailbox-pressure-completed-\(index)",
+        kind: .completed,
+    )
+    let replacementCompleted = makeEvent(
+        host: host,
+        run: replacementRun,
+        sequence: 1,
+        idempotencyKey: "voy696-mailbox-pressure-replacement-completed-\(index)",
+        kind: .completed,
+    )
+    let store = InMemoryRuntimeStateStore()
+    let adapter = DeterministicRuntimeAdapter(
+        id: "sdk",
+        transport: .sdkAsyncStream,
+        capabilities: uncooperativeStreamCapabilities,
+        eventsByEventStream: [[oldCompleted], [replacementCompleted]],
+        eventStreamInvocationGate: invocationGate,
+    )
+    let plane = RuntimeControlPlane(store: store)
+    let request = makeLaunch(host: host, run: run, adapterID: "sdk")
+    let replacementRequest = makeLaunch(host: host, run: replacementRun, adapterID: "sdk")
+
+    do {
+        try await plane.register(adapter)
+        try await plane.projectPrelaunch(request, as: .policyReady)
+    } catch {
+        return MailboxPressureCaseObservation(
+            index: index,
+            converged: false,
+            leaseReleased: false,
+            launchCount: nil,
+            streamCount: nil,
+            replacementAdmitted: false,
+            finalProjection: "setupFailed(\(String(describing: error)))",
+            finalLease: nil,
+            callerOutcome: nil,
+        )
+    }
+
+    let runTask = Task { try await plane.run(request) }
+    let recorder = ResumeProbeRecorder()
+    let monitor = Task {
+        do {
+            try await recorder.record(.result(runTask.value))
+        } catch is CancellationError {
+            await recorder.record(.cancellation)
+        } catch {
+            await recorder.record(.failure(String(describing: error)))
+        }
+    }
+    await adapter.waitForEventStreamCount(1)
+    await invocationGate.waitUntilWaiting()
+
+    // cancel과 gate 개방의 선후와 간격을 사례별로 샘플링해 deliver/cancelWaiter 경합 창 전체를 압력으로 담는다.
+    // 짝수 사례는 cancel 선승(T_cancel 먼저 도착), 홀수 사례는 개방 후 미세 지연 뒤 cancel로
+    // provider deliver 체인에 선두를 준다. 지연 단계는 인덱스로 순환해 기계 편차를 흡수한다.
+    if index.isMultiple(of: 2) {
+        runTask.cancel()
+        await invocationGate.open()
+    } else {
+        await invocationGate.open()
+        let pressureDelays: [UInt64] = [50000, 150_000, 400_000, 900_000]
+        try? await Task.sleep(nanoseconds: pressureDelays[(index / 2) % pressureDelays.count])
+        await Task.yield()
+        runTask.cancel()
+    }
+
+    // 1단계: 단말 투영 대기. 2단계: 투영 완료 뒤 소유권 해제는 별도 경계에서 늦게 반영되므로
+    // 해제를 별도 예산으로 기다린다. 두 단계가 모두 예산 안에 끝나야 수렴으로 인정한다.
+    var converged = false
+    var leaseReleased = false
+    var finalProjection: String?
+    var finalLease: String?
+    for _ in 0 ..< 1000 {
+        if let session = await plane.sessions[host] {
+            finalProjection = String(describing: session.stored.projection)
+            finalLease = String(describing: session.lease)
+            if session.stored.projection == .completed {
+                converged = true
+                break
+            }
+        }
+        try? await Task.sleep(nanoseconds: 5_000_000)
+    }
+    if converged {
+        for _ in 0 ..< 1000 {
+            if let session = await plane.sessions[host] {
+                finalProjection = String(describing: session.stored.projection)
+                finalLease = String(describing: session.lease)
+                if session.lease == RuntimeControlPlane.RuntimeLease.none {
+                    leaseReleased = true
+                    break
+                }
+            }
+            try? await Task.sleep(nanoseconds: 5_000_000)
+        }
+    }
+
+    var launchCount: Int?
+    var streamCount: Int?
+    var replacementAdmitted = false
+    if converged {
+        let counts = await adapter.counts()
+        launchCount = counts.launch
+        streamCount = counts.stream
+        do {
+            try await plane.projectPrelaunch(replacementRequest, as: .policyReady)
+            replacementAdmitted = true
+        } catch {
+            replacementAdmitted = false
+        }
+    }
+
+    _ = await recorder.waitForValue(maxYields: 1)
+    let callerOutcome = await recorder.value
+    _ = await monitor.value
+
+    return MailboxPressureCaseObservation(
+        index: index,
+        converged: converged,
+        leaseReleased: leaseReleased,
+        launchCount: launchCount,
+        streamCount: streamCount,
+        replacementAdmitted: replacementAdmitted,
+        finalProjection: finalProjection,
+        finalLease: finalLease,
+        callerOutcome: callerOutcome.map(String.init(describing:)),
+    )
 }

@@ -34,6 +34,13 @@ private actor FreshProviderRaceMailbox {
         }
     }
 
+    /// 취소된 caller가 배달로 가져간 단말을 배경 수렴 소비자를 위해 반납한다.
+    /// 생산자는 정확히 한 번만 전달하므로 반납 시점에는 보관된 결과가 없다.
+    func redeposit(_ outcome: FreshProviderRaceOutcome) {
+        guard storedOutcome == nil else { return }
+        storedOutcome = outcome
+    }
+
     /// caller 대기다. 취소 시 nil로 재개되지만 보관된 결과는 채널에 남아 배경 드레인이 받는다.
     func awaitOutcome() async -> FreshProviderRaceOutcome? {
         if let storedOutcome { return storedOutcome }
@@ -470,6 +477,19 @@ extension RuntimeControlPlane {
         _ = providerTask
         switch await mailbox.awaitOutcome() {
         case let .some(.consumed(result)):
+            // deliver가 cancelWaiter보다 먼저 재개하면 취소된 caller가 유일한 단말 복사본을
+            // 가져간다. 취소된 caller는 저장 경계의 checkCancellation에서 단말 저장과 소유권
+            // 해제를 모두 유실하고 배경 수렴도 남지 않는다. 단말을 우편함에 반납해 canonical
+            // 탈출 경계의 배경 드레인이 정확히 한 번 받도록 한다.
+            guard !Task.isCancelled else {
+                await mailbox.redeposit(.consumed(result))
+                return try await convergeOrEscapeOnCallerCancellation(
+                    mailbox: mailbox,
+                    receipt: receipt,
+                    host: reservation.host,
+                    lease: lease,
+                )
+            }
             // provider 결과가 이기면 늦은 취소와 무관하게 수렴 결과를 그대로 처리한다.
             return try await reconcileConsumedOutcome(
                 result,
