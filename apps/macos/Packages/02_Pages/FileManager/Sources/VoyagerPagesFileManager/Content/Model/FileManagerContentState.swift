@@ -21,9 +21,6 @@ public struct FileManagerContentState: Equatable {
     var productBrowsingOperationID: UUID?
     var productBrowsingSource: ContentBrowsingSource?
     var productBrowsingContent: ContentBrowsingKind?
-    var productEntryOperationID: UUID?
-    var productEntryAction: EntryActionMetricKind?
-    var productEntryFailedCount = 0
 
     var homeFavoriteItems: [FileManagerHomeFavoriteItem] = []
     var homeLocationItems: [FileManagerFixedLocationItem] = []

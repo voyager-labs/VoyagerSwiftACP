@@ -52,9 +52,6 @@ struct FileManagerContentEntryOperationsBridgeReducer {
         case let .executeCommand(command):
             guard let entryCommand = entryOperationsCommand(from: command, currentPath: state.navigation.currentPath)
             else { return .none }
-            state.productEntryOperationID = productMetricsClient.makeOperationID()
-            state.productEntryAction = entryMetricKind(for: entryCommand)
-            state.productEntryFailedCount = 0
             let entryOperationsAction = EntryOperationsAction.routing(.executeCommand(
                 command: entryCommand,
                 context: makeEntryOperationsCommandContext(command: entryCommand, state: state),
@@ -63,9 +60,6 @@ struct FileManagerContentEntryOperationsBridgeReducer {
 
         case let .openEntry(entry):
             let command = EntryOperationsCommand.navigation(.openSelectedItem)
-            state.productEntryOperationID = productMetricsClient.makeOperationID()
-            state.productEntryAction = .open
-            state.productEntryFailedCount = 0
             return sendEntryOperations(.routing(.executeCommand(
                 command: command,
                 context: EntryOperationsCommandContext(
@@ -79,9 +73,6 @@ struct FileManagerContentEntryOperationsBridgeReducer {
             let command = EntryOperationsCommand.navigation(.openWithSelectedItem(
                 bundleID: bundleID, shouldSetAsDefault: false,
             ))
-            state.productEntryOperationID = productMetricsClient.makeOperationID()
-            state.productEntryAction = .open
-            state.productEntryFailedCount = 0
             return sendEntryOperations(.routing(.executeCommand(
                 command: command,
                 context: makeEntryOperationsCommandContext(command: command, state: state),
@@ -351,29 +342,59 @@ struct FileManagerContentEntryOperationsBridgeReducer {
             state.productBrowsingContent = nil
         }
 
-        if case .lifecycle(.operationFinished(_, _, .failure)) = action,
-           state.productEntryOperationID != nil
-        {
-            state.productEntryFailedCount += 1
+        // entryActionCompleted가 유일한 command-level terminal seam이다.
+        // record.id/kind/aggregate로 자기 완료를 상관하므로 겹친 명령·역순 완료에서도
+        // 단일 슬롯 덮어쓰기에 따른 stale/misattribution이 없다.
+        if case let .lifecycle(.entryActionCompleted(record)) = action {
+            let succeeded = record.succeededCount
+            let failed = record.failedCount
+            productMetricsClient.record(FileManagerProductMetricsProducer.entryTerminal(
+                operationID: record.id,
+                action: Self.metricKind(for: record.operationKind),
+                source: .fileManagerContent,
+                result: Self.entryResult(succeeded: succeeded, failed: failed),
+                aggregate: .init(attempted: record.attemptedCount, succeeded: succeeded, failed: failed),
+            ))
         }
+    }
 
-        guard case let .lifecycle(.entryActionCompleted(record)) = action,
-              let operationID = state.productEntryOperationID,
-              let actionKind = state.productEntryAction
-        else { return }
-        let succeeded = record.targets.count
-        let failed = max(record.failedCount, state.productEntryFailedCount)
-        let result: EntryActionResult = failed == 0 ? .success : .partial
-        productMetricsClient.record(FileManagerProductMetricsProducer.entryTerminal(
-            operationID: operationID,
-            action: actionKind,
-            source: .fileManagerContent,
-            result: result,
-            aggregate: .init(attempted: succeeded + failed, succeeded: succeeded, failed: failed),
-        ))
-        state.productEntryOperationID = nil
-        state.productEntryAction = nil
-        state.productEntryFailedCount = 0
+    /// 성공/실패 개수로 result를 truthfully 매핑한다.
+    /// succeeded>0 failed=0 => success, succeeded>0 failed>0 => partial, succeeded=0 failed>0 => failure.
+    /// 시도 자체가 없는 비-undo 완료(0/0)는 실패 없이 완료된 것이므로 success다.
+    private static func entryResult(succeeded: Int, failed: Int) -> EntryActionResult {
+        if failed == 0 { return .success }
+        return succeeded > 0 ? .partial : .failure
+    }
+
+    private static func metricKind(for operationKind: OperationKind) -> EntryActionMetricKind {
+        switch operationKind {
+        case .openDefault, .openWithApp, .setDefaultApp, .getInfo, .performService:
+            .open
+        case .quickLook:
+            .quickLook
+        case .share:
+            .share
+        case .revealInFinder:
+            .revealInFinder
+        case .copyPath:
+            .copyPath
+        case .createFolder, .createAlias:
+            .create
+        case .pasteFileCopy, .pasteFileDuplicate:
+            .copy
+        case .pasteFileMove:
+            .move
+        case .rename:
+            .rename
+        case .moveToTrash, .deleteImmediately:
+            .trash
+        case .putBack:
+            .restore
+        case .setTags:
+            .tag
+        case .compress, .extract:
+            .copy
+        }
     }
 
     // MARK: - Helpers
@@ -457,33 +478,6 @@ struct FileManagerContentEntryOperationsBridgeReducer {
         case "clipboard": return clipboardCommand(action: action, currentPath: currentPath)
         case "mutation": return mutationCommand(action: action)
         default: return nil
-        }
-    }
-
-    private func entryMetricKind(for command: EntryOperationsCommand) -> EntryActionMetricKind {
-        switch command {
-        case let .navigation(command):
-            switch command {
-            case .openSelectedItem, .openWithSelectedItem: .open
-            case .quickLookSelectedItem: .quickLook
-            case .shareSelectedItems: .share
-            case .revealSelectedItemsInFinder: .revealInFinder
-            default: .open
-            }
-        case let .clipboard(command):
-            switch command {
-            case .copySelectedAbsolutePaths, .copySelectedURLs: .copyPath
-            case .copySelectedItems: .copy
-            case .cutSelectedItems, .pasteItems, .duplicateSelectedItems: .move
-            }
-        case let .mutation(command):
-            switch command {
-            case .createAliasForSelectedItems: .create
-            case .moveSelectedItemsToTrash, .deleteSelectedItemsImmediately, .emptyTrash: .trash
-            case .putBackSelectedItems: .restore
-            case .setTagForSelectedItems, .toggleTagForSelectedItem: .tag
-            default: .copy
-            }
         }
     }
 

@@ -126,11 +126,14 @@ struct EntryOperationsLifecycleReducer {
                 }
 
                 switch record.operationKind {
+                // 성공 사운드는 성공 semantic target이 있을 때만 재생한다(전체 실패 배치는 무음).
                 case .moveToTrash:
+                    guard !record.targets.isEmpty else { return .none }
                     return .run { [soundClient] _ in
                         await soundClient.play(.moveToTrash)
                     }
                 case .pasteFileCopy, .pasteFileMove, .pasteFileDuplicate, .putBack:
+                    guard !record.targets.isEmpty else { return .none }
                     return .run { [soundClient] _ in
                         await soundClient.play(.operationCompleted)
                     }

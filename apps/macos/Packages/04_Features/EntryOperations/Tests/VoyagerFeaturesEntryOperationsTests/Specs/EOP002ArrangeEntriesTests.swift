@@ -237,6 +237,9 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             $0.itemStates[sourcePath] = ItemOperationState(isBusy: false, lastError: error)
         }
 
+        // 전체 실패 paste 배치도 실패 aggregate를 담은 command-level terminal을 한 건 수신한다.
+        await store.receive(\.lifecycle.entryActionCompleted)
+
         XCTAssertEqual(store.state.itemStates[sourcePath]?.lastError, error)
         XCTAssertTrue(FileManager.default.fileExists(atPath: sourcePath))
         XCTAssertFalse(FileManager.default.fileExists(atPath: destinationPath))

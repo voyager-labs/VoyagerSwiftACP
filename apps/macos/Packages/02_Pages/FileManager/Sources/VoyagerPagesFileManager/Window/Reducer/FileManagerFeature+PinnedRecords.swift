@@ -585,6 +585,11 @@ extension FileManagerFeature {
         guard let record = completedEntryActionRecord(from: action) else {
             return .tabContent(tabID: tabID, action: action)
         }
+        // 비-undo terminal은 registry/owner-generation 경로(.internal)에서 drop되므로
+        // 일반 tabContent 라우팅으로 되돌려 bridge 메트릭이 정확히 한 번 기록되게 한다.
+        guard record.operationKind.isUndoable else {
+            return .tabContent(tabID: tabID, action: action)
+        }
         return .internal(.entryActionCompleted(
             tabID: tabID,
             record: record,

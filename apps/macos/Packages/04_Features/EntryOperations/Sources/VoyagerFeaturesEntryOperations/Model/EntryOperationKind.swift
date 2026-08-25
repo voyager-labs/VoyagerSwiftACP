@@ -7,6 +7,7 @@ public enum OperationKind: Equatable, Hashable, Sendable {
     case share
     case performService(String)
     case revealInFinder
+    case copyPath
     case createFolder
     case createAlias
     case pasteFileCopy
@@ -41,6 +42,7 @@ public enum OperationKind: Equatable, Hashable, Sendable {
              .share,
              .performService,
              .revealInFinder,
+             .copyPath,
              .deleteImmediately,
              .compress,
              .extract:

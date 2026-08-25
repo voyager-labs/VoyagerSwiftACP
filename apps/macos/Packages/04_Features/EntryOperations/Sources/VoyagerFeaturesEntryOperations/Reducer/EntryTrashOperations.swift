@@ -107,12 +107,14 @@ struct EntryTrashOperationsReducer {
             case let .trash(.putBackFromTrash(paths)):
                 return .run { [entryFileOpsClient, trashMetadataStoreClient, alertClient] send in
                     var targets: [EntryActionRecord.Target] = []
+                    var failedCount = 0
 
                     for path in paths {
                         await send(.lifecycle(.operationStarted(path, .putBack)))
 
                         guard let metadata = await trashMetadataStoreClient.find(path)
                         else {
+                            failedCount += 1
                             await send(.lifecycle(.operationFinished(
                                 path,
                                 .putBack,
@@ -134,6 +136,7 @@ struct EntryTrashOperationsReducer {
                             targets.append(.init(beforePath: path, afterPath: originalPath))
                         } catch let error as FileOpError where error.isFileExists {
                             guard let itemName = error.itemName else {
+                                failedCount += 1
                                 await send(.lifecycle(.operationFinished(path, .putBack, .failure(error))))
                                 continue
                             }
@@ -159,6 +162,7 @@ struct EntryTrashOperationsReducer {
                                     await send(.lifecycle(.operationFinished(path, .putBack, .success(()))))
                                     targets.append(.init(beforePath: path, afterPath: originalPath))
                                 } catch {
+                                    failedCount += 1
                                     await send(.lifecycle(.operationFinished(
                                         path,
                                         .putBack,
@@ -166,17 +170,22 @@ struct EntryTrashOperationsReducer {
                                     )))
                                 }
                             } else {
+                                failedCount += 1
                                 await send(.lifecycle(.operationFinished(path, .putBack, .failure(.cancelled))))
                             }
                         } catch {
+                            failedCount += 1
                             await send(.lifecycle(.operationFinished(path, .putBack, .failure(error.fileOpError))))
                         }
                     }
 
-                    if !targets.isEmpty {
-                        let record = EntryActionRecord(operationKind: .putBack, targets: targets)
-                        await send(.lifecycle(.entryActionCompleted(record)))
-                    }
+                    // 전체 실패 배치도 실패 aggregate를 담은 terminal로 마무리한다.
+                    let record = EntryActionRecord(
+                        operationKind: .putBack,
+                        targets: targets,
+                        failedCount: failedCount,
+                    )
+                    await send(.lifecycle(.entryActionCompleted(record)))
                 }
 
             default:

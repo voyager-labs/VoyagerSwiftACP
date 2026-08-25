@@ -349,6 +349,9 @@ final class EOP001ExecuteEntryTests: XCTestCase {
             $0.itemStates[filePath] = ItemOperationState(isBusy: false)
         }
 
+        // 비-undo open 명령도 command-level terminal을 한 건 수신한다.
+        await store.receive(\.lifecycle.entryActionCompleted)
+
         XCTAssertEqual(openURLsWithApplicationCalls.recorded.count, 1)
         XCTAssertEqual(openURLsWithApplicationCalls.recorded[0].0, [fileURL])
         XCTAssertEqual(openURLsWithApplicationCalls.recorded[0].1, appURL)
@@ -402,10 +405,12 @@ final class EOP001ExecuteEntryTests: XCTestCase {
         await store.receive(\.lifecycle.operationStarted) {
             $0.itemStates[filePath] = ItemOperationState(isBusy: true)
         }
-
         await store.receive(\.lifecycle.operationFinished) {
             $0.itemStates[filePath] = ItemOperationState(isBusy: false)
         }
+
+        // 비-undo open-with 명령도 실제 OperationKind를 보존한 terminal을 한 건 수신한다.
+        await store.receive(\.lifecycle.entryActionCompleted)
 
         XCTAssertEqual(openCalls.recorded.count, 1)
         XCTAssertEqual(openCalls.recorded[0].0, fileURL)
@@ -543,6 +548,9 @@ final class EOP001ExecuteEntryTests: XCTestCase {
             $0.itemStates[filePath] = ItemOperationState(isBusy: false)
         }
 
+        // 비-undo quickLook 명령도 command-level terminal을 한 건 수신한다.
+        await store.receive(\.lifecycle.entryActionCompleted)
+
         XCTAssertEqual(quickLookCalls.recorded.count, 1)
         XCTAssertEqual(quickLookCalls.recorded[0].0, [fileURL])
         XCTAssertEqual(quickLookCalls.recorded[0].1, 0)
@@ -574,6 +582,9 @@ final class EOP001ExecuteEntryTests: XCTestCase {
             $0.itemStates[filePath] = ItemOperationState(isBusy: false, lastError: error)
         }
 
+        // 비-undo quickLook 명령도 실패 시에도 command-level terminal을 한 건 수신한다.
+        await store.receive(\.lifecycle.entryActionCompleted)
+
         XCTAssertEqual(store.state.itemStates[filePath]?.lastError, error)
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
     }
@@ -596,5 +607,208 @@ final class EOP001ExecuteEntryTests: XCTestCase {
         await store.send(.open(.quickLookFiles(paths: [])))
 
         XCTAssertTrue(quickLookCalls.recorded.isEmpty)
+    }
+}
+
+// MARK: - Entry Command Terminal Records
+
+extension EOP001ExecuteEntryTests {
+    // MARK: - EOP-001-entry_command_terminal
+
+    /// EOP-001-entry_command_terminal: 수용된 비-undo 명령은 정확히 한 건의 command-level terminal을 낸다.
+    /// quickLook 성공 시 operationFinished 이후 entryActionCompleted terminal이 정확히 한 번 이어지는지 검증한다.
+    /// - 검증 내용: terminal record의 operationKind는 .quickLook이고 targets는 비며 failedCount는 0이다.
+    /// - 사전 조건: EntryQuickLookClient mock 성공 응답
+    /// - 기대 결과: entryActionCompleted(.quickLook, targets: [], failedCount: 0)가 한 번 수신된다.
+    func testQuickLookCommandEmitsSingleTerminalRecord() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+        let filePath = sandbox.fileURL.path
+
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryQuickLookClient = EntryQuickLookClient(quickLook: { _, _ in })
+        }
+        // store.exhaustivity = .off: terminal 계약만 검증하고 중간 lifecycle 수신은 생략함
+        store.exhaustivity = .off
+
+        await store.send(.open(.quickLookFiles(paths: [filePath])))
+        await store.receive { action in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return false }
+            return record.operationKind == .quickLook
+                && record.targets.isEmpty
+                && record.failedCount == 0
+                && record.succeededCount == 1
+        }
+        await store.finish()
+    }
+
+    /// EOP-001-entry_command_terminal: 공유 명령도 한 건의 command-level terminal을 낸다.
+    /// - 검증 내용: terminal record의 operationKind는 .share이고 실패 없이 완료된다.
+    /// - 사전 조건: EntryOpenClient.shareItems mock 성공 응답
+    /// - 기대 결과: entryActionCompleted(.share, targets: [], failedCount: 0)가 한 번 수신된다.
+    func testShareCommandEmitsSingleTerminalRecord() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+        let filePath = sandbox.fileURL.path
+
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryOpenClient.shareItems = { _, _ in }
+        }
+        // store.exhaustivity = .off: terminal 계약만 검증하고 중간 lifecycle 수신은 생략함
+        store.exhaustivity = .off
+
+        await store.send(.open(.shareItems(paths: [filePath], anchor: nil)))
+        await store.receive { action in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return false }
+            return record.operationKind == .share
+                && record.targets.isEmpty
+                && record.failedCount == 0
+                && record.succeededCount == 1
+        }
+        await store.finish()
+    }
+
+    /// EOP-001-entry_command_terminal: Finder 표시 명령도 한 건의 command-level terminal을 낸다.
+    /// - 검증 내용: terminal record의 operationKind는 .revealInFinder이고 실패 없이 완료된다.
+    /// - 사전 조건: EntryOpenClient.revealInFinder mock 성공 응답
+    /// - 기대 결과: entryActionCompleted(.revealInFinder, targets: [], failedCount: 0)가 한 번 수신된다.
+    func testRevealInFinderCommandEmitsSingleTerminalRecord() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+        let filePath = sandbox.fileURL.path
+
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryOpenClient.revealInFinder = { _ in }
+        }
+        // store.exhaustivity = .off: terminal 계약만 검증하고 중간 lifecycle 수신은 생략함
+        store.exhaustivity = .off
+
+        await store.send(.open(.revealInFinder(paths: [filePath])))
+        await store.receive { action in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return false }
+            return record.operationKind == .revealInFinder
+                && record.targets.isEmpty
+                && record.failedCount == 0
+                && record.succeededCount == 1
+        }
+        await store.finish()
+    }
+
+    /// EOP-001-entry_command_terminal: open 전체 실패도 failedCount를 담은 한 건의 terminal을 낸다.
+    /// 모든 파일 열기가 실패하면 targets 없이 시도 수만큼 failedCount를 가진 record로 마무리되는지 검증한다.
+    /// - 검증 내용: terminal record의 operationKind는 .openDefault이고 failedCount는 시도 수와 같다.
+    /// - 사전 조건: 기본 앱 해석 실패(urlForApplicationToOpen nil)와 open client 실패
+    /// - 기대 결과: entryActionCompleted(.openDefault, targets: [], failedCount: 2)가 한 번 수신된다.
+    func testOpenFilesAllFailureEmitsFailureTerminalRecord() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+        let error = FileOpError.system(message: "open unavailable")
+
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.workspaceClient.urlForApplicationToOpen = { _ in nil }
+            $0.entryOpenClient.open = { _, _ in throw error }
+        }
+        // store.exhaustivity = .off: 전체 실패 terminal 계약만 검증함
+        store.exhaustivity = .off
+
+        await store.send(.open(.openFiles(paths: [
+            sandbox.fileURL.path,
+            sandbox.originalFixture.path,
+        ])))
+        await store.receive { action in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return false }
+            return record.operationKind == .openDefault
+                && record.targets.isEmpty
+                && record.failedCount == 2
+                && record.succeededCount == 0
+        }
+        await store.finish()
+    }
+
+    /// EOP-001-entry_command_terminal: open 성공은 failedCount 0인 한 건의 terminal을 낸다.
+    /// - 검증 내용: terminal record의 operationKind는 .openDefault이고 failedCount는 0이다.
+    /// - 사전 조건: 기본 앱 해석 실패 이후 개별 open은 성공하는 mock
+    /// - 기대 결과: entryActionCompleted(.openDefault, targets: [], failedCount: 0)가 한 번 수신된다.
+    func testOpenFilesSuccessEmitsSingleTerminalRecord() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.workspaceClient.urlForApplicationToOpen = { _ in nil }
+        }
+        // store.exhaustivity = .off: terminal 계약만 검증하고 중간 lifecycle 수신은 생략함
+        store.exhaustivity = .off
+
+        await store.send(.open(.openFiles(paths: [sandbox.fileURL.path])))
+        await store.receive { action in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return false }
+            return record.operationKind == .openDefault
+                && record.targets.isEmpty
+                && record.failedCount == 0
+                && record.succeededCount == 1
+        }
+        await store.finish()
+    }
+
+    /// EOP-001-entry_command_terminal: 선택 앱 열기 성공은 실제 OperationKind를 보존한 terminal을 낸다.
+    /// - 검증 내용: terminal record의 operationKind는 .openWithApp(bundleID)이고 succeededCount는 1이다.
+    /// - 사전 조건: EntryOpenClient.open 성공 mock, 비휴지통 경로
+    /// - 기대 결과: entryActionCompleted(.openWithApp, targets: [], failed: 0, succeeded: 1)가 한 번 수신된다.
+    func testOpenFileWithAppBundleIDEmitsTerminalRecord() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+        let filePath = sandbox.fileURL.path
+
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryOpenClient.trashDirectoryPath = { nil }
+            $0.entryOpenClient.open = { _, _ in }
+        }
+        // store.exhaustivity = .off: terminal 계약만 검증하고 중간 lifecycle 수신은 생략함
+        store.exhaustivity = .off
+
+        await store.send(.openWith(.openFileWithAppBundleID(
+            filePath: filePath,
+            bundleID: "com.apple.Preview",
+            url: sandbox.fileURL,
+        )))
+        await store.receive { action in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return false }
+            return record.operationKind == .openWithApp("com.apple.Preview")
+                && record.targets.isEmpty
+                && record.failedCount == 0
+                && record.succeededCount == 1
+        }
+        await store.finish()
+    }
+
+    /// EOP-001-entry_command_terminal: 선택 앱 열기 실패도 실패 aggregate를 담은 terminal을 낸다.
+    /// - 검증 내용: terminal record의 failedCount는 1이고 succeededCount는 0이다.
+    /// - 사전 조건: EntryOpenClient.open 실패 mock
+    /// - 기대 결과: entryActionCompleted(.openWithApp, targets: [], failed: 1, succeeded: 0)가 한 번 수신된다.
+    func testOpenFileWithAppBundleIDFailureEmitsFailureTerminalRecord() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+        let filePath = sandbox.fileURL.path
+
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryOpenClient.trashDirectoryPath = { nil }
+            $0.entryOpenClient.open = { _, _ in throw FileOpError.system(message: "open denied") }
+        }
+        // store.exhaustivity = .off: 전체 실패 terminal 계약만 검증함
+        store.exhaustivity = .off
+
+        await store.send(.openWith(.openFileWithAppBundleID(
+            filePath: filePath,
+            bundleID: "com.apple.Preview",
+            url: sandbox.fileURL,
+        )))
+        await store.receive { action in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return false }
+            return record.operationKind == .openWithApp("com.apple.Preview")
+                && record.targets.isEmpty
+                && record.failedCount == 1
+                && record.succeededCount == 0
+        }
+        await store.finish()
     }
 }

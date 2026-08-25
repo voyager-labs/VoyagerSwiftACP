@@ -110,6 +110,9 @@ final class EOP004EditEntryMetadataTests: XCTestCase {
             state.itemStates[path]?.isBusy = false
         }
 
+        // 비-undo getInfo 명령도 command-level terminal을 한 건 수신한다.
+        await store.receive(\.lifecycle.entryActionCompleted)
+
         XCTAssertEqual(capture.url, sandbox.fileURL)
         XCTAssertEqual(capture.resourceValues?.fileSize, expectedSize)
         XCTAssertEqual(capture.resourceValues?.isRegularFile, true)
@@ -626,6 +629,110 @@ extension EOP004EditEntryMetadataTests {
         XCTAssertEqual(store.state.undoRecords.count, 1)
         XCTAssertEqual(store.state.undoRecords.first?.targets.map(\.beforePath), [successfulPath])
         XCTAssertEqual(store.state.itemStates[failedPath]?.lastError?.message, "Tag write failed")
+    }
+
+    /// EOP-004-create_new_folder: 폴더 생성 실패도 실패 aggregate terminal로 마무리된다.
+    /// - 검증 내용: terminal record의 failedCount는 1이고 succeededCount는 0이다.
+    /// - 사전 조건: createFolder 실패 mock
+    /// - 기대 결과: entryActionCompleted(.createFolder, targets: [], failed: 1, succeeded: 0) 1건
+    func testCreateNewFolderFailureEmitsFailureTerminal() async {
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryFileOpsClient.createFolder = { _, _ in
+                throw FileOpError.system(message: "create denied")
+            }
+        }
+        // store.exhaustivity = .off: 실패 terminal 계약에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.edit(.createNewFolder(parentPath: "/tmp", siblingNames: [])))
+        await store.receive { action in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return false }
+            return record.operationKind == .createFolder
+                && record.targets.isEmpty
+                && record.failedCount == 1
+                && record.succeededCount == 0
+        }
+        await store.finish()
+    }
+
+    /// EOP-004-create_aliases: 별칭 생성 전체 실패 배치도 실패 aggregate terminal로 마무리된다.
+    /// - 검증 내용: terminal record의 failedCount는 시도 수 2이고 succeededCount는 0이다.
+    /// - 사전 조건: createAlias 실패 mock, 경로 2개
+    /// - 기대 결과: entryActionCompleted(.createAlias, targets: [], failed: 2, succeeded: 0) 1건
+    func testCreateAliasesAllFailureEmitsFailureTerminal() async {
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryFileOpsClient.createAlias = { _, _ in
+                throw FileOpError.system(message: "alias denied")
+            }
+        }
+        // store.exhaustivity = .off: 전체 실패 배치 terminal 계약에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.edit(.createAliases(paths: ["/tmp/a.txt", "/tmp/b.txt"])))
+        await store.receive { action in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return false }
+            return record.operationKind == .createAlias
+                && record.targets.isEmpty
+                && record.failedCount == 2
+                && record.succeededCount == 0
+        }
+        await store.finish()
+    }
+
+    /// EOP-004-rename_entry: 이름 변경 실패도 실패 aggregate terminal로 마무리된다.
+    /// - 검증 내용: terminal record의 failedCount는 1이고 succeededCount는 0이다.
+    /// - 사전 조건: renameFile 실패 mock
+    /// - 기대 결과: entryActionCompleted(.rename, targets: [], failed: 1, succeeded: 0) 1건
+    func testRenameItemFailureEmitsFailureTerminal() async {
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryFileOpsClient.renameFile = { _, _ in
+                throw FileOpError.system(message: "rename denied")
+            }
+        }
+        // store.exhaustivity = .off: 실패 terminal 계약에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.edit(.renameItem(oldPath: "/tmp/a.txt", newPath: "/tmp/b.txt")))
+        await store.receive { action in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return false }
+            return record.operationKind == .rename
+                && record.targets.isEmpty
+                && record.failedCount == 1
+                && record.succeededCount == 0
+        }
+        await store.finish()
+    }
+
+    /// EOP-004-edit_entry_tags: 태그 변경 전체 실패 배치도 실패 aggregate terminal로 마무리된다.
+    /// - 검증 내용: terminal record의 failedCount는 2이고 succeededCount는 0이며 undo에 등록되지 않는다.
+    /// - 사전 조건: setTags 실패 mock, 경로 2개
+    /// - 기대 결과: entryActionCompleted(.setTags, targets: [], failed: 2, succeeded: 0) 1건, undoRecords 비어 있음
+    func testSetTagsAllFailureEmitsFailureTerminalWithoutUndo() async {
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryFileOpsClient.getTags = { _ in [] }
+            $0.entryFileOpsClient.setTags = { _, _ in
+                throw FileOpError.system(message: "tag denied")
+            }
+            $0.entryOperationsAlertClient.showTagMutationFailureAlert = { _ in }
+        }
+        // store.exhaustivity = .off: 전체 실패 배치 terminal과 undo 미등록을 함께 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.tagging(.requestTagMutation(request: .init(
+            mode: .add,
+            tagName: "Red",
+            paths: ["/tmp/a.txt", "/tmp/b.txt"],
+        ))))
+        await store.receive { action in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return false }
+            return record.operationKind == .setTags
+                && record.targets.isEmpty
+                && record.failedCount == 2
+                && record.succeededCount == 0
+        }
+        await store.finish()
+
+        XCTAssertTrue(store.state.undoRecords.isEmpty)
     }
 }
 

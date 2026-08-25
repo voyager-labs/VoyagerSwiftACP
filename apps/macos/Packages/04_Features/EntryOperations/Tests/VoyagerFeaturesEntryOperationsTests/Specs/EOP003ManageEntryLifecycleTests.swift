@@ -2795,3 +2795,163 @@ extension EOP003ManageEntryLifecycleTests {
         return try XCTUnwrap(attributes[.posixPermissions] as? NSNumber).intValue & 0o777
     }
 }
+
+// MARK: - Batch Terminal Records
+
+extension EOP003ManageEntryLifecycleTests {
+    // MARK: - EOP-003-delete_entries_immediately
+
+    /// EOP-003-delete_entries_immediately: 즉시 삭제 성공도 한 건의 command-level terminal을 낸다.
+    /// 비-undo 삭제가 operationFinished 이후 entryActionCompleted로 정확히 한 번 마무리되는지 검증한다.
+    /// - 검증 내용: terminal record의 operationKind는 .deleteImmediately이고 targets는 비며 failedCount는 0이다.
+    /// - 사전 조건: deleteImmediately client 성공 mock
+    /// - 기대 결과: entryActionCompleted(.deleteImmediately, targets: [], failedCount: 0)가 한 번 수신된다.
+    func testDeleteImmediatelyConfirmedEmitsSingleTerminalRecord() async {
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryFileOpsClient.deleteImmediately = { _ in }
+        }
+        // store.exhaustivity = .off: terminal 계약만 검증하고 중간 lifecycle 수신은 생략함
+        store.exhaustivity = .off
+
+        await store.send(.trash(.deleteImmediatelyConfirmed(paths: ["/root/deleted"])))
+        await store.receive { action in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return false }
+            return record.operationKind == .deleteImmediately
+                && record.targets.isEmpty
+                && record.failedCount == 0
+                && record.succeededCount == 1
+        }
+        await store.finish()
+    }
+
+    /// EOP-003-delete_entries_immediately: 즉시 삭제 전체 실패도 실패 aggregate를 담은 terminal을 낸다.
+    /// - 검증 내용: terminal record의 failedCount는 시도 수와 같고 targets는 비어 있다.
+    /// - 사전 조건: deleteImmediately client 실패 mock
+    /// - 기대 결과: entryActionCompleted(.deleteImmediately, targets: [], failedCount: 1)가 한 번 수신된다.
+    func testDeleteImmediatelyConfirmedAllFailureEmitsFailureTerminalRecord() async {
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryFileOpsClient = makeFailingDeleteClient(error: .system(message: "delete denied"))
+        }
+        // store.exhaustivity = .off: 전체 실패 terminal 계약만 검증함
+        store.exhaustivity = .off
+
+        await store.send(.trash(.deleteImmediatelyConfirmed(paths: ["/root/deleted"])))
+        await store.receive { action in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return false }
+            return record.operationKind == .deleteImmediately
+                && record.targets.isEmpty
+                && record.failedCount == 1
+                && record.succeededCount == 0
+        }
+        await store.finish()
+    }
+
+    // MARK: - eop-003-product_batch_metrics
+
+    /// EOP-003-product_batch_metrics: paste 전체 실패 배치도 실패 terminal을 한 건 낸다.
+    /// 성공 target이 하나도 없어도 시도한 배치는 command-level terminal로 마무리되어야 한다.
+    /// - 검증 내용: terminal record의 operationKind는 .pasteFileCopy이고 targets는 비며 failedCount는 1이다.
+    /// - 사전 조건: pasteFile client 실패 mock
+    /// - 기대 결과: entryActionCompleted(.pasteFileCopy, targets: [], failedCount: 1)가 한 번 수신된다.
+    func testPasteAllFailureEmitsFailureTerminalRecord() async {
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryFileOpsClient.pasteFile = { _, _ in throw FileOpError.system(message: "paste failed") }
+        }
+        // store.exhaustivity = .off: 전체 실패 배치 terminal 계약만 검증함
+        store.exhaustivity = .off
+
+        await store.send(.clipboard(.pasteItems(
+            sourcePaths: ["/src/a.txt"],
+            destinationPath: "/dest",
+            operation: .copy,
+            operationKind: .pasteFileCopy,
+        )))
+        await store.receive { action in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return false }
+            return record.operationKind == .pasteFileCopy
+                && record.targets.isEmpty
+                && record.failedCount == 1
+                && record.succeededCount == 0
+        }
+        await store.finish()
+    }
+
+    /// EOP-003-product_batch_metrics: putBack 전체 실패 배치도 실패 terminal을 한 건 낸다.
+    /// metadata 부재로 모든 대상이 실패하면 failedCount를 담은 record로 마무리되는지 검증한다.
+    /// - 검증 내용: terminal record의 operationKind는 .putBack이고 targets는 비며 failedCount는 1이다.
+    /// - 사전 조건: trash metadata store에 해당 path의 metadata가 없음
+    /// - 기대 결과: entryActionCompleted(.putBack, targets: [], failedCount: 1)가 한 번 수신된다.
+    func testPutBackAllFailureEmitsFailureTerminalRecord() async {
+        let store = EntryOperationsTestSupport.makeStore()
+        // store.exhaustivity = .off: 전체 실패 배치 terminal 계약만 검증함
+        store.exhaustivity = .off
+
+        await store.send(.trash(.putBackFromTrash(paths: ["/.Trash/a.txt"])))
+        await store.receive { action in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return false }
+            return record.operationKind == .putBack
+                && record.targets.isEmpty
+                && record.failedCount == 1
+                && record.succeededCount == 0
+        }
+        await store.finish()
+    }
+
+    /// EOP-003-product_batch_metrics: 전체 실패 배치 record는 성공 사운드를 재생하지 않는다.
+    /// - 검증 내용: targets가 비은 moveToTrash/pasteFileMove 완료에서 soundClient 호출이 없다.
+    /// - 사전 조건: 성공 target 1개짜리 대조 레코드와 전체 실패 레코드
+    /// - 기대 결과: 성공 레코드만 사운드 1회, 전체 실패 레코드는 무음
+    func testAllFailedBatchRecordsDoNotPlaySuccessSounds() async {
+        var played: [EntryOperationSound] = []
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryOperationSoundClient = EntryOperationSoundClient(play: { sound in
+                await MainActor.run { played.append(sound) }
+            })
+        }
+        // store.exhaustivity = .off: 사운드 부수 효과 계약에 집중함
+        store.exhaustivity = .off
+
+        let successTrash = EntryActionRecord(
+            operationKind: .moveToTrash,
+            targets: [.init(beforePath: "/src/a.txt", afterPath: nil)],
+        )
+        await store.send(.lifecycle(.entryActionCompleted(successTrash)))
+        let allFailedTrash = EntryActionRecord(operationKind: .moveToTrash, targets: [], failedCount: 2)
+        await store.send(.lifecycle(.entryActionCompleted(allFailedTrash)))
+        let allFailedPaste = EntryActionRecord(operationKind: .pasteFileMove, targets: [], failedCount: 1)
+        await store.send(.lifecycle(.entryActionCompleted(allFailedPaste)))
+
+        XCTAssertEqual(played, [.moveToTrash])
+    }
+
+    // MARK: - eop-003-undo_entry_action
+
+    /// EOP-003-undo_entry_action: 성공 target이 없는 레코드는 undo 등록하지 않는다.
+    /// 전체 실패 배치 record(undoable kind라도 targets가 비면) undo history와 manager 등록에서 제외되는지 검증한다.
+    /// - 검증 내용: undoRecords가 변하지 않고 UndoManagerSpy.registerUndo가 호출되지 않는다.
+    /// - 사전 조건: windowID/ownerID가 설정된 state와 UndoManagerSpy, targets가 빈 pasteFileMove record
+    /// - 기대 결과: 상태 변화 없이 spy 호출 0회
+    func testEntryActionCompletedWithoutSuccessfulTargetsDoesNotRegisterUndo() async throws {
+        let spy = UndoManagerSpy()
+        let windowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000569"))
+        let ownerID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000568"))
+        var initialState = EntryOperationsState(undoOwnerID: ownerID)
+        initialState.windowID = windowID
+        let store = EntryOperationsTestSupport.makeStore(initialState: initialState) {
+            $0.undoManagerClient = spy.client
+        }
+
+        let allFailedRecord = EntryActionRecord(
+            operationKind: .pasteFileMove,
+            targets: [],
+            failedCount: 2,
+        )
+
+        await store.send(.lifecycle(.entryActionCompleted(allFailedRecord)))
+
+        await store.finish()
+
+        XCTAssertTrue(spy.registerUndoCalls.isEmpty)
+        XCTAssertTrue(store.state.undoRecords.isEmpty)
+    }
+}

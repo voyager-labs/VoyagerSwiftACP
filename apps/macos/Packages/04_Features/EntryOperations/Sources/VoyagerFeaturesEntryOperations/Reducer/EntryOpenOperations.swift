@@ -55,6 +55,7 @@ struct EntryOpenOperationsReducer {
                         groupedPaths[ext, default: []].append(path)
                     }
 
+                    var failedCount = 0
                     for (_, groupPaths) in groupedPaths {
                         let urls = groupPaths.map { URL(fileURLWithPath: $0) }
                         guard let firstURL = urls.first else { continue }
@@ -68,6 +69,7 @@ struct EntryOpenOperationsReducer {
                                     try await entryOpenClient.open(url, .defaultApp)
                                     await send(.lifecycle(.operationFinished(filePath, .openDefault, .success(()))))
                                 } catch {
+                                    failedCount += 1
                                     await send(.lifecycle(.operationFinished(
                                         filePath,
                                         .openDefault,
@@ -96,6 +98,7 @@ struct EntryOpenOperationsReducer {
                                 )
                             }
                         } catch {
+                            failedCount += groupPaths.count
                             for filePath in groupPaths {
                                 await send(.lifecycle(.operationFinished(
                                     filePath,
@@ -105,6 +108,17 @@ struct EntryOpenOperationsReducer {
                             }
                         }
                     }
+
+                    // 수용된 open 명령은 정확히 한 건의 terminal로 마무리한다.
+                    // 휴지통 사전 안내처럼 시도 없이 끝난 경로는 위에서 조기 반환되어 terminal이 없다.
+                    await send(.lifecycle(.entryActionCompleted(
+                        EntryActionRecord(
+                            operationKind: .openDefault,
+                            targets: [],
+                            failedCount: failedCount,
+                            succeededCount: paths.count - failedCount,
+                        ),
+                    )))
                 }
 
             case let .open(.quickLookFiles(paths)):

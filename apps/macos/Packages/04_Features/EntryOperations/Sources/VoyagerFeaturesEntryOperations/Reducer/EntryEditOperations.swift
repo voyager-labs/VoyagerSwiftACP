@@ -23,27 +23,38 @@ struct EntryEditOperationsReducer {
 
                 return .run { send in
                     await send(.lifecycle(.operationStarted(targetPath, .createFolder)))
+                    var succeededCount = 0
+                    var failedCount = 0
                     do {
                         try await entryFileOpsClient.createFolder(parentURL, name)
+                        succeededCount = 1
                         await send(.lifecycle(.pathsMutated([targetPath])))
                         await send(.lifecycle(.operationFinished(targetPath, .createFolder, .success(()))))
-                        let record = EntryActionRecord(
-                            operationKind: .createFolder,
-                            targets: [.init(beforePath: nil, afterPath: targetPath)],
-                        )
-                        await send(.lifecycle(.entryActionCompleted(record)))
                     } catch {
+                        failedCount = 1
                         await send(.lifecycle(.operationFinished(
                             targetPath,
                             .createFolder,
                             .failure(error.fileOpError),
                         )))
                     }
+                    // 수용된 생성 명령은 성공 여부와 무관하게 정확히 한 건의 terminal로 마무리한다.
+                    await send(.lifecycle(.entryActionCompleted(
+                        EntryActionRecord(
+                            operationKind: .createFolder,
+                            targets: succeededCount == 1
+                                ? [.init(beforePath: nil, afterPath: targetPath)]
+                                : [],
+                            failedCount: failedCount,
+                            succeededCount: succeededCount,
+                        ),
+                    )))
                 }
 
             case let .edit(.createAliases(paths)):
                 return .run { [entryFileOpsClient] send in
                     var targets: [EntryActionRecord.Target] = []
+                    var failedCount = 0
 
                     for path in paths {
                         let sourceURL = URL(fileURLWithPath: path)
@@ -67,12 +78,17 @@ struct EntryEditOperationsReducer {
                             targets.append(.init(beforePath: path, afterPath: aliasURL.path))
                             entryFileOpsClient.postFileSystemChanged([aliasURL.path])
                         } catch {
+                            failedCount += 1
                             await send(.lifecycle(.operationFinished(path, .createAlias, .failure(error.fileOpError))))
                         }
                     }
 
-                    guard !targets.isEmpty else { return }
-                    let record = EntryActionRecord(operationKind: .createAlias, targets: targets)
+                    // 전체 실패 배치도 실패 aggregate를 담은 terminal로 마무리한다.
+                    let record = EntryActionRecord(
+                        operationKind: .createAlias,
+                        targets: targets,
+                        failedCount: failedCount,
+                    )
                     await send(.lifecycle(.entryActionCompleted(record)))
                 }
 
@@ -82,25 +98,40 @@ struct EntryEditOperationsReducer {
 
                 return .run { [entryFileOpsClient, alertClient] send in
                     await send(.lifecycle(.operationStarted(oldPath, .rename)))
+                    var succeededCount = 0
+                    var failedCount = 0
                     do {
                         try await entryFileOpsClient.renameFile(sourceURL, destURL)
+                        succeededCount = 1
                         await send(.lifecycle(.pathsMutated([oldPath, newPath])))
                         await send(.lifecycle(.operationFinished(oldPath, .rename, .success(()))))
-                        let record = EntryActionRecord(
-                            operationKind: .rename,
-                            targets: [.init(beforePath: oldPath, afterPath: newPath)],
-                        )
-                        await send(.lifecycle(.entryActionCompleted(record)))
                     } catch let error as FileOpError where error.isFileExists {
+                        failedCount = 1
                         guard let itemName = error.itemName else {
                             await send(.lifecycle(.operationFinished(oldPath, .rename, .failure(error))))
+                            await finishRenameTerminal(
+                                oldPath: oldPath,
+                                newPath: newPath,
+                                succeededCount: succeededCount,
+                                failedCount: failedCount,
+                                send: send,
+                            )
                             return
                         }
                         await alertClient.showRenameConflictAlert(itemName)
                         await send(.lifecycle(.operationFinished(oldPath, .rename, .failure(error))))
                     } catch {
+                        failedCount = 1
                         await send(.lifecycle(.operationFinished(oldPath, .rename, .failure(error.fileOpError))))
                     }
+                    // 수용된 rename 명령은 성공 여부와 무관하게 정확히 한 건의 terminal로 마무리한다.
+                    await finishRenameTerminal(
+                        oldPath: oldPath,
+                        newPath: newPath,
+                        succeededCount: succeededCount,
+                        failedCount: failedCount,
+                        send: send,
+                    )
                 }
 
             case let .edit(.startRename(item, text)):
@@ -177,4 +208,21 @@ struct EntryEditOperationsReducer {
 
         return folderName
     }
+}
+
+/// rename terminal은 성공 시에만 semantic target을 가진다.
+private func finishRenameTerminal(
+    oldPath: String,
+    newPath: String,
+    succeededCount: Int,
+    failedCount: Int,
+    send: Send<EntryOperationsAction>,
+) async {
+    let record = EntryActionRecord(
+        operationKind: .rename,
+        targets: succeededCount == 1 ? [.init(beforePath: oldPath, afterPath: newPath)] : [],
+        failedCount: failedCount,
+        succeededCount: succeededCount,
+    )
+    await send(.lifecycle(.entryActionCompleted(record)))
 }

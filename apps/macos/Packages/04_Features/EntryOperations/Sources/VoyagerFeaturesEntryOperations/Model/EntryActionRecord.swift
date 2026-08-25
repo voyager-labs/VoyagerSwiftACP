@@ -6,9 +6,12 @@ public struct EntryActionRecord: Equatable, Identifiable, Sendable {
     public let timestamp: Date
     public let targets: [Target]
     public let failedCount: Int
+    /// 실제 성공 시도 수. targets는 undo 가능한 의미론적 변환 경로만 담으므로
+    /// 비-undo 연산의 성공 집계는 이 값으로 별도 전달한다.
+    public let succeededCount: Int
 
     public var attemptedCount: Int {
-        targets.count + failedCount
+        succeededCount + failedCount
     }
 
     public struct Target: Equatable, Sendable {
@@ -34,6 +37,7 @@ public struct EntryActionRecord: Equatable, Identifiable, Sendable {
         operationKind: OperationKind,
         targets: [Target],
         failedCount: Int = 0,
+        succeededCount: Int? = nil,
         id: UUID = UUID(),
         timestamp: Date = Date(),
     ) {
@@ -42,5 +46,7 @@ public struct EntryActionRecord: Equatable, Identifiable, Sendable {
         self.timestamp = timestamp
         self.targets = targets
         self.failedCount = max(0, failedCount)
+        // 의미론적 target 기반 연산은 성공 수가 targets 수와 일치한다.
+        self.succeededCount = max(0, succeededCount ?? targets.count)
     }
 }

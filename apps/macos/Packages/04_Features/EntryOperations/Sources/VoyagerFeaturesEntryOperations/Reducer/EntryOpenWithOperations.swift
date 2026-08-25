@@ -40,16 +40,29 @@ struct EntryOpenWithOperationsReducer {
                     }
 
                     await send(.lifecycle(.operationStarted(filePath, .openWithApp(bundleID))))
+                    var succeededCount = 0
+                    var failedCount = 0
                     do {
                         try await entryOpenClient.open(url, .bundleID(bundleID))
+                        succeededCount = 1
                         await send(.lifecycle(.operationFinished(filePath, .openWithApp(bundleID), .success(()))))
                     } catch {
+                        failedCount = 1
                         await send(.lifecycle(.operationFinished(
                             filePath,
                             .openWithApp(bundleID),
                             .failure(error.fileOpError),
                         )))
                     }
+                    // open-with도 실제 OperationKind를 보존한 단일 terminal로 마무리한다.
+                    await send(.lifecycle(.entryActionCompleted(
+                        EntryActionRecord(
+                            operationKind: .openWithApp(bundleID),
+                            targets: [],
+                            failedCount: failedCount,
+                            succeededCount: succeededCount,
+                        ),
+                    )))
                 }
 
             case let .openWith(.setDefaultAppForFile(type, bundleID, file)):

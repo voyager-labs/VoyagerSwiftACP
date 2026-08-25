@@ -70,10 +70,15 @@ struct EntryTaggingOperationsReducer {
                 }
             }
 
-            if !completedTargets.isEmpty {
-                let record = EntryActionRecord(operationKind: .setTags, targets: completedTargets)
-                await send(.lifecycle(.entryActionCompleted(record)))
-            }
+            // 전체 실패 배치도 실패 aggregate를 담은 terminal로 마무리한다.
+            // 성공 시도 수는 no-op 성공(태그 불변)을 포함한 실제 시도 기준이다.
+            let record = EntryActionRecord(
+                operationKind: .setTags,
+                targets: completedTargets,
+                failedCount: failures.count,
+                succeededCount: paths.count - failures.count,
+            )
+            await send(.lifecycle(.entryActionCompleted(record)))
             if !failures.isEmpty {
                 await alertClient.showTagMutationFailureAlert(failures)
             }

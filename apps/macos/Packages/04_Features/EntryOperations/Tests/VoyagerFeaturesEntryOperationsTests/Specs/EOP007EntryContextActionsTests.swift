@@ -38,6 +38,9 @@ final class EOP007EntryContextActionsTests: XCTestCase {
             $0.itemStates[filePath] = ItemOperationState(isBusy: false)
         }
 
+        // 비-undo 명령도 command-level terminal을 한 건 수신한다.
+        await store.receive(\.lifecycle.entryActionCompleted)
+
         XCTAssertEqual(revealCalls.recorded.count, 1)
         XCTAssertEqual(revealCalls.recorded[0], [fileURL])
     }
@@ -89,6 +92,9 @@ final class EOP007EntryContextActionsTests: XCTestCase {
         await store.receive(\.lifecycle.operationFinished) {
             $0.itemStates[filePath] = ItemOperationState(isBusy: false)
         }
+
+        // 비-undo 명령도 command-level terminal을 한 건 수신한다.
+        await store.receive(\.lifecycle.entryActionCompleted)
 
         XCTAssertEqual(performServiceCalls.recorded.count, 1)
         XCTAssertEqual(performServiceCalls.recorded[0].0, serviceName)
@@ -193,6 +199,9 @@ final class EOP007EntryContextActionsTests: XCTestCase {
             $0.itemStates[filePath] = ItemOperationState(isBusy: false)
         }
 
+        // 비-undo 명령도 command-level terminal을 한 건 수신한다.
+        await store.receive(\.lifecycle.entryActionCompleted)
+
         XCTAssertEqual(shareCalls.recorded.count, 1)
         XCTAssertEqual(shareCalls.recorded[0].0, [fileURL])
         XCTAssertEqual(shareCalls.recorded[0].1, anchor)
@@ -223,6 +232,9 @@ final class EOP007EntryContextActionsTests: XCTestCase {
         await store.receive(\.lifecycle.operationFinished) {
             $0.itemStates[filePath] = ItemOperationState(isBusy: false)
         }
+
+        // 비-undo 명령도 command-level terminal을 한 건 수신한다.
+        await store.receive(\.lifecycle.entryActionCompleted)
 
         XCTAssertEqual(shareCalls.recorded.count, 1)
         XCTAssertNil(shareCalls.recorded[0].1)

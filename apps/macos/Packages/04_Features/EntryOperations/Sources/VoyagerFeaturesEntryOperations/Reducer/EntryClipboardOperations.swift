@@ -81,6 +81,16 @@ struct EntryClipboardOperationsReducer {
     @Dependency(\.uuid)
     var uuid
 
+    /// copyPath terminal은 pasteboard write 성공 여부를 그대로 집계한다.
+    private func copyPathTerminal(didWrite: Bool) -> EntryActionRecord {
+        EntryActionRecord(
+            operationKind: .copyPath,
+            targets: [],
+            failedCount: didWrite ? 0 : 1,
+            succeededCount: didWrite ? 1 : 0,
+        )
+    }
+
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
@@ -151,9 +161,11 @@ struct EntryClipboardOperationsReducer {
 
                 let text = paths.joined(separator: "\n")
                 pasteboardClient.clearContents()
-                _ = pasteboardClient.setString(text, .string)
+                let didWrite = pasteboardClient.setString(text, .string)
 
-                return .none
+                return .send(.lifecycle(.entryActionCompleted(
+                    copyPathTerminal(didWrite: didWrite),
+                )))
 
             case let .clipboard(.copyURLs(paths)):
                 guard !paths.isEmpty else { return .none }
@@ -162,9 +174,11 @@ struct EntryClipboardOperationsReducer {
                     .map { URL(fileURLWithPath: $0).absoluteString }
                     .joined(separator: "\n")
                 pasteboardClient.clearContents()
-                _ = pasteboardClient.setString(text, .string)
+                let didWrite = pasteboardClient.setString(text, .string)
 
-                return .none
+                return .send(.lifecycle(.entryActionCompleted(
+                    copyPathTerminal(didWrite: didWrite),
+                )))
 
             case let .clipboard(.setClipboardOperation(operation)):
                 state.clipboardOperation = operation
@@ -366,7 +380,8 @@ private enum EntryClipboardOperationsSupport {
             operationKind: OperationKind,
             send: Send<EntryOperationsAction>,
         ) async {
-            guard !targets.isEmpty else { return }
+            // 전체 실패 배치도 실패 aggregate를 담은 terminal로 마무리한다.
+            // undo 등록은 소비자가 successful targets 존재로 게이트한다.
             if operationKind.isUndoable {
                 let record = EntryActionRecord(
                     operationKind: operationKind,
@@ -375,7 +390,7 @@ private enum EntryClipboardOperationsSupport {
                 )
                 await send(.lifecycle(.entryActionCompleted(record)))
             }
-            guard let mutationImpactDestinationPath else { return }
+            guard !targets.isEmpty, let mutationImpactDestinationPath else { return }
             let impact = EntryOperationsMutationImpact(
                 sourceParentPaths: EntryClipboardOperationsSupport.uniqueSourceParentPaths(from: targets),
                 destinationPath: mutationImpactDestinationPath,

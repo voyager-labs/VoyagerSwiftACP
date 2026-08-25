@@ -99,7 +99,11 @@ final class EOP003GlobalUndoCommandTests: XCTestCase {
         let ownerA = try XCTUnwrap(
             state.tabContentStates[tabA]?.entryViewLayout.entryOperations.undoOwnerID,
         )
-        let record = EntryActionRecord(operationKind: .rename, targets: [])
+        // 성공 target이 있는 record만 undo 등록 대상이다(전체 실패 배치 제외 계약).
+        let record = EntryActionRecord(
+            operationKind: .rename,
+            targets: [.init(beforePath: "/src/a.txt", afterPath: "/dest/a.txt")],
+        )
         let store = TestStore(initialState: state) {
             FileManagerFeature()
         } withDependencies: {

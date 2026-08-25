@@ -2585,6 +2585,313 @@ extension EVM001FileManagerNavigationTests {
     }
 }
 
+// MARK: - Entry Command Product Metrics
+
+extension EVM001FileManagerNavigationTests {
+    // MARK: - evm-001-entry_command_product_metrics
+
+    /// EVM-001-entry_command_product_metrics: 겹친 명령의 완료는 각자의 record로 상관된다.
+    /// paste 수용 뒤 quickLook이 수용되어 단일 슬롯이 덮어써져도, 완료 순서가 뒤바뀌면 각 record의 id/kind로
+    /// 정확히 두 건의 terminal이 기록되어야 한다.
+    /// - 검증 내용: 첫 완료(quickLook)와 늦은 완료(paste)가 각각 자신의 record.id와 kind로 기록된다.
+    /// - 사전 조건: paste → quickLook 순서로 두 명령을 수용하고 완료는 quickLook → paste 순으로 도착
+    /// - 기대 결과: recorder에 entryAction 메트릭 2건(quickLook success, move success)이 순서대로 기록됨
+    func testOverlappingCompletionsCorrelateToTheirOwnRecords() async {
+        let injectedID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x42))
+        let recorder = FileManagerProductMetricRecorder(makeOperationID: { injectedID })
+        let store = TestStore(initialState: FileManagerFeature.State()) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.fileManagerProductMetricsClient = recorder.client
+            $0.entryFileOpsClient.loadClipboardPaths = { ([], .copy) }
+            $0.date = .constant(Date())
+        }
+        // store.exhaustivity = .off: 메트릭 상관 계약에 집중하고 라우팅 부수 효과 수신은 생략함
+        store.exhaustivity = .off
+
+        await store.send(.content(.entryViewLayout(.delegate(.executeCommand("clipboard.pasteItems")))))
+        await store.send(.content(.entryViewLayout(.delegate(.executeCommand("navigation.quickLookSelectedItem")))))
+
+        let latePasteRecord = EntryActionRecord(
+            operationKind: .pasteFileMove,
+            targets: [.init(beforePath: "/src/a.txt", afterPath: "/dest/a.txt")],
+        )
+        let earlyQuickLookRecord = EntryActionRecord(operationKind: .quickLook, targets: [])
+
+        await store.send(.content(.entryViewLayout(.entryOperations(.lifecycle(.entryActionCompleted(
+            earlyQuickLookRecord,
+        ))))))
+        await store.send(.content(.entryViewLayout(.entryOperations(.lifecycle(.entryActionCompleted(
+            latePasteRecord,
+        ))))))
+
+        XCTAssertEqual(recorder.metrics(), [
+            .entryAction(
+                result: .success,
+                action: .quickLook,
+                source: .fileManagerContent,
+                operationID: earlyQuickLookRecord.id,
+                aggregate: .init(attempted: 0, succeeded: 0, failed: 0),
+            ),
+            .entryAction(
+                result: .success,
+                action: .move,
+                source: .fileManagerContent,
+                operationID: latePasteRecord.id,
+                aggregate: .init(attempted: 1, succeeded: 1, failed: 0),
+            ),
+        ])
+    }
+
+    /// EVM-001-entry_command_product_metrics: 전체 실패 배치는 .failure result로 기록된다.
+    /// succeeded=0, failed>0인 record는 partial이 아니라 failure로 truthfully 매핑되어야 한다.
+    /// - 검증 내용: result가 .failure이고 aggregate가 attempted 2, succeeded 0, failed 2이다.
+    /// - 사전 조건: paste 명령 수용 후 targets가 비고 failedCount 2인 record 도착
+    /// - 기대 결과: entryAction(.failure, .move) 메트릭 1건 기록
+    func testAllFailedBatchMapsToFailureResult() async {
+        let recorder = FileManagerProductMetricRecorder()
+        let store = TestStore(initialState: FileManagerFeature.State()) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.fileManagerProductMetricsClient = recorder.client
+            $0.entryFileOpsClient.loadClipboardPaths = { ([], .copy) }
+            $0.date = .constant(Date())
+        }
+        // store.exhaustivity = .off: 메트릭 truth table 계약에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.content(.entryViewLayout(.delegate(.executeCommand("clipboard.pasteItems")))))
+
+        let allFailedRecord = EntryActionRecord(operationKind: .pasteFileMove, targets: [], failedCount: 2)
+        await store.send(.content(.entryViewLayout(.entryOperations(.lifecycle(.entryActionCompleted(
+            allFailedRecord,
+        ))))))
+
+        XCTAssertEqual(recorder.metrics(), [
+            .entryAction(
+                result: .failure,
+                action: .move,
+                source: .fileManagerContent,
+                operationID: allFailedRecord.id,
+                aggregate: .init(attempted: 2, succeeded: 0, failed: 2),
+            ),
+        ])
+    }
+
+    /// EVM-001-entry_command_product_metrics: 성공/부분 성공 배치는 truth table대로 기록된다.
+    /// succeeded>0 failed=0은 success, succeeded>0 failed>0은 partial로 매핑되는지 검증한다.
+    /// - 검증 내용: 연속된 두 배치가 각각 success/partial result와 정확한 aggregate로 기록된다.
+    /// - 사전 조건: paste 명령을 두 번 수용하고 각각 성공/부분 성공 record가 도착
+    /// - 기대 결과: entryAction 메트릭 2건(success 1/1/0, partial 2/1/1)이 순서대로 기록됨
+    func testSuccessAndPartialBatchesMapTruthfully() async {
+        let recorder = FileManagerProductMetricRecorder()
+        let store = TestStore(initialState: FileManagerFeature.State()) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.fileManagerProductMetricsClient = recorder.client
+            $0.entryFileOpsClient.loadClipboardPaths = { ([], .copy) }
+            $0.date = .constant(Date())
+        }
+        // store.exhaustivity = .off: 메트릭 truth table 계약에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.content(.entryViewLayout(.delegate(.executeCommand("clipboard.pasteItems")))))
+        let successRecord = EntryActionRecord(
+            operationKind: .pasteFileCopy,
+            targets: [.init(beforePath: "/src/a.txt", afterPath: "/dest/a.txt")],
+        )
+        await store.send(.content(.entryViewLayout(.entryOperations(.lifecycle(.entryActionCompleted(
+            successRecord,
+        ))))))
+
+        await store.send(.content(.entryViewLayout(.delegate(.executeCommand("clipboard.pasteItems")))))
+        let partialRecord = EntryActionRecord(
+            operationKind: .pasteFileCopy,
+            targets: [.init(beforePath: "/src/b.txt", afterPath: "/dest/b.txt")],
+            failedCount: 1,
+        )
+        await store.send(.content(.entryViewLayout(.entryOperations(.lifecycle(.entryActionCompleted(
+            partialRecord,
+        ))))))
+
+        // pasteFileCopy는 실제 연산대로 .copy로 분류된다(단일 .move 회귀 수정).
+        XCTAssertEqual(recorder.metrics(), [
+            .entryAction(
+                result: .success,
+                action: .copy,
+                source: .fileManagerContent,
+                operationID: successRecord.id,
+                aggregate: .init(attempted: 1, succeeded: 1, failed: 0),
+            ),
+            .entryAction(
+                result: .partial,
+                action: .copy,
+                source: .fileManagerContent,
+                operationID: partialRecord.id,
+                aggregate: .init(attempted: 2, succeeded: 1, failed: 1),
+            ),
+        ])
+    }
+
+    /// EVM-001-entry_command_product_metrics: content effect에서 방출된 비-undo terminal도 제품 메트릭으로 정확히 한 번 기록된다.
+    /// routeContentEffectAction이 비-undo record를 .internal 경로로 돌려 drop하는 P0 회귀를 검증한다.
+    /// - 검증 내용: copyPath 명령의 실제 effect terminal이 window 라우팅을 통과해 메트릭 1건으로 기록된다.
+    /// - 사전 조건: 선택 항목 1개와 pasteboard 성공 mock, 실제 FileManagerFeature 라우팅 사용
+    /// - 기대 결과: entryAction(.copyPath, aggregate 1/1/0) 메트릭 정확히 1건 기록
+    func testNonUndoEffectTerminalRecordsSingleProductEvent() async {
+        let folderPath = "/tmp/voyager-nonundo-terminal"
+        let folder = EntryModel.temporaryFolder(id: folderPath, name: "folder")
+        var state = FileManagerFeature.State()
+        state.content.navigation.navigationState = .folder("/tmp")
+        state.content.entryViewLayout.entries = [folder]
+        state.content.entryViewLayout.selectedIds = [folder.id]
+
+        let recorder = FileManagerProductMetricRecorder()
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.fileManagerProductMetricsClient = recorder.client
+            $0.date = .constant(Date())
+            $0.pasteboardClient = PasteboardClient(
+                changeCount: { 0 },
+                clearContents: {},
+                writeObjects: { _ in true },
+                readObjects: { _, _ in nil },
+                setString: { _, _ in true },
+                string: { _ in nil },
+            )
+        }
+        // store.exhaustivity = .off: window 라우팅 부수 effect보다 메트릭 exactly-once를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.content(.entryViewLayout(.delegate(
+            .executeCommand("clipboard.copySelectedAbsolutePaths"),
+        ))))
+        await store.finish()
+
+        XCTAssertEqual(recorder.metrics().count, 1)
+        guard case let .entryAction(result, action, _, _, aggregate)? = recorder.metrics().first else {
+            return XCTFail("Expected one entryAction metric")
+        }
+        XCTAssertEqual(result, .success)
+        XCTAssertEqual(action, .copyPath)
+        XCTAssertEqual(aggregate, .init(attempted: 1, succeeded: 1, failed: 0))
+    }
+
+    /// EVM-001-entry_command_product_metrics: paste 계열 record는 실제 연산별 metric kind로 매핑된다.
+    /// 복사·복제는 .copy, 이동은 .move로 분류되어야 한다(이전 단일 .move 회귀 수정).
+    /// - 검증 내용: pasteFileCopy→.copy, pasteFileDuplicate→.copy, pasteFileMove→.move
+    /// - 사전 조건: 성공 target 1개씩을 가진 세 record를 직접 전달
+    /// - 기대 결과: entryAction 메트릭 3건이 각각 .copy/.copy/.move로 기록됨
+    func testPasteRecordKindsMapToCopyAndMoveActions() async {
+        let recorder = FileManagerProductMetricRecorder()
+        let store = TestStore(initialState: FileManagerFeature.State()) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.fileManagerProductMetricsClient = recorder.client
+            $0.date = .constant(Date())
+        }
+        // store.exhaustivity = .off: kind 매핑 계약에 집중함
+        store.exhaustivity = .off
+
+        let copyRecord = EntryActionRecord(
+            operationKind: .pasteFileCopy,
+            targets: [.init(beforePath: "/src/a.txt", afterPath: "/dest/a.txt")],
+        )
+        let duplicateRecord = EntryActionRecord(
+            operationKind: .pasteFileDuplicate,
+            targets: [.init(beforePath: "/src/b.txt", afterPath: "/dest/b.txt")],
+        )
+        let moveRecord = EntryActionRecord(
+            operationKind: .pasteFileMove,
+            targets: [.init(beforePath: "/src/c.txt", afterPath: "/dest/c.txt")],
+        )
+        for record in [copyRecord, duplicateRecord, moveRecord] {
+            await store.send(.content(.entryViewLayout(.entryOperations(.lifecycle(.entryActionCompleted(
+                record,
+            ))))))
+        }
+
+        let actions = recorder.metrics().compactMap { (metric: FileManagerProductMetric) -> EntryActionMetricKind? in
+            guard case let .entryAction(_, action, _, _, _) = metric else { return nil }
+            return action
+        }
+        XCTAssertEqual(actions, [.copy, .copy, .move])
+    }
+
+    /// EVM-001-entry_command_product_metrics: 압축/해제 record는 이전 fallback인 .copy를 유지한다.
+    /// - 검증 내용: compress record의 metric action이 .copy다
+    /// - 사전 조건: compress record 1건을 직접 전달
+    /// - 기대 결과: entryAction 메트릭 1건이 .copy로 기록됨
+    func testCompressRecordMapsToCopyFallback() async {
+        let recorder = FileManagerProductMetricRecorder()
+        let store = TestStore(initialState: FileManagerFeature.State()) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.fileManagerProductMetricsClient = recorder.client
+            $0.date = .constant(Date())
+        }
+        // store.exhaustivity = .off: fallback 매핑 계약에 집중함
+        store.exhaustivity = .off
+
+        let compressRecord = EntryActionRecord(operationKind: .compress, targets: [])
+        await store.send(.content(.entryViewLayout(.entryOperations(.lifecycle(.entryActionCompleted(
+            compressRecord,
+        ))))))
+
+        let actions = recorder.metrics().compactMap { (metric: FileManagerProductMetric) -> EntryActionMetricKind? in
+            guard case let .entryAction(_, action, _, _, _) = metric else { return nil }
+            return action
+        }
+        XCTAssertEqual(actions, [.copy])
+    }
+
+    /// EVM-001-entry_command_product_metrics: 비-undo record도 kind별 메트릭으로 매핑된다.
+    /// quickLook/deleteImmediately record가 수용 슬롯 없이도 자체 kind로 terminal이 되는지 검증한다.
+    /// - 검증 내용: quickLook은 .quickLook으로, deleteImmediately는 .trash로 매핑되어 2건 기록된다.
+    /// - 사전 조건: 명령 수용 없이 비-undo record 두 개를 직접 전달
+    /// - 기대 결과: entryAction 메트릭 2건(quickLook success, trash success)이 순서대로 기록됨
+    func testNonUndoRecordsMapMetricKinds() async {
+        let recorder = FileManagerProductMetricRecorder()
+        let store = TestStore(initialState: FileManagerFeature.State()) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.fileManagerProductMetricsClient = recorder.client
+            $0.date = .constant(Date())
+        }
+        // store.exhaustivity = .off: 메트릭 kind 매핑 계약에 집중함
+        store.exhaustivity = .off
+
+        // 성공 1회 시도는 succeededCount로 전달되어 aggregate에 그대로 반영된다.
+        let quickLookRecord = EntryActionRecord(operationKind: .quickLook, targets: [], succeededCount: 1)
+        // 시도 없는 완료(0/0)는 no-attempt success로 기록된다.
+        let deleteRecord = EntryActionRecord(operationKind: .deleteImmediately, targets: [])
+        await store.send(.content(.entryViewLayout(.entryOperations(.lifecycle(.entryActionCompleted(
+            quickLookRecord,
+        ))))))
+        await store.send(.content(.entryViewLayout(.entryOperations(.lifecycle(.entryActionCompleted(
+            deleteRecord,
+        ))))))
+
+        XCTAssertEqual(recorder.metrics(), [
+            .entryAction(
+                result: .success,
+                action: .quickLook,
+                source: .fileManagerContent,
+                operationID: quickLookRecord.id,
+                aggregate: .init(attempted: 1, succeeded: 1, failed: 0),
+            ),
+            .entryAction(
+                result: .success,
+                action: .trash,
+                source: .fileManagerContent,
+                operationID: deleteRecord.id,
+                aggregate: .init(attempted: 0, succeeded: 0, failed: 0),
+            ),
+        ])
+    }
+}
+
 private enum FixturePathError: Error, CustomStringConvertible {
     case repoRootNotFound(searchFrom: String)
 
