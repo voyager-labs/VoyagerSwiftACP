@@ -163,13 +163,27 @@ final class StagingDirectory {
         do {
             // 배타 선점된 이름 위로 원자 교체한다. moveItem의 경로 추적과 달리 중간에
             // 설치된 symlink를 따라가 staging 밖으로 나갈 수 없다.
-            guard Darwin.renameat(
+            let renamed = Darwin.renameat(
                 sourceParentDescriptor,
                 sourceName,
                 parentDescriptor,
                 reservedName,
-            ) == 0 else {
-                throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+            )
+            if renamed != 0 {
+                let renameErrno = errno
+                guard renameErrno == EXDEV else {
+                    throw POSIXError(POSIXErrorCode(rawValue: renameErrno) ?? .EIO)
+                }
+                // renameat은 볼륨 간 이동을 지원하지 않는다(EXDEV). 예전 moveItem의
+                // copy+delete 능력을 폴백으로 보존한다. 선점 해제~moveItem 사이 창은
+                // 기존 동작과 동일하게 수용하되, 하단 NOFOLLOW 재개방 검증이 치환된
+                // symlink를 여전히 차단한다.
+                Darwin.unlinkat(parentDescriptor, reservedName, 0)
+                do {
+                    try fileManager.moveItem(sourceURL, candidate)
+                } catch {
+                    throw CocoaError(.fileWriteUnknown)
+                }
             }
             let claimedCanonical = canonicalClaimPath(candidate.path)
             // 배리어는 candidate 가시 표면의 신원을 검증한다(격리 snapshot inode가 아님).
