@@ -18,11 +18,15 @@ struct FileManagerWindowMainContainerView: View {
                 )
 
                 if let presentation = store.contentTabSwitcherPresentation {
-                    Color.clear
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .contentShape(Rectangle())
-                        .accessibilityIdentifier("file-manager.content-tab-switcher.backdrop")
-                        .onTapGesture(perform: dismissContentTabSwitcher)
+                    // backdrop은 제스처 대신 단일 semantic Button으로 해제를 소유한다(포인터 클릭과 AXPress 동일 경로).
+                    Button(action: dismissContentTabSwitcher) {
+                        Color.clear
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Dismiss content tab switcher")
+                    .accessibilityIdentifier("file-manager.content-tab-switcher.backdrop")
 
                     FileManagerContentTabSwitcherView(
                         viewState: ContentTabSwitcherViewState.make(
@@ -30,11 +34,15 @@ struct FileManagerWindowMainContainerView: View {
                             contentTabs: store.contentTabs,
                             focusedCandidateID: presentation.focusedCandidateID,
                         ),
-                        onFocusChanged: contentTabSwitcherFocusChanged,
+                        onFocusMove: moveContentTabSwitcherFocus,
+                        onActivate: activateContentTabSwitcherCandidate,
                         onDismiss: dismissContentTabSwitcher,
                     )
-                    .onExitCommand(perform: dismissContentTabSwitcher)
                 }
+            }
+            .onChange(of: store.contentTabSwitcherPresentation != nil) { isPresented in
+                guard !isPresented else { return }
+                keyCommandFocusCoordinator.requestFocus()
             }
             .alert(
                 "Tab Could Not Be Moved",
@@ -82,8 +90,12 @@ struct FileManagerWindowMainContainerView: View {
         store.send(.view(.dismissContentTabSwitcher))
     }
 
-    private func contentTabSwitcherFocusChanged(_ id: ContentTabID) {
-        store.send(.view(.contentTabSwitcherFocusChanged(id)))
+    private func moveContentTabSwitcherFocus(_ direction: ContentTabSwitcherFocusDirection) {
+        store.send(.request(.moveContentTabSwitcherFocus(direction: direction)))
+    }
+
+    private func activateContentTabSwitcherCandidate(_ id: ContentTabID) {
+        store.send(.view(.activateContentTabSwitcherCandidate(id)))
     }
 }
 

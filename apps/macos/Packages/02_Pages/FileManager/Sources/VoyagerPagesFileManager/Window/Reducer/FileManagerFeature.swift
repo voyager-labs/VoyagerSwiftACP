@@ -497,6 +497,9 @@ private extension FileManagerFeature {
         Reduce { state, action in
             if case .request(.moveContentTabSwitcherFocus) = action {
                 // stale focus의 방향 정보는 command reducer에서 처리한다.
+            } else if case .request(.activateContentTabSwitcherSelection) = action {
+                // focused window command는 stale focus 보존을 위해 command reducer가 직접 처리한다.
+            } else if case .view(.activateContentTabSwitcherCandidate) = action {
             } else {
                 reconcileContentTabSwitcherPresentation(state: &state)
             }

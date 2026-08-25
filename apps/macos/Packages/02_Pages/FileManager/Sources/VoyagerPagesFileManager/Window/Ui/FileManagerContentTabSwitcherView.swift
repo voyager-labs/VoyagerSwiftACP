@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import VoyagerShared
 
@@ -51,20 +52,22 @@ enum ContentTabSwitcherLayout {
 
 struct FileManagerContentTabSwitcherView: View {
     private let viewState: ContentTabSwitcherViewState
-    private let onFocusChanged: (ContentTabID) -> Void
+    private let onFocusMove: (ContentTabSwitcherFocusDirection) -> Void
+    private let onActivate: (ContentTabID) -> Void
     private let onDismiss: () -> Void
 
     @Environment(\.colorScheme)
     private var colorScheme
-    @FocusState private var focusedRowID: ContentTabID?
 
     init(
         viewState: ContentTabSwitcherViewState,
-        onFocusChanged: @escaping (ContentTabID) -> Void = { _ in },
+        onFocusMove: @escaping (ContentTabSwitcherFocusDirection) -> Void = { _ in },
+        onActivate: @escaping (ContentTabID) -> Void = { _ in },
         onDismiss: @escaping () -> Void,
     ) {
         self.viewState = viewState
-        self.onFocusChanged = onFocusChanged
+        self.onFocusMove = onFocusMove
+        self.onActivate = onActivate
         self.onDismiss = onDismiss
     }
 
@@ -72,17 +75,17 @@ struct FileManagerContentTabSwitcherView: View {
         GeometryReader { geometry in
             ZStack {
                 switcherSurface(availableWidth: geometry.size.width)
+                ContentTabSwitcherKeyCommandBridge(
+                    onConfirmFocused: confirmFocusedCandidate,
+                    onDismiss: onDismiss,
+                    onFocusMove: onFocusMove,
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityHidden(true)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .focusSection()
-        .onAppear(perform: synchronizeFocus)
-        .onChange(of: focusRenderState) { _ in
-            synchronizeFocus()
-        }
-        .onChange(of: focusedRowID, perform: handleNativeFocusChange)
-        .onExitCommand(perform: onDismiss)
     }
 
     private enum Metrics {
@@ -97,35 +100,12 @@ struct FileManagerContentTabSwitcherView: View {
         static let focusRingWidth: CGFloat = 2
     }
 
-    private struct FocusRenderState: Equatable {
-        let focusedCandidateID: ContentTabID?
-        let rowIDs: [ContentTabID]
-    }
-
-    private var focusedCandidateID: ContentTabID? {
-        guard case let .content(rows) = viewState else { return nil }
-        return rows.first(where: \.isFocused)?.id
-    }
-
-    private var focusRenderState: FocusRenderState {
-        .init(
-            focusedCandidateID: focusedCandidateID,
-            rowIDs: rowIDs,
-        )
-    }
-
-    private var rowIDs: [ContentTabID] {
-        guard case let .content(rows) = viewState else { return [] }
-        return rows.map(\.id)
-    }
-
-    private func synchronizeFocus() {
-        focusedRowID = focusedCandidateID
-    }
-
-    private func handleNativeFocusChange(_ id: ContentTabID?) {
-        guard let id, id != focusedCandidateID else { return }
-        onFocusChanged(id)
+    /// Return/keypad Enter는 현재 viewState의 focused row ID를 derive해 explicit-ID activation seam을 재사용한다.
+    private func confirmFocusedCandidate() {
+        guard case let .content(rows) = viewState,
+              let focusedRow = rows.first(where: \.isFocused)
+        else { return }
+        onActivate(focusedRow.id)
     }
 
     private func switcherSurface(availableWidth: CGFloat) -> some View {
@@ -177,8 +157,12 @@ struct FileManagerContentTabSwitcherView: View {
             ) { _, row in
                 HStack(spacing: ContentTabSwitcherLayout.cardSpacing) {
                     ForEach(row, id: \.id) { item in
-                        SwitcherRow(row: item, focusedRowID: $focusedRowID)
-                            .frame(width: cardWidth)
+                        Button(
+                            action: { onActivate(item.id) },
+                            label: { SwitcherRow(row: item) },
+                        )
+                        .buttonStyle(.plain)
+                        .frame(width: cardWidth)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .center)
@@ -220,7 +204,6 @@ struct FileManagerContentTabSwitcherView: View {
 
     private struct SwitcherRow: View {
         let row: ContentTabSwitcherViewState.Row
-        let focusedRowID: FocusState<ContentTabID?>.Binding
 
         @Environment(\.colorScheme)
         private var colorScheme
@@ -279,9 +262,6 @@ struct FileManagerContentTabSwitcherView: View {
                 }
             }
             .contentShape(Rectangle())
-            .focusable()
-            .focusEffectDisabledIfAvailable()
-            .focused(focusedRowID, equals: row.id)
             .accessibilityElement(children: .ignore)
             .accessibilityIdentifier(row.accessibilityIdentifier)
             .accessibilityLabel(Text(row.accessibilityLabel))
@@ -290,13 +270,174 @@ struct FileManagerContentTabSwitcherView: View {
     }
 }
 
-private extension View {
-    @ViewBuilder
-    func focusEffectDisabledIfAvailable() -> some View {
-        if #available(macOS 14.0, *) {
-            focusEffectDisabled()
-        } else {
-            self
+/// 전환기 overlay의 키 입력을 단일 AppKit responder(`KeyCommandHostingView`)가 소유하는 bridge.
+/// Return/keypad Enter/Escape/방향키의 semantic 매핑을 내부에 두고 SwiftUI focus 엔진이나
+/// hidden keyboard shortcut과 경쟁하지 않는다.
+private struct ContentTabSwitcherKeyCommandBridge: View {
+    let onConfirmFocused: () -> Void
+    let onDismiss: () -> Void
+    let onFocusMove: (ContentTabSwitcherFocusDirection) -> Void
+
+    @StateObject private var activationCoordinator = ActivationCoordinator()
+
+    var body: some View {
+        KeyCommandView(
+            onViewCreated: activationCoordinator.attach,
+            onKeyDown: handleKeyDown,
+        )
+        .frame(width: 1, height: 1)
+        .opacity(0)
+        .accessibilityHidden(true)
+        .allowsHitTesting(false)
+        .overlay {
+            ContentTabSwitcherWindowKeyProbe(
+                onWindowAttached: activationCoordinator.attachWindow,
+            )
+            .frame(width: 1, height: 1)
+            .accessibilityHidden(true)
+        }
+        .onAppear(perform: activationCoordinator.start)
+        .onDisappear(perform: activationCoordinator.stop)
+    }
+
+    /// KeyCommandHostingView의 keyDown을 semantic action으로 변환한다.
+    /// IME 조합 중에는 입력기가 Return/Escape/방향키를 소유하므로 semantic action을 만들지 않는다.
+    /// Tab(48)은 Shift 없으면 forward, Shift만 있으면 backward로 focus를 1회 이동한다.
+    private func handleKeyDown(_ event: NSEvent) {
+        guard !activationCoordinator.hasMarkedText() else { return }
+        guard !event.isARepeat,
+              event.modifierFlags.isDisjoint(with: [.command, .control, .option]),
+              // Shift는 Tab 탐색 전용 보조키이고 나머지 키에서는 기존처럼 no-op이다.
+              event.modifierFlags.isDisjoint(with: [.shift]) || event.keyCode == 48
+        else { return }
+
+        switch event.keyCode {
+        case 36, 76:
+            onConfirmFocused()
+
+        case 53:
+            onDismiss()
+
+        case 123, 126:
+            onFocusMove(.previous)
+
+        case 124, 125:
+            onFocusMove(.next)
+
+        case 48:
+            onFocusMove(event.modifierFlags.contains(.shift) ? .previous : .next)
+
+        default:
+            break
+        }
+    }
+
+    /// overlay-local bridge를 window의 first responder로 유지하는 coordinator.
+    /// first responder를 되돌려 얻을 뿐, 일단 bridge가 소유하면 다른 responder로 옮기지 않는다.
+    @MainActor
+    private final class ActivationCoordinator: ObservableObject {
+        private weak var keyCommandView: KeyCommandHostingView?
+        private weak var observedWindow: NSWindow?
+        private var windowObservers: [NSObjectProtocol] = []
+
+        func attach(_ view: KeyCommandHostingView) {
+            keyCommandView = view
+            activateIfKeyWindow()
+            scheduleActivation()
+        }
+
+        func attachWindow(_ window: NSWindow) {
+            guard observedWindow !== window else {
+                activateIfKeyWindow()
+                return
+            }
+            stopObservingKeyWindow()
+            observedWindow = window
+            for notificationName in [NSWindow.didBecomeKeyNotification, NSWindow.didUpdateNotification] {
+                windowObservers.append(NotificationCenter.default.addObserver(
+                    forName: notificationName,
+                    object: window,
+                    queue: .main,
+                ) { [weak self, weak window] _ in
+                    Task { @MainActor [weak self, weak window] in
+                        guard let self,
+                              let window,
+                              window === keyCommandView?.window
+                        else { return }
+                        activateIfKeyWindow()
+                    }
+                })
+            }
+            activateIfKeyWindow()
+        }
+
+        func hasMarkedText() -> Bool {
+            keyCommandView?.hasMarkedText() == true
+        }
+
+        func start() {
+            activateIfKeyWindow()
+            scheduleActivation()
+        }
+
+        func stop() {
+            stopObservingKeyWindow()
+            keyCommandView = nil
+        }
+
+        private func stopObservingKeyWindow() {
+            for observer in windowObservers {
+                NotificationCenter.default.removeObserver(observer)
+            }
+            windowObservers.removeAll()
+            observedWindow = nil
+        }
+
+        private func scheduleActivation() {
+            DispatchQueue.main.async { [weak self] in
+                self?.activateIfKeyWindow()
+            }
+        }
+
+        private func activateIfKeyWindow() {
+            guard let keyCommandView,
+                  let window = keyCommandView.window,
+                  window.isKeyWindow,
+                  window.firstResponder !== keyCommandView,
+                  // 편집 중인 텍스트 입력 responder는 빼앗지 않는다 (기존 repository pattern).
+                  !Self.isEditingText(window.firstResponder)
+            else { return }
+            window.makeFirstResponder(keyCommandView)
+        }
+
+        private static func isEditingText(_ responder: NSResponder?) -> Bool {
+            guard let textView = responder as? NSTextView else { return false }
+            return textView.isEditable
+        }
+    }
+}
+
+private struct ContentTabSwitcherWindowKeyProbe: NSViewRepresentable {
+    let onWindowAttached: (NSWindow) -> Void
+
+    func makeNSView(context _: Context) -> WindowKeyProbeView {
+        let view = WindowKeyProbeView()
+        view.onWindowAttached = onWindowAttached
+        return view
+    }
+
+    func updateNSView(_ nsView: WindowKeyProbeView, context _: Context) {
+        nsView.onWindowAttached = onWindowAttached
+    }
+
+    final class WindowKeyProbeView: NSView {
+        var onWindowAttached: ((NSWindow) -> Void)?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let window {
+                onWindowAttached?(window)
+            }
         }
     }
 }

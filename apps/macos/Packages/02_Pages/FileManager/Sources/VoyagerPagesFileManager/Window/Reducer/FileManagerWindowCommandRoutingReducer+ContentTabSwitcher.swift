@@ -54,24 +54,20 @@ extension FileManagerWindowCommandRoutingReducer {
         return .none
     }
 
-    func handleContentTabSwitcherFocusChanged(
+    func handleActivateContentTabSwitcherCandidate(
         _ id: ContentTabID,
         state: inout State,
     ) -> Effect<Action> {
-        guard canRouteRecentContentTabInteraction(state),
-              let presentation = state.contentTabSwitcherPresentation,
-              presentation.source.isInteractive,
-              case let .candidates(candidates) = ContentTabSwitcherProjection.project(from: state.contentTabs)
+        guard canRouteRecentContentTabInteraction(state) else { return .none }
+        guard let presentation = state.contentTabSwitcherPresentation else { return .none }
+        guard presentation.source.isInteractive else { return .none }
+        guard case let .candidates(candidates) = ContentTabSwitcherProjection.project(from: state.contentTabs)
         else { return .none }
+        guard candidates.contains(where: { $0.id == id }) else { return .none }
 
-        let liveIDs = candidates.map(\.id)
-        guard liveIDs.contains(id), presentation.focusedCandidateID != id else { return .none }
-        state.contentTabSwitcherPresentation = .init(
-            source: presentation.source,
-            candidateIDs: liveIDs,
-            focusedCandidateID: id,
-        )
-        return .none
+        state.contentTabSwitcherPresentation = nil
+        guard id != state.contentTabs.activeTabID else { return .none }
+        return .send(.contentTabs(.setCurrent(id)))
     }
 
     func handleDismissContentTabSwitcher(state: inout State) -> Effect<Action> {

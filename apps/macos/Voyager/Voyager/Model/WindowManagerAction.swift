@@ -408,6 +408,10 @@ enum WindowManagerAction: CasePathable {
             source: FileManagerContentTabSwitcherPresentation.Source,
         )
         case selectMostRecentlyUsedContentTab
+        case activateContentTabSwitcherInWindow(
+            windowID: WindowManagerState.WindowID,
+            source: FileManagerContentTabSwitcherPresentation.Source,
+        )
         case moveNextContentTabSwitcher
         case moveNextContentTabSwitcherInWindow(
             windowID: WindowManagerState.WindowID,

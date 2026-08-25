@@ -248,12 +248,81 @@ final class ContentTabBrowsingFlowTests: XCTestCase {
         )
     }
 
-    /// CTM-004-aggregate_content_tab_browsing: stale keyboard ownership cannot dismiss a menu-owned switcher.
-    /// External dismissal followed by a menu presentation must replace ownership without inheriting monitor dismissal.
-    /// - 검증 내용: external dismiss, source replacement, matching targeted dismiss rejection
+    /// CTM-004-aggregate_content_tab_browsing: keyboard-owned switcher activation은 owner window의 focused 후보만 확정한다.
+    /// Control release semantic command가 source-matched WindowManager 경계를 거쳐 canonical setCurrent를 한 번 실행하는지 검증한다.
+    /// - 검증 내용: targeted activation, presentation close, focused active/MRU 갱신, sibling isolation, setCurrent 1회
+    /// - 사전 조건: 서로 다른 두 탭을 가진 focused ready window와 별도 sibling, keyboardShortcut presentation의 non-current focus
+    /// - 기대 결과: focused 후보가 active가 되고 overlay는 닫히며 sibling은 불변이고 setCurrent는 정확히 한 번 기록된다.
+    @MainActor
+    func testKeyboardSwitcherActivationTargetsFocusedCandidateAndCloses() async throws {
+        let focusedWindowID = UUID()
+        let siblingWindowID = UUID()
+        let currentID = ContentTabID(rawValue: "activation-current")
+        let focusedID = ContentTabID(rawValue: "activation-focused")
+        let siblingID = ContentTabID(rawValue: "activation-sibling")
+        var focusedWindow = makeContentTabBrowsingWindow(
+            tabIDs: [currentID, focusedID],
+            activeTabID: currentID,
+            recentlyUsedTabIDs: [currentID, focusedID],
+        )
+        focusedWindow.contentTabSwitcherPresentation = .init(
+            source: .keyboardShortcut,
+            candidateIDs: [currentID, focusedID],
+            focusedCandidateID: focusedID,
+        )
+        var initialState = AppRootState()
+        initialState.windowManager.windows = [
+            WindowSessionState(id: focusedWindowID, window: focusedWindow),
+            WindowSessionState(
+                id: siblingWindowID,
+                window: makeContentTabBrowsingWindow(tabIDs: [siblingID], activeTabID: siblingID),
+            ),
+        ]
+        initialState.windowManager.focusedWindowID = focusedWindowID
+        let siblingSnapshot = try XCTUnwrap(initialState.windowManager.windows[id: siblingWindowID]?.window.contentTabs)
+        let setCurrentDispatchCount = LockIsolated(0)
+        let store = TestStore(initialState: initialState) {
+            CombineReducers {
+                AppRootFeature()
+                SetCurrentDispatchRecorder(count: setCurrentDispatchCount)
+            }
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.entryLoadingClient.loadItems = { _, _ in [] }
+            $0.fileChangeGatewayClient.observeEvents = {
+                AsyncStream { continuation in continuation.finish() }
+            }
+        }
+        store.exhaustivity = .off // production handoff 내부 action보다 focused/sibling 최종 semantic state를 검증한다.
+
+        await store.send(.windowManager(.file(.activateContentTabSwitcherInWindow(
+            windowID: focusedWindowID,
+            source: .keyboardShortcut,
+        ))))
+        await store.skipReceivedActions(strict: false)
+        await store.finish()
+
+        XCTAssertNil(store.state.windowManager.windows[id: focusedWindowID]?.window.contentTabSwitcherPresentation)
+        XCTAssertEqual(
+            store.state.windowManager.windows[id: focusedWindowID]?.window.contentTabs.activeTabID,
+            focusedID,
+        )
+        XCTAssertEqual(
+            store.state.windowManager.windows[id: focusedWindowID]?.window.contentTabs.recentlyUsedTabIDs,
+            [focusedID, currentID],
+        )
+        XCTAssertEqual(store.state.windowManager.windows[id: siblingWindowID]?.window.contentTabs, siblingSnapshot)
+        XCTAssertEqual(setCurrentDispatchCount.value, 1)
+    }
+
+    /// CTM-004-aggregate_content_tab_browsing: stale keyboard ownership cannot activate or dismiss a menu-owned
+    /// switcher.
+    /// External dismissal followed by a menu presentation must replace ownership without inheriting monitor
+    /// activation/dismissal.
+    /// - 검증 내용: external dismiss, source replacement, matching targeted activation/dismiss rejection
     /// - 사전 조건: focused ready window에 keyboard-owned switcher를 표시한 뒤 외부 dismiss와 menu present를 수행한다.
-    /// - 기대 결과: stale keyboard dismiss는 automatic menu presentation을 닫지 않는다.
-    func testStaleKeyboardOwnershipCannotDismissMenuOwnedSwitcher() async {
+    /// - 기대 결과: stale keyboard activation과 dismiss는 automatic menu presentation을 변경하지 않는다.
+    func testStaleKeyboardOwnershipCannotActivateOrDismissMenuOwnedSwitcher() async {
         let windowID = UUID()
         let tabID = ContentTabID(rawValue: "ownership-tab")
         var initialState = AppRootState()
@@ -294,6 +363,16 @@ final class ContentTabBrowsingFlowTests: XCTestCase {
         )
 
         await store.send(.windowManager(.file(.presentContentTabSwitcherInWindow(
+            windowID: windowID,
+            source: .keyboardShortcut,
+        ))))
+        await store.skipReceivedActions(strict: false)
+        XCTAssertEqual(
+            store.state.windowManager.windows[id: windowID]?.window.contentTabSwitcherPresentation?.source,
+            .automatic,
+        )
+
+        await store.send(.windowManager(.file(.activateContentTabSwitcherInWindow(
             windowID: windowID,
             source: .keyboardShortcut,
         ))))
