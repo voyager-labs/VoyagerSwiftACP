@@ -191,6 +191,14 @@ private func contentTabMoveFolderLifecycleEvent(
 final class WindowManagerFeatureContractTests: XCTestCase {
     private struct ExpectedPinnedRecordSaveFailure: Error {}
 
+    private enum UnreadyContentTabSwitcherWindowScenario: CaseIterable {
+        case focusedWindowMissing
+        case windowMissing
+        case focusMissing
+        case windowOpenPending
+        case windowClosing
+    }
+
     private func lifecycleWindow(
         tabID: ContentTabID,
         record: ContentTabPinnedRecord,
@@ -3276,39 +3284,20 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             }
 
             await store.send(.file(fileCommand))
-            await store.receive { action in
-                guard case let .windows(.element(id, action: .window(.request(actualCommand)))) = action,
-                      id == windowID
-                else { return false }
-                return Self.matches(actualCommand, expected: windowCommand)
-            }
+            await assertContentTabSwitcherCommandRouted(
+                store,
+                windowID: windowID,
+                expected: windowCommand,
+            )
             await store.finish()
         }
 
-        for scenario in 0 ..< 5 {
+        for scenario in UnreadyContentTabSwitcherWindowScenario.allCases {
             let windowID = UUID()
-            var initialState = WindowManagerFeature.State()
-            if scenario != 1 {
-                initialState.windows = [
-                    WindowSessionState(id: windowID, window: .makeInitial(path: nil)),
-                ]
-            }
-            switch scenario {
-            case 0:
-                initialState.focusedWindowID = UUID()
-            case 1:
-                initialState.focusedWindowID = windowID
-            default:
-                initialState.focusedWindowID = scenario == 2 ? nil : windowID
-            }
-            switch scenario {
-            case 3:
-                initialState.pendingWindowOpenIDs = [windowID]
-            case 4:
-                initialState.closingWindowIDs = [windowID]
-            default:
-                break
-            }
+            let initialState = Self.makeUnreadyContentTabSwitcherWindowState(
+                scenario,
+                windowID: windowID,
+            )
 
             let store = TestStore(initialState: initialState) {
                 WindowManagerFeature()
@@ -3321,6 +3310,58 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             await store.finish()
             XCTAssertEqual(store.state, before)
         }
+    }
+
+    private func assertContentTabSwitcherCommandRouted(
+        _ store: TestStoreOf<WindowManagerFeature>,
+        windowID: UUID,
+        expected windowCommand: FileManagerWindowAction.WindowCommand,
+    ) async {
+        let isExpectedAction: (WindowManagerAction) -> Bool = { action in
+            guard case let .windows(.element(id, action: .window(.request(actualCommand)))) = action,
+                  id == windowID
+            else { return false }
+            return Self.matches(actualCommand, expected: windowCommand)
+        }
+        if case let .presentContentTabSwitcher(source) = windowCommand {
+            await store.receive(isExpectedAction, assert: { state in
+                guard let contentTabs = state.windows[id: windowID]?.window.contentTabs else {
+                    return XCTFail("ready window가 존재해야 함")
+                }
+                state.windows[id: windowID]?.window.contentTabSwitcherPresentation = .init(
+                    source: source,
+                    contentTabs: contentTabs,
+                )
+            })
+        } else {
+            await store.receive(isExpectedAction)
+        }
+    }
+
+    private static func makeUnreadyContentTabSwitcherWindowState(
+        _ scenario: UnreadyContentTabSwitcherWindowScenario,
+        windowID: UUID,
+    ) -> WindowManagerFeature.State {
+        var state = WindowManagerFeature.State()
+        let window = WindowSessionState(id: windowID, window: .makeInitial(path: nil))
+        switch scenario {
+        case .focusedWindowMissing:
+            state.windows = [window]
+            state.focusedWindowID = UUID()
+        case .windowMissing:
+            state.focusedWindowID = windowID
+        case .focusMissing:
+            state.windows = [window]
+        case .windowOpenPending:
+            state.windows = [window]
+            state.focusedWindowID = windowID
+            state.pendingWindowOpenIDs = [windowID]
+        case .windowClosing:
+            state.windows = [window]
+            state.focusedWindowID = windowID
+            state.closingWindowIDs = [windowID]
+        }
+        return state
     }
 
     private static func matches(
