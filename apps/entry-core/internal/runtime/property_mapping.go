@@ -1,0 +1,195 @@
+package runtime
+
+import (
+	applicationproperty "github.com/voyager-labs/voyager-app/apps/entry-core/internal/application/property"
+	domainentry "github.com/voyager-labs/voyager-app/apps/entry-core/internal/domain/entry"
+	"github.com/voyager-labs/voyager-app/apps/entry-core/protocol/schema"
+)
+
+// changeTargetsFromWire는 wire 변경 대상을 application 명령으로 번역한다.
+// wire expected_assignment_revision R(≥1)은 도메인 revision R-1에 대응하고
+// wire 1은 implicit unset@0 첫 쓰기다. not_applicable 목표 상태는 이 슬라이스에서
+// 쓰기 불가이며 unsupported로 명시 거절한다(unknown/not_applicable은 resolved
+// projection 전용 상태이나 unknown은 값 지움(clear) 의미로 unset에 대응한다).
+func changeTargetsFromWire(wire []schema.PropertyChangeTarget) ([]applicationproperty.ChangeTarget, schema.ErrorCode) {
+	changes := make([]applicationproperty.ChangeTarget, len(wire))
+	for index, target := range wire {
+		desired, code := desiredFromWire(target.Desired)
+		if code != "" {
+			return nil, code
+		}
+		propertyID, err := domainentry.ParsePropertyID(target.PropertyID)
+		if err != nil {
+			return nil, schema.ErrorInvalidRequest
+		}
+		changes[index] = applicationproperty.ChangeTarget{
+			LocalPath:                  target.Target.LocalPath,
+			PropertyID:                 propertyID,
+			ExpectedDefinitionRevision: int(target.ExpectedDefinitionRevision),
+			ExpectedAssignmentRevision: uint64(target.ExpectedAssignmentRevision - 1),
+			Desired:                    desired,
+		}
+	}
+	return changes, ""
+}
+
+// desiredFromWire는 wire 목표 상태를 도메인 DesiredAssignment로 사상한다.
+func desiredFromWire(desired schema.PropertyDesiredState) (applicationproperty.DesiredAssignment, schema.ErrorCode) {
+	switch desired.State {
+	case "null":
+		return applicationproperty.DesiredAssignment{State: domainentry.AssignmentStateNull}, ""
+	case "unknown":
+		return applicationproperty.DesiredAssignment{State: domainentry.AssignmentStateUnset}, ""
+	case "not_applicable":
+		return applicationproperty.DesiredAssignment{}, schema.ErrorUnsupported
+	case "value":
+		if desired.Payload == nil {
+			return applicationproperty.DesiredAssignment{}, schema.ErrorInvalidRequest
+		}
+		if desired.Cardinality == "one" {
+			scalar, ok := scalarFromWire(desired.ValueType, desired.Payload.One())
+			if !ok {
+				return applicationproperty.DesiredAssignment{}, schema.ErrorInvalidRequest
+			}
+			return applicationproperty.DesiredAssignment{State: domainentry.AssignmentStateValue, Scalar: &scalar}, ""
+		}
+		values, ok := manyFromWire(desired.ValueType, desired.Payload.Many())
+		if !ok {
+			return applicationproperty.DesiredAssignment{}, schema.ErrorInvalidRequest
+		}
+		return applicationproperty.DesiredAssignment{State: domainentry.AssignmentStateValue, Many: values}, ""
+	default:
+		return applicationproperty.DesiredAssignment{}, schema.ErrorInvalidRequest
+	}
+}
+
+// scalarFromWire는 디코딩된 스칼라 멤버를 typed AssignmentValue로 옮긴다.
+func scalarFromWire(valueType string, member any) (domainentry.AssignmentValue, bool) {
+	switch value := member.(type) {
+	case string:
+		mapped, ok := assignmentStringMember(valueType, value)
+		return mapped, ok
+	case bool:
+		if valueType != "boolean" {
+			return domainentry.AssignmentValue{}, false
+		}
+		return domainentry.AssignmentValue{Boolean: &value}, true
+	default:
+		return domainentry.AssignmentValue{}, false
+	}
+}
+
+// assignmentStringMember는 문자열 스칼라를 유형별 멤버로 분배한다.
+func assignmentStringMember(valueType, value string) (domainentry.AssignmentValue, bool) {
+	switch valueType {
+	case "text":
+		return domainentry.AssignmentValue{Text: &value}, true
+	case "number":
+		return domainentry.AssignmentValue{Decimal: &value}, true
+	case "date":
+		return domainentry.AssignmentValue{Date: &value}, true
+	case "datetime":
+		return domainentry.AssignmentValue{Timestamp: &value}, true
+	case "select":
+		optionID, err := domainentry.ParsePropertyOptionID(value)
+		if err != nil {
+			return domainentry.AssignmentValue{}, false
+		}
+		return domainentry.AssignmentValue{OptionID: &optionID}, true
+	default:
+		return domainentry.AssignmentValue{}, false
+	}
+}
+
+// manyFromWire는 디코딩된 many 멤버 배열을 순서 보존하여 옮긴다.
+func manyFromWire(valueType string, members any) ([]domainentry.AssignmentValue, bool) {
+	switch items := members.(type) {
+	case []string:
+		values := make([]domainentry.AssignmentValue, len(items))
+		for index, item := range items {
+			mapped, ok := assignmentStringMember(valueType, item)
+			if !ok {
+				return nil, false
+			}
+			values[index] = mapped
+		}
+		return values, true
+	case []bool:
+		if valueType != "boolean" {
+			return nil, false
+		}
+		values := make([]domainentry.AssignmentValue, len(items))
+		for index, item := range items {
+			copied := item
+			values[index] = domainentry.AssignmentValue{Boolean: &copied}
+		}
+		return values, true
+	default:
+		return nil, false
+	}
+}
+
+// definitionViewToWire는 정의 뷰를 wire DTO로 사상한다. tombstoned는 wire의
+// disabled 상태에 대응한다.
+func definitionViewToWire(view applicationproperty.DefinitionView) (schema.PropertyDefinition, schema.ErrorCode) {
+	state := "disabled"
+	if view.IsActive() {
+		state = "active"
+	}
+	options := make([]schema.PropertyOption, len(view.Options))
+	for index, option := range view.Options {
+		optionState := "disabled"
+		if option.Active {
+			optionState = "active"
+		}
+		options[index] = schema.PropertyOption{OptionID: option.OptionID.String(), Label: option.Label, Position: int64(option.Ordinal), State: optionState}
+	}
+	definition := schema.PropertyDefinition{
+		PropertyID:  view.Definition.PropertyID.String(),
+		Key:         view.Definition.CanonicalKey,
+		Name:        view.Definition.DisplayName,
+		ValueType:   string(view.Definition.ValueType),
+		Cardinality: string(view.Definition.Cardinality),
+		State:       state,
+		Revision:    int64(view.Definition.DefinitionRev),
+		Options:     options,
+	}
+	if definition.Validate() != nil {
+		return schema.PropertyDefinition{}, schema.ErrorInternal
+	}
+	return definition, ""
+}
+
+// prepareResultFromApplication은 제안을 wire 결과로 사상한다. wire 계약은
+// requires_confirmation을 항상 true로 요구하므로(todo-3 동결) application의
+// 세분화 신호는 표현되지 않는다. Before가 nil이면 implicit unset이다.
+func prepareResultFromApplication(proposal applicationproperty.Proposal, definitions map[domainentry.PropertyID]applicationproperty.DefinitionView, requested []schema.PropertyChangeTarget) (schema.PropertyChangePrepareResult, schema.ErrorCode) {
+	changes := make([]schema.PropertyPreparedChange, len(proposal.Changes))
+	for index, prepared := range proposal.Changes {
+		view, ok := definitions[prepared.PropertyID]
+		if !ok {
+			return schema.PropertyChangePrepareResult{}, schema.ErrorInternal
+		}
+		var before *schema.PropertyAssignment
+		if prepared.Before != nil {
+			mapped, code := assignmentFactToWire(*prepared.Before, definitions)
+			if code != "" {
+				return schema.PropertyChangePrepareResult{}, code
+			}
+			before = &mapped
+		}
+		after, code := assignmentFactToDesired(prepared.After, view)
+		if code != "" {
+			return schema.PropertyChangePrepareResult{}, code
+		}
+		if index >= len(requested) {
+			return schema.PropertyChangePrepareResult{}, schema.ErrorInternal
+		}
+		changes[index] = schema.PropertyPreparedChange{Target: requested[index].Target, PropertyID: prepared.PropertyID.String(), EntryID: prepared.EntryID, Before: before, After: after}
+	}
+	result := schema.PropertyChangePrepareResult{Changes: changes, RequiresConfirmation: true}
+	if result.Validate() != nil {
+		return schema.PropertyChangePrepareResult{}, schema.ErrorInternal
+	}
+	return result, ""
+}

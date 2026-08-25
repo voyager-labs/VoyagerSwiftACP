@@ -232,6 +232,28 @@ func EncodedSuccessBytes(requestID string, result Result) (int, bool) {
 	return len(encoded), len(encoded) <= MaxWireBytes
 }
 
+// --- runtime dispatch 전용 최소 seam ---
+//
+// PropertyPayload 멤버는 패키지 비공개라 wire 계약 불변식을 해치지 않으려면
+// 생성과 읽기가 모두 이 패키지를 통과해야 한다. internal/runtime의 정준
+// read-back 사상은 아래 생성자와 접근자만 사용하고 그 외 경로는 금지된다.
+
+// NewPropertyPayload는 디코딩 규칙과 동일한 검증을 통과한 payload를 만든다.
+// one과 many 중 카디널리티에 맞는 멤버 정확히 하나를 운반해야 한다.
+func NewPropertyPayload(valueType, cardinality string, one any, many any) (PropertyPayload, bool) {
+	payload := PropertyPayload{kind: valueType, one: one, many: many}
+	if !validPropertyChangePayload(payload, valueType, cardinality) {
+		return PropertyPayload{}, false
+	}
+	return payload, true
+}
+
+// One은 스칼라(one) 멤버 원본을 돌려준다.
+func (payload PropertyPayload) One() any { return payload.one }
+
+// Many는 배열(many) 멤버 원본을 돌려준다.
+func (payload PropertyPayload) Many() any { return payload.many }
+
 // --- 검증 헬퍼 ---
 
 // validPropertyIDText는 wire 수준의 canonical UUID 텍스트 규칙(8-4-4-4-12

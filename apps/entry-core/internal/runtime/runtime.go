@@ -14,11 +14,12 @@ const (
 )
 
 type Runtime struct {
-	mu           sync.RWMutex
-	state        State
-	appVersion   string
-	entryService EntryService
-	workspaceID  string
+	mu              sync.RWMutex
+	state           State
+	appVersion      string
+	entryService    EntryService
+	propertyService PropertyService
+	workspaceID     string
 }
 
 func New() *Runtime {
@@ -26,11 +27,11 @@ func New() *Runtime {
 }
 
 func newWithAppVersion(appVersion string) *Runtime {
-	return newWithAppVersionAndServices(appVersion, "", nil)
+	return newWithAppVersionAndServices(appVersion, "", nil, nil)
 }
 
-func newWithAppVersionAndServices(appVersion, workspaceID string, service EntryService) *Runtime {
-	return &Runtime{state: StateRunning, appVersion: appVersion, entryService: service, workspaceID: workspaceID}
+func newWithAppVersionAndServices(appVersion, workspaceID string, entryService EntryService, propertyService PropertyService) *Runtime {
+	return &Runtime{state: StateRunning, appVersion: appVersion, entryService: entryService, propertyService: propertyService, workspaceID: workspaceID}
 }
 
 func (runtime *Runtime) State() State {
