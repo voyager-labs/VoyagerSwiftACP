@@ -9,10 +9,6 @@ func logSearchDurationIfNeeded(
     guard let startedAt else { return }
     let duration = round((Date().timeIntervalSince(startedAt)) * 1000)
     composerMetricClient.logMetric(
-        ComposerCollectionFilterMetrics.legacySearchDuration,
-        value: duration,
-    )
-    composerMetricClient.logMetric(
         ComposerCollectionFilterMetrics.queryDuration,
         value: duration,
     )
@@ -24,10 +20,6 @@ func logFiltersDurationIfNeeded(
 ) {
     guard let startedAt else { return }
     let duration = round((Date().timeIntervalSince(startedAt)) * 1000)
-    composerMetricClient.logMetric(
-        ComposerCollectionFilterMetrics.legacyApplyDuration,
-        value: duration,
-    )
     composerMetricClient.logMetric(
         ComposerCollectionFilterMetrics.applyDuration,
         value: duration,

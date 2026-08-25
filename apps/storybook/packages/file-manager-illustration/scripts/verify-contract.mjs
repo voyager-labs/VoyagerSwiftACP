@@ -13,14 +13,21 @@ import { verifyThumbnailFixtures } from "./verify-thumbnail-fixtures.mjs"
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 const storybookRoot = resolve(packageRoot, "../..")
-const macosTokens = readFileSync(resolve(packageRoot, "src/styles/macos-tokens.css"), "utf8")
+const macosTokens = readFileSync(
+  resolve(packageRoot, "../design-foundation/src/styles/macos-tokens.css"),
+  "utf8",
+)
 const generatedMaterialMetadata = readFileSync(
   resolve(packageRoot, "src/Foundations/swiftui-material-metadata.generated.ts"),
   "utf8",
 )
+// atoms.css는 UI 키트와 함께 design-foundation으로 이관됨
+const atomsCss = readFileSync(
+  resolve(packageRoot, "../design-foundation/src/styles/atoms.css"),
+  "utf8",
+)
 const styleSheets = [
   "src/styles/file-manager.css",
-  "src/styles/atoms.css",
   "src/styles/window-shell.css",
   "src/styles/sidebar.css",
   "src/styles/inspector.css",
@@ -28,11 +35,12 @@ const styleSheets = [
 const fileManagerCss = readFileSync(resolve(packageRoot, styleSheets[0]), "utf8")
 const css = [
   macosTokens,
+  atomsCss,
   ...styleSheets.map((path) => readFileSync(resolve(packageRoot, path), "utf8")),
 ].join("\n")
 const sourceBarrel = readFileSync(resolve(packageRoot, "src/index.ts"), "utf8")
 const designTokensStorySource = readFileSync(
-  resolve(packageRoot, "src/Foundations/DesignTokens.stories.tsx"),
+  resolve(storybookRoot, "src/FileManager/Foundations/DesignTokens.stories.tsx"),
   "utf8",
 )
 const packageJson = JSON.parse(readFileSync(resolve(packageRoot, "package.json"), "utf8"))
@@ -277,7 +285,10 @@ const tahoeColorBlock = macosTokens.match(
 assert.ok(fixedColorBlock, "Missing baseline-independent SwiftUI fixed colors")
 assert.ok(sequoiaColorBlock, "Missing Sequoia SwiftUI dynamic colors")
 assert.ok(tahoeColorBlock, "Missing Tahoe SwiftUI dynamic colors")
-assert.match(fixedColorBlock[1], /:root \[data-file-manager-illustration\]/)
+assert.match(
+  fixedColorBlock[1],
+  /:where\(\[data-design-foundation\], \[data-file-manager-illustration\], \[data-settings-illustration\]\)/,
+)
 assert.match(fixedColorBlock[1], /--swiftui-black:\s*#000000ff/)
 assert.match(fixedColorBlock[1], /--swiftui-white:\s*#ffffffff/)
 assert.match(fixedColorBlock[1], /--swiftui-clear:\s*#00000000/)
@@ -343,8 +354,12 @@ const fileManagerStories = entries.filter(
   (entry) => entry.type === "story" && entry.title?.startsWith("File Manager/"),
 )
 const fileManagerPaths = new Set(fileManagerStories.map((entry) => entry.importPath))
-const nonFileManagerStories = entries.filter(
-  (entry) => entry.type === "story" && !entry.title?.startsWith("File Manager/"),
+// 다중 서페이스 계약: 등록된 제품 화면이 공용 스토리북을 공유한다
+const KNOWN_SURFACE_PREFIXES = ["File Manager/", "Settings/", "Design Foundation/", "Onboarding/"]
+const nonKnownStories = entries.filter(
+  (entry) =>
+    entry.type === "story" &&
+    !KNOWN_SURFACE_PREFIXES.some((prefix) => entry.title?.startsWith(prefix)),
 )
 const designTokensStory = fileManagerStories.find(
   (entry) => entry.id === "file-manager-design-tokens--overview",
@@ -352,19 +367,17 @@ const designTokensStory = fileManagerStories.find(
 verifyContentBrowserContract(packageRoot, css, runtime, fileManagerStories)
 
 assert.ok(designTokensStory, "Missing File Manager design tokens overview story")
-assert.equal(
-  designTokensStory.importPath,
-  "./packages/file-manager-illustration/src/Foundations/DesignTokens.stories.tsx",
-)
-assert.ok(fileManagerStories.length >= 245)
-assert.ok(fileManagerPaths.size >= 51)
-assert.equal(nonFileManagerStories.length, 0)
+assert.equal(designTokensStory.importPath, "./src/FileManager/Foundations/DesignTokens.stories.tsx")
+// UI 키트 이관(Design Foundation) 후 File Manager 스토리 축소 — 176 기준 마진 170
+assert.ok(fileManagerStories.length >= 170)
+// UI 키트 이관(Design Foundation) 후 경로 축소 — 현값 38 기준 마진 35
+assert.ok(fileManagerPaths.size >= 35)
+assert.equal(nonKnownStories.length, 0, "알려지지 않은 서페이스 프리픽스의 스토리가 존재합니다")
 for (const storyName of ["Centered Empty", "Centered Unconnected", "Connection Error", "Rebind"]) {
   assert.ok(
     fileManagerStories.some(
       (entry) =>
-        entry.importPath ===
-          "./packages/file-manager-illustration/src/Domains/Chat/AiChatView.stories.tsx" &&
+        entry.importPath === "./src/FileManager/Domains/Chat/AiChatView.stories.tsx" &&
         entry.name === storyName,
     ),
     `Missing AiChatView story: ${storyName}`,
@@ -374,8 +387,7 @@ for (const rootStoryName of ["Chat Connection Error", "Chat Rebind"]) {
   assert.ok(
     fileManagerStories.some(
       (entry) =>
-        entry.importPath ===
-          "./packages/file-manager-illustration/src/Stories/FileManagerIllustration.stories.tsx" &&
+        entry.importPath === "./src/FileManager/Stories/FileManagerIllustration.stories.tsx" &&
         entry.name === rootStoryName,
     ),
     `Missing root story: ${rootStoryName}`,
@@ -384,16 +396,14 @@ for (const rootStoryName of ["Chat Connection Error", "Chat Rebind"]) {
 assert.ok(
   fileManagerStories.some(
     (entry) =>
-      entry.importPath ===
-        "./packages/file-manager-illustration/src/Domains/Chat/AiChatView.stories.tsx" &&
+      entry.importPath === "./src/FileManager/Domains/Chat/AiChatView.stories.tsx" &&
       entry.name === "Unconnected",
   ),
 )
 assert.ok(
   fileManagerStories.some(
     (entry) =>
-      entry.importPath ===
-        "./packages/file-manager-illustration/src/Stories/FileManagerIllustration.stories.tsx" &&
+      entry.importPath === "./src/FileManager/Stories/FileManagerIllustration.stories.tsx" &&
       entry.name === "Chat Unconnected",
   ),
 )

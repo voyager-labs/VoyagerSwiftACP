@@ -97,6 +97,45 @@ hardening_gate() {
   log "Hardening gate passed (CONFIGURATION=Prod-Release, SCHEME=Voyager-Prod)"
 }
 
+validate_posthog_configuration() {
+  python3 - <<'PY'
+import os
+import re
+import sys
+from urllib.parse import urlsplit
+
+token_key = "PUBLIC_POSTHOG_PROJECT_TOKEN"
+host_key = "PUBLIC_POSTHOG_HOST"
+token = os.environ.get(token_key, "")
+host = os.environ.get(host_key, "")
+
+if not token.strip() or "\n" in token or "\r" in token:
+    print(f"Missing or invalid env: {token_key}", file=sys.stderr)
+    raise SystemExit(1)
+if not re.fullmatch(r"phc_[A-Za-z0-9._~-]+", token):
+    print(f"Missing or invalid env: {token_key}", file=sys.stderr)
+    raise SystemExit(1)
+if not host.strip() or "\n" in host or "\r" in host:
+    print(f"Missing or invalid env: {host_key}", file=sys.stderr)
+    raise SystemExit(1)
+try:
+    parsed = urlsplit(host)
+    port = parsed.port
+    valid_host = (
+        parsed.scheme.lower() == "https"
+        and bool(parsed.hostname)
+        and parsed.username is None
+        and parsed.password is None
+        and (port is None or 1 <= port <= 65535)
+    )
+except ValueError:
+    valid_host = False
+if not valid_host:
+    print(f"Missing or invalid env: {host_key}", file=sys.stderr)
+    raise SystemExit(1)
+PY
+}
+
 verify_archive_artifacts() {
   local app_path="${BUILD_DIR}/export/Voyager.app"
   local helper_path="${app_path}/Contents/Helpers/VoyagerHelper.app"
@@ -278,6 +317,7 @@ fetch_baseline() {
 build_notarize() {
   resolve_version
   hardening_gate
+  validate_posthog_configuration
   prepare_release_identity
   : "${DOWNLOADS_BASE_URL:?Missing env: DOWNLOADS_BASE_URL}"
   : "${SPARKLE_PRIVATE_KEY:?Missing env: SPARKLE_PRIVATE_KEY}"

@@ -110,6 +110,10 @@ struct ContentPageView: View {
             onKeyDown: { event in
                 handleKeyboardEvent(event)
             },
+            onTextInput: { text in
+                guard presentationPolicy.allowsKeyboardCommandDispatch else { return }
+                store.send(.view(.handleTextInput(text)))
+            },
         )
         .focusable()
         .allowsHitTesting(false)
@@ -180,6 +184,11 @@ struct ContentPageView: View {
             characters: event.characters,
             charactersIgnoringModifiers: event.charactersIgnoringModifiers,
         )
+        if FileManagerContentKeyCommandHandler.compositionPolicy(for: command, state: store.state)
+            == .cancelMarkedText
+        {
+            keyCommandFocusCoordinator?.cancelMarkedText()
+        }
         store.send(.view(.handleKeyCommand(command)))
     }
 

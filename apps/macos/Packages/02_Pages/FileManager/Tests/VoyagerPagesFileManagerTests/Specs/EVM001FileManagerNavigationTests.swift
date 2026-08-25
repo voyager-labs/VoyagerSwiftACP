@@ -153,6 +153,172 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         }
     }
 
+    // MARK: - EVM-001-dau_navigation_metrics
+
+    /// EVM-001-dau_navigation_metrics: content-row directory open reaches the FileManager metrics client
+    /// 실제 Open Selected Item 경로가 navigation delegate를 거쳐 folder metric을 정확히 한 번 기록하는지 검증.
+    /// - 검증 내용: FileManagerFeature → EntryViewLayout command → navigation delegate → MetricsClient
+    /// - 사전 조건: ordinary folder entry가 선택된 FileManagerFeature 상태
+    /// - 기대 결과: `.folder` 1회, collection/no-op metric 없음
+    func testContentRowFolderOpenLogsFolderNavigationExactlyOnce() async {
+        let folderPath = "/tmp/voyager-content-row-folder"
+        let folder = EntryModel.temporaryFolder(id: folderPath, name: "folder")
+        var state = FileManagerFeature.State()
+        state.content.navigation.navigationState = .folder("/tmp")
+        state.content.entryViewLayout.entries = [folder]
+        state.content.entryViewLayout.selectedIds = [folder.id]
+
+        let metrics = LockIsolated<[DAUNavigationKind]>([])
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.metricsClient = MetricsClient(
+                logMetric: { _, _, _ in },
+                logDAUNavigation: { kind in metrics.withValue { $0.append(kind) } },
+                logDAUEntryAction: { _, _ in },
+            )
+        }
+        // store.exhaustivity = .off: 전체 FileManager routing의 부수적인 loading effect보다 metric count를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.content(.entryViewLayout(.delegate(.executeCommand("navigation.openSelectedItem")))))
+        await store.skipInFlightEffects()
+
+        XCTAssertEqual(metrics.value, [.folder], "content-row folder navigation must log exactly one folder metric")
+    }
+
+    /// EVM-001-dau_navigation_metrics: direct fixed-location folder selection logs one folder metric
+    /// FileManager window의 직접 folder selection 경로가 동일한 metric owner를 사용하는지 검증.
+    /// - 검증 내용: navigation view action이 folder metric으로 연결되는지 확인
+    /// - 사전 조건: Home route의 FileManagerFeature
+    /// - 기대 결과: 지정한 ordinary folder에 대해 `.folder` 1회
+    func testDirectFolderSelectionLogsFolderNavigationExactlyOnce() async {
+        let metrics = LockIsolated<[DAUNavigationKind]>([])
+        let store = makeMetricsStore(metrics: metrics)
+
+        await store.send(.navigation(.view(.navigateToPath("/tmp/voyager-fixed-location"))))
+        await store.skipInFlightEffects()
+
+        XCTAssertEqual(metrics.value, [.folder])
+    }
+
+    /// EVM-001-dau_navigation_metrics: same folder selection is a metric no-op
+    /// 동일 route 재선택이 navigation metric을 중복 기록하지 않는지 검증.
+    /// - 검증 내용: current folder와 동일한 navigation 입력의 metric count
+    /// - 사전 조건: 현재 route가 지정 folder인 FileManagerFeature
+    /// - 기대 결과: metric 0회
+    func testSameFolderSelectionDoesNotLogNavigation() async {
+        let path = "/tmp/voyager-same-folder"
+        var state = FileManagerFeature.State()
+        state.content.navigation.navigationState = .folder(path)
+        let metrics = LockIsolated<[DAUNavigationKind]>([])
+        let store = makeMetricsStore(metrics: metrics, initialState: state)
+
+        await store.send(.navigation(.view(.navigateToPath(path))))
+        await store.skipInFlightEffects()
+
+        XCTAssertTrue(metrics.value.isEmpty)
+    }
+
+    /// EVM-001-dau_navigation_metrics: collection open remains exactly one collection metric
+    /// collection open의 직접 logging과 navigation delegate가 중복되지 않는지 검증.
+    /// - 검증 내용: collection file open 실패에서도 metric 호출 count와 kind
+    /// - 사전 조건: ordinary folder route와 throwing collection loader
+    /// - 기대 결과: `.collection` 1회
+    func testCollectionOpenLogsCollectionNavigationExactlyOnce() async {
+        let metrics = LockIsolated<[DAUNavigationKind]>([])
+        let url = URL(fileURLWithPath: "/tmp/voyager-metrics.voycoll")
+        let store = makeMetricsStore(metrics: metrics) { dependencies in
+            dependencies.collectionFileClient.load = { _ in
+                throw NSError(domain: "metrics-test", code: 1)
+            }
+        }
+
+        await store.send(.navigation(.view(.openCollectionFile(url))))
+
+        XCTAssertEqual(metrics.value, [.collection])
+    }
+
+    /// EVM-001-dau_navigation_metrics: sidebar fixed-location selection logs one folder metric
+    /// 실제 Sidebar delegate action이 navigation route 변경과 folder metric을 함께 처리하는지 검증.
+    /// - 검증 내용: `.sidebar(.delegate(.selectFixedLocation(id)))` 이후 anchor transition과 metric kind/count
+    /// - 사전 조건: active Home tab과 다른 ordinary fixed location이 있는 FileManagerFeature 상태
+    /// - 기대 결과: directory anchor로 전환되고 `.folder`만 정확히 1회 기록됨
+    func testSidebarFixedLocationSelectionLogsOneFolderMetric() async throws {
+        let location = FileManagerFixedLocationItem(
+            id: "location-documents",
+            title: "Documents",
+            path: "/Users/test/Documents",
+            iconName: "folder",
+            accessibilityLabel: "Documents",
+        )
+        var state = FileManagerFeature.State()
+        state.sidebar.fixedLocationItems = [location]
+        let metrics = LockIsolated<[DAUNavigationKind]>([])
+        let store = makeMetricsStore(metrics: metrics, initialState: state)
+
+        await store.send(.sidebar(.delegate(.selectFixedLocation(location.id))))
+        await store.receive(\.contentTabs)
+
+        let activeTabID = try XCTUnwrap(store.state.contentTabs.activeTabID)
+        XCTAssertEqual(
+            store.state.contentTabs.tabs[id: activeTabID]?.anchor,
+            .directory(path: location.path),
+        )
+        XCTAssertEqual(metrics.value, [.folder])
+    }
+
+    /// EVM-001-dau_navigation_metrics: sidebar fixed-location re-selection is a metric no-op
+    /// 같은 Sidebar fixed location을 다시 누를 때 route와 metric이 중복 처리되지 않는지 검증.
+    /// - 검증 내용: 동일 location ID에 대한 실제 sidebar delegate action의 anchor와 metric count
+    /// - 사전 조건: active tab과 content route가 같은 fixed location path를 가리키는 상태
+    /// - 기대 결과: anchor는 유지되고 navigation metric은 0회이며 collection metric도 없음
+    func testSidebarSameFixedLocationSelectionDoesNotLogNavigation() async throws {
+        let path = "/Users/test/Documents"
+        let location = FileManagerFixedLocationItem(
+            id: "location-documents",
+            title: "Documents",
+            path: path,
+            iconName: "folder",
+            accessibilityLabel: "Documents",
+        )
+        var state = FileManagerFeature.State()
+        state.content.navigation.navigationState = .folder(path)
+        state.sidebar.fixedLocationItems = [location]
+        let activeTabID = try XCTUnwrap(state.contentTabs.activeTabID)
+        state.contentTabs.tabs[id: activeTabID]?.anchor = .directory(path: path)
+        let metrics = LockIsolated<[DAUNavigationKind]>([])
+        let store = makeMetricsStore(metrics: metrics, initialState: state)
+
+        await store.send(.sidebar(.delegate(.selectFixedLocation(location.id))))
+        await store.receive(\.contentTabs)
+
+        XCTAssertEqual(store.state.contentTabs.tabs[id: activeTabID]?.anchor, .directory(path: path))
+        XCTAssertTrue(metrics.value.isEmpty)
+    }
+
+    private func makeMetricsStore(
+        metrics: LockIsolated<[DAUNavigationKind]>,
+        initialState: FileManagerFeature.State = .init(),
+        configure: (inout DependencyValues) -> Void = { _ in },
+    ) -> TestStore<FileManagerFeature.State, FileManagerFeature.Action> {
+        let store = TestStore(initialState: initialState) {
+            FileManagerFeature()
+        } withDependencies: { dependencies in
+            dependencies.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            dependencies.uuid = .incrementing
+            dependencies.metricsClient = MetricsClient(
+                logMetric: { _, _, _ in },
+                logDAUNavigation: { kind in metrics.withValue { $0.append(kind) } },
+                logDAUEntryAction: { _, _ in },
+            )
+            configure(&dependencies)
+        }
+        store.exhaustivity = .off
+        return store
+    }
+
     // MARK: - EVM-001-route_entry_selection_commands
 
     /// EVM-001-route_entry_selection_commands: Select All은 hierarchy visible preorder를 layout reducer로 전달한다.

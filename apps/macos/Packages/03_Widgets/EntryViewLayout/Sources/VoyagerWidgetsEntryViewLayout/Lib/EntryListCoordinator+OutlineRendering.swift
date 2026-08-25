@@ -92,6 +92,18 @@ extension EntryListCoordinator {
         return true
     }
 
+    /// 타자 검색으로 설정된 pending target을 첫 유효 row로 스크롤하고 reset한다.
+    /// 성공 여부와 관계없이 resetTypeScrollTarget을 발행해 일회성 소비를 보장한다.
+    func scrollToTypeScrollTarget(_ targetId: EntryModel.ID) {
+        defer { store.send(.view(.resetTypeScrollTarget)) }
+        guard let row = entryItemsByID[targetId]?
+            .lazy
+            .map({ self.tableView.row(forItem: $0) })
+            .first(where: { $0 >= 0 })
+        else { return }
+        tableView.scrollRowToVisible(row)
+    }
+
     func updateDropTargetBorder(isTargeted: Bool) {
         scrollView.layer?.borderWidth = isTargeted ? 2 : 0
         scrollView.layer?.borderColor = isTargeted ? NSColor.controlAccentColor.cgColor : nil

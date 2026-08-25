@@ -109,7 +109,7 @@ final class EntryContextMenuCoordinator: NSObject, NSMenuDelegate, NSPopoverDele
     func contextMenuOpenSelectedItemInNewWindow(_ sender: NSMenuItem) {
         guard let path = sender.representedObject as? String,
               canPerformTargetBoundCommand,
-              target.entries.contains(where: { $0.fullPath == path && $0.isFolder })
+              target.entries.contains(where: { $0.fullPath == path && $0.isDirectoryNavigationTarget })
         else {
             return
         }

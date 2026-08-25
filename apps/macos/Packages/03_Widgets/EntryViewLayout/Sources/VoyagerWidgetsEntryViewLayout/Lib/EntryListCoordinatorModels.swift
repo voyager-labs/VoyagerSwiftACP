@@ -1,5 +1,6 @@
 import CoreGraphics
 import VoyagerEntitiesEntry
+import VoyagerFeaturesEntryOperations
 import VoyagerShared
 
 struct EntryListCoordinatorRenderSnapshot: Equatable {
@@ -19,8 +20,10 @@ struct EntryListCoordinatorRenderSnapshot: Equatable {
     let showHiddenFiles: Bool
     let shouldScrollToSelection: Bool
     let isDropTargeted: Bool
+    let pendingTypeScrollTargetId: EntryModel.ID?
     let outlineProjection: EntryListOutlineProjection
     let isHierarchyOutlineEnabled: Bool
+    let activeExternalDrop: ExternalDropActiveSession?
 
     init(state: EntryViewLayoutState) {
         presentation = state.presentation
@@ -41,6 +44,7 @@ struct EntryListCoordinatorRenderSnapshot: Equatable {
         showHiddenFiles = state.showHiddenFiles
         shouldScrollToSelection = state.shouldScrollToSelection
         isDropTargeted = state.isDropTargeted
+        pendingTypeScrollTargetId = state.pendingTypeScrollTargetId
         isHierarchyOutlineEnabled = state.mode == .list
             && !state.isCollectionMode
             && state.entryArrangements.groupKey == .none
@@ -57,6 +61,7 @@ struct EntryListCoordinatorRenderSnapshot: Equatable {
             sortKey: state.entryArrangements.sortKey,
             sortOrder: state.entryArrangements.sortOrder,
         )
+        activeExternalDrop = state.entryOperations.activeExternalDrop
     }
 }
 

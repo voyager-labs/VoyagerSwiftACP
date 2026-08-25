@@ -139,31 +139,6 @@
   display: none;
 }
 
-[data-file-manager-illustration] .traffic-lights {
-  display: flex;
-  gap: var(--fm-space-4);
-}
-
-[data-file-manager-illustration] .traffic-lights span {
-  display: block;
-  width: 12px;
-  height: 12px;
-  border-radius: var(--fm-radius-round);
-  box-shadow: inset 0 0 0 0.5px var(--fm-control-outline);
-}
-
-[data-file-manager-illustration] .traffic-lights .red {
-  background: var(--fm-red);
-}
-
-[data-file-manager-illustration] .traffic-lights .yellow {
-  background: var(--fm-yellow);
-}
-
-[data-file-manager-illustration] .traffic-lights .green {
-  background: var(--fm-green);
-}
-
 [data-file-manager-illustration] .mac-window:not(.sidebar-closed) {
   min-width: calc(var(--fm-native-window-min-width) + var(--fm-native-sidebar-min-width));
 }

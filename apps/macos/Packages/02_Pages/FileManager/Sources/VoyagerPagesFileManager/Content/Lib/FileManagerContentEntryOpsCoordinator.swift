@@ -30,13 +30,18 @@ enum FileManagerContentEntryOpsCoordinator {
             handleMutatedPaths(paths, removedPrefixes: [], state: state)
 
         case let .lifecycle(.operationFinished(path, kind, result)):
-            handleOperationFinished(path: path, kind: kind, result: result, state: state)
+            kind == .externalObjectImportItem
+                ? .none
+                : handleOperationFinished(path: path, kind: kind, result: result, state: state)
 
         case .lifecycle(.operationFinished(_, _, .failure)):
             .none
 
         case .lifecycle(.dropOperationFinished):
             .none
+
+        case let .externalDrop(.importFinished(result)):
+            handleExternalImportFinished(result: result, state: state)
 
         case .lifecycle(.emptyTrashCompleted):
             .send(.delegate(.closeWindow))
@@ -128,6 +133,20 @@ enum FileManagerContentEntryOpsCoordinator {
             metadataProbe(for: groupKey),
         ].compactMap(\.self)
         return probes.isEmpty ? .none : .active(probes)
+    }
+
+    private static func handleExternalImportFinished(
+        result: ExternalDropImportResult,
+        state: FileManagerContentState,
+    ) -> Effect<FileManagerContentAction> {
+        guard case .collection = state.navigation.navigationState else {
+            return reloadEntryItemsEffect(state: state)
+        }
+        guard !result.succeededPaths.isEmpty else { return .none }
+        return .concatenate(
+            .send(.collection(.externalPathsChanged(result.succeededPaths))),
+            .send(.view(.refreshStaleCollection)),
+        )
     }
 
     private static func setTagsRefreshEffect(

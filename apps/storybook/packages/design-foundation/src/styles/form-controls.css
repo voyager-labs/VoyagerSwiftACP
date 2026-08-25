@@ -1,0 +1,175 @@
+/* Form control primitives — TextField, ComboBox */
+
+/* === TextField base === */
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .vc-form-field {
+  border: 1px solid var(--macos-separator-color);
+  border-radius: var(--fm-radius-lg);
+  background: var(--macos-control-color);
+  padding: var(--fm-space-5) var(--fm-space-6);
+  color: var(--macos-label-color);
+  font: inherit;
+  font-size: var(--fm-font-size-body);
+  line-height: var(--fm-line-body);
+  outline: none;
+  transition: border-color var(--fm-motion-fast) ease, box-shadow var(--fm-motion-fast) ease;
+}
+
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .vc-form-field:focus-visible {
+  border-color: var(--macos-control-accent-color);
+  box-shadow: 0 0 0 2px var(--macos-keyboard-focus-indicator-color);
+}
+
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .vc-form-field::placeholder {
+  color: var(--macos-quaternary-label-color);
+}
+
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .vc-form-field:disabled {
+  opacity: 0.4;
+  cursor: default;
+  pointer-events: none;
+}
+
+/* === TextField variants === */
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .vc-form-field.vc-form-field--rounded {
+  border-radius: var(--fm-radius-round);
+}
+
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .vc-form-field.vc-form-field--plain {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .vc-form-field.vc-form-field--plain:focus-visible {
+  border-color: var(--macos-control-accent-color);
+  box-shadow: 0 0 0 2px var(--macos-keyboard-focus-indicator-color);
+}
+
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .vc-form-field.vc-form-field--plain:disabled {
+  opacity: 0.3;
+}
+
+/* === TextField sizes === */
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .vc-form-field.vc-form-field--small {
+  padding: var(--fm-space-2) var(--fm-space-4);
+  font-size: var(--fm-font-size-caption);
+  line-height: 1.3;
+}
+
+/* === TextField invalid === */
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .vc-form-field.vc-form-field--invalid {
+  border-color: var(--fm-danger-outline);
+}
+
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .vc-form-field.vc-form-field--invalid:focus-visible {
+  border-color: var(--macos-system-red);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--macos-system-red) 30%, transparent);
+}
+
+/* === ComboBox === */
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .vc-combo-box {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+}
+
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .vc-combo-box-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fm-space-4);
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--macos-separator-color);
+  border-radius: var(--fm-radius-lg);
+  background: var(--macos-control-color);
+  padding: var(--fm-space-5) var(--fm-space-6);
+  color: var(--macos-label-color);
+  font: inherit;
+  font-size: var(--fm-font-size-body);
+  line-height: var(--fm-line-body);
+  text-align: left;
+  cursor: default;
+  outline: none;
+  transition: border-color var(--fm-motion-fast) ease, box-shadow var(--fm-motion-fast) ease;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .vc-combo-box-trigger:focus-visible {
+  border-color: var(--macos-control-accent-color);
+  box-shadow: 0 0 0 2px var(--macos-keyboard-focus-indicator-color);
+}
+
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .vc-combo-box-trigger:disabled {
+  opacity: 0.4;
+  cursor: default;
+  pointer-events: none;
+}
+
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .vc-combo-box-trigger[aria-expanded="true"] {
+  border-color: var(--macos-control-accent-color);
+}
+
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .vc-combo-box-trigger-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .vc-combo-box-trigger-placeholder {
+  color: var(--macos-quaternary-label-color);
+}
+
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .vc-combo-box-chevron {
+  flex-shrink: 0;
+  width: 12px;
+  height: 12px;
+  color: var(--macos-tertiary-label-color);
+  transition: transform var(--fm-motion-fast) ease;
+}
+
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .vc-combo-box-chevron[aria-expanded="true"] {
+  transform: rotate(180deg);
+}
+
+/* === ComboBox popover === */
+/* row 시각은 공통 fm-menu-item(MenuItem)이 소유하고, .vc-combo-box-option 클래스는
+ * 키보드 네비게이션 셀렉터 훅으로만 존재한다. */
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .vc-combo-box-popover {
+  position: absolute;
+  z-index: 100;
+  top: calc(100% + var(--fm-space-2));
+  left: 0;
+  width: max-content;
+  min-width: 100%;
+  max-width: calc(100vw - var(--fm-space-8));
+  overflow: auto;
+  border: 1px solid var(--macos-separator-color);
+  border-radius: var(--fm-radius-lg);
+  background: var(--macos-material-popover);
+  padding: var(--fm-space-2);
+  box-shadow: var(--fm-shadow-card);
+}

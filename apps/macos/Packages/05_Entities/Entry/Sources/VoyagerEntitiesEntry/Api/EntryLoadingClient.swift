@@ -602,26 +602,7 @@ enum EntryLoadingLive {
     }
 
     nonisolated static var isPackageDirectory: @Sendable (URL) -> Bool {
-        { url in
-            if let values = try? url.resourceValues(forKeys: [.isPackageKey]),
-               values.isPackage == true
-            {
-                return true
-            }
-
-            let ext = url.pathExtension.lowercased()
-            if ["app", "icon"].contains(ext) {
-                return true
-            }
-
-            if let type = UTType(filenameExtension: url.pathExtension),
-               type.conforms(to: .package)
-            {
-                return true
-            }
-
-            return false
-        }
+        { url in PackageDirectoryClassification.isPackageDirectory(url) }
     }
 
     nonisolated static func loadRecentItemsViaSearch(
