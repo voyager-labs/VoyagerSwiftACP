@@ -1775,8 +1775,13 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             .contentTab(fixture.tabB),
         ])
         let destination = FileManagerTopNavigationMoveDestination.before(.location(fixture.downloadsID))
+        let moveMetricOperationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 4))
         let store = TestStore(initialState: initialState) { FileManagerFeature() } withDependencies: {
             $0.contentTabPinnedRecordClient.reserveTopNavigationOperationToken = { fixture.token }
+            $0.fileManagerProductMetricsClient = FileManagerProductMetricsClient(
+                record: { _ in },
+                makeOperationID: { moveMetricOperationID },
+            )
         }
 
         await store.send(.topNavigationMoveRequested(
@@ -1790,6 +1795,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
                 ),
             ]
             $0.optimisticTopNavigationOrder = expectedOrder
+            $0.productContentTabMoveOperationIDs = [fixture.token: moveMetricOperationID]
         }
         await store.receive { action in
             guard case let .delegate(.persistTopNavigationMove(token, source, receivedDestination, _)) = action
@@ -1949,10 +1955,15 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         _ scenario: PinnedGroupChangedScenario,
         fixture: PinnedGroupReorderFixture,
     ) async {
+        let moveMetricOperationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 5))
         let store = TestStore(
             initialState: fixture.state(order: fixture.initialOrder, frozenIDs: [fixture.tabC, fixture.tabA]),
         ) { FileManagerFeature() } withDependencies: {
             $0.contentTabPinnedRecordClient.reserveTopNavigationOperationToken = { fixture.token }
+            $0.fileManagerProductMetricsClient = FileManagerProductMetricsClient(
+                record: { _ in },
+                makeOperationID: { moveMetricOperationID },
+            )
         }
         await store.send(.sidebar(.delegate(.fileManagerTopNavigationReorderRequested(
             sourceID: .contentTab(fixture.tabC),
@@ -1973,6 +1984,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
                 ),
             ]
             $0.optimisticTopNavigationOrder = scenario.expectedOrder
+            $0.productContentTabMoveOperationIDs = [fixture.token: moveMetricOperationID]
         }
         await store.receive { action in
             guard case .delegate(.persistTopNavigationPinnedGroupMove) = action else { return false }

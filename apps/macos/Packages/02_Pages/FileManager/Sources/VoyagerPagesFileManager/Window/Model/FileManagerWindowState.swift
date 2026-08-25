@@ -109,6 +109,28 @@ public enum FileManagerTopNavigationIntent: Equatable, Sendable {
     case update(ContentTabID)
 }
 
+extension FileManagerTopNavigationIntent {
+    var isContentTabMoveMetricEligible: Bool {
+        switch self {
+        case .move, .movePinnedGroup:
+            true
+        case .pin, .unpin, .close, .update:
+            false
+        }
+    }
+}
+
+/// direct pin/unpin 터미널을 탭별로 상관하기 위한 메트릭 키.
+public struct ProductContentTabPinMutationMetric: Equatable, Sendable {
+    public let operationID: UUID
+    public let action: ContentTabActionKind
+
+    public init(operationID: UUID, action: ContentTabActionKind) {
+        self.operationID = operationID
+        self.action = action
+    }
+}
+
 public struct FileManagerPendingTopNavigationIntent: Equatable, Sendable {
     public let token: FileManagerTopNavigationOperationToken
     public let intent: FileManagerTopNavigationIntent
@@ -189,6 +211,8 @@ public struct FileManagerWindowState: Equatable {
     public var pendingContentTabClose: PendingContentTabClose?
     public var pendingSelectedContentTabClose: PendingSelectedContentTabClose?
     public var pendingSelectedContentTabPinMutation: PendingSelectedContentTabPinMutation?
+    var productContentTabMoveOperationIDs: [FileManagerTopNavigationOperationToken: UUID] = [:]
+    var productContentTabPinMutationMetrics: [ContentTabID: ProductContentTabPinMutationMetric] = [:]
     public var deferredPinnedContentTabs: ContentTabState?
     public var deferredPinnedContentTabsMode: PinnedContentTabsApplicationMode?
     var pendingRuntimePreservationRecords: [ContentTabID: ContentTabPinnedRecord] = [:]

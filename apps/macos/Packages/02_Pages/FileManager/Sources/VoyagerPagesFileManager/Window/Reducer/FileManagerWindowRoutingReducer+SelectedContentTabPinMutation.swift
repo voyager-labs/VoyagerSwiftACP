@@ -174,6 +174,25 @@ extension FileManagerWindowRoutingReducer {
         )
     }
 
+    /// 배치 pin/unpin 완료를 집계 terminal 한 건으로 기록한다. 항목별 이벤트는 만들지 않는다.
+    /// 수용 항목 중 실패가 있으면 failure가 우선하고, 전부 적용 성공일 때만 success, 그 외는 cancelled다.
+    func recordSelectedPinMutationBatchMetric(_ result: SelectedContentTabPinMutationResult) {
+        guard result.totalCount > 0 else { return }
+        let outcome: ContentTabActionResult = if result.failureCount > 0 {
+            .failure
+        } else if result.successCount > 0 {
+            .success
+        } else {
+            .cancelled
+        }
+        productMetricsClient.record(FileManagerProductMetricsProducer.contentTabTerminal(
+            operationID: result.operationID,
+            action: result.target == .pinned ? .pin : .unpin,
+            source: .contentTabBar,
+            result: outcome,
+        ))
+    }
+
     func completeSelectedContentTabPinMutationPreflight(
         operationID: UUID,
         tabID: ContentTabID,

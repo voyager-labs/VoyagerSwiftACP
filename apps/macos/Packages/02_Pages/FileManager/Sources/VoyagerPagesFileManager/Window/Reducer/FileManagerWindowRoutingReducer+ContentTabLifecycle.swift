@@ -175,6 +175,7 @@ extension FileManagerWindowRoutingReducer {
             return .none
         }
         let disposition = contentTabCloseDisposition(tabID: tabID, state: state)
+        recordContentTabCloseMetricIfRemoved(disposition, state: state)
         state.pendingDirectoryReloadTabIDs.remove(tabID)
         let closedTabLoadingCancellationEffect = makeContentTabLoadingCancellationEffect(
             tabID: tabID,
@@ -227,6 +228,23 @@ extension FileManagerWindowRoutingReducer {
             wasActive: disposition.shouldRestorePreviousActiveTab,
             state: state,
         )
+    }
+
+    /// 실제 탭 제거로 확정된 close만 success terminal 한 건을 기록한다.
+    /// 배치 close는 다중 선택 pin/unpin 집계 대상이 아니므로 이벤트를 만들지 않는다.
+    private func recordContentTabCloseMetricIfRemoved(
+        _ disposition: ContentTabCloseDisposition,
+        state: State,
+    ) {
+        guard disposition.isActualRemoval,
+              state.pendingSelectedContentTabClose == nil
+        else { return }
+        productMetricsClient.record(FileManagerProductMetricsProducer.contentTabTerminal(
+            operationID: productMetricsClient.makeOperationID(),
+            action: .close,
+            source: .contentTabBar,
+            result: .success,
+        ))
     }
 
     private func makeContentTabUndoManagerLifecycleEffect(

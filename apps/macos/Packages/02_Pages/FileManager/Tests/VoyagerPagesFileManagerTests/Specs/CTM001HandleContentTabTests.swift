@@ -5402,6 +5402,714 @@ final class CTM001HandleContentTabTests: XCTestCase {
         )
     }
 
+    // MARK: - CTM-001-content_tab_action_metrics
+
+    /// CTM-001-content_tab_action_metrics: 수용된 새 Content Tab open은 typed success 메트릭 한 건을 기록한다.
+    /// 탭 생성이 상태로 증명될 때만 open terminal이 발화하는지 검증한다.
+    /// - 검증 내용: tabs.count +1과 `.success/.open/.contentTabBar` 메트릭 1건, 주입된 operationID 상관
+    /// - 사전 조건: 기본 Home tab window state와 recorder 주입 metrics client
+    /// - 기대 결과: 레코더에 open success 메트릭 1건만 기록됨
+    func testOpenNewContentTabAcceptanceEmitsSingleOpenMetric() async {
+        let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1))
+        let recorder = FileManagerProductMetricRecorder(makeOperationID: { operationID })
+        let store = TestStore(initialState: FileManagerFeature.State()) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 443))
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: open handoff 부수 효과보다 메트릭 계약에 집중함
+        store.exhaustivity = .off
+
+        let initialCount = store.state.contentTabs.tabs.count
+        await store.send(.contentTabs(.open(.homeDefault)))
+
+        XCTAssertEqual(store.state.contentTabs.tabs.count, initialCount + 1)
+        XCTAssertEqual(recorder.metrics(), [
+            .contentTabAction(
+                result: .success,
+                action: .open,
+                source: .contentTabBar,
+                operationID: operationID,
+            ),
+        ])
+    }
+
+    /// CTM-001-content_tab_action_metrics: maxTabs 도달 open은 탭을 만들지 않고 메트릭도 없다.
+    /// - 검증 내용: tabs.count 유지, 레코더 빈 배열
+    /// - 사전 조건: maxTabs(20)개 Directory tab
+    /// - 기대 결과: 메트릭 0건
+    func testOpenNewContentTabAtMaxTabsEmitsNoMetric() async {
+        let recorder = FileManagerProductMetricRecorder()
+        var contentTabs = ContentTabState(tabs: [], activeTabID: nil, recentlyClosed: nil)
+        for index in 0 ..< ContentTabConstants.maxTabs {
+            contentTabs.tabs.append(ContentTabItem(
+                id: ContentTabID(rawValue: "max-tab-\(index)"),
+                page: .directory,
+                anchor: .directory(path: "/max/\(index)"),
+                isPinned: false,
+                title: nil,
+                iconName: nil,
+            ))
+        }
+        contentTabs.activeTabID = contentTabs.tabs.first?.id
+        var state = FileManagerFeature.State()
+        state.contentTabs = contentTabs
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 443))
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: maxTabs 거부 no-op 경로만 검증함
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.open(.homeDefault)))
+
+        XCTAssertEqual(store.state.contentTabs.tabs.count, ContentTabConstants.maxTabs)
+        XCTAssertTrue(recorder.metrics().isEmpty)
+    }
+
+    /// CTM-001-content_tab_action_metrics: 실제 제거로 완료된 close는 success 메트릭 한 건을 기록한다.
+    /// finalize 시점 탭 부재가 close 적용의 증거임을 검증한다.
+    /// - 검증 내용: 닫힌 active tab 부재와 `.success/.close/.contentTabBar` 메트릭 1건
+    /// - 사전 조건: unpinned Home(active)+Directory 두 탭
+    /// - 기대 결과: 레코더에 close success 메트릭 1건만 기록됨
+    func testCloseContentTabRemovalEmitsSingleCloseMetric() async {
+        let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2))
+        let homeID = ContentTabID(rawValue: "metric-close-home")
+        let directoryID = ContentTabID(rawValue: "metric-close-directory")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: homeID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: nil,
+                    iconName: nil,
+                ),
+                ContentTabItem(
+                    id: directoryID,
+                    page: .directory,
+                    anchor: .directory(path: "/metric-close"),
+                    isPinned: false,
+                    title: nil,
+                    iconName: nil,
+                ),
+            ],
+            activeTabID: homeID,
+            recentlyClosed: nil,
+        )
+        let recorder = FileManagerProductMetricRecorder(makeOperationID: { operationID })
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 443))
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: close handoff/cleanup 효과보다 메트릭 계약에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.close(homeID)))
+
+        XCTAssertNil(store.state.contentTabs.tabs[id: homeID])
+        XCTAssertEqual(recorder.metrics(), [
+            .contentTabAction(
+                result: .success,
+                action: .close,
+                source: .contentTabBar,
+                operationID: operationID,
+            ),
+        ])
+    }
+
+    /// CTM-001-content_tab_action_metrics: 존재하지 않는 탭 close는 메트릭을 만들지 않는다.
+    /// - 검증 내용: missing ID close 후 레코더 빈 배열
+    /// - 사전 조건: unpinned 두 탭 window state
+    /// - 기대 결과: 메트릭 0건
+    func testCloseMissingContentTabEmitsNoMetric() async {
+        let homeID = ContentTabID(rawValue: "metric-close-missing-home")
+        let directoryID = ContentTabID(rawValue: "metric-close-missing-directory")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: homeID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: nil,
+                    iconName: nil,
+                ),
+                ContentTabItem(
+                    id: directoryID,
+                    page: .directory,
+                    anchor: .directory(path: "/metric-close-missing"),
+                    isPinned: false,
+                    title: nil,
+                    iconName: nil,
+                ),
+            ],
+            activeTabID: homeID,
+            recentlyClosed: nil,
+        )
+        let recorder = FileManagerProductMetricRecorder()
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 443))
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: missing ID no-op 경로만 검증함
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.close(ContentTabID(rawValue: "missing-tab"))))
+
+        XCTAssertTrue(recorder.metrics().isEmpty)
+    }
+
+    /// CTM-001-content_tab_action_metrics: snapshot 소비에 성공한 restore는 success 메트릭 한 건을 기록한다.
+    /// - 검증 내용: tabs.count +1, recentlyClosed 비움, `.success/.restore` 메트릭 1건
+    /// - 사전 조건: Home tab과 Directory recentlyClosed snapshot
+    /// - 기대 결과: 레코더에 restore success 메트릭 1건만 기록됨
+    func testRestoreLastClosedTabAcceptanceEmitsSingleRestoreMetric() async {
+        let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 3))
+        let homeID = ContentTabID(rawValue: "metric-restore-home")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: homeID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: nil,
+                    iconName: nil,
+                ),
+            ],
+            activeTabID: homeID,
+            recentlyClosed: ClosedContentTabSnapshot(
+                page: .directory,
+                anchor: .directory(path: "/metric-restored"),
+                wasPinned: false,
+                closedAt: Date(timeIntervalSince1970: 443),
+            ),
+        )
+        let recorder = FileManagerProductMetricRecorder(makeOperationID: { operationID })
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 443))
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: restore handoff 효과보다 메트릭 계약에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.restore))
+
+        XCTAssertEqual(store.state.contentTabs.tabs.count, 2)
+        XCTAssertNil(store.state.contentTabs.recentlyClosed)
+        XCTAssertEqual(recorder.metrics(), [
+            .contentTabAction(
+                result: .success,
+                action: .restore,
+                source: .contentTabBar,
+                operationID: operationID,
+            ),
+        ])
+    }
+
+    /// CTM-001-content_tab_action_metrics: 복원 후보가 없으면 restore는 메트릭을 만들지 않는다.
+    /// - 검증 내용: recentlyClosed nil 상태에서 restore 후 레코더 빈 배열
+    /// - 사전 조건: Home tab 하나, recentlyClosed nil
+    /// - 기대 결과: 메트릭 0건
+    func testRestoreWithoutCandidateEmitsNoMetric() async {
+        let homeID = ContentTabID(rawValue: "metric-restore-empty-home")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: homeID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: nil,
+                    iconName: nil,
+                ),
+            ],
+            activeTabID: homeID,
+            recentlyClosed: nil,
+        )
+        let recorder = FileManagerProductMetricRecorder()
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 443))
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: empty restore no-op 경로만 검증함
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.restore))
+
+        XCTAssertTrue(recorder.metrics().isEmpty)
+    }
+
+    /// CTM-001-content_tab_action_metrics: 순서가 실제로 바뀐 reorder는 success 메트릭 한 건을 기록한다.
+    /// - 검증 내용: tabs 순서 [A,B]→[B,A] 전환과 `.success/.reorder` 메트릭 1건
+    /// - 사전 조건: unpinned Directory 2개
+    /// - 기대 결과: 레코더에 reorder success 메트릭 1건만 기록됨
+    func testReorderAppliedEmitsSingleReorderMetric() async {
+        let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 4))
+        let firstID = ContentTabID(rawValue: "metric-reorder-first")
+        let secondID = ContentTabID(rawValue: "metric-reorder-second")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: firstID,
+                    page: .directory,
+                    anchor: .directory(path: "/metric-reorder/first"),
+                    isPinned: false,
+                    title: nil,
+                    iconName: nil,
+                ),
+                ContentTabItem(
+                    id: secondID,
+                    page: .directory,
+                    anchor: .directory(path: "/metric-reorder/second"),
+                    isPinned: false,
+                    title: nil,
+                    iconName: nil,
+                ),
+            ],
+            activeTabID: firstID,
+            recentlyClosed: nil,
+        )
+        let recorder = FileManagerProductMetricRecorder(makeOperationID: { operationID })
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 443))
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: reorder projection sync보다 메트릭 계약에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.reorder(sourceID: secondID, targetID: firstID, placement: .before)))
+
+        XCTAssertEqual(store.state.contentTabs.tabs.map(\.id), [secondID, firstID])
+        XCTAssertEqual(recorder.metrics(), [
+            .contentTabAction(
+                result: .success,
+                action: .reorder,
+                source: .contentTabBar,
+                operationID: operationID,
+            ),
+        ])
+    }
+
+    /// CTM-001-content_tab_action_metrics: 순서 변화가 없는 reorder는 메트릭을 만들지 않는다.
+    /// - 검증 내용: [A,B]에서 A→B before 이동 후 동일 순서 유지, 레코더 빈 배열
+    /// - 사전 조건: unpinned Directory 2개
+    /// - 기대 결과: 메트릭 0건
+    func testUnchangedReorderEmitsNoMetric() async {
+        let firstID = ContentTabID(rawValue: "metric-reorder-same-first")
+        let secondID = ContentTabID(rawValue: "metric-reorder-same-second")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: firstID,
+                    page: .directory,
+                    anchor: .directory(path: "/metric-reorder-same/first"),
+                    isPinned: false,
+                    title: nil,
+                    iconName: nil,
+                ),
+                ContentTabItem(
+                    id: secondID,
+                    page: .directory,
+                    anchor: .directory(path: "/metric-reorder-same/second"),
+                    isPinned: false,
+                    title: nil,
+                    iconName: nil,
+                ),
+            ],
+            activeTabID: firstID,
+            recentlyClosed: nil,
+        )
+        let recorder = FileManagerProductMetricRecorder()
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 443))
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: unchanged reorder no-op 경로만 검증함
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.reorder(sourceID: firstID, targetID: secondID, placement: .before)))
+
+        XCTAssertEqual(store.state.contentTabs.tabs.map(\.id), [firstID, secondID])
+        XCTAssertTrue(recorder.metrics().isEmpty)
+    }
+
+    /// CTM-001-content_tab_action_metrics: 유효한 duplicate는 success 메트릭 한 건을 기록한다.
+    /// - 검증 내용: duplicate row 생성과 `.success/.duplicate` 메트릭 1건
+    /// - 사전 조건: unpinned Directory source tab과 fresh duplicate ID
+    /// - 기대 결과: 레코더에 duplicate success 메트릭 1건만 기록됨
+    func testDuplicateAppliedEmitsSingleDuplicateMetric() async {
+        let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 6))
+        let sourceID = ContentTabID(rawValue: "metric-dup-source")
+        let freshID = ContentTabID(rawValue: "metric-dup-fresh")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: sourceID,
+                    page: .directory,
+                    anchor: .directory(path: "/metric-dup"),
+                    isPinned: false,
+                    title: nil,
+                    iconName: nil,
+                ),
+            ],
+            activeTabID: sourceID,
+            recentlyClosed: nil,
+        )
+        let recorder = FileManagerProductMetricRecorder(makeOperationID: { operationID })
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 443))
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: duplicate owner handoff 효과보다 메트릭 계약에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.duplicate(sourceID: sourceID, duplicateID: freshID)))
+        await store.skipReceivedActions()
+
+        XCTAssertNotNil(store.state.contentTabs.tabs[id: freshID])
+        XCTAssertEqual(recorder.metrics(), [
+            .contentTabAction(
+                result: .success,
+                action: .duplicate,
+                source: .contentTabBar,
+                operationID: operationID,
+            ),
+        ])
+    }
+
+    /// CTM-001-content_tab_action_metrics: 이미 존재하는 duplicate ID 요청은 메트릭을 만들지 않는다.
+    /// - 검증 내용: preexisting identity로 인한 row 미생성, 레코더 빈 배열
+    /// - 사전 조건: Directory source tab과 기존 tab ID를 재사용한 duplicate 요청
+    /// - 기대 결과: 메트릭 0건
+    func testDuplicatePreexistingIdentityEmitsNoMetric() async {
+        let sourceID = ContentTabID(rawValue: "metric-dup-existing-source")
+        let existingID = ContentTabID(rawValue: "metric-dup-existing-target")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: sourceID,
+                    page: .directory,
+                    anchor: .directory(path: "/metric-dup-existing/source"),
+                    isPinned: false,
+                    title: nil,
+                    iconName: nil,
+                ),
+                ContentTabItem(
+                    id: existingID,
+                    page: .directory,
+                    anchor: .directory(path: "/metric-dup-existing/target"),
+                    isPinned: false,
+                    title: nil,
+                    iconName: nil,
+                ),
+            ],
+            activeTabID: sourceID,
+            recentlyClosed: nil,
+        )
+        let recorder = FileManagerProductMetricRecorder()
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 443))
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: invalid duplicate no-op 경로만 검증함
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.duplicate(sourceID: sourceID, duplicateID: existingID)))
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(store.state.contentTabs.tabs.count, 2)
+        XCTAssertTrue(recorder.metrics().isEmpty)
+    }
+
+    /// CTM-001-content_tab_action_metrics: commit된 top navigation move는 move 메트릭 한 건을 기록하고
+    /// 지연/중복 terminal은 추가 이벤트를 만들지 않는다.
+    /// - 검증 내용: committed terminal의 `.success/.move` 1건, intent·상관 키 제거, late terminal 무이벤트
+    /// - 사전 조건: pinned Directory 2개와 optimistic order [first, second]
+    /// - 기대 결과: 레코더에 move success 메트릭 정확히 1건 유지
+    func testTopNavigationMoveCommitEmitsSingleMoveMetricOnce() async throws {
+        let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 7))
+        let firstID = ContentTabID(rawValue: "metric-move-first")
+        let secondID = ContentTabID(rawValue: "metric-move-second")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: firstID,
+                    page: .directory,
+                    anchor: .directory(path: "/metric-move/first"),
+                    isPinned: true,
+                    title: nil,
+                    iconName: nil,
+                ),
+                ContentTabItem(
+                    id: secondID,
+                    page: .directory,
+                    anchor: .directory(path: "/metric-move/second"),
+                    isPinned: true,
+                    title: nil,
+                    iconName: nil,
+                ),
+            ],
+            activeTabID: firstID,
+            pinnedRecords: [
+                firstID: ContentTabPinnedRecord(
+                    id: firstID.rawValue,
+                    page: .directory,
+                    anchor: .directory(path: "/metric-move/first"),
+                    title: nil,
+                    iconName: nil,
+                    pinnedAt: Date(timeIntervalSince1970: 443),
+                ),
+                secondID: ContentTabPinnedRecord(
+                    id: secondID.rawValue,
+                    page: .directory,
+                    anchor: .directory(path: "/metric-move/second"),
+                    title: nil,
+                    iconName: nil,
+                    pinnedAt: Date(timeIntervalSince1970: 443),
+                ),
+            ],
+        )
+        state.lastConfirmedTopNavigationOrder = .init(items: [.contentTab(firstID), .contentTab(secondID)])
+        state.optimisticTopNavigationOrder = state.lastConfirmedTopNavigationOrder
+        let recorder = FileManagerProductMetricRecorder(makeOperationID: { operationID })
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 443))
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: delegate persistence routing보다 move terminal 메트릭 계약에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.topNavigationMoveRequested(
+            source: .contentTab(firstID),
+            destination: .after(.contentTab(secondID)),
+        ))
+
+        let token = try XCTUnwrap(store.state.pendingTopNavigationIntents.first?.token)
+        await store.skipReceivedActions()
+        await store.send(.internal(.topNavigationIntentCompleted(
+            token: token,
+            terminal: .committed(FileManagerTopNavigationCommit(
+                order: store.state.optimisticTopNavigationOrder,
+                revision: 1,
+            )),
+        )))
+
+        XCTAssertFalse(store.state.pendingTopNavigationIntents.contains { $0.token == token })
+        XCTAssertEqual(recorder.metrics(), [
+            .contentTabAction(
+                result: .success,
+                action: .move,
+                source: .contentTabBar,
+                operationID: operationID,
+            ),
+        ])
+
+        await store.send(.internal(.topNavigationIntentCompleted(
+            token: token,
+            terminal: .committed(FileManagerTopNavigationCommit(
+                order: store.state.optimisticTopNavigationOrder,
+                revision: 2,
+            )),
+        )))
+        XCTAssertEqual(recorder.metrics().count, 1)
+    }
+
+    /// CTM-001-content_tab_action_metrics: 순서 변화가 없는 move 요청은 intent와 메트릭을 만들지 않는다.
+    /// - 검증 내용: pending intents 빈 배열 유지, 레코더 빈 배열
+    /// - 사전 조건: optimistic order [first, second]에서 first→before(second) 이동
+    /// - 기대 결과: 메트릭 0건
+    func testUnchangedTopNavigationMoveEmitsNoMetric() async {
+        let firstID = ContentTabID(rawValue: "metric-move-same-first")
+        let secondID = ContentTabID(rawValue: "metric-move-same-second")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: firstID,
+                    page: .directory,
+                    anchor: .directory(path: "/metric-move-same/first"),
+                    isPinned: true,
+                    title: nil,
+                    iconName: nil,
+                ),
+                ContentTabItem(
+                    id: secondID,
+                    page: .directory,
+                    anchor: .directory(path: "/metric-move-same/second"),
+                    isPinned: true,
+                    title: nil,
+                    iconName: nil,
+                ),
+            ],
+            activeTabID: firstID,
+            recentlyClosed: nil,
+        )
+        state.optimisticTopNavigationOrder = .init(items: [.contentTab(firstID), .contentTab(secondID)])
+        let recorder = FileManagerProductMetricRecorder()
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 443))
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: unchanged move no-op 경로만 검증함
+        store.exhaustivity = .off
+
+        await store.send(.topNavigationMoveRequested(
+            source: .contentTab(firstID),
+            destination: .before(.contentTab(secondID)),
+        ))
+
+        XCTAssertTrue(store.state.pendingTopNavigationIntents.isEmpty)
+        XCTAssertTrue(recorder.metrics().isEmpty)
+    }
+
+    /// CTM-001-content_tab_action_metrics: save 실패 terminal은 failure move 메트릭 한 건으로 매핑된다.
+    /// - 검증 내용: `.failed(.save)` terminal의 `.failure/.move` 메트릭 1건
+    /// - 사전 조건: 수용된 move intent 하나
+    /// - 기대 결과: 레코더에 move failure 메트릭 1건만 기록됨
+    func testTopNavigationMoveSaveFailureEmitsSingleFailureMetric() async throws {
+        let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 8))
+        let firstID = ContentTabID(rawValue: "metric-move-fail-first")
+        let secondID = ContentTabID(rawValue: "metric-move-fail-second")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: firstID,
+                    page: .directory,
+                    anchor: .directory(path: "/metric-move-fail/first"),
+                    isPinned: true,
+                    title: nil,
+                    iconName: nil,
+                ),
+                ContentTabItem(
+                    id: secondID,
+                    page: .directory,
+                    anchor: .directory(path: "/metric-move-fail/second"),
+                    isPinned: true,
+                    title: nil,
+                    iconName: nil,
+                ),
+            ],
+            activeTabID: firstID,
+            recentlyClosed: nil,
+        )
+        state.optimisticTopNavigationOrder = .init(items: [.contentTab(firstID), .contentTab(secondID)])
+        let recorder = FileManagerProductMetricRecorder(makeOperationID: { operationID })
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 443))
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: failure presentation보다 terminal 매핑 계약에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.topNavigationMoveRequested(
+            source: .contentTab(firstID),
+            destination: .after(.contentTab(secondID)),
+        ))
+
+        let token = try XCTUnwrap(store.state.pendingTopNavigationIntents.first?.token)
+        await store.skipReceivedActions()
+        await store.send(.internal(.topNavigationIntentCompleted(
+            token: token,
+            terminal: .failed(.save),
+        )))
+
+        XCTAssertEqual(recorder.metrics(), [
+            .contentTabAction(
+                result: .failure,
+                action: .move,
+                source: .contentTabBar,
+                operationID: operationID,
+            ),
+        ])
+    }
+
+    /// CTM-001-content_tab_action_metrics: 배치 selected close는 항목별 close 메트릭을 억제한다.
+    /// coordinator 수명 동안 finalize가 N번 실행되어도 이벤트 중복이 없는지 검증한다.
+    /// - 검증 내용: 두 탭 제거 완료 후에도 레코더 빈 배열
+    /// - 사전 조건: pinned-first interleaved 선택 상태에서 2개 대상 batch close
+    /// - 기대 결과: 메트릭 0건
+    func testBatchSelectedCloseSuppressesPerItemCloseMetrics() async throws {
+        let activeID = ContentTabID(rawValue: "suppress-close-active")
+        let pinnedID = ContentTabID(rawValue: "suppress-close-pinned")
+        let visualRightID = ContentTabID(rawValue: "suppress-close-visual-right")
+        let targetID = ContentTabID(rawValue: "suppress-close-target")
+        let operationID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000453"))
+        let initialState = makePinnedFirstInterleavedSelectedCloseState(
+            activeID: activeID,
+            pinnedID: pinnedID,
+            visualRightID: visualRightID,
+            targetID: targetID,
+        )
+        let recorder = FileManagerProductMetricRecorder()
+        let store = TestStore(initialState: initialState) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.uuid = .constant(operationID)
+            $0.date = .constant(Date(timeIntervalSince1970: 453))
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: batch lifecycle action보다 close 메트릭 억제 계약에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.requestCloseSelectedContentTabs)
+        await store.receive(\.processNextSelectedContentTabClose, operationID)
+        await receiveRemovedSelectedCloseLifecycle(
+            store,
+            operationID: operationID,
+            tabID: targetID,
+        )
+        await store.receive(\.processNextSelectedContentTabClose, operationID)
+        await receiveRemovedSelectedCloseLifecycle(
+            store,
+            operationID: operationID,
+            tabID: activeID,
+        )
+        await store.receive(\.processNextSelectedContentTabClose, operationID)
+
+        XCTAssertNil(store.state.pendingSelectedContentTabClose)
+        XCTAssertNil(store.state.contentTabs.tabs[id: targetID])
+        XCTAssertNil(store.state.contentTabs.tabs[id: activeID])
+        XCTAssertTrue(recorder.metrics().isEmpty)
+    }
+
     // MARK: - CTM-001-handle_content_tab_invariants
 
     /// CTM-001-handle_content_tab_invariants: invalid id와 max tab limit은 상태 invariant를 깨지 않는 no-op임

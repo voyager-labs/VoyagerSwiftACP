@@ -19,6 +19,8 @@ public struct FileManagerFeature {
     var pinnedRecordPersistenceOwnership
     @Dependency(\.userDefaultsClient)
     var userDefaultsClient
+    @Dependency(\.fileManagerProductMetricsClient)
+    var productMetricsClient
 
     public var body: some Reducer<State, Action> {
         Reduce { state, action in
@@ -195,7 +197,14 @@ private extension FileManagerFeature {
                       state.pendingSelectedContentTabClose == nil,
                       state.pendingSelectedContentTabPinMutation == nil
                 else { return .none }
-                _ = requestTopNavigationPin(tabID: tabID, placement: placement, state: &state)
+                // 상관 삽입은 요청 수락 이후로 미루어 거부된 preflight가 기존 상관을 지우지 못하게 한다.
+                guard requestTopNavigationPin(tabID: tabID, placement: placement, state: &state) else {
+                    return .none
+                }
+                state.productContentTabPinMutationMetrics[tabID] = ProductContentTabPinMutationMetric(
+                    operationID: productMetricsClient.makeOperationID(),
+                    action: .pin,
+                )
                 return .none
 
             case let .contentTabs(.unpin(tabID, placement)):
@@ -203,7 +212,13 @@ private extension FileManagerFeature {
                       state.pendingSelectedContentTabClose == nil,
                       state.pendingSelectedContentTabPinMutation == nil
                 else { return .none }
-                _ = prepareTopNavigationUnpin(tabID: tabID, placement: placement, state: &state)
+                guard prepareTopNavigationUnpin(tabID: tabID, placement: placement, state: &state) else {
+                    return .none
+                }
+                state.productContentTabPinMutationMetrics[tabID] = ProductContentTabPinMutationMetric(
+                    operationID: productMetricsClient.makeOperationID(),
+                    action: .unpin,
+                )
                 return .none
 
             case let .contentTabs(.updateActivePageAnchor(tabID, anchor)):
@@ -229,6 +244,7 @@ private extension FileManagerFeature {
                 return .none
 
             case let .contentTabs(contentTabAction) where isPinnedRecordPersistenceTerminal(contentTabAction):
+                recordContentTabMetricIfNeeded(contentTabAction, state: &state)
                 return completeContentTabPinnedRecordPersistence(
                     action: contentTabAction,
                     state: &state,

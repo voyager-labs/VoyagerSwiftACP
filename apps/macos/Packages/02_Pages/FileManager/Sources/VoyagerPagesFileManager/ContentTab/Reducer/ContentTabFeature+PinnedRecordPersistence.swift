@@ -32,6 +32,13 @@ enum PinnedRecordPersistenceIntent {
         return isCurrent
     }
 
+    /// 해당 탭의 최신 persistence intent ID를 반환한다. 테스트가 터미널 context를 구성할 때 사용한다.
+    static func latestIntentID(scopeID: UUID, tabID: ContentTabID) -> UUID? {
+        lock.lock()
+        defer { lock.unlock() }
+        return latestIntentIDs[Key(scopeID: scopeID, tabID: tabID)]
+    }
+
     static func checkCurrent(scopeID: UUID, tabID: ContentTabID, intentID: UUID) throws {
         if !isCurrent(scopeID: scopeID, tabID: tabID, intentID: intentID) {
             throw CancellationError()

@@ -273,6 +273,11 @@ extension FileManagerFeature {
         else { return .none }
 
         let childAction = pinnedRecordTerminalAction(request: request, terminal: terminal)
+        // windowManager 소유 왕복은 터미널 자식 액션을 인라인 축소하므로 .contentTabs 단말 케이스를
+        // 다시 거치지 않는다. 직접 pin/unpin 메트릭은 이 지점에서 상관을 소비해 기록해야 정확히 한 번 귀환한다.
+        if case .contentTab = source {
+            recordContentTabMetricIfNeeded(childAction, state: &state)
+        }
         let childEffect = pinnedRecordTerminalChildEffect(
             childAction: childAction,
             source: source,
@@ -401,6 +406,7 @@ extension FileManagerFeature {
         guard movedOrder != state.optimisticTopNavigationOrder else { return .none }
 
         let token = contentTabPinnedRecordClient.reserveTopNavigationOperationToken()
+        state.productContentTabMoveOperationIDs[token] = productMetricsClient.makeOperationID()
         state.pendingTopNavigationIntents.append(.init(
             token: token,
             intent: .move(source: source, destination: destination),
@@ -434,6 +440,7 @@ extension FileManagerFeature {
 
         state.sidebar.contentTabDragSnapshot = nil
         let token = contentTabPinnedRecordClient.reserveTopNavigationOperationToken()
+        state.productContentTabMoveOperationIDs[token] = productMetricsClient.makeOperationID()
         state.pendingTopNavigationIntents.append(.init(
             token: token,
             intent: .movePinnedGroup(orderedIDs: orderedIDs, destination: destination),
@@ -456,6 +463,8 @@ extension FileManagerFeature {
         isCurrentTerminal: Bool? = nil,
     ) -> Effect<Action> {
         let hadPendingIntent = state.pendingTopNavigationIntents.contains { $0.token == token }
+        let isMoveMetricPending = hadPendingIntent
+            && pendingTopNavigationIntent(token: token, state: state)?.intent.isContentTabMoveMetricEligible == true
         let isRelevantCurrentTerminal = hadPendingIntent
             && (isCurrentTerminal ?? contentTabPinnedRecordClient.isCurrentTopNavigationOperationToken(token))
         switch terminal {
@@ -489,8 +498,53 @@ extension FileManagerFeature {
             return .none
         }
         state.pendingTopNavigationIntents.removeAll { $0.token == token }
+        if isMoveMetricPending {
+            recordContentTabMoveMetric(token: token, terminal: terminal, state: &state)
+        }
         state.replayTopNavigationOverlays()
         return .none
+    }
+
+    private func pendingTopNavigationIntent(
+        token: FileManagerTopNavigationOperationToken,
+        state: State,
+    ) -> FileManagerPendingTopNavigationIntent? {
+        state.pendingTopNavigationIntents.first { $0.token == token }
+    }
+
+    /// move persistence terminal을 operation ID와 상관해 정확히 한 번 기록하고 상관 키를 함께 제거한다.
+    /// intent가 이미 제거된 지연/중복 terminal은 이벤트를 만들지 않는다.
+    private func recordContentTabMoveMetric(
+        token: FileManagerTopNavigationOperationToken,
+        terminal: FileManagerTopNavigationIntentTerminal,
+        state: inout State,
+    ) {
+        guard let operationID = state.productContentTabMoveOperationIDs.removeValue(forKey: token) else {
+            return
+        }
+        productMetricsClient.record(FileManagerProductMetricsProducer.contentTabTerminal(
+            operationID: operationID,
+            action: .move,
+            source: .contentTabBar,
+            result: contentTabActionResult(from: terminal),
+        ))
+    }
+
+    private func contentTabActionResult(
+        from terminal: FileManagerTopNavigationIntentTerminal,
+    ) -> ContentTabActionResult {
+        switch terminal {
+        case .committed:
+            .success
+        case .failed(.save):
+            .failure
+        case let .failed(.storeUnavailable):
+            .unavailable
+        case .failed(.superseded):
+            .failure
+        case .failed(.cancelled):
+            .cancelled
+        }
     }
 
     func clearLogicalUndoHistory(tabID: ContentTabID, state: inout State) {
@@ -542,6 +596,7 @@ extension FileManagerFeature {
         _ action: ContentTabAction,
         state: inout State,
     ) -> Effect<Action> {
+        let syncMetricObservation = contentTabSyncMetricObservation(for: action, state: state)
         let reducedAction: ContentTabAction = if case let .pin(tabID, placement) = action, placement == nil {
             .pinUsingDormantSlot(
                 tabID,
@@ -577,7 +632,78 @@ extension FileManagerFeature {
         }
         .map { Action.contentTabs($0) }
         let closeCancellationEffect = contentTabCloseCancellationEffect(for: action, state: &state)
+        recordContentTabSyncMetricIfAccepted(syncMetricObservation, state: &state)
         return .merge(preReductionEffect, closeCancellationEffect, childEffect)
+    }
+
+    /// 동기 content tab 작업의 수용 판정에 필요한 사전 상태 스냅샷.
+    private enum ContentTabSyncMetricObservation {
+        case open(previousTabCount: Int)
+        case restore(hadRecentlyClosed: Bool, previousTabCount: Int)
+        case reorder(previousOrder: [ContentTabID])
+        case duplicate(previousIDs: Set<ContentTabID>, duplicateIDs: [ContentTabID])
+
+        var kind: ContentTabActionKind {
+            switch self {
+            case .open: .open
+            case .restore: .restore
+            case .reorder: .reorder
+            case .duplicate: .duplicate
+            }
+        }
+    }
+
+    private func contentTabSyncMetricObservation(
+        for action: ContentTabAction,
+        state: State,
+    ) -> ContentTabSyncMetricObservation? {
+        switch action {
+        case .open:
+            .open(previousTabCount: state.contentTabs.tabs.count)
+        case .restore:
+            .restore(
+                hadRecentlyClosed: state.contentTabs.recentlyClosed != nil,
+                previousTabCount: state.contentTabs.tabs.count,
+            )
+        case .reorder, .reorderGroup:
+            .reorder(previousOrder: state.contentTabs.tabs.map(\.id))
+        case let .duplicate(_, duplicateID):
+            .duplicate(previousIDs: Set(state.contentTabs.tabs.ids), duplicateIDs: [duplicateID])
+        case let .duplicateSelected(requests):
+            .duplicate(
+                previousIDs: Set(state.contentTabs.tabs.ids),
+                duplicateIDs: requests.map(\.duplicateID),
+            )
+        default:
+            nil
+        }
+    }
+
+    /// 상태가 적용을 증명할 때만 success terminal을 한 건 기록한다. no-op/rejected 경로는 이벤트가 없다.
+    private func recordContentTabSyncMetricIfAccepted(
+        _ observation: ContentTabSyncMetricObservation?,
+        state: inout State,
+    ) {
+        guard let observation else { return }
+        let accepted: Bool = switch observation {
+        case let .open(previousTabCount):
+            state.contentTabs.tabs.count > previousTabCount
+        case let .restore(hadRecentlyClosed, previousTabCount):
+            hadRecentlyClosed && state.contentTabs.tabs.count > previousTabCount
+        case let .reorder(previousOrder):
+            state.contentTabs.tabs.map(\.id) != previousOrder
+        case let .duplicate(previousIDs, duplicateIDs):
+            duplicateIDs.contains { duplicateID in
+                !previousIDs.contains(duplicateID) && state.contentTabs.tabs[id: duplicateID] != nil
+            }
+        }
+        guard accepted else { return }
+        productMetricsClient.record(FileManagerProductMetricsProducer.contentTabTerminal(
+            operationID: productMetricsClient.makeOperationID(),
+            action: observation.kind,
+            source: .contentTabBar,
+            result: .success,
+        ))
     }
 
     func contentTabCloseCancellationEffect(

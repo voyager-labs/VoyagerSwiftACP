@@ -1636,6 +1636,183 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertEqual(counts.value, countsAfterCommit)
     }
 
+    /// CTM-003-product_terminal_metrics: 실제 앱 WindowManager 소유 persistence에서 direct pin이
+    /// 정확히 한 건의 typed metric으로 귀환하는지 검증하는 전체 왕복 계약.
+    /// UI pin → correlation → delegate persistPinnedRecordMutation → 큐 커밋 → source 터미널 복귀.
+    /// - 검증 내용: committed 왕복 뒤 `.contentTabAction(.success/.pin)` 1회와 상관 완전 소비
+    /// - 사전 조건: 실제 FileManager 창 1개와 applied commit을 반환하는 pinned record client
+    /// - 기대 결과: 레코더에 pin success 메트릭 정확히 1건
+    func testWindowManagerOwnedDirectPinRoundTripRecordsSingleSuccessMetric() async {
+        let windowID = UUID()
+        let pinOperationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 1))
+        let path = "/Users/test/A"
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [WindowSessionState(id: windowID, window: .makeInitial(path: path))]
+        guard let tabID = initialState.windows[id: windowID]?.window.contentTabs.tabs.first(where: {
+            $0.anchor == .directory(path: path) && !$0.isPinned
+        })?.id else {
+            return XCTFail("initial window must contain the unpinned directory tab")
+        }
+        let metrics = LockIsolated<[FileManagerProductMetric]>([])
+        let operationIDs = LockIsolated([pinOperationID])
+        let pinnedStore = ContentTabPinnedRecordStore(
+            records: [
+                ContentTabPinnedRecord(
+                    id: tabID.rawValue,
+                    page: .directory,
+                    anchor: .directory(path: path),
+                    title: nil,
+                    iconName: nil,
+                    pinnedAt: Date(timeIntervalSince1970: 443),
+                ),
+            ],
+            topNavigationOrder: .init(items: [.contentTab(tabID)]),
+        )
+
+        let store = TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.fileManagerProductMetricsClient = FileManagerProductMetricsClient(
+                record: { metric in metrics.withValue { $0.append(metric) } },
+                makeOperationID: {
+                    operationIDs.withValue { $0.isEmpty ? UUID() : $0.removeFirst() }
+                },
+            )
+            $0.contentTabPinnedRecordClient.reserveTopNavigationOperationToken = {
+                FileManagerTopNavigationOperationToken(value: UUID(uuid: (
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    5,
+                    2,
+                )))
+            }
+            $0.contentTabPinnedRecordClient.applyPersistenceMutationCommitted = { _, _, _ in
+                ContentTabPinnedRecordPersistenceCommit(
+                    store: pinnedStore,
+                    topNavigation: .init(order: pinnedStore.topNavigationOrder, revision: 1),
+                )
+            }
+            $0.fileManagerClient.fileExistsWithIsDirectory = { _, _ in true }
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.fileManagerWindowClient.open = { _ in }
+        }
+        // store.exhaustivity = .off: bootstrap/peer fanout 부수 effect보다 metric 왕복 계약에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.windows(.element(
+            id: windowID,
+            action: .window(.contentTabs(.pin(tabID, placement: nil))),
+        )))
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(
+            metrics.value,
+            [.contentTabAction(
+                result: .success,
+                action: .pin,
+                source: .contentTabBar,
+                operationID: pinOperationID,
+            )],
+            "WindowManager-owned direct pin must record exactly one success metric",
+        )
+        XCTAssertTrue(
+            store.state.windows[id: windowID]?.window.productContentTabPinMutationMetrics.isEmpty ?? false,
+        )
+    }
+
+    /// CTM-003-product_terminal_metrics: WindowManager 소유 direct pin의 store-unavailable 왕복도
+    /// 정확히 한 건의 `.unavailable` 메트릭으로 귀환하는지 검증.
+    /// - 검증 내용: commit 실패 후 `.contentTabAction(.unavailable/.pin)` 1회와 상관 해제
+    /// - 사전 조건: corrupt store로 실패하는 pinned record client
+    /// - 기대 결과: 레코더에 pin unavailable 메트릭 정확히 1건
+    func testWindowManagerOwnedDirectPinFailureRoundTripRecordsSingleUnavailableMetric() async {
+        let windowID = UUID()
+        let pinOperationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 3))
+        let path = "/Users/test/A"
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [WindowSessionState(id: windowID, window: .makeInitial(path: path))]
+        guard let tabID = initialState.windows[id: windowID]?.window.contentTabs.tabs.first(where: {
+            $0.anchor == .directory(path: path) && !$0.isPinned
+        })?.id else {
+            return XCTFail("initial window must contain the unpinned directory tab")
+        }
+        let metrics = LockIsolated<[FileManagerProductMetric]>([])
+        let operationIDs = LockIsolated([pinOperationID])
+
+        let store = TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.fileManagerProductMetricsClient = FileManagerProductMetricsClient(
+                record: { metric in metrics.withValue { $0.append(metric) } },
+                makeOperationID: {
+                    operationIDs.withValue { $0.isEmpty ? UUID() : $0.removeFirst() }
+                },
+            )
+            $0.contentTabPinnedRecordClient.reserveTopNavigationOperationToken = {
+                FileManagerTopNavigationOperationToken(value: UUID(uuid: (
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    5,
+                    4,
+                )))
+            }
+            $0.contentTabPinnedRecordClient.applyPersistenceMutationCommitted = { _, _, _ in
+                throw ContentTabPinnedRecordStoreLoadError.corruptUnavailable
+            }
+            $0.fileManagerClient.fileExistsWithIsDirectory = { _, _ in true }
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.fileManagerWindowClient.open = { _ in }
+        }
+        // store.exhaustivity = .off: rollback/peer fanout 부수 effect보다 metric 왕복 계약에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.windows(.element(
+            id: windowID,
+            action: .window(.contentTabs(.pin(tabID, placement: nil))),
+        )))
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(
+            metrics.value,
+            [.contentTabAction(
+                result: .unavailable,
+                action: .pin,
+                source: .contentTabBar,
+                operationID: pinOperationID,
+            )],
+            "WindowManager-owned direct pin failure must record exactly one unavailable metric",
+        )
+        XCTAssertTrue(
+            store.state.windows[id: windowID]?.window.productContentTabPinMutationMetrics.isEmpty ?? false,
+        )
+    }
+
     /// busy source window는 최신 pinned snapshot을 batch 완료 뒤 한 번 재생한다.
     /// source가 batch 중 fan-out을 defer해도 추가 store-changed event 없이 최신 snapshot으로 수렴하는지 검증한다.
     /// - 검증 내용: 이전 deferred snapshot을 latest-wins로 교체하고 coordinator clear 뒤 source에 replay

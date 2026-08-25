@@ -39,6 +39,7 @@ extension FileManagerWindowRoutingReducer {
                 )
 
             case let .selectedPinMutationBatchCompleted(result):
+                recordSelectedPinMutationBatchMetric(result)
                 let replayAction = takeDeferredPinnedContentTabsAction(state: &state)
                 let replaySnapshot: Effect<Action> = if case .applyAuthoritativePinnedContentTabs = replayAction,
                                                         let revision = state.lastConfirmedTopNavigationCommitRevision

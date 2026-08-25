@@ -18,6 +18,468 @@ private struct CTM003PinnedPersistenceHarness {
     }
 }
 
+extension CTM003ManagePinnedContentTabsTests {
+    // MARK: - CTM-003-product_terminal_metrics
+
+    /// CTM-003-product_terminal_metrics: pinned tab persistence emits one typed terminal.
+    /// persistence success는 action type과 source surface를 포함한 bounded event 한 건으로 기록된다.
+    /// - 검증 내용: content tab terminal status/action/source와 opaque operation ID
+    /// - 사전 조건: pin operation이 durable persistence terminal에 도달함
+    /// - 기대 결과: `.success/.pin/.contentTabBar` typed metric
+    func testPinnedTabTerminalProducesTypedMetric() {
+        let operationID = UUID()
+        let metric = FileManagerProductMetricsProducer.contentTabTerminal(
+            operationID: operationID,
+            action: .pin,
+            source: .contentTabBar,
+            result: .success,
+        )
+
+        XCTAssertEqual(metric, .contentTabAction(
+            result: .success,
+            action: .pin,
+            source: .contentTabBar,
+            operationID: operationID,
+        ))
+    }
+
+    /// CTM-003-product_terminal_metrics: 같은 탭 pin→unpin 중첩에서 구 pin의 superseded 터미널이 먼저 도착해도
+    /// false 이벤트가 없고 상관이 보존되어, 현재 unpin 성공 터미널이 `.unpin/.success`를 정확히 한 번 기록한다.
+    /// - 검증 내용: 구 intent 터미널 무이벤트·상관 유지, 신규 intent 터미널 1건 기록, 상관 완전 소비
+    /// - 사전 조건: 동일 탭에 direct pin 수락 직후 unpin 수락으로 상관이 대체된 상태
+    /// - 기대 결과: 레코더에 unpin success 메트릭 정확히 1건
+    func testSameTabStalePinTerminalDoesNotConsumeNewerUnpinCorrelation() async {
+        let operationIDPin = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 51))
+        let operationIDUnpin = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 52))
+        let queuedOperationIDs = LockIsolated([operationIDPin, operationIDUnpin])
+        let recorder = FileManagerProductMetricRecorder(makeOperationID: {
+            queuedOperationIDs.withValue { $0.isEmpty ? UUID() : $0.removeFirst() }
+        })
+        let tabID = ContentTabID(rawValue: "same-tab-overlap")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: tabID,
+                    page: .directory,
+                    anchor: .directory(path: "/same-tab-overlap"),
+                    isPinned: false,
+                    title: nil,
+                    iconName: nil,
+                ),
+            ],
+            activeTabID: tabID,
+            recentlyClosed: nil,
+        )
+        state.syncContentTabSidebarItems()
+        let store = TestStore(initialState: state) {
+            CTM003FileManagerPersistenceHarness()
+        } withDependencies: {
+            $0.date = .constant(Self.pinnedAt)
+            $0.fileManagerProductMetricsClient = recorder.client
+            $0.fileManagerPinnedRecordOwner = .windowManager
+        }
+        // store.exhaustivity = .off: 미처리 delegate persistence보다 동일 탭 터미널 상관 계약에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.pin(tabID, placement: nil)))
+        let scopeID = store.state.contentTabs.pinnedRecordPersistenceScopeID
+        guard let pinIntentID = PinnedRecordPersistenceIntent.latestIntentID(scopeID: scopeID, tabID: tabID) else {
+            return XCTFail("pin acceptance must mark the latest persistence intent")
+        }
+        await store.send(.contentTabs(.unpin(tabID, placement: nil)))
+        guard let unpinIntentID = PinnedRecordPersistenceIntent.latestIntentID(scopeID: scopeID, tabID: tabID),
+              unpinIntentID != pinIntentID
+        else {
+            return XCTFail("unpin acceptance must supersede the pin intent")
+        }
+
+        let generation = ContentTabPinnedRecordMutationGeneration(
+            tabID: tabID,
+            value: UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 53)),
+        )
+        await store.send(.contentTabs(.pinnedRecordSaveNotApplied(
+            tabID: tabID,
+            context: ContentTabPinnedRecordTerminalContext(intentID: pinIntentID, generation: generation),
+            reason: .superseded,
+            rollback: ContentTabPinnedRecordRollbackSnapshot(
+                previousIsPinned: false,
+                previousPinnedRecord: nil,
+                previousTabIndex: nil,
+            ),
+        )))
+
+        XCTAssertTrue(recorder.metrics().isEmpty)
+        XCTAssertNotNil(store.state.productContentTabPinMutationMetrics[tabID])
+
+        await store.send(.contentTabs(.pinnedRecordSaveSucceeded(
+            tabID: tabID,
+            context: ContentTabPinnedRecordTerminalContext(intentID: unpinIntentID, generation: generation),
+        )))
+
+        XCTAssertEqual(recorder.metrics(), [
+            .contentTabAction(
+                result: .success,
+                action: .unpin,
+                source: .contentTabBar,
+                operationID: operationIDUnpin,
+            ),
+        ])
+        XCTAssertTrue(store.state.productContentTabPinMutationMetrics.isEmpty)
+    }
+
+    /// CTM-003-product_terminal_metrics: 서로 다른 탭의 동시 direct pin은 탭별 상관으로 out-of-order terminal을 귀속한다.
+    /// 먼저 도착한 B 성공 터미널이 A의 operation ID를 소비하지 않고, 늦은 A 실패 터미널도 자신의 상관만 제거하는지 검증한다.
+    /// - 검증 내용: success(opB)+failure(opA) 2건 순차 기록, 상관 맵 완전 비움
+    /// - 사전 조건: unpinned Directory 2개에 대한 direct pin 수락과 hand-delivered terminal 2건
+    /// - 기대 결과: 탭별로 정확히 한 건씩, 교차 없는 메트릭 2건
+    func testConcurrentDirectPinTerminalsCorrelatePerTab() async {
+        let operationIDA = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 41))
+        let operationIDB = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 42))
+        let queuedOperationIDs = LockIsolated([operationIDA, operationIDB])
+        let recorder = FileManagerProductMetricRecorder(makeOperationID: {
+            queuedOperationIDs.withValue { $0.isEmpty ? UUID() : $0.removeFirst() }
+        })
+        let tabA = ContentTabID(rawValue: "concurrent-pin-a")
+        let tabB = ContentTabID(rawValue: "concurrent-pin-b")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: tabA,
+                    page: .directory,
+                    anchor: .directory(path: "/concurrent-pin/a"),
+                    isPinned: false,
+                    title: nil,
+                    iconName: nil,
+                ),
+                ContentTabItem(
+                    id: tabB,
+                    page: .directory,
+                    anchor: .directory(path: "/concurrent-pin/b"),
+                    isPinned: false,
+                    title: nil,
+                    iconName: nil,
+                ),
+            ],
+            activeTabID: tabA,
+            recentlyClosed: nil,
+        )
+        state.syncContentTabSidebarItems()
+        let store = TestStore(initialState: state) {
+            CTM003FileManagerPersistenceHarness()
+        } withDependencies: {
+            $0.date = .constant(Self.pinnedAt)
+            $0.fileManagerProductMetricsClient = recorder.client
+            $0.fileManagerPinnedRecordOwner = .windowManager
+        }
+        // store.exhaustivity = .off: 미처리 delegate persistence보다 터미널 상관 계약에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.pin(tabA, placement: nil)))
+        await store.send(.contentTabs(.pin(tabB, placement: nil)))
+
+        let scopeID = store.state.contentTabs.pinnedRecordPersistenceScopeID
+        guard let intentA = PinnedRecordPersistenceIntent.latestIntentID(scopeID: scopeID, tabID: tabA),
+              let intentB = PinnedRecordPersistenceIntent.latestIntentID(scopeID: scopeID, tabID: tabB)
+        else {
+            return XCTFail("both pin acceptances must mark their latest persistence intents")
+        }
+        let generation = ContentTabPinnedRecordMutationGeneration(
+            tabID: tabB,
+            value: UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 43)),
+        )
+        await store.send(.contentTabs(.pinnedRecordSaveSucceeded(
+            tabID: tabB,
+            context: ContentTabPinnedRecordTerminalContext(intentID: intentB, generation: generation),
+        )))
+        await store.send(.contentTabs(.pinnedRecordSaveFailed(
+            tabID: tabA,
+            context: ContentTabPinnedRecordTerminalContext(intentID: intentA, generation: generation),
+            rollback: ContentTabPinnedRecordRollbackSnapshot(
+                previousIsPinned: false,
+                previousPinnedRecord: nil,
+                previousTabIndex: nil,
+            ),
+        )))
+
+        XCTAssertEqual(recorder.metrics(), [
+            .contentTabAction(
+                result: .success,
+                action: .pin,
+                source: .contentTabBar,
+                operationID: operationIDB,
+            ),
+            .contentTabAction(
+                result: .failure,
+                action: .pin,
+                source: .contentTabBar,
+                operationID: operationIDA,
+            ),
+        ])
+        XCTAssertTrue(store.state.productContentTabPinMutationMetrics.isEmpty)
+    }
+
+    /// CTM-003-product_terminal_metrics: 상관 없는 탭의 pinned-record 터미널은 direct pin 상관을 소비하지 않는다.
+    /// 닫기 유발 unpin 등 타 터미널이 선점해 false 이벤트를 만들거나 실제 터미널을 누락시키지 않는지 검증한다.
+    /// - 검증 내용: 무관 터미널 무이벤트·상관 보존, 이후 실제 터미널 1건 기록
+    /// - 사전 조건: direct pin A 수락과 correlation 없는 tab C 터미널 선도착
+    /// - 기대 결과: 레코더에 opA success 메트릭 정확히 1건
+    func testUnrelatedPinnedRecordTerminalDoesNotConsumeDirectPinCorrelation() async {
+        let operationIDA = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 45))
+        let recorder = FileManagerProductMetricRecorder(makeOperationID: { operationIDA })
+        let tabA = ContentTabID(rawValue: "unrelated-terminal-pin-a")
+        let unrelatedTabC = ContentTabID(rawValue: "unrelated-terminal-close-c")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: tabA,
+                    page: .directory,
+                    anchor: .directory(path: "/unrelated-terminal/a"),
+                    isPinned: false,
+                    title: nil,
+                    iconName: nil,
+                ),
+            ],
+            activeTabID: tabA,
+            recentlyClosed: nil,
+        )
+        state.syncContentTabSidebarItems()
+        let store = TestStore(initialState: state) {
+            CTM003FileManagerPersistenceHarness()
+        } withDependencies: {
+            $0.date = .constant(Self.pinnedAt)
+            $0.fileManagerProductMetricsClient = recorder.client
+            $0.fileManagerPinnedRecordOwner = .windowManager
+        }
+        // store.exhaustivity = .off: 무관 터미널 선점 방지 계약에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.pin(tabA, placement: nil)))
+        let intentA = PinnedRecordPersistenceIntent.latestIntentID(
+            scopeID: store.state.contentTabs.pinnedRecordPersistenceScopeID,
+            tabID: tabA,
+        )
+        let unrelatedContext = ContentTabPinnedRecordTerminalContext(
+            intentID: UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 46)),
+            generation: ContentTabPinnedRecordMutationGeneration(
+                tabID: unrelatedTabC,
+                value: UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 47)),
+            ),
+        )
+        await store.send(.contentTabs(.pinnedRecordSaveSucceeded(
+            tabID: unrelatedTabC,
+            context: unrelatedContext,
+        )))
+        XCTAssertTrue(recorder.metrics().isEmpty)
+
+        guard let intentA else {
+            return XCTFail("pin acceptance must mark the latest persistence intent")
+        }
+        await store.send(.contentTabs(.pinnedRecordSaveSucceeded(
+            tabID: tabA,
+            context: ContentTabPinnedRecordTerminalContext(
+                intentID: intentA,
+                generation: ContentTabPinnedRecordMutationGeneration(
+                    tabID: tabA,
+                    value: UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 48)),
+                ),
+            ),
+        )))
+        XCTAssertEqual(recorder.metrics(), [
+            .contentTabAction(
+                result: .success,
+                action: .pin,
+                source: .contentTabBar,
+                operationID: operationIDA,
+            ),
+        ])
+    }
+}
+
+extension CTM003ManagePinnedContentTabsTests {
+    // MARK: - CTM-003-product_action_metrics
+
+    /// CTM-003-product_action_metrics: 다중 선택 Pin 배치 완료는 집계 terminal 메트릭 정확히 한 건을 기록한다.
+    /// 배치 coordinator 결과가 항목별 이벤트 없이 단일 typed event로 상관되는지 검증한다.
+    /// - 검증 내용: success=2 배치에 대해 `.success/.pin/.contentTabBar`와 배치 operationID 일치, 메트릭 총 1건
+    /// - 사전 조건: unpinned Directory 2개 선택과 deterministic applied persistence
+    /// - 기대 결과: 레코더에 aggregate success 메트릭 1건만 기록됨
+    func testSelectedPinBatchCompletionEmitsSingleAggregateSuccessMetric() async {
+        let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 21))
+        let fixture = allUnpinnedSelectedPinMutationFixture()
+        let recorder = FileManagerProductMetricRecorder()
+        let store = TestStore(initialState: fixture.state) {
+            CTM003FileManagerPersistenceHarness()
+        } withDependencies: {
+            $0.uuid = .constant(operationID)
+            $0.date = .constant(Self.pinnedAt)
+            $0.fileManagerProductMetricsClient = recorder.client
+            $0.contentTabPinnedRecordClient.guardedUpdateStore = { _, _, transform in
+                _ = try transform(ContentTabPinnedRecordStore())
+                return .applied
+            }
+        }
+        // store.exhaustivity = .off: correlated child terminal의 동적 intent/generation보다 집계 메트릭 계약에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.requestSelectedContentTabPinMutation(target: .pinned))
+        await store.skipReceivedActions()
+        await store.finish()
+
+        XCTAssertNil(store.state.pendingSelectedContentTabPinMutation)
+        XCTAssertEqual(recorder.metrics(), [
+            .contentTabAction(
+                result: .success,
+                action: .pin,
+                source: .contentTabBar,
+                operationID: operationID,
+            ),
+        ])
+    }
+
+    /// CTM-003-product_action_metrics: 전 항목 persistence 실패 배치는 failure 집계 메트릭 한 건을 기록한다.
+    /// 부분/전체 실패가 항목별 이벤트 폭증 없이 단일 failure terminal로 수렴하는지 검증한다.
+    /// - 검증 내용: failure=2 배치의 `.failure/.unpin/.contentTabBar` 메트릭 1건과 배치 operationID 상관
+    /// - 사전 조건: selected pinned Directory 2개와 guarded persistence 전면 throw
+    /// - 기대 결과: 레코더에 aggregate failure 메트릭 1건만 기록됨
+    func testSelectedUnpinBatchWithAllPersistenceFailuresEmitsSingleFailureMetric() async {
+        struct SaveFailure: Error {}
+        let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 22))
+        let fixture = allPinnedSelectedPinMutationFixture()
+        let recorder = FileManagerProductMetricRecorder()
+        let store = TestStore(initialState: fixture.state) {
+            CTM003FileManagerPersistenceHarness()
+        } withDependencies: {
+            $0.uuid = .constant(operationID)
+            $0.date = .constant(Self.pinnedAt)
+            $0.fileManagerProductMetricsClient = recorder.client
+            $0.contentTabPinnedRecordClient.guardedUpdateStore = { _, _, _ in throw SaveFailure() }
+        }
+        // store.exhaustivity = .off: rollback/terminal context보다 failure 집계 메트릭 계약에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.requestSelectedContentTabPinMutation(target: .unpinned))
+        await store.skipReceivedActions()
+        await store.finish()
+
+        XCTAssertNil(store.state.pendingSelectedContentTabPinMutation)
+        XCTAssertEqual(recorder.metrics(), [
+            .contentTabAction(
+                result: .failure,
+                action: .unpin,
+                source: .contentTabBar,
+                operationID: operationID,
+            ),
+        ])
+    }
+
+    /// CTM-003-product_action_metrics: 적용된 탭이 없는 배치는 cancelled 집계 메트릭 한 건을 기록한다.
+    /// preflight remaining만 남은 배치가 무이벤트가 아니라 cancelled terminal로 보고되는지 검증한다.
+    /// - 검증 내용: success=failure=0, remaining=2 배치의 `.cancelled/.pin` 메트릭 1건
+    /// - 사전 조건: 이미 pinned인 Directory 2개 선택과 target `.pinned`
+    /// - 기대 결과: 레코더에 aggregate cancelled 메트릭 1건만 기록됨
+    func testSelectedPinBatchWithoutAppliedTabsEmitsSingleCancelledMetric() async {
+        let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 23))
+        let fixture = allPinnedSelectedPinMutationFixture()
+        let recorder = FileManagerProductMetricRecorder()
+        let store = TestStore(initialState: fixture.state) {
+            CTM003FileManagerPersistenceHarness()
+        } withDependencies: {
+            $0.uuid = .constant(operationID)
+            $0.date = .constant(Self.pinnedAt)
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: preflight remaining 경로의 집계 메트릭 계약에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.requestSelectedContentTabPinMutation(target: .pinned))
+        await store.skipReceivedActions()
+        await store.finish()
+
+        XCTAssertNil(store.state.pendingSelectedContentTabPinMutation)
+        XCTAssertEqual(recorder.metrics(), [
+            .contentTabAction(
+                result: .cancelled,
+                action: .pin,
+                source: .contentTabBar,
+                operationID: operationID,
+            ),
+        ])
+    }
+
+    /// CTM-003-product_action_metrics: 혼합 결과 배치는 failure 우선으로 `.failure` 집계 한 건을 기록한다.
+    /// 부분 성공이라도 수용 항목 중 실패가 있으면 success로 완화하지 않는 explicit 규칙을 검증한다.
+    /// - 검증 내용: success=1/failure=1 배치의 `.failure/.pin` 메트릭 1건
+    /// - 사전 조건: unpinned Directory 2개 선택과 두 번째 persistence만 throw하는 guarded client
+    /// - 기대 결과: 레코더에 aggregate failure 메트릭 1건만 기록됨
+    func testSelectedPinBatchWithMixedOutcomeAggregatesFailureFirst() async {
+        struct SaveFailure: Error {}
+        let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 24))
+        let fixture = allUnpinnedSelectedPinMutationFixture()
+        let recorder = FileManagerProductMetricRecorder()
+        let persistenceCallCount = LockIsolated(0)
+        let store = TestStore(initialState: fixture.state) {
+            CTM003FileManagerPersistenceHarness()
+        } withDependencies: {
+            $0.uuid = .constant(operationID)
+            $0.date = .constant(Self.pinnedAt)
+            $0.fileManagerProductMetricsClient = recorder.client
+            $0.contentTabPinnedRecordClient.guardedUpdateStore = { _, _, transform in
+                _ = try transform(ContentTabPinnedRecordStore())
+                let callIndex = persistenceCallCount.withValue { $0 += 1
+                    return $0
+                }
+                if callIndex == 2 {
+                    throw SaveFailure()
+                }
+                return .applied
+            }
+        }
+        // store.exhaustivity = .off: rollback/terminal context보다 mixed 집합 규칙에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.requestSelectedContentTabPinMutation(target: .pinned))
+        await store.skipReceivedActions()
+        await store.finish()
+
+        XCTAssertNil(store.state.pendingSelectedContentTabPinMutation)
+        XCTAssertEqual(recorder.metrics(), [
+            .contentTabAction(
+                result: .failure,
+                action: .pin,
+                source: .contentTabBar,
+                operationID: operationID,
+            ),
+        ])
+    }
+
+    /// CTM-003-product_action_metrics: 시작 gate 거부된 요청은 메트릭을 만들지 않는다.
+    /// 유효 선택 2 미만 배치가 pending 생성과 이벤트 모두 없이 소멸하는지 검증한다.
+    /// - 검증 내용: request 후 pending nil 유지, 레코더 빈 배열
+    /// - 사전 조건: unpinned Directory 2개 중 1개만 선택된 상태
+    /// - 기대 결과: 메트릭 0건
+    func testSelectedPinMutationStartGuardRejectionEmitsNoMetric() async {
+        let fixture = allUnpinnedSelectedPinMutationFixture()
+        var initialState = fixture.state
+        initialState.contentTabs.selectedTabIDs = [fixture.orderedIDs[0]]
+        let recorder = FileManagerProductMetricRecorder()
+        let store = TestStore(initialState: initialState) {
+            CTM003FileManagerPersistenceHarness()
+        } withDependencies: {
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: gate 거부 시 무효과(no effect) 경로만 검증함
+        store.exhaustivity = .off
+
+        await store.send(.requestSelectedContentTabPinMutation(target: .pinned))
+
+        XCTAssertNil(store.state.pendingSelectedContentTabPinMutation)
+        XCTAssertTrue(recorder.metrics().isEmpty)
+    }
+}
+
 @Reducer
 struct CTM003FileManagerPersistenceHarness {
     typealias State = FileManagerWindowState
@@ -1879,11 +2341,16 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         _ expectation: PinnedGroupFailureExpectation,
         fixture: PinnedGroupFailureFixture,
     ) async {
+        let moveMetricOperationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 31))
         let store = TestStore(initialState: makePinnedGroupFailureState(fixture)) {
             FileManagerFeature()
         } withDependencies: {
             $0.contentTabPinnedRecordClient.reserveTopNavigationOperationToken = { fixture.token }
             $0.contentTabPinnedRecordClient.isCurrentTopNavigationOperationToken = { $0 == fixture.token }
+            $0.fileManagerProductMetricsClient = FileManagerProductMetricsClient(
+                record: { _ in },
+                makeOperationID: { moveMetricOperationID },
+            )
         }
 
         await store.send(.sidebar(.delegate(.fileManagerTopNavigationReorderRequested(
@@ -1903,6 +2370,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 ),
             ]
             $0.optimisticTopNavigationOrder = fixture.optimisticOrder
+            $0.productContentTabMoveOperationIDs = [fixture.token: moveMetricOperationID]
         }
         await store.receive { action in
             guard case let .delegate(.persistTopNavigationPinnedGroupMove(
@@ -1923,6 +2391,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             $0.optimisticTopNavigationOrder = fixture.initialOrder
             $0.topNavigationArrangementAvailability = expectation.availability
             $0.topNavigationArrangementPresentation = expectation.presentation
+            $0.productContentTabMoveOperationIDs = [:]
         }
         XCTAssertEqual(store.state.lastConfirmedTopNavigationOrder, fixture.initialOrder)
         XCTAssertTrue(store.state.pendingTopNavigationIntents.isEmpty)
@@ -1998,6 +2467,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         let tabA = ContentTabID(rawValue: "A")
         let tabB = ContentTabID(rawValue: "B")
         let token = topNavigationToken(3)
+        let moveMetricOperationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 30))
         let initial = FileManagerTopNavigationOrder(items: [
             .location("L1"), .contentTab(tabA), .contentTab(tabB),
         ])
@@ -2010,6 +2480,10 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
             $0.contentTabPinnedRecordClient.reserveTopNavigationOperationToken = { token }
             $0.contentTabPinnedRecordClient.isCurrentTopNavigationOperationToken = { $0 == token }
+            $0.fileManagerProductMetricsClient = FileManagerProductMetricsClient(
+                record: { _ in },
+                makeOperationID: { moveMetricOperationID },
+            )
         }
 
         await store.send(.topNavigationMoveRequested(
@@ -2021,6 +2495,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 destination: .after(.contentTab(tabB)),
             ))]
             $0.optimisticTopNavigationOrder = committed
+            $0.productContentTabMoveOperationIDs = [token: moveMetricOperationID]
         }
         await store.receive { action in
             guard case let .delegate(.persistTopNavigationMove(
@@ -2041,6 +2516,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             $0.lastConfirmedTopNavigationOrder = committed
             $0.lastConfirmedTopNavigationCommitRevision = 1
             $0.pendingTopNavigationIntents.removeAll()
+            $0.productContentTabMoveOperationIDs = [:]
         }
 
         XCTAssertEqual(store.state.optimisticTopNavigationOrder, committed)
@@ -5101,10 +5577,12 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             recentlyClosed: nil,
         )
         state.syncContentTabSidebarItems()
+        let metricOperationID = UUID()
         let store = TestStore(initialState: state) {
             CTM003FileManagerPersistenceHarness()
         } withDependencies: {
             $0.date = DateGenerator { Date(timeIntervalSince1970: 443) }
+            $0.fileManagerProductMetricsClient.makeOperationID = { metricOperationID }
             $0.contentTabPinnedRecordClient.saveStore = { _, _ in }
             $0.contentTabPinnedRecordClient.reserveTopNavigationOperationToken = { token }
             $0.contentTabPinnedRecordClient.isCurrentTopNavigationOperationToken = { $0 == token }
@@ -5126,13 +5604,21 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             )
             $0.contentTabs.pendingPinnedRecordIDs.insert(tabID)
             $0.syncContentTabSidebarItems()
+            $0.productContentTabPinMutationMetrics = [
+                tabID: ProductContentTabPinMutationMetric(
+                    operationID: metricOperationID,
+                    action: .pin,
+                ),
+            ]
         }
         await store.receive(\.contentTabs.pinnedRecordSaveSucceeded) {
             $0.lastConfirmedTopNavigationOrder = committedOrder
             $0.lastConfirmedTopNavigationCommitRevision = 1
             $0.pendingTopNavigationIntents.removeAll()
             $0.contentTabs.pendingPinnedRecordIDs.remove(tabID)
+            $0.productContentTabPinMutationMetrics = [:]
         }
+        XCTAssertTrue(store.state.productContentTabPinMutationMetrics.isEmpty)
         await store.finish()
     }
 
@@ -5486,9 +5972,11 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             pinnedRecords: [tabID: Self.pinnedRecord(id: tabID, anchor: directoryAnchor)],
         )
         state.syncContentTabSidebarItems()
+        let metricOperationID = UUID()
         let store = TestStore(initialState: state) {
             CTM003FileManagerPersistenceHarness()
         } withDependencies: {
+            $0.fileManagerProductMetricsClient.makeOperationID = { metricOperationID }
             $0.contentTabPinnedRecordClient.saveStore = { _, _ in }
         }
 
@@ -5502,6 +5990,8 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         await store.receive(\.contentTabs.pinnedRecordSaveSucceeded) {
             $0.contentTabs.pendingPinnedRecordIDs.remove(tabID)
         }
+        // 이 픽스처는 committed order가 비어 prepare가 거부되어 상관이 수락 즉시 정리된다.
+        XCTAssertTrue(store.state.productContentTabPinMutationMetrics.isEmpty)
         await store.finish()
     }
 
