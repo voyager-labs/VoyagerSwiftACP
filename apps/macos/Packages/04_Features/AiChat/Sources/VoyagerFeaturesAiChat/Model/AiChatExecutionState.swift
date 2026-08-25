@@ -41,9 +41,9 @@ public struct AiChatPreparedRequest: Equatable, Sendable {
     public init(
         prompt: String,
         messages: [AiChatMessage],
+        persistenceTranscriptHistory: [AiChatMessage]?,
         assistantReplacementIndex: Int?,
         historyTruncation: AiChatHistoryTruncationMetadata,
-        persistenceTranscriptHistory: [AiChatMessage]? = nil,
         requestContextOverride: AiChatLockedRequestContextSnapshot? = nil,
         requestContextSource: AiChatLockedRequestContextSnapshot? = nil,
     ) {

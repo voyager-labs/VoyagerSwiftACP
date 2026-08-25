@@ -131,6 +131,7 @@ public struct AiChatExecutionActivitySignal: Codable, Equatable, Sendable {
 /// then exactly one terminal final or failed event. Consumers should ignore terminal or late events
 /// that no longer match the active request/run context.
 public enum AiChatEvent: Codable, Equatable, Sendable {
+    case requestPrepared(context: AiChatRequestContextSnapshot)
     case started(context: AiChatRequestContextSnapshot)
     case delta(context: AiChatRequestContextSnapshot, text: String)
     case status(context: AiChatRequestContextSnapshot, signal: AiChatExecutionActivitySignal)

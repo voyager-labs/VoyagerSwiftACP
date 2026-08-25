@@ -1578,7 +1578,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         store.exhaustivity = .off(showSkippedAssertions: false)
 
         let provenance = store.state.newChatPreparationProvenance
-        await store.send(.prepareUnpersistedNewChatWithContextIfCurrent(
+        await store.send(.prepareUnpersistedNewChatIfActive(
             context,
             provenance: provenance,
             seed: seed,
@@ -1625,7 +1625,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
 
         let provenance = store.state.newChatPreparationProvenance
         await store.send(.draftTextChanged("User draft"))
-        await store.send(.prepareUnpersistedNewChatWithContextIfCurrent(
+        await store.send(.prepareUnpersistedNewChatIfActive(
             replacementContext,
             provenance: provenance,
             seed: seed,
@@ -3541,10 +3541,10 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
             runID: request.context.runID,
             context: request.context,
             request: request,
-            persistenceTranscriptHistory: [olderUser, olderAssistant, latestUser],
             selectedModelHandle: selectedHandle,
             selectedModelRow: catalogRows[0],
             assistantReplacementIndex: nil,
+            persistenceTranscriptHistory: [olderUser, olderAssistant, latestUser],
             customTitle: "Persist full transcript",
             historyTruncation: AiChatHistoryTruncationMetadata(
                 includedMessageCount: 1,
@@ -3975,6 +3975,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
             preparedRequest: AiChatPreparedRequest(
                 prompt: newUserMessage.content,
                 messages: [newUserMessage],
+                persistenceTranscriptHistory: nil,
                 assistantReplacementIndex: nil,
                 historyTruncation: AiChatHistoryTruncationMetadata(
                     includedMessageCount: 1,
@@ -4169,6 +4170,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
             preparedRequest: AiChatPreparedRequest(
                 prompt: newUserMessage.content,
                 messages: [newUserMessage],
+                persistenceTranscriptHistory: nil,
                 assistantReplacementIndex: nil,
                 historyTruncation: AiChatHistoryTruncationMetadata(
                     includedMessageCount: 1,
@@ -5769,6 +5771,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
             preparedRequest: AiChatPreparedRequest(
                 prompt: userMessage.content,
                 messages: [userMessage],
+                persistenceTranscriptHistory: nil,
                 assistantReplacementIndex: nil,
                 historyTruncation: .init(
                     includedMessageCount: 1,
@@ -6182,10 +6185,10 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
             runID: runID,
             context: request.context,
             request: request,
-            persistenceTranscriptHistory: [message],
             selectedModelHandle: providerModels[0].id,
             selectedModelRow: catalogRows[0],
             assistantReplacementIndex: nil,
+            persistenceTranscriptHistory: [message],
             historyTruncation: .init(
                 includedMessageCount: 1,
                 excludedMessageCount: 0,
@@ -6241,10 +6244,10 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
             runID: runID,
             context: request.context,
             request: request,
-            persistenceTranscriptHistory: [message],
             selectedModelHandle: providerModels[0].id,
             selectedModelRow: catalogRows[0],
             assistantReplacementIndex: nil,
+            persistenceTranscriptHistory: [message],
             historyTruncation: .init(
                 includedMessageCount: 1,
                 excludedMessageCount: 0,
@@ -6885,6 +6888,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
             preparedRequest: AiChatPreparedRequest(
                 prompt: prompt,
                 messages: request.messages,
+                persistenceTranscriptHistory: nil,
                 assistantReplacementIndex: nil,
                 historyTruncation: .init(
                     includedMessageCount: request.messages.count,
