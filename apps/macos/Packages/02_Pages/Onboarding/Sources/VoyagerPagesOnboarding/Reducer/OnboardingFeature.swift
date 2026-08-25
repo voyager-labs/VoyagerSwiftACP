@@ -46,21 +46,17 @@ struct OnboardingFeature {
         case .nextTapped:
             return handleNextTapped(state: &state, progressClient: progressClient)
 
-        case .complete(.startUsingTapped), .complete(.retryTapped):
-            return handleCompleteStart(state: &state, progressClient: progressClient)
-
-        case .complete(.openWindowResponse(true)):
-            return .run { _ in
-                await onboardingWindowClient.closeWindow()
-            }
-
-        case .complete(.openWindowResponse(false)):
-            return .none
+        case let .complete(completeAction):
+            return handleCompleteAction(
+                completeAction,
+                state: &state,
+                progressClient: progressClient,
+            )
 
         case .aiProviderSetup(.setUpLaterTapped):
             return handleSetUpLaterTapped(state: &state, progressClient: progressClient)
 
-        case .welcome, .permissions, .aiProviderSetup, .complete:
+        case .welcome, .permissions, .aiProviderSetup:
             let snapshot = state.progressSnapshot
             return Self.saveEffect(snapshot, progressClient: progressClient)
         }
@@ -119,10 +115,41 @@ struct OnboardingFeature {
         progressClient: OnboardingProgressClient,
     ) -> Effect<Action> {
         let snapshot = state.progressSnapshot
+        guard let operationID = state.complete.completionOperationID else { return .none }
         return .run { send in
-            _ = progressClient.save(snapshot)
-            let opened = await onboardingWindowClient.openMainWindow(.defaultTabPath)
-            await send(.complete(.openWindowResponse(opened)))
+            let saved = progressClient.save(snapshot) == .success
+            await send(.complete(.progressSaveResponse(operationID, saved)))
+        }
+    }
+
+    private func handleCompleteAction(
+        _ action: CompleteAction,
+        state: inout State,
+        progressClient: OnboardingProgressClient,
+    ) -> Effect<Action> {
+        switch action {
+        case .startUsingTapped, .retryTapped:
+            return handleCompleteStart(state: &state, progressClient: progressClient)
+
+        case let .progressSaveResponse(operationID, true):
+            guard state.complete.completionOperationID == operationID else { return .none }
+            return .run { send in
+                let opened = await onboardingWindowClient.openMainWindow(.defaultTabPath)
+                await send(.complete(.openWindowResponse(operationID, opened)))
+            }
+
+        case .progressSaveResponse:
+            return .none
+
+        case let .openWindowResponse(operationID, true):
+            guard state.complete.lastHandledCompletionOperationID == operationID else { return .none }
+            state.complete.lastHandledCompletionOperationID = nil
+            return .run { _ in
+                await onboardingWindowClient.closeWindow()
+            }
+
+        case .openWindowResponse:
+            return .none
         }
     }
 
