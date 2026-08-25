@@ -181,6 +181,7 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
     case aiConnectionsFileUpdated(AIConnectionsFile)
     case reserveExternalContentTabs([ExternalContentTabReservation])
     case activateExternalContentTabUndoScopes([ContentTabID])
+    case cancelPendingPinnedCollectionReturn(ContentTabID)
     case resyncActiveCollectionNavigation
 
     case requestSelectedContentTabPinMutation(target: SelectedContentTabPinMutationTargetState)

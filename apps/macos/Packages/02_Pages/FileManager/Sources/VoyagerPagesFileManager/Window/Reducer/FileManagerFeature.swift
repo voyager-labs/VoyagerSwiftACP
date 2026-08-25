@@ -297,6 +297,10 @@ private extension FileManagerFeature {
                 state.topNavigationArrangementPresentation = .loadUnavailable
                 return .none
 
+            case let .cancelPendingPinnedCollectionReturn(tabID):
+                guard state.pendingPinnedCollectionReturnTabID == tabID else { return .none }
+                return cancelPendingCollectionOpen(state: &state)
+
             case let .internal(.entryActionCompleted(tabID, record, expectedGeneration)):
                 guard record.operationKind.isUndoable,
                       let expectedGeneration,
