@@ -124,6 +124,15 @@ struct WindowManagerFeature {
                 guard let id = state.focusedWindowID, isWindowReady(id, state: state) else { return .none }
                 return sendCommandToFocusedWindow(state, .selectMostRecentlyUsedContentTab)
 
+            case let .file(.activateContentTabSwitcherInWindow(windowID: id, source: source)):
+                guard isWindowReady(id, state: state) else { return .none }
+                return sendCommandToWindowIfPresentationMatches(
+                    state,
+                    id: id,
+                    source: source,
+                    command: .activateContentTabSwitcherSelection,
+                )
+
             case .file(.moveNextContentTabSwitcher):
                 guard let id = state.focusedWindowID, isWindowReady(id, state: state) else { return .none }
                 return sendCommandToFocusedWindow(
