@@ -5,6 +5,8 @@ import Dependencies
 import VoyagerEntitiesCollection
 import VoyagerEntryCoreClient
 import VoyagerFeaturesAccountAccess
+import VoyagerFeaturesAiChat
+import VoyagerFeaturesComposer
 import VoyagerFeaturesEntryOperations
 import VoyagerFeaturesExternalFileRouter
 import VoyagerFeaturesUpdateVersion
@@ -17,6 +19,164 @@ import XCTest
 
 @MainActor
 final class AppRootCompositionTests: XCTestCase {
+    func testOnboardingProductMetricBridgeCapturesCanonicalRequestOnce() {
+        let requests = LockIsolated<[ProductAnalyticsMetricRequest]>([])
+        let client = ProductAnalyticsClient { request in requests.withValue { $0.append(request) } }
+        let operationID = UUID()
+
+        VoyagerApp.makeOnboardingProductMetricsClient(client: client, environment: .dev)
+            .record(.completion(operationID: operationID, result: .success))
+
+        XCTAssertEqual(requests.value.count, 1)
+        XCTAssertEqual(requests.value.first?.metricKey, "voy_691_onb_001_complete_onboarding_session")
+        XCTAssertEqual(requests.value.first?.eventVersion.rawValue, "1")
+        XCTAssertEqual(requests.value.first?.operationID, operationID)
+        XCTAssertEqual(requests.value.first?.properties["result_status"], .string("success"))
+        XCTAssertEqual(requests.value.first?.properties["source_surface"], .string("onboarding"))
+    }
+
+    func testOnboardingCompletionFailureIsApprovedNoEvent() {
+        let requests = LockIsolated<[ProductAnalyticsMetricRequest]>([])
+        let client = ProductAnalyticsClient { request in requests.withValue { $0.append(request) } }
+
+        VoyagerApp.makeOnboardingProductMetricsClient(client: client, environment: .dev)
+            .record(.completion(operationID: UUID(), result: .failure))
+
+        XCTAssertTrue(requests.value.isEmpty)
+    }
+
+    func testFileManagerProductMetricBridgeCapturesCanonicalRequestOnce() {
+        let requests = LockIsolated<[ProductAnalyticsMetricRequest]>([])
+        let client = ProductAnalyticsClient { request in requests.withValue { $0.append(request) } }
+        let operationID = UUID()
+
+        VoyagerApp.makeFileManagerProductMetricsClient(client: client, environment: .dev)
+            .record(.contentTabAction(
+                result: .success,
+                action: .open,
+                source: .contentTabBar,
+                operationID: operationID,
+            ))
+
+        XCTAssertEqual(requests.value.count, 1)
+        XCTAssertEqual(requests.value.first?.metricKey, "voy_691_ctm_001_open_new_content_tab")
+        XCTAssertEqual(requests.value.first?.eventVersion.rawValue, "1")
+        XCTAssertEqual(requests.value.first?.operationID, operationID)
+        XCTAssertEqual(requests.value.first?.properties["result_status"], .string("success"))
+        XCTAssertEqual(requests.value.first?.properties["action_type"], .string("open"))
+        XCTAssertEqual(requests.value.first?.properties["source_surface"], .string("content_tab_bar"))
+    }
+
+    func testAiChatProductMetricBridgeCapturesCanonicalRequestOnce() {
+        let requests = LockIsolated<[ProductAnalyticsMetricRequest]>([])
+        let client = ProductAnalyticsClient { request in requests.withValue { $0.append(request) } }
+        let operationID = UUID()
+
+        VoyagerApp.makeAiChatProductMetricsClient(client: client, environment: .dev)
+            .record(.turnResult(
+                operationID: operationID,
+                result: .success,
+                sourceSurface: .aiChatContent,
+            ))
+
+        XCTAssertEqual(requests.value.count, 1)
+        XCTAssertEqual(requests.value.first?.metricKey, "voy_691_cbw_003_generate_contextual_chat_response")
+        XCTAssertEqual(requests.value.first?.eventVersion.rawValue, "1")
+        XCTAssertEqual(requests.value.first?.operationID, operationID)
+        XCTAssertEqual(requests.value.first?.properties["result_status"], .string("success"))
+        XCTAssertEqual(requests.value.first?.properties["source_surface"], .string("ai_chat_content"))
+    }
+
+    func testComposerProductMetricBridgeCapturesCanonicalV2RequestOnce() {
+        let requests = LockIsolated<[ProductAnalyticsMetricRequest]>([])
+        let client = ProductAnalyticsClient { request in requests.withValue { $0.append(request) } }
+        let operationID = UUID()
+
+        VoyagerApp.makeComposerMetricClient(client: client, environment: .dev)
+            .record(.queryResult(
+                operationID: operationID,
+                result: .success,
+                durationMilliseconds: 123,
+            ))
+
+        XCTAssertEqual(requests.value.count, 1)
+        XCTAssertEqual(requests.value.first?.metricKey, "voy_691_rcl_004_generate_filter_changes_from_query")
+        XCTAssertEqual(requests.value.first?.eventVersion.rawValue, "2")
+        XCTAssertEqual(requests.value.first?.operationID, operationID)
+        XCTAssertEqual(requests.value.first?.properties["result_status"], .string("success"))
+        XCTAssertEqual(requests.value.first?.properties["source_surface"], .string("composer"))
+        XCTAssertEqual(requests.value.first?.properties["duration_ms"], .integer(123))
+    }
+
+    func testComposerGenericMetricInitializerDoesNotBridgeTypedProductRequest() {
+        let requests = LockIsolated<[ProductAnalyticsMetricRequest]>([])
+        let client = ProductAnalyticsClient { request in requests.withValue { $0.append(request) } }
+        let operationID = UUID()
+        let genericClient = ComposerMetricClient(logMetric: { _, _, _, _ in })
+
+        genericClient.record(.applyResult(
+            operationID: operationID,
+            result: .success,
+            durationMilliseconds: 45,
+        ))
+        XCTAssertTrue(requests.value.isEmpty)
+
+        VoyagerApp.makeComposerMetricClient(client: client, environment: .dev)
+            .record(.applyResult(
+                operationID: operationID,
+                result: .success,
+                durationMilliseconds: 45,
+            ))
+        XCTAssertEqual(requests.value.count, 1)
+        XCTAssertEqual(requests.value.first?.metricKey, "voy_691_rcl_004_apply_generated_filter_changes")
+        XCTAssertEqual(requests.value.first?.properties["duration_ms"], .integer(45))
+    }
+
+    func testTypedAdaptersResolveThroughCanonicalRegistryKeys() {
+        let requests = LockIsolated<[ProductAnalyticsMetricRequest]>([])
+        let client = ProductAnalyticsClient { request in requests.withValue { $0.append(request) } }
+        let operationIDs = (0 ..< 4).map { _ in UUID() }
+
+        VoyagerApp.makeOnboardingProductMetricsClient(client: client, environment: .dev)
+            .record(.completion(operationID: operationIDs[0], result: .success))
+        VoyagerApp.makeFileManagerProductMetricsClient(client: client, environment: .dev)
+            .record(.contentBrowsing(
+                result: .success,
+                content: .folder,
+                source: .fileManagerContent,
+                operationID: operationIDs[1],
+            ))
+        VoyagerApp.makeAiChatProductMetricsClient(client: client, environment: .dev)
+            .record(.turnSubmitted(operationID: operationIDs[2], sourceSurface: .aiChatContent))
+        VoyagerApp.makeComposerMetricClient(client: client, environment: .dev)
+            .record(.queryResult(operationID: operationIDs[3], result: .success, durationMilliseconds: 12))
+
+        let registry = ProductAnalyticsRegistry.load(bundle: VoyagerTestSupport.hostApplicationBundle())
+        let expectedEventNames = [
+            "voyager_onboarding_completed",
+            "voyager_content_browsing_engaged",
+            "voyager_ai_chat_turn_submitted",
+            "voyager_collection_filter_query_result",
+        ]
+        XCTAssertEqual(requests.value.count, expectedEventNames.count)
+
+        for (request, expectedEventName) in zip(requests.value, expectedEventNames) {
+            let result = registry.resolve(
+                metricKey: request.metricKey,
+                identity: .device("test-device-id"),
+                context: request.context,
+                properties: request.properties,
+                eventVersion: request.eventVersion,
+                operationID: request.operationID,
+            )
+            guard case let .capture(capture) = result else {
+                return XCTFail("typed adapter request did not resolve: \(request.metricKey), result: \(result)")
+            }
+            XCTAssertEqual(capture.event.eventName.rawValue, expectedEventName)
+            XCTAssertEqual(capture.event.operationID, request.operationID)
+        }
+    }
+
     func testProductAnalyticsContextUsesResolvedAppEnvironment() {
         let occurredAtUTC = Date(timeIntervalSince1970: 1_700_000_000)
 

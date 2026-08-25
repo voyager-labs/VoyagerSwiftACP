@@ -4,6 +4,7 @@ import Foundation
 import Logging
 import SwiftUI
 import VoyagerEntitiesCollection
+import VoyagerFeaturesAiChat
 import VoyagerFeaturesComposer
 import VoyagerFeaturesEntryOperations
 import VoyagerPagesFileManager
@@ -25,8 +26,11 @@ private final class AppRootStoreReference {
 
 @main
 struct VoyagerApp: App {
-    private struct ProductAnalyticsDependencies {
+    struct ProductAnalyticsDependencies {
         let client: ProductAnalyticsClient
+        let onboarding: OnboardingProductMetricsClient
+        let aiChat: AiChatProductMetricsClient
+        let fileManagerProduct: FileManagerProductMetricsClient
         let composer: ComposerMetricClient
         let collection: CollectionMetricClient
         let fileManager: MetricsClient
@@ -59,6 +63,9 @@ struct VoyagerApp: App {
         } withDependencies: {
             $0.composerMetricClient = analytics.composer
             $0.collectionMetricClient = analytics.collection
+            $0.onboardingProductMetricsClient = analytics.onboarding
+            $0.aiChatProductMetricsClient = analytics.aiChat
+            $0.fileManagerProductMetricsClient = analytics.fileManagerProduct
             $0.onboardingWindowClient = OnboardingWindowClient.makeMainApp(
                 openMainWindow: { _ in
                     await appRootStoreReference.openInitialWindowIfNeeded()
@@ -101,7 +108,7 @@ struct VoyagerApp: App {
         )
     }
 
-    private static func makeProductAnalyticsDependencies(
+    static func makeProductAnalyticsDependencies(
         environment: EnvironmentLoader.AppEnv,
     ) -> ProductAnalyticsDependencies {
         let registry = ProductAnalyticsRegistry.load()
@@ -112,9 +119,209 @@ struct VoyagerApp: App {
         )
         return ProductAnalyticsDependencies(
             client: client,
-            composer: makeComposerMetricClient(context: context),
+            onboarding: makeOnboardingProductMetricsClient(client: client, environment: environment),
+            aiChat: makeAiChatProductMetricsClient(client: client, environment: environment),
+            fileManagerProduct: makeFileManagerProductMetricsClient(client: client, environment: environment),
+            composer: makeComposerMetricClient(client: client, environment: environment),
             collection: makeCollectionMetricClient(context: context),
             fileManager: makeFileManagerMetricsClient(context: context),
+        )
+    }
+
+    static func makeOnboardingProductMetricsClient(
+        client: ProductAnalyticsClient,
+        environment: EnvironmentLoader.AppEnv,
+    ) -> OnboardingProductMetricsClient {
+        OnboardingProductMetricsClient { metric in
+            switch metric {
+            case let .completion(operationID, .success):
+                captureProductMetric(
+                    "voy_691_onb_001_complete_onboarding_session",
+                    properties: ["result_status": .string("success"), "source_surface": .string("onboarding")],
+                    eventVersion: "1",
+                    operationID: operationID,
+                    client: client,
+                    environment: environment,
+                )
+            case .completion(_, .failure):
+                return
+            case let .helperFolderAccess(operationID, result):
+                captureProductMetric(
+                    "voy_691_onb_003_request_onboarding_permission_access",
+                    properties: [
+                        "result_status": .string(result.rawValue),
+                        "permission_kind": .string("helper_folder_access"),
+                        "source_surface": .string("onboarding"),
+                    ],
+                    eventVersion: "1",
+                    operationID: operationID,
+                    client: client,
+                    environment: environment,
+                )
+            case let .fullDiskAccess(operationID, result):
+                captureProductMetric(
+                    "voy_691_onb_003_request_onboarding_permission_access",
+                    properties: [
+                        "result_status": .string(result.rawValue),
+                        "permission_kind": .string("full_disk_access"),
+                        "source_surface": .string("onboarding"),
+                    ],
+                    eventVersion: "1",
+                    operationID: operationID,
+                    client: client,
+                    environment: environment,
+                )
+            case let .aiProviderWithKind(operationID, provider, result):
+                var properties: [String: ProductAnalyticsPropertyValue] = [
+                    "result_status": .string(result.rawValue),
+                    "source_surface": .string("onboarding"),
+                ]
+                if let provider {
+                    properties["provider_kind"] = .string(provider.rawValue)
+                } else if result != .skipped {
+                    return
+                }
+                captureProductMetric(
+                    "voy_691_onb_004_start_ai_provider_connection_from_onboarding",
+                    properties: properties,
+                    eventVersion: "1",
+                    operationID: operationID,
+                    client: client,
+                    environment: environment,
+                )
+            case let .aiProvider(operationID, result):
+                guard result == .skipped else { return }
+                captureProductMetric(
+                    "voy_691_onb_004_start_ai_provider_connection_from_onboarding",
+                    properties: [
+                        "result_status": .string(result.rawValue),
+                        "source_surface": .string("onboarding"),
+                    ],
+                    eventVersion: "1",
+                    operationID: operationID,
+                    client: client,
+                    environment: environment,
+                )
+            }
+        }
+    }
+
+    static func makeFileManagerProductMetricsClient(
+        client: ProductAnalyticsClient,
+        environment: EnvironmentLoader.AppEnv,
+    ) -> FileManagerProductMetricsClient {
+        FileManagerProductMetricsClient { metric in
+            let request: (String, [String: ProductAnalyticsPropertyValue], UUID) = switch metric {
+            case let .contentBrowsing(result, content, source, operationID):
+                ("voy_691_evm_001_navigate_pages", [
+                    "result_status": .string(result.rawValue),
+                    "content_kind": .string(content.rawValue),
+                    "source_surface": .string(source.rawValue),
+                ], operationID)
+            case let .contentTabAction(result, action, source, operationID):
+                ("voy_691_ctm_001_open_new_content_tab", [
+                    "result_status": .string(result.rawValue),
+                    "action_type": .string(action.rawValue),
+                    "source_surface": .string(source.rawValue),
+                ], operationID)
+            case let .entryAction(result, action, source, operationID, _):
+                ("voy_691_eop_001_open_entry_with_default_app", [
+                    "result_status": .string(result.rawValue),
+                    "action_type": .string(action.rawValue),
+                    "source_surface": .string(source.rawValue),
+                ], operationID)
+            }
+            captureProductMetric(
+                request.0,
+                properties: request.1,
+                eventVersion: "1",
+                operationID: request.2,
+                client: client,
+                environment: environment,
+            )
+        }
+    }
+
+    static func makeAiChatProductMetricsClient(
+        client: ProductAnalyticsClient,
+        environment: EnvironmentLoader.AppEnv,
+    ) -> AiChatProductMetricsClient {
+        AiChatProductMetricsClient { metric in
+            let request: (String, [String: ProductAnalyticsPropertyValue], UUID) = switch metric {
+            case let .turnSubmitted(operationID, source):
+                ("voy_691_cbw_001_submit_chat_request", [
+                    "result_status": .string("accepted"),
+                    "source_surface": .string(source.rawValue),
+                ], operationID)
+            case let .turnResult(operationID, result, source):
+                ("voy_691_cbw_003_generate_contextual_chat_response", [
+                    "result_status": .string(result.rawValue),
+                    "source_surface": .string(source.rawValue),
+                ], operationID)
+            }
+            captureProductMetric(
+                request.0,
+                properties: request.1,
+                eventVersion: "1",
+                operationID: request.2,
+                client: client,
+                environment: environment,
+            )
+        }
+    }
+
+    static func makeComposerMetricClient(
+        client: ProductAnalyticsClient,
+        environment: EnvironmentLoader.AppEnv,
+    ) -> ComposerMetricClient {
+        ComposerMetricClient(recordProductMetric: { metric in
+            switch metric {
+            case let .queryResult(operationID, result, durationMilliseconds):
+                captureComposerProductMetric(
+                    metricKey: "voy_691_rcl_004_generate_filter_changes_from_query",
+                    result: result,
+                    durationMilliseconds: durationMilliseconds,
+                    operationID: operationID,
+                    client: client,
+                    environment: environment,
+                )
+            case let .applyResult(operationID, result, durationMilliseconds):
+                captureComposerProductMetric(
+                    metricKey: "voy_691_rcl_004_apply_generated_filter_changes",
+                    result: result,
+                    durationMilliseconds: durationMilliseconds,
+                    operationID: operationID,
+                    client: client,
+                    environment: environment,
+                )
+            }
+        })
+    }
+
+    nonisolated private static func captureComposerProductMetric(
+        metricKey: String,
+        result: ComposerProductMetricResult,
+        durationMilliseconds: Int?,
+        operationID: UUID,
+        client: ProductAnalyticsClient,
+        environment: EnvironmentLoader.AppEnv,
+    ) {
+        var properties: [String: ProductAnalyticsPropertyValue] = [
+            "result_status": .string(result.rawValue),
+            "source_surface": .string("composer"),
+        ]
+        if let durationMilliseconds,
+           (0 ... 86_400_000).contains(durationMilliseconds)
+        {
+            properties["duration_ms"] = .integer(durationMilliseconds)
+        }
+        captureProductMetric(
+            metricKey,
+            properties: properties,
+            eventVersion: "2",
+            operationID: operationID,
+            client: client,
+            environment: environment,
         )
     }
 
@@ -156,25 +363,8 @@ struct VoyagerApp: App {
                     context: context,
                 )
             },
-            logDAUNavigation: { kind in
-                captureProductMetric(
-                    "dau.navigation",
-                    value: 1,
-                    tags: ["source_surface": kind.rawValue],
-                    context: context,
-                )
-            },
-            logDAUEntryAction: { actionKind, entryKind in
-                captureProductMetric(
-                    "dau.entry_action",
-                    value: 1,
-                    tags: [
-                        "source_surface": actionKind.rawValue,
-                        "result_status": entryKind.rawValue,
-                    ],
-                    context: context,
-                )
-            },
+            logDAUNavigation: { _ in },
+            logDAUEntryAction: { _, _ in },
         )
     }
 
@@ -189,6 +379,23 @@ struct VoyagerApp: App {
             metricKey: name,
             properties: productMetricProperties(name: name, value: value, tags: tags),
             context: eventContext,
+        ))
+    }
+
+    nonisolated private static func captureProductMetric(
+        _ name: String,
+        properties: [String: ProductAnalyticsPropertyValue],
+        eventVersion: String,
+        operationID: UUID,
+        client: ProductAnalyticsClient,
+        environment: EnvironmentLoader.AppEnv,
+    ) {
+        client.captureMetric(.init(
+            metricKey: name,
+            properties: properties,
+            context: makeProductAnalyticsEventContext(environment: environment),
+            eventVersion: .init(rawValue: eventVersion),
+            operationID: operationID,
         ))
     }
 
