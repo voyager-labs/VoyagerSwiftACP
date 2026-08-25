@@ -261,6 +261,22 @@ enum FileManagerContentEntryOpsCoordinator {
         }
     }
 
+    /// 예약된 root reload가 loadingContext.begin에서 세대를 하나 올리므로, 보존하기로 한
+    /// 대기 전이의 root 소유자를 새 세대로 재기준화한다. 폴더 소유자는 root 완료 시
+    /// 기존 리베이스 경로(rebaseFolderIdentityTransitionOwnersAfterRootSnapshot)가 담당한다.
+    static func rebaseIdentityTransitionForNextRootReload(state: inout FileManagerContentState) {
+        guard var transition = state.pendingIdentityTransition else { return }
+        func rebased(_ owner: FileManagerContentState.EntryIdentityTransitionProjectionOwner)
+            -> FileManagerContentState.EntryIdentityTransitionProjectionOwner
+        {
+            guard case let .root(generation) = owner else { return owner }
+            return .root(generation: generation &+ 1)
+        }
+        transition.projectionOwner = rebased(transition.projectionOwner)
+        transition.preservationOwner = transition.preservationOwner.map(rebased)
+        state.pendingIdentityTransition = transition
+    }
+
     private static func identityTransitionProjectionOwner(
         afterPath: String,
         rootPath: String,

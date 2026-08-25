@@ -2787,6 +2787,60 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         XCTAssertEqual(store.state.rootReloadCount, 1)
     }
 
+    /// EVM-001-command_external_refresh_correlation: 무관 이벤트가 예약한 reload 뒤의 batch에서도 선택 migration이 산다.
+    /// 예약된 root reload가 세대를 하나 올리므로 전이 root 소유자가 재기준화되지 않으면
+    /// 후속 batch에서 세대 불일치로 전이가 만료되고 기존 선택이 해제된다.
+    /// - 검증 내용: 무관 modified 이벤트 reload 후 after-path batch가 선택을 옮기는지 검증
+    /// - 사전 조건: rename 완료 대기 전이와 무관 경로의 modified 이벤트
+    /// - 기대 결과: 후속 itemsLoaded에서 selectedIds가 after-path로 이동하고 전이 소비
+    func testUnrelatedEventReloadKeepsMigrationAliveThroughNextBatch() async {
+        let folderPath = "/tmp/voyager-correlation"
+        let oldPath = "\(folderPath)/old.txt"
+        let newPath = "\(folderPath)/new.txt"
+        let unrelatedPath = "\(folderPath)/unrelated.txt"
+        var initialState = makeCorrelationState(folderPath: folderPath)
+        initialState.content.entryViewLayout.selectedIds = [oldPath]
+        let store = TestStore(initialState: initialState) {
+            CommandExternalRefreshHarness()
+        }
+        store.exhaustivity = .off
+
+        let record = EntryActionRecord(
+            operationKind: .rename,
+            targets: [.init(beforePath: oldPath, afterPath: newPath)],
+        )
+        await store.send(.bridge(.lifecycle(.entryActionCompleted(record))))
+
+        await store.send(.content(.externalFileSystemChanged(Self.externalChangeEvents(
+            [unrelatedPath],
+            flags: UInt32(kFSEventStreamEventFlagItemModified),
+        ))))
+        await store.receive { action in
+            guard case let .content(.entryViewLayout(.hierarchy(.hierarchyInvalidated(
+                affectedPaths,
+                removedPrefixes,
+            )))) = action else { return false }
+            return affectedPaths == [Self.canonicalPath(unrelatedPath), Self.canonicalPath(folderPath)]
+                && removedPrefixes.isEmpty
+        }
+        await store.receive { action in
+            guard case .content(.entryViewLayout(.entryOperations(.loading(.loadItems)))) = action else {
+                return false
+            }
+            return true
+        }
+        XCTAssertNotNil(store.state.content.pendingIdentityTransition)
+
+        let renamedEntry = makeCorrelationEntry(id: newPath, name: "new.txt")
+        await store.send(.bridge(.loading(.itemsLoaded([renamedEntry]))))
+        XCTAssertEqual(
+            store.state.content.entryViewLayout.selectedIds,
+            [newPath],
+            "reload이 올린 새 세대에서도 after-path 선택 migration이 유지된다",
+        )
+        XCTAssertNil(store.state.content.pendingIdentityTransition)
+    }
+
     /// EVM-001-command_external_refresh_correlation: 실패한 명령도 대기 전이를 만료시키지 않는다.
     /// operationFinished는 record identity가 없어 이 실패가 전이의 원인 명령인지 확정할 수 없다.
     /// 경로·종류를 추측해 만료하면 무관한 실패가 성공한 전이를 파괴하므로, 같은 경로·종류의
