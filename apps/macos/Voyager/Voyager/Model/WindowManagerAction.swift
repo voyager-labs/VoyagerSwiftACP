@@ -592,10 +592,12 @@ enum ExternalOpenPlacementApplication {
                 continue
             }
             guard window.isExternalOpenActivationEligible(for: placementWindow.items) else { return nil }
-            if window.contentTabs.tabs[id: item.tabID] != nil {
-                guard window.stillMatchesExternalOpenItem(item) else { return nil }
-                lastMatch = placementWindow.windowID
+            guard window.contentTabs.tabs[id: item.tabID] != nil else {
+                guard plan.request == nil else { return nil }
+                continue
             }
+            guard window.stillMatchesExternalOpenItem(item) else { return nil }
+            lastMatch = placementWindow.windowID
         }
         return lastMatch
     }

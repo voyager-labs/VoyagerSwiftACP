@@ -227,7 +227,10 @@ extension WindowManagerFeature {
         else { return .none }
         state.externalOpenActivationAttempt = nil
         state.externalOpenActivationBecameKey = false
-        var excludedTabIDs = Set([tabID])
+        var excludedTabIDs = Set(attempt.plan.orderedItems.compactMap { item in
+            item.requiresPinnedAnchorReturn ? item.tabID : nil
+        })
+        excludedTabIDs.insert(tabID)
         for window in state.windows {
             for tab in window.window.contentTabs.tabs
                 where tab.isPinned
