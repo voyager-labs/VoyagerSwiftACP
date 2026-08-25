@@ -211,21 +211,66 @@ enum StablePlacementCopier {
 
     /// source의 xattr(resource fork 포함)을 destination으로 복제한다. 빈 값 속성도
     /// 생성하며 청크 사이에 취소를 확인한다(#3840962269).
+    /// source의 xattr(resource fork 포함)을 destination으로 복제한다. 빈 값 속성도
+    /// 생성하며(#3840962269) resource fork는 제한된 버퍼로 position 기반 스트리밍해
+    /// 대형 fork의 전체 할당을 막는다(#3849551007).
     private static func duplicateXattrs(
         from sourceDescriptor: Int32,
         to destinationDescriptor: Int32,
     ) throws {
+        var streamBuffer: UnsafeMutableRawPointer?
+        defer { streamBuffer?.deallocate() }
         for name in PinnedContentStore.sortedXattrNames(ofDescriptor: sourceDescriptor) ?? [] {
             try Task.checkCancellation()
             let valueSize32 = fgetxattr(sourceDescriptor, name, nil, 0, 0, 0)
             guard valueSize32 >= 0 else { throw posixError() }
-            // #3840962269: 빈 값 속성도 생성한다
-            var value = Data(count: Int(valueSize32))
+            let valueSize = Int(valueSize32)
+            if name == PinnedContentStore.resourceForkXattrName {
+                if streamBuffer == nil {
+                    streamBuffer = UnsafeMutableRawPointer.allocate(
+                        byteCount: PinnedContentStore.xattrStreamChunkBytes,
+                        alignment: MemoryLayout<UInt8>.alignment,
+                    )
+                }
+                var offset = 0
+                while offset < valueSize {
+                    try Task.checkCancellation()
+                    let chunk = min(PinnedContentStore.xattrStreamChunkBytes, valueSize - offset)
+                    let got = fgetxattr(
+                        sourceDescriptor,
+                        name,
+                        streamBuffer,
+                        chunk,
+                        UInt32(offset),
+                        0,
+                    )
+                    guard got == chunk else { throw posixError() }
+                    let setResult = fsetxattr(
+                        destinationDescriptor,
+                        name,
+                        streamBuffer,
+                        chunk,
+                        UInt32(offset),
+                        0,
+                    )
+                    guard setResult == 0 else { throw posixError() }
+                    offset += chunk
+                }
+                // 빈 resource fork도 속성을 생성한다(#3840962269).
+                if valueSize == 0 {
+                    guard fsetxattr(destinationDescriptor, name, nil, 0, 0, 0) == 0 else {
+                        throw posixError()
+                    }
+                }
+                continue
+            }
+            guard valueSize <= PinnedContentStore.regularXattrMaxBytes else { throw posixError() }
+            var value = Data(count: valueSize)
             let got = value.withUnsafeMutableBytes { mutable -> Int in
                 guard let base = mutable.baseAddress else { return -1 }
                 return fgetxattr(sourceDescriptor, name, base, valueSize32, 0, 0)
             }
-            guard got == valueSize32 else { throw posixError() }
+            guard got == valueSize else { throw posixError() }
             let setResult = value.withUnsafeBytes { immutable -> Int32 in
                 fsetxattr(destinationDescriptor, name, immutable.baseAddress, valueSize32, 0, 0)
             }

@@ -996,9 +996,22 @@ extension ExternalDropAcquisitionSession {
 
     /// 지연 data-flavor 로드를 세션 전용 큐에서 실행한다. 로드 실패는 타입화 실패로 종단 처리한다.
     func enqueueDeferredLoad(_ flavor: ExternalDropDeferredFlavor) {
+        // load 자체가 60초를 넘을 수 있으므로(대형 Mail 원문) 큐 등록 전에 pending을
+        // 선증가해 워치독이 실제 진행 중으로 본다(#3849551004). 아래 모든 조기 종료
+        // 경로에서 감소하고, 성공 경로는 materializeOnQueue가 감소한다.
+        lock.lock()
+        guard phase == .acquiring else {
+            lock.unlock()
+            return
+        }
+        pendingSnapshotCount += 1
+        lock.unlock()
         queue.addOperation { [weak self] in
             guard let self else { return }
             guard let bytes = flavor.load() else {
+                lock.lock()
+                pendingSnapshotCount -= 1
+                lock.unlock()
                 fail(reason: .dataMaterializationFailed)
                 return
             }
@@ -1014,11 +1027,11 @@ extension ExternalDropAcquisitionSession {
             // 큐에 이중으로 예약돼 promise callback보다 물리화가 늦어진다(#3837956591).
             lock.lock()
             guard phase == .acquiring else {
+                pendingSnapshotCount -= 1
                 lock.unlock()
                 return
             }
             let reserved = uniqueStagedFilename(for: filename)
-            pendingSnapshotCount += 1
             lock.unlock()
             materializeOnQueue(
                 dataFlavor: ExternalDropDataFlavor(
