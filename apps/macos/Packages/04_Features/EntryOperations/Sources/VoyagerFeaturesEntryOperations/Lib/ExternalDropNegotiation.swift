@@ -224,6 +224,13 @@ public struct ExternalDropNegotiation: Equatable {
         let structural = Set(promiseTypes + [fileURLType, legacyType])
         let candidates = item.types.map(\.rawValue).filter { !structural.contains(NSPasteboard.PasteboardType($0)) }
         guard !candidates.isEmpty else { return nil }
+        // 웹 링크 item(public.url + public.url-name 공존)은 표현 자체가 URL이므로 text
+        // 계열(제목 문자열)보다 먼저 선택한다. text-first가 제목만 담은 .txt를 만들어
+        // 사용자가 드롭한 링크 자체를 잃었다(#3849679259). message: 스킴 Mail 경로는
+        // 이 협상 앞에서 이미 분기한다.
+        if candidates.contains(UTType.url.identifier) {
+            return UTType.url.identifier
+        }
         if let text = candidates.first(where: isTextFlavor) {
             return text
         }

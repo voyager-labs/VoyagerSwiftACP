@@ -570,15 +570,42 @@ final class StagingDirectory {
         identityLock.unlock()
         guard !timesByLabel.isEmpty else { return }
         let rootKey = canonicalClaimPath(claimedPath)
+        // 목적지 루트를 fd로 고정해 복원 자체가 경로 재해석(symlink 치환)을 따라가지
+        // 않게 한다(#3849679264). 하위 디렉터리는 이 fd에서 NOFOLLOW로 걷는다.
+        let rootDescriptor = Darwin.open(
+            destinationPath,
+            O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC,
+        )
+        guard rootDescriptor >= 0 else { return }
+        defer { Darwin.close(rootDescriptor) }
         if let times = timesByLabel[rootKey] {
-            utimes(destinationPath, times)
+            futimes(rootDescriptor, times)
         }
         // 레이블은 캐노니컬 소스 경로이므로 루트 접두를 벗긴 상대 경로가 목적지 트리의
-        // 동일 위치에 대응한다. 복사가 실패해 하위 경로가 없으면 utimes가 조용히
-        // 실패하며 세션 종단에는 영향을 주지 않는다.
+        // 동일 위치에 대응한다. 복사가 실패해 하위 경로가 없으면 조용히 건너뛰며
+        // 세션 종단에는 영향을 주지 않는다.
         let rootPrefix = rootKey + "/"
         for (label, times) in timesByLabel where label.hasPrefix(rootPrefix) {
-            utimes(destinationPath + "/" + label.dropFirst(rootPrefix.count), times)
+            var currentDescriptor = rootDescriptor
+            var opened: [Int32] = []
+            var reached = true
+            for component in label.dropFirst(rootPrefix.count).split(separator: "/") {
+                let next = Darwin.openat(
+                    currentDescriptor,
+                    String(component),
+                    O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC,
+                )
+                guard next >= 0 else {
+                    reached = false
+                    break
+                }
+                opened.append(next)
+                currentDescriptor = next
+            }
+            if reached {
+                futimes(currentDescriptor, times)
+            }
+            opened.forEach { Darwin.close($0) }
         }
     }
 

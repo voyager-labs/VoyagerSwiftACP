@@ -261,6 +261,31 @@ public enum ExternalDropDataFlavorNaming {
         return ext.isEmpty ? base : "\(base).\(ext)"
     }
 
+    /// 웹 링크 기반 `.webloc` 파일명. `public.url-name` 표시 이름을 우선하고 없으면 URL
+    /// host·마지막 경로 성분을 쓴다(#3849679259). Finder의 `.webloc` 물리화와 대응한다.
+    public static func weblocFilename(title: String?, rawURL: String) -> String {
+        let trimmedTitle = title?
+            .split(whereSeparator: \.isWhitespace)
+            .joined(separator: " ") ?? ""
+        if !trimmedTitle.isEmpty {
+            let sanitized = trimmedTitle
+                .replacingOccurrences(of: "/", with: "-")
+                .replacingOccurrences(of: ":", with: "-")
+            return "\(truncatedBaseName(sanitized, maxUTF8Bytes: maxBaseNameUTF8Bytes)).webloc"
+        }
+        if let url = URL(string: rawURL) {
+            let host = url.host ?? ""
+            let last = url.lastPathComponent
+            let derived = [host, last]
+                .filter { !$0.isEmpty }
+                .joined(separator: " - ")
+            if !derived.isEmpty {
+                return "\(truncatedBaseName(derived, maxUTF8Bytes: maxBaseNameUTF8Bytes)).webloc"
+            }
+        }
+        return "Web Link.webloc"
+    }
+
     /// Mail 메시지 제목 기반 `.eml` 파일명. 공백 축약·경로 구분자 치환·파일시스템
     /// 바이트 제한을 적용하고 빈 제목이면 `Mail Message <n>`을 쓰며, 세션 내 중복은
     /// ` <n>` 접미로 회피한다.

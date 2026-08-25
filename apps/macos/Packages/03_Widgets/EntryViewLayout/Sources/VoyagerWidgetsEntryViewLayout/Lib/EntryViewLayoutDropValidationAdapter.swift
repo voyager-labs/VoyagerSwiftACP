@@ -619,6 +619,26 @@ extension EntryViewLayoutDropValidationAdapter {
             let item = items[descriptor.ordinal]
             let type = NSPasteboard.PasteboardType(descriptor.uti)
             guard item.types.contains(type) else { return nil }
+            // 웹 링크는 URL을 `.webloc` property-list로 물리화한다(#3849679259).
+            // public.url-name은 파일명 메타데이터로만 사용한다.
+            if descriptor.uti == UTType.url.identifier {
+                guard let rawURL = item.string(forType: type) else { return nil }
+                let title = item.string(
+                    forType: NSPasteboard.PasteboardType("public.url-name"),
+                )
+                result.append(ExternalDropDeferredFlavor(
+                    uti: descriptor.uti,
+                    filename: ExternalDropDataFlavorNaming.weblocFilename(
+                        title: title,
+                        rawURL: rawURL,
+                    ),
+                    ordinal: descriptor.ordinal,
+                    nameFromBytes: false,
+                ) {
+                    Self.weblocPayload(rawURL: rawURL)
+                })
+                continue
+            }
             result.append(ExternalDropDeferredFlavor(
                 uti: descriptor.uti,
                 filename: "",
@@ -629,5 +649,14 @@ extension EntryViewLayoutDropValidationAdapter {
             })
         }
         return result
+    }
+
+    /// Finder와 동일한 `.webloc` binary property-list 페이로드(#3849679259).
+    private static func weblocPayload(rawURL: String) -> Data? {
+        try? PropertyListSerialization.data(
+            fromPropertyList: ["URL": rawURL],
+            format: .binary,
+            options: 0,
+        )
     }
 }
