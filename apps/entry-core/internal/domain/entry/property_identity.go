@@ -12,6 +12,10 @@ var (
 	ErrInvalidPropertyIDScheme    = errors.New("invalid property identity scheme")
 	ErrPropertyIDSchemeMismatch   = errors.New("property id scheme mismatch")
 	ErrInvalidRegistryPropertyKey = errors.New("invalid registry property key")
+
+	ErrInvalidPropertyOptionID         = errors.New("invalid property option id")
+	ErrInvalidPropertyOptionIDText     = errors.New("invalid property option id text")
+	ErrPropertyOptionIDVersionMismatch = errors.New("property option id version mismatch")
 )
 
 // PropertyID is a typed 16-byte UUID identity for a Voyager Property (ADR-015).
@@ -30,6 +34,13 @@ type PropertyID [16]byte
 // carry the RFC 4122 variant. Version nibble is preserved (5 or 7) and later
 // checked against the owning PropertyIdentityScheme.
 func ParsePropertyID(text string) (PropertyID, error) {
+	return parseUUIDText(text)
+}
+
+// parseUUIDText는 정규 소문자 하이픈 UUID 텍스트(8-4-4-4-12)를 16바이트로 파싱하고
+// RFC 9562 variant 비트만 검사한다. 버전 니블은 보존되며 소유자 유형이 요구하는
+// scheme 검사에서 별도로 확인된다.
+func parseUUIDText(text string) (PropertyID, error) {
 	if len(text) != 36 {
 		return PropertyID{}, ErrInvalidPropertyIDText
 	}
@@ -175,4 +186,55 @@ func RegistryPropertyID(categoryKey string) (PropertyID, error) {
 	id[6] = (id[6] & 0x0f) | 0x50
 	id[8] = (id[8] & 0x3f) | 0x80
 	return id, nil
+}
+
+// PropertyOptionID는 select option의 역할별 typed UUIDv7 identity다. Option은
+// 항상 Voyager 발급 UUIDv7이다(Registry 유도 v5 없음). Byte layout은 RFC 9562를
+// 따르며 version 니블 7과 RFC 4122 variant를 강제한다.
+type PropertyOptionID [16]byte
+
+// ParsePropertyOptionID는 정규 소문자 하이픈 UUID 텍스트를 파싱하고 version 7과
+// RFC 4122 variant를 강제한다. 비정상 텍스트는 ErrInvalidPropertyOptionIDText,
+// 버전 불일치는 ErrPropertyOptionIDVersionMismatch로 실패 닫기한다.
+func ParsePropertyOptionID(text string) (PropertyOptionID, error) {
+	parsed, err := parseUUIDText(text)
+	if err != nil {
+		return PropertyOptionID{}, ErrInvalidPropertyOptionIDText
+	}
+	if parsed.version() != 7 {
+		return PropertyOptionID{}, ErrPropertyOptionIDVersionMismatch
+	}
+	return PropertyOptionID(parsed), nil
+}
+
+// MustPropertyOptionID는 파싱 실패 시 panic한다. package 수준 불변 리터럴과 테스트
+// 픽스처 전용이며 production 코드는 ParsePropertyOptionID와 오류 처리를 쓴다.
+func MustPropertyOptionID(text string) PropertyOptionID {
+	id, err := ParsePropertyOptionID(text)
+	if err != nil {
+		panic(err)
+	}
+	return id
+}
+
+func (id PropertyOptionID) Bytes() []byte {
+	out := make([]byte, len(id))
+	copy(out, id[:])
+	return out
+}
+
+func (id PropertyOptionID) String() string {
+	return PropertyID(id).String()
+}
+
+func (id PropertyOptionID) version() byte {
+	return id[6] >> 4
+}
+
+// valid은 ID가 영값이 아니고 version 7과 RFC 9562 variant를 만족하는지 보고한다.
+func (id PropertyOptionID) valid() bool {
+	if id == (PropertyOptionID{}) {
+		return false
+	}
+	return id.version() == 7 && id[8]&0xc0 == 0x80
 }
