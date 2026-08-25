@@ -270,7 +270,7 @@ public extension RuntimeControlPlane {
         for hostReference: ExternalAgentSessionReference,
     ) throws -> (any ExternalAgentRuntimeAdapter, RuntimeStoredSession) {
         guard let session = sessions[hostReference],
-              session.lease.isActive,
+              session.lease.permitsLiveProviderOperation,
               !session.stored.projection.isTerminal
         else {
             throw RuntimeHostError.invalidEvent
@@ -305,6 +305,7 @@ public extension RuntimeControlPlane {
         guard pendingPersistenceMutations[hostReference, default: 0] == 0,
               let current = sessions[hostReference],
               current.lease == claim.lease,
+              current.lease.permitsLiveProviderOperation,
               current.stored.runReference == claim.session.runReference,
               !current.stored.projection.isTerminal
         else { throw RuntimeHostError.invalidEvent }
@@ -326,6 +327,19 @@ struct OperationClaim {
     let adapter: any ExternalAgentRuntimeAdapter
     let session: RuntimeStoredSession
     let lease: RuntimeControlPlane.RuntimeLease
+}
+
+extension RuntimeControlPlane.RuntimeLease {
+    /// provider 연산 소유 입증: 라이브 consuming/resuming 소유자만 연산을 시작할 수 있다.
+    /// none/launching/detachedLaunching/detachedConsuming/restored 소유자는 탈부착 또는 비소유 상태이므로 거부한다.
+    var permitsLiveProviderOperation: Bool {
+        switch self {
+        case .consuming, .resuming:
+            true
+        case .none, .launching, .detachedLaunching, .detachedConsuming, .restored:
+            false
+        }
+    }
 }
 
 extension RuntimeProjection {

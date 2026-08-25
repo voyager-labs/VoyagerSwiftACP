@@ -221,4 +221,262 @@ extension RuntimeFreshRunCoordinatorContractTests {
         await streamGate.open()
         _ = try? await runTask.value
     }
+
+    // MARK: - ATI-006-project_external_agent_run_events
+
+    /// ATI-006-project_external_agent_run_events: detached consuming owner cannot issue provider operations.
+    /// receipt 저장 후 caller 취소로 탈부착된 consuming 소유자가 provider 승인·입력·취소 연산을 시작할 수 없는지 검증한다.
+    /// - 검증 내용: 세 operation 모두 소유자 입증 단계에서 invalidEvent로 거부되고 adapter 호출 카운터와 run/projection/lease/durable
+    ///   상태가 불변이다.
+    /// - 사전 조건: receipt 저장(save 3) 이후 caller cancel로 detachedConsuming 소유자가 남아 있고 provider stream은 gate로 막혀 있다.
+    /// - 기대 결과: 각 operation은 RuntimeHostError.invalidEvent를 던지고 카운터는 0회이며 상태 스냅샷과 동일하게 유지된다.
+    @Test
+    func `detached consuming owner cannot issue provider operations`() async throws {
+        let host: ExternalAgentSessionReference = "host-detached-consuming-operations"
+        let run = RuntimeRunReference("run-detached-consuming-operations")
+        let streamGate = RuntimeTestGate()
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            capabilities: .allSupported,
+            eventsByLaunch: [[]],
+            eventStreamGate: streamGate,
+        )
+        let store = InMemoryRuntimeStateStore()
+        let plane = RuntimeControlPlane(store: store)
+        try await plane.register(adapter)
+        let request = makeLaunch(host: host, run: run, adapterID: "sdk")
+        try await plane.projectPrelaunch(request, as: .policyReady)
+        let runTask = Task { try await plane.run(request) }
+        // 결정적 탈부착 시점: receipt 저장(save 3)까지 대기한 뒤 caller cancel을 선형화한다.
+        await store.waitForSaveCount(3)
+        runTask.cancel()
+        await #expect(throws: CancellationError.self) { try await runTask.value }
+        let detached = try #require(await plane.sessions[host])
+        guard case .detachedConsuming = detached.lease else {
+            Issue.record("receipt 이후 caller cancel은 detachedConsuming 소유자를 남겨야 한다: \(detached.lease)")
+            await streamGate.open()
+            return
+        }
+        #expect(detached.stored.projection == .running)
+        let baseline = try await detachedOwnerBaseline(host: host, store: store, session: detached)
+
+        try await assertDetachedOwnerRejectsOperations(
+            host: host,
+            adapter: adapter,
+            plane: plane,
+            store: store,
+            baseline: baseline,
+        )
+        await streamGate.open()
+    }
+
+    /// ATI-006-project_external_agent_run_events: detached launching owner cannot issue provider operations.
+    /// launch gate 대기 중 caller 취소와 취소 저장 실패(save 3)로 남은 detachedLaunching 소유자의 provider 연산 차단을 검증한다.
+    /// - 검증 내용: 세 operation 모두 소유자 입증 단계에서 invalidEvent로 거부되며 승인 연산은 provider 참조 조회 이전에 거부된다.
+    /// - 사전 조건: pre-receipt 취소 저장 실패로 detachedLaunching 소유자가 남아 있고 projection은 launching이다.
+    /// - 기대 결과: 각 operation은 RuntimeHostError.invalidEvent를 던지고 카운터는 0회이며 상태 스냅샷과 동일하게 유지된다.
+    @Test
+    func `detached launching owner cannot issue provider operations`() async throws {
+        let host: ExternalAgentSessionReference = "host-detached-launching-operations"
+        let run = RuntimeRunReference("run-detached-launching-operations")
+        let launchGate = RuntimeTestGate()
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            capabilities: .allSupported,
+            eventsByLaunch: [[]],
+            launchGate: launchGate,
+        )
+        let store = InMemoryRuntimeStateStore(failingSaveNumbers: [3])
+        let plane = RuntimeControlPlane(store: store)
+        try await plane.register(adapter)
+        let request = makeLaunch(host: host, run: run, adapterID: "sdk")
+        try await plane.projectPrelaunch(request, as: .policyReady)
+        let runTask = Task { try await plane.run(request) }
+        await adapter.waitForLaunchCount(1)
+        runTask.cancel()
+        await launchGate.open()
+        await #expect(throws: CancellationError.self) { try await runTask.value }
+        let detached = try #require(await plane.sessions[host])
+        guard case .detachedLaunching = detached.lease else {
+            Issue.record("취소 저장 실패 뒤 launch owner는 detachedLaunching이어야 한다: \(detached.lease)")
+            return
+        }
+        #expect(detached.stored.projection == .launching)
+        let baseline = try await detachedOwnerBaseline(host: host, store: store, session: detached)
+
+        try await assertDetachedOwnerRejectsOperations(
+            host: host,
+            adapter: adapter,
+            plane: plane,
+            store: store,
+            baseline: baseline,
+        )
+    }
+
+    /// ATI-006-project_external_agent_run_events: live consuming owner completes provider operations exactly once.
+    /// 라이브 consuming 소유자의 승인·입력·취소 연산이 정확히 한 번씩 성공하는 긍정 제어를 검증한다.
+    /// - 검증 내용: 세 operation의 성공, approval correlation 필드, projection/lease/durable 상태 불변.
+    /// - 사전 조건: receipt 저장 후 running consuming 소유자가 있고 provider stream은 gate로 막혀 있다.
+    /// - 기대 결과: 각 operation은 한 번씩 adapter에 도달하고 상태는 연산 전 스냅샷과 동일하게 유지된다.
+    @Test
+    func `live consuming owner completes provider operations exactly once`() async throws {
+        let fixture = try await makeLiveOperationFixture()
+        let live = try #require(await fixture.plane.sessions[fixture.host])
+        guard case .consuming = live.lease else {
+            Issue.record("receipt 저장 뒤 소유자는 consuming이어야 한다: \(live.lease)")
+            await fixture.streamGate.open()
+            _ = try? await fixture.runTask.value
+            return
+        }
+        let baselinePersisted = try #require(await fixture.store.currentState()?.sessions
+            .first(where: { $0.externalAgentSessionReference == fixture.host }))
+        let saveCountBeforeOperations = await fixture.store.saveCount
+        try await assertLiveProviderOperations(fixture)
+        #expect(await fixture.plane.projection(for: fixture.host) == .running)
+        #expect(await fixture.plane.sessions[fixture.host] == live)
+        #expect(await fixture.store.currentState()?.sessions
+            .first(where: { $0.externalAgentSessionReference == fixture.host }) == baselinePersisted)
+        #expect(await fixture.store.saveCount == saveCountBeforeOperations)
+        await fixture.streamGate.open()
+        #expect(try await fixture.runTask.value.outcome == .completed)
+    }
+
+    private struct LiveOperationFixture {
+        let host: ExternalAgentSessionReference
+        let run: RuntimeRunReference
+        let streamGate: RuntimeTestGate
+        let adapter: DeterministicRuntimeAdapter
+        let store: InMemoryRuntimeStateStore
+        let plane: RuntimeControlPlane
+        let runTask: Task<RuntimeResult, Error>
+    }
+
+    private func makeLiveOperationFixture() async throws -> LiveOperationFixture {
+        let host: ExternalAgentSessionReference = "host-live-consuming-operations"
+        let run = RuntimeRunReference("run-live-consuming-operations")
+        let streamGate = RuntimeTestGate()
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            capabilities: .allSupported,
+            eventsByLaunch: [
+                [
+                    makeEvent(
+                        host: host,
+                        run: run,
+                        sequence: 1,
+                        idempotencyKey: "done",
+                        kind: .completed,
+                    ),
+                ],
+            ],
+            eventStreamGate: streamGate,
+        )
+        let store = InMemoryRuntimeStateStore()
+        let plane = RuntimeControlPlane(store: store)
+        try await plane.register(adapter)
+        let request = makeLaunch(host: host, run: run, adapterID: "sdk")
+        try await plane.projectPrelaunch(request, as: .policyReady)
+        let runTask = Task { try await plane.run(request) }
+        try await waitForProjection(.running, host: host, on: plane)
+        return LiveOperationFixture(
+            host: host,
+            run: run,
+            streamGate: streamGate,
+            adapter: adapter,
+            store: store,
+            plane: plane,
+            runTask: runTask,
+        )
+    }
+
+    private func assertLiveProviderOperations(_ fixture: LiveOperationFixture) async throws {
+        try await fixture.plane.respondToApproval(
+            hostReference: fixture.host,
+            requestID: RuntimeApprovalRequestID("approval-live"),
+            operationID: RuntimeOperationID("operation-live"),
+        )
+        try await fixture.plane.enqueueInput(
+            hostReference: fixture.host,
+            operationID: RuntimeOperationID("input-live"),
+            input: RuntimeSensitiveInput("not persisted"),
+        )
+        try await fixture.plane.requestCancellation(
+            hostReference: fixture.host,
+            operationID: RuntimeOperationID("cancel-live"),
+        )
+        let counts = await fixture.adapter.counts()
+        #expect(counts.approval == 1)
+        #expect(counts.input == 1)
+        #expect(counts.cancellation == 1)
+        let approval = try #require(await fixture.adapter.receivedApprovalRequests().first)
+        #expect(approval.externalAgentSessionReference == fixture.host)
+        #expect(approval.providerInternalSessionReference == ProviderInternalSessionReference("opaque-1"))
+        #expect(approval.requestID == RuntimeApprovalRequestID("approval-live"))
+        #expect(approval.operationID == RuntimeOperationID("operation-live"))
+        #expect(approval.runReference == fixture.run)
+        #expect(approval.authorizationGeneration == 1)
+    }
+
+    /// 탈부착 소유자 단언을 위한 연산 전 상태 스냅샷.
+    private struct DetachedOwnerBaseline {
+        let session: RuntimeControlPlane.Session
+        let persisted: RuntimeStoredSession
+        let saveCount: Int
+    }
+
+    /// 연산 전 durable store와 persistence 카운터 스냅샷을 수집한다.
+    private func detachedOwnerBaseline(
+        host: ExternalAgentSessionReference,
+        store: InMemoryRuntimeStateStore,
+        session: RuntimeControlPlane.Session,
+    ) async throws -> DetachedOwnerBaseline {
+        try await DetachedOwnerBaseline(
+            session: session,
+            persisted: #require(store.currentState()?.sessions
+                .first(where: { $0.externalAgentSessionReference == host })),
+            saveCount: store.saveCount,
+        )
+    }
+
+    /// 탈부착 소유자 공통 단언: 세 provider operation의 invalidEvent 거부와 무효과를 검증한다.
+    private func assertDetachedOwnerRejectsOperations(
+        host: ExternalAgentSessionReference,
+        adapter: DeterministicRuntimeAdapter,
+        plane: RuntimeControlPlane,
+        store: InMemoryRuntimeStateStore,
+        baseline: DetachedOwnerBaseline,
+    ) async throws {
+        await #expect(throws: RuntimeHostError.invalidEvent) {
+            try await plane.respondToApproval(
+                hostReference: host,
+                requestID: RuntimeApprovalRequestID("approval-detached"),
+                operationID: RuntimeOperationID("operation-detached"),
+            )
+        }
+        await #expect(throws: RuntimeHostError.invalidEvent) {
+            try await plane.enqueueInput(
+                hostReference: host,
+                operationID: RuntimeOperationID("input-detached"),
+                input: RuntimeSensitiveInput("not persisted"),
+            )
+        }
+        await #expect(throws: RuntimeHostError.invalidEvent) {
+            try await plane.requestCancellation(
+                hostReference: host,
+                operationID: RuntimeOperationID("cancel-detached"),
+            )
+        }
+
+        let counts = await adapter.counts()
+        #expect(counts.approval == 0)
+        #expect(counts.input == 0)
+        #expect(counts.cancellation == 0)
+        #expect(await plane.sessions[host] == baseline.session)
+        #expect(await store.currentState()?.sessions
+            .first(where: { $0.externalAgentSessionReference == host }) == baseline.persisted)
+        #expect(await store.saveCount == baseline.saveCount)
+    }
 }
