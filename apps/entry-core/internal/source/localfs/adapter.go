@@ -27,6 +27,7 @@ const (
 	minimumCursorKeySize    = 32
 	maximumGeneration       = 128
 	maximumCursorLength     = 4096
+	maximumLocalPathBytes   = 4096
 	cursorPayloadSize       = 4 + sha256.Size
 	cursorTokenSize         = cursorPayloadSize + sha256.Size
 )
@@ -562,6 +563,84 @@ func (adapter *Adapter) canonicalLocatorRef(item source.SourceItem) (entry.Locat
 		return entry.LocatorRef{}, err
 	}
 	return locator.LocatorRef()
+}
+
+// ResolveLocalPath는 소스 루트 기준 clean 절대 UTF-8 경로 하나를 canonical
+// EntryRef로 해석한다. 원시 경로는 identity 재구성 입력으로만 쓰고 결과에는
+// locator 유도 값만 남으며 rename/move 연속성은 보장하지 않는다.
+func (adapter *Adapter) ResolveLocalPath(ctx context.Context, localPath string) (entry.EntryRef, error) {
+	if err := ctx.Err(); err != nil {
+		return entry.EntryRef{}, source.ErrAdapterFailure
+	}
+	if !utf8.ValidString(localPath) || len(localPath) < 1 || len(localPath) > maximumLocalPathBytes ||
+		strings.ContainsRune(localPath, '\x00') || !filepath.IsAbs(localPath) || filepath.Clean(localPath) != localPath {
+		return entry.EntryRef{}, source.ErrInvalidRequest
+	}
+	relativePath, err := filepath.Rel(adapter.root, localPath)
+	if err != nil {
+		return entry.EntryRef{}, source.ErrPathEscape
+	}
+	relativePath = filepath.ToSlash(relativePath)
+	if relativePath == "." {
+		// 소스 루트 자체는 assignment 대상 entry가 아니다.
+		return entry.EntryRef{}, source.ErrInvalidRequest
+	}
+	if !source.ValidateRelativePath(relativePath) {
+		return entry.EntryRef{}, source.ErrPathEscape
+	}
+	item, found, err := adapter.resolveItem(ctx, relativePath)
+	if err != nil {
+		return entry.EntryRef{}, err
+	}
+	if !found {
+		return entry.EntryRef{}, classifyMissingLocalPath(localPath)
+	}
+	if err := verifyLocalPathAccessible(adapter.root, relativePath); err != nil {
+		return entry.EntryRef{}, err
+	}
+	locatorRef, err := adapter.canonicalLocatorRef(item)
+	if err != nil {
+		return entry.EntryRef{}, source.ErrAdapterFailure
+	}
+	entryID := entry.DeriveEntryID(adapter.identity.SourceID, item.Snapshot.ResourceType, item.Identity.EntryKey)
+	ref, err := entry.NewEntryRef(entryID, adapter.identity.SourceID, item.Identity.EntryKey, item.Snapshot.ResourceType, locatorRef, item.Identity.IdentityStrength)
+	if err != nil {
+		return entry.EntryRef{}, source.ErrAdapterFailure
+	}
+	return ref, nil
+}
+
+// classifyMissingLocalPath는 walk가 대상을 찾지 못한 원인을 존재·권한·어댑터가
+// 다루지 않는 대상(symlink 등)으로 분류한다.
+func classifyMissingLocalPath(localPath string) error {
+	_, statErr := os.Lstat(localPath)
+	switch {
+	case statErr == nil:
+		return source.ErrPathEscape
+	case errors.Is(statErr, fs.ErrPermission):
+		return source.ErrPermissionDenied
+	default:
+		return source.ErrEntryNotFound
+	}
+}
+
+// verifyLocalPathAccessible은 최종 대상을 실제로 열어 접근 가능함을 확인한다.
+// ponytail: 부모 순회 중간의 권한 오류는 openDirectory가 ErrAdapterFailure로
+// 닫는다. 경로별 권한 정밀 분류가 필요해지면 openDirectory에 cause 매핑을 추가한다.
+func verifyLocalPathAccessible(rootPath, relativePath string) error {
+	root, err := os.OpenRoot(rootPath)
+	if err != nil {
+		return source.ErrAdapterFailure
+	}
+	defer root.Close()
+	probe, err := root.Open(relativePath)
+	if err != nil {
+		if errors.Is(err, fs.ErrPermission) {
+			return source.ErrPermissionDenied
+		}
+		return source.ErrAdapterFailure
+	}
+	return probe.Close()
 }
 
 func (adapter *Adapter) resolveObjectKey(ctx context.Context, objectKey string) (source.SourceItem, bool, error) {
