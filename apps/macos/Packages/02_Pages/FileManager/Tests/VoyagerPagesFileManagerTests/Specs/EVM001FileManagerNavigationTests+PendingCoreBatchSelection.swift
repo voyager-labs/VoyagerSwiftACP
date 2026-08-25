@@ -19,8 +19,11 @@ extension EVM001FileManagerNavigationTests {
         let targetEntry = EntryModel.temporaryFolder(id: "/tmp/pending-selection", name: "pending-selection")
         var state = FileManagerContentState()
         state.pendingSelectEntryID = targetEntry.id
+        state.pendingSelectEntryDestinationPath = "/tmp"
+        state.navigation.navigationState = .folder("/tmp")
         state.entryViewLayout.entryOperations.loadingContext.generation = 7
         state.entryViewLayout.entryOperations.loadingContext.expectedCoreBatchIndex = 3
+        state.entryViewLayout.entryOperations.loadingContext.items = [targetEntry]
 
         let store = TestStore(initialState: state) {
             FileManagerContentFeature()
@@ -35,6 +38,7 @@ extension EVM001FileManagerNavigationTests {
             event: .coreBatch(items: [targetEntry], batchIndex: 3),
         ))))))
         XCTAssertEqual(store.state.pendingSelectEntryID, targetEntry.id)
+        XCTAssertEqual(store.state.pendingSelectEntryDestinationPath, "/tmp")
         XCTAssertTrue(store.state.entryViewLayout.selectedIds.isEmpty)
 
         await store.send(.entryViewLayout(.entryOperations(.loading(.streamEvent(.init(
@@ -42,6 +46,7 @@ extension EVM001FileManagerNavigationTests {
             event: .coreBatch(items: [targetEntry], batchIndex: 2),
         ))))))
         XCTAssertEqual(store.state.pendingSelectEntryID, targetEntry.id)
+        XCTAssertEqual(store.state.pendingSelectEntryDestinationPath, "/tmp")
         XCTAssertTrue(store.state.entryViewLayout.selectedIds.isEmpty)
         await store.finish()
     }

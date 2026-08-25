@@ -270,7 +270,7 @@ public struct FileManagerWindowState: Equatable {
                 inheritingWindowContextFrom: state.content,
             )
         }
-        state.content.pendingSelectEntryID = selectEntryID
+        state.content.setPendingEntrySelection(entryID: selectEntryID, destinationPath: nil)
 
         state.syncActiveTabContentState()
         state.restoreInspectorStateForActiveTab()
@@ -307,7 +307,7 @@ public struct FileManagerWindowState: Equatable {
             )
         }
 
-        state.content.pendingSelectEntryID = selectEntryID
+        state.content.setPendingEntrySelection(entryID: selectEntryID, destinationPath: nil)
 
         state.syncActiveTabContentState()
         state.restoreInspectorStateForActiveTab()

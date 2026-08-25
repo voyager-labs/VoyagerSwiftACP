@@ -10,6 +10,12 @@ func handleNavigationDelegate(
     metricsClient: MetricsClient,
 ) -> Effect<FileManagerWindowAction> {
     switch delegateAction {
+    case let .revealEntryAfterNavigation(destinationPath, entryPath):
+        return .send(.content(.internal(.setPendingEntrySelection(
+            entryID: entryPath,
+            destinationPath: destinationPath,
+        ))))
+
     case let .navigateToState(navigationState):
         return .concatenate(
             syncActiveContentTabEffect(navigationState, state: state, computerName: computerName),

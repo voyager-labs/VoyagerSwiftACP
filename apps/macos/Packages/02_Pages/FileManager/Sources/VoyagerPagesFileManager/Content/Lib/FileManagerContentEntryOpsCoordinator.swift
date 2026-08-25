@@ -102,7 +102,7 @@ enum FileManagerContentEntryOpsCoordinator {
 
         let selectedIds = Set([matchedID])
         let didChangeSelection = state.entryViewLayout.selectedIds != selectedIds
-        state.pendingSelectEntryID = nil
+        state.setPendingEntrySelection(entryID: nil, destinationPath: nil)
         state.entryViewLayout.selectedIds = selectedIds
         state.entryViewLayout.lastSelectedId = matchedID
         state.entryViewLayout.rangeAnchorId = matchedID

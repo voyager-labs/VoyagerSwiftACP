@@ -44,6 +44,7 @@ public enum FileManagerContentAction: ViewAction, CasePathable, Sendable {
     @CasePathable
     public enum Internal: Sendable {
         case applyNavigationState(ContentPageNavigationRoute)
+        case setPendingEntrySelection(entryID: String?, destinationPath: String?)
         case performPendingNavigation(ContentPageNavigationPending)
         case requestNavigation(ContentPageNavigationAction)
         case saveScrollOffset(CGPoint, forPath: String)

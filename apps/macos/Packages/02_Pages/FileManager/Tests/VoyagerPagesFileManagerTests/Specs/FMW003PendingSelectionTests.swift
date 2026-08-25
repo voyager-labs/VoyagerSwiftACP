@@ -45,6 +45,16 @@ final class FMW003PendingSelectionTests: XCTestCase {
         return state
     }
 
+    private func makeNavigationSelectionState(
+        entryID: String = "/test/target.txt",
+        destinationPath: String = "/test",
+    ) -> FileManagerContentState {
+        var state = FileManagerContentState()
+        state.navigation.navigationState = .folder(destinationPath)
+        state.setPendingEntrySelection(entryID: entryID, destinationPath: destinationPath)
+        return state
+    }
+
     // MARK: - Tests
 
     /// FMW-003: pendingSelectEntryID와 매칭되는 엔트리가 itemsLoaded에 포함된 경우 selection state 즉시 반영 검증.
@@ -336,6 +346,129 @@ final class FMW003PendingSelectionTests: XCTestCase {
             guard case .entryViewLayout(.delegate(.selectionChanged)) = action else { return false }
             return true
         }
+    }
+
+    /// FMW-003-handle_external_file_open_requests: a navigation-origin coreFinished miss remains retryable.
+    /// Core completion is non-terminal for pending selection because the stream can still deliver later data.
+    /// - Verification: a current coreFinished miss preserves both pending-selection fields.
+    /// - Preconditions: the guarded destination route is current and the loaded partial rows do not contain the target.
+    /// - Expected result: the navigation-origin pair remains available for a later retry.
+    func test_contentFeature_navigationCoreFinishedMissRetainsPendingPair() async {
+        var state = makeNavigationSelectionState()
+        state.entryViewLayout.entryOperations.loadingContext.generation = 4
+
+        let store = makeFileManagerContentFeatureStore(initialState: state)
+        store.exhaustivity = .off
+
+        await store.send(.entryViewLayout(.entryOperations(.loading(.streamEvent(.init(
+            generation: 4,
+            event: .coreFinished(batchCount: 0),
+        ))))))
+
+        XCTAssertEqual(store.state.pendingSelectEntryID, "/test/target.txt")
+        XCTAssertEqual(store.state.pendingSelectEntryDestinationPath, "/test")
+        await store.finish()
+    }
+
+    /// FMW-003-handle_external_file_open_requests: a navigation-origin streamFinished miss clears the pair.
+    /// The terminal stream result proves that no later retry can arrive for this load.
+    /// - Verification: a current streamFinished miss clears both pending-selection fields.
+    /// - Preconditions: the guarded destination route is current and the partial rows do not contain the target.
+    /// - Expected result: both pending-selection fields are nil and no selection delegate is emitted.
+    func test_contentFeature_navigationStreamFinishedMissClearsPendingPair() async {
+        var state = makeNavigationSelectionState()
+        state.entryViewLayout.entryOperations.loadingContext.generation = 4
+        state.entryViewLayout.entryOperations.loadingContext.coreFinished = true
+
+        let store = makeFileManagerContentFeatureStore(initialState: state)
+        store.exhaustivity = .off
+
+        await store.send(.entryViewLayout(.entryOperations(.loading(.streamFinished(generation: 4))))) {
+            $0.pendingSelectEntryID = nil
+            $0.pendingSelectEntryDestinationPath = nil
+        }
+        await store.finish()
+    }
+
+    /// FMW-003-handle_external_file_open_requests: streamFailed matches preserved partial rows before cleanup.
+    /// A failed stream can still expose a valid target from its accepted core batches.
+    /// - Verification: the partial-row matcher consumes the pair and applies selection before failure cleanup.
+    /// - Preconditions: current generation has a preserved partial row containing the target.
+    /// - Expected result: target selection is applied, both pending fields clear, and selectionChanged is emitted.
+    func test_contentFeature_navigationStreamFailedPartialMatchConsumesPendingPair() async {
+        let targetID = "/test/target.txt"
+        var state = makeNavigationSelectionState(entryID: targetID)
+        state.entryViewLayout.entryOperations.loadingContext.generation = 4
+        state.entryViewLayout.entryOperations.loadingContext.items = [Self.makeEntry(fullPath: targetID)]
+        state.entryViewLayout.entryOperations.loadingContext.expectedCoreBatchIndex = 1
+
+        let store = makeFileManagerContentFeatureStore(initialState: state)
+        store.exhaustivity = .off
+
+        await store.send(.entryViewLayout(.entryOperations(.loading(.streamFailed(generation: 4))))) {
+            $0.pendingSelectEntryID = nil
+            $0.pendingSelectEntryDestinationPath = nil
+            $0.entryViewLayout.selectedIds = [targetID]
+            $0.entryViewLayout.lastSelectedId = targetID
+            $0.entryViewLayout.rangeAnchorId = targetID
+            $0.entryViewLayout.shouldScrollToSelection = true
+        }
+        await store.receive { action in
+            guard case .entryViewLayout(.delegate(.selectionChanged)) = action else { return false }
+            return true
+        }
+    }
+
+    /// FMW-003-handle_external_file_open_requests: streamFailed without a match clears navigation provenance.
+    /// - Verification: a current-generation failure with no matching partial row clears both fields.
+    /// - Preconditions: current generation has partial rows that omit the target.
+    /// - Expected result: both pending-selection fields are nil and selection remains unchanged.
+    func test_contentFeature_navigationStreamFailedPartialMissClearsPendingPair() async {
+        var state = makeNavigationSelectionState()
+        state.entryViewLayout.entryOperations.loadingContext.generation = 4
+        state.entryViewLayout.entryOperations.loadingContext.items = [Self.makeEntry(fullPath: "/test/other.txt")]
+        state.entryViewLayout.entryOperations.loadingContext.expectedCoreBatchIndex = 1
+
+        let store = makeFileManagerContentFeatureStore(initialState: state)
+        store.exhaustivity = .off
+
+        await store.send(.entryViewLayout(.entryOperations(.loading(.streamFailed(generation: 4))))) {
+            $0.pendingSelectEntryID = nil
+            $0.pendingSelectEntryDestinationPath = nil
+        }
+        await store.finish()
+    }
+
+    /// FMW-003-handle_external_file_open_requests: itemsLoadFailed ends navigation-origin selection.
+    /// - Verification: the unversioned load failure clears both pending-selection fields.
+    /// - Preconditions: the guarded destination route is current.
+    /// - Expected result: both pending-selection fields are nil.
+    func test_contentFeature_navigationItemsLoadFailedClearsPendingPair() async {
+        let store = makeFileManagerContentFeatureStore(initialState: makeNavigationSelectionState())
+        store.exhaustivity = .off
+
+        await store.send(.entryViewLayout(.entryOperations(.loading(.itemsLoadFailed)))) {
+            $0.pendingSelectEntryID = nil
+            $0.pendingSelectEntryDestinationPath = nil
+        }
+        await store.finish()
+    }
+
+    /// FMW-003-handle_external_file_open_requests: legacy itemsLoaded miss ends navigation-origin selection.
+    /// - Verification: the unversioned legacy load miss clears both pending-selection fields.
+    /// - Preconditions: the guarded destination route is current and loaded entries omit the target.
+    /// - Expected result: both pending-selection fields are nil and no selection delegate is emitted.
+    func test_contentFeature_navigationItemsLoadedMissClearsPendingPair() async {
+        let store = makeFileManagerContentFeatureStore(initialState: makeNavigationSelectionState())
+        store.exhaustivity = .off
+
+        await store.send(.entryViewLayout(.entryOperations(.loading(.itemsLoaded([
+            Self.makeEntry(fullPath: "/test/other.txt"),
+        ]))))) {
+            $0.pendingSelectEntryID = nil
+            $0.pendingSelectEntryDestinationPath = nil
+        }
+        await store.finish()
     }
 
     /// FMW-003: pendingSelectEntryID가 nil인 경우 기존 동작 유지 (no-op).

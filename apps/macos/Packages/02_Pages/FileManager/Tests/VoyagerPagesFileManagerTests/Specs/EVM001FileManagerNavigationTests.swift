@@ -13,6 +13,146 @@ import XCTest
 
 @MainActor
 final class EVM001FileManagerNavigationTests: XCTestCase {
+    // MARK: - EVM-001-route_navigation_reveal_lifecycle
+
+    /// EVM-001-route_navigation_reveal_lifecycle: navigation-origin reveal installs an atomic destination pair.
+    /// Navigation-origin selection must carry its destination so later routes cannot consume it accidentally.
+    /// - 검증 내용: entry ID와 destination guard가 하나의 internal action으로 함께 설치된다.
+    /// - 사전 조건: FileManager content state가 비어 있다.
+    /// - 기대 결과: pendingSelectEntryID와 pendingSelectEntryDestinationPath가 각각 전달된 값으로 설정된다.
+    func testNavigationRevealInstallsEntryAndDestinationAtomically() async {
+        let store = TestStore(initialState: FileManagerContentState()) {
+            FileManagerContentFeature()
+        }
+
+        await store.send(.internal(.setPendingEntrySelection(
+            entryID: "/a/b",
+            destinationPath: "/a",
+        ))) {
+            $0.pendingSelectEntryID = "/a/b"
+            $0.pendingSelectEntryDestinationPath = "/a"
+        }
+
+        await store.send(.internal(.setPendingEntrySelection(
+            entryID: "/a/c",
+            destinationPath: "/a",
+        ))) {
+            $0.pendingSelectEntryID = "/a/c"
+            $0.pendingSelectEntryDestinationPath = "/a"
+        }
+
+        await store.send(.internal(.setPendingEntrySelection(
+            entryID: "/a/external.txt",
+            destinationPath: nil,
+        ))) {
+            $0.pendingSelectEntryID = "/a/external.txt"
+            $0.pendingSelectEntryDestinationPath = nil
+        }
+    }
+
+    /// EVM-001-route_navigation_reveal_lifecycle: matching folder route retains the pending pair.
+    /// A committed route for the guarded destination must leave the pair available for later loading.
+    /// - 검증 내용: matching folder applyNavigationState가 ID와 guard를 유지한다.
+    /// - 사전 조건: pending pair destination이 /a이고 현재 route가 folder(/old)다.
+    /// - 기대 결과: folder(/a) 적용 뒤 pending pair가 그대로 남는다.
+    func testMatchingFolderRouteRetainsNavigationRevealPair() async {
+        var state = FileManagerContentState()
+        state.pendingSelectEntryID = "/a/b"
+        state.pendingSelectEntryDestinationPath = "/a"
+        let store = TestStore(initialState: state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        store.exhaustivity = .off
+
+        await store.send(.internal(.applyNavigationState(.folder("/a"))))
+        await store.skipReceivedActions(strict: false)
+
+        XCTAssertEqual(store.state.pendingSelectEntryID, "/a/b")
+        XCTAssertEqual(store.state.pendingSelectEntryDestinationPath, "/a")
+    }
+
+    /// EVM-001-route_navigation_reveal_lifecycle: mismatched and non-folder routes clear both fields.
+    /// A superseding route must invalidate only navigation-origin pending state while preserving external nil-guard
+    /// behavior.
+    /// - 검증 내용: 다른 folder와 non-folder route가 ID와 guard를 함께 clear한다.
+    /// - 사전 조건: navigation-origin pending pair가 설치돼 있다.
+    /// - 기대 결과: 각 superseding route 적용 뒤 두 필드가 모두 nil이다.
+    func testSupersedingRoutesClearNavigationRevealPair() async {
+        for route in [
+            ContentPageNavigationRoute.folder("/other"),
+            .home,
+        ] {
+            var state = FileManagerContentState()
+            state.pendingSelectEntryID = "/a/b"
+            state.pendingSelectEntryDestinationPath = "/a"
+            let store = TestStore(initialState: state) {
+                FileManagerContentFeature()
+            } withDependencies: {
+                $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            }
+            store.exhaustivity = .off
+
+            await store.send(.internal(.applyNavigationState(route)))
+            await store.skipReceivedActions(strict: false)
+
+            XCTAssertNil(store.state.pendingSelectEntryID)
+            XCTAssertNil(store.state.pendingSelectEntryDestinationPath)
+        }
+    }
+
+    /// EVM-001-route_navigation_reveal_lifecycle: external selection keeps a nil destination guard.
+    /// External reservation selection remains destination-unscoped and therefore retains its existing retry contract.
+    /// - 검증 내용: external reservation snapshot sets only pendingSelectEntryID.
+    /// - 사전 조건: valid directory reservation with a pending file path.
+    /// - 기대 결과: reserved content has the external ID and a nil destination guard.
+    func testExternalReservationSelectionHasNoDestinationGuard() {
+        let tabID = ContentTabID(rawValue: "external")
+        let reservation = ExternalContentTabReservation(
+            id: tabID,
+            anchor: .directory(path: "/a"),
+            pendingSelectEntryID: "/a/file.txt",
+        )
+        let secondTabID = ContentTabID(rawValue: "external-2")
+        let secondReservation = ExternalContentTabReservation(
+            id: secondTabID,
+            anchor: .directory(path: "/b"),
+            pendingSelectEntryID: "/b/file.txt",
+        )
+        var state = FileManagerWindowState()
+
+        XCTAssertTrue(state.reserveExternalContentTabs([reservation, secondReservation]))
+        XCTAssertEqual(state.tabContentStates[tabID]?.pendingSelectEntryID, "/a/file.txt")
+        XCTAssertNil(state.tabContentStates[tabID]?.pendingSelectEntryDestinationPath)
+        XCTAssertEqual(state.tabContentStates[secondTabID]?.pendingSelectEntryID, "/b/file.txt")
+        XCTAssertNil(state.tabContentStates[secondTabID]?.pendingSelectEntryDestinationPath)
+    }
+
+    /// EVM-001-route_navigation_reveal_lifecycle: window navigation delegate reaches active content.
+    /// The composer boundary must translate the committed navigation delegate into the content-local internal action.
+    /// - 검증 내용: revealEntryAfterNavigation is forwarded with both payload paths unchanged.
+    /// - 사전 조건: FileManager window has its default active content tab.
+    /// - 기대 결과: active content receives one atomic pending-selection action.
+    func testNavigationRevealDelegateRoutesToActiveContent() async {
+        let store = TestStore(initialState: FileManagerWindowState()) {
+            FileManagerNavigationActionReducer()
+        } withDependencies: {
+            $0.fileManagerClient.displayName = { _ in "Mac" }
+        }
+
+        await store.send(.navigation(.delegate(.revealEntryAfterNavigation(
+            destinationPath: "/a",
+            entryPath: "/a/b",
+        ))))
+        await store.receive { action in
+            guard case let .content(.internal(.setPendingEntrySelection(entryID, destinationPath))) = action else {
+                return false
+            }
+            return entryID == "/a/b" && destinationPath == "/a"
+        }
+    }
+
     // MARK: - EVM-001-route_entry_selection_commands
 
     /// EVM-001-route_entry_selection_commands: Select All은 hierarchy visible preorder를 layout reducer로 전달한다.

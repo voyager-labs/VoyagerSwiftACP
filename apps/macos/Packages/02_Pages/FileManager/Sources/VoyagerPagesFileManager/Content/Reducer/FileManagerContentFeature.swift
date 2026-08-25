@@ -26,6 +26,9 @@ public struct FileManagerContentFeature {
     public var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
+            case let .internal(.setPendingEntrySelection(entryID, destinationPath)):
+                state.setPendingEntrySelection(entryID: entryID, destinationPath: destinationPath)
+                return .none
             case let .collection(.saveCompleted(result)):
                 return handleCollectionSaveCompleted(result: result, state: &state)
             case let .entryViewLayout(.entryOperations(.lifecycle(.windowIDChanged(windowID)))):
@@ -69,7 +72,10 @@ public struct FileManagerContentFeature {
         }
 
         Reduce { state, action in
-            handlePendingSelectionBeforeEntryLayoutLoaded(action, state: &state)
+            if let effect = handlePendingSelectionTerminal(action, state: &state) {
+                return effect
+            }
+            return handlePendingSelectionBeforeEntryLayoutLoaded(action, state: &state)
         }
 
         Scope(state: \.entryViewLayout, action: \.entryViewLayout) {
@@ -309,6 +315,37 @@ public struct FileManagerContentFeature {
         return .send(.entryViewLayout(.delegate(.selectionChanged)))
     }
 
+    private func handlePendingSelectionTerminal(
+        _ action: Action,
+        state: inout State,
+    ) -> Effect<Action>? {
+        guard isCurrentNavigationPendingSelection(state) else { return nil }
+
+        switch action {
+        case let .entryViewLayout(.entryOperations(.loading(.streamFinished(generation)))),
+             let .entryViewLayout(.entryOperations(.loading(.streamFailed(generation)))):
+            guard generation == state.entryViewLayout.entryOperations.loadingContext.generation else {
+                return .none
+            }
+            let entries = Array(state.entryViewLayout.entryOperations.loadingContext.items)
+            if FileManagerContentEntryOpsCoordinator.applyPendingSelectionForLoadedEntries(
+                entries: entries,
+                state: &state,
+            ) {
+                return .send(.entryViewLayout(.delegate(.selectionChanged)))
+            }
+            state.setPendingEntrySelection(entryID: nil, destinationPath: nil)
+            return .none
+
+        case .entryViewLayout(.entryOperations(.loading(.itemsLoadFailed))):
+            state.setPendingEntrySelection(entryID: nil, destinationPath: nil)
+            return .none
+
+        default:
+            return nil
+        }
+    }
+
     private func handlePendingSelectionAfterEntryLayoutLoaded(
         _ action: Action,
         state: inout State,
@@ -317,9 +354,8 @@ public struct FileManagerContentFeature {
         switch action {
         case let .entryViewLayout(.entryOperations(.loading(.itemsLoaded(loadedEntries)))):
             entries = loadedEntries
-        case let .entryViewLayout(.entryOperations(.loading(.streamEvent(streamEvent)))):
-            guard case .coreBatch = streamEvent.event else { return .none }
-            entries = Array(state.entryViewLayout.entryOperations.loadingContext.items)
+        case .entryViewLayout(.entryOperations(.loading(.streamEvent))):
+            return .none
         default:
             return .none
         }
@@ -327,9 +363,19 @@ public struct FileManagerContentFeature {
             entries: entries,
             state: &state,
         ) else {
+            if isCurrentNavigationPendingSelection(state) {
+                state.setPendingEntrySelection(entryID: nil, destinationPath: nil)
+            }
             return .none
         }
         return .send(.entryViewLayout(.delegate(.selectionChanged)))
+    }
+
+    private func isCurrentNavigationPendingSelection(_ state: State) -> Bool {
+        guard let destinationPath = state.pendingSelectEntryDestinationPath else { return false }
+        guard case let .folder(path) = state.navigation.navigationState else { return false }
+        return URL(fileURLWithPath: path).standardizedFileURL.path
+            == URL(fileURLWithPath: destinationPath).standardizedFileURL.path
     }
 
     // MARK: - Projection Bridge
