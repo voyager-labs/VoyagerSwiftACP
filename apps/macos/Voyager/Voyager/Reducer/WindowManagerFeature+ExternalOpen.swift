@@ -137,14 +137,19 @@ extension WindowManagerFeature {
                     id: activation.windowID,
                     action: .window(.contentTabs(.collapseSelectionToActive)),
                 ))),
-            ] + (activation.shouldReloadActiveDirectory
-                ? [
-                    .send(.windows(.element(
-                        id: activation.windowID,
-                        action: .window(.content(.internal(.reloadDirectoryListing))),
-                    ))),
-                ]
-                : []) + externalOpenSelectionChangeEffects(activation)
+            ] + externalOpenDirectoryReloadEffects(activation)
+                + externalOpenSelectionChangeEffects(activation)
+        }
+    }
+
+    private func externalOpenDirectoryReloadEffects(
+        _ activation: ExternalOpenPlacementApplication.ExistingWindowActivation,
+    ) -> [Effect<Action>] {
+        activation.directoryReloadTabIDs.map { tabID in
+            let action: FileManagerWindowAction = tabID == activation.activeTabID
+                ? .content(.internal(.reloadDirectoryListing))
+                : .tabContent(tabID: tabID, action: .internal(.reloadDirectoryListing))
+            return .send(.windows(.element(id: activation.windowID, action: .window(action))))
         }
     }
 
@@ -225,6 +230,12 @@ extension WindowManagerFeature {
                   $0.tabID == tabID && $0.requiresPinnedAnchorReturn
               })
         else { return .none }
+        let cancellationEffects = externalOpenPinnedReturnCancellationEffects(
+            attempt,
+            failedWindowID: windowID,
+            failedTabID: tabID,
+            state: state,
+        )
         state.externalOpenActivationAttempt = nil
         state.externalOpenActivationBecameKey = false
         var excludedTabIDs = Set(attempt.plan.orderedItems.compactMap { item in
@@ -247,14 +258,42 @@ extension WindowManagerFeature {
               )
         else {
             state.authorizedExternalOpenBatchID = nil
-            return .send(.delegate(.externalOpenActivationFailed(
-                batchID: attempt.batchID,
-                failure: .recoveryExhausted,
-            )))
+            return .concatenate(cancellationEffects + [
+                .send(.delegate(.externalOpenActivationFailed(
+                    batchID: attempt.batchID,
+                    failure: .recoveryExhausted,
+                ))),
+            ])
         }
-        return .send(.placement(.apply(
-            plan: replacementPlan,
-            reservationsByItemID: replacementPlan.reservationsByItemID,
-        )))
+        return .concatenate(cancellationEffects + [
+            .send(.placement(.apply(
+                plan: replacementPlan,
+                reservationsByItemID: replacementPlan.reservationsByItemID,
+            ))),
+        ])
+    }
+
+    private func externalOpenPinnedReturnCancellationEffects(
+        _ attempt: ExternalOpenActivationAttempt,
+        failedWindowID: State.WindowID,
+        failedTabID: ContentTabID,
+        state: State,
+    ) -> [Effect<Action>] {
+        var windowIDs: Set<State.WindowID> = []
+        var effects: [Effect<Action>] = []
+        for window in attempt.plan.windows where !window.isNewWindow {
+            guard state.windows[id: window.windowID] != nil else { continue }
+            for item in window.items where item.requiresPinnedAnchorReturn {
+                guard !(window.windowID == failedWindowID && item.tabID == failedTabID),
+                      !attempt.settledPinnedReturnTabIDs.contains(item.tabID),
+                      windowIDs.insert(window.windowID).inserted
+                else { continue }
+                effects.append(.send(.windows(.element(
+                    id: window.windowID,
+                    action: .window(.cancelPendingPinnedCollectionReturn(item.tabID)),
+                ))))
+            }
+        }
+        return effects
     }
 }

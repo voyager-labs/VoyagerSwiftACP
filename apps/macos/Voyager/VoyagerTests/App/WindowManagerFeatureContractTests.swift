@@ -9777,6 +9777,100 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertTrue(window.content.entryViewLayout.shouldScrollToSelection)
     }
 
+    /// 여러 재사용 Directory tab의 pending selection이 즉시 소비되지 않으면 각 tab을 canonical reload한다.
+    /// - 검증 내용: active·inactive tab reload fanout, pending selection 소비, 최종 selection과 scroll 반영
+    /// - 사전 조건: 같은 창의 두 Directory tab 모두 stale listing을 가지며 각 reveal 파일이 아직 로드되지 않음
+    /// - 기대 결과: active는 content, inactive는 tabContent 경로로 reload되고 두 pending selection이 모두 소비됨
+    func testPlacementApplicationReloadsAllReusedDirectoriesWithUnconsumedPendingSelections() async throws {
+        let entry: @Sendable (String) -> EntryModel = { path in
+            EntryModel(
+                name: URL(fileURLWithPath: path).lastPathComponent,
+                fullPath: path,
+                isFolder: false,
+                isHidden: false,
+                size: 1,
+                modifiedDate: Date(timeIntervalSince1970: 0),
+                fileExtension: "txt",
+                facets: .init(
+                    createdDate: Date(timeIntervalSince1970: 0),
+                    addedDate: Date(timeIntervalSince1970: 0),
+                    lastOpenedDate: nil,
+                    kind: "Text",
+                    creatorApplication: nil,
+                    tags: nil,
+                    supplementaryMetadata: nil,
+                ),
+            )
+        }
+
+        let batchID = UUID()
+        let windowID = UUID()
+        let tabA = ContentTabID(rawValue: "reload-fanout-a")
+        let tabB = ContentTabID(rawValue: "reload-fanout-b")
+        let pathA = "/tmp/reload-fanout-a"
+        let pathB = "/tmp/reload-fanout-b"
+        let routeA = ContentTabPageAnchor.directory(path: pathA)
+        let routeB = ContentTabPageAnchor.directory(path: pathB)
+        let revealA = "\(pathA)/a.txt"
+        let revealB = "\(pathB)/b.txt"
+        var window = Self.makeRouteWindow(
+            id: windowID,
+            tabs: [(tabA, routeA), (tabB, routeB)],
+            activeTabID: tabA,
+        )
+        window.window.content.navigation.seedInitialFolderPath(pathA)
+        window.window.content.entryViewLayout.entryOperations.items = [entry("\(pathA)/old.txt")]
+        var snapshotB = FileManagerContentState()
+        snapshotB.navigation.seedInitialFolderPath(pathB)
+        snapshotB.entryViewLayout.entryOperations.items = [entry("\(pathB)/old.txt")]
+        window.window.tabContentStates[tabB] = snapshotB
+        window.window.syncActiveTabContentState()
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [window]
+        initialState.authorizedExternalOpenBatchID = batchID
+        let request = ExternalOpenPlacementRequest(
+            batchID: batchID,
+            items: [
+                .init(itemID: UUID(), anchor: routeA, pendingSelectEntryID: revealA),
+                .init(itemID: UUID(), anchor: routeB, pendingSelectEntryID: revealB),
+            ],
+            preferredWindowIDs: [],
+        )
+        let planningResult = ExternalOpenPlacementPlanner.make(
+            request,
+            state: initialState,
+            generateUUID: UUID(),
+        )
+        let plan = try planningResult.get()
+        let loadedPaths = LockIsolated<[String]>([])
+        let store = TestStore(initialState: initialState) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.entryLoadingClient.loadItems = { url, _ in
+                loadedPaths.withValue { $0.append(url.path) }
+                return [entry(url.path == pathA ? revealA : revealB)]
+            }
+            $0.fileChangeGatewayClient.observeEvents = { AsyncStream { $0.finish() } }
+        }
+        // store.exhaustivity = .off: child reload action 순서보다 모든 reused tab의 최종 reveal 상태를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.placement(.apply(plan: plan, reservationsByItemID: [:])))
+        await store.skipReceivedActions()
+        await store.finish()
+
+        let appliedWindow = try XCTUnwrap(store.state.windows[id: windowID]?.window)
+        XCTAssertEqual(Set(loadedPaths.value), [pathA, pathB])
+        XCTAssertEqual(appliedWindow.contentTabs.activeTabID, tabB)
+        XCTAssertNil(appliedWindow.tabContentStates[tabA]?.pendingSelectEntryID)
+        XCTAssertEqual(appliedWindow.tabContentStates[tabA]?.entryViewLayout.selectedIds, [revealA])
+        XCTAssertEqual(appliedWindow.tabContentStates[tabA]?.entryViewLayout.shouldScrollToSelection, true)
+        XCTAssertNil(appliedWindow.content.pendingSelectEntryID)
+        XCTAssertEqual(appliedWindow.content.entryViewLayout.selectedIds, [revealB])
+        XCTAssertTrue(appliedWindow.content.entryViewLayout.shouldScrollToSelection)
+    }
+
     /// 비활성 Directory tab을 파일 열기로 재사용해도 즉시 selection 변경을 activation delegate로 넘긴다.
     /// - 검증 내용: inactive snapshot에서 pending 소비, selectionChangedTabIDs에 reused tab 포함
     /// - 사전 조건: 다른 tab이 활성, 재사용 Directory tab snapshot에 대상 파일이 이미 로드됨
@@ -10712,6 +10806,13 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                 ),
             ],
         )
+        secondWindow.pendingCollectionOpenRequest = ContentPageCollectionOpenRequest(
+            id: UUID(),
+            url: URL(fileURLWithPath: "/tmp/second-pinned-durable.voycoll"),
+            sourceRoute: .folder("/tmp"),
+            prePrepareBackHistory: [],
+            prePrepareForwardHistory: [],
+        )
         let request = ExternalOpenPlacementRequest(
             batchID: fixture.plan.batchID,
             items: [
@@ -10769,6 +10870,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                 && !items.map(\.tabID).contains(secondTabID)
                 && reservationsByItemID.count == 2
         }
+        XCTAssertNil(store.state.windows[id: secondWindowID]?.window.pendingCollectionOpenRequest)
         await store.skipReceivedActions()
         await store.finish()
     }

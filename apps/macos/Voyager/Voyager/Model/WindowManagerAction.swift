@@ -521,7 +521,7 @@ enum ExternalOpenPlacementApplication {
         let activeTabID: ContentTabID
         let pinnedAnchorReturns: [PinnedAnchorReturn]
         let selectionChangedTabIDs: [ContentTabID]
-        let shouldReloadActiveDirectory: Bool
+        let directoryReloadTabIDs: [ContentTabID]
     }
 
     struct Result {
@@ -654,10 +654,6 @@ enum ExternalOpenPlacementApplication {
         }
         windows[id: placement.windowID]?.window = window
         guard let activeItem = placement.items.last else { return nil }
-        let publishedContent = activeItem.tabID == window.contentTabs.activeTabID
-            ? window.content
-            : window.tabContentStates[activeItem.tabID]
-        let isDirectoryAnchor = if case .directory = activeItem.anchor { true } else { false }
         var pinnedAnchorReturns: [PinnedAnchorReturn] = []
         for item in placement.items where item.requiresPinnedAnchorReturn {
             let pinnedReturn = PinnedAnchorReturn(
@@ -676,12 +672,30 @@ enum ExternalOpenPlacementApplication {
             activeTabID: activeItem.tabID,
             pinnedAnchorReturns: pinnedAnchorReturns,
             selectionChangedTabIDs: selectionChangedTabIDs(for: placement.items, in: window),
-            shouldReloadActiveDirectory: !activeItem.requiresReservation
-                && !activeItem.requiresPinnedAnchorReturn
-                && activeItem.pendingSelectEntryID != nil
-                && isDirectoryAnchor
-                && publishedContent?.pendingSelectEntryID != nil,
+            directoryReloadTabIDs: directoryReloadTabIDs(for: placement.items, in: window),
         )
+    }
+
+    private static func directoryReloadTabIDs(
+        for items: [ExternalOpenPlacementPlan.Item],
+        in window: FileManagerWindowState,
+    ) -> [ContentTabID] {
+        var tabIDs: [ContentTabID] = []
+        for item in items {
+            guard !item.requiresReservation,
+                  !item.requiresPinnedAnchorReturn,
+                  item.pendingSelectEntryID != nil,
+                  case .directory = item.anchor
+            else { continue }
+            let content = item.tabID == window.contentTabs.activeTabID
+                ? window.content
+                : window.tabContentStates[item.tabID]
+            guard content?.pendingSelectEntryID != nil,
+                  !tabIDs.contains(item.tabID)
+            else { continue }
+            tabIDs.append(item.tabID)
+        }
+        return tabIDs
     }
 
     private static func selectionChangedTabIDs(
