@@ -202,6 +202,9 @@ extension FileManagerContentFeature {
             (.performService, paths)
         case let .revealInFinder(paths):
             (.revealInFinder, paths)
+        case let .syncQuickLookSelection(paths, _):
+            // Quick Look 패널 동기화는 사용자 직접 액션(DAU)이 아니므로 메트릭에서 제외한다.
+            nil
         }
     }
 

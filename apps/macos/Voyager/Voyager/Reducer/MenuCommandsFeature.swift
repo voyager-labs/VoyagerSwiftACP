@@ -97,6 +97,12 @@ struct MenuCommandsFeature {
             .send(.delegate(.windowManager(.file(.presentContentTabSwitcher))))
         case .selectMostRecentlyUsedContentTab:
             .send(.delegate(.windowManager(.file(.selectMostRecentlyUsedContentTab))))
+        case .moveNextContentTabSwitcher:
+            .send(.delegate(.windowManager(.file(.moveNextContentTabSwitcher))))
+        case .movePreviousContentTabSwitcher:
+            .send(.delegate(.windowManager(.file(.movePreviousContentTabSwitcher))))
+        case .dismissContentTabSwitcher:
+            .send(.delegate(.windowManager(.file(.dismissContentTabSwitcher))))
         default: nil
         }
     }

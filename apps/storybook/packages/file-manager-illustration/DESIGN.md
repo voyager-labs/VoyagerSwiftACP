@@ -32,10 +32,14 @@ Scroll ownership is explicit: sidebar tabs, entry content, and inspector chat ow
 
 ## 5. Catalog Taxonomy
 
-- **Foundations and UI** are product-agnostic visual primitives and controls. They may be used by any higher layer and do not own File Manager workflow state.
-- **Patterns** combine primitives into reusable File Manager interaction or chrome structures without owning a product workflow.
-- **Layouts** place patterns and domains within the window shell and own pane geometry, resize behavior, and scroll boundaries.
-- **Domains** own product language, fixtures, and stateful review flows. A domain may expose a domain pattern when a composition is reusable inside that domain but is not product-agnostic.
+The catalog follows a single axis with four categories (`src/FileManager/`):
+
+- **`Foundations`** — product-agnostic visual primitives and controls (shared via `design-foundation` when cross-surface). They may be used by any higher layer and do not own File Manager workflow state.
+- **`Domains`** — feature domains that own product language, fixtures, and stateful review flows (`Domains/Entries`, `Domains/Chat`, `Domains/Composer`). A domain may expose a reusable composition inside that domain, but it is not product-agnostic.
+- **`Pages`** — window/page compositions and panes that place domains within the shell and own geometry, resize behavior, and scroll boundaries (`Pages/FileManager`, `Pages/Sidebar`, `Pages/Inspector`, `Pages/Overlays`, `Pages/Home`).
+- **`Stories`** — root composition(s) (`FileManagerIllustration`, `ContentBrowserStates`), the only canonical integration point.
+
+There is no `Layouts` or `Patterns` category. Chrome/interaction structures that combine primitives (e.g. `Content Chrome`) and window-shell geometry (e.g. `Native Window Shell`, `Sidebar`, `Contextual Inspector`) live under `Pages/`; reusable domain compositions stay inside their owning `Domains/` folder.
 
 ### Domains: Entries
 
@@ -77,7 +81,7 @@ Entry thumbnail SVGs are reference-image observations of macOS Finder thumbnails
 - **QuickLook:** parent wrapper scales the SVG 1.55× via CSS `transform: scale(1.55)`.
 - **Constraint:** all three scaling tiers must preserve the silhouette — no element is hidden or added at different sizes.
 
-### Layouts
+### Pages
 
 #### Native Window Shell
 
@@ -95,7 +99,7 @@ Entry thumbnail SVGs are reference-image observations of macOS Finder thumbnails
 - **Structure:** 40px chat-only header and chat body.
 - **States:** Chat History, connected empty (blank body + bottom composer), unconnected provider setup (top status banner), connection error (top banner + Retry), rebind required (top banner + two actions), conversation, closed. The content-page centered empty ("Ask Voyager" + optional compactConnectionCTA) is modeled only as an isolated AiChatView specimen, never in the inspector root.
 
-### Patterns
+### Pages: Content
 
 #### Content Chrome
 
@@ -157,10 +161,11 @@ Entry thumbnail SVGs are reference-image observations of macOS Finder thumbnails
 - **Catalog role:** Composer domain pattern. It composes Composer-specific controls and picker flows, so it remains under `Domains/Composer`; it is not a product-agnostic `Patterns` primitive.
 - **Authority:** `VoyagerFeaturesComposer/Ui/ComposerView.swift`, `ComposerTopRowView.swift`, `ComposerBottomRowView.swift`, and their picker/chip views.
 - **Placement:** File Manager content-pane top overlay with 7px horizontal and 5px top inset; it is not an independent window or Chat surface.
-- **Structure:** 40px top row with undo, redo, query, submit/stop, Clear/Discard, and Save/Save As; 1px inset separator; wrapped 28px scope and condition rows.
-- **Geometry:** top row uses 8px spacing and 16px horizontal/6px vertical padding. Query field has a 30px minimum height and 8px radius. Scope and condition chips use 28px rows, 8px spacing, 16px outer padding, and 6px/4px container/item radii.
-- **Overlays:** scope picker is 420px wide with a 520px maximum height. Property picker is 200×320px and keeps the native hierarchy bounded to pinned recommendations plus static Common/Filesystem groups; search and category navigation remain out of scope. Operator picker is a flat, text-only 180px list. Generic text/number/range value forms are 240px; semantic date is 163px; Boolean is a 150px True/False list; categorical/list token entry is 260px with a 164px suggestion region. Transient feedback is 360px maximum width and appears 54px below the composer top.
-- **Tokens:** native `Interaction.composerBackground`, input, chip, popover, control-hover, brand accent, radius, and shadow roles map through `--macos-composer-*` to `--fm-composer-*`.
+- **Structure:** 40px top row with undo, redo, editable query (Enter submits; only processing exposes Stop), direct Save, and an overflow menu containing Clear, Discard, and Save As; 1px inset separator; wrapped 28px scope and condition rows.
+- **Geometry:** top row uses 8px spacing and 16px horizontal/6px vertical padding. The 30px-minimum query field is borderless at rest and stays visually unchanged while editing (no background fill, border, or focus ring), matching native behavior. Scope and condition chips use 28px rows, 8px spacing, 16px outer padding, and 6px/4px container/item radii.
+- **Overlays:** scope picker is a 420px-wide custom panel with a 420px preferred runtime height. The property selector translates the native searchable `NSMenu` into a 320px shared-menu surface: a borderless 24pt search row, "Recommended"/"Categories" captions (11pt semibold secondary), pinned rows, and category rows that open root-persisting adjacent submenus labeled "{Category} properties"; the selected property renders a checkmark and used keys are pre-filtered via `existingKeys` instead of an in-menu duplicate warning. Operator selectors translate native text menus into inspectable browser menus; generic text/number/range value forms are 240px, semantic date is 163px, Boolean is content-sized with a 150px minimum, and categorical/list token entry is 260px with a 164px suggestion region. Transient feedback is 360px maximum width and appears 54px below the composer top.
+- **Menu primitive:** `design-foundation` owns `Menu`, `MenuItem`, and `MenuSeparator` for the shared AppKit-style surface, Tahoe-style row metrics (24px rows, 16px content inset, full-bleed separators), disabled state, keyboard shortcuts, trailing detail text, and optional selection checkmark. Menu items have no destructive styling — native macOS menus render destructive actions like any other row. All menu surfaces compose these children — including the open panels of `PopUpButton` and `PullDownButton` and the `ComboBox` listbox rows, which keep only their trigger and panel placement. Menus focus the checked item (or the first item) on open and support ArrowUp/ArrowDown roving focus; popup triggers restore focus on Escape. Composer owns only its 180px placement and option data.
+- **Tokens:** native `.popover` material plus 15% `Interaction.composerBackground` tint, input, chip, popover, control-hover, brand accent, radius, and shadow roles map through `--macos-composer-*` to `--fm-composer-*`. Browser blur and alpha are a source-derived approximation, not native material-compositing proof.
 - **States:** empty/populated draft, standalone compact-width review, property/operator/value pickers, processing stop, applied/applying/failed scope feedback, query recovery, and deterministic representative flows for string, number, unit-bearing size, single/range date, Boolean, string-list, categorical token, and arity-zero operators. Registry-inaccessible `rx`, Boolean `neq`, and unused `listNumber` are excluded. Storybook demonstrates browser-side presentation and selection only; it does not claim native material compositing, measured chip wrapping, or reducer/business-logic execution.
 
 ## 6. Motion & Interaction
@@ -175,7 +180,6 @@ Use mixed native materials: translucent sidebar and toolbar, one clipped content
 
 - Target WCAG 2.2 AA semantics, full keyboard reachability, visible focus, and meaningful landmarks.
 - Icons are inline SVG with accessible labels on their owning buttons; visible emoji icons are not permitted.
-- Browser verification: after every visual change, the agent must drive a real browser (agent-browser) to capture and inspect the affected states. Screenshot evidence is required before declaring a visual task complete.
 
 ## 9. Entry Thumbnail Static Fixtures
 

@@ -29,6 +29,7 @@ public enum FileManagerContentAction: ViewAction, CasePathable, Sendable {
     @CasePathable
     public enum View: Sendable {
         case handleKeyCommand(KeyCommand)
+        case handleTextInput(String)
         case changeLayout(EntryViewLayoutState.Mode)
         case selectAllEntries
         case newChatTapped

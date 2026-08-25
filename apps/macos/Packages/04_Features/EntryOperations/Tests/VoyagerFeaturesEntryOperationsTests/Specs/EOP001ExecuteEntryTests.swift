@@ -597,4 +597,58 @@ final class EOP001ExecuteEntryTests: XCTestCase {
 
         XCTAssertTrue(quickLookCalls.recorded.isEmpty)
     }
+
+    // MARK: - EOP-001-quick_look_selection_sync
+
+    /// EOP-001-quick_look_selection_sync: 선택 동기화가 경로 순서와 인덱스를 그대로 전달한다.
+    /// - 검증 내용: syncQuickLookSelection action이 순서가 유지된 URL 배열과 선택 인덱스를 client에 전달하고, 상태 변화나 lifecycle 이벤트가 없는지 확인한다.
+    /// - 사전 조건: EntryQuickLookClient의 syncQuickLookSelection을 기록하는 recorder로 교체
+    /// - 기대 결과: client 호출 1회, URL 순서 보존, 인덱스 일치, operationStarted/operationFinished 없음
+    func testQuickLookSelectionSyncForwardsOrderedURLsAndIndex() async {
+        let quickLookSyncCalls = CallRecorder<([URL], Int)>()
+
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryQuickLookClient = EntryQuickLookClient(
+                quickLook: { _, _ in },
+                syncQuickLookSelection: { urls, index in
+                    quickLookSyncCalls.record((urls, index))
+                },
+            )
+        }
+
+        await store.send(.open(.syncQuickLookSelection(
+            paths: ["/a.txt", "/b.txt", "/c.txt"],
+            selectedIndex: 1,
+        )))
+        await store.finish()
+
+        XCTAssertEqual(quickLookSyncCalls.recorded.count, 1)
+        XCTAssertEqual(
+            quickLookSyncCalls.recorded[0].0,
+            [URL(fileURLWithPath: "/a.txt"), URL(fileURLWithPath: "/b.txt"), URL(fileURLWithPath: "/c.txt")],
+        )
+        XCTAssertEqual(quickLookSyncCalls.recorded[0].1, 1)
+    }
+
+    /// EOP-001-quick_look_selection_sync: 빈 경로 목록 전달 시 아무 동작도 수행하지 않음
+    /// - 검증 내용: 빈 경로 입력에서 syncQuickLookSelection 의존성이 호출되지 않고 lifecycle 이벤트도 없는지 확인한다.
+    /// - 사전 조건: 초기 상태, 의존성 mock 설정
+    /// - 기대 결과: syncQuickLookSelection 호출 없음, operationStarted/operationFinished 없음
+    func testQuickLookSelectionSyncEmptyPathsNoOp() async {
+        let quickLookSyncCalls = CallRecorder<([URL], Int)>()
+
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryQuickLookClient = EntryQuickLookClient(
+                quickLook: { _, _ in },
+                syncQuickLookSelection: { urls, index in
+                    quickLookSyncCalls.record((urls, index))
+                },
+            )
+        }
+
+        await store.send(.open(.syncQuickLookSelection(paths: [], selectedIndex: 0)))
+        await store.finish()
+
+        XCTAssertTrue(quickLookSyncCalls.recorded.isEmpty)
+    }
 }

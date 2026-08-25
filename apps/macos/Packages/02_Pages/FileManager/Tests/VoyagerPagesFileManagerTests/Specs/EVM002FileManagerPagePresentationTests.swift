@@ -9,6 +9,35 @@ import XCTest
 
 @MainActor
 final class EVM002FileManagerPagePresentationTests: XCTestCase {
+    // MARK: - EVM-002-open_composer
+
+    /// EVM-002-open_composer: Composer 표시 시 사용자 presentation 유지와 product metric 미발행 검증
+    /// FileManagerContentFeature의 실제 Composer coordinator 경로가 Composer를 표시하되 product metric을 발행하지 않는지 검증한다.
+    /// - 검증 내용: composer.view.setPresented(true) 이후 Composer presentation state와 MetricsClient 기록을 확인
+    /// - 사전 조건: 기본 FileManagerContentState와 metric recorder 주입
+    /// - 기대 결과: composer.isPresented == true, metric recorder 이벤트 수 == 0
+    func testOpeningComposerPreservesPresentationWithoutEmittingMetric() async {
+        let metricNames = LockIsolated<[String]>([])
+        let store = TestStore(initialState: FileManagerContentState()) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.metricsClient = MetricsClient(
+                logMetric: { name, _, _ in
+                    metricNames.withValue { $0.append(name) }
+                },
+                logDAUNavigation: { _ in },
+                logDAUEntryAction: { _, _ in },
+            )
+            $0.entryQuickLookClient = .previewValue
+        }
+
+        await store.send(.composer(.view(.setPresented(true)))) {
+            $0.composer.isPresented = true
+        }
+
+        XCTAssertEqual(metricNames.withValue { $0 }, [])
+    }
+
     // MARK: - EVM-002-set_entries_view_as_list_table
 
     /// EVM-002-set_entries_view_as_list_table: 리스트 모드로 레이아웃 변경 시 상태 전이 검증
