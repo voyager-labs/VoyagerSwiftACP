@@ -7,7 +7,7 @@ func handleNavigationDelegate(
     _ delegateAction: ContentPageNavigationAction.Delegate,
     state: inout FileManagerWindowState,
     computerName: String,
-    metricsClient: MetricsClient,
+    productMetricsClient: FileManagerProductMetricsClient,
 ) -> Effect<FileManagerWindowAction> {
     switch delegateAction {
     case let .navigateToState(navigationState):
@@ -23,16 +23,45 @@ func handleNavigationDelegate(
 
     case let .logDAUNavigation(previous, next):
         guard previous != next else { return .none }
-        if next.isCollection {
-            metricsClient.logDAUNavigation(.collection)
-        } else {
-            metricsClient.logDAUNavigation(.folder)
-        }
-        return .none
+        return syncProductBrowsingCorrelation(
+            next: next,
+            state: &state,
+            productMetricsClient: productMetricsClient,
+        )
 
     case .resetComposer:
         return resetComposerAndExitCollectionModeEffect()
     }
+}
+
+/// EVM001: 실제 탐색과 콘텐츠 로딩 단말(`voyager_content_browsing_engaged`)을 상관시킨다.
+/// entry-loading route만 correlation을 성립시키고, 이미 성립된
+/// 콘텐츠 기원 correlation은 덮어쓰지 않으며, 비로딩 route는 미완료 correlation을 정리한다.
+private func syncProductBrowsingCorrelation(
+    next: ContentPageNavigationRoute,
+    state: inout FileManagerWindowState,
+    productMetricsClient: FileManagerProductMetricsClient,
+) -> Effect<FileManagerWindowAction> {
+    let content: ContentBrowsingKind? = switch next {
+    case .folder:
+        .folder
+    case .recents, .tags, .computer:
+        .collection
+    case .home, .collection, .aiChat, .aiChatSessions:
+        nil
+    }
+    guard let content else {
+        state.content.productBrowsingOperationID = nil
+        state.content.productBrowsingSource = nil
+        state.content.productBrowsingContent = nil
+        return .none
+    }
+    if state.content.productBrowsingOperationID == nil {
+        state.content.productBrowsingOperationID = productMetricsClient.makeOperationID()
+        state.content.productBrowsingSource = .fileManagerSidebar
+    }
+    state.content.productBrowsingContent = content
+    return .none
 }
 
 func resetComposerAndExitCollectionModeEffect() -> Effect<FileManagerWindowAction> {

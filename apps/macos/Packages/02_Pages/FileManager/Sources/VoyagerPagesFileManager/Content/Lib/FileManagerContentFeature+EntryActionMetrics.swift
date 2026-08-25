@@ -10,11 +10,8 @@ extension FileManagerContentFeature {
     }
 
     static func logEntryActionMetricIfNeeded(for action: EntryOperationsAction, metricsClient: MetricsClient) {
-        guard let payload = dauEntryActionPayload(for: action) else {
-            return
-        }
-
-        metricsClient.logDAUEntryAction(payload.actionKind, payload.entryKind)
+        _ = action
+        _ = metricsClient
     }
 
     private static func dauEntryActionPayload(for action: EntryOperationsAction) -> EntryActionPayload? {

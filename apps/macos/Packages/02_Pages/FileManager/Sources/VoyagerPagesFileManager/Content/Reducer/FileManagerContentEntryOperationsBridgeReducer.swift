@@ -11,8 +11,8 @@ struct FileManagerContentEntryOperationsBridgeReducer {
     typealias State = FileManagerContentState
     typealias Action = FileManagerContentAction
 
-    @Dependency(\.metricsClient)
-    var metricsClient
+    @Dependency(\.fileManagerProductMetricsClient)
+    var productMetricsClient
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
@@ -52,6 +52,9 @@ struct FileManagerContentEntryOperationsBridgeReducer {
         case let .executeCommand(command):
             guard let entryCommand = entryOperationsCommand(from: command, currentPath: state.navigation.currentPath)
             else { return .none }
+            state.productEntryOperationID = productMetricsClient.makeOperationID()
+            state.productEntryAction = entryMetricKind(for: entryCommand)
+            state.productEntryFailedCount = 0
             let entryOperationsAction = EntryOperationsAction.routing(.executeCommand(
                 command: entryCommand,
                 context: makeEntryOperationsCommandContext(command: entryCommand, state: state),
@@ -60,6 +63,9 @@ struct FileManagerContentEntryOperationsBridgeReducer {
 
         case let .openEntry(entry):
             let command = EntryOperationsCommand.navigation(.openSelectedItem)
+            state.productEntryOperationID = productMetricsClient.makeOperationID()
+            state.productEntryAction = .open
+            state.productEntryFailedCount = 0
             return sendEntryOperations(.routing(.executeCommand(
                 command: command,
                 context: EntryOperationsCommandContext(
@@ -73,6 +79,9 @@ struct FileManagerContentEntryOperationsBridgeReducer {
             let command = EntryOperationsCommand.navigation(.openWithSelectedItem(
                 bundleID: bundleID, shouldSetAsDefault: false,
             ))
+            state.productEntryOperationID = productMetricsClient.makeOperationID()
+            state.productEntryAction = .open
+            state.productEntryFailedCount = 0
             return sendEntryOperations(.routing(.executeCommand(
                 command: command,
                 context: makeEntryOperationsCommandContext(command: command, state: state),
@@ -261,6 +270,23 @@ struct FileManagerContentEntryOperationsBridgeReducer {
                 case let .unavailable(description):
                     .unavailable(description: description)
                 }
+                if let operationID = state.productBrowsingOperationID,
+                   let source = state.productBrowsingSource,
+                   let content = state.productBrowsingContent
+                {
+                    let result = FileManagerProductMetricsProducer.browsingFailure(
+                        failure == .permissionDenied ? .permissionDenied : .unavailable,
+                    )
+                    productMetricsClient.record(.contentBrowsing(
+                        result: result,
+                        content: content,
+                        source: source,
+                        operationID: operationID,
+                    ))
+                    state.productBrowsingOperationID = nil
+                    state.productBrowsingSource = nil
+                    state.productBrowsingContent = nil
+                }
                 return .send(.entryViewLayout(.hierarchy(.folderChildrenResponse(
                     rootContextGeneration: request.id.rootContextGeneration,
                     folderID: request.id.folderID,
@@ -275,14 +301,127 @@ struct FileManagerContentEntryOperationsBridgeReducer {
             return nil
         }
 
-        FileManagerContentFeature.logEntryActionMetricIfNeeded(for: entryOperationsAction, metricsClient: metricsClient)
+        handleProductMetrics(entryOperationsAction, state: &state)
+
         return FileManagerContentEntryOpsCoordinator.handleEntryOperationsAction(
             entryOperationsAction,
             state: &state,
         )
     }
 
+    private func handleProductMetrics(
+        _ action: EntryOperationsAction,
+        state: inout State,
+    ) {
+        if recordStreamingBrowsingTerminalIfAccepted(action, state: &state) {
+            return
+        }
+
+        if case let .loading(.itemsLoaded(entries)) = action,
+           let operationID = state.productBrowsingOperationID,
+           let source = state.productBrowsingSource,
+           let content = state.productBrowsingContent,
+           let metric = FileManagerProductMetricsProducer.browsingTerminal(
+               operationID: operationID,
+               content: content,
+               source: source,
+               entryCount: entries.count,
+               failure: nil,
+           )
+        {
+            productMetricsClient.record(metric)
+            state.productBrowsingOperationID = nil
+            state.productBrowsingSource = nil
+            state.productBrowsingContent = nil
+        } else if case .loading(.itemsLoadFailed) = action,
+                  let operationID = state.productBrowsingOperationID,
+                  let source = state.productBrowsingSource,
+                  let content = state.productBrowsingContent,
+                  let metric = FileManagerProductMetricsProducer.browsingTerminal(
+                      operationID: operationID,
+                      content: content,
+                      source: source,
+                      entryCount: nil,
+                      failure: .unavailable,
+                  )
+        {
+            productMetricsClient.record(metric)
+            state.productBrowsingOperationID = nil
+            state.productBrowsingSource = nil
+            state.productBrowsingContent = nil
+        }
+
+        if case .lifecycle(.operationFinished(_, _, .failure)) = action,
+           state.productEntryOperationID != nil
+        {
+            state.productEntryFailedCount += 1
+        }
+
+        guard case let .lifecycle(.entryActionCompleted(record)) = action,
+              let operationID = state.productEntryOperationID,
+              let actionKind = state.productEntryAction
+        else { return }
+        let succeeded = record.targets.count
+        let failed = max(record.failedCount, state.productEntryFailedCount)
+        let result: EntryActionResult = failed == 0 ? .success : .partial
+        productMetricsClient.record(FileManagerProductMetricsProducer.entryTerminal(
+            operationID: operationID,
+            action: actionKind,
+            source: .fileManagerContent,
+            result: result,
+            aggregate: .init(attempted: succeeded + failed, succeeded: succeeded, failed: failed),
+        ))
+        state.productEntryOperationID = nil
+        state.productEntryAction = nil
+        state.productEntryFailedCount = 0
+    }
+
     // MARK: - Helpers
+
+    /// 실제 로딩 스트림 터미널(streamFinished/streamFailed)을 자식이 수락한 경우에만
+    /// browsing correlation을 소비해 typed terminal을 한 번 기록한다.
+    /// generation 불일치(stale) 터미널은 상관을 유지한 채 무시한다.
+    private func recordStreamingBrowsingTerminalIfAccepted(
+        _ action: EntryOperationsAction,
+        state: inout State,
+    ) -> Bool {
+        guard case let .loading(loadingAction) = action else {
+            return false
+        }
+        let context = state.entryViewLayout.entryOperations.loadingContext
+        let failure: ContentBrowsingResult?
+        let entryCount: Int?
+        switch loadingAction {
+        case let .streamFinished(generation):
+            guard generation == context.generation, context.streamTerminal else { return false }
+            failure = nil
+            entryCount = context.items.count
+
+        case let .streamFailed(generation):
+            guard generation == context.generation, context.streamTerminal else { return false }
+            failure = .unavailable
+            entryCount = nil
+
+        default:
+            return false
+        }
+        guard let operationID = state.productBrowsingOperationID,
+              let source = state.productBrowsingSource,
+              let content = state.productBrowsingContent,
+              let metric = FileManagerProductMetricsProducer.browsingTerminal(
+                  operationID: operationID,
+                  content: content,
+                  source: source,
+                  entryCount: entryCount,
+                  failure: failure,
+              )
+        else { return false }
+        productMetricsClient.record(metric)
+        state.productBrowsingOperationID = nil
+        state.productBrowsingSource = nil
+        state.productBrowsingContent = nil
+        return true
+    }
 
     private func sendEntryOperations(_ action: EntryOperationsAction) -> Effect<Action> {
         .send(.entryViewLayout(.entryOperations(action)))
@@ -318,6 +457,33 @@ struct FileManagerContentEntryOperationsBridgeReducer {
         case "clipboard": return clipboardCommand(action: action, currentPath: currentPath)
         case "mutation": return mutationCommand(action: action)
         default: return nil
+        }
+    }
+
+    private func entryMetricKind(for command: EntryOperationsCommand) -> EntryActionMetricKind {
+        switch command {
+        case let .navigation(command):
+            switch command {
+            case .openSelectedItem, .openWithSelectedItem: .open
+            case .quickLookSelectedItem: .quickLook
+            case .shareSelectedItems: .share
+            case .revealSelectedItemsInFinder: .revealInFinder
+            default: .open
+            }
+        case let .clipboard(command):
+            switch command {
+            case .copySelectedAbsolutePaths, .copySelectedURLs: .copyPath
+            case .copySelectedItems: .copy
+            case .cutSelectedItems, .pasteItems, .duplicateSelectedItems: .move
+            }
+        case let .mutation(command):
+            switch command {
+            case .createAliasForSelectedItems: .create
+            case .moveSelectedItemsToTrash, .deleteSelectedItemsImmediately, .emptyTrash: .trash
+            case .putBackSelectedItems: .restore
+            case .setTagForSelectedItems, .toggleTagForSelectedItem: .tag
+            default: .copy
+            }
         }
     }
 

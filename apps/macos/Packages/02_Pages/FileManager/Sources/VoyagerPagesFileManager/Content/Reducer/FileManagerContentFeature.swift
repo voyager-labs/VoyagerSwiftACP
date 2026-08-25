@@ -22,12 +22,35 @@ public struct FileManagerContentFeature {
     private var fileManagerClient
     @Dependency(\.entryOpenClient)
     private var entryOpenClient
+    @Dependency(\.fileManagerProductMetricsClient)
+    private var productMetricsClient
 
     public var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
             case let .collection(.saveCompleted(result)):
                 return handleCollectionSaveCompleted(result: result, state: &state)
+            case let .internal(.requestNavigation(.view(viewAction))):
+                guard shouldBeginProductBrowsing(viewAction, navigation: state.navigation) else {
+                    return .none
+                }
+                switch viewAction {
+                case let .navigateToPath(path):
+                    state.productBrowsingOperationID = productMetricsClient.makeOperationID()
+                    state.productBrowsingSource = .fileManagerContent
+                    state.productBrowsingContent = .folder
+                case .goBack, .goForward, .goToHistoryIndex, .goToEnclosingDirectory:
+                    state.productBrowsingOperationID = productMetricsClient.makeOperationID()
+                    state.productBrowsingSource = .fileManagerContent
+                    state.productBrowsingContent = nil
+                case .showRecents, .showComputer, .showTag:
+                    state.productBrowsingOperationID = productMetricsClient.makeOperationID()
+                    state.productBrowsingSource = .fileManagerContent
+                    state.productBrowsingContent = .collection
+                default:
+                    break
+                }
+                return .none
             case let .entryViewLayout(.entryOperations(.lifecycle(.windowIDChanged(windowID)))):
                 state.composer.cancellationOwnerID = windowID
                 return .none

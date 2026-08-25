@@ -22,10 +22,10 @@ struct FileManagerNavigationActionReducer {
     var registryClient
     @Dependency(\.collectionStalenessClient)
     var collectionStalenessClient
-    @Dependency(\.metricsClient)
-    var metricsClient
     @Dependency(\.uuid)
     var uuid
+    @Dependency(\.fileManagerProductMetricsClient)
+    var productMetricsClient
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
@@ -56,7 +56,7 @@ struct FileManagerNavigationActionReducer {
                 delegateAction,
                 state: &state,
                 computerName: fileManagerClient.displayName("/"),
-                metricsClient: metricsClient,
+                productMetricsClient: productMetricsClient,
             )
         }
     }
@@ -91,7 +91,6 @@ struct FileManagerNavigationActionReducer {
                 url: url,
                 state: &state,
                 collectionFileClient: collectionFileClient,
-                metricsClient: metricsClient,
                 uuid: uuid,
             )
         }
@@ -276,7 +275,6 @@ private func handleOpenCollectionFile(
     url: URL,
     state: inout FileManagerWindowState,
     collectionFileClient: CollectionFileClient,
-    metricsClient: MetricsClient,
     uuid: UUIDGenerator,
 ) -> Effect<FileManagerWindowAction> {
     if let pendingRequest = state.pendingCollectionOpenRequest {
@@ -299,9 +297,6 @@ private func handleOpenCollectionFile(
         prePrepareBackHistory: state.content.navigation.backHistory,
         prePrepareForwardHistory: state.content.navigation.forwardHistory,
     )
-    if state.content.collection.collectionSession.document?.url.path != request.url.path {
-        metricsClient.logDAUNavigation(.collection)
-    }
     state.pendingCollectionOpenRequest = request
 
     let cancelExistingCollectionEffect: Effect<FileManagerWindowAction> = if state.content.isCollectionMode {

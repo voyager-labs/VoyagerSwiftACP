@@ -18,6 +18,13 @@ public struct FileManagerContentState: Equatable {
     /// 외부에서 오픈 요청된 파일의 선택 focus ID (itemsLoaded 후 소비됨)
     public var pendingSelectEntryID: String?
 
+    var productBrowsingOperationID: UUID?
+    var productBrowsingSource: ContentBrowsingSource?
+    var productBrowsingContent: ContentBrowsingKind?
+    var productEntryOperationID: UUID?
+    var productEntryAction: EntryActionMetricKind?
+    var productEntryFailedCount = 0
+
     var homeFavoriteItems: [FileManagerHomeFavoriteItem] = []
     var homeLocationItems: [FileManagerFixedLocationItem] = []
     var homeDirectoryItemCounts: [FileManagerHomeDirectory: Int] = [:]
