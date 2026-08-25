@@ -45,11 +45,22 @@ const (
 type EmptyParams struct{}
 
 type Request struct {
-	RequestID          string
-	Method             Method
-	Params             EmptyParams
-	EntryListParams    *EntryListParams
-	EntryResolveParams *EntryResolveParams
+	RequestID                       string
+	Method                          Method
+	Params                          EmptyParams
+	EntryListParams                 *EntryListParams
+	EntryResolveParams              *EntryResolveParams
+	PropertyDefinitionListParams    *PropertyDefinitionListParams
+	PropertyDefinitionCreateParams  *PropertyDefinitionCreateParams
+	PropertyDefinitionUpdateParams  *PropertyDefinitionUpdateParams
+	PropertyDefinitionDisableParams *PropertyDefinitionDisableParams
+	PropertyOptionCreateParams      *PropertyOptionCreateParams
+	PropertyOptionUpdateParams      *PropertyOptionUpdateParams
+	PropertyOptionReorderParams     *PropertyOptionReorderParams
+	PropertyOptionDisableParams     *PropertyOptionDisableParams
+	PropertyAssignmentListParams    *PropertyAssignmentListParams
+	PropertyChangePrepareParams     *PropertyChangePrepareParams
+	PropertyChangeExecuteParams     *PropertyChangeExecuteParams
 }
 
 type ProtocolError struct {
@@ -62,7 +73,7 @@ func (method Method) valid() bool {
 	case MethodPing, MethodHealth, MethodVersion, MethodEntryList, MethodEntryResolve:
 		return true
 	default:
-		return false
+		return propertyMethodValid(method)
 	}
 }
 
@@ -146,6 +157,10 @@ func errorMessage(code ErrorCode) string {
 		return "request conflicts with current state"
 	case ErrorAdapterFailure:
 		return "adapter failed"
+	case ErrorPropertyNotFound:
+		return "property was not found"
+	case ErrorResponseTooLarge:
+		return "response is too large"
 	default:
 		return "internal error"
 	}
@@ -268,6 +283,16 @@ func validResult(result Result) bool {
 		return typed.Validate() == nil
 	case EntryResolveResult:
 		return typed.Validate() == nil
+	case PropertyDefinitionListResult:
+		return typed.Validate() == nil
+	case PropertyDefinitionResult:
+		return typed.Validate() == nil
+	case PropertyAssignmentListResult:
+		return typed.Validate() == nil
+	case PropertyChangePrepareResult:
+		return typed.Validate() == nil
+	case PropertyChangeExecuteResult:
+		return typed.Validate() == nil
 	default:
 		return false
 	}
@@ -284,7 +309,7 @@ func validProtocolError(protocolError *ProtocolError) bool {
 		return false
 	}
 	switch protocolError.Code {
-	case ErrorRequestTooLarge, ErrorInvalidRequest, ErrorUnknownMethod, ErrorInternal, ErrorInvalidPath, ErrorMountNotFound, ErrorSourceNotFound, ErrorInvalidSelector, ErrorContextMismatch, ErrorScopeTooLarge, ErrorInvalidPageToken, ErrorPermissionDenied, ErrorSourceUnavailable, ErrorSourceDeleted, ErrorEntryNotFound, ErrorUnsupported, ErrorConflict, ErrorAdapterFailure:
+	case ErrorRequestTooLarge, ErrorInvalidRequest, ErrorUnknownMethod, ErrorInternal, ErrorInvalidPath, ErrorMountNotFound, ErrorSourceNotFound, ErrorInvalidSelector, ErrorContextMismatch, ErrorScopeTooLarge, ErrorInvalidPageToken, ErrorPermissionDenied, ErrorSourceUnavailable, ErrorSourceDeleted, ErrorEntryNotFound, ErrorUnsupported, ErrorConflict, ErrorAdapterFailure, ErrorPropertyNotFound, ErrorResponseTooLarge:
 		return true
 	default:
 		return false
@@ -399,6 +424,37 @@ func decodeResult(value jsonValue, method Method) (Result, error) {
 		return result, nil
 	case MethodEntryResolve:
 		result, ok := decodeEntryResolveResult(value)
+		if !ok {
+			return nil, ErrInvalidResponse
+		}
+		return result, nil
+	case MethodPropertyDefinitionList:
+		result, ok := decodePropertyDefinitionListResult(value)
+		if !ok {
+			return nil, ErrInvalidResponse
+		}
+		return result, nil
+	case MethodPropertyDefinitionCreate, MethodPropertyDefinitionUpdate, MethodPropertyDefinitionDisable,
+		MethodPropertyOptionCreate, MethodPropertyOptionUpdate, MethodPropertyOptionReorder, MethodPropertyOptionDisable:
+		result, ok := decodePropertyDefinitionResult(value)
+		if !ok {
+			return nil, ErrInvalidResponse
+		}
+		return result, nil
+	case MethodPropertyAssignmentList:
+		result, ok := decodePropertyAssignmentListResult(value)
+		if !ok {
+			return nil, ErrInvalidResponse
+		}
+		return result, nil
+	case MethodPropertyChangePrepare:
+		result, ok := decodePropertyChangePrepareResult(value)
+		if !ok {
+			return nil, ErrInvalidResponse
+		}
+		return result, nil
+	case MethodPropertyChangeExecute:
+		result, ok := decodePropertyChangeExecuteResult(value)
 		if !ok {
 			return nil, ErrInvalidResponse
 		}

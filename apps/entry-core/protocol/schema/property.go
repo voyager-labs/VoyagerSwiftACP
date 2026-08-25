@@ -1,0 +1,1017 @@
+package schema
+
+import (
+	"encoding/json"
+	"strings"
+	"time"
+)
+
+// Property wire contract 상한은 서로 독립적인 캡이다. 어떤 캡을 통과해도
+// 인코딩된 요청/응답이 65,536바이트 봉투를 넘을 수 있으므로 봉투 검사는 항상
+// 별도로 수행한다.
+const (
+	maximumPropertyScalarBytes = 4096 // local path, text/URL/email 스칼라
+	maximumPropertyNameBytes   = 256  // definition key/name, option label
+	maximumPropertyIDs         = 256  // 요청 PropertyID 배열 길이
+	maximumPropertyTargets     = 256  // prepare/execute 변경 대상 수
+	maximumPropertyManyItems   = 256  // many-value 멤버 수
+)
+
+// Property UDS 메서드 상수.
+const (
+	MethodPropertyDefinitionList    Method = "property.definition.list"
+	MethodPropertyDefinitionCreate  Method = "property.definition.create"
+	MethodPropertyDefinitionUpdate  Method = "property.definition.update"
+	MethodPropertyDefinitionDisable Method = "property.definition.disable"
+	MethodPropertyOptionCreate      Method = "property.option.create"
+	MethodPropertyOptionUpdate      Method = "property.option.update"
+	MethodPropertyOptionReorder     Method = "property.option.reorder"
+	MethodPropertyOptionDisable     Method = "property.option.disable"
+	MethodPropertyAssignmentList    Method = "property.assignment.list"
+	MethodPropertyChangePrepare     Method = "property.change.prepare"
+	MethodPropertyChangeExecute     Method = "property.change.execute"
+)
+
+// Property 계약에 필요한 추가 안정 에러. 메시지는 고정·redacted다.
+const (
+	ErrorPropertyNotFound ErrorCode = "property_not_found"
+	ErrorResponseTooLarge ErrorCode = "response_too_large"
+)
+
+// propertyMethodValid는 Property 메서드 게이트 분리 열거다.
+func propertyMethodValid(method Method) bool {
+	switch method {
+	case MethodPropertyDefinitionList, MethodPropertyDefinitionCreate, MethodPropertyDefinitionUpdate, MethodPropertyDefinitionDisable,
+		MethodPropertyOptionCreate, MethodPropertyOptionUpdate, MethodPropertyOptionReorder, MethodPropertyOptionDisable,
+		MethodPropertyAssignmentList, MethodPropertyChangePrepare, MethodPropertyChangeExecute:
+		return true
+	default:
+		return false
+	}
+}
+
+// --- 공용 DTO ---
+
+// PropertyTargetSelector는 명시적 태그 선택자다. 현재 호환 variant는 local_path뿐이다.
+type PropertyTargetSelector struct {
+	Kind      string `json:"kind"`
+	LocalPath string `json:"local_path"`
+}
+
+// PropertyDesiredState는 execute가 운반하는 타입화된 목표 상태다.
+type PropertyDesiredState struct {
+	State       string           `json:"state"`
+	ValueType   string           `json:"value_type,omitempty"`
+	Cardinality string           `json:"cardinality,omitempty"`
+	Payload     *PropertyPayload `json:"value,omitempty"`
+}
+
+// PropertyChangeTarget은 prepare/execute가 공유하는 경계 대상이다.
+type PropertyChangeTarget struct {
+	Target                     PropertyTargetSelector `json:"target"`
+	PropertyID                 string                 `json:"property_id"`
+	ExpectedDefinitionRevision int64                  `json:"expected_definition_revision"`
+	ExpectedAssignmentRevision int64                  `json:"expected_assignment_revision"`
+	Desired                    PropertyDesiredState   `json:"desired"`
+}
+
+type PropertyDefinition struct {
+	PropertyID  string           `json:"property_id"`
+	Key         string           `json:"key"`
+	Name        string           `json:"name"`
+	ValueType   string           `json:"value_type"`
+	Cardinality string           `json:"cardinality"`
+	State       string           `json:"state"`
+	Revision    int64            `json:"revision"`
+	Options     []PropertyOption `json:"options"`
+}
+
+type PropertyOption struct {
+	OptionID string `json:"option_id"`
+	Label    string `json:"label"`
+	Position int64  `json:"position"`
+	State    string `json:"state"`
+}
+
+// PropertyAssignment는 정본 저장 assignment 표현이다. execute 성공은 이 형태의
+// 정준 read-back을 운반한다.
+type PropertyAssignment struct {
+	PropertyID  string           `json:"property_id"`
+	EntryID     string           `json:"entry_id"`
+	ValueType   string           `json:"value_type"`
+	Cardinality string           `json:"cardinality"`
+	State       string           `json:"state"`
+	Revision    int64            `json:"revision"`
+	Payload     *PropertyPayload `json:"value,omitempty"`
+}
+
+type PropertyPreparedChange struct {
+	Target     PropertyTargetSelector `json:"target"`
+	PropertyID string                 `json:"property_id"`
+	EntryID    string                 `json:"entry_id"`
+	Before     *PropertyAssignment    `json:"before"`
+	After      PropertyDesiredState   `json:"after"`
+}
+
+// --- 요청 파라미터 ---
+
+type PropertyDefinitionListParams struct {
+	PageSize             int
+	RequestedPropertyIDs []string
+	IncludeDisabled      bool
+	PageToken            *string
+}
+
+type PropertyDefinitionCreateParams struct {
+	Key          string
+	Name         string
+	ValueType    string
+	Cardinality  string
+	OptionLabels []string
+}
+
+type PropertyDefinitionUpdateParams struct {
+	PropertyID                 string
+	ExpectedDefinitionRevision int64
+	Name                       string
+}
+
+type PropertyDefinitionDisableParams struct {
+	PropertyID                 string
+	ExpectedDefinitionRevision int64
+}
+
+type PropertyOptionCreateParams struct {
+	PropertyID                 string
+	ExpectedDefinitionRevision int64
+	Label                      string
+}
+
+type PropertyOptionUpdateParams struct {
+	PropertyID                 string
+	OptionID                   string
+	ExpectedDefinitionRevision int64
+	Label                      string
+}
+
+type PropertyOptionReorderParams struct {
+	PropertyID                 string
+	ExpectedDefinitionRevision int64
+	OptionIDs                  []string
+}
+
+type PropertyOptionDisableParams struct {
+	PropertyID                 string
+	OptionID                   string
+	ExpectedDefinitionRevision int64
+}
+
+type PropertyAssignmentListParams struct {
+	PageSize             int
+	RequestedPropertyIDs []string
+	Target               PropertyTargetSelector
+	PageToken            *string
+}
+
+type PropertyChangePrepareParams struct {
+	Changes []PropertyChangeTarget
+}
+
+type PropertyChangeExecuteParams struct {
+	Changes []PropertyChangeTarget
+}
+
+// --- 결과 ---
+
+type PropertyDefinitionListResult struct {
+	Definitions   []PropertyDefinition `json:"definitions"`
+	NextPageToken *string              `json:"next_page_token,omitempty"`
+	HasMore       bool                 `json:"has_more"`
+}
+
+func (PropertyDefinitionListResult) isResult() {}
+
+type PropertyDefinitionResult struct {
+	Definition PropertyDefinition `json:"definition"`
+}
+
+func (PropertyDefinitionResult) isResult() {}
+
+type PropertyAssignmentListResult struct {
+	Assignments   []PropertyAssignment `json:"assignments"`
+	NextPageToken *string              `json:"next_page_token,omitempty"`
+	HasMore       bool                 `json:"has_more"`
+}
+
+func (PropertyAssignmentListResult) isResult() {}
+
+type PropertyChangePrepareResult struct {
+	Changes              []PropertyPreparedChange `json:"changes"`
+	RequiresConfirmation bool                     `json:"requires_confirmation"`
+}
+
+func (PropertyChangePrepareResult) isResult() {}
+
+type PropertyChangeExecuteResult struct {
+	Assignments []PropertyAssignment `json:"assignments"`
+}
+
+func (PropertyChangeExecuteResult) isResult() {}
+
+// EncodedSuccessBytes는 성공 응답의 정확한 인코딩 바이트 수를 계산한다.
+// execute는 mutation 전에 이 값으로 정준 read-back 바이트를 검증해야 하며,
+// 봉투 초과 시 mutation 없이 ErrorResponseTooLarge로 실패한다.
+func EncodedSuccessBytes(requestID string, result Result) (int, bool) {
+	if !validEchoID(requestID) || !validResult(result) {
+		return 0, false
+	}
+	encoded, err := json.Marshal(successWire{RequestID: requestID, OK: true, Result: result})
+	if err != nil {
+		return 0, false
+	}
+	return len(encoded), len(encoded) <= MaxWireBytes
+}
+
+// --- 검증 헬퍼 ---
+
+// validPropertyIDText는 wire 수준의 canonical UUID 텍스트 규칙(8-4-4-4-12
+// 소문자 hex + RFC 9562 variant)만 검증한다. 버전 니블과 스킴 대조 같은 타입
+// 의미 검증은 domain 진입 시 typed ID로 수행한다.
+func validPropertyIDText(value string) bool {
+	if len(value) != 36 {
+		return false
+	}
+	groups := [5]int{8, 4, 4, 4, 12}
+	offset := 0
+	for index, length := range groups {
+		if index > 0 {
+			if value[offset] != '-' {
+				return false
+			}
+			offset++
+		}
+		for _, ch := range []byte(value[offset : offset+length]) {
+			if (ch < '0' || ch > '9') && (ch < 'a' || ch > 'f') {
+				return false
+			}
+		}
+		offset += length
+	}
+	// RFC 9562 variant 비트 0b10: 네 번째 그룹 첫 바이트의 상위 2비트.
+	switch value[19] {
+	case '8', '9', 'a', 'b':
+		return true
+	default:
+		return false
+	}
+}
+
+func validPropertyValueType(value string) bool {
+	return oneOf(value, "text", "number", "date", "datetime", "boolean", "select")
+}
+
+func validPropertyCardinality(value string) bool {
+	return oneOf(value, "one", "many")
+}
+
+func validPropertyDate(value string) bool {
+	parsed, err := time.Parse("2006-01-02", value)
+	return err == nil && parsed.Format("2006-01-02") == value
+}
+
+func validLocalPath(path string) bool {
+	if !validUTF8Bytes(path, 1, maximumPropertyScalarBytes) || path[0] != '/' {
+		return false
+	}
+	if path == "/" {
+		return true
+	}
+	if path[len(path)-1] == '/' || strings.Contains(path, "//") {
+		return false
+	}
+	for index := 0; index < len(path); index++ {
+		if path[index] < 0x20 || path[index] == 0x7f {
+			return false
+		}
+	}
+	for _, segment := range strings.Split(path[1:], "/") {
+		if segment == "" || segment == "." || segment == ".." {
+			return false
+		}
+	}
+	return true
+}
+
+func validPropertyChangePayload(payload PropertyPayload, valueType, cardinality string) bool {
+	checkString := func(value string) bool {
+		switch valueType {
+		case "text":
+			return validUTF8Bytes(value, 0, maximumPropertyScalarBytes)
+		case "number":
+			return validCanonicalDecimal(value)
+		case "date":
+			return validPropertyDate(value)
+		case "datetime":
+			return canonicalTimestamp(value)
+		case "select":
+			return validPropertyIDText(value)
+		default:
+			return false
+		}
+	}
+	if cardinality == "one" {
+		if valueType == "boolean" {
+			_, ok := payload.one.(bool)
+			return ok
+		}
+		value, ok := payload.one.(string)
+		return ok && checkString(value)
+	}
+	if cardinality != "many" {
+		return false
+	}
+	if valueType == "boolean" {
+		values, ok := payload.many.([]bool)
+		return ok && len(values) <= maximumPropertyManyItems
+	}
+	values, ok := payload.many.([]string)
+	if !ok || len(values) > maximumPropertyManyItems {
+		return false
+	}
+	for _, value := range values {
+		if !checkString(value) {
+			return false
+		}
+	}
+	return true
+}
+
+func (desired PropertyDesiredState) Validate() error {
+	switch desired.State {
+	case "null", "unknown", "not_applicable":
+		if desired.Payload != nil || desired.ValueType != "" || desired.Cardinality != "" {
+			return ErrInvalidResponse
+		}
+		return nil
+	case "value":
+		if desired.Payload == nil || !validPropertyValueType(desired.ValueType) || !validPropertyCardinality(desired.Cardinality) {
+			return ErrInvalidResponse
+		}
+		if !validPropertyChangePayload(*desired.Payload, desired.ValueType, desired.Cardinality) {
+			return ErrInvalidResponse
+		}
+		return nil
+	default:
+		return ErrInvalidResponse
+	}
+}
+
+func (target PropertyTargetSelector) Validate() error {
+	if target.Kind != "local_path" || !validLocalPath(target.LocalPath) {
+		return ErrInvalidResponse
+	}
+	return nil
+}
+
+func (change PropertyChangeTarget) Validate() error {
+	if change.Target.Validate() != nil || !validPropertyIDText(change.PropertyID) ||
+		change.ExpectedDefinitionRevision < 1 || change.ExpectedAssignmentRevision < 1 ||
+		change.Desired.Validate() != nil {
+		return ErrInvalidResponse
+	}
+	return nil
+}
+
+func (definition PropertyDefinition) Validate() error {
+	if !validPropertyIDText(definition.PropertyID) || !validUTF8Bytes(definition.Key, 1, maximumPropertyNameBytes) ||
+		!validUTF8Bytes(definition.Name, 1, maximumPropertyNameBytes) || !validPropertyValueType(definition.ValueType) ||
+		!validPropertyCardinality(definition.Cardinality) || !oneOf(definition.State, "active", "disabled") ||
+		definition.Revision < 1 || definition.Options == nil || len(definition.Options) > maximumPropertyIDs {
+		return ErrInvalidResponse
+	}
+	if definition.ValueType != "select" && len(definition.Options) > 0 {
+		return ErrInvalidResponse
+	}
+	seen := make(map[string]struct{}, len(definition.Options))
+	for index, option := range definition.Options {
+		if !validPropertyIDText(option.OptionID) || !validUTF8Bytes(option.Label, 1, maximumPropertyNameBytes) ||
+			!oneOf(option.State, "active", "disabled") || option.Position < 0 {
+			return ErrInvalidResponse
+		}
+		if _, duplicate := seen[option.OptionID]; duplicate {
+			return ErrInvalidResponse
+		}
+		seen[option.OptionID] = struct{}{}
+		if index > 0 && definition.Options[index-1].Position >= option.Position {
+			return ErrInvalidResponse
+		}
+	}
+	return nil
+}
+
+func (assignment PropertyAssignment) Validate() error {
+	if !validPropertyIDText(assignment.PropertyID) || !validEntryID(assignment.EntryID) ||
+		!validPropertyValueType(assignment.ValueType) || !validPropertyCardinality(assignment.Cardinality) ||
+		!oneOf(assignment.State, "value", "null", "unknown", "not_applicable") || assignment.Revision < 1 {
+		return ErrInvalidResponse
+	}
+	if (assignment.State == "value") != (assignment.Payload != nil) {
+		return ErrInvalidResponse
+	}
+	if assignment.Payload != nil && !validPropertyChangePayload(*assignment.Payload, assignment.ValueType, assignment.Cardinality) {
+		return ErrInvalidResponse
+	}
+	return nil
+}
+
+func (prepared PropertyPreparedChange) Validate() error {
+	if prepared.Target.Validate() != nil || !validPropertyIDText(prepared.PropertyID) ||
+		!validEntryID(prepared.EntryID) || prepared.After.Validate() != nil {
+		return ErrInvalidResponse
+	}
+	if prepared.Before != nil && prepared.Before.Validate() != nil {
+		return ErrInvalidResponse
+	}
+	return nil
+}
+
+func (result PropertyDefinitionListResult) Validate() error {
+	if result.Definitions == nil || len(result.Definitions) > maximumPropertyIDs || result.HasMore != (result.NextPageToken != nil) {
+		return ErrInvalidResponse
+	}
+	if result.NextPageToken != nil && !validOpaqueASCII(*result.NextPageToken, 1, maximumPageTokenBytes) {
+		return ErrInvalidResponse
+	}
+	seen := make(map[string]struct{}, len(result.Definitions))
+	for _, definition := range result.Definitions {
+		if definition.Validate() != nil {
+			return ErrInvalidResponse
+		}
+		if _, duplicate := seen[definition.PropertyID]; duplicate {
+			return ErrInvalidResponse
+		}
+		seen[definition.PropertyID] = struct{}{}
+	}
+	return nil
+}
+
+func (result PropertyDefinitionResult) Validate() error {
+	return result.Definition.Validate()
+}
+
+func (result PropertyAssignmentListResult) Validate() error {
+	if result.Assignments == nil || len(result.Assignments) > maximumPropertyIDs || result.HasMore != (result.NextPageToken != nil) {
+		return ErrInvalidResponse
+	}
+	if result.NextPageToken != nil && !validOpaqueASCII(*result.NextPageToken, 1, maximumPageTokenBytes) {
+		return ErrInvalidResponse
+	}
+	seen := make(map[string]struct{}, len(result.Assignments))
+	for _, assignment := range result.Assignments {
+		if assignment.Validate() != nil {
+			return ErrInvalidResponse
+		}
+		if _, duplicate := seen[assignment.PropertyID]; duplicate {
+			return ErrInvalidResponse
+		}
+		seen[assignment.PropertyID] = struct{}{}
+	}
+	return nil
+}
+
+func (result PropertyChangePrepareResult) Validate() error {
+	if !result.RequiresConfirmation || result.Changes == nil || len(result.Changes) < 1 || len(result.Changes) > maximumPropertyTargets {
+		return ErrInvalidResponse
+	}
+	for _, change := range result.Changes {
+		if change.Validate() != nil {
+			return ErrInvalidResponse
+		}
+	}
+	return nil
+}
+
+func (result PropertyChangeExecuteResult) Validate() error {
+	if result.Assignments == nil || len(result.Assignments) < 1 || len(result.Assignments) > maximumPropertyTargets {
+		return ErrInvalidResponse
+	}
+	seen := make(map[string]struct{}, len(result.Assignments))
+	for _, assignment := range result.Assignments {
+		if assignment.Validate() != nil {
+			return ErrInvalidResponse
+		}
+		key := assignment.EntryID + "\x00" + assignment.PropertyID
+		if _, duplicate := seen[key]; duplicate {
+			return ErrInvalidResponse
+		}
+		seen[key] = struct{}{}
+	}
+	return nil
+}
+
+// --- 요청 디코딩 ---
+
+func decodePageSize(value jsonValue) (int, bool) {
+	pageSize, ok := lexicalInteger(value)
+	return int(pageSize), ok && pageSize >= 1 && pageSize <= 256
+}
+
+func decodeExpectedRevision(value jsonValue) (int64, bool) {
+	revision, ok := lexicalInteger(value)
+	return revision, ok && revision >= 1
+}
+
+func decodePropertyIDField(value jsonValue) (string, bool) {
+	return value.text, value.kind == jsonString && validPropertyIDText(value.text)
+}
+
+func decodePropertyIDFilter(value jsonValue) ([]string, bool) {
+	if value.kind != jsonArray || len(value.items) > maximumPropertyIDs {
+		return nil, false
+	}
+	result := make([]string, len(value.items))
+	for index, item := range value.items {
+		text, ok := decodePropertyIDField(item)
+		if !ok {
+			return nil, false
+		}
+		if index > 0 && result[index-1] >= text {
+			return nil, false
+		}
+		result[index] = text
+	}
+	return result, true
+}
+
+func decodePropertyTargetSelector(value jsonValue) (PropertyTargetSelector, ErrorCode) {
+	fields, ok := objectFields(value, "kind", "local_path")
+	if !ok || fields["kind"].text != "local_path" || fields["local_path"].kind != jsonString {
+		return PropertyTargetSelector{}, ErrorInvalidRequest
+	}
+	selector := PropertyTargetSelector{Kind: "local_path", LocalPath: fields["local_path"].text}
+	if !validLocalPath(selector.LocalPath) {
+		return PropertyTargetSelector{}, ErrorInvalidPath
+	}
+	return selector, ""
+}
+
+func decodePropertyDesiredState(value jsonValue) (PropertyDesiredState, bool) {
+	if fields, ok := objectFields(value, "state"); ok {
+		state := fields["state"].text
+		desired := PropertyDesiredState{State: state}
+		return desired, state == "null" || state == "unknown" || state == "not_applicable"
+	}
+	fields, ok := objectFields(value, "state", "value_type", "cardinality", "value")
+	if !ok || fields["state"].text != "value" {
+		return PropertyDesiredState{}, false
+	}
+	valueType, cardinality := fields["value_type"].text, fields["cardinality"].text
+	payload, ok := decodePropertyChangePayload(fields["value"], valueType, cardinality)
+	if !ok {
+		return PropertyDesiredState{}, false
+	}
+	desired := PropertyDesiredState{State: "value", ValueType: valueType, Cardinality: cardinality, Payload: &payload}
+	return desired, desired.Validate() == nil
+}
+
+func decodePropertyChangePayload(value jsonValue, valueType, cardinality string) (PropertyPayload, bool) {
+	payload := PropertyPayload{kind: valueType}
+	scalar := func(item jsonValue) (any, bool) {
+		switch valueType {
+		case "boolean":
+			return item.boolean, item.kind == jsonBool
+		case "text":
+			return item.text, item.kind == jsonString && validUTF8Bytes(item.text, 0, maximumPropertyScalarBytes)
+		case "number":
+			return item.text, item.kind == jsonString && validCanonicalDecimal(item.text)
+		case "date":
+			return item.text, item.kind == jsonString && validPropertyDate(item.text)
+		case "datetime":
+			return item.text, item.kind == jsonString && canonicalTimestamp(item.text)
+		case "select":
+			return item.text, item.kind == jsonString && validPropertyIDText(item.text)
+		default:
+			return nil, false
+		}
+	}
+	if cardinality == "one" {
+		item, ok := scalar(value)
+		if !ok {
+			return payload, false
+		}
+		payload.one = item
+		return payload, true
+	}
+	if cardinality != "many" || value.kind != jsonArray || len(value.items) > maximumPropertyManyItems {
+		return payload, false
+	}
+	if valueType == "boolean" {
+		items := make([]bool, len(value.items))
+		for index, item := range value.items {
+			if item.kind != jsonBool {
+				return payload, false
+			}
+			items[index] = item.boolean
+		}
+		payload.many = items
+		return payload, true
+	}
+	items := make([]string, len(value.items))
+	for index, item := range value.items {
+		decoded, ok := scalar(item)
+		if !ok {
+			return payload, false
+		}
+		text, _ := decoded.(string)
+		items[index] = text
+	}
+	payload.many = items
+	return payload, true
+}
+
+func decodePropertyChangeTarget(value jsonValue) (PropertyChangeTarget, bool) {
+	fields, ok := objectFields(value, "target", "property_id", "expected_definition_revision", "expected_assignment_revision", "desired")
+	if !ok {
+		return PropertyChangeTarget{}, false
+	}
+	target, targetCode := decodePropertyTargetSelector(fields["target"])
+	propertyID, b := decodePropertyIDField(fields["property_id"])
+	definitionRevision, c := decodeExpectedRevision(fields["expected_definition_revision"])
+	assignmentRevision, d := decodeExpectedRevision(fields["expected_assignment_revision"])
+	desired, e := decodePropertyDesiredState(fields["desired"])
+	change := PropertyChangeTarget{Target: target, PropertyID: propertyID, ExpectedDefinitionRevision: definitionRevision, ExpectedAssignmentRevision: assignmentRevision, Desired: desired}
+	return change, targetCode == "" && b && c && d && e && change.Validate() == nil
+}
+
+func decodePropertyDefinitionListParams(value jsonValue) (PropertyDefinitionListParams, ErrorCode) {
+	fields, ok := objectFieldsWithOptional(value, []string{"page_size", "requested_property_ids"}, []string{"include_disabled", "page_token"})
+	if !ok {
+		return PropertyDefinitionListParams{}, ErrorInvalidRequest
+	}
+	pageSize, ok := decodePageSize(fields["page_size"])
+	if !ok {
+		return PropertyDefinitionListParams{}, ErrorInvalidRequest
+	}
+	ids, ok := decodePropertyIDFilter(fields["requested_property_ids"])
+	if !ok {
+		return PropertyDefinitionListParams{}, ErrorInvalidRequest
+	}
+	params := PropertyDefinitionListParams{PageSize: pageSize, RequestedPropertyIDs: ids}
+	if field, exists := fields["include_disabled"]; exists {
+		if field.kind != jsonBool {
+			return PropertyDefinitionListParams{}, ErrorInvalidRequest
+		}
+		params.IncludeDisabled = field.boolean
+	}
+	if field, exists := fields["page_token"]; exists {
+		if field.kind != jsonString || !validOpaqueASCII(field.text, 1, maximumPageTokenBytes) {
+			return PropertyDefinitionListParams{}, ErrorInvalidRequest
+		}
+		params.PageToken = stringPointer(field.text)
+	}
+	return params, ""
+}
+
+func decodePropertyDefinitionCreateParams(value jsonValue) (PropertyDefinitionCreateParams, ErrorCode) {
+	fields, ok := objectFieldsWithOptional(value, []string{"key", "name", "value_type", "cardinality"}, []string{"options"})
+	if !ok || !allStrings(fields, "key", "name", "value_type", "cardinality") {
+		return PropertyDefinitionCreateParams{}, ErrorInvalidRequest
+	}
+	params := PropertyDefinitionCreateParams{Key: fields["key"].text, Name: fields["name"].text, ValueType: fields["value_type"].text, Cardinality: fields["cardinality"].text}
+	if !validUTF8Bytes(params.Key, 1, maximumPropertyNameBytes) || !validUTF8Bytes(params.Name, 1, maximumPropertyNameBytes) ||
+		!validPropertyValueType(params.ValueType) || !validPropertyCardinality(params.Cardinality) {
+		return PropertyDefinitionCreateParams{}, ErrorInvalidRequest
+	}
+	if field, exists := fields["options"]; exists {
+		if params.ValueType != "select" || field.kind != jsonArray || len(field.items) > maximumPropertyIDs {
+			return PropertyDefinitionCreateParams{}, ErrorInvalidRequest
+		}
+		labels := make([]string, len(field.items))
+		for index, item := range field.items {
+			optionFields, valid := objectFields(item, "label")
+			if !valid || optionFields["label"].kind != jsonString || !validUTF8Bytes(optionFields["label"].text, 1, maximumPropertyNameBytes) {
+				return PropertyDefinitionCreateParams{}, ErrorInvalidRequest
+			}
+			labels[index] = optionFields["label"].text
+		}
+		params.OptionLabels = labels
+	}
+	return params, ""
+}
+
+func decodePropertyDefinitionUpdateParams(value jsonValue) (PropertyDefinitionUpdateParams, ErrorCode) {
+	fields, ok := objectFields(value, "property_id", "expected_definition_revision", "name")
+	if !ok || fields["name"].kind != jsonString {
+		return PropertyDefinitionUpdateParams{}, ErrorInvalidRequest
+	}
+	propertyID, a := decodePropertyIDField(fields["property_id"])
+	revision, b := decodeExpectedRevision(fields["expected_definition_revision"])
+	if !a || !b || !validUTF8Bytes(fields["name"].text, 1, maximumPropertyNameBytes) {
+		return PropertyDefinitionUpdateParams{}, ErrorInvalidRequest
+	}
+	return PropertyDefinitionUpdateParams{PropertyID: propertyID, ExpectedDefinitionRevision: revision, Name: fields["name"].text}, ""
+}
+
+func decodePropertyDefinitionDisableParams(value jsonValue) (PropertyDefinitionDisableParams, ErrorCode) {
+	fields, ok := objectFields(value, "property_id", "expected_definition_revision")
+	if !ok {
+		return PropertyDefinitionDisableParams{}, ErrorInvalidRequest
+	}
+	propertyID, a := decodePropertyIDField(fields["property_id"])
+	revision, b := decodeExpectedRevision(fields["expected_definition_revision"])
+	if !a || !b {
+		return PropertyDefinitionDisableParams{}, ErrorInvalidRequest
+	}
+	return PropertyDefinitionDisableParams{PropertyID: propertyID, ExpectedDefinitionRevision: revision}, ""
+}
+
+func decodePropertyOptionCreateParams(value jsonValue) (PropertyOptionCreateParams, ErrorCode) {
+	fields, ok := objectFields(value, "property_id", "expected_definition_revision", "label")
+	if !ok || fields["label"].kind != jsonString {
+		return PropertyOptionCreateParams{}, ErrorInvalidRequest
+	}
+	propertyID, a := decodePropertyIDField(fields["property_id"])
+	revision, b := decodeExpectedRevision(fields["expected_definition_revision"])
+	if !a || !b || !validUTF8Bytes(fields["label"].text, 1, maximumPropertyNameBytes) {
+		return PropertyOptionCreateParams{}, ErrorInvalidRequest
+	}
+	return PropertyOptionCreateParams{PropertyID: propertyID, ExpectedDefinitionRevision: revision, Label: fields["label"].text}, ""
+}
+
+func decodePropertyOptionUpdateParams(value jsonValue) (PropertyOptionUpdateParams, ErrorCode) {
+	fields, ok := objectFields(value, "property_id", "option_id", "expected_definition_revision", "label")
+	if !ok || fields["label"].kind != jsonString {
+		return PropertyOptionUpdateParams{}, ErrorInvalidRequest
+	}
+	propertyID, a := decodePropertyIDField(fields["property_id"])
+	optionID, b := decodePropertyIDField(fields["option_id"])
+	revision, c := decodeExpectedRevision(fields["expected_definition_revision"])
+	if !a || !b || !c || !validUTF8Bytes(fields["label"].text, 1, maximumPropertyNameBytes) {
+		return PropertyOptionUpdateParams{}, ErrorInvalidRequest
+	}
+	return PropertyOptionUpdateParams{PropertyID: propertyID, OptionID: optionID, ExpectedDefinitionRevision: revision, Label: fields["label"].text}, ""
+}
+
+func decodePropertyOptionReorderParams(value jsonValue) (PropertyOptionReorderParams, ErrorCode) {
+	fields, ok := objectFields(value, "property_id", "expected_definition_revision", "option_ids")
+	if !ok || fields["option_ids"].kind != jsonArray {
+		return PropertyOptionReorderParams{}, ErrorInvalidRequest
+	}
+	propertyID, a := decodePropertyIDField(fields["property_id"])
+	revision, b := decodeExpectedRevision(fields["expected_definition_revision"])
+	items := fields["option_ids"].items
+	if !a || !b || len(items) < 1 || len(items) > maximumPropertyIDs {
+		return PropertyOptionReorderParams{}, ErrorInvalidRequest
+	}
+	optionIDs := make([]string, len(items))
+	seen := make(map[string]struct{}, len(items))
+	for index, item := range items {
+		text, valid := decodePropertyIDField(item)
+		if !valid {
+			return PropertyOptionReorderParams{}, ErrorInvalidRequest
+		}
+		if _, duplicate := seen[text]; duplicate {
+			return PropertyOptionReorderParams{}, ErrorInvalidRequest
+		}
+		seen[text] = struct{}{}
+		optionIDs[index] = text
+	}
+	return PropertyOptionReorderParams{PropertyID: propertyID, ExpectedDefinitionRevision: revision, OptionIDs: optionIDs}, ""
+}
+
+func decodePropertyOptionDisableParams(value jsonValue) (PropertyOptionDisableParams, ErrorCode) {
+	fields, ok := objectFields(value, "property_id", "option_id", "expected_definition_revision")
+	if !ok {
+		return PropertyOptionDisableParams{}, ErrorInvalidRequest
+	}
+	propertyID, a := decodePropertyIDField(fields["property_id"])
+	optionID, b := decodePropertyIDField(fields["option_id"])
+	revision, c := decodeExpectedRevision(fields["expected_definition_revision"])
+	if !a || !b || !c {
+		return PropertyOptionDisableParams{}, ErrorInvalidRequest
+	}
+	return PropertyOptionDisableParams{PropertyID: propertyID, OptionID: optionID, ExpectedDefinitionRevision: revision}, ""
+}
+
+func decodePropertyAssignmentListParams(value jsonValue) (PropertyAssignmentListParams, ErrorCode) {
+	fields, ok := objectFieldsWithOptional(value, []string{"page_size", "requested_property_ids", "target"}, []string{"page_token"})
+	if !ok {
+		return PropertyAssignmentListParams{}, ErrorInvalidRequest
+	}
+	pageSize, ok := decodePageSize(fields["page_size"])
+	if !ok {
+		return PropertyAssignmentListParams{}, ErrorInvalidRequest
+	}
+	ids, ok := decodePropertyIDFilter(fields["requested_property_ids"])
+	if !ok {
+		return PropertyAssignmentListParams{}, ErrorInvalidRequest
+	}
+	target, code := decodePropertyTargetSelector(fields["target"])
+	if code != "" {
+		return PropertyAssignmentListParams{}, code
+	}
+	params := PropertyAssignmentListParams{PageSize: pageSize, RequestedPropertyIDs: ids, Target: target}
+	if field, exists := fields["page_token"]; exists {
+		if field.kind != jsonString || !validOpaqueASCII(field.text, 1, maximumPageTokenBytes) {
+			return PropertyAssignmentListParams{}, ErrorInvalidRequest
+		}
+		params.PageToken = stringPointer(field.text)
+	}
+	return params, ""
+}
+
+func decodePropertyChangeParams(value jsonValue) ([]PropertyChangeTarget, ErrorCode) {
+	fields, ok := objectFields(value, "changes")
+	if !ok || fields["changes"].kind != jsonArray {
+		return nil, ErrorInvalidRequest
+	}
+	items := fields["changes"].items
+	if len(items) < 1 || len(items) > maximumPropertyTargets {
+		return nil, ErrorInvalidRequest
+	}
+	changes := make([]PropertyChangeTarget, len(items))
+	for index, item := range items {
+		change, valid := decodePropertyChangeTarget(item)
+		if !valid {
+			return nil, ErrorInvalidRequest
+		}
+		changes[index] = change
+	}
+	return changes, ""
+}
+
+// --- 결과 디코딩 ---
+
+func decodePropertyDefinition(value jsonValue) (PropertyDefinition, bool) {
+	fields, ok := objectFields(value, "property_id", "key", "name", "value_type", "cardinality", "state", "revision", "options")
+	if !ok || !allStrings(fields, "property_id", "key", "name", "value_type", "cardinality", "state") || fields["options"].kind != jsonArray {
+		return PropertyDefinition{}, false
+	}
+	revision, valid := decodeExpectedRevision(fields["revision"])
+	if !valid {
+		return PropertyDefinition{}, false
+	}
+	definition := PropertyDefinition{
+		PropertyID:  fields["property_id"].text,
+		Key:         fields["key"].text,
+		Name:        fields["name"].text,
+		ValueType:   fields["value_type"].text,
+		Cardinality: fields["cardinality"].text,
+		State:       fields["state"].text,
+		Revision:    revision,
+		Options:     make([]PropertyOption, len(fields["options"].items)),
+	}
+	for index, item := range fields["options"].items {
+		optionFields, valid := objectFields(item, "option_id", "label", "position", "state")
+		if !valid || !allStrings(optionFields, "option_id", "label", "state") {
+			return PropertyDefinition{}, false
+		}
+		position, valid := decodeExpectedRevision(optionFields["position"])
+		if !valid {
+			return PropertyDefinition{}, false
+		}
+		definition.Options[index] = PropertyOption{OptionID: optionFields["option_id"].text, Label: optionFields["label"].text, Position: position - 1, State: optionFields["state"].text}
+	}
+	return definition, definition.Validate() == nil
+}
+
+func decodePropertyAssignment(value jsonValue) (PropertyAssignment, bool) {
+	fields, ok := objectFieldsWithOptional(value, []string{"property_id", "entry_id", "value_type", "cardinality", "state", "revision"}, []string{"value"})
+	if !ok || !allStrings(fields, "property_id", "entry_id", "value_type", "cardinality", "state") {
+		return PropertyAssignment{}, false
+	}
+	revision, valid := decodeExpectedRevision(fields["revision"])
+	if !valid {
+		return PropertyAssignment{}, false
+	}
+	assignment := PropertyAssignment{
+		PropertyID:  fields["property_id"].text,
+		EntryID:     fields["entry_id"].text,
+		ValueType:   fields["value_type"].text,
+		Cardinality: fields["cardinality"].text,
+		State:       fields["state"].text,
+		Revision:    revision,
+	}
+	if field, exists := fields["value"]; exists {
+		payload, valid := decodePropertyChangePayload(field, assignment.ValueType, assignment.Cardinality)
+		if !valid {
+			return PropertyAssignment{}, false
+		}
+		assignment.Payload = &payload
+	}
+	return assignment, assignment.Validate() == nil
+}
+
+func decodePropertyPagedToken(fields map[string]jsonValue) (*string, bool) {
+	field, exists := fields["next_page_token"]
+	if !exists {
+		return nil, true
+	}
+	if field.kind != jsonString || !validOpaqueASCII(field.text, 1, maximumPageTokenBytes) {
+		return nil, false
+	}
+	return stringPointer(field.text), true
+}
+
+func decodePropertyDefinitionListResult(value jsonValue) (PropertyDefinitionListResult, bool) {
+	fields, ok := objectFieldsWithOptional(value, []string{"definitions", "has_more"}, []string{"next_page_token"})
+	if !ok || fields["definitions"].kind != jsonArray || fields["has_more"].kind != jsonBool {
+		return PropertyDefinitionListResult{}, false
+	}
+	token, valid := decodePropertyPagedToken(fields)
+	if !valid {
+		return PropertyDefinitionListResult{}, false
+	}
+	result := PropertyDefinitionListResult{Definitions: make([]PropertyDefinition, len(fields["definitions"].items)), NextPageToken: token, HasMore: fields["has_more"].boolean}
+	for index, item := range fields["definitions"].items {
+		definition, valid := decodePropertyDefinition(item)
+		if !valid {
+			return PropertyDefinitionListResult{}, false
+		}
+		result.Definitions[index] = definition
+	}
+	return result, result.Validate() == nil
+}
+
+func decodePropertyDefinitionResult(value jsonValue) (PropertyDefinitionResult, bool) {
+	fields, ok := objectFields(value, "definition")
+	if !ok {
+		return PropertyDefinitionResult{}, false
+	}
+	definition, valid := decodePropertyDefinition(fields["definition"])
+	return PropertyDefinitionResult{Definition: definition}, valid
+}
+
+func decodePropertyAssignmentListResult(value jsonValue) (PropertyAssignmentListResult, bool) {
+	fields, ok := objectFieldsWithOptional(value, []string{"assignments", "has_more"}, []string{"next_page_token"})
+	if !ok || fields["assignments"].kind != jsonArray || fields["has_more"].kind != jsonBool {
+		return PropertyAssignmentListResult{}, false
+	}
+	token, valid := decodePropertyPagedToken(fields)
+	if !valid {
+		return PropertyAssignmentListResult{}, false
+	}
+	result := PropertyAssignmentListResult{Assignments: make([]PropertyAssignment, len(fields["assignments"].items)), NextPageToken: token, HasMore: fields["has_more"].boolean}
+	for index, item := range fields["assignments"].items {
+		assignment, valid := decodePropertyAssignment(item)
+		if !valid {
+			return PropertyAssignmentListResult{}, false
+		}
+		result.Assignments[index] = assignment
+	}
+	return result, result.Validate() == nil
+}
+
+func decodePropertyPreparedChange(value jsonValue) (PropertyPreparedChange, bool) {
+	fields, ok := objectFields(value, "target", "property_id", "entry_id", "before", "after")
+	if !ok || fields["entry_id"].kind != jsonString {
+		return PropertyPreparedChange{}, false
+	}
+	target, targetCode := decodePropertyTargetSelector(fields["target"])
+	propertyID, b := decodePropertyIDField(fields["property_id"])
+	desired, c := decodePropertyDesiredState(fields["after"])
+	prepared := PropertyPreparedChange{Target: target, PropertyID: propertyID, EntryID: fields["entry_id"].text, After: desired}
+	if targetCode != "" || !b || !c {
+		return PropertyPreparedChange{}, false
+	}
+	if fields["before"].kind != jsonNull {
+		before, valid := decodePropertyAssignment(fields["before"])
+		if !valid {
+			return PropertyPreparedChange{}, false
+		}
+		prepared.Before = &before
+	}
+	return prepared, prepared.Validate() == nil
+}
+
+func decodePropertyChangePrepareResult(value jsonValue) (PropertyChangePrepareResult, bool) {
+	fields, ok := objectFields(value, "changes", "requires_confirmation")
+	if !ok || fields["changes"].kind != jsonArray || fields["requires_confirmation"].kind != jsonBool {
+		return PropertyChangePrepareResult{}, false
+	}
+	result := PropertyChangePrepareResult{Changes: make([]PropertyPreparedChange, len(fields["changes"].items)), RequiresConfirmation: fields["requires_confirmation"].boolean}
+	for index, item := range fields["changes"].items {
+		change, valid := decodePropertyPreparedChange(item)
+		if !valid {
+			return PropertyChangePrepareResult{}, false
+		}
+		result.Changes[index] = change
+	}
+	return result, result.Validate() == nil
+}
+
+func decodePropertyChangeExecuteResult(value jsonValue) (PropertyChangeExecuteResult, bool) {
+	fields, ok := objectFields(value, "assignments")
+	if !ok || fields["assignments"].kind != jsonArray {
+		return PropertyChangeExecuteResult{}, false
+	}
+	result := PropertyChangeExecuteResult{Assignments: make([]PropertyAssignment, len(fields["assignments"].items))}
+	for index, item := range fields["assignments"].items {
+		assignment, valid := decodePropertyAssignment(item)
+		if !valid {
+			return PropertyChangeExecuteResult{}, false
+		}
+		result.Assignments[index] = assignment
+	}
+	return result, result.Validate() == nil
+}
