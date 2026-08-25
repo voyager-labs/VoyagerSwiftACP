@@ -6,6 +6,34 @@ import XCTest
 
 @MainActor
 final class ONB003ConfigureRequiredPermissionsDuringOnboardingTests: XCTestCase {
+    func testPermissionMetricsIgnoreCancelledAndEmitHelperResponseOnce() async {
+        let metrics = LockIsolated<[OnboardingProductMetric]>([])
+        let store = TestStore(initialState: PermissionsFeature.State()) {
+            PermissionsFeature()
+        } withDependencies: {
+            $0.onboardingProductMetricsClient = OnboardingProductMetricsClient(record: { metric in
+                metrics.withValue { $0.append(metric) }
+            })
+            $0.helperFolderAccessClient.requestAccess = { kGrantedHelperAccess }
+        }
+
+        await store.send(.requestHelperFolderAccessTapped) { state in
+            state.isRequestingHelperFolderAccess = true
+        }
+        await store.receive(\.helperFolderAccessResponse) { state in
+            state.isRequestingHelperFolderAccess = false
+            state.helperFolderAccess = kGrantedHelperAccess
+        }
+        await store.send(.helperFolderAccessResponse(kGrantedHelperAccess))
+        await store.send(.onDisappear)
+
+        XCTAssertEqual(metrics.value.count, 1)
+        guard case let .helperFolderAccess(_, result) = metrics.value.first else {
+            return XCTFail("Expected helper access metric")
+        }
+        XCTAssertEqual(result, .success)
+    }
+
     // MARK: - ONB-003-show_onboarding_permission_status
 
     // 온보딩 권한 구성 화면(ONB-003)의 첫 번째 스펙 인터랙션입니다.

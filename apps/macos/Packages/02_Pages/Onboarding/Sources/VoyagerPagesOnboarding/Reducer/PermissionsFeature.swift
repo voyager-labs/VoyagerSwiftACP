@@ -21,6 +21,8 @@ struct PermissionsFeature {
     var notificationCenterClient
     @Dependency(\.systemSettingsClient)
     var systemSettingsClient
+    @Dependency(\.onboardingProductMetricsClient)
+    var metricsClient
 
     private let appDidBecomeActiveObserverCancelID = "PermissionsFeature.appDidBecomeActiveObserver"
 
@@ -34,11 +36,17 @@ struct PermissionsFeature {
                 )
 
             case .onDisappear:
+                state.pendingHelperFolderOperationID = nil
+                state.pendingFullDiskAccessOperationID = nil
+                state.pendingFullDiskAccessGeneration = nil
                 return .cancel(id: appDidBecomeActiveObserverCancelID)
 
             case .appDidBecomeActive:
                 state.latestAppActiveRefreshGeneration += 1
                 let generation = state.latestAppActiveRefreshGeneration
+                if state.pendingFullDiskAccessOperationID != nil {
+                    state.pendingFullDiskAccessGeneration = generation
+                }
                 return .merge(
                     refreshFullDiskAccess(generation: generation),
                     refreshHelperFolderAccess(generation: generation),
@@ -52,6 +60,16 @@ struct PermissionsFeature {
                 )
                 state.fullDiskAccessStatus = resolvedStatus
                 refreshCompletionState(state: &state)
+                if let operationID = state.pendingFullDiskAccessOperationID,
+                   state.pendingFullDiskAccessGeneration == generation
+                {
+                    state.pendingFullDiskAccessOperationID = nil
+                    state.pendingFullDiskAccessGeneration = nil
+                    metricsClient.record(.fullDiskAccess(
+                        operationID: operationID,
+                        result: status == .granted ? .success : .unavailable,
+                    ))
+                }
                 return .none
 
             case let .helperFolderAccessRefreshLoaded(generation, result):
@@ -85,6 +103,7 @@ struct PermissionsFeature {
                 return .none
 
             case .requestHelperFolderAccessTapped:
+                state.pendingHelperFolderOperationID = UUID()
                 state.helperFolderAccessError = nil
                 state.isRequestingHelperFolderAccess = true
                 return .run { [helperFolderAccessClient] send in
@@ -93,6 +112,8 @@ struct PermissionsFeature {
                 }
 
             case let .helperFolderAccessResponse(result):
+                guard let operationID = state.pendingHelperFolderOperationID else { return .none }
+                state.pendingHelperFolderOperationID = nil
                 state.isRequestingHelperFolderAccess = false
                 state.helperFolderAccess = result
                 state.helperFolderAccessError = result.status == .granted
@@ -101,10 +122,15 @@ struct PermissionsFeature {
                 let data = try? JSONEncoder().encode(result)
                 userDefaultsClient.setObject(data, SettingsKeys.helperFolderAccessSnapshot)
                 refreshCompletionState(state: &state)
+                metricsClient.record(.helperFolderAccess(
+                    operationID: operationID,
+                    result: result.status == .granted ? .success : .failure,
+                ))
                 return .none
 
             case .openSystemSettingsTapped:
                 state.systemSettingsError = nil
+                state.pendingFullDiskAccessOperationID = UUID()
                 return .run { [systemSettingsClient] send in
                     let opened = systemSettingsClient.openFullDiskAccess()
                     await send(.systemSettingsOpenResult(opened))
@@ -113,6 +139,14 @@ struct PermissionsFeature {
             case let .systemSettingsOpenResult(opened):
                 if !opened {
                     state.systemSettingsError = "We couldn't open System Settings. Please open it manually."
+                    if let operationID = state.pendingFullDiskAccessOperationID {
+                        state.pendingFullDiskAccessOperationID = nil
+                        state.pendingFullDiskAccessGeneration = nil
+                        metricsClient.record(.fullDiskAccess(
+                            operationID: operationID,
+                            result: .unavailable,
+                        ))
+                    }
                 } else {
                     state.hasAttemptedFullDiskAccessEnable = true
                 }

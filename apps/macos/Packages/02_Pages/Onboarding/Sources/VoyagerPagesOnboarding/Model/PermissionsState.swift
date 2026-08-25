@@ -18,6 +18,22 @@ struct PermissionsState: Equatable {
     var launchAtLoginError: String?
     var hasAttemptedFullDiskAccessEnable: Bool = false
     var latestAppActiveRefreshGeneration: Int = 0
+    @ObservationStateIgnored var pendingHelperFolderOperationID: UUID?
+    @ObservationStateIgnored var pendingFullDiskAccessOperationID: UUID?
+    @ObservationStateIgnored var pendingFullDiskAccessGeneration: Int?
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.isComplete == rhs.isComplete
+            && lhs.fullDiskAccessStatus == rhs.fullDiskAccessStatus
+            && lhs.helperFolderAccess == rhs.helperFolderAccess
+            && lhs.systemSettingsError == rhs.systemSettingsError
+            && lhs.helperFolderAccessError == rhs.helperFolderAccessError
+            && lhs.isRequestingHelperFolderAccess == rhs.isRequestingHelperFolderAccess
+            && lhs.launchAtLoginEnabled == rhs.launchAtLoginEnabled
+            && lhs.launchAtLoginError == rhs.launchAtLoginError
+            && lhs.hasAttemptedFullDiskAccessEnable == rhs.hasAttemptedFullDiskAccessEnable
+            && lhs.latestAppActiveRefreshGeneration == rhs.latestAppActiveRefreshGeneration
+    }
 
     var fullDiskAccessStatusMessage: String {
         switch fullDiskAccessStatus {
