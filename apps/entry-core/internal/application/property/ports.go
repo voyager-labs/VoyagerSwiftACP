@@ -42,6 +42,15 @@ type AssignmentRepository interface {
 	AssignmentRevision(ctx context.Context, workspace domainentry.WorkspaceContext, entryID string, propertyID domainentry.PropertyID) (uint64, bool, error)
 }
 
+// AssignmentFactRepository는 정준 assignment fact의 batched 읽기와 tx 안 일괄
+// 쓰기 계약이다. LoadAssignments는 요청한 참조 중 행이 없는 것을 결과에서
+// 제외한다(implicit unset). SaveAssignments는 TransactionRunner.WithinTx 안에서만
+// 호출되며 부분 집합이 아닌 전체 배치를 한 번에 받는다.
+type AssignmentFactRepository interface {
+	LoadAssignments(ctx context.Context, workspace domainentry.WorkspaceContext, entryIDs []string, propertyIDs []domainentry.PropertyID) ([]domainentry.EntryPropertyAssignment, error)
+	SaveAssignments(ctx context.Context, workspace domainentry.WorkspaceContext, facts []domainentry.EntryPropertyAssignment) error
+}
+
 // TransactionRunner는 하나의 원자적 mutation boundary를 제공한다. 구현은
 // tx-scoped 저장소를 ctx에 붙여 fn에 전달하며 application 계약은 DB 핸들을
 // 노출하지 않는다.
