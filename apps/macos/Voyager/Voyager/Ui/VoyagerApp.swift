@@ -45,11 +45,20 @@ struct VoyagerApp: App {
         } withDependencies: {
             $0.composerMetricClient = Self.makeComposerMetricClient()
             $0.collectionMetricClient = Self.makeCollectionMetricClient()
-            $0.onboardingWindowClient = OnboardingWindowClient.makeMainApp(
-                openMainWindow: { _ in
+            let openMainWindowOnMainActor: @MainActor @Sendable (
+                OnboardingOpenMainWindowRequest,
+            ) async -> Bool = { request in
+                switch request {
+                case .defaultTabPath:
                     await appRootStoreReference.openInitialWindowIfNeeded()
-                    return true
-                },
+                case let .explicitPath(path):
+                    guard let store = appRootStoreReference.store else { return false }
+                    await store.send(.windowManager(.file(.newWindow(path: path)))).finish()
+                }
+                return true
+            }
+            $0.onboardingWindowClient = OnboardingWindowClient.makeMainApp(
+                openMainWindow: { request in await openMainWindowOnMainActor(request) },
             )
             $0.fileManagerWindowClient = fileManagerWindowClient
             $0.fileOperationUndoManagerClient = .live(registry: fileOperationUndoManagerRegistry)
