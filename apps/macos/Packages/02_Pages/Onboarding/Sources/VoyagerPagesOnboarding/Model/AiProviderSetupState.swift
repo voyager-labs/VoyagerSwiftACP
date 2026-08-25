@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import Foundation
 import VoyagerEntitiesAi
 import VoyagerFeaturesAiProviderConnection
 
@@ -10,6 +11,16 @@ struct AiProviderSetupState: Equatable {
     var choice: AiProviderSetupChoice = .none
     var status: AiProviderSetupStatus = .blocked
     var rows: IdentifiedArrayOf<AiConnectionRowState>
+    @ObservationStateIgnored var pendingConnectionOperationID: UUID?
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.didBootstrap == rhs.didBootstrap
+            && lhs.bootstrapPhase == rhs.bootstrapPhase
+            && lhs.loadError == rhs.loadError
+            && lhs.choice == rhs.choice
+            && lhs.status == rhs.status
+            && lhs.rows == rhs.rows
+    }
 
     init(rows: IdentifiedArrayOf<AiConnectionRowState>? = nil) {
         self.rows = rows ?? Self.catalogRows()

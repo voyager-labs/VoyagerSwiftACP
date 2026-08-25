@@ -6,6 +6,53 @@ import XCTest
 
 @MainActor
 final class ONB004ConfigureAIProviderDuringOnboardingTests: XCTestCase {
+    func testRetryKeepsOneOperationUUIDWhileAttemptIsInFlight() async throws {
+        var initialState = AiProviderSetupState()
+        initialState.rows[id: .openai]?.connectionState = .connectionFailed
+        let store = TestStore(initialState: initialState) {
+            AiProviderSetupFeature()
+        }
+
+        await store.send(.row(.element(id: .openai, action: .retryButtonTapped)))
+        let operationID = try XCTUnwrap(store.state.pendingConnectionOperationID)
+        await store.send(.row(.element(id: .openai, action: .retryButtonTapped)))
+
+        XCTAssertEqual(store.state.pendingConnectionOperationID, operationID)
+    }
+
+    func testEachAcceptedSkipAttemptEmitsOneTypedTerminalMetric() async {
+        let metrics = LockIsolated<[OnboardingProductMetric]>([])
+        let store = TestStore(initialState: AiProviderSetupState()) {
+            AiProviderSetupFeature()
+        } withDependencies: {
+            $0.onboardingProductMetricsClient = OnboardingProductMetricsClient(record: { metric in
+                metrics.withValue { $0.append(metric) }
+            })
+        }
+
+        await store.send(.setUpLaterTapped)
+
+        XCTAssertEqual(metrics.value.count, 1)
+        guard case let .aiProvider(firstOperationID, .skipped) = metrics.value[0] else {
+            return XCTFail("Expected one skipped AI provider metric")
+        }
+
+        let secondMetrics = LockIsolated<[OnboardingProductMetric]>([])
+        let secondStore = TestStore(initialState: AiProviderSetupState()) {
+            AiProviderSetupFeature()
+        } withDependencies: {
+            $0.onboardingProductMetricsClient = OnboardingProductMetricsClient(record: { metric in
+                secondMetrics.withValue { $0.append(metric) }
+            })
+        }
+        await secondStore.send(.setUpLaterTapped)
+
+        guard case let .aiProvider(secondOperationID, .skipped) = secondMetrics.value[0] else {
+            return XCTFail("Expected one skipped AI provider metric for second attempt")
+        }
+        XCTAssertNotEqual(firstOperationID, secondOperationID)
+    }
+
     // MARK: - ONB-004-show_onboarding_ai_provider_setup
 
     /// ONB-004-show_onboarding_ai_provider_setup: provider catalog bootstrap이 row 순서와 연결 상태를 표시한다.

@@ -12,6 +12,8 @@ struct AiProviderSetupFeature {
     var connectionsFileClient
     @Dependency(\.aiProviderVerificationClient)
     var verificationClient
+    @Dependency(\.onboardingProductMetricsClient)
+    var metricsClient
 
     private enum CancelID: Hashable {
         case bootstrap
@@ -45,6 +47,12 @@ struct AiProviderSetupFeature {
                     )
 
                 case .setUpLaterTapped:
+                    let operationID = UUID()
+                    state.pendingConnectionOperationID = nil
+                    metricsClient.record(.aiProvider(
+                        operationID: operationID,
+                        result: .skipped,
+                    ))
                     return .none
 
                 case let .bootstrapCompleted(results):
@@ -67,7 +75,13 @@ struct AiProviderSetupFeature {
                     state.refreshStatus()
                     return .none
 
-                case let .row(.element(id: _, action: rowAction)):
+                case let .row(.element(id: provider, action: rowAction)):
+                    Self.recordTerminalMetric(
+                        for: rowAction,
+                        provider: provider,
+                        state: &state,
+                        metricsClient: metricsClient,
+                    )
                     state.refreshStatus()
                     if Self.shouldReloadLatestStatus(after: rowAction) {
                         return Self.bootstrapEffect(
@@ -127,6 +141,42 @@ struct AiProviderSetupFeature {
         default:
             false
         }
+    }
+
+    private static func recordTerminalMetric(
+        for action: AiConnectionRowAction,
+        provider: AiProvider,
+        state: inout State,
+        metricsClient: OnboardingProductMetricsClient,
+    ) {
+        let result: OnboardingProductMetric.AIProviderResult?
+        switch action {
+        case let .connectionResponse(response):
+            result = response.state == .connected ? .success : .failure
+        case .browserLoginFailed(.cancelled), .deviceAuthFailed(.cancelled), .cancelButtonTapped:
+            result = nil
+        case .browserLoginFailed, .deviceAuthFailed, .verificationFailed:
+            result = .failure
+        default:
+            if case .connectButtonTapped = action, state.pendingConnectionOperationID == nil {
+                state.pendingConnectionOperationID = UUID()
+            } else if case .submitAPIKey = action, state.pendingConnectionOperationID == nil {
+                state.pendingConnectionOperationID = UUID()
+            } else if case .retryButtonTapped = action, state.pendingConnectionOperationID == nil {
+                state.pendingConnectionOperationID = UUID()
+            }
+            return
+        }
+
+        guard let operationID = state.pendingConnectionOperationID,
+              let result
+        else { return }
+        state.pendingConnectionOperationID = nil
+        metricsClient.record(.aiProviderWithKind(
+            operationID: operationID,
+            provider: .init(provider: provider),
+            result: result,
+        ))
     }
 }
 
