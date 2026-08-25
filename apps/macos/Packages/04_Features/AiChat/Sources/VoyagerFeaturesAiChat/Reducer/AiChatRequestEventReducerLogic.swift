@@ -5,17 +5,37 @@ import VoyagerEntitiesAi
 extension AiChatFeature {
     func handleExecutionEvent(_ event: AiChatEvent, state: inout State) -> Effect<Action> {
         switch event {
+        case let .requestPrepared(context):
+            handleRequestPreparedEvent(context, state: &state)
+            return .none
         case let .started(context):
-            handleStartedEvent(context, state: &state)
+            return handleStartedEvent(context, state: &state)
         case let .delta(context, text):
-            handleDeltaEvent(context: context, text: text, state: &state)
+            return handleDeltaEvent(context: context, text: text, state: &state)
         case let .status(context, signal):
-            handleStatusEvent(context: context, signal: signal, state: &state)
+            return handleStatusEvent(context: context, signal: signal, state: &state)
         case let .final(response):
-            handleFinalEvent(response, state: &state)
+            return handleFinalEvent(response, state: &state)
         case let .failed(context, reason):
-            handleFailedEvent(context: context, reason: reason, state: &state)
+            return handleFailedEvent(context: context, reason: reason, state: &state)
         }
+    }
+
+    private func handleRequestPreparedEvent(
+        _ context: AiChatRequestContextSnapshot,
+        state: inout State,
+    ) {
+        guard processingLock(matching: context, state: state) != nil,
+              state.productMetricOperations[context.requestID] == nil
+        else { return }
+        let operation = AiChatProductMetricOperation(runID: context.runID, operationID: uuid())
+        state.productMetricOperations[context.requestID] = operation
+        aiChatProductMetricsClient.record(
+            .turnSubmitted(
+                operationID: operation.operationID,
+                sourceSurface: .aiChatContent,
+            ),
+        )
     }
 
     private func handleStatusEvent(
@@ -64,6 +84,11 @@ extension AiChatFeature {
 
     private func handleFinalEvent(_ response: AiChatResponse, state: inout State) -> Effect<Action> {
         guard let matched = processingLock(matching: response.context, state: state) else { return .none }
+        recordProductResult(
+            for: response.context,
+            result: .success,
+            state: &state,
+        )
 
         let terminalTimestampMs = currentTimestampMs()
         let assistantMessage = AiChatMessage(
@@ -194,6 +219,8 @@ extension AiChatFeature {
         state: inout State,
     ) -> Effect<Action> {
         guard let matched = processingLock(matching: context, state: state) else { return .none }
+        let result: AiChatProductMetricResult = reason == .cancelled ? .cancelled : .failure
+        recordProductResult(for: context, result: result, state: &state)
 
         let failedLock = matched.lock.recordingTerminal(
             at: currentTimestampMs(),
@@ -224,6 +251,24 @@ extension AiChatFeature {
         return .merge(
             .cancel(id: CancelID.request(failedLock.requestID)),
             .cancel(id: CancelID.requestStartPersistence(failedLock.requestID)),
+        )
+    }
+
+    func recordProductResult(
+        for context: AiChatRequestContextSnapshot,
+        result: AiChatProductMetricResult,
+        state: inout State,
+    ) {
+        guard let operation = state.productMetricOperations[context.requestID],
+              operation.runID == context.runID
+        else { return }
+        state.productMetricOperations[context.requestID] = nil
+        aiChatProductMetricsClient.record(
+            .turnResult(
+                operationID: operation.operationID,
+                result: result,
+                sourceSurface: .aiChatContent,
+            ),
         )
     }
 

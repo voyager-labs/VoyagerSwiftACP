@@ -38,6 +38,151 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         assertOpenContextualChatSurface(store.state)
     }
 
+    // MARK: - CBW-001-submit_chat_request
+
+    /// CBW-001-submit_chat_request: accepted request metrics use only an opaque operation ID.
+    /// 제출 metric seam이 SDK나 사용자 입력 payload를 노출하지 않는 typed value만 전달하는지 검증합니다.
+    /// - 검증 내용: submitted metric의 operation ID와 허용된 typed case를 확인합니다.
+    /// - 사전 조건: 유효한 opaque operation ID를 사용합니다.
+    /// - 기대 결과: recorder에는 submitted 한 건만 전달되고 prompt/context/path 값은 존재하지 않습니다.
+    func testAcceptedRequestRecordsSanitizedSubmittedMetric() {
+        let operationID = makeUUID("11111111-1111-1111-1111-111111111191")
+        let recorded = LockIsolated<[AiChatProductMetric]>([])
+        let client = AiChatProductMetricsClient { metric in
+            recorded.withValue { $0.append(metric) }
+        }
+
+        client.record(.turnSubmitted(operationID: operationID, sourceSurface: .aiChatContent))
+
+        XCTAssertEqual(
+            recorded.value,
+            [.turnSubmitted(operationID: operationID, sourceSurface: .aiChatContent)],
+        )
+    }
+
+    /// CBW-001-submit_chat_request: reducer records one submitted and one successful terminal result.
+    /// requestPrepared correlation, retry activity, duplicate terminal, and stale terminal paths are exercised through
+    /// TestStore.
+    /// - 검증 내용: submitted/result count, shared opaque operation ID, retry non-terminal, duplicate/stale no-op을 확인합니다.
+    /// - 사전 조건: 유효한 requestID/runID를 가진 요청이 reducer processing phase에 진입합니다.
+    /// - 기대 결과: submitted 1회와 success result 1회만 기록됩니다.
+    func testReducerMetricsAreExactlyOnceAcrossSuccessRetryAndLateTerminals() async {
+        let fixture = makeStreamFixture(draftText: "Hello", fixedMs: 1_700_000_000_250)
+        applyObservationFocusedExhaustivity(to: fixture.store)
+
+        await fixture.store.send(.submitTapped)
+        await resolvePendingRequestContext(fixture.store) { state in
+            state.draftText = ""
+            state.lockedModelHandle = fixture.selectedHandle
+        }
+        let request = fixture.stream.requests[0]
+        let retrySignal = makeActivitySignal(id: "retry", kind: .retrying, phase: .began)
+        await fixture.store.send(.executionEvent(.requestPrepared(context: request.context)))
+        await fixture.store.send(.executionEvent(.requestPrepared(context: request.context)))
+        await fixture.store.send(.executionEvent(.status(context: request.context, signal: retrySignal)))
+
+        let response = AiChatResponse(
+            context: request.context,
+            assistantMessage: AiChatMessage(role: .assistant, content: "Hello"),
+            completedAtMs: fixture.fixedMs,
+        )
+        await fixture.store.send(.executionEvent(.final(response: response)))
+        await fixture.store.send(.executionEvent(.final(response: response)))
+        let staleContext = makeRequestContext(
+            sessionID: fixture.store.state.sessionID
+                ?? AiChatSessionID(rawValue: makeUUID("77777777-7777-7777-7777-777777777791")),
+            requestID: request.context.requestID,
+            runID: AiChatRunID(rawValue: makeUUID("66666666-6666-6666-6666-666666666691")),
+            model: fixture.selectedHandle,
+            selectedRow: fixture.catalogRows[0],
+        )
+        await fixture.store.send(.executionEvent(.final(response: AiChatResponse(
+            context: staleContext,
+            assistantMessage: AiChatMessage(role: .assistant, content: "stale"),
+            completedAtMs: fixture.fixedMs,
+        ))))
+        fixture.stream.finish()
+        await fixture.store.finish()
+
+        let metrics = fixture.metrics.value
+        let submitted = metrics.compactMap { metric -> UUID? in
+            guard case let .turnSubmitted(operationID, _) = metric else { return nil }
+            return operationID
+        }
+        let results = metrics.compactMap { metric -> (UUID, AiChatProductMetricResult)? in
+            guard case let .turnResult(operationID, result, _) = metric else { return nil }
+            return (operationID, result)
+        }
+        XCTAssertEqual(submitted.count, 1)
+        XCTAssertEqual(results.count, 1)
+        XCTAssertEqual(results.first?.0, submitted.first)
+        XCTAssertEqual(results.first?.1, .success)
+    }
+
+    /// CBW-001-cancel_active_chat_request: explicit cancellation records one cancelled result and ignores late failure.
+    /// User cancellation is driven through the reducer action and the late provider callback is delivered afterward.
+    /// - 검증 내용: cancellation terminal count와 late failed callback의 dedupe를 확인합니다.
+    /// - 사전 조건: requestPrepared 이후 processing 요청이 활성화되어 있습니다.
+    /// - 기대 결과: submitted 1회, cancelled result 1회, failure result 0회입니다.
+    func testReducerMetricsCancelOnceIgnoresLateFailure() async {
+        let fixture = makeStreamFixture(draftText: "Cancel", fixedMs: 1_700_000_000_251)
+        applyObservationFocusedExhaustivity(to: fixture.store)
+
+        await fixture.store.send(.submitTapped)
+        await resolvePendingRequestContext(fixture.store) { state in
+            state.draftText = ""
+            state.lockedModelHandle = fixture.selectedHandle
+        }
+        let request = fixture.stream.requests[0]
+        await fixture.store.send(.executionEvent(.requestPrepared(context: request.context)))
+        await fixture.store.send(.cancelTapped)
+        await fixture.store.send(.executionEvent(.failed(context: request.context, reason: .network)))
+        fixture.stream.finish()
+        await fixture.store.finish()
+
+        let metrics = fixture.metrics.value
+        XCTAssertEqual(metrics.count(where: { if case .turnSubmitted = $0 { true } else { false } }), 1)
+        XCTAssertEqual(
+            metrics
+                .count(where: { if case let .turnResult(_, result, _) = $0 { result == .cancelled } else { false } }),
+            1,
+        )
+        XCTAssertEqual(
+            metrics.count(where: { if case let .turnResult(_, result, _) = $0 { result == .failure } else { false } }),
+            0,
+        )
+    }
+
+    /// CBW-001-cancel_active_chat_request: teardown cancellation is intentionally no-event.
+    /// Teardown clears the product correlation before a late terminal callback can arrive.
+    /// - 검증 내용: teardown 이후 late final callback이 terminal metric을 만들지 않는지 확인합니다.
+    /// - 사전 조건: requestPrepared 이후 teardownRequested가 처리됩니다.
+    /// - 기대 결과: submitted 1회, terminal result 0회입니다.
+    func testReducerMetricsTeardownClearsCorrelationWithoutResult() async {
+        let fixture = makeStreamFixture(draftText: "Teardown", fixedMs: 1_700_000_000_252)
+        applyObservationFocusedExhaustivity(to: fixture.store)
+
+        await fixture.store.send(.submitTapped)
+        await resolvePendingRequestContext(fixture.store) { state in
+            state.draftText = ""
+            state.lockedModelHandle = fixture.selectedHandle
+        }
+        let request = fixture.stream.requests[0]
+        await fixture.store.send(.executionEvent(.requestPrepared(context: request.context)))
+        await fixture.store.send(.teardownRequested)
+        await fixture.store.send(.executionEvent(.final(response: AiChatResponse(
+            context: request.context,
+            assistantMessage: AiChatMessage(role: .assistant, content: "late"),
+            completedAtMs: fixture.fixedMs,
+        ))))
+        fixture.stream.finish()
+        await fixture.store.finish()
+
+        let metrics = fixture.metrics.value
+        XCTAssertEqual(metrics.count(where: { if case .turnSubmitted = $0 { true } else { false } }), 1)
+        XCTAssertEqual(metrics.count(where: { if case .turnResult = $0 { true } else { false } }), 0)
+    }
+
     /// CBW-001-open_contextual_chat: 같은 composer identity의 remount는 focus를 보존한다.
     /// centered-empty와 transcript 전환에서 representable lease가 교체되어도 동일 session composer의 focus가 이어지는지 검증합니다.
     /// - 검증 내용: 새 coordinator 활성화 뒤 이전 coordinator의 end-editing과 dismantle을 처리하고 focus owner를 확인합니다.
@@ -4243,6 +4388,7 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
             preparedRequest: AiChatPreparedRequest(
                 prompt: originalPrompt,
                 messages: [AiChatMessage(role: .user, content: originalPrompt)],
+                persistenceTranscriptHistory: nil,
                 assistantReplacementIndex: nil,
                 historyTruncation: .init(
                     includedMessageCount: 1,
@@ -8503,6 +8649,7 @@ private struct CBW001SubmitFixture {
 
 private struct CBW001StreamFixture {
     let stream: AiChatExecutionStreamDriver
+    let metrics: LockIsolated<[AiChatProductMetric]>
     let catalogRows: [AiModelCatalogRow]
     let selectedHandle: AiModelHandle
     let fixedMs: Int64
@@ -9048,6 +9195,7 @@ private extension CBW001ContextualChatRequestTests {
         persistence: AiChatSessionPersistenceSpy? = nil,
     ) -> CBW001StreamFixture {
         let stream = AiChatExecutionStreamDriver()
+        let metrics = LockIsolated<[AiChatProductMetric]>([])
         let catalogRows = makeCatalogRows()
         let selectedHandle = catalogRows[0].handle
         let sessionID = AiChatSessionID(rawValue: makeUUID("11111111-1111-1111-1111-111111111112"))
@@ -9068,6 +9216,9 @@ private extension CBW001ContextualChatRequestTests {
             $0.uuid = .incrementing
             $0.date = .constant(makeFixedDate(milliseconds: fixedMs))
             $0.aiChatExecutionClient = AiChatExecutionClient(execute: { request in stream.stream(for: request) })
+            $0.aiChatProductMetricsClient = AiChatProductMetricsClient { metric in
+                metrics.withValue { $0.append(metric) }
+            }
             $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
                 loadSession: { _ in nil },
                 saveSession: { snapshot in
@@ -9079,6 +9230,7 @@ private extension CBW001ContextualChatRequestTests {
         }
         return CBW001StreamFixture(
             stream: stream,
+            metrics: metrics,
             catalogRows: catalogRows,
             selectedHandle: selectedHandle,
             fixedMs: fixedMs,

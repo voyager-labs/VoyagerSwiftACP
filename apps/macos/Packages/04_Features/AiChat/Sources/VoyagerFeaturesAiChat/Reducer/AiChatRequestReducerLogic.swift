@@ -293,9 +293,9 @@ extension AiChatFeature {
         return AiChatPreparedRequest(
             prompt: trimmed,
             messages: truncatedHistory.messages,
+            persistenceTranscriptHistory: fullMessages,
             assistantReplacementIndex: nil,
             historyTruncation: truncatedHistory.metadata,
-            persistenceTranscriptHistory: fullMessages,
         )
     }
 
@@ -324,9 +324,9 @@ extension AiChatFeature {
         return AiChatPreparedRequest(
             prompt: lastUserPrompt,
             messages: truncatedHistory.messages,
+            persistenceTranscriptHistory: messages,
             assistantReplacementIndex: assistantReplacementIndex,
             historyTruncation: truncatedHistory.metadata,
-            persistenceTranscriptHistory: messages,
             requestContextOverride: requestContextOverride,
             requestContextSource: requestContextOverride == nil ? lastSubmittedContext?.context : nil,
         )
@@ -673,12 +673,14 @@ extension AiChatFeature {
             effects.append(.cancel(id: CancelID.requestContextResolution(pendingRequestStart.resolutionID)))
         }
         if let lock = state.executionPhase.lock, lock.context.sessionID == sessionID {
+            state.productMetricOperations[lock.requestID] = nil
             effects.append(cancelRequestLifecycle(for: lock))
         }
 
         let backgroundLocks = state.backgroundExecutionPhases.values.compactMap(\.lock)
             .filter { $0.context.sessionID == sessionID }
         for lock in backgroundLocks {
+            state.productMetricOperations[lock.requestID] = nil
             state.backgroundExecutionPhases[lock.requestID] = nil
             effects.append(cancelRequestLifecycle(for: lock))
         }
@@ -696,9 +698,11 @@ extension AiChatFeature {
             effects.append(.cancel(id: CancelID.requestContextResolution(pendingRequestStart.resolutionID)))
         }
         if let lock = state.executionPhase.lock {
+            state.productMetricOperations[lock.requestID] = nil
             effects.append(cancelRequestLifecycle(for: lock))
         }
         for lock in state.backgroundExecutionPhases.values.compactMap(\.lock) {
+            state.productMetricOperations[lock.requestID] = nil
             effects.append(cancelRequestLifecycle(for: lock))
         }
         state.backgroundPendingRequestStarts = [:]
@@ -737,6 +741,11 @@ extension AiChatFeature {
             failure: .cancelled,
             wasCancelled: true,
         ))
+        recordProductResult(
+            for: lock.context,
+            result: .cancelled,
+            state: &state,
+        )
         return cancelRequestLifecycle(for: lock)
     }
 
