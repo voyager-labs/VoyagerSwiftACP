@@ -70,6 +70,9 @@ final class StagingDirectory {
     /// accept 시점에 동기 고정한 root descriptor(O(1) per URL). 트리 격리와 하위 열거는
     /// 세션 큐 첫 작업에서 이 fd 기준으로 수행한다(코멘트 #3835329097).
     private var pinnedImmediateRootDescriptors: [String: Int32] = [:]
+    /// 세션 생성 시 고정한 staging root descriptor. provider에 경로가 노출되기 전에
+    /// 열렸으므로 이후의 중간 디렉터리 symlink 치환에 영향받지 않는다(#3848721433).
+    private var stagingRootDescriptor: Int32 = -1
     /// 보관 candidate 경로(canonical) → 격리 레지스트리 루트 label 매핑. 격리는 원본
     /// canonical 레이블로 수행되고 placement 조회는 candidate 경로로 들어온다.
     private var placementAliases: [String: String] = [:]
@@ -86,6 +89,17 @@ final class StagingDirectory {
             .appendingPathComponent(".voyager-claimed-\(rootName)", isDirectory: true)
         try? fileManager.createDirectory(ownedPath, true, nil)
         pinnedContent = PinnedContentStore(directoryPath: ownedPath.path, fileManager: fileManager)
+        // root fd는 provider에 경로가 노출되기 전 세션 생성 시점에 고정한다(#3848721433).
+        stagingRootDescriptor = Darwin.open(
+            path,
+            O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC,
+        )
+    }
+
+    deinit {
+        if stagingRootDescriptor >= 0 {
+            Darwin.close(stagingRootDescriptor)
+        }
     }
 
     var claimedPath: String {
@@ -105,43 +119,36 @@ final class StagingDirectory {
         guard parentDescriptor >= 0 else { return nil }
         defer { Darwin.close(parentDescriptor) }
 
-        let sourceName = sourceURL.lastPathComponent
-        let baseName = (sourceName as NSString).deletingPathExtension
-        let pathExtension = (sourceName as NSString).pathExtension
-
-        // 이름을 O_CREAT|O_EXCL로 배타 선점한다. 공격자가 예측한 candidate 이름을
-        // symlink로 대차할 수 없고, renameat이 그 이름 위로 원자적으로 덮어쓴다.
-        var candidateName: String?
-        var suffix = 0
-        while candidateName == nil, suffix < 64 {
-            let trial = suffix == 0 ? sourceName : (
-                pathExtension.isEmpty
-                    ? "\(baseName) \(suffix + 1)"
-                    : "\(baseName) \(suffix + 1).\(pathExtension)"
-            )
-            let probe = Darwin.openat(
-                parentDescriptor,
-                trial,
-                O_CREAT | O_EXCL | O_RDONLY | O_NOFOLLOW | O_CLOEXEC,
-                mode_t(0o600),
-            )
-            if probe >= 0 {
-                Darwin.close(probe)
-                candidateName = trial
-            } else if errno != EEXIST {
-                return nil
-            }
-            suffix += 1
-        }
-        guard let reservedName = candidateName else { return nil }
+        guard let reservedName = reserveClaimedName(
+            for: sourceURL.lastPathComponent,
+            in: parentDescriptor,
+        ) else { return nil }
         let candidate = ownedPath.appendingPathComponent(reservedName)
 
         func abandonReservation() {
             Darwin.unlinkat(parentDescriptor, reservedName, 0)
         }
 
-        let sourceDescriptor = Darwin.open(
-            sourceURL.path,
+        // 고정된 staging root fd에서 상대 경로의 모든 성분을 NOFOLLOW로 걷는다.
+        // 전체 경로 open의 O_NOFOLLOW는 마지막 성분만 보호해, 중간 디렉터리가
+        // symlink로 교체되면 staging 밖 노드를 Voyager 권한으로 열 수 있었다(#3848721433).
+        identityLock.lock()
+        let stagingRootFD = stagingRootDescriptor
+        identityLock.unlock()
+        guard stagingRootFD >= 0 else {
+            abandonReservation()
+            return nil
+        }
+        guard let walked = openStagingSource(relativeTo: sourceURL, rootDescriptor: stagingRootFD) else {
+            abandonReservation()
+            return nil
+        }
+        defer {
+            if let closeable = walked.closeableParent { Darwin.close(closeable) }
+        }
+        let sourceDescriptor = Darwin.openat(
+            walked.parentDescriptor,
+            walked.name,
             O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC,
         )
         guard sourceDescriptor >= 0 else {
@@ -150,22 +157,12 @@ final class StagingDirectory {
         }
         defer { Darwin.close(sourceDescriptor) }
 
-        let sourceParentDescriptor = Darwin.open(
-            sourceURL.deletingLastPathComponent().path,
-            O_RDONLY | O_DIRECTORY | O_CLOEXEC,
-        )
-        guard sourceParentDescriptor >= 0 else {
-            abandonReservation()
-            return nil
-        }
-        defer { Darwin.close(sourceParentDescriptor) }
-
         do {
             // 배타 선점된 이름 위로 원자 교체한다. moveItem의 경로 추적과 달리 중간에
             // 설치된 symlink를 따라가 staging 밖으로 나갈 수 없다.
             let renamed = Darwin.renameat(
-                sourceParentDescriptor,
-                sourceName,
+                walked.parentDescriptor,
+                walked.name,
                 parentDescriptor,
                 reservedName,
             )
@@ -212,6 +209,67 @@ final class StagingDirectory {
             abandonReservation()
             return nil
         }
+    }
+
+    /// 보관 이름을 O_CREAT|O_EXCL로 배타 선점한다(#3845390794). 공격자가 예측한
+    /// candidate 이름을 symlink로 대차할 수 없고, renameat이 그 이름 위로 원자적으로
+    /// 덮어쓴다. 64회 시도 내에 비어 있는 이름을 찾지 못하면 nil로 실패한다.
+    private func reserveClaimedName(for sourceName: String, in parentDescriptor: Int32) -> String? {
+        let baseName = (sourceName as NSString).deletingPathExtension
+        let pathExtension = (sourceName as NSString).pathExtension
+        var suffix = 0
+        while suffix < 64 {
+            let trial = suffix == 0 ? sourceName : (
+                pathExtension.isEmpty
+                    ? "\(baseName) \(suffix + 1)"
+                    : "\(baseName) \(suffix + 1).\(pathExtension)"
+            )
+            let probe = Darwin.openat(
+                parentDescriptor,
+                trial,
+                O_CREAT | O_EXCL | O_RDONLY | O_NOFOLLOW | O_CLOEXEC,
+                mode_t(0o600),
+            )
+            if probe >= 0 {
+                Darwin.close(probe)
+                return trial
+            }
+            guard errno == EEXIST else { return nil }
+            suffix += 1
+        }
+        return nil
+    }
+
+    /// 고정된 staging root fd에서 상대 경로의 모든 성분을 NOFOLLOW로 걷어
+    /// (parent fd, 마지막 성분)을 반환한다(#3848721433). staging 경계 밖 경로와
+    /// 중간 symlink는 nil로 실패 폐쇄한다. closeableParent는 caller가 닫을 fd이며
+    /// 직계 자식(opened 중간 없음)일 때 nil이다.
+    private func openStagingSource(
+        relativeTo sourceURL: URL,
+        rootDescriptor: Int32,
+    ) -> (parentDescriptor: Int32, closeableParent: Int32?, name: String)? {
+        let canonicalSource = canonicalClaimPath(sourceURL.path)
+        let canonicalRoot = canonicalClaimPath(path)
+        guard canonicalSource.hasPrefix(canonicalRoot + "/") else { return nil }
+        let components = canonicalSource
+            .dropFirst(canonicalRoot.count + 1)
+            .split(separator: "/")
+            .map(String.init)
+        guard let name = components.last else { return nil }
+        var parentDescriptor = rootDescriptor
+        var openedIntermediate: Int32?
+        for component in components.dropLast() {
+            let next = Darwin.openat(
+                parentDescriptor,
+                component,
+                O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC,
+            )
+            if let opened = openedIntermediate { Darwin.close(opened) }
+            guard next >= 0 else { return nil }
+            openedIntermediate = next
+            parentDescriptor = next
+        }
+        return (parentDescriptor, openedIntermediate, name)
     }
 
     /// accept 경계(MainActor)에서는 각 즉시 URL의 root descriptor 고정과 타입 검증만 수행한다
@@ -578,6 +636,10 @@ final class StagingDirectory {
         pinnedContent.clearRegistry()
         closeDescriptors(pinnedImmediateRootDescriptors.values)
         pinnedImmediateRootDescriptors.removeAll()
+        if stagingRootDescriptor >= 0 {
+            Darwin.close(stagingRootDescriptor)
+            stagingRootDescriptor = -1
+        }
         placementAliases.removeAll()
         claimedIdentities.removeAll()
         identityLock.unlock()
@@ -603,6 +665,10 @@ final class StagingDirectory {
         isRemoved = true
         closeDescriptors(pinnedImmediateRootDescriptors.values)
         pinnedImmediateRootDescriptors.removeAll()
+        if stagingRootDescriptor >= 0 {
+            Darwin.close(stagingRootDescriptor)
+            stagingRootDescriptor = -1
+        }
         // 레지스트리만 비우고 실제 파일은 통째 rename+백그라운드 삭제로 정리한다.
         pinnedContent.clearRegistry()
         claimedIdentities.removeAll()

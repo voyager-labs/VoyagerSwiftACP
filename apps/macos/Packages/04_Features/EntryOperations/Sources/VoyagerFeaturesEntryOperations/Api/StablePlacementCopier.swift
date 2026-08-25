@@ -101,8 +101,10 @@ enum StablePlacementCopier {
             times[0].tv_usec = Int32(status.st_atimespec.tv_nsec / 1000)
             times[1].tv_sec = status.st_mtimespec.tv_sec
             times[1].tv_usec = Int32(status.st_mtimespec.tv_nsec / 1000)
-            utimes(destination.path, times)
-
+            // fd 기반 적용: 목적지 부모가 경로를 rename·치환해도 복사한 inode의
+            // 시각만 복원한다(#3848721436). 검증 재개방은 mismatch가 실패 폐쇄로
+            // 귀결되므로 탐지로 작동한다.
+            futimes(destinationDescriptor, times)
             // 성공 반환 전 최종 취소 확인(#3840637309).
             try Task.checkCancellation()
         } catch {
