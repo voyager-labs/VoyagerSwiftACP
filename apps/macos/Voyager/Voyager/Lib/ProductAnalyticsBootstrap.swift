@@ -42,6 +42,8 @@ private actor ProductAnalyticsRuntime {
                     identity: .device(cachedDeviceIdentity),
                     context: request.context,
                     properties: request.properties,
+                    eventVersion: request.eventVersion,
+                    operationID: request.operationID,
                 )
                 if case let .capture(captureRequest) = result {
                     await provider.capture(captureRequest)
