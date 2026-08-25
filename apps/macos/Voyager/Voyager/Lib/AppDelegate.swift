@@ -233,8 +233,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         withAppRootStore {
             if let windowID {
                 $0.send(.windowManager(.file(Self.targetedFileCommand(for: command, windowID: windowID))))
-            } else {
-                $0.send(.menuCommands(.view(.app(Self.menuCommand(for: command)))))
+            } else if let menuCommand = Self.menuCommand(for: command) {
+                $0.send(.menuCommands(.view(.app(menuCommand))))
             }
         }
     }
@@ -252,6 +252,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             .moveNextContentTabSwitcherInWindow(windowID: windowID, source: .keyboardShortcut)
         case .movePrevious:
             .movePreviousContentTabSwitcherInWindow(windowID: windowID, source: .keyboardShortcut)
+        case .activateSwitcherSelection:
+            .activateContentTabSwitcherInWindow(windowID: windowID, source: .keyboardShortcut)
         case .dismissSwitcher:
             .dismissContentTabSwitcherInWindow(windowID: windowID, source: .keyboardShortcut)
         }
@@ -259,7 +261,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     static func menuCommand(
         for command: AppKeyboardShortcutMonitor.ControlTabGestureCommand,
-    ) -> MenuCommandItem.AppCommand {
+    ) -> MenuCommandItem.AppCommand? {
         switch command {
         case .immediateMostRecentlyUsed:
             .selectMostRecentlyUsedContentTab
@@ -269,6 +271,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             .moveNextContentTabSwitcher
         case .movePrevious:
             .movePreviousContentTabSwitcher
+        case .activateSwitcherSelection:
+            nil
         case .dismissSwitcher:
             .dismissContentTabSwitcher
         }

@@ -11,12 +11,13 @@ final class CTM004SwitchContentTabWithUsedContentTabsSwitcherTests: XCTestCase {
     func testAppDelegateSemanticCommandsMapExactlyToMenuCommands() {
         let cases: [(
             AppKeyboardShortcutMonitor.ControlTabGestureCommand,
-            MenuCommandItem.AppCommand,
+            MenuCommandItem.AppCommand?,
         )] = [
             (.immediateMostRecentlyUsed, .selectMostRecentlyUsedContentTab),
             (.presentSwitcher, .presentContentTabSwitcher),
             (.moveNext, .moveNextContentTabSwitcher),
             (.movePrevious, .movePreviousContentTabSwitcher),
+            (.activateSwitcherSelection, nil),
             (.dismissSwitcher, .dismissContentTabSwitcher),
         ]
 
@@ -278,8 +279,11 @@ final class CTM004SwitchContentTabWithUsedContentTabsSwitcherTests: XCTestCase {
         XCTAssertTrue(fixture.commands.isEmpty)
     }
 
-    /// CTM-004-short_hold_arbitration: overlay repeats navigate and Control release dismisses.
-    func testOverlayTabRepeatsEmitNavigationAndControlReleaseDismisses() {
+    /// CTM-004-short_hold_arbitration: overlay repeats navigate and Control release activates the focused candidate.
+    /// - 검증 내용: 이전·다음 탐색 이후 Control 해제 semantic command
+    /// - 사전 조건: monitor 소유 switcher가 표시된 상태에서 후보 focus를 이동한다.
+    /// - 기대 결과: dismiss가 아니라 targeted activation command를 정확히 한 번 방출한다.
+    func testOverlayTabRepeatsEmitNavigationAndControlReleaseActivates() {
         let fixture = MonitorFixture()
         _ = fixture.monitor.handleKeyDownEvent(
             fixture.event(.keyDown, timestamp: 10),
@@ -288,25 +292,32 @@ final class CTM004SwitchContentTabWithUsedContentTabsSwitcherTests: XCTestCase {
             emit: fixture.emit,
         )
         fixture.fireScheduledHold()
+        let overlayContext = AppKeyboardShortcutMonitor.ContentTabShortcutContext(
+            hasFocusedWindow: true,
+            isComposerPresented: false,
+            isContentTabSwitcherPresented: true,
+            focusedWindowID: fixture.context.focusedWindowID,
+            contentTabSwitcherSource: .keyboardShortcut,
+        )
         _ = fixture.monitor.handleKeyDownEvent(
             fixture.event(.keyDown, timestamp: 10.3, shift: true),
-            context: fixture.context,
+            context: overlayContext,
             firstResponder: nil,
             emit: fixture.emit,
         )
         _ = fixture.monitor.handleKeyDownEvent(
             fixture.event(.keyDown, timestamp: 10.31, repeat: true),
-            context: fixture.context,
+            context: overlayContext,
             firstResponder: nil,
             emit: fixture.emit,
         )
         _ = fixture.monitor.handleFlagsChangedEvent(
             fixture.event(.flagsChanged, timestamp: 10.32, modifiers: []),
-            context: fixture.context,
+            context: overlayContext,
             emit: fixture.emit,
         )
 
-        XCTAssertEqual(fixture.commands, [.presentSwitcher, .movePrevious, .moveNext, .dismissSwitcher])
+        XCTAssertEqual(fixture.commands, [.presentSwitcher, .movePrevious, .moveNext, .activateSwitcherSelection])
     }
 
     func testExternalDismissalResynchronizesHeldControlTabBeforeRetriggering() {

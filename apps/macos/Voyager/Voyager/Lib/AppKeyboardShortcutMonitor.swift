@@ -9,6 +9,7 @@ final class AppKeyboardShortcutMonitor {
         case presentSwitcher
         case moveNext
         case movePrevious
+        case activateSwitcherSelection
         case dismissSwitcher
     }
 
@@ -319,6 +320,10 @@ final class AppKeyboardShortcutMonitor {
                     dismissHold: true,
                     emit: emit,
                 )
+            } else if case .overlayOwned = controlTabState,
+                      !event.modifierFlags.contains(.control)
+            {
+                activateOwnedSwitcherSelection(context: context, emit: emit)
             } else if wasActive {
                 cancelControlTabGesture(emit: emit)
             }
@@ -410,6 +415,24 @@ final class AppKeyboardShortcutMonitor {
                 overlayDismiss?()
             }
         }
+        generation &+= 1
+        controlTabState = .idle
+    }
+
+    private func activateOwnedSwitcherSelection(
+        context: ContentTabShortcutContext,
+        emit: @escaping (ControlTabGestureCommand) -> Void,
+    ) {
+        guard case let .overlayOwned(_, ownerWindowID, source) = controlTabState,
+              source == .keyboardShortcut,
+              ownerWindowID == context.focusedWindowID,
+              context.isContentTabSwitcherPresented,
+              context.contentTabSwitcherSource == source
+        else {
+            cancelControlTabGesture(emit: emit)
+            return
+        }
+        emitControlTabCommand(.activateSwitcherSelection, fallback: emit)
         generation &+= 1
         controlTabState = .idle
     }
