@@ -70,6 +70,9 @@ struct WindowManagerFeature {
     @Dependency(\.workspaceClient)
     var workspaceClient
 
+    @Dependency(\.startPageAvailabilityClient)
+    var startPageAvailabilityClient
+
     @Dependency(\.date)
     var date
 
@@ -464,6 +467,14 @@ struct WindowManagerFeature {
                 default:
                     return .none
                 }
+
+            case let .defaultStartPageResolved(requestID, selectEntryID, startPage):
+                return resumeDefaultStartPageResolution(
+                    requestID: requestID,
+                    selectEntryID: selectEntryID,
+                    startPage: startPage,
+                    state: &state,
+                )
 
             case .delegate, .windows:
                 return .none

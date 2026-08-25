@@ -102,6 +102,7 @@ extension WindowManagerFeature {
         requestID: UUID,
         path: String?,
         selectEntryID: String?,
+        resolvedStartPage: StartPage? = nil,
         state: inout State,
     ) -> Effect<Action> {
         guard state.authorizedTrackedSingletonRequestID == requestID else {
@@ -111,7 +112,32 @@ extension WindowManagerFeature {
             state.authorizedTrackedSingletonRequestID = nil
             return trackedSingletonCompletionEffect(requestID)
         }
-        let windowSession = makeWindowSession(path: path, selectEntryID: selectEntryID)
+        var startPage: StartPage?
+        if path == nil {
+            if let resolvedStartPage {
+                startPage = resolvedStartPage
+            } else {
+                let snapshot = state.appPreferences.defaultStartPage
+                if case .home = snapshot {
+                    // home 선호는 IO가 없으므로 동기 fast path로 즉시 생성한다.
+                    startPage = .home
+                } else {
+                    // 클라우드 placeholder stat이 메인 스레드를 막지 않도록 프로브를 effect로 미룬다.
+                    return resolveDefaultStartPageEffect(snapshot: snapshot) { resolved in
+                        .defaultStartPageResolved(
+                            requestID: requestID,
+                            selectEntryID: selectEntryID,
+                            startPage: resolved,
+                        )
+                    }
+                }
+            }
+        }
+        let windowSession = makeWindowSession(
+            path: path,
+            startPage: startPage,
+            selectEntryID: selectEntryID,
+        )
         state.windows.append(windowSession)
         state.focusedWindowID = windowSession.id
         state.moveWindowToMRUFront(windowSession.id)
@@ -380,13 +406,63 @@ extension WindowManagerFeature {
     private func openWindowSession(
         path: String?,
         selectEntryID: String?,
+        resolvedStartPage: StartPage? = nil,
         state: inout State,
     ) -> Effect<Action> {
         if onboardingWindowClient.showIfNeeded() { return .none }
-        let windowSession = makeWindowSession(path: path, selectEntryID: selectEntryID)
+        var startPage: StartPage?
+        if path == nil {
+            if let resolvedStartPage {
+                startPage = resolvedStartPage
+            } else {
+                let snapshot = state.appPreferences.defaultStartPage
+                if case .home = snapshot {
+                    // home 선호는 IO가 없으므로 동기 fast path로 즉시 생성한다.
+                    startPage = .home
+                } else {
+                    // 클라우드 placeholder stat이 메인 스레드를 막지 않도록 프로브를 effect로 미룬다.
+                    return resolveDefaultStartPageEffect(snapshot: snapshot) { resolved in
+                        .defaultStartPageResolved(
+                            requestID: nil,
+                            selectEntryID: selectEntryID,
+                            startPage: resolved,
+                        )
+                    }
+                }
+            }
+        }
+        let windowSession = makeWindowSession(
+            path: path,
+            startPage: startPage,
+            selectEntryID: selectEntryID,
+        )
         return openWindowSession(
             windowSession,
             startsDefaultBootstrap: path == nil,
+            state: &state,
+        )
+    }
+
+    /// 비동기 시작 페이지 프로브 완료 후 원래 요청 경로로 창 생성을 재개한다.
+    func resumeDefaultStartPageResolution(
+        requestID: UUID?,
+        selectEntryID: String?,
+        startPage: StartPage,
+        state: inout State,
+    ) -> Effect<Action> {
+        if let requestID {
+            return openTrackedWindowSession(
+                requestID: requestID,
+                path: nil,
+                selectEntryID: selectEntryID,
+                resolvedStartPage: startPage,
+                state: &state,
+            )
+        }
+        return openWindowSession(
+            path: nil,
+            selectEntryID: selectEntryID,
+            resolvedStartPage: startPage,
             state: &state,
         )
     }

@@ -6,6 +6,7 @@ import VoyagerEntitiesAi
 import VoyagerEntitiesAppPreferences
 import VoyagerFeaturesAiChat
 import VoyagerFeaturesComposer
+import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
 @testable import VoyagerPagesFileManager
 import VoyagerPagesOnboarding
@@ -71,6 +72,171 @@ final class FileManagerWindowManagerTests: XCTestCase {
         await store.send(.lifecycle(.openInitialWindowIfNeeded))
 
         XCTAssertEqual(openCallCount.value, 0, "기존 window가 있으면 openInitialWindowIfNeeded는 open client를 다시 호출하지 않아야 한다")
+    }
+
+    /// FMW-001-open_new_file_manager_window: 새 창 요청 시 defaultStartPage를 한 번 해석해 Directory를 직접 seed한다.
+    /// 요청 시점의 preference snapshot이 Home shell을 거치지 않고 initial state에 반영되는지 검증한다.
+    /// - 검증 내용: `path:nil` 요청의 첫 상태가 Directory route/anchor인지, resolver가 available 결과를 반환하는지
+    /// - 사전 조건: WindowManager preference는 `/request-time-directory`, directory probe는 available이다.
+    /// - 기대 결과: 생성된 창의 navigation state가 즉시 해당 Directory이고 Home navigation action은 방출되지 않는다.
+    func testNewWindowUsesRequestTimeDefaultStartPageWithoutHomeFlash() async {
+        let windowID = UUID()
+        let directory = "/request-time-directory"
+        var initialState = WindowManagerFeature.State()
+        initialState.appPreferences.defaultStartPage = .directory(directory)
+        let store = makeStore(initialState: initialState, uuid: windowID) {
+            $0.startPageAvailabilityClient = .init { path in
+                path == directory ? .availableDirectory : .missing
+            }
+            $0.fileManagerWindowClient.registeredWindowIDs = { [windowID] }
+        }
+        store.exhaustivity = .off
+
+        // 디렉터리 프로브는 비동기 effect로 실행되므로 해석 완료 액션 이후 창이 생성된다.
+        await store.send(.file(.newWindow(path: nil)))
+        await store.receive { action in
+            guard case let .defaultStartPageResolved(requestID, selectEntryID, startPage) = action,
+                  requestID == nil,
+                  selectEntryID == nil,
+                  startPage == .directory(directory)
+            else { return false }
+            return true
+        }
+        XCTAssertEqual(
+            store.state.windows[id: windowID]?.window.content.navigation.navigationState,
+            .folder(directory),
+        )
+        await store.finish()
+    }
+
+    /// FMW-001-open_new_file_manager_window: 최초 기본 창도 Directory를 직접 seed한다.
+    /// lifecycle 경로가 `path:nil` 새 창 요청으로 연결될 때 Home shell을 먼저 만들지 않는지 검증한다.
+    /// - 검증 내용: 최초 창의 첫 observable state가 Directory route/anchor인지, Home navigation action이 없는지
+    /// - 사전 조건: app preference는 available Directory이고 기존 창은 없다.
+    /// - 기대 결과: lifecycle 요청 직후 생성된 window가 해당 Directory에서 시작한다.
+    func testInitialWindowUsesDefaultDirectoryWithoutHomeFlash() async {
+        let windowID = UUID()
+        let directory = "/initial-directory"
+        var initialState = WindowManagerFeature.State()
+        initialState.appPreferences.defaultStartPage = .directory(directory)
+        let store = makeStore(initialState: initialState, uuid: windowID) {
+            $0.startPageAvailabilityClient = .init { path in
+                path == directory ? .availableDirectory : .missing
+            }
+            $0.fileManagerWindowClient.registeredWindowIDs = { [windowID] }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.lifecycle(.openInitialWindowIfNeeded))
+        await store.receive { action in
+            guard case let .file(.newWindow(path, _)) = action, path == nil else { return false }
+            return true
+        }
+        await store.receive { action in
+            guard case let .defaultStartPageResolved(requestID, selectEntryID, startPage) = action,
+                  requestID == nil,
+                  selectEntryID == nil,
+                  startPage == .directory(directory)
+            else { return false }
+            return true
+        }
+        XCTAssertEqual(
+            store.state.windows[id: windowID]?.window.content.navigation.navigationState,
+            .folder(directory),
+        )
+        await store.finish()
+    }
+
+    /// FMW-001-open_new_file_manager_window: unavailable default는 Home으로 fallback하고 explicit path가 우선한다.
+    /// - 검증 내용: default Directory probe 실패 시 Home 생성, explicit path 요청 시 preference 무시
+    /// - 사전 조건: default preference는 missing Directory이다.
+    /// - 기대 결과: 첫 새 창은 Home이고 explicit path 새 창은 요청 path Directory이다.
+    func testUnavailableDefaultFallsBackToHomeAndExplicitPathWins() async throws {
+        let defaultDirectory = "/missing-default"
+        let explicitDirectory = "/explicit-directory"
+        var initialState = WindowManagerFeature.State()
+        initialState.appPreferences.defaultStartPage = .directory(defaultDirectory)
+        let store = makeStore(initialState: initialState) {
+            $0.uuid = .incrementing
+            $0.startPageAvailabilityClient = .init { _ in .missing }
+            $0.fileManagerWindowClient.registeredWindowIDs = { [] }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.file(.newWindow(path: nil)))
+        // probe 실패(missing)는 Home으로 fallback된다.
+        await store.receive { action in
+            guard case let .defaultStartPageResolved(requestID, selectEntryID, startPage) = action,
+                  requestID == nil,
+                  selectEntryID == nil,
+                  startPage == .home
+            else { return false }
+            return true
+        }
+        let firstWindowID = try XCTUnwrap(store.state.windows.ids.first)
+        XCTAssertEqual(
+            store.state.windows[id: firstWindowID]?.window.content.navigation.navigationState,
+            .home,
+        )
+
+        await store.send(.file(.newWindow(path: explicitDirectory)))
+        let secondWindowID = try XCTUnwrap(store.state.windows.ids.last)
+        XCTAssertEqual(
+            store.state.windows[id: secondWindowID]?.window.content.navigation.navigationState,
+            .folder(explicitDirectory),
+        )
+        await store.finish()
+    }
+
+    /// FMW-001-open_new_file_manager_window: 설정 변경은 기존 창을 이동시키지 않고 다음 창 snapshot만 바꾼다.
+    /// - 검증 내용: preference update 후 기존 Directory 보존 및 후속 `path:nil` 창의 새 Directory 적용
+    /// - 사전 조건: 기존 창은 첫 Directory, 새 preference는 두 번째 available Directory이다.
+    /// - 기대 결과: 기존 창은 첫 Directory 불변이고 새 창은 두 번째 Directory에서 시작한다.
+    func testPreferenceUpdatePreservesExistingWindowAndChangesNextWindowSnapshot() async {
+        let existingID = UUID()
+        let nextID = UUID()
+        let firstDirectory = "/first-directory"
+        let secondDirectory = "/second-directory"
+        var initialState = WindowManagerFeature.State()
+        initialState.appPreferences.defaultStartPage = .directory(firstDirectory)
+        initialState.windows = .init(uniqueElements: [
+            .init(id: existingID, window: .makeInitial(path: firstDirectory)),
+        ])
+        initialState.focusedWindowID = existingID
+        let store = makeStore(initialState: initialState, uuid: nextID) {
+            $0.startPageAvailabilityClient = .init { path in
+                path == firstDirectory || path == secondDirectory ? .availableDirectory : .missing
+            }
+            $0.fileManagerWindowClient.registeredWindowIDs = { [existingID, nextID] }
+        }
+        store.exhaustivity = .off
+
+        var updatedPreferences = Voyager.AppPreferencesState()
+        updatedPreferences.defaultStartPage = .directory(secondDirectory)
+        await store.send(.lifecycle(.applyAppPreferences(updatedPreferences))) {
+            $0.appPreferences = updatedPreferences
+        }
+        await store.finish()
+
+        XCTAssertEqual(
+            store.state.windows[id: existingID]?.window.content.navigation.navigationState,
+            .folder(firstDirectory),
+        )
+
+        await store.send(.file(.newWindow(path: nil)))
+        await store.receive { action in
+            guard case let .defaultStartPageResolved(requestID, selectEntryID, startPage) = action,
+                  requestID == nil,
+                  selectEntryID == nil,
+                  startPage == .directory(secondDirectory)
+            else { return false }
+            return true
+        }
+        XCTAssertEqual(
+            store.state.windows[id: nextID]?.window.content.navigation.navigationState,
+            .folder(secondDirectory),
+        )
+        await store.finish()
     }
 
     // MARK: - FMW-001-close_file_manager_window (detail)
@@ -1203,11 +1369,13 @@ enum WindowManagerTestSupport {
         TestStore(initialState: initialState) {
             WindowManagerFeature()
         } withDependencies: {
+            $0.uuid = .incrementing
             if let uuid {
                 $0.uuid = .constant(uuid)
             }
             $0.date = .constant(Date(timeIntervalSince1970: 0))
             $0.onboardingWindowClient.showIfNeeded = { onboardingRequired }
+            $0.fileManagerWindowClient.open = { _ in }
             configureDependencies?(&$0)
         }
     }

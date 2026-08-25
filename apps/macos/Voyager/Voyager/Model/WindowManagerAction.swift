@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAi
+import VoyagerEntitiesAppPreferences
 import VoyagerEntitiesCollection
 import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
@@ -339,6 +340,11 @@ enum WindowManagerAction: CasePathable {
     case topNavigationPersistenceCompleted(WindowManagerTopNavigationPersistenceResult)
     case defaultWindowBootstrapCompleted(requestID: UUID, result: DefaultWindowBootstrapResult)
     case defaultWindowBootstrapFailed(requestID: UUID)
+    case defaultStartPageResolved(
+        requestID: UUID?,
+        selectEntryID: String?,
+        startPage: StartPage,
+    )
     case defaultWindowBootstrapRequested(id: WindowManagerState.WindowID)
     case windowReadyToOpen(id: WindowManagerState.WindowID)
     case windowOpenCompleted(

@@ -256,7 +256,11 @@ extension WindowManagerFeature {
         }
     }
 
-    func makeWindowSession(path: String?, selectEntryID: String? = nil) -> WindowSessionState {
+    func makeWindowSession(
+        path: String?,
+        startPage: StartPage? = nil,
+        selectEntryID: String? = nil,
+    ) -> WindowSessionState {
         let id = uuid()
 
         if let path {
@@ -268,15 +272,31 @@ extension WindowManagerFeature {
             return .init(id: id, window: windowState)
         }
 
-        // Default window: Home shell immediately, no synchronous IO.
-        // Pinned store restore/seed/validation runs asynchronously via
-        // runDefaultWindowBootstrapEffect() attached in openWindowSession.
+        let initialPath: String? = switch startPage ?? .home {
+        case .home:
+            nil
+        case let .directory(path):
+            path
+        }
         let windowState = FileManagerWindowFeature.State.makeInitial(
-            path: nil,
+            path: initialPath,
             selectEntryID: selectEntryID,
             windowID: id,
         )
         return .init(id: id, window: windowState)
+    }
+
+    /// 시작 페이지 디렉터리 프로브(stat/resourceValues)를 비동기 effect로 실행한다.
+    /// request-time snapshot 계약: 액션 시작 시 캡처한 snapshot만 사용하고,
+    /// 완료 후 preference를 재조회하지 않는다.
+    func resolveDefaultStartPageEffect(
+        snapshot: StartPage,
+        makeAction: @escaping @Sendable (StartPage) -> Action,
+    ) -> Effect<Action> {
+        .run { send in
+            let resolution = StartPageResolver.resolve(snapshot)
+            await send(makeAction(resolution.effectiveStartPage))
+        }
     }
 }
 
