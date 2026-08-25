@@ -5,6 +5,14 @@ import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
 
+/// 대응 확정된 단일 이동 대상. raw는 symlink 해석 전 lexical 경로다.
+private struct RecordedMoveTarget {
+    let rawBefore: String
+    let rawAfter: String
+    let before: String
+    let after: String
+}
+
 enum FileManagerContentEntryOpsCoordinator {
     static func handleEntryOperationsAction(
         _ action: EntryOperationsAction,
@@ -127,11 +135,16 @@ enum FileManagerContentEntryOpsCoordinator {
         guard case let .folder(currentPath) = state.navigation.navigationState else { return .none }
         let normalizedRoot = canonicalizedPath(currentPath)
         let selectedPaths = Set(state.entryViewLayout.selectedIds.map(canonicalizedPath))
-        let movedTargets = record.targets.compactMap { target -> (before: String, after: String)? in
+        let movedTargets = record.targets.compactMap { target -> RecordedMoveTarget? in
             guard let beforePath = target.beforePath, let afterPath = target.afterPath else { return nil }
             let before = canonicalizedPath(beforePath)
             let after = canonicalizedPath(afterPath)
-            return before == after ? nil : (before, after)
+            return before == after ? nil : RecordedMoveTarget(
+                rawBefore: beforePath,
+                rawAfter: afterPath,
+                before: before,
+                after: after,
+            )
         }
         let selectedMoves = movedTargets.filter { selectedPaths.contains($0.before) }
         guard selectedMoves.count == 1, let move = selectedMoves.first else { return .none }
@@ -145,12 +158,12 @@ enum FileManagerContentEntryOpsCoordinator {
         // 이후에 도달해도 같은 세대로 판정되어 전이가 selection migration까지 유지된다.
         // 중간에 다른 reload가 끼면 generation 불일치로 전이가 만료된다.
         let projectionOwner = identityTransitionProjectionOwner(
-            afterPath: move.after,
+            afterPath: move.rawAfter,
             rootPath: normalizedRoot,
             state: state,
         )
         let preservationOwner = identityTransitionPreservationOwner(
-            beforePath: move.before,
+            beforePath: move.rawBefore,
             projectionOwner: projectionOwner,
             rootPath: normalizedRoot,
             state: state,
@@ -256,12 +269,15 @@ enum FileManagerContentEntryOpsCoordinator {
         let rootOwner = FileManagerContentState.EntryIdentityTransitionProjectionOwner.root(
             generation: state.entryViewLayout.entryOperations.loadingContext.generation,
         )
-        let directParentPath = canonicalizedPath(parentPath(for: afterPath))
-        if directParentPath == rootPath {
+        // symlink 엔트리는 마지막 컴포넌트가 target으로 해석될 수 있으므로 부모 판정은
+        // lexical(standardized) 경로를 먼저 쓰고, canonical 비교는 시스템 symlink(/tmp 등)
+        // 동등성 폴백으로만 사용한다.
+        let directParentPath = standardizedPath(parentPath(for: afterPath))
+        if directParentPath == rootPath || canonicalizedPath(directParentPath) == rootPath {
             return rootOwner
         }
         guard let folderID = state.entryViewLayout.hierarchy.nodesByID.keys.first(where: {
-            canonicalizedPath($0) == directParentPath
+            standardizedPath($0) == directParentPath || canonicalizedPath($0) == directParentPath
         }),
             state.entryViewLayout.hierarchy.expandedFolderIDs.contains(folderID),
             let node = state.entryViewLayout.hierarchy.nodesByID[folderID]
@@ -521,11 +537,11 @@ private extension OperationKind {
         }
     }
 
-    /// 교체 확인 후 목적지 선삭제를 포함하는 다단계 파이프라인 종류.
-    /// 취소 아닌 실패도 선삭제가 이미 반영됐을 수 있다.
+    /// 교체 확인 후 목적지 선삭제 또는 부분 배치를 포함하는 다단계 파이프라인 종류.
+    /// 취소 아닌 실패도 일부 파일시스템 결과가 이미 반영됐을 수 있다.
     var mayMutateBeforeFailure: Bool {
         switch self {
-        case .pasteFileMove, .pasteFileCopy:
+        case .pasteFileMove, .pasteFileCopy, .extract:
             true
         default:
             false

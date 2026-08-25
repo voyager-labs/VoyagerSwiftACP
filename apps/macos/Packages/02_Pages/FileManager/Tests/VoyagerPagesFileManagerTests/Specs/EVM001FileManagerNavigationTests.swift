@@ -1763,6 +1763,54 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         await store.finish()
     }
 
+    /// EVM-001-reload_directory_page_on_external_change: 압축 해제 부분 실패도 mutation 전이므로 reload한다.
+    /// extract는 대상 폴더 생성 후 항목을 하나씩 옮기므로 중간 실패 시 일부 결과가 남는다.
+    /// - 검증 내용: operationFinished .extract system 실패 수신 시 reload 전달
+    /// - 사전 조건: folder route의 LifecycleBridgeHarness
+    /// - 기대 결과: loadItems forwarding이 발생한다
+    func testExtractFailureReloadsContentForPartialMutation() async {
+        let folderPath = "/tmp/voyager-extract-failure"
+        let store = TestStore(initialState: makeInitialState(folderPath: folderPath)) {
+            LifecycleBridgeHarness()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.bridge(.lifecycle(.operationFinished(
+            "\(folderPath)/archive.zip",
+            .extract,
+            .failure(.system(message: "mid-extract move failure")),
+        ))))
+        await store.receive { action in
+            guard case let .forwarded(.entryViewLayout(.entryOperations(.loading(.loadItems(
+                path,
+                showHidden,
+                priority,
+            ))))) =
+                action else { return false }
+            return path == folderPath && showHidden == false && priority == .none
+        }
+        await store.finish()
+    }
+
+    /// EVM-001-reload_directory_page_on_external_change: 취소된 extract 실패는 reload하지 않는다.
+    /// - 검증 내용: operationFinished .extract cancelled 수신 시 forwarding 없음
+    /// - 사전 조건: folder route의 LifecycleBridgeHarness
+    /// - 기대 결과: reload effect 미발생
+    func testCancelledExtractFailureDoesNotReloadContent() async {
+        let folderPath = "/tmp/voyager-extract-cancel"
+        let store = TestStore(initialState: makeInitialState(folderPath: folderPath)) {
+            LifecycleBridgeHarness()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.bridge(.lifecycle(.operationFinished(
+            "\(folderPath)/archive.zip",
+            .extract,
+            .failure(.cancelled),
+        ))))
+        await store.finish()
+    }
+
     /// EVM-001-reload_directory_page_on_external_change: recents route entry operation 완료 시 recents reload forwarding
     /// FileManager content entry operation lifecycle bridge가 navigation route별 reload/restore boundary를 지키는지 검증.
     /// - 검증 내용: recents route에서 entry operation 완료 액션이 recents loader로 전달되는지 검증
@@ -3260,6 +3308,74 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         ))))
         XCTAssertEqual(store.state.entryViewLayout.selectedIds, [fixture.after.id])
         XCTAssertNil(store.state.pendingIdentityTransition, "stale sibling은 전이를 되살리거나 다시 소비하지 않는다")
+    }
+
+    /// EVM-001-reload_directory_page_on_external_change: symlink 이동의 projection owner는 lexical 부모로 판정한다.
+    /// 완료 시점 afterPath는 존재하는 symlink라 canonical 해석 시 root 밖으로 빠질 수 있으므로
+    /// destination folder가 expanded 상태면 해당 폴더 소유자가 유지되어야 한다.
+    /// - 검증 내용: replace 대상이 symlink인 pasteFileMove 기록의 owner가 dst folder로 계산되는지 검증
+    /// - 사전 조건: src/dst 확장 폴더와 dst/moved.txt symlink(outside 지시) 실제 생성
+    /// - 기대 결과: projectionOwner = .folder(dst), preservationOwner = .folder(src)
+    func testSymlinkMoveKeepsFolderProjectionOwnerFromLexicalParent() throws {
+        let base = NSTemporaryDirectory().appending("voyager-symlink-owner-\(UUID().uuidString)")
+        let rootPath = base + "root"
+        let srcPath = rootPath + "/src"
+        let dstPath = rootPath + "/dst"
+        let outsidePath = base + "outside/target"
+        let fm = FileManager.default
+        try fm.createDirectory(atPath: srcPath, withIntermediateDirectories: true)
+        try fm.createDirectory(atPath: dstPath, withIntermediateDirectories: true)
+        try fm.createDirectory(atPath: outsidePath, withIntermediateDirectories: true)
+        try fm.createSymbolicLink(atPath: dstPath + "/moved.txt", withDestinationPath: outsidePath)
+        defer { try? fm.removeItem(atPath: base) }
+
+        let source = EntryModel.temporaryFolder(id: srcPath, name: "src")
+        let destination = EntryModel.temporaryFolder(id: dstPath, name: "dst")
+        let before = makeCorrelationEntry(id: "\(srcPath)/moved.txt", name: "moved.txt")
+        let after = makeCorrelationEntry(id: "\(dstPath)/moved.txt", name: "moved.txt")
+        var state = FileManagerContentState()
+        state.navigation.seedInitialFolderPath(rootPath)
+        state.navigation.navigationState = .folder(rootPath)
+        state.entryViewLayout.mode = .list
+        state.entryViewLayout.entries = [source, destination]
+        state.entryViewLayout.entryOperations.items = [source, destination]
+        state.entryViewLayout.entryOperations.loadingContext.items = [source, destination]
+        state.entryViewLayout.entryOperations.loadingContext.generation = 7
+        state.entryViewLayout.hierarchy = .init(rootPath: rootPath)
+        state.entryViewLayout.hierarchy.nodesByID[source.id] = .init(
+            children: [before],
+            loadPhase: .loaded,
+            generation: 1,
+            expectedBatchIndex: 0,
+            coreFinished: true,
+        )
+        state.entryViewLayout.hierarchy.nodesByID[destination.id] = .init(
+            children: [],
+            loadPhase: .loaded,
+            generation: 1,
+            expectedBatchIndex: 0,
+            coreFinished: true,
+        )
+        state.entryViewLayout.hierarchy.setExpandedIDs([source.id, destination.id])
+        state.entryViewLayout.selectedIds = [before.id]
+        state.entryViewLayout.lastSelectedId = before.id
+        state.entryViewLayout.rangeAnchorId = before.id
+
+        let record = EntryActionRecord(
+            operationKind: .pasteFileMove,
+            targets: [.init(beforePath: before.id, afterPath: after.id)],
+        )
+        _ = FileManagerContentEntryOpsCoordinator.recordIdentityTransitionIfEligible(record, state: &state)
+
+        XCTAssertEqual(
+            state.pendingIdentityTransition?.projectionOwner,
+            .folder(id: destination.id, generation: 2),
+            "symlink after-path가 canonical 해석으로 벗어나도 lexical 부모의 folder 소유자를 유지한다",
+        )
+        XCTAssertEqual(
+            state.pendingIdentityTransition?.preservationOwner,
+            .folder(id: source.id, generation: 2),
+        )
     }
 
     /// EVM-001-command_external_refresh_correlation: 포함 디렉터리(현재 root의 조상) 경로의
