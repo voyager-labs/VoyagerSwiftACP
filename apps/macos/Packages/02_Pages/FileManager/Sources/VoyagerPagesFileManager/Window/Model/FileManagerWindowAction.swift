@@ -234,7 +234,7 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
 
     @CasePathable
     public enum View: Sendable {
-        case contentTabSwitcherFocusChanged(ContentTabID)
+        case activateContentTabSwitcherCandidate(ContentTabID)
         case dismissContentTabMoveFailure(requestID: UUID)
         case dismissContentTabSwitcher
     }
@@ -348,6 +348,7 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
         case openNewContentTab
         case selectContentTab(position: Int)
         case selectMostRecentlyUsedContentTab
+        case activateContentTabSwitcherSelection
         case moveContentTabSwitcherFocus(direction: ContentTabSwitcherFocusDirection)
         case presentContentTabSwitcher(source: FileManagerContentTabSwitcherPresentation.Source)
         case dismissContentTabSwitcher
