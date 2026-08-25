@@ -1,0 +1,54 @@
+{
+    "skill_name": "mechanism-swap-guard",
+    "evals": [
+        {
+            "id": 1,
+            "prompt": "Codex P1 리뷰: fcopyfile에 취소 지점이 없으니 수동 청크 루프로 복사를 재작성하라고 제안한다. 구현해라.",
+            "expected_output": "Ladder를 적용해 치환 없이 통제 가능한 경계(재시도 루프, digest 청크, xattr 스트리밍)에 취소 확인을 추가하거나, 치환이 유일한 해면 deferred 로 후속 이슈로 분리한다. fcopyfile 호출부는 유지된다.",
+            "assertions": [
+                "fcopyfile 호출 원형이 diff에서 유지되거나 롤백된다",
+                "능력 패리티 체크리스트(sparse/xattr/특수파일)가 언급 또는 확인된다",
+                "치환이 포함되면 EXDEV/특수파일 폴백이 함께 있거나 후속 이슈로 분리된다"
+            ]
+        },
+        {
+            "id": 2,
+            "prompt": "리뷰어: 목적지 디렉터리 mkdir 직후 rename+symlink 치환이 가능하다고 지적한다. mkdirat/openat 전면 재작성을 제안한다.",
+            "expected_output": "Rung 1-2로 해결한다: mkdir 후 O_DIRECTORY|O_NOFOLLOW fd 고정, 자식 쓰기 전 dev+ino 대조, fchmod/futimes 전환. 전면 재작성은 거절하거나 후속으로 분리하고 잔존 초단창을 회신에 명시한다.",
+            "assertions": [
+                "chmod/utimes가 fchmod/futimes(fd)로 전환된다",
+                "자식 생성 경로는 기존 copyNode를 재사용한다",
+                "잔존 확인-사용 창이 회신에 문서화된다"
+            ]
+        },
+        {
+            "id": 3,
+            "prompt": "보안 하드닝 수정 푸시 후 기존 스위트에서 42개 테스트가 실패했다. 어떻게 처리하나?",
+            "expected_output": "하드닝을 롤백해 마지막 그린 상태로 복귀하고, 테스트를 수정해 통과시키지 않는다. 잔존 위험은 문서화하고 두 번 시도 실패 시 세 번째 강행을 금지한다.",
+            "assertions": [
+                "실패한 테스트를 삭제하거나 완화하지 않는다",
+                "하드닝 변경이 롤백된다",
+                "세 번째 시도 강행 금지 규칙이 준수된다"
+            ]
+        },
+        {
+            "id": 4,
+            "prompt": "리뷰어: 세션 종단 타임아웃이 무결(indeterminate) 수신기에만 적용되니 모든 미완료 세션으로 확장하라고 제안한다. 구현해라.",
+            "expected_output": "래더 0단을 적용한다: 확장으로 새로 커버되는 모집단(진행 중 대형 I/O, 지연 load 등)을 나열하고 각 모집단이 확장된 타임아웃을 견디는지(유예·재무장·선등록) 확인한 뒤 구현한다. 모집단 열거 없는 즉시 확장은 하지 않는다.",
+            "assertions": [
+                "새로 커버되는 모집단이 명시적으로 나열된다",
+                "진행 중 I/O가 타임아웃에 잘리는지 확인한다",
+                "모집단별 대응(유예/선증가 등)이 구현에 반영된다"
+            ]
+        },
+        {
+            "id": 5,
+            "prompt": "시그니처에 shouldAbort 클로저 파라미터를 추가하고 본문 참조는 다음 편집에서 채우려 한다. 주의점은?",
+            "expected_output": "2단 편집 시 첫 편집에서 swiftformat이 미사용 파라미터를 _:(이름 폐기)로 바꾸므로 두 번째 편집에서 cannot find in scope 컴파일 에러가 난다. 파라미터와 첫 본문 참조를 같은 편집에 넣거나, 해당 에러 시 _: 폐기를 먼저 의심한다.",
+            "assertions": [
+                "같은 편집에 넣으라 안내한다",
+                "cannot find in scope 에러 시 _: 폐기를 의심한다"
+            ]
+        }
+    ]
+}
