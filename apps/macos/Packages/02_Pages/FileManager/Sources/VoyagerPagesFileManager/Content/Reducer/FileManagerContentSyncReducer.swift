@@ -72,10 +72,13 @@ struct FileManagerContentSyncReducer {
             )
             if rootMatches, generationMatches {
                 // 일치 이벤트는 명령이 이미 예약한 refresh로 병합한다(중복 refresh 억제).
+                // 병합 대상은 명령 자체 활동이 남기는 확정 신호(ItemRenamed)뿐이다. 독립적인
+                // ItemModified 등은 명령 snapshot 이후 변경일 수 있어 기존 refresh로 통과한다.
                 // 전이는 소비하지 않는다: after-path projection이 도착해 선택을 옮길 때까지
                 // 유지되어야 selection migration이 완료된다.
                 scheduledEvents = events.filter {
                     requiresCoarseHierarchyReload($0)
+                        || !isCommandIdentityEcho($0)
                         || !transitionOverlaps(normalizedPath(for: $0.path), transition)
                 }
                 if scheduledEvents.isEmpty {
@@ -116,6 +119,12 @@ struct FileManagerContentSyncReducer {
             || isSameOrDescendant(path: normalizedEventPath, of: transition.afterPath)
             || isSameOrDescendant(path: transition.beforePath, of: normalizedEventPath)
             || isSameOrDescendant(path: transition.afterPath, of: normalizedEventPath)
+    }
+
+    /// 명령 자체 활동이 FSEvents에 남기는 확정 신호. rename/move는 양쪽 경로에
+    /// ItemRenamed를 보고하므로 이것만 중복 제거 대상이 된다.
+    private func isCommandIdentityEcho(_ event: FileChangeGatewayEvent) -> Bool {
+        event.flags & UInt32(kFSEventStreamEventFlagItemRenamed) != 0
     }
 
     private func logFileManagerReloadRequest(

@@ -2382,6 +2382,82 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         )
     }
 
+    /// EVM-001-command_external_refresh_correlation: 독립적인 수정 이벤트는 명령 refresh로 병합되지 않는다.
+    /// 대기 전이 경로와 겹쳐도 ItemModified는 명령 snapshot 이후 변경일 수 있으므로
+    /// 기존 refresh 경로로 통과해 표시가 stale해지지 않게 한다.
+    /// - 검증 내용: after-path ItemModified 이벤트가 계층 무효화와 reload를 예약하는지 검증
+    /// - 사전 조건: 현재 root에서 old→new rename 전이가 같은 generation으로 대기 중
+    /// - 기대 결과: hierarchyInvalidated 1회와 loadItems forwarding이 발생한다
+    func testCorrelatedModifiedEventStillSchedulesRefresh() async {
+        let folderPath = "/tmp/voyager-correlation"
+        let oldPath = "\(folderPath)/old.txt"
+        let newPath = "\(folderPath)/new.txt"
+        var initialState = makeCorrelationState(folderPath: folderPath)
+        initialState.content.entryViewLayout.selectedIds = [oldPath]
+        let store = TestStore(initialState: initialState) {
+            CommandExternalRefreshHarness()
+        }
+        store.exhaustivity = .off
+
+        let record = EntryActionRecord(
+            operationKind: .rename,
+            targets: [.init(beforePath: oldPath, afterPath: newPath)],
+        )
+        // 프로덕션 순서: operationFinished가 먼저 reload를 예약·실행해 세대를 연다.
+        await store.send(.bridge(.lifecycle(.operationFinished(
+            oldPath,
+            .rename,
+            .success(()),
+        ))))
+        await store.receive { action in
+            guard case .content(.entryViewLayout(.entryOperations(.loading(.loadItems)))) = action else {
+                return false
+            }
+            return true
+        }
+        await store.send(.bridge(.lifecycle(.entryActionCompleted(record))))
+        await store.receive { action in
+            guard case let .content(.entryViewLayout(.hierarchy(.hierarchyInvalidated(
+                affectedPaths,
+                removedPrefixes,
+            )))) = action else { return false }
+            return affectedPaths == [folderPath, folderPath] && removedPrefixes == [oldPath]
+        }
+        let baselineInvalidations = store.state.hierarchyInvalidations.count
+        let baselineReloads = store.state.rootReloadCount
+
+        await store.send(.content(.externalFileSystemChanged(
+            Self.externalChangeEvents([newPath], flags: UInt32(kFSEventStreamEventFlagItemModified)),
+            deliveryChainToken: nil,
+        )))
+        await store.receive { action in
+            guard case let .content(.entryViewLayout(.hierarchy(.hierarchyInvalidated(
+                affectedPaths,
+                removedPrefixes,
+            )))) = action else { return false }
+            return affectedPaths == [Self.canonicalPath(newPath), Self.canonicalPath(folderPath)]
+                && removedPrefixes.isEmpty
+        }
+        await store.receive { action in
+            guard case .content(.entryViewLayout(.entryOperations(.loading(.loadItems)))) = action else {
+                return false
+            }
+            return true
+        }
+
+        XCTAssertEqual(
+            store.state.hierarchyInvalidations.count,
+            baselineInvalidations + 1,
+            "독립 수정 이벤트는 계층 무효화를 예약해야 한다",
+        )
+        XCTAssertEqual(
+            store.state.rootReloadCount,
+            baselineReloads + 1,
+            "독립 수정 이벤트는 root reload를 예약해야 한다",
+        )
+        XCTAssertNotNil(store.state.content.pendingIdentityTransition, "수정 이벤트는 전이를 소비하지 않는다")
+    }
+
     /// EVM-001-command_external_refresh_correlation: 상관 배치의 추가 경로는 같은 refresh 창에서 계속 전달된다.
     /// 전이와 겹치는 경로와 무관한 경로가 한 배치에 섞이면 무관한 경로만 기존 라우트 동작으로
     /// refresh를 예약하고 겹치는 경로는 명령 refresh에 병합되는지 검증한다.
