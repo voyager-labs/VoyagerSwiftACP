@@ -96,23 +96,94 @@ final class StagingDirectory {
     /// move 전에 열어 고정하므로 예측 가능한 candidate 경로명을 다시 열지 않는다
     /// (코멘트 #3835329095).
     func claim(_ sourceURL: URL) -> URL? {
-        var candidate = ownedPath.appendingPathComponent(sourceURL.lastPathComponent)
-        var suffix = 2
-        while fileManager.fileExists(candidate.path) {
-            let name = (sourceURL.lastPathComponent as NSString).deletingPathExtension
-            let ext = (sourceURL.lastPathComponent as NSString).pathExtension
-            let suffixedName = ext.isEmpty ? "\(name) \(suffix)" : "\(name) \(suffix).\(ext)"
-            candidate = ownedPath.appendingPathComponent(suffixedName)
+        // 보관 디렉터리 부모를 fd로 고정한다. 이후 모든 candidate 조작은 이 fd 기준
+        // openat/unlinkat/renameat으로 수행해 경로 재해석 창을 남기지 않는다(#3845390794).
+        let parentDescriptor = Darwin.open(
+            ownedPath.path,
+            O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC,
+        )
+        guard parentDescriptor >= 0 else { return nil }
+        defer { Darwin.close(parentDescriptor) }
+
+        let sourceName = sourceURL.lastPathComponent
+        let baseName = (sourceName as NSString).deletingPathExtension
+        let pathExtension = (sourceName as NSString).pathExtension
+
+        // 이름을 O_CREAT|O_EXCL로 배타 선점한다. 공격자가 예측한 candidate 이름을
+        // symlink로 대차할 수 없고, renameat이 그 이름 위로 원자적으로 덮어쓴다.
+        var candidateName: String?
+        var suffix = 0
+        while candidateName == nil, suffix < 64 {
+            let trial = suffix == 0 ? sourceName : (
+                pathExtension.isEmpty
+                    ? "\(baseName) \(suffix + 1)"
+                    : "\(baseName) \(suffix + 1).\(pathExtension)"
+            )
+            let probe = Darwin.openat(
+                parentDescriptor,
+                trial,
+                O_CREAT | O_EXCL | O_RDONLY | O_NOFOLLOW | O_CLOEXEC,
+                mode_t(0o600),
+            )
+            if probe >= 0 {
+                Darwin.close(probe)
+                candidateName = trial
+            } else if errno != EEXIST {
+                return nil
+            }
             suffix += 1
         }
-        let sourceDescriptor = Darwin.open(sourceURL.path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
-        guard sourceDescriptor >= 0 else { return nil }
+        guard let reservedName = candidateName else { return nil }
+        let candidate = ownedPath.appendingPathComponent(reservedName)
+
+        func abandonReservation() {
+            Darwin.unlinkat(parentDescriptor, reservedName, 0)
+        }
+
+        let sourceDescriptor = Darwin.open(
+            sourceURL.path,
+            O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC,
+        )
+        guard sourceDescriptor >= 0 else {
+            abandonReservation()
+            return nil
+        }
         defer { Darwin.close(sourceDescriptor) }
+
+        let sourceParentDescriptor = Darwin.open(
+            sourceURL.deletingLastPathComponent().path,
+            O_RDONLY | O_DIRECTORY | O_CLOEXEC,
+        )
+        guard sourceParentDescriptor >= 0 else {
+            abandonReservation()
+            return nil
+        }
+        defer { Darwin.close(sourceParentDescriptor) }
+
         do {
-            try fileManager.moveItem(sourceURL, candidate)
+            // 배타 선점된 이름 위로 원자 교체한다. moveItem의 경로 추적과 달리 중간에
+            // 설치된 symlink를 따라가 staging 밖으로 나갈 수 없다.
+            guard Darwin.renameat(
+                sourceParentDescriptor,
+                sourceName,
+                parentDescriptor,
+                reservedName,
+            ) == 0 else {
+                throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+            }
             let claimedCanonical = canonicalClaimPath(candidate.path)
             // 배리어는 candidate 가시 표면의 신원을 검증한다(격리 snapshot inode가 아님).
-            guard let visibleIdentity = ClaimedFileIdentity(path: candidate.path) else {
+            // NOFOLLOW 재개방이므로 치환된 symlink를 따라가지 않는다.
+            let surfaceDescriptor = Darwin.openat(
+                parentDescriptor,
+                reservedName,
+                O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC,
+            )
+            guard surfaceDescriptor >= 0 else {
+                throw POSIXError(.EIO)
+            }
+            defer { Darwin.close(surfaceDescriptor) }
+            guard let visibleIdentity = ClaimedFileIdentity(descriptor: surfaceDescriptor) else {
                 throw CocoaError(.fileReadUnknown)
             }
             guard try isolateTree(
@@ -124,7 +195,7 @@ final class StagingDirectory {
             identityLock.unlock()
             return candidate
         } catch {
-            try? fileManager.removeItem(candidate)
+            abandonReservation()
             return nil
         }
     }

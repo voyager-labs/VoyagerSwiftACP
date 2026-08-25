@@ -208,6 +208,29 @@ enum StablePlacementCopier {
         // 빈 디렉터리도 포함해 생성 전에 취소를 확인한다(#3841132154).
         try Task.checkCancellation()
         guard Darwin.mkdir(destination.path, mode | 0o700) == 0 else { throw posixError() }
+        // mkdir 직후 목적지를 O_DIRECTORY|O_NOFOLLOW로 고정하고 신원(dev+ino)을 포착한다.
+        // 부모 쓰기 권한자가 디렉터리를 rename하고 같은 이름의 symlink를 설치해도 자식
+        // 생성·메타데이터가 그 symlink를 따라가지 않는다(#3845390804).
+        let destinationDescriptor = Darwin.open(
+            destination.path,
+            O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC,
+        )
+        guard destinationDescriptor >= 0 else {
+            try? FileManager.default.removeItem(at: destination)
+            throw posixError()
+        }
+        defer { Darwin.close(destinationDescriptor) }
+        var pinnedStatus = stat()
+        guard Darwin.fstat(destinationDescriptor, &pinnedStatus) == 0 else { throw posixError() }
+        func ensureDestinationUnswapped() throws {
+            var current = stat()
+            guard Darwin.lstat(destination.path, &current) == 0,
+                  current.st_dev == pinnedStatus.st_dev,
+                  current.st_ino == pinnedStatus.st_ino
+            else {
+                throw POSIXError(.EBUSY)
+            }
+        }
         do {
             // 자식 쓰기와 구분하기 위해 source dir 시각을 진입 시 포착한다.
             var sourceDirStatus = stat()
@@ -217,6 +240,8 @@ enum StablePlacementCopier {
             for childLabel in childLabels(label).sorted() {
                 // 대형 트리에서 노드 사이에 취소를 확인해 즉시 중단한다(#3840396987).
                 try Task.checkCancellation()
+                // 각 자식 쓰기 전에 경로 뒤가 여전히 고정된 디렉터리인지 확인한다.
+                try ensureDestinationUnswapped()
                 try copyNode(
                     label: childLabel,
                     destination: destination.appendingPathComponent(
@@ -228,7 +253,9 @@ enum StablePlacementCopier {
                     verifyCopiedFile: verifyCopiedFile,
                 )
             }
-            guard Darwin.chmod(destination.path, mode) == 0 else { throw posixError() }
+            // 메타데이터는 경로 대신 고정 fd에 적용한다(#3845390804).
+            try ensureDestinationUnswapped()
+            guard Darwin.fchmod(destinationDescriptor, mode) == 0 else { throw posixError() }
 
             // placement가 새 파일을 생성하므로 원본 스냅숏의 mtime/atime을 복원해야
             // Finder 날짜 정렬·메타데이터가 유지된다(#3840962273과 동일 계약).
@@ -237,7 +264,7 @@ enum StablePlacementCopier {
             dirTimes[0].tv_usec = Int32(sourceDirStatus.st_atimespec.tv_nsec / 1000)
             dirTimes[1].tv_sec = sourceDirStatus.st_mtimespec.tv_sec
             dirTimes[1].tv_usec = Int32(sourceDirStatus.st_mtimespec.tv_nsec / 1000)
-            utimes(destination.path, dirTimes)
+            futimes(destinationDescriptor, dirTimes)
             // 최종 chmod 이후에도 취소를 확인한다(#3841132154).
             try Task.checkCancellation()
         } catch {
