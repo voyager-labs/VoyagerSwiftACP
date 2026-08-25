@@ -1,0 +1,215 @@
+package sqlite
+
+// VOY-765 property 저장소 계약 테스트다. 모든 assignment 상태의 round-trip,
+// 고정 쿼리 예산, implicit unset 채움을 증명한다.
+
+import (
+	"context"
+	"reflect"
+	"sync/atomic"
+	"testing"
+
+	"gorm.io/gorm"
+
+	domainentry "github.com/voyager-labs/voyager-app/apps/entry-core/internal/domain/entry"
+)
+
+// fixtureContracts는 픽스처 정의 메타데이터에서 독립적으로 만든 도메인 검증
+// 계약표다. 저장소 출력이 아닌 입력에서 유도된다.
+func fixtureContracts(fx propertyFixture) map[domainentry.PropertyID]domainentry.AssignmentContract {
+	optionSet := func(ids ...domainentry.PropertyOptionID) map[domainentry.PropertyOptionID]struct{} {
+		set := make(map[domainentry.PropertyOptionID]struct{}, len(ids))
+		for _, id := range ids {
+			set[id] = struct{}{}
+		}
+		return set
+	}
+	return map[domainentry.PropertyID]domainentry.AssignmentContract{
+		fx.textDef:     {Type: domainentry.PropertyTypeText, Cardinality: domainentry.PropertyCardinalityOne},
+		fx.numberDef:   {Type: domainentry.PropertyTypeNumber, Cardinality: domainentry.PropertyCardinalityOne},
+		fx.booleanDef:  {Type: domainentry.PropertyTypeBoolean, Cardinality: domainentry.PropertyCardinalityOne},
+		fx.dateDef:     {Type: domainentry.PropertyTypeDate, Cardinality: domainentry.PropertyCardinalityOne},
+		fx.datetimeDef: {Type: domainentry.PropertyTypeDateTime, Cardinality: domainentry.PropertyCardinalityOne},
+		fx.selectDef: {Type: domainentry.PropertyTypeSelect, Cardinality: domainentry.PropertyCardinalityOne,
+			ActiveOptions: optionSet(fx.optionA, fx.optionB, fx.optionOff)},
+		fx.nullableDef: {Type: domainentry.PropertyTypeText, Cardinality: domainentry.PropertyCardinalityOne, Nullable: true},
+		fx.multiDef: {Type: domainentry.PropertyTypeSelect, Cardinality: domainentry.PropertyCardinalityMany,
+			ActiveOptions: optionSet(fx.multiOptA, fx.multiOptB)},
+	}
+}
+
+func TestPropertyAssignmentRoundTripAllStates(t *testing.T) {
+	ctx := context.Background()
+	store := migratedStore(t)
+	defer store.Close()
+	fx := buildPropertyFixture(t, store)
+
+	text := "hello"
+	decimal := "3.14"
+	booleanFalse := false
+	date := "2026-08-25"
+	timestamp := "2026-08-25T10:00:00Z"
+
+	newFact := func(entryID string, propertyID domainentry.PropertyID, mutate func(*domainentry.EntryPropertyAssignment)) domainentry.EntryPropertyAssignment {
+		fact := domainentry.ImplicitUnsetEntryPropertyAssignment(fx.wsctx.ID, entryID, propertyID)
+		fact.RecordRevision = 1
+		fact.ValueContractRevision = 1
+		mutate(&fact)
+		return fact
+	}
+
+	cases := []struct {
+		name string
+		fact domainentry.EntryPropertyAssignment
+	}{
+		{"unset_durable", newFact(testEntryID(1), fx.textDef, func(f *domainentry.EntryPropertyAssignment) {
+			f.State = domainentry.AssignmentStateUnset
+		})},
+		{"null_state", newFact(testEntryID(2), fx.nullableDef, func(f *domainentry.EntryPropertyAssignment) {
+			f.State = domainentry.AssignmentStateNull
+		})},
+		{"scalar_text", newFact(testEntryID(3), fx.textDef, func(f *domainentry.EntryPropertyAssignment) {
+			f.State = domainentry.AssignmentStateValue
+			f.Scalar = &domainentry.AssignmentValue{Text: &text}
+		})},
+		{"scalar_decimal", newFact(testEntryID(4), fx.numberDef, func(f *domainentry.EntryPropertyAssignment) {
+			f.State = domainentry.AssignmentStateValue
+			f.Scalar = &domainentry.AssignmentValue{Decimal: &decimal}
+		})},
+		{"scalar_boolean_false", newFact(testEntryID(5), fx.booleanDef, func(f *domainentry.EntryPropertyAssignment) {
+			f.State = domainentry.AssignmentStateValue
+			f.Scalar = &domainentry.AssignmentValue{Boolean: &booleanFalse}
+		})},
+		{"scalar_date", newFact(testEntryID(6), fx.dateDef, func(f *domainentry.EntryPropertyAssignment) {
+			f.State = domainentry.AssignmentStateValue
+			f.Scalar = &domainentry.AssignmentValue{Date: &date}
+		})},
+		{"scalar_timestamp", newFact(testEntryID(7), fx.datetimeDef, func(f *domainentry.EntryPropertyAssignment) {
+			f.State = domainentry.AssignmentStateValue
+			f.Scalar = &domainentry.AssignmentValue{Timestamp: &timestamp}
+		})},
+		{"scalar_option_ref", newFact(testEntryID(8), fx.selectDef, func(f *domainentry.EntryPropertyAssignment) {
+			f.State = domainentry.AssignmentStateValue
+			option := fx.optionA
+			f.Scalar = &domainentry.AssignmentValue{OptionID: &option}
+		})},
+		{"many_two_options", newFact(testEntryID(9), fx.multiDef, func(f *domainentry.EntryPropertyAssignment) {
+			f.State = domainentry.AssignmentStateValue
+			a, b := fx.multiOptA, fx.multiOptB
+			f.Many = []domainentry.OrderedAssignmentValue{
+				{Ordinal: 0, Value: domainentry.AssignmentValue{OptionID: &a}},
+				{Ordinal: 1, Value: domainentry.AssignmentValue{OptionID: &b}},
+			}
+		})},
+		{"empty_many_value_state", newFact(testEntryID(10), fx.multiDef, func(f *domainentry.EntryPropertyAssignment) {
+			f.State = domainentry.AssignmentStateValue
+			f.Many = []domainentry.OrderedAssignmentValue{}
+		})},
+	}
+
+	repo := NewEntryPropertyRepository(store)
+	facts := make([]domainentry.EntryPropertyAssignment, 0, len(cases))
+	for _, tc := range cases {
+		facts = append(facts, tc.fact)
+	}
+	if err := repo.SaveAssignments(ctx, fx.wsctx, facts); err != nil {
+		t.Fatalf("SaveAssignments: %v", err)
+	}
+
+	entryIDs := make([]string, 0, len(cases))
+	propertyIDs := make([]domainentry.PropertyID, 0, len(cases))
+	for _, tc := range cases {
+		entryIDs = append(entryIDs, tc.fact.EntryID)
+		propertyIDs = append(propertyIDs, tc.fact.PropertyID)
+	}
+	loaded, err := repo.LoadAssignments(ctx, fx.wsctx, entryIDs, propertyIDs)
+	if err != nil {
+		t.Fatalf("LoadAssignments: %v", err)
+	}
+
+	for _, tc := range cases {
+		ref := EntryPropertyRef{EntryID: tc.fact.EntryID, PropertyID: tc.fact.PropertyID}
+		got, ok := loaded[ref]
+		if !ok {
+			t.Fatalf("%s: ref missing from load result", tc.name)
+		}
+		want, err := domainentry.NewEntryPropertyAssignment(tc.fact, fixtureContracts(fx)[tc.fact.PropertyID])
+		if err != nil {
+			t.Fatalf("%s: fixture invalid: %v", tc.name, err)
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("%s: round-trip mismatch\n got=%+v\nwant=%+v", tc.name, got, want)
+		}
+	}
+
+	// empty-many=value 상태는 자식 0행의 non-nil 슬라이스로 보존되어야 한다.
+	emptyManyRef := EntryPropertyRef{EntryID: testEntryID(10), PropertyID: fx.multiDef}
+	if loaded[emptyManyRef].Many == nil {
+		t.Fatal("empty-many round-trip collapsed to nil Many; empty-many=value state lost")
+	}
+	// boolean false는 영값이라도 포인터로 보존되어야 한다.
+	falseRef := EntryPropertyRef{EntryID: testEntryID(5), PropertyID: fx.booleanDef}
+	if loaded[falseRef].Scalar == nil || loaded[falseRef].Scalar.Boolean == nil || *loaded[falseRef].Scalar.Boolean {
+		t.Fatalf("boolean false round-trip broken: %+v", loaded[falseRef].Scalar)
+	}
+}
+
+// TestPropertyBatchedReadQueryBudget는 EntryID 수가 늘어나도 읽기 쿼리 수가
+// 일정함을 증명한다.
+func TestPropertyBatchedReadQueryBudget(t *testing.T) {
+	ctx := context.Background()
+	store := migratedStore(t)
+	defer store.Close()
+	fx := buildPropertyFixture(t, store)
+
+	var queries int64
+	if err := store.db.Callback().Query().Before("gorm:query").Register("test_count_queries", func(tx *gorm.DB) {
+		atomic.AddInt64(&queries, 1)
+	}); err != nil {
+		t.Fatalf("register callback: %v", err)
+	}
+
+	repo := NewEntryPropertyRepository(store)
+	smallIDs := []string{testEntryID(101)}
+	if _, err := repo.LoadAssignments(ctx, fx.wsctx, smallIDs, nil); err != nil {
+		t.Fatalf("small load: %v", err)
+	}
+	smallCount := atomic.LoadInt64(&queries)
+
+	atomic.StoreInt64(&queries, 0)
+	largeIDs := make([]string, 0, 40)
+	for i := 0; i < 40; i++ {
+		largeIDs = append(largeIDs, testEntryID(200+i))
+	}
+	if _, err := repo.LoadAssignments(ctx, fx.wsctx, largeIDs, nil); err != nil {
+		t.Fatalf("large load: %v", err)
+	}
+	largeCount := atomic.LoadInt64(&queries)
+
+	if smallCount == 0 || smallCount != largeCount {
+		t.Fatalf("query budget grew with entry count: small=%d large=%d", smallCount, largeCount)
+	}
+}
+
+// TestPropertyLoadImplicitUnset은 durable row가 없는 요청 키가 implicit unset
+// revision 0으로 채워짐을 증명한다.
+func TestPropertyLoadImplicitUnset(t *testing.T) {
+	ctx := context.Background()
+	store := migratedStore(t)
+	defer store.Close()
+	fx := buildPropertyFixture(t, store)
+
+	repo := NewEntryPropertyRepository(store)
+	loaded, err := repo.LoadAssignments(ctx, fx.wsctx, []string{testEntryID(999)}, []domainentry.PropertyID{fx.textDef})
+	if err != nil {
+		t.Fatalf("LoadAssignments: %v", err)
+	}
+	got, ok := loaded[EntryPropertyRef{EntryID: testEntryID(999), PropertyID: fx.textDef}]
+	if !ok {
+		t.Fatal("implicit unset fact missing")
+	}
+	want := domainentry.ImplicitUnsetEntryPropertyAssignment(fx.wsctx.ID, testEntryID(999), fx.textDef)
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("implicit unset = %+v, want %+v", got, want)
+	}
+}

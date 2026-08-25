@@ -1,7 +1,8 @@
-h1:yRPTjp6ioAJrYRO82no0ag8VAfCz8o74/icGgMYljKk=
+h1:hY5fi0MKB6gYTq8oYxnbI/3liFTuvW32A5JsqYEHJI8=
 0001_workspace_metadata.up.sql h1:S22MOyQg71BnpQcAEbmFiUTsAiNBgc7dee6hMUTXKvw=
 0002_workspace_property_catalog.up.sql h1:jBr4pzI/fwPpsCnsPCvPzPHi7euJEPmAx7LA5MAmT5g=
 0003_workspace_property_term_lifecycle.up.sql h1:GW3lIEob+jh3Kp6Qmog8zASnLyYz2lHluy5TKl32wvY=
 0004_workspace_property_term_active_unique.up.sql h1:GNr87JXErlDyFTOZCKecWE2zFdn/sWxCQDLjoInoERs=
 0005_property_definition_units.up.sql h1:7VloMmKvytQVugacJ683miVImL/oL2quiYEDXkq95+g=
 0006_catalog_seed_marker.up.sql h1:vvyUzg0SQ2UVQpvo5jCBuBAG1O9EJmJgfHhf5t+oyAs=
+0007_entry_properties.up.sql h1:vu1h5NJcI+laA5551vMKM0YVn0yT0bZjFJKSc3riGDk=
