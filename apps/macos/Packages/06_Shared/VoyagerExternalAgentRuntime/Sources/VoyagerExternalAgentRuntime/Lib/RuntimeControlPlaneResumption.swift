@@ -613,9 +613,60 @@ public extension RuntimeControlPlane {
         })
     }
 
+    /// 단말 우선권 계약의 exact-run 수선 seam: 같은 run의 local terminal을 먼저 채택하고 없으면
+    /// restored context로 persisted terminal을 채택한다. attempt가 이미 무효화된 경우에 한해
+    /// context 검증 없이 재채택하며, 수렴 시 해당 claim의 lease로 exact owner finalize를 수행한다.
+    /// 취소와 typed 오류는 그대로 전파하고 같은 run의 durable terminal이 없으면 nil을 반환한다.
+    private func readRepairExactRunDurableTerminal(
+        host: ExternalAgentSessionReference,
+        runReference: RuntimeRunReference,
+        lease: UInt64,
+        restoredContext: RuntimeRestoredResumeContext,
+    ) async throws -> RuntimeResult? {
+        if let terminal = storedTerminalResult(host: host, runReference: runReference) {
+            finalizeVisibleResumptionTerminal(
+                host: host,
+                runReference: runReference,
+                lease: lease,
+                restoredContext: restoredContext,
+            )
+            return terminal
+        }
+        do {
+            guard let terminal = try await persistedTerminalResult(
+                host: host,
+                runReference: runReference,
+                restoredContext: restoredContext,
+            ) else { return nil }
+            finalizeVisibleResumptionTerminal(
+                host: host,
+                runReference: runReference,
+                lease: lease,
+                restoredContext: restoredContext,
+            )
+            return terminal
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch is RuntimeRestoredResumeAttemptError {
+            // attempt가 이미 무효화됐어도 durable terminal 자체는 권위 있다. context 검증 없이 재채택한다.
+            if let terminal = try await persistedTerminalResult(
+                host: host,
+                runReference: runReference,
+            ) {
+                finalizeVisibleResumptionTerminal(
+                    host: host,
+                    runReference: runReference,
+                    lease: lease,
+                )
+                return terminal
+            }
+            return nil
+        }
+    }
+
     /// 단말 우선권 계약: attemptLost/persistenceConflict/persistence 계열 실패 노출 전에
-    /// 같은 run의 persisted terminal을 채택해 수렴 결과로 반환한다. 수선 대상이 아니거나
-    /// durable terminal이 없으면 nil을 반환해 기존 분류 경계가 그대로 적용되게 한다.
+    /// exact-run 수선 seam으로 같은 run의 durable terminal을 채택해 수렴 결과로 반환한다.
+    /// 수선 대상이 아니면 nil을 반환해 기존 분류 경계가 그대로 적용되게 한다.
     private func repairDurableTerminalAfterRaceFailure(
         _ failure: RuntimeRestoredResumeRaceFailure,
         host: ExternalAgentSessionReference,
@@ -629,38 +680,12 @@ public extension RuntimeControlPlane {
         case .cancellation, .providerTerminalAdmission, .host:
             return nil
         }
-        do {
-            if let terminal = try await persistedTerminalResult(
-                host: host,
-                runReference: receipt.runReference,
-                restoredContext: restoredContext,
-            ) {
-                finalizeVisibleResumptionTerminal(
-                    host: host,
-                    runReference: receipt.runReference,
-                    lease: lease,
-                    restoredContext: restoredContext,
-                )
-                return terminal
-            }
-            return nil
-        } catch is CancellationError {
-            throw CancellationError()
-        } catch is RuntimeRestoredResumeAttemptError {
-            // attempt가 이미 무효화됐어도 durable terminal 자체는 권위 있다. context 검증 없이 재채택한다.
-            if let terminal = try await persistedTerminalResult(
-                host: host,
-                runReference: receipt.runReference,
-            ) {
-                finalizeVisibleResumptionTerminal(
-                    host: host,
-                    runReference: receipt.runReference,
-                    lease: lease,
-                )
-                return terminal
-            }
-            return nil
-        }
+        return try await readRepairExactRunDurableTerminal(
+            host: host,
+            runReference: receipt.runReference,
+            lease: lease,
+            restoredContext: restoredContext,
+        )
     }
 
     /// 승인 경계 실패를 기존 분류 경계에 따라 분류하고, 수선 대상 실패(attemptLost/persistence 계열)에 한해
@@ -841,6 +866,7 @@ public extension RuntimeControlPlane {
                         error,
                         host: host,
                         runReference: receipt.runReference,
+                        lease: lease,
                         restoredContext: restoredContext,
                     ) {
                         return terminal
@@ -852,6 +878,7 @@ public extension RuntimeControlPlane {
                     error,
                     host: host,
                     runReference: receipt.runReference,
+                    lease: lease,
                     restoredContext: restoredContext,
                 ) {
                     return terminal
@@ -865,34 +892,28 @@ public extension RuntimeControlPlane {
         _ error: any Error,
         host: ExternalAgentSessionReference,
         runReference: RuntimeRunReference,
+        lease: UInt64,
         restoredContext: RuntimeRestoredResumeContext,
     ) async throws -> RuntimeResult? {
         if error is CancellationError { throw CancellationError() }
         do {
-            if let terminal = storedTerminalResult(host: host, runReference: runReference) {
-                return terminal
-            }
-            try requireRestoredResumeContext(
-                restoredContext,
+            if let terminal = try await readRepairExactRunDurableTerminal(
                 host: host,
                 runReference: runReference,
-            )
-            if let terminal = try await persistedTerminalResult(
-                host: host,
-                runReference: runReference,
+                lease: lease,
                 restoredContext: restoredContext,
             ) {
                 return terminal
             }
         } catch is CancellationError {
             throw CancellationError()
-        } catch let error as RuntimeHostError {
-            throw error
-        } catch is RuntimeRestoredResumeAttemptError {
-            throw RuntimeRestoredResumeAttemptError.lost
+        } catch let probeError as RuntimeHostError {
+            // 수선 probe의 typed 오류는 기존 분류 경계 없이 그대로 보존한다.
+            throw probeError
         } catch {
             throw RuntimeRestorationHeartbeatPersistenceError.persistenceFailure
         }
+        // 같은 run의 durable terminal이 없으면 원래 heartbeat 오류의 기존 분류를 유지한다.
         guard let hostError = error as? RuntimeHostError else { return nil }
         switch hostError {
         case .persistenceConflict:
