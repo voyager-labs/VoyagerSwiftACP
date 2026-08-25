@@ -33,7 +33,7 @@ extension AiChatFeature {
         aiChatProductMetricsClient.record(
             .turnSubmitted(
                 operationID: operation.operationID,
-                sourceSurface: .aiChatContent,
+                sourceSurface: state.productMetricSourceSurface,
             ),
         )
     }
@@ -267,7 +267,7 @@ extension AiChatFeature {
             .turnResult(
                 operationID: operation.operationID,
                 result: result,
-                sourceSurface: .aiChatContent,
+                sourceSurface: state.productMetricSourceSurface,
             ),
         )
     }
