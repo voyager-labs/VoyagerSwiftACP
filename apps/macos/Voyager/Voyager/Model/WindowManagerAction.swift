@@ -581,11 +581,14 @@ enum ExternalOpenPlacementApplication {
             guard let placementWindow = plan.windows.first(where: { window in
                 window.items.contains(where: { $0.itemID == item.itemID })
             }) else { continue }
-            guard !excludedWindowIDs.contains(placementWindow.windowID),
-                  !state.closingWindowIDs.contains(placementWindow.windowID),
+            guard !excludedWindowIDs.contains(placementWindow.windowID) else { continue }
+            guard !state.closingWindowIDs.contains(placementWindow.windowID),
                   !state.pendingWindowOpenIDs.contains(placementWindow.windowID),
                   let window = state.windows[id: placementWindow.windowID]?.window
-            else { continue }
+            else {
+                guard plan.request == nil else { return nil }
+                continue
+            }
             if placementWindow.isNewWindow,
                state.externalWindowBatchIDs[placementWindow.windowID] != plan.batchID
             {

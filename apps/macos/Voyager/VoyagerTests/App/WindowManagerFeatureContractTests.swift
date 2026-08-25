@@ -10494,6 +10494,98 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await store.finish()
     }
 
+    /// request-bearing plan의 제외되지 않은 planned window가 unavailable이면 survivor 활성화를 거부한다.
+    /// - 검증 내용: closing·pending-open·missing window는 whole-batch stale이고 excluded·legacy window는 skip됨
+    /// - 사전 조건: 첫 planned window와 마지막 survivor window가 서로 다른 route를 소유함
+    /// - 기대 결과: production request는 nil을 반환하고 excluded 및 request-nil plan은 마지막 survivor를 반환함
+    func testPlacementSurvivorRejectsUnavailableRequestWindowAndPreservesSkipContracts() {
+        let batchID = UUID()
+        let firstWindowID = UUID()
+        let survivorWindowID = UUID()
+        let firstTabID = ContentTabID(rawValue: "unavailable-first")
+        let survivorTabID = ContentTabID(rawValue: "unavailable-survivor")
+        let firstItemID = UUID()
+        let survivorItemID = UUID()
+        let firstAnchor = ContentTabPageAnchor.directory(path: "/tmp/unavailable-first")
+        let survivorAnchor = ContentTabPageAnchor.directory(path: "/tmp/unavailable-survivor")
+        let request = ExternalOpenPlacementRequest(
+            batchID: batchID,
+            items: [
+                .init(itemID: firstItemID, anchor: firstAnchor, pendingSelectEntryID: nil),
+                .init(itemID: survivorItemID, anchor: survivorAnchor, pendingSelectEntryID: nil),
+            ],
+            preferredWindowIDs: [],
+        )
+        let windows: [ExternalOpenPlacementPlan.Window] = [
+            .init(
+                windowID: firstWindowID,
+                isNewWindow: false,
+                items: [.init(
+                    itemID: firstItemID,
+                    tabID: firstTabID,
+                    anchor: firstAnchor,
+                    requiresReservation: false,
+                )],
+            ),
+            .init(
+                windowID: survivorWindowID,
+                isNewWindow: false,
+                items: [.init(
+                    itemID: survivorItemID,
+                    tabID: survivorTabID,
+                    anchor: survivorAnchor,
+                    requiresReservation: false,
+                )],
+            ),
+        ]
+        let requestPlan = ExternalOpenPlacementPlan(batchID: batchID, windows: windows, request: request)
+        let legacyPlan = ExternalOpenPlacementPlan(batchID: batchID, windows: windows)
+        var baseState = WindowManagerFeature.State()
+        baseState.windows = [
+            Self.makeRouteWindow(
+                id: firstWindowID,
+                tabs: [(firstTabID, firstAnchor)],
+                activeTabID: firstTabID,
+            ),
+            Self.makeRouteWindow(
+                id: survivorWindowID,
+                tabs: [(survivorTabID, survivorAnchor)],
+                activeTabID: survivorTabID,
+            ),
+        ]
+        var closingState = baseState
+        closingState.closingWindowIDs.insert(firstWindowID)
+        var pendingState = baseState
+        pendingState.pendingWindowOpenIDs.insert(firstWindowID)
+        var missingState = baseState
+        missingState.windows.remove(id: firstWindowID)
+
+        XCTAssertNil(ExternalOpenPlacementApplication.lastSurvivingWindowID(
+            for: requestPlan,
+            state: closingState,
+        ))
+        XCTAssertNil(ExternalOpenPlacementApplication.lastSurvivingWindowID(
+            for: requestPlan,
+            state: pendingState,
+        ))
+        XCTAssertNil(ExternalOpenPlacementApplication.lastSurvivingWindowID(
+            for: requestPlan,
+            state: missingState,
+        ))
+        XCTAssertEqual(
+            ExternalOpenPlacementApplication.lastSurvivingWindowID(
+                for: requestPlan,
+                state: closingState,
+                excluding: [firstWindowID],
+            ),
+            survivorWindowID,
+        )
+        XCTAssertEqual(
+            ExternalOpenPlacementApplication.lastSurvivingWindowID(for: legacyPlan, state: missingState),
+            survivorWindowID,
+        )
+    }
+
     /// 계획된 기존 tab 하나가 lifecycle-ineligible이면 다른 survivor를 활성화하지 않고 전체 배치를 재계획한다.
     /// - 검증 내용: pending Collection open tab이 존재하면 staleReplanCount 1 replacement plan을 생성함
     /// - 사전 조건: 첫 window의 exact-route tab은 pending Collection open, 두 번째 window는 exact-route survivor
