@@ -5546,6 +5546,43 @@ final class CTM001HandleContentTabTests: XCTestCase {
         XCTAssertNotEqual(store.state.contentTabs.activeTabID, beforeActiveID, "active tab ID must change to new tab")
     }
 
+    /// CTM-001-open_new_content_tab_start_page: Cmd+T는 request-time default start page snapshot으로 새 tab을 생성함
+    /// - 검증 내용: preference directory가 유효하면 command가 Directory initial tab을 직접 생성함
+    /// - 사전 조건: 실제 fixture directory를 가리키는 defaultStartPage와 선택된 기존 Home tab
+    /// - 기대 결과: 기존 selection은 유지되고 새 Directory tab의 content session은 기존 session과 독립됨
+    func testOpenNewContentTab_commandRouting_usesRequestTimeDirectorySnapshot() async throws {
+        let directory = try FileManagerFixtureSandbox.readOnlyDirectory(from: "fixtures/fixtures/documents")
+        var preferences = VoyagerPagesFileManager.AppPreferencesState()
+        preferences.defaultStartPage = .directory(directory.path)
+        var initialState = FileManagerFeature.State()
+        let originalID = try XCTUnwrap(initialState.contentTabs.activeTabID)
+        initialState.contentTabs.selectedTabIDs = [originalID]
+        initialState.contentTabs.selectionAnchorID = originalID
+        initialState.content.navigation.backHistory = [ContentPageNavigationHistorySnapshot(navigationState: .recents)]
+        initialState.content.entryViewLayout.entryOperations.isLoading = true
+        let store = TestStore(initialState: initialState) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.startPageAvailabilityClient.probeDirectory = { _ in .availableDirectory }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.applyAppPreferences(preferences))
+        await store.skipReceivedActions(strict: false)
+        let originalContent = store.state.content
+        await store.send(.request(.openNewContentTab))
+        await store.skipReceivedActions(strict: false)
+
+        let newTab = try XCTUnwrap(store.state.contentTabs.tabs.last)
+        XCTAssertEqual(newTab.anchor, .directory(path: directory.path))
+        XCTAssertEqual(newTab.page, .directory)
+        XCTAssertEqual(store.state.contentTabs.selectedTabIDs, [originalID])
+        XCTAssertEqual(store.state.tabContentStates[originalID], originalContent)
+        XCTAssertNotEqual(store.state.tabContentStates[originalID], store.state.tabContentStates[newTab.id])
+        XCTAssertEqual(store.state.content.navigation.currentPath, directory.path)
+    }
+
     /// CTM-001-open_new_content_tab_routing: 기존 active Directory/Collection anchor가 새 tab에 복제되지 않음
     /// VOY-447 AC3와 CTM contract의 "copy 방지" 정책을 검증한다.
     /// - 검증 내용: Directory tab이 active인 상태에서 openNewContentTab 전송 시 last.anchor == .homeDefault

@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAi
+import VoyagerEntitiesAppPreferences
 import VoyagerEntitiesCollection
 import VoyagerFeaturesAiChat
 import VoyagerFeaturesComposer
@@ -311,6 +312,7 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
         case homeAiChatNewChatSeedRequested(sessionID: AiChatSessionID)
         case applyContentNewChatSeed(FileManagerContentNewChatSeedApplication)
         case applyInspectorNewChatSeed(FileManagerInspectorNewChatSeedApplication)
+        case defaultStartPageResolved(StartPage)
     }
 
     @CasePathable
