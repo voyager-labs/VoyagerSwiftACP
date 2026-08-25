@@ -26,6 +26,9 @@ var (
 	// 없거나 동순위 후보가 둘 이상이면 어댑터 호출 없이 요청을 거절한다.
 	ErrAmbiguousSourceBinding    = errors.New("ambiguous source binding")
 	ErrNoExecutableSourceBinding = errors.New("no executable source binding")
+	// ErrPropertyOverlayFailed는 Property overlay 로드·검증·병합이 실패해 요청
+	// 전체를 실패 닫기할 때 거절하는 센티널이다. 소스 결과는 부분 노출되지 않는다.
+	ErrPropertyOverlayFailed = errors.New("property overlay failed")
 )
 
 type ResourceAdapter interface {
@@ -37,6 +40,14 @@ type MountRegistry interface {
 	Register(domainentry.MountRef) error
 	Unmount(mountID string) error
 	Snapshot() mount.MountRegistrySnapshot
+}
+
+// PropertyOverlayLoader는 Entry 읽기에 끼워 넣는 batched Property overlay 로드
+// 계약이다. property 패키지의 PropertyOverlayReader와 의미가 구조적으로 동일하며,
+// import 순환을 피하기 위해 entry 자신의 좁은 포트로 선언한다. N+1 조회를 금지하기
+// 위해 페이지·배치당 정확히 한 번 호출된다.
+type PropertyOverlayLoader interface {
+	LoadOverlay(ctx context.Context, workspace domainentry.WorkspaceContext, entryIDs []string, propertyIDs []domainentry.PropertyID) (map[string][]domainentry.PropertyValue, error)
 }
 
 type EntryResolver interface {

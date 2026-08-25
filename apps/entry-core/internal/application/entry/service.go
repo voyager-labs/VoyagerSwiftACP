@@ -24,12 +24,28 @@ var (
 )
 
 type UnifiedService struct {
-	mountRegistry MountRegistry
-	adapters      map[string]ResourceAdapterBinding
-	catalog       domainentry.PropertyCatalogSnapshot
-	cursor        *compositeCursorCodec
-	clock         func() time.Time
-	observed      atomic.Uint64
+	mountRegistry   MountRegistry
+	adapters        map[string]ResourceAdapterBinding
+	catalog         domainentry.PropertyCatalogSnapshot
+	cursor          *compositeCursorCodec
+	clock           func() time.Time
+	observed        atomic.Uint64
+	propertyOverlay PropertyOverlayLoader
+}
+
+// UnifiedServiceOption은 UnifiedService 생성 시 선택 기능을 주입하는 함수다.
+type UnifiedServiceOption func(*UnifiedService) error
+
+// WithPropertyOverlayLoader는 batched Property overlay loader를 주입한다. nil과
+// 중복 주입은 ErrInvalidService로 거절한다.
+func WithPropertyOverlayLoader(loader PropertyOverlayLoader) UnifiedServiceOption {
+	return func(service *UnifiedService) error {
+		if loader == nil || service.propertyOverlay != nil {
+			return ErrInvalidService
+		}
+		service.propertyOverlay = loader
+		return nil
+	}
 }
 
 type selectedScope struct {
@@ -71,7 +87,7 @@ func NewUnifiedService(registry MountRegistry, bindings []ResourceAdapterBinding
 	return &UnifiedService{mountRegistry: registry, adapters: adapters, cursor: codec, clock: clock}, nil
 }
 
-func NewUnifiedServiceWithCatalog(registry MountRegistry, bindings []ResourceAdapterBinding, catalog domainentry.PropertyCatalogSnapshot, cursorKey []byte, clock func() time.Time) (*UnifiedService, error) {
+func NewUnifiedServiceWithCatalog(registry MountRegistry, bindings []ResourceAdapterBinding, catalog domainentry.PropertyCatalogSnapshot, cursorKey []byte, clock func() time.Time, options ...UnifiedServiceOption) (*UnifiedService, error) {
 	if err := catalog.Validate(); err != nil {
 		return nil, ErrInvalidService
 	}
@@ -80,6 +96,14 @@ func NewUnifiedServiceWithCatalog(registry MountRegistry, bindings []ResourceAda
 		return nil, err
 	}
 	service.catalog = catalog
+	for _, option := range options {
+		if option == nil {
+			return nil, ErrInvalidService
+		}
+		if optionErr := option(service); optionErr != nil {
+			return nil, optionErr
+		}
+	}
 	return service, nil
 }
 
@@ -494,6 +518,9 @@ func (service *UnifiedService) UnifiedList(ctx context.Context, request UnifiedL
 		result.NextPageToken = &token
 		result.HasMore = true
 	}
+	if overlayErr := service.applyPropertyOverlay(ctx, request.WorkspaceID, entries, requestedProperties, definitions); overlayErr != nil {
+		return UnifiedListResult{}, overlayErr
+	}
 	return result, nil
 }
 
@@ -602,7 +629,13 @@ func (service *UnifiedService) ResolveEntry(ctx context.Context, request Resolve
 	if err != nil {
 		return ResolveResult{}, newApplicationError("adapter_failure", "adapter_failure", ErrApplicationAdapterFailure)
 	}
-	return ResolveResult{EntryRef: item.EntryRef, EntrySnapshot: item.EntrySnapshot, AccessContext: access, Capabilities: item.Capabilities, Availability: adapterResult.Availability, Freshness: adapterResult.Freshness, SourceRevision: adapterResult.SourceRevision}, nil
+	result := ResolveResult{EntryRef: item.EntryRef, EntrySnapshot: item.EntrySnapshot, AccessContext: access, Capabilities: item.Capabilities, Availability: adapterResult.Availability, Freshness: adapterResult.Freshness, SourceRevision: adapterResult.SourceRevision}
+	overlaid := []CanonicalEntry{{EntryRef: result.EntryRef, EntrySnapshot: result.EntrySnapshot}}
+	if overlayErr := service.applyPropertyOverlay(ctx, request.WorkspaceID, overlaid, requestedProperties, definitions); overlayErr != nil {
+		return ResolveResult{}, overlayErr
+	}
+	result.EntrySnapshot = overlaid[0].EntrySnapshot
+	return result, nil
 }
 
 func (service *UnifiedService) SourceObjectToEntryRef(sourceRef domainentry.SourceRef, identity source.SourceObjectIdentity) (domainentry.EntryRef, error) {
