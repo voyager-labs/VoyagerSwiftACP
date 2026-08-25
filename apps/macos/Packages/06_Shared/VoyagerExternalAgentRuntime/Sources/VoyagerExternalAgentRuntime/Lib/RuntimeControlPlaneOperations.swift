@@ -107,6 +107,8 @@ public extension RuntimeControlPlane {
         )
         let compatibility: RuntimeRestartCompatibility
         do {
+            // 사전에 취소된 caller의 restore가 외부 호환성 확인을 시작하지 않도록 호출 전에 취소를 검사한다.
+            try Task.checkCancellation()
             compatibility = try await adapter.restartCompatibility(for: binding)
         } catch is CancellationError {
             throw CancellationError()

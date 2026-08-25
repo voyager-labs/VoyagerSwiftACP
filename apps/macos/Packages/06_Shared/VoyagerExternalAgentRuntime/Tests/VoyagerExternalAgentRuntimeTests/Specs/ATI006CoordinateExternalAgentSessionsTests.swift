@@ -1725,6 +1725,40 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         #expect(await adapter.receivedRestartBindings().count == 1)
     }
 
+    /// ATI-006-coordinate_external_agent_run_continuity: 사전 취소된 restore는 restart compatibility를 호출하지 않는다.
+    /// hydration이 이미 완료된 뒤 caller가 취소한 restore가 adapter 호환성 확인을 시작하지 않는지 검증한다.
+    /// - 검증 내용: CancellationError 전파, restart binding 미호출(0회), projection·restoration claim·lease 불변.
+    /// - 사전 조건: plane이 hydration을 미리 완료했고 restore 작업은 public restore 호출 전에 취소된다.
+    /// - 기대 결과: restore는 CancellationError를 던지고 adapter restart compatibility 호출 횟수는 0이다.
+    @Test
+    func `pre-cancelled restore skips restart compatibility`() async throws {
+        let adapter = DeterministicRuntimeAdapter(id: "sdk", transport: .sdkAsyncStream, eventsByLaunch: [[]])
+        let plane = RuntimeControlPlane(
+            store: InMemoryRuntimeStateStore(state: reviewRegressionTestsMakeRunningState()),
+        )
+        try await plane.register(adapter)
+        try await plane.hydrateIfNeeded()
+
+        let gate = RuntimeTestGate()
+        let restoreTask = Task {
+            await gate.wait()
+            return try await plane.restore(
+                hostReference: "host-a",
+                expectedContext: reviewRegressionTestsMakeContext(),
+            )
+        }
+        await gate.waitUntilWaiting()
+
+        restoreTask.cancel()
+        await gate.open()
+
+        await #expect(throws: CancellationError.self) { try await restoreTask.value }
+        #expect(await adapter.receivedRestartBindings().isEmpty)
+        #expect(await plane.projection(for: "host-a") == .running)
+        #expect(await plane.sessions["host-a"]?.lease.isActive == false)
+        #expect(await plane.sessions["host-a"]?.stored.restorationClaim == nil)
+    }
+
     /// ATI-006-coordinate_external_agent_run_continuity: persisted run blocks launch while compatibility check restores
     /// it.
     /// 외부 에이전트 세션 조정 계약의 이 시나리오를 검증한다.
