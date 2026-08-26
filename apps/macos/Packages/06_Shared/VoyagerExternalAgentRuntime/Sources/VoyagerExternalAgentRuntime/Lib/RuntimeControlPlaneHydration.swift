@@ -72,7 +72,7 @@ extension RuntimeControlPlane {
         switch outcome {
         case .cancelled:
             if finishHydrationWaiter(generation) {
-                hydrationTask = nil
+                teardownCurrentHydrationTask(generation: generation, task: task)
             }
             throw CancellationError()
         case let .delivered(delivered):
@@ -106,7 +106,7 @@ extension RuntimeControlPlane {
 
         if Task.isCancelled {
             if isLastWaiter {
-                hydrationTask = nil
+                teardownCurrentHydrationTask(generation: generation, task: nil)
             }
             throw CancellationError()
         }
@@ -174,6 +174,20 @@ extension RuntimeControlPlane {
     private func clearHydrationTask(ifMatching generation: UInt64) {
         guard generation == hydrationGeneration else { return }
         hydrationTask = nil
+    }
+
+    /// 현재 세대의 마지막 waiter가 떠난 뒤 공유 load 태스크를 정리한다.
+    /// 참조를 먼저 끊어 새 세대 시작을 막지 않고, 캡처한 현재 세대 태스크에만 취소를 요청한다.
+    /// 결과 펌프는 task.result를 직접 기다렸다가 스스로 제거되므로 여기서 다루지 않는다.
+    /// 이미 완료한 태스크에 대한 cancel은 무해하다.
+    private func teardownCurrentHydrationTask(
+        generation: UInt64,
+        task: Task<RuntimeStoredState?, Error>?,
+    ) {
+        guard generation == hydrationGeneration else { return }
+        guard let target = task ?? hydrationTask else { return }
+        hydrationTask = nil
+        target.cancel()
     }
 
     func pauseHydrationDelivery(at ordinal: Int) {
