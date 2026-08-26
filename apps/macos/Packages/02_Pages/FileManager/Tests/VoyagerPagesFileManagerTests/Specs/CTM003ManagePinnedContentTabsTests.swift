@@ -7187,6 +7187,70 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         XCTAssertNil(store.state.pendingCollectionOpenRequest)
     }
 
+    /// CTM-003-go_to_anchored_path_of_pinned_tab: 정착 후 일반 Collection tab 전환은 복귀 실패로 오상관하지 않는다.
+    /// 외부 pinned 복귀와 무관한 Collection load 취소가 완료된 durable route를 재계획하지 않는지 검증한다.
+    /// - 검증 내용: ordinary Collection pending을 정리하면서 pinned 복귀 failure delegate는 보내지 않음
+    /// - 사전 조건: pinned tab은 durable Collection A에 정착했고 별도 Collection B load 중 다른 tab으로 전환함
+    /// - 기대 결과: target tab이 활성화되고 pending request는 제거되며 failure terminal은 비어 있음
+    func testSwitchingTabsAfterPinnedReturnSettlementDoesNotEmitFailureTerminal() async {
+        let settledTabID = ContentTabID(rawValue: "settled-pinned-collection")
+        let targetTabID = ContentTabID(rawValue: "settled-switch-target")
+        let durableURL = URL(fileURLWithPath: "/tmp/settled-a.voycoll")
+        let ordinaryURL = URL(fileURLWithPath: "/tmp/ordinary-b.voycoll")
+        let targetAnchor = ContentTabPageAnchor.directory(path: "/tmp/settled-switch-target")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: settledTabID,
+                    page: .collection,
+                    anchor: .collectionFile(url: durableURL),
+                    isPinned: true,
+                ),
+                ContentTabItem(id: targetTabID, page: .directory, anchor: targetAnchor, isPinned: false),
+            ],
+            activeTabID: settledTabID,
+            pinnedRecords: [settledTabID: Self.pinnedRecord(
+                id: settledTabID,
+                anchor: .collectionFile(url: durableURL),
+                title: "Settled A",
+                iconName: "rectangle.stack",
+            )],
+        )
+        state.content = .initialContent(for: .collectionFile(url: ordinaryURL))
+        state.tabContentStates[targetTabID] = .initialContent(for: targetAnchor)
+        state.syncActiveTabContentState()
+        state.pendingCollectionOpenRequest = ContentPageCollectionOpenRequest(
+            id: UUID(),
+            url: ordinaryURL,
+            sourceRoute: state.content.navigation.navigationState,
+            prePrepareBackHistory: [],
+            prePrepareForwardHistory: [],
+        )
+        let failedTabIDs = LockIsolated<[ContentTabID]>([])
+        let store = TestStore(initialState: state) {
+            Reduce<FileManagerWindowState, FileManagerWindowAction> { state, action in
+                if case let .delegate(.pinnedContentTabRuntimeNavigationFailed(tabID)) = action {
+                    failedTabIDs.withValue { $0.append(tabID) }
+                    return .none
+                }
+                return FileManagerFeature().reduce(into: &state, action: action)
+            }
+        } withDependencies: {
+            $0.date = .constant(Self.pinnedAt)
+        }
+        // store.exhaustivity = .off: handoff 세부 action보다 false failure terminal 차단을 검증한다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.contentTabs(.setCurrent(targetTabID)))
+        await store.skipReceivedActions(strict: false)
+        await store.finish()
+
+        XCTAssertEqual(store.state.contentTabs.activeTabID, targetTabID)
+        XCTAssertTrue(failedTabIDs.value.isEmpty)
+        XCTAssertNil(store.state.pendingCollectionOpenRequest)
+    }
+
     /// CTM-003-go_to_anchored_path_of_pinned_tab: 활성 Directory 복귀도 typed success terminal을 전달한다.
     /// runtime과 durable이 다른 active pinned Directory 복귀가 anchor commit 후 성공 delegate를 보내는지 검증한다.
     /// - 검증 내용: anchor·navigation 갱신 후 pinnedContentTabRuntimeNavigationChanged terminal 전달

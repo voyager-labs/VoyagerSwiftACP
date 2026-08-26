@@ -9,7 +9,11 @@ import VoyagerShared
 
 extension FileManagerWindowState {
     var pendingPinnedCollectionReturnTabID: ContentTabID? {
-        guard let tabID = contentTabs.activeTabID,
+        pendingPinnedCollectionReturnTabID(for: contentTabs.activeTabID)
+    }
+
+    func pendingPinnedCollectionReturnTabID(for tabID: ContentTabID?) -> ContentTabID? {
+        guard let tabID,
               let tab = contentTabs.tabs[id: tabID],
               tab.isPinned,
               let record = contentTabs.pinnedRecords[tabID],
