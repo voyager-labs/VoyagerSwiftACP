@@ -1,6 +1,6 @@
 # Entry Core
 
-Entry Core는 Voyager의 최소 Go runtime foundation입니다. 현재 production foreground daemon, CLI, UDS, Swift client는 canonical wire contract에서 `ping`, `health`, `version`만 처리합니다. canonical Entry contract의 `entry.list`/`entry.resolve` strict DTO, bounded unified application orchestration, composite continuation, injected runtime 경로는 구현되어 in-process test로 검증되지만 production UDS/CLI에는 연결되지 않았습니다. 이 module은 기존 macOS Helper, XPC, Spotlight 경로와 독립적이며 Swift integration을 포함하지 않습니다.
+Entry Core는 Voyager의 최소 Go runtime foundation입니다. 현재 production foreground daemon, CLI, UDS, Swift client는 canonical wire contract에서 `ping`, `health`, `version`만 처리합니다. `--database` 모드의 daemon은 여기에 VOY-765 Property API 11개 method(`property.definition.*`, `property.option.*`, `property.assignment.list`, `property.change.prepare/execute`)를 추가로 dispatch합니다(아래 "Property API" 참고). DB-less 모드는 이전과 동일하게 lifecycle 전용입니다. canonical Entry contract의 `entry.list`/`entry.resolve` strict DTO, bounded unified application orchestration, composite continuation, injected runtime 경로는 구현되어 in-process test로 검증되지만 production UDS/CLI에는 연결되지 않았습니다. 이 module은 기존 macOS Helper, XPC, Spotlight 경로와 독립적이며 Swift integration을 포함하지 않습니다.
 
 ## Module contract
 
@@ -19,21 +19,24 @@ The contract is intentionally unversioned while there is only one canonical repr
 
 ## Architecture
 
-| Path                                 | Responsibility                                                                                                                                            |
-| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cmd/entry-core`                     | canonical wire contract CLI argument, request ID, output, exit-code adapter                                                                               |
-| `cmd/entry-core-daemon`              | canonical wire contract foreground process, signal, server composition root                                                                               |
-| `protocol/schema`                    | strict canonical wire contract JSON DTO, validation, response-size contract                                                                               |
-| `internal/domain/entry`              | transport-free Entry values and invariants                                                                                                                |
-| `internal/mount`                     | workspace mount registry, normalization, forward/reverse resolution                                                                                       |
-| `internal/source`                    | local and fake-external adapters with source-scoped cursors                                                                                               |
-| `internal/application/entry`         | bounded workspace list/resolve, fair multi-source pagination, context mapping                                                                             |
-| `internal/runtime`                   | lifecycle, canonical wire dispatch, injected Entry contract list/resolve                                                                                  |
-| `internal/transport/unixsocket`      | canonical wire contract one-shot UDS client/server and lifecycle                                                                                          |
-| `internal/persistence/sqlite`        | SQLite store lifecycle, versioned migrations, workspace bootstrap/restore, `WithinTx` mutation boundary (store/migrate/checksum/workspace/tx/model/embed) |
-| `internal/domain/entry`              | transport-free Entry values and invariants, typed UUIDv7 `WorkspaceID` + `WorkspaceContext`                                                               |
-| `integration/entry_contract_test.go` | unified local+fake-external canonical list/continuation/resolve proof                                                                                     |
-| `integration/daemon_smoke_test.go`   | sole Go integration owner for real CLI and daemon process smoke (including persistence smoke)                                                             |
+| Path                                              | Responsibility                                                                                                                                            |
+| ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cmd/entry-core`                                  | canonical wire contract CLI argument, request ID, output, exit-code adapter                                                                               |
+| `cmd/entry-core-daemon`                           | canonical wire contract foreground process, signal, server composition root                                                                               |
+| `protocol/schema`                                 | strict canonical wire contract JSON DTO, validation, response-size contract                                                                               |
+| `internal/domain/entry`                           | transport-free Entry values and invariants                                                                                                                |
+| `internal/mount`                                  | workspace mount registry, normalization, forward/reverse resolution                                                                                       |
+| `internal/source`                                 | local and fake-external adapters with source-scoped cursors                                                                                               |
+| `internal/application/entry`                      | bounded workspace list/resolve, fair multi-source pagination, context mapping                                                                             |
+| `internal/application/property`                   | VOY-765 Property catalog (definition/option) 유스케이스와 prepare/execute 원자적 변경, CAS, 정준 read-back                                                |
+| `internal/runtime`                                | lifecycle, canonical wire dispatch, injected Entry contract list/resolve                                                                                  |
+| `internal/transport/unixsocket`                   | canonical wire contract one-shot UDS client/server and lifecycle                                                                                          |
+| `internal/persistence/sqlite`                     | SQLite store lifecycle, versioned migrations, workspace bootstrap/restore, `WithinTx` mutation boundary (store/migrate/checksum/workspace/tx/model/embed) |
+| `internal/domain/entry`                           | transport-free Entry values and invariants, typed UUIDv7 `WorkspaceID` + `WorkspaceContext`                                                               |
+| `integration/entry_contract_test.go`              | unified local+fake-external canonical list/continuation/resolve proof                                                                                     |
+| `integration/daemon_smoke_test.go`                | sole Go integration owner for real CLI and daemon process smoke (including persistence smoke)                                                             |
+| `integration/daemon_property_persistence_test.go` | real-daemon Property UDS 통합 헬퍼(원자적 persistence, 응답 예산, sibling 실패 시나리오 러너)                                                             |
+| `integration/property_smoke_test.go`              | real-daemon Property UDS 통합 헬퍼(wire 교환, 정의/옵션 fixture, 임시 파일 루트)                                                                          |
 
 Dev/CI-only tooling (never linked into the daemon binary): `internal/persistence/sqlite/tools/atlas-schema` loads the desired GORM schema for Atlas generation and validation.
 
@@ -48,6 +51,7 @@ mise run entry-core-test-race
 mise run entry-core-smoke
 mise run entry-core-property-catalog-generate
 mise run entry-core-property-catalog-validate
+mise run entry-core-schema-parity
 mise run entry-core-check
 mise run entry-core-interop-check
 ```
@@ -62,7 +66,9 @@ make -C apps/entry-core smoke
 make -C apps/entry-core check
 ```
 
-`entry-core-build` compiles both real command packages without writing repository binaries. `entry-core-smoke` runs only `TestDaemonProcessSmoke`. `entry-core-check` composes build, full test, full race, canonical smoke, the property-catalog validation, the migration validation, vet, gofmt, and module invariant checks.
+`entry-core-build` compiles both real command packages without writing repository binaries. `entry-core-smoke` runs only `TestDaemonProcessSmoke`. `entry-core-check` composes build, full test, full race, canonical smoke, the property-catalog validation, the migration validation, schema parity, vet, gofmt, and module invariant checks.
+
+`entry-core-schema-parity` compares the desired GORM model schema against the migration head by running `atlas migrate diff` on a temp copy of the migrations directory. The diff must be empty or byte-match (after CHECK-constraint ordering normalization) the committed `internal/persistence/sqlite/migration-divergence.allowlist`, which records the accepted divergence: the Atlas GORM loader cannot express migration `0002`'s composite foreign keys, so a naive diff always proposes recreating the tables without them. A model edit without a matching migration fails this gate.
 
 ## Property catalog seed and condition catalog
 
@@ -81,6 +87,68 @@ mise run entry-core-property-catalog-validate   # verify committed artifacts are
 
 `entry-core-property-catalog-generate` rewrites the three generated artifacts from the canonical Registries; `entry-core-property-catalog-validate` fails if any committed artifact is missing or stale, and `entry-core-check` depends on it.
 
+## Property API (VOY-765)
+
+`--database` 모드 daemon이 UDS로 제공하는 쓰기 가능한 System Property backend다. DB-less 모드에서는 method gate에서 거절된다.
+
+### Methods
+
+`protocol/schema/property.go` 상수와 1:1로 대응하는 11개 canonical method:
+
+| Method                        | 소유 유스케이스 (`internal/application/property`)                            |
+| ----------------------------- | ---------------------------------------------------------------------------- |
+| `property.definition.list`    | 워크스페이스 정의 bounded 목록(`page_size` 1..256, opaque `next_page_token`) |
+| `property.definition.create`  | 사용자 정의 생성(`user` namespace, UUIDv7 ID 발급, 첫 revision 1)            |
+| `property.definition.update`  | 표시 이름 메타데이터 갱신(CAS on `definition_revision`)                      |
+| `property.definition.disable` | 정의 비활성화(물리 삭제 없음, CAS)                                           |
+| `property.option.create`      | select 정의에 선택지 추가(소유 정의 revision +1)                             |
+| `property.option.update`      | 선택지 label 변경(rename/recolor, CAS)                                       |
+| `property.option.reorder`     | 선택지 ordinal 재배열(CAS)                                                   |
+| `property.option.disable`     | 선택지 비활성화(CAS)                                                         |
+| `property.assignment.list`    | local_path 대상 1개의 assignment fact bounded 읽기(PropertyID 오름차순)      |
+| `property.change.prepare`     | 변경안을 비내구 계산(저장 없음, before/after와 `requires_confirmation` 반환) |
+| `property.change.execute`     | 단일 트랜잭션 원자적 적용 + 정준 read-back 반환                              |
+
+### Limits
+
+- Request/response envelope: exactly `65,536` bytes (shared `MaxWireBytes`)
+- `page_size`: 1..256; result rows도 동일 상한
+- 요청 PropertyID 배열 / prepare·execute 변경 대상 수 / many-value 멤버 수: each ≤256
+- 스칼라 값(text/URL/email/local path): ≤4,096 bytes UTF-8
+- definition key/name, option label: ≤256 bytes
+- request ID: ≤128 bytes
+
+### Bootstrap order (`--database`)
+
+`cmd/entry-core-daemon/main.go` 순서 그대로, 어느 단계든 실패하면 socket 생성 전 fail-closed(exit 1):
+
+1. store open (`sqlite.Open`, connection policy read-back 검증 포함)
+2. embedded migration (`Migrate`)
+3. workspace bootstrap/restore (`BootstrapOrRestoreWorkspace`)
+4. catalog seed apply (`ApplyCatalogSeed`, 멱등)
+5. active catalog validate (`ValidateActiveCatalog`, 고아/invalid snapshot 거절)
+6. preset reconcile (`ApplyPropertyPresets`, Status/Project/Priority 멱등 재조정, 사용자 편집 행 미덮쓰기)
+7. service compose (`ComposeServices`, catalog+change 서비스를 runtime에 조합)
+8. ready — `workspace metadata initialized|restored` 로그 후 socket bind, `started in foreground`
+
+### Atomicity and read-back
+
+- 모든 mutation은 정확히 하나의 top-level `TransactionRunner.WithinTx` 안에서 수행된다. 물리 삭제 경로는 없고, 성공 시 소유 정의의 `definition_revision`은 정확히 1 올라간다.
+- `property.change.execute`는 하나의 트랜잭션 안에서 **CAS 재검증 → 응답 예산 사전 검사 → 일괄 적용 → 정준 read-back → 예산 재검사** 순서를 강제한다. CAS는 definition revision과 assignment revision 모두를 검사하고, expected assignment revision 0은 implicit unset@0(set→clear ABA 포함)을 의미한다. Stale revision은 protocol `conflict`로 매핑된다.
+- commit 전에 staged fact로 예상 read-back 성공 응답 바이트를 계산해 봉투 초과 시 `scope_too_large`로 실패 닫기한다(쓰기 0). 커밋 직전 persisted fact를 재조회해 정준 read-back 행을 만들고 요청 순서대로 반환한다.
+- `internal/application/property/change_readback.go`의 반영 인코더는 protocol `EncodedSuccessBytes`와 바이트 parity 테스트(`TestEncodedExecuteResponseBytesMatchProtocolEnvelope`)로 잠겨 있다.
+- 알려진 스펙 편차: 계획의 `property_response_budget_preflight` fixture(32×4096바이트 스칼라 요청이 봉투 안에 들어가는 시나리오)는 요청 자체가 봉투를 초과해 구조적으로 불가능하다. 구현된 subtest는 도달 가능한 절반을 증명한다 — oversized 요청이 dispatch 전 `request_too_large`로 실패 닫기됨, production `EncodedSuccessBytes(projected)`가 65,536 초과임, mutation 0임. "요청 ≤65,536 AND 예상 응답 >65,536" 단정은 존재하지 않으며 통과할 수 없는 단정으로 문서화하지 않는다.
+
+### Local-path target limitation
+
+변경 대상은 clean 절대 UTF-8 로컬 경로(1..4,096 bytes, `/` 시작, NUL·비정규·상대 경로 거절)만 지원한다. 경로는 존재하고 접근 가능해야 하며, identity는 locator에서 유도된 transitional 대상(`locator_derived` 분류)이다. rename/move 연속성은 보장되지 않는다 — 경로가 옮겨지면 같은 파일이라도 새 대상으로 취급된다.
+
+### Verification
+
+```bash
+mise run entry-core-check   # build + test + race + smoke(위 property_* subtests 포함) + catalog/migration/schema-parity/vet/gofmt/invariants
+```
+
 ## Dependency and native event decisions
 
 - The runtime foundation uses a pure-Go persistence stack: GORM (`gorm.io/gorm`) as the ORM, the `github.com/glebarez/sqlite` driver backed by `modernc.org/sqlite` (pure Go, so `CGO_ENABLED=0` builds work), and `github.com/golang-migrate/migrate/v4` for schema migrations. Atlas CLI (dev/CI only, pinned `mise` aqua `ariga/atlas` 1.3.0) plus the `ariga.io/atlas-provider-gorm` provider generate and validate migrations from GORM models. `go.sum` is committed and required; the module stays single (no `go.work` anywhere).
@@ -93,7 +161,7 @@ Implemented and verified in-process:
 
 - `protocol/schema` strictly decodes canonical Entry contract `entry.list` and `entry.resolve`, requires bounded `page_size` and `requested_properties`, keeps `page_token` opaque, derives `has_more` from token presence, maps canonical Entry DTOs, and enforces the shared 65,536-byte request/response ceiling.
 - `internal/application/entry` selects at most eight active mount/source scopes in a server-selected workspace, fairly interleaves canonical entries, authenticates a composite continuation token, preserves per-source availability/freshness/revision summaries, and resolves by EntryRef plus mount or by VirtualPath.
-- `internal/runtime` exposes only an injected/test canonical Entry contract list/resolve path. It snapshots lifecycle state before application I/O and maps typed application failures to stable redacted protocol errors. Default `New()` and production composition remain limited to `ping`, `health`, and `version`; Entry methods are rejected at the method gate.
+- `internal/runtime` exposes only an injected/test canonical Entry contract list/resolve path. It snapshots lifecycle state before application I/O and maps typed application failures to stable redacted protocol errors. Default `New()` and DB-less composition remain limited to `ping`, `health`, and `version`; Entry methods are rejected at the method gate. With `--database`, the composed runtime additionally dispatches the 11 VOY-765 Property methods through the catalog/change services; Entry contract methods stay method-gate-rejected.
 - `internal/source`의 fake-external 경로는 source-owned connection resolver가 `AccessSession`을 만든 뒤 fake client를 호출하는 결정적 테스트 경계입니다. CredentialRef는 opaque reference이며 credential/token/API-key/header 값은 Entry, wire, cursor, error, log에 들어가지 않습니다.
 - `integration/entry_contract_test.go` proves one root list response containing localfs and fake-external entries, opaque composite continuation without duplicate/lost entries, representative local/external resolve, available success-empty, and cached-offline normalization to stale with a `source_offline` warning.
 - Canonical wire contract `ping`, `health`, `version`, `EmptyParams`, exact bytes, CLI/daemon behavior, and real-process smoke ownership are canonical.
@@ -102,7 +170,7 @@ Not production-wired and still deferred:
 
 - The production daemon, Unix-socket transport, CLI, and Swift client use canonical wire contract but expose no canonical Entry contract list/resolve route.
 - Localfs and fakeexternal are deterministic fixture adapters for this boundary, not production provider connectors. Real providers, OAuth browser/callback/code exchange, token/API-key storage or refresh, secure-store integration, network behavior, retry/rate limiting, and provider configuration are deferred.
-- The SQLite store, embedded migrations, and workspace metadata persistence are implemented; durable Entry/Property/revision storage, indexes, search/query projections, cache authority, restart-stable composite tokens, mutation/operation engines, and content streaming are deferred.
+- The SQLite store, embedded migrations, workspace metadata persistence, and the VOY-765 durable Property catalog/assignment storage are implemented; durable Entry/revision storage, indexes, search/query projections, cache authority, restart-stable composite tokens, mutation/operation engines, and content streaming are deferred.
 - Swift/macOS models and UI, Helper/XPC integration, native filesystem observation, and production Mirage execution are deferred.
 - VOY-665 receives only the ownership/coexistence/rollback handoff defined by the canonical contract. Its migration and implementation remain owned by VOY-665 and are not implemented here.
 
@@ -163,7 +231,7 @@ The pragmas are read back and verified at open; any mismatch fails closed with `
 
 ### Migration directory
 
-Migrations live in `internal/persistence/sqlite/migrations` in golang-migrate format and are embedded into the daemon via `//go:embed`. The directory is append-only and currently contains exactly `0001_workspace_metadata.{up,down}.sql` plus `atlas.sum`. The `.down.sql` file exists for ADR-014 artifact-format compliance; it is never executed at runtime. The `atlas.sum` is verified before any migration SQL runs, so a tampered directory fails closed without creating the ledger table.
+Migrations live in `internal/persistence/sqlite/migrations` in golang-migrate format and are embedded into the daemon via `//go:embed`. The directory is append-only and currently contains exactly `0001_workspace_metadata.{up,down}.sql` through `0007_entry_properties.{up,down}.sql` (VOY-765 property catalog/term/assignment tables) plus `atlas.sum`. The `.down.sql` files exist for ADR-014 artifact-format compliance; they are never executed at runtime. The `atlas.sum` is verified before any migration SQL runs, so a tampered directory fails closed without creating the ledger table.
 
 The 16-byte `workspace_id` CHECK is emitted directly by the GORM model's `check:` tags during Atlas generation; no hand-finishing is required. The schema ledger is golang-migrate's `schema_migrations` table.
 
@@ -194,6 +262,8 @@ mise run entry-core-migration-validate
 The module uses a custom golang-migrate `database.Driver` (`sharedSQLiteDriver`) over the store's shared `*sql.DB`. It deliberately does **not** import `github.com/golang-migrate/migrate/v4/database/sqlite`: that package blank-imports `modernc.org/sqlite`, which registers the `sqlite` driver and collides with `github.com/glebarez/sqlite`'s registration, panicking with `sql: Register called twice for driver sqlite`. The shared driver also treats `Close` as a no-op because the Store owns the connection lifecycle.
 
 ## VOY-765 handoff
+
+> VOY-765는 이어받은 표면 위에 쓰기 가능한 Property backend를 이미 구현했다(위 "Property API (VOY-765)" 섹션). 아래는 VOY-663가 남긴 원본 인계 기록이다.
 
 This slice creates no property tables and no repository methods. It hands the writable Property backend (VOY-765) a frozen mutation surface:
 
