@@ -75,9 +75,11 @@ public struct FileManagerContentFeature {
         }
 
         Reduce { state, action in
-            // 전이가 사라졌으면 폴더 hold 힌트도 함께 해제한다.
+            // 전이가 사라졌으면 폴더 hold 힌트와 누적 staging도 함께 폐기한다.
+            // 남은 staging은 이후 같은 경로 재오픈 시 과거 행을 되살릴 수 있다.
             if state.pendingIdentityTransition == nil {
                 state.entryViewLayout.hierarchy.identityMigrationDeferredAfterIDByFolder.removeAll()
+                state.entryViewLayout.hierarchy.identityMigrationStagedChildrenByFolder.removeAll()
             }
             let effect = handlePendingSelectionBeforeEntryLayoutLoaded(action, state: &state)
             markPreserveSelectionForReplacementProjection(on: action, state: &state)
