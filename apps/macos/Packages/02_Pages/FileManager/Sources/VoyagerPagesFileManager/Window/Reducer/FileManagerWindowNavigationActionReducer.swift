@@ -309,12 +309,12 @@ private func handleOpenCollectionFile(
         guard pendingRequest.url.standardizedFileURL != url.standardizedFileURL else {
             return .none
         }
-        state.pendingCollectionOpenRequest = nil
+        let failedPinnedReturnTabID = state.pendingPinnedCollectionReturnTabID
         return .concatenate(
-            .cancel(id: OpenCollectionFileCancelID(
-                windowID: state.content.entryViewLayout.entryOperations.windowID,
-            )),
-            restoreCollectionOpenHistoryEffect(pendingRequest),
+            cancelPendingCollectionOpen(
+                state: &state,
+                failedPinnedReturnTabID: failedPinnedReturnTabID,
+            ),
             .send(.navigation(.view(.openCollectionFile(url)))),
         )
     }

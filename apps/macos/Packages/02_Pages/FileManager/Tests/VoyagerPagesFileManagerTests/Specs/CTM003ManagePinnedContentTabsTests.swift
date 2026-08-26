@@ -8271,6 +8271,73 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         XCTAssertNil(store.state.pendingCollectionOpenRequest)
     }
 
+    /// CTM-003-go_to_anchored_path_of_pinned_tab: pinned Collection 복귀 중 다른 Collection 교체는 기존 복귀를 실패로 종료한다.
+    /// 새 Collection request를 시작하기 전에 기존 pinned 복귀 load와 terminal 상관을 정리하는지 검증한다.
+    /// - 검증 내용: 기존 pinned tab failure terminal 1회, 교체 Collection load 1회, 최종 pending request 정리
+    /// - 사전 조건: runtime Collection R에서 durable Collection A 복귀 중 ordinary Collection B를 열고 B load가 실패함
+    /// - 기대 결과: A의 tabID만 failure terminal로 기록되고 B 실패는 추가 pinned failure를 만들지 않음
+    func testOpeningReplacementCollectionDuringPinnedReturnEmitsFailureTerminal() async {
+        let tabID = ContentTabID(rawValue: "replacement-pinned-return")
+        let runtimeURL = URL(fileURLWithPath: "/tmp/replacement-runtime.voycoll")
+        let durableURL = URL(fileURLWithPath: "/tmp/replacement-durable.voycoll")
+        let replacementURL = URL(fileURLWithPath: "/tmp/replacement-ordinary.voycoll")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: tabID,
+                page: .collection,
+                anchor: .collectionFile(url: runtimeURL),
+                isPinned: true,
+            )],
+            activeTabID: tabID,
+            pinnedRecords: [tabID: Self.pinnedRecord(
+                id: tabID,
+                page: .collection,
+                anchor: .collectionFile(url: durableURL),
+                title: "Durable Collection",
+                iconName: "rectangle.stack",
+            )],
+        )
+        state.content = .initialContent(for: .collectionFile(url: runtimeURL))
+        state.syncActiveTabContentState()
+        state.pendingCollectionOpenRequest = ContentPageCollectionOpenRequest(
+            id: UUID(),
+            url: durableURL,
+            sourceRoute: state.content.navigation.navigationState,
+            prePrepareBackHistory: [],
+            prePrepareForwardHistory: [],
+        )
+        let failedTabIDs = LockIsolated<[ContentTabID]>([])
+        let loadedURLs = LockIsolated<[URL]>([])
+        let store = TestStore(initialState: state) {
+            Reduce<FileManagerWindowState, FileManagerWindowAction> { state, action in
+                if case let .delegate(.pinnedContentTabRuntimeNavigationFailed(failedTabID)) = action {
+                    failedTabIDs.withValue { $0.append(failedTabID) }
+                    return .none
+                }
+                return FileManagerFeature().reduce(into: &state, action: action)
+            }
+        } withDependencies: {
+            $0.date = .constant(Self.pinnedAt)
+            $0.uuid = .incrementing
+            $0.collectionFileClient.load = { url in
+                loadedURLs.withValue { $0.append(url) }
+                throw NSError(domain: "CTM003", code: 735)
+            }
+            $0.collectionAlertClient.showCollectionOpenErrorAlert = { _, _ in }
+        }
+        // store.exhaustivity = .off: Collection load child action보다 교체 전 pinned terminal 상관을 검증한다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.navigation(.view(.openCollectionFile(replacementURL))))
+        await store.skipReceivedActions(strict: false)
+        await store.finish()
+
+        XCTAssertEqual(failedTabIDs.value, [tabID])
+        XCTAssertEqual(loadedURLs.value, [replacementURL])
+        XCTAssertNil(store.state.pendingCollectionOpenRequest)
+    }
+
     /// CTM-003-go_to_anchored_path_of_pinned_tab: empty durable Collection은 유효한 source Collection 보존
     /// empty 판정은 staleness/session/navigation mutation 전에 failure-style terminal로 종료되어야 한다.
     /// - 검증 내용: source document/draft/baseline/route/history 보존, staleness write 미호출, Empty Collection alert
