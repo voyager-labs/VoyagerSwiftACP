@@ -386,19 +386,33 @@ public struct FileManagerContentFeature {
             appliesPendingExternalSelection = false
             // 소유자 폴더 batch에 lexical after 행이 없으면 hierarchy reducer의
             // retained 교체를 보류시킨다(도착 시 자연 해제).
-            if case let .folder(ownerID, _) = state.pendingIdentityTransition?.projectionOwner,
-               canonicalizedPath(ownerID) == canonicalizedPath(folderID),
-               let transition = state.pendingIdentityTransition
-            {
-                let afterIdentity = identityAfterLexicalPath(transition)
-                let hasAfterRow = items.contains {
-                    standardizedIdentityPath($0.id) == standardizedIdentityPath(afterIdentity)
+            if let transition = state.pendingIdentityTransition {
+                // projection(목적지) 소유자는 lexical after 행 도착 여부로 hold를,
+                // preservation(소스) 소유자는 migration 완료 전까지 항상 hold를 둔다.
+                var holdsProjection: Bool?
+                if case let .folder(ownerID, _) = transition.projectionOwner,
+                   canonicalizedPath(ownerID) == canonicalizedPath(folderID)
+                {
+                    let afterIdentity = identityAfterLexicalPath(transition)
+                    holdsProjection = items.contains {
+                        standardizedIdentityPath($0.id) == standardizedIdentityPath(afterIdentity)
+                    }
                 }
-                if hasAfterRow {
+                if case let .folder(ownerID, _) = transition.preservationOwner,
+                   canonicalizedPath(ownerID) == canonicalizedPath(folderID),
+                   holdsProjection == nil
+                {
+                    holdsProjection = false
+                }
+                switch holdsProjection {
+                case .some(true):
                     state.entryViewLayout.hierarchy.identityMigrationDeferredAfterIDByFolder[folderID] = nil
-                } else {
+                case .some(false):
                     state.entryViewLayout.hierarchy.identityMigrationDeferredAfterIDByFolder[folderID] =
-                        afterIdentity
+                        identityAfterLexicalPath(transition)
+                case .none:
+                    // 소유자가 아닌 폴더는 보류 대상이 아니다.
+                    state.entryViewLayout.hierarchy.identityMigrationDeferredAfterIDByFolder[folderID] = nil
                 }
             }
 

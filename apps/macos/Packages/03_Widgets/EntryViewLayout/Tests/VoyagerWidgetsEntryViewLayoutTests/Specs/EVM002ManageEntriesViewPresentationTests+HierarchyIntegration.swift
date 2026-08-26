@@ -746,8 +746,16 @@ extension EVM002ManageEntriesViewPresentationTests {
         state.entries = [folderA]
         state.hierarchy = .init(rootPath: "/root")
         state.hierarchy.nodesByID = [
-            folderA.id: .init(children: [folderB], loadPhase: .loaded, generation: 2, hasAppliedContentBatch: true),
-            folderB.id: .init(children: [staleChild], loadPhase: .loaded, generation: 4, hasAppliedContentBatch: true),
+            folderA.id: .init(
+                folder: .init(children: [folderB], coreFinished: true),
+                loadPhase: .loaded,
+                generation: 2,
+            ),
+            folderB.id: .init(
+                folder: .init(children: [staleChild], coreFinished: true),
+                loadPhase: .loaded,
+                generation: 4,
+            ),
         ]
         state.hierarchy.setExpandedIDs([folderA.id, folderB.id])
         let store = TestStore(initialState: state) {
@@ -756,13 +764,18 @@ extension EVM002ManageEntriesViewPresentationTests {
         // store.exhaustivity = .off: effect 순서보다 모든 cached descendant의 동기 state 전환을 검증한다.
         store.exhaustivity = .off
 
-        await store.send(.hierarchy(.coarseHierarchyInvalidated(removedPrefixes: []))) {
+        await store.send(.hierarchy(.coarseHierarchyInvalidated(
+            removedPrefixes: [],
+            retainsCompleteSnapshots: true,
+        ))) {
             $0.hierarchy.nodesByID[folderA.id as String] = .init(
+                folder: .init(children: [folderB]),
                 expansionIntent: true,
                 generation: 3,
                 loadPhase: .loadingCore,
             )
             $0.hierarchy.nodesByID[folderB.id as String] = .init(
+                folder: .init(children: [staleChild]),
                 expansionIntent: true,
                 generation: 5,
                 loadPhase: .loadingCore,

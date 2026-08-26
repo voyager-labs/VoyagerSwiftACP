@@ -13,7 +13,7 @@ public enum EntryListHierarchyAction: CasePathable, Sendable {
     case hiddenFilesSettingChanged
     case arrangementMetadataPriorityChanged
     case hierarchyInvalidated(affectedPaths: [String], removedPrefixes: [String])
-    case coarseHierarchyInvalidated(removedPrefixes: [String])
+    case coarseHierarchyInvalidated(removedPrefixes: [String], retainsCompleteSnapshots: Bool = false)
     case coarseHierarchyRefreshRequested
     case restartUnfinishedExpandedFolderLoads
     case rootSnapshotCompleted(rootContextGeneration: Int, rootFolders: [EntryModel])

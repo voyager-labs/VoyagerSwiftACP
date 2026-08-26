@@ -67,6 +67,9 @@ public struct EntryListHierarchyState: Equatable, Sendable {
     /// children 교체를 미루도록 하는 힌트. 값은 해당 폴더의 lexical after ID.
     public var identityMigrationDeferredAfterIDByFolder: [EntryModel.ID: String] = [:]
 
+    /// 보류 중인 배치 항목 누적. lexical after 행 도착 시 한 번에 커밋된다.
+    public var identityMigrationStagedChildrenByFolder: [EntryModel.ID: [EntryModel]] = [:]
+
     public private(set) var rootContextGeneration: Int
     public private(set) var rootPath: String
 

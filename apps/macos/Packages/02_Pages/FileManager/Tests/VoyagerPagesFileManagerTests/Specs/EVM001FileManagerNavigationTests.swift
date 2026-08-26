@@ -447,7 +447,10 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             flags: UInt32(kFSEventStreamEventFlagMustScanSubDirs),
         )))
         await store.receive { action in
-            guard case let .entryViewLayout(.hierarchy(.coarseHierarchyInvalidated(removedPrefixes))) = action
+            guard case let .entryViewLayout(.hierarchy(.coarseHierarchyInvalidated(
+                removedPrefixes: removedPrefixes,
+                _,
+            ))) = action
             else { return false }
             return removedPrefixes.isEmpty
         }
@@ -2934,7 +2937,10 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
                 deliveryChainToken: nil,
             )))
             await store.receive { action in
-                guard case let .content(.entryViewLayout(.hierarchy(.coarseHierarchyInvalidated(removedPrefixes)))) =
+                guard case let .content(.entryViewLayout(.hierarchy(.coarseHierarchyInvalidated(
+                    removedPrefixes: removedPrefixes,
+                    _,
+                )))) =
                     action
                 else { return false }
                 return removedPrefixes.isEmpty

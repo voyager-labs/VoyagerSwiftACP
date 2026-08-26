@@ -37,10 +37,11 @@ struct EntryListHierarchyReducer {
                     state: &state,
                 )
 
-            case let .coarseHierarchyInvalidated(removedPrefixes):
+            case let .coarseHierarchyInvalidated(removedPrefixes, retainsCompleteSnapshots):
                 return invalidateHierarchy(
                     affectedPaths: [],
                     removedPrefixes: removedPrefixes,
+                    retainsCompleteSnapshots: retainsCompleteSnapshots,
                     reloadCachedFolders: true,
                     state: &state,
                 )
@@ -203,14 +204,45 @@ struct EntryListHierarchyReducer {
                 // selection 행이 사라지는 깜빡임을 막는다.
                 if case let .event(.coreBatch(items, batchIndex)) = response,
                    !nodeState.folder.hasAppliedContentBatch,
-                   !nodeState.folder.children.isEmpty,
-                   let deferredAfterID = state.hierarchy.identityMigrationDeferredAfterIDByFolder[folderID],
-                   !items.contains(where: {
-                       URL(fileURLWithPath: $0.id).standardizedFileURL.path
-                           == URL(fileURLWithPath: deferredAfterID).standardizedFileURL.path
-                   })
+                   !nodeState.folder.children.isEmpty
                 {
-                    nodeState.folder.expectedBatchIndex += 1
+                    // identity migration 보류 창: lexical after 행이 오기 전 batch는
+                    // 누적만 하고 retained children 교체는 미룬다. after 행이 포함된
+                    // batch가 오면 누적분을 결합해 한 번에 커밋한다.
+                    let standardizedItems = items.map { item in
+                        (item, URL(fileURLWithPath: item.id).standardizedFileURL.path)
+                    }
+                    if let deferredAfterID = state.hierarchy.identityMigrationDeferredAfterIDByFolder[folderID] {
+                        let standardizedDeferred = URL(fileURLWithPath: deferredAfterID).standardizedFileURL.path
+                        if !standardizedItems.contains(where: { $0.1 == standardizedDeferred }) {
+                            state.hierarchy.identityMigrationStagedChildrenByFolder[folderID, default: []]
+                                .append(contentsOf: items)
+                            nodeState.folder.expectedBatchIndex += 1
+                            state.hierarchy.nodesByID[folderID] = nodeState
+                            return .none
+                        }
+                        var staged = state.hierarchy.identityMigrationStagedChildrenByFolder[folderID] ?? []
+                        staged.append(contentsOf: items)
+                        state.hierarchy.identityMigrationStagedChildrenByFolder[folderID] = nil
+                        state.hierarchy.identityMigrationDeferredAfterIDByFolder[folderID] = nil
+                        nodeState.folder.children = staged
+                        nodeState.folder.hasAppliedContentBatch = true
+                        nodeState.folder.expectedBatchIndex = batchIndex + 1
+                        state.hierarchy.nodesByID[folderID] = nodeState
+                        return .none
+                    }
+                }
+                if case let .event(.coreFinished(batchCount)) = response,
+                   let staged = state.hierarchy.identityMigrationStagedChildrenByFolder[folderID],
+                   !staged.isEmpty
+                {
+                    // after 행 없이 종료한 경우 누적분이 최종 children이다.
+                    nodeState.folder.children = staged
+                    nodeState.folder.hasAppliedContentBatch = true
+                    nodeState.folder.coreFinished = true
+                    nodeState.folder.expectedBatchIndex = batchCount
+                    state.hierarchy.identityMigrationStagedChildrenByFolder[folderID] = nil
+                    state.hierarchy.identityMigrationDeferredAfterIDByFolder[folderID] = nil
                     state.hierarchy.nodesByID[folderID] = nodeState
                     return .none
                 }

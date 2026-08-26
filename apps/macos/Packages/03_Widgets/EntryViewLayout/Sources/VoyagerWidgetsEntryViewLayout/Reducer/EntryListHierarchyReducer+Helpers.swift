@@ -55,6 +55,7 @@ extension EntryListHierarchyReducer {
     func invalidateHierarchy(
         affectedPaths: [String],
         removedPrefixes: [String],
+        retainsCompleteSnapshots: Bool = false,
         reloadCachedFolders: Bool,
         state: inout State,
     ) -> Effect<Action> {
@@ -69,7 +70,10 @@ extension EntryListHierarchyReducer {
         }
 
         if reloadCachedFolders {
-            return .merge(effects + [reloadFoldersForPresentationChange(state: &state)])
+            return .merge(effects + [reloadFoldersForPresentationChange(
+                state: &state,
+                retainsCompleteSnapshots: retainsCompleteSnapshots,
+            )])
         }
 
         var affectedIDs = Set<EntryModel.ID>()
@@ -129,7 +133,10 @@ extension EntryListHierarchyReducer {
         state.hierarchy.nodesByID[folderID] = nodeState
     }
 
-    func reloadFoldersForPresentationChange(state: inout State) -> Effect<Action> {
+    func reloadFoldersForPresentationChange(
+        state: inout State,
+        retainsCompleteSnapshots: Bool = false,
+    ) -> Effect<Action> {
         let folderIDs = Array(state.hierarchy.nodesByID.keys)
         let expandedFolders = state.hierarchy.expandedFolderIDs
             .compactMap { id in
@@ -146,11 +153,23 @@ extension EntryListHierarchyReducer {
 
         for id in folderIDs {
             var nodeState = state.hierarchy.nodesByID[id] ?? FolderNodeState()
-            if !state.hierarchy.expandedFolderIDs.contains(id) {
+            let isExpanded = state.hierarchy.expandedFolderIDs.contains(id)
+            if !isExpanded {
                 nodeState.generation &+= 1
             }
-            nodeState.folder = FolderSnapshot()
-            nodeState.loadPhase = FolderLoadPhase.idle
+            // 보존 모드에서는 완전 스냅샷을 유지한 채 startLoad의 reloadedNodeState가
+            // 세대를 올리고 커서를 되감게 한다(선택 행 보존). 비보존 모드는 기존대로 비운다.
+            if retainsCompleteSnapshots, isExpanded,
+               nodeState.folder.coreFinished || nodeState.loadPhase == .loaded
+            {
+                nodeState.folder.coreFinished = false
+                nodeState.folder.expectedBatchIndex = 0
+                nodeState.folder.hasAppliedContentBatch = false
+                nodeState.loadPhase = FolderLoadPhase.idle
+            } else {
+                nodeState.folder = FolderSnapshot()
+                nodeState.loadPhase = FolderLoadPhase.idle
+            }
             state.hierarchy.nodesByID[id] = nodeState
         }
         if !folderIDs.isEmpty {

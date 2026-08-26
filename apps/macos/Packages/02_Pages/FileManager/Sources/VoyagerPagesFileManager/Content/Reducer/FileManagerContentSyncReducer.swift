@@ -95,39 +95,25 @@ struct FileManagerContentSyncReducer {
         let normalizedPaths = scheduledEvents.map { normalizedPath(for: $0.path) }
         let affectedPaths = hierarchyAffectedPaths(for: normalizedPaths)
         let removedPrefixes = removedPrefixes(for: scheduledEvents)
-        // coarse 재스캔은 모든 확장 폴더를 되감는다. 전이의 폴더 소유자가 있으면
-        // coarse 전체 리셋 대신 모든 확장 폴더를 targeted 무효화로 보낸다.
-        // startLoad retained 경로가 완전 child snapshot을 유지해 선택이 살아남고,
-        // 나머지 캐시도 stale 없이 새 세대로 재시작된다.
-        var downgradeToTargetedExpanded = false
-        if scheduledEvents.contains(where: requiresCoarseHierarchyReload),
-           let transition = state.pendingIdentityTransition,
-           case .folder = transition.projectionOwner
-        {
-            downgradeToTargetedExpanded = true
-        }
-        let rebaseAffectedPaths = downgradeToTargetedExpanded || scheduledEvents
-            .contains(where: requiresCoarseHierarchyReload)
-            ? Array(state.entryViewLayout.hierarchy.expandedFolderIDs)
-            : affectedPaths
         FileManagerContentEntryOpsCoordinator.rebaseIdentityTransitionForNextRootReload(state: &state)
+        // invalidation이 확장 폴더 node를 재시작하면 그 세대도 올라가므로 폴더 소유자를 재기준화한다.
+        // coarse 재스캔은 모든 확장 폴더를 되감는다.
         FileManagerContentEntryOpsCoordinator.rebaseIdentityTransitionForHierarchyInvalidation(
-            affectedPaths: rebaseAffectedPaths,
+            affectedPaths: scheduledEvents.contains(where: requiresCoarseHierarchyReload)
+                ? Array(state.entryViewLayout.hierarchy.expandedFolderIDs)
+                : affectedPaths,
             state: &state,
         )
-        let hierarchyAction: EntryListHierarchyAction = if downgradeToTargetedExpanded {
-            .hierarchyInvalidated(
-                affectedPaths: Array(state.entryViewLayout.hierarchy.expandedFolderIDs),
-                removedPrefixes: [],
+        let hierarchyAction: EntryListHierarchyAction = scheduledEvents
+            .contains(where: requiresCoarseHierarchyReload)
+            ? .coarseHierarchyInvalidated(
+                removedPrefixes: removedPrefixes,
+                retainsCompleteSnapshots: true,
             )
-        } else if scheduledEvents.contains(where: requiresCoarseHierarchyReload) {
-            .coarseHierarchyInvalidated(removedPrefixes: removedPrefixes)
-        } else {
-            .hierarchyInvalidated(
+            : .hierarchyInvalidated(
                 affectedPaths: affectedPaths,
                 removedPrefixes: removedPrefixes,
             )
-        }
         return .concatenate(
             .send(.entryViewLayout(.hierarchy(hierarchyAction))),
             FileManagerContentEntryOpsCoordinator.reloadEntryItemsEffect(state: state),
