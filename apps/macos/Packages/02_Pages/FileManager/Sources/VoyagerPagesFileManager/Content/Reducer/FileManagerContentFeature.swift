@@ -59,7 +59,10 @@ public struct FileManagerContentFeature {
                 // 실제 네비게이션·root 변경 시 대기 중인 identity 전이를 즉시 만료한다.
                 // 같은 root로의 재적용은 유지하고, 다른 root·비폴더 라우트로 이동하면
                 // stale 전이가 되살아나 선택을 잘못 옮기지 않게 한다.
-                expireTransitionOnNavigation(navigationState, state: &state)
+                FileManagerContentIdentityTransitionCoordinator.expireOnNavigation(
+                    navigationState,
+                    state: &state,
+                )
                 return .none
             default:
                 return .none
@@ -75,14 +78,11 @@ public struct FileManagerContentFeature {
         }
 
         Reduce { state, action in
-            // 전이가 사라졌으면 폴더 hold 힌트와 누적 staging도 함께 폐기한다.
-            // 남은 staging은 이후 같은 경로 재오픈 시 과거 행을 되살릴 수 있다.
-            if state.pendingIdentityTransition == nil {
-                state.entryViewLayout.hierarchy.identityMigrationDeferredAfterIDByFolder.removeAll()
-                state.entryViewLayout.hierarchy.identityMigrationStagedChildrenByFolder.removeAll()
-            }
             let effect = handlePendingSelectionBeforeEntryLayoutLoaded(action, state: &state)
-            markPreserveSelectionForReplacementProjection(on: action, state: &state)
+            FileManagerContentIdentityTransitionCoordinator.markReplacementSelection(
+                on: action,
+                state: &state,
+            )
             return effect
         }
 
@@ -96,9 +96,18 @@ public struct FileManagerContentFeature {
 
         Reduce { state, action in
             let effect = handlePendingSelectionAfterEntryLayoutLoaded(action, state: &state)
-            rebaseFolderIdentityTransitionOwnersAfterRootSnapshot(on: action, state: &state)
-            resolvePreserveSelectionForReplacementProjection(on: action, state: &state)
-            resolveFolderIdentityTransition(on: action, state: &state)
+            FileManagerContentIdentityTransitionCoordinator.rebaseFolderOwnersAfterRootSnapshot(
+                on: action,
+                state: &state,
+            )
+            FileManagerContentIdentityTransitionCoordinator.resolveReplacementSelection(
+                on: action,
+                state: &state,
+            )
+            FileManagerContentIdentityTransitionCoordinator.resolveFolderTransition(
+                on: action,
+                state: &state,
+            )
             return effect
         }
 
@@ -139,19 +148,8 @@ public struct FileManagerContentFeature {
             // 대기 중인 identity 전이의 after-path가 아직 배치에 없으면 부분 교체 대신
             // 마지막 완전 projection을 유지한다. 물리 row 없는 논리 선택은 표시가
             // 깜빡이므로, after-path 도착 또는 accepted completion에서 한 번에 교체한다.
-            let transitionHoldsProjection: Bool = {
-                guard let transition = state.pendingIdentityTransition else { return false }
-                guard case let .entryViewLayout(.entryOperations(.loading(.streamEvent(streamEvent)))) = action,
-                      case let .coreBatch(items, _) = streamEvent.event
-                else { return false }
-                // symlink 이동은 resolved target 행을 after로 오인하지 않도록
-                // lexical identity로 hold 해제를 판정한다.
-                return !items
-                    .contains {
-                        standardizedIdentityPath($0.id) ==
-                            standardizedIdentityPath(identityAfterLexicalPath(transition))
-                    }
-            }()
+            let transitionHoldsProjection = FileManagerContentIdentityTransitionCoordinator
+                .holdsRootProjection(on: action, state: state)
             let projectionEntries = if !useCollectionItems,
                                        isFolderRoute,
                                        isRetainedProjectionTrigger,
@@ -386,37 +384,11 @@ public struct FileManagerContentFeature {
             entries = items
             projectionOwner = .folder(id: folderID, generation: folderGeneration)
             appliesPendingExternalSelection = false
-            // 소유자 폴더 batch에 lexical after 행이 없으면 hierarchy reducer의
-            // retained 교체를 보류시킨다(도착 시 자연 해제).
-            if let transition = state.pendingIdentityTransition {
-                // projection(목적지) 소유자는 lexical after 행 도착 여부로 hold를,
-                // preservation(소스) 소유자는 migration 완료 전까지 항상 hold를 둔다.
-                var holdsProjection: Bool?
-                if case let .folder(ownerID, _) = transition.projectionOwner,
-                   canonicalizedPath(ownerID) == canonicalizedPath(folderID)
-                {
-                    let afterIdentity = identityAfterLexicalPath(transition)
-                    holdsProjection = items.contains {
-                        standardizedIdentityPath($0.id) == standardizedIdentityPath(afterIdentity)
-                    }
-                }
-                if case let .folder(ownerID, _) = transition.preservationOwner,
-                   canonicalizedPath(ownerID) == canonicalizedPath(folderID),
-                   holdsProjection == nil
-                {
-                    holdsProjection = false
-                }
-                switch holdsProjection {
-                case .some(false):
-                    state.entryViewLayout.hierarchy.identityMigrationDeferredAfterIDByFolder[folderID] =
-                        identityAfterLexicalPath(transition)
-                default:
-                    // after 행이 포함된 batch(holdsProjection == true)와 소유자가 아닌
-                    // 폴더(.none)는 힌트를 건드리지 않는다. 커밋·소비는 hierarchy
-                    // reducer의 staged 결합 분기가 담당한다.
-                    break
-                }
-            }
+            FileManagerContentIdentityTransitionCoordinator.beginDeferredFolderReplacementIfNeeded(
+                folderID: folderID,
+                items: items,
+                state: &state,
+            )
 
         default:
             return .none
@@ -427,7 +399,7 @@ public struct FileManagerContentFeature {
                 entries: entries,
                 state: &state,
             )
-        let identityMigrated = FileManagerContentEntryOpsCoordinator.migrateSelectionAlongIdentityTransition(
+        let identityMigrated = FileManagerContentIdentityTransitionCoordinator.migrateSelection(
             entries: entries,
             projectionOwner: projectionOwner,
             state: &state,
@@ -459,207 +431,6 @@ public struct FileManagerContentFeature {
         return .send(.entryViewLayout(.delegate(.selectionChanged)))
     }
 
-    /// 비종료 대체 projection이 reconcile로 before-path 선택을 지우기 직전에 transient 표시를 세운다.
-    /// 종료(accepted) projection 또는 사용자가 이미 선택을 바꾼 경우에는 세우지 않아
-    /// deselect를 되돌리지 않는다.
-    private func markPreserveSelectionForReplacementProjection(
-        on action: Action,
-        state: inout State,
-    ) {
-        guard var transition = state.pendingIdentityTransition else { return }
-        guard let trigger = identityReplacementTrigger(action, transition: transition) else { return }
-        let triggerOwner = switch trigger {
-        case .migration: transition.projectionOwner
-        case .preservation: transition.preservationOwner ?? transition.projectionOwner
-        }
-        guard case let .folder(currentPath) = state.navigation.navigationState,
-              canonicalizedPath(currentPath) == transition.rootPath,
-              FileManagerContentEntryOpsCoordinator.identityTransitionOwnerIsCurrent(
-                  triggerOwner,
-                  state: state,
-              )
-        else {
-            state.pendingIdentityTransition = nil
-            return
-        }
-        if case .root = transition.projectionOwner,
-           state.entryViewLayout.entryOperations.loadingContext.coreFinished
-        {
-            return
-        }
-        let beforePath = canonicalizedPath(transition.beforePath)
-        let afterPath = canonicalizedPath(identityAfterLexicalPath(transition))
-        let selectedPaths = Set(state.entryViewLayout.selectedIds.map(canonicalizedPath))
-        guard selectedPaths.contains(beforePath),
-              !selectedPaths.contains(afterPath)
-        else { return }
-        let loadedPaths = replacementProjectionPaths(owner: triggerOwner, state: state)
-        guard !loadedPaths.contains(afterPath) else { return }
-        // 재선택은 canonical이 아닌 현재 선택의 원본 lexical ID로 수행해야 표기가 유지된다.
-        transition.preservedLexicalBeforeID = state.entryViewLayout.selectedIds.first {
-            canonicalizedPath($0) == beforePath
-        }
-        transition.preserveSelectionForReplacementBatch = true
-        state.pendingIdentityTransition = transition
-    }
-
-    /// reconcile 후 transient 표시가 있으면 before-path 선택을 복원하고, 종료(accepted) projection에서
-    /// after-path가 끝내 없으면 전이를 소비해 기존 선택 reconcile이 이기게 한다.
-    private func resolvePreserveSelectionForReplacementProjection(
-        on action: Action,
-        state: inout State,
-    ) {
-        guard var transition = state.pendingIdentityTransition else { return }
-        guard identityReplacementTrigger(action, transition: transition) != nil else { return }
-        let afterPath = canonicalizedPath(identityAfterLexicalPath(transition))
-        let selectedPaths = Set(state.entryViewLayout.selectedIds.map(canonicalizedPath))
-
-        if transition.preserveSelectionForReplacementBatch {
-            transition.preserveSelectionForReplacementBatch = false
-            let preservedLexicalBeforeID = transition.preservedLexicalBeforeID
-            transition.preservedLexicalBeforeID = nil
-            state.pendingIdentityTransition = transition
-            let beforePath = canonicalizedPath(transition.beforePath)
-            guard !selectedPaths.contains(beforePath), !selectedPaths.contains(afterPath) else { return }
-            // canonical이 아닌 보존된 원본 lexical ID를 재선택해 표기·표시 선택이 유지되게 한다.
-            let restoredID = preservedLexicalBeforeID ?? transition.beforePath
-            state.entryViewLayout.selectedIds.insert(restoredID)
-            state.entryViewLayout.lastSelectedId = restoredID
-            state.entryViewLayout.rangeAnchorId = restoredID
-            return
-        }
-
-        guard case .root = transition.projectionOwner,
-              state.entryViewLayout.entryOperations.loadingContext.coreFinished
-        else { return }
-        let visiblePaths = visibleEntryPaths(in: state)
-        guard !visiblePaths.contains(afterPath), !selectedPaths.contains(afterPath) else { return }
-        state.pendingIdentityTransition = nil
-    }
-
-    /// action이 전이 관련 replacement projection인지와 어느 소유자 기준인지 판정한다.
-    /// applyContentProjection은 root 투영을 대표하고, folderChildrenResponse coreBatch는
-    /// migration 소유자 또는 preservation(소스) 소유자 세대와 일치할 때만 관련이다.
-    private func identityReplacementTrigger(
-        _ action: Action,
-        transition: FileManagerContentState.EntryIdentityTransition,
-    ) -> IdentityReplacementTrigger? {
-        switch action {
-        case .entryViewLayout(.view(.applyContentProjection)):
-            return .migration
-        case .entryViewLayout(.hierarchy(.rootSnapshotCompleted)):
-            if case .folder = transition.projectionOwner { return .migration }
-            return nil
-        case let .entryViewLayout(.hierarchy(.folderChildrenResponse(
-            _,
-            folderID,
-            folderGeneration,
-            .event(.coreBatch),
-        ))):
-            if case let .folder(expectedID, expectedGeneration) = transition.projectionOwner,
-               canonicalizedPath(folderID) == canonicalizedPath(expectedID),
-               folderGeneration == expectedGeneration
-            {
-                return .migration
-            }
-            if let preservationOwner = transition.preservationOwner,
-               case let .folder(preservedID, preservedGeneration) = preservationOwner,
-               canonicalizedPath(folderID) == canonicalizedPath(preservedID),
-               folderGeneration == preservedGeneration
-            {
-                return .preservation
-            }
-            return nil
-        default:
-            return nil
-        }
-    }
-
-    /// 소유자별 현재 투영 경로 집합. after-path 부재가 reconcile 삭제를 유발하는지 판정한다.
-    private func replacementProjectionPaths(
-        owner: FileManagerContentState.EntryIdentityTransitionProjectionOwner,
-        state: State,
-    ) -> Set<String> {
-        switch owner {
-        case .root:
-            Set(state.entryViewLayout.entryOperations.loadingContext.items.map { canonicalizedPath($0.id) })
-        case let .folder(id, _):
-            Set(state.entryViewLayout.hierarchy.nodesByID[id]?.folder.children.map {
-                canonicalizedPath($0.id)
-            } ?? [])
-        }
-    }
-
-    private enum IdentityReplacementTrigger {
-        case migration
-        case preservation
-    }
-
-    private func rebaseFolderIdentityTransitionOwnersAfterRootSnapshot(
-        on action: Action,
-        state: inout State,
-    ) {
-        guard case .entryViewLayout(.hierarchy(.rootSnapshotCompleted)) = action,
-              var transition = state.pendingIdentityTransition
-        else { return }
-
-        func rebasedOwner(
-            _ owner: FileManagerContentState.EntryIdentityTransitionProjectionOwner,
-        ) -> FileManagerContentState.EntryIdentityTransitionProjectionOwner {
-            guard case let .folder(id, generation) = owner,
-                  let currentGeneration = state.entryViewLayout.hierarchy.nodesByID[id]?.generation,
-                  currentGeneration == generation &+ 1
-            else { return owner }
-            return .folder(id: id, generation: currentGeneration)
-        }
-
-        transition.projectionOwner = rebasedOwner(transition.projectionOwner)
-        if let preservationOwner = transition.preservationOwner {
-            transition.preservationOwner = rebasedOwner(preservationOwner)
-        }
-        state.pendingIdentityTransition = transition
-    }
-
-    private func resolveFolderIdentityTransition(
-        on action: Action,
-        state: inout State,
-    ) {
-        guard let transition = state.pendingIdentityTransition,
-              case let .folder(expectedID, expectedGeneration) = transition.projectionOwner
-        else { return }
-        guard FileManagerContentEntryOpsCoordinator.identityTransitionOwnerIsCurrent(
-            transition.projectionOwner,
-            state: state,
-        ) else {
-            state.pendingIdentityTransition = nil
-            return
-        }
-        guard case let .entryViewLayout(.hierarchy(.folderChildrenResponse(
-            _,
-            folderID,
-            folderGeneration,
-            response,
-        ))) = action,
-            canonicalizedPath(folderID) == canonicalizedPath(expectedID)
-        else { return }
-        guard folderGeneration == expectedGeneration else { return }
-        switch response {
-        case .failed, .streamCompleted, .event(.coreFinished):
-            state.pendingIdentityTransition = nil
-        case .event(.coreBatch), .event(.metadataPatches):
-            break
-        }
-    }
-
-    private func visibleEntryPaths(in state: State) -> Set<String> {
-        let flatPaths = state.entryViewLayout.entries.map(\.id).map(canonicalizedPath)
-        let hierarchyPaths = state.entryViewLayout.hierarchy.nodesByID.values
-            .flatMap(\.folder.children)
-            .map(\.id)
-            .map(canonicalizedPath)
-        return Set(flatPaths + hierarchyPaths)
-    }
-
     /// loadItems 시작이 현재 표시 중인 완전 projection과 같은 root의 재로드인지 판정한다.
     /// 표시 항목이 모두 대상 경로의 직속 하위일 때만 유지한다(다른 폴더 이동과 구분).
     private func isSameRootFolderReload(path: String, state: State) -> Bool {
@@ -674,35 +445,8 @@ public struct FileManagerContentFeature {
         }
     }
 
-    /// 전이의 화면 row identity 매칭용 경로. symlink 해석 전 lexical after를
-    /// 우선하고 미지정 시 기존 afterPath를 쓴다.
-    private func identityAfterLexicalPath(
-        _ transition: FileManagerContentState.EntryIdentityTransition,
-    ) -> String {
-        transition.afterLexicalPath.isEmpty ? transition.afterPath : transition.afterLexicalPath
-    }
-
-    private func standardizedIdentityPath(_ path: String) -> String {
-        URL(fileURLWithPath: path).standardizedFileURL.path
-    }
-
     private func canonicalizedPath(_ path: String) -> String {
         URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath().path
-    }
-
-    /// 실제 네비게이션·root 변경 시 대기 중인 identity 전이를 만료한다.
-    /// 같은 root로의 재적용은 유지하고, 다른 root 또는 비폴더 라우트로 이동하면
-    /// 만료해 stale 전이가 선택을 되살리거나 잘못 옮기지 않게 한다.
-    private func expireTransitionOnNavigation(_ navigationState: ContentPageNavigationRoute, state: inout State) {
-        guard let transition = state.pendingIdentityTransition else { return }
-        switch navigationState {
-        case let .folder(newPath):
-            if canonicalizedPath(newPath) != transition.rootPath {
-                state.pendingIdentityTransition = nil
-            }
-        default:
-            state.pendingIdentityTransition = nil
-        }
     }
 
     // MARK: - Projection Bridge

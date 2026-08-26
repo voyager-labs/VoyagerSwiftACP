@@ -63,10 +63,12 @@ struct FileManagerContentSyncReducer {
     ) -> Effect<Action> {
         var scheduledEvents = events
         if let transition = state.pendingIdentityTransition,
-           events.contains(where: { transitionOverlaps(normalizedPath(for: $0.path), transition) })
+           events.contains(where: {
+               FileManagerContentIdentityTransitionCoordinator.transitionOverlaps($0.path, transition)
+           })
         {
             let rootMatches = transition.rootPath == normalizedPath(for: currentPath)
-            let generationMatches = FileManagerContentEntryOpsCoordinator.identityTransitionOwnerIsCurrent(
+            let generationMatches = FileManagerContentIdentityTransitionCoordinator.ownerIsCurrent(
                 transition.projectionOwner,
                 state: state,
             )
@@ -79,7 +81,10 @@ struct FileManagerContentSyncReducer {
                 scheduledEvents = events.filter {
                     requiresCoarseHierarchyReload($0)
                         || !isCommandIdentityEcho($0)
-                        || !transitionOverlaps(normalizedPath(for: $0.path), transition)
+                        || !FileManagerContentIdentityTransitionCoordinator.transitionOverlaps(
+                            $0.path,
+                            transition,
+                        )
                 }
                 if scheduledEvents.isEmpty {
                     // 모든 경로가 명령 refresh에 병합됨. 중복 refresh를 예약하지 않는다.
@@ -87,7 +92,7 @@ struct FileManagerContentSyncReducer {
                 }
             } else {
                 // 루트·세대가 어긋난(stale) 전이는 결정적으로 만료하고 기존 라우트 동작으로 처리한다.
-                state.pendingIdentityTransition = nil
+                FileManagerContentIdentityTransitionCoordinator.discard(state: &state)
             }
         }
 
@@ -95,10 +100,10 @@ struct FileManagerContentSyncReducer {
         let normalizedPaths = scheduledEvents.map { normalizedPath(for: $0.path) }
         let affectedPaths = hierarchyAffectedPaths(for: normalizedPaths)
         let removedPrefixes = removedPrefixes(for: scheduledEvents)
-        FileManagerContentEntryOpsCoordinator.rebaseIdentityTransitionForNextRootReload(state: &state)
+        FileManagerContentIdentityTransitionCoordinator.rebaseForNextRootReload(state: &state)
         // invalidation이 확장 폴더 node를 재시작하면 그 세대도 올라가므로 폴더 소유자를 재기준화한다.
         // coarse 재스캔은 모든 확장 폴더를 되감는다.
-        FileManagerContentEntryOpsCoordinator.rebaseIdentityTransitionForHierarchyInvalidation(
+        FileManagerContentIdentityTransitionCoordinator.rebaseForHierarchyInvalidation(
             affectedPaths: scheduledEvents.contains(where: requiresCoarseHierarchyReload)
                 ? Array(state.entryViewLayout.hierarchy.expandedFolderIDs)
                 : affectedPaths,
@@ -118,19 +123,6 @@ struct FileManagerContentSyncReducer {
             .send(.entryViewLayout(.hierarchy(hierarchyAction))),
             FileManagerContentEntryOpsCoordinator.reloadEntryItemsEffect(state: state),
         )
-    }
-
-    /// 이벤트 경로와 전이 before/after identity(또는 그 subtree/조상)가 겹치는지 판정한다.
-    /// FSEvents는 변경 파일 경로 대신 포함 디렉터리나 현재 root 경로를 보고하기도 하므로
-    /// 조상 방향까지 포함해 pathComponents 기준으로 대칭 비교한다(문자열 prefix 오매칭 방지).
-    private func transitionOverlaps(
-        _ normalizedEventPath: String,
-        _ transition: FileManagerContentState.EntryIdentityTransition,
-    ) -> Bool {
-        isSameOrDescendant(path: normalizedEventPath, of: transition.beforePath)
-            || isSameOrDescendant(path: normalizedEventPath, of: transition.afterPath)
-            || isSameOrDescendant(path: transition.beforePath, of: normalizedEventPath)
-            || isSameOrDescendant(path: transition.afterPath, of: normalizedEventPath)
     }
 
     /// 명령 자체 활동이 FSEvents에 남기는 확정 신호. rename/move는 양쪽 경로에
@@ -168,7 +160,9 @@ struct FileManagerContentSyncReducer {
         // 관련으로 판정해 상관관계(중복 refresh 병합)로 흘려보낸다. 이때 무관한
         // 경로를 버리지 않는다(배치 전체를 그대로 전달).
         guard let transition = state.pendingIdentityTransition else { return false }
-        return paths.contains { transitionOverlaps(normalizedPath(for: $0), transition) }
+        return paths.contains {
+            FileManagerContentIdentityTransitionCoordinator.transitionOverlaps($0, transition)
+        }
     }
 
     private func isSameOrDescendant(path: String, of ancestor: String) -> Bool {

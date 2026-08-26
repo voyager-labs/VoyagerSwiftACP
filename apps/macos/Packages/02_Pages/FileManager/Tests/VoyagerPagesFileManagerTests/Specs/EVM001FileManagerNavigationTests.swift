@@ -1543,7 +1543,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             operationKind: .rename,
             targets: [.init(beforePath: before.id, afterPath: after.id)],
         )
-        _ = FileManagerContentEntryOpsCoordinator.recordIdentityTransitionIfEligible(record, state: &state)
+        _ = FileManagerContentIdentityTransitionCoordinator.recordIfEligible(record, state: &state)
         state.entryViewLayout.hierarchy.nodesByID[folder.id]?.generation = 2
         state.entryViewLayout.hierarchy.nodesByID[folder.id]?.loadPhase = .loadingCore
         state.entryViewLayout.hierarchy.nodesByID[folder.id]?.folder.coreFinished = false
@@ -1590,7 +1590,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             operationKind: .pasteFileMove,
             targets: [.init(beforePath: before.id, afterPath: after.id)],
         )
-        _ = FileManagerContentEntryOpsCoordinator.recordIdentityTransitionIfEligible(record, state: &state)
+        _ = FileManagerContentIdentityTransitionCoordinator.recordIfEligible(record, state: &state)
         for id in [source.id, destination.id] {
             state.entryViewLayout.hierarchy.nodesByID[id]?.generation = 2
             state.entryViewLayout.hierarchy.nodesByID[id]?.loadPhase = .loadingCore
@@ -3663,6 +3663,63 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         ))))
         XCTAssertEqual(store.state.entryViewLayout.selectedIds, [fixture.after.id])
         XCTAssertNil(store.state.pendingIdentityTransition, "folder terminal은 소비된 전이를 되살리지 않는다")
+        XCTAssertEqual(
+            store.state.entryViewLayout.hierarchy.nodesByID[fixture.folder.id]?.folder.children.map(\.id),
+            [unrelated.id, fixture.after.id],
+            "after-path migration 전 staged batch까지 최종 folder snapshot에 유지한다",
+        )
+    }
+
+    /// EVM-001-command_external_refresh_correlation: 거부된 folder terminal은 전이와 staged batch를 보존한다.
+    /// - 검증 내용: cursor보다 작은 batchCount terminal 뒤 전이 유지, 후속 batch와 정상 terminal에서 전체 snapshot commit
+    /// - 사전 조건: expanded folder replacement가 batch 0을 staged하고 expectedBatchIndex가 1이다.
+    /// - 기대 결과: 잘못된 terminal은 no-op이며 정상 완료 뒤 batch 0과 after-path batch 1이 모두 남는다.
+    func testExpandedChildTransitionRejectsMismatchedTerminalWithoutDiscardingStagedBatch() async {
+        let fixture = makeExpandedChildTransitionFixture()
+        let unrelated = makeCorrelationEntry(id: "\(fixture.folder.id)/unrelated.txt", name: "unrelated.txt")
+        let store = TestStore(initialState: fixture.state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.entryOpenClient = .testValue
+            $0.entryQuickLookClient = .previewValue
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+        }
+        store.exhaustivity = .off
+
+        await store.send(.entryViewLayout(.hierarchy(.folderChildrenResponse(
+            rootContextGeneration: store.state.entryViewLayout.hierarchy.rootContextGeneration,
+            folderID: fixture.folder.id,
+            folderGeneration: 2,
+            .event(.coreBatch(items: [unrelated], batchIndex: 0)),
+        ))))
+        await store.send(.entryViewLayout(.hierarchy(.folderChildrenResponse(
+            rootContextGeneration: store.state.entryViewLayout.hierarchy.rootContextGeneration,
+            folderID: fixture.folder.id,
+            folderGeneration: 2,
+            .event(.coreFinished(batchCount: 0)),
+        ))))
+
+        XCTAssertNotNil(store.state.pendingIdentityTransition, "거부된 terminal은 전이를 소비하지 않는다")
+
+        await store.send(.entryViewLayout(.hierarchy(.folderChildrenResponse(
+            rootContextGeneration: store.state.entryViewLayout.hierarchy.rootContextGeneration,
+            folderID: fixture.folder.id,
+            folderGeneration: 2,
+            .event(.coreBatch(items: [fixture.after], batchIndex: 1)),
+        ))))
+        await store.send(.entryViewLayout(.hierarchy(.folderChildrenResponse(
+            rootContextGeneration: store.state.entryViewLayout.hierarchy.rootContextGeneration,
+            folderID: fixture.folder.id,
+            folderGeneration: 2,
+            .event(.coreFinished(batchCount: 2)),
+        ))))
+
+        XCTAssertEqual(store.state.entryViewLayout.selectedIds, [fixture.after.id])
+        XCTAssertNil(store.state.pendingIdentityTransition)
+        XCTAssertEqual(
+            store.state.entryViewLayout.hierarchy.nodesByID[fixture.folder.id]?.folder.children.map(\.id),
+            [unrelated.id, fixture.after.id],
+        )
     }
 
     /// EVM-001-command_external_refresh_correlation: 교차 폴더 move는 소스 폴더 배치에서 before 선택을 보존한다.
@@ -3819,7 +3876,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             operationKind: .pasteFileMove,
             targets: [.init(beforePath: before.id, afterPath: after.id)],
         )
-        _ = FileManagerContentEntryOpsCoordinator.recordIdentityTransitionIfEligible(record, state: &state)
+        _ = FileManagerContentIdentityTransitionCoordinator.recordIfEligible(record, state: &state)
 
         XCTAssertEqual(
             state.pendingIdentityTransition?.projectionOwner,

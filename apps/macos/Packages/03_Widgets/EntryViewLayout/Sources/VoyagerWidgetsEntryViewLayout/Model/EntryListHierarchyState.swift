@@ -62,13 +62,18 @@ public struct FolderNodeState: Equatable, Sendable {
     }
 }
 
-public struct EntryListHierarchyState: Equatable, Sendable {
-    /// identity migration 대기 중인 폴더가 lexical after 행 도착 전까지 retained
-    /// children 교체를 미루도록 하는 힌트. 값은 해당 폴더의 lexical after ID.
-    public var identityMigrationDeferredAfterIDByFolder: [EntryModel.ID: String] = [:]
+public struct DeferredFolderReplacement: Equatable, Sendable {
+    public let untilEntryID: EntryModel.ID
+    public var stagedChildren: [EntryModel]
 
-    /// 보류 중인 배치 항목 누적. lexical after 행 도착 시 한 번에 커밋된다.
-    public var identityMigrationStagedChildrenByFolder: [EntryModel.ID: [EntryModel]] = [:]
+    public init(untilEntryID: EntryModel.ID, stagedChildren: [EntryModel] = []) {
+        self.untilEntryID = untilEntryID
+        self.stagedChildren = stagedChildren
+    }
+}
+
+public struct EntryListHierarchyState: Equatable, Sendable {
+    var deferredFolderReplacements: [EntryModel.ID: DeferredFolderReplacement] = [:]
 
     public private(set) var rootContextGeneration: Int
     public private(set) var rootPath: String
@@ -102,6 +107,27 @@ public struct EntryListHierarchyState: Equatable, Sendable {
         rootContextGeneration &+= 1
         rootPath = path
         nodesByID = [:]
+        deferredFolderReplacements = [:]
+    }
+
+    public mutating func beginDeferredFolderReplacement(
+        folderID: EntryModel.ID,
+        untilEntryID: EntryModel.ID,
+    ) {
+        guard deferredFolderReplacements[folderID] == nil else { return }
+        deferredFolderReplacements[folderID] = .init(untilEntryID: untilEntryID)
+    }
+
+    public mutating func takeDeferredFolderReplacement(folderID: EntryModel.ID) -> [EntryModel]? {
+        deferredFolderReplacements.removeValue(forKey: folderID)?.stagedChildren
+    }
+
+    public func deferredFolderReplacement(folderID: EntryModel.ID) -> DeferredFolderReplacement? {
+        deferredFolderReplacements[folderID]
+    }
+
+    public mutating func discardAllDeferredFolderReplacements() {
+        deferredFolderReplacements = [:]
     }
 }
 

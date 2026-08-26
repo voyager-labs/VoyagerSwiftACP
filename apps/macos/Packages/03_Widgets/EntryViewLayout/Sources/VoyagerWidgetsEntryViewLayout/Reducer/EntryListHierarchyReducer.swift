@@ -199,50 +199,38 @@ struct EntryListHierarchyReducer {
                 let previousRevision = state.outlineProjectionRevision
                 let previousSelectedIds = state.selectedIds
                 let wasCoreFinished = nodeState.folder.coreFinished
-                // identity migration 대기 폴더는 lexical after 행이 온 batch에서만
-                // retained children을 교체한다. 중간 batch는 커서만 소진해
-                // selection 행이 사라지는 깜빡임을 막는다.
                 if case let .event(.coreBatch(items, batchIndex)) = response,
                    !nodeState.folder.hasAppliedContentBatch,
-                   !nodeState.folder.children.isEmpty
+                   !nodeState.folder.children.isEmpty,
+                   var replacement = state.hierarchy.deferredFolderReplacements[folderID]
                 {
-                    // identity migration 보류 창: lexical after 행이 오기 전 batch는
-                    // 누적만 하고 retained children 교체는 미룬다. after 행이 포함된
-                    // batch가 오면 누적분을 결합해 한 번에 커밋한다.
+                    guard batchIndex == nodeState.folder.expectedBatchIndex else { return .none }
                     let standardizedItems = items.map { item in
                         (item, URL(fileURLWithPath: item.id).standardizedFileURL.path)
                     }
-                    if let deferredAfterID = state.hierarchy.identityMigrationDeferredAfterIDByFolder[folderID] {
-                        let standardizedDeferred = URL(fileURLWithPath: deferredAfterID).standardizedFileURL.path
-                        if !standardizedItems.contains(where: { $0.1 == standardizedDeferred }) {
-                            state.hierarchy.identityMigrationStagedChildrenByFolder[folderID, default: []]
-                                .append(contentsOf: items)
-                            nodeState.folder.expectedBatchIndex += 1
-                            state.hierarchy.nodesByID[folderID] = nodeState
-                            return .none
-                        }
-                        var staged = state.hierarchy.identityMigrationStagedChildrenByFolder[folderID] ?? []
-                        staged.append(contentsOf: items)
-                        state.hierarchy.identityMigrationStagedChildrenByFolder[folderID] = nil
-                        state.hierarchy.identityMigrationDeferredAfterIDByFolder[folderID] = nil
-                        nodeState.folder.children = staged
-                        nodeState.folder.hasAppliedContentBatch = true
-                        nodeState.folder.expectedBatchIndex = batchIndex + 1
+                    let standardizedDeferred = URL(fileURLWithPath: replacement.untilEntryID)
+                        .standardizedFileURL.path
+                    replacement.stagedChildren.append(contentsOf: items)
+                    nodeState.folder.expectedBatchIndex &+= 1
+                    if !standardizedItems.contains(where: { $0.1 == standardizedDeferred }) {
+                        state.hierarchy.deferredFolderReplacements[folderID] = replacement
                         state.hierarchy.nodesByID[folderID] = nodeState
                         return .none
                     }
+                    state.hierarchy.deferredFolderReplacements[folderID] = nil
+                    nodeState.folder.children = replacement.stagedChildren
+                    nodeState.folder.hasAppliedContentBatch = true
+                    state.hierarchy.nodesByID[folderID] = nodeState
+                    return .none
                 }
                 if case let .event(.coreFinished(batchCount)) = response,
-                   let staged = state.hierarchy.identityMigrationStagedChildrenByFolder[folderID],
-                   !staged.isEmpty
+                   let replacement = state.hierarchy.deferredFolderReplacements[folderID]
                 {
-                    // after 행 없이 종료한 경우 누적분이 최종 children이다.
-                    nodeState.folder.children = staged
-                    nodeState.folder.hasAppliedContentBatch = true
+                    guard batchCount == nodeState.folder.expectedBatchIndex else { return .none }
+                    nodeState.folder.children = replacement.stagedChildren
+                    nodeState.folder.hasAppliedContentBatch = !replacement.stagedChildren.isEmpty
                     nodeState.folder.coreFinished = true
-                    nodeState.folder.expectedBatchIndex = batchCount
-                    state.hierarchy.identityMigrationStagedChildrenByFolder[folderID] = nil
-                    state.hierarchy.identityMigrationDeferredAfterIDByFolder[folderID] = nil
+                    state.hierarchy.deferredFolderReplacements[folderID] = nil
                     state.hierarchy.nodesByID[folderID] = nodeState
                     return .none
                 }

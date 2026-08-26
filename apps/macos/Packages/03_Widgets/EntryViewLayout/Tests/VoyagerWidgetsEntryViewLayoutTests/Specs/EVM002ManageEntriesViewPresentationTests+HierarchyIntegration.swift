@@ -748,13 +748,13 @@ extension EVM002ManageEntriesViewPresentationTests {
         state.hierarchy.nodesByID = [
             folderA.id: .init(
                 folder: .init(children: [folderB], coreFinished: true),
-                loadPhase: .loaded,
                 generation: 2,
+                loadPhase: .loaded,
             ),
             folderB.id: .init(
                 folder: .init(children: [staleChild], coreFinished: true),
-                loadPhase: .loaded,
                 generation: 4,
+                loadPhase: .loaded,
             ),
         ]
         state.hierarchy.setExpandedIDs([folderA.id, folderB.id])
@@ -776,6 +776,7 @@ extension EVM002ManageEntriesViewPresentationTests {
             )
             $0.hierarchy.nodesByID[folderB.id as String] = .init(
                 folder: .init(children: [staleChild]),
+                parentID: folderA.id,
                 expansionIntent: true,
                 generation: 5,
                 loadPhase: .loadingCore,

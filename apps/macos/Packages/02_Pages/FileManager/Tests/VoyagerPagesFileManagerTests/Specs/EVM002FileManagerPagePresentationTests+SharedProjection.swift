@@ -1177,7 +1177,7 @@ extension EVM002FileManagerPagePresentationTests {
         // 소스(preservation) 폴더 batch는 migration 완료 전까지 retained 보존 + 누적만 한다.
         XCTAssertEqual(state.entryViewLayout.hierarchy.nodesByID[source.id]?.folder.children, [before])
         XCTAssertEqual(
-            state.entryViewLayout.hierarchy.identityMigrationStagedChildrenByFolder[source.id],
+            state.entryViewLayout.hierarchy.deferredFolderReplacement(folderID: source.id)?.stagedChildren,
             [sourceSibling],
             "소스 중간 batch 항목은 after 도착 시 함께 커밋되도록 누적된다",
         )
