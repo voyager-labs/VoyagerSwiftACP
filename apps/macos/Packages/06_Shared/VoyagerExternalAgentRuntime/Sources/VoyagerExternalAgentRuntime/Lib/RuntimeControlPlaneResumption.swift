@@ -121,7 +121,7 @@ public extension RuntimeControlPlane {
             )
         } catch {
             // 승인 경계의 소유권/영속 실패를 노출하기 전 같은 run의 durable terminal 수선을 먼저 시도한다.
-            if let repaired = try await repairedTerminalAfterAdmissionLoss(
+            if let repaired = try await convergedTerminalAfterBoundaryLoss(
                 error,
                 result: result,
                 host: host,
@@ -132,13 +132,28 @@ public extension RuntimeControlPlane {
             }
             throw error
         }
-        if let terminal = try await reconcileConsumedResult(
-            result,
-            host: host,
-            lease: claim.lease,
-            restoredContext: restoredContext,
-        ) {
-            return terminal
+        do {
+            if let terminal = try await reconcileConsumedResult(
+                result,
+                host: host,
+                lease: claim.lease,
+                restoredContext: restoredContext,
+            ) {
+                return terminal
+            }
+        } catch {
+            // 로컬 정산 경계의 소유권 실패를 노출하기 전에도 같은 run의 durable terminal 수렴이 우선한다.
+            // heartbeat 수렴이 정산 대기 중 attempt를 무효화했으면 원래 오류 대신 수렴 결과를 반환한다.
+            if let converged = try await convergedTerminalAfterBoundaryLoss(
+                error,
+                result: result,
+                host: host,
+                lease: claim.lease,
+                restoredContext: restoredContext,
+            ) {
+                return converged
+            }
+            throw error
         }
         do {
             return try await persistTerminalResult(
@@ -186,7 +201,9 @@ public extension RuntimeControlPlane {
             throw RuntimeHostError.persistenceConflict
         } catch let error as RuntimeHostError {
             guard activeRestoredResumeAttempts[host] == restoredContext.attemptID else {
-                throw error
+                // 소유권 경계가 만료 복구 등으로 이동한 뒤 도착한 provider 중단은
+                // heartbeat .restoreClaim 경계와 동일하게 persistenceConflict로 수렴한다.
+                throw staleAttemptBoundaryError(error)
             }
             return try await resolveResumedHostError(
                 error,
@@ -204,6 +221,17 @@ public extension RuntimeControlPlane {
                 host: host,
                 restoredContext: restoredContext,
             )
+        }
+    }
+
+    /// 소유권 경계가 이동한 뒤 도착한 provider 중단(processExit/transportLoss)은
+    /// heartbeat `.restoreClaim` 경계와 동일하게 persistenceConflict로 수렴시킨다.
+    private func staleAttemptBoundaryError(_ error: RuntimeHostError) -> RuntimeHostError {
+        switch error {
+        case .adapterFailure(.processExit, _), .adapterFailure(.transportLoss, _):
+            RuntimeHostError.persistenceConflict
+        default:
+            error
         }
     }
 
@@ -613,24 +641,26 @@ public extension RuntimeControlPlane {
         })
     }
 
-    /// 단말 우선권 계약의 exact-run 수선 seam: 같은 run의 local terminal을 먼저 채택하고 없으면
-    /// restored context로 persisted terminal을 채택한다. attempt가 이미 무효화된 경우에 한해
-    /// context 검증 없이 재채택하며, 수렴 시 해당 claim의 lease로 exact owner finalize를 수행한다.
-    /// 취소와 typed 오류는 그대로 전파하고 같은 run의 durable terminal이 없으면 nil을 반환한다.
-    private func readRepairExactRunDurableTerminal(
+    /// 단말 우선권 수렴 코어: 같은 run의 local/durable terminal 채택, exact owner finalize,
+    /// outcome이 일치할 때만 provider 메타데이터 보존을 하나의 경계에서 수행한다.
+    /// race/승인/정산/heartbeat 수선이 모두 이 경계로 위임하며 site별 분기는 적격성만 결정한다.
+    /// attempt 무효화 시 context 검증 없이 단 한 번 재채택하고, 취소와 typed 오류는 그대로 전파하며
+    /// 같은 run의 durable terminal이 없으면 nil을 반환한다.
+    private func convergedExactRunTerminal(
         host: ExternalAgentSessionReference,
         runReference: RuntimeRunReference,
         lease: UInt64,
-        restoredContext: RuntimeRestoredResumeContext,
+        restoredContext: RuntimeRestoredResumeContext?,
+        providerResult: RuntimeResult?,
     ) async throws -> RuntimeResult? {
         if let terminal = storedTerminalResult(host: host, runReference: runReference) {
-            finalizeVisibleResumptionTerminal(
+            return finalizeConvergedTerminal(
+                terminal,
+                providerResult: providerResult,
                 host: host,
-                runReference: runReference,
                 lease: lease,
                 restoredContext: restoredContext,
             )
-            return terminal
         }
         do {
             guard let terminal = try await persistedTerminalResult(
@@ -638,34 +668,77 @@ public extension RuntimeControlPlane {
                 runReference: runReference,
                 restoredContext: restoredContext,
             ) else { return nil }
-            finalizeVisibleResumptionTerminal(
+            return finalizeConvergedTerminal(
+                terminal,
+                providerResult: providerResult,
                 host: host,
-                runReference: runReference,
                 lease: lease,
                 restoredContext: restoredContext,
             )
-            return terminal
         } catch is CancellationError {
             throw CancellationError()
         } catch is RuntimeRestoredResumeAttemptError {
             // attempt가 이미 무효화됐어도 durable terminal 자체는 권위 있다. context 검증 없이 재채택한다.
-            if let terminal = try await persistedTerminalResult(
+            return try await readoptExactRunTerminalWithoutContext(
                 host: host,
                 runReference: runReference,
-            ) {
-                finalizeVisibleResumptionTerminal(
-                    host: host,
-                    runReference: runReference,
-                    lease: lease,
-                )
-                return terminal
-            }
-            return nil
+                lease: lease,
+                providerResult: providerResult,
+            )
         }
     }
 
+    /// attempt가 무효화된 뒤 수렴 코어의 context-free 재채택 경로다(로컬 확인 후 persisted 최대 1회).
+    private func readoptExactRunTerminalWithoutContext(
+        host: ExternalAgentSessionReference,
+        runReference: RuntimeRunReference,
+        lease: UInt64,
+        providerResult: RuntimeResult?,
+    ) async throws -> RuntimeResult? {
+        if let terminal = storedTerminalResult(host: host, runReference: runReference) {
+            return finalizeConvergedTerminal(
+                terminal,
+                providerResult: providerResult,
+                host: host,
+                lease: lease,
+                restoredContext: nil,
+            )
+        }
+        guard let terminal = try await persistedTerminalResult(
+            host: host,
+            runReference: runReference,
+        ) else { return nil }
+        return finalizeConvergedTerminal(
+            terminal,
+            providerResult: providerResult,
+            host: host,
+            lease: lease,
+            restoredContext: nil,
+        )
+    }
+
+    /// 수렴된 terminal의 exact owner finalize와 메타데이터 병합을 수행한다(outcome 일치 시에만 provider 보존).
+    private func finalizeConvergedTerminal(
+        _ terminal: RuntimeResult,
+        providerResult: RuntimeResult?,
+        host: ExternalAgentSessionReference,
+        lease: UInt64,
+        restoredContext: RuntimeRestoredResumeContext?,
+    ) -> RuntimeResult {
+        finalizeVisibleResumptionTerminal(
+            host: host,
+            runReference: terminal.runReference,
+            lease: lease,
+            restoredContext: restoredContext,
+        )
+        if let providerResult, terminal.outcome == providerResult.outcome {
+            return providerResult
+        }
+        return terminal
+    }
+
     /// 단말 우선권 계약: attemptLost/persistenceConflict/persistence 계열 실패 노출 전에
-    /// exact-run 수선 seam으로 같은 run의 durable terminal을 채택해 수렴 결과로 반환한다.
+    /// exact-run 수렴 코어로 같은 run의 durable terminal을 채택해 수렴 결과로 반환한다.
     /// 수선 대상이 아니면 nil을 반환해 기존 분류 경계가 그대로 적용되게 한다.
     private func repairDurableTerminalAfterRaceFailure(
         _ failure: RuntimeRestoredResumeRaceFailure,
@@ -675,22 +748,22 @@ public extension RuntimeControlPlane {
         restoredContext: RuntimeRestoredResumeContext,
     ) async throws -> RuntimeResult? {
         switch failure {
-        case .attemptLost, .terminalEventPersistence, .heartbeatPersistence, .host(.persistenceConflict):
-            break
-        case .cancellation, .providerTerminalAdmission, .host:
-            return nil
+        case .attemptLost, .terminalEventPersistence, .heartbeatPersistence, .host(.persistenceConflict): break
+        case .cancellation, .providerTerminalAdmission, .host: return nil
         }
-        return try await readRepairExactRunDurableTerminal(
+        return try await convergedExactRunTerminal(
             host: host,
             runReference: receipt.runReference,
             lease: lease,
             restoredContext: restoredContext,
+            providerResult: nil,
         )
     }
 
-    /// 승인 경계 실패를 기존 분류 경계에 따라 분류하고, 수선 대상 실패(attemptLost/persistence 계열)에 한해
-    /// 같은 run durable terminal 수선을 시도한다. 취소와 나머지 분류는 수선 없이 nil을 반환해 원래 오류가 그대로 노출되게 한다.
-    private func repairedTerminalAfterAdmissionLoss(
+    /// 승인/정산 경계 실패를 기존 분류 경계에 따라 분류하고, 수선 대상 실패(attemptLost/persistence 계열)에 한해
+    /// 같은 run durable terminal 수렴 코어로 위임한다. heartbeat 수렴이 경계 대기 중 attempt를 무효화했으면
+    /// 원래 오류 대신 수렴 결과를 반환한다. 취소와 나머지 분류는 수선 없이 nil을 반환해 원래 오류가 그대로 노출되게 한다.
+    private func convergedTerminalAfterBoundaryLoss(
         _ error: any Error,
         result: RuntimeResult,
         host: ExternalAgentSessionReference,
@@ -709,88 +782,13 @@ public extension RuntimeControlPlane {
         default:
             return nil
         }
-        return try await repairDurableTerminalAfterAdmissionLoss(
-            result,
+        return try await convergedExactRunTerminal(
             host: host,
+            runReference: result.runReference,
             lease: lease,
             restoredContext: restoredContext,
+            providerResult: result,
         )
-    }
-
-    /// 단말 우선권 계약: provider 결과 승인 경계의 attemptLost/persistence 계열 실패 노출 전에
-    /// 같은 run의 persisted terminal을 채택해 수렴 결과로 반환한다. race 실패 수선과 동일하게
-    /// attempt가 이미 무효화된 경우에도 durable terminal을 권위 있는 값으로 재채택하며,
-    /// provider 결과와 outcome이 일치할 때만 provider 메타데이터를 보존한다.
-    /// 수선 대상이 아니거나 durable terminal이 없으면 nil을 반환해 기존 분류 경계가 그대로 적용되게 한다.
-    private func repairDurableTerminalAfterAdmissionLoss(
-        _ result: RuntimeResult,
-        host: ExternalAgentSessionReference,
-        lease: UInt64,
-        restoredContext: RuntimeRestoredResumeContext,
-    ) async throws -> RuntimeResult? {
-        if let terminal = storedTerminalResult(host: host, runReference: result.runReference) {
-            return convergedRestoredResumeTerminal(
-                terminal,
-                providerResult: result,
-                host: host,
-                lease: lease,
-                restoredContext: restoredContext,
-            )
-        }
-        do {
-            guard let terminal = try await persistedTerminalResult(
-                host: host,
-                runReference: result.runReference,
-                restoredContext: restoredContext,
-            ) else { return nil }
-            return convergedRestoredResumeTerminal(
-                terminal,
-                providerResult: result,
-                host: host,
-                lease: lease,
-                restoredContext: restoredContext,
-            )
-        } catch is CancellationError {
-            throw CancellationError()
-        } catch is RuntimeRestoredResumeAttemptError {
-            // attempt가 이미 무효화됐어도 durable terminal 자체는 권위 있다. context 검증 없이 재채택한다.
-            if let terminal = storedTerminalResult(host: host, runReference: result.runReference) {
-                return convergedRestoredResumeTerminal(
-                    terminal,
-                    providerResult: result,
-                    host: host,
-                    lease: lease,
-                    restoredContext: nil,
-                )
-            }
-            guard let terminal = try await persistedTerminalResult(
-                host: host,
-                runReference: result.runReference,
-            ) else { return nil }
-            return convergedRestoredResumeTerminal(
-                terminal,
-                providerResult: result,
-                host: host,
-                lease: lease,
-                restoredContext: nil,
-            )
-        }
-    }
-
-    private func convergedRestoredResumeTerminal(
-        _ terminal: RuntimeResult,
-        providerResult: RuntimeResult,
-        host: ExternalAgentSessionReference,
-        lease: UInt64,
-        restoredContext: RuntimeRestoredResumeContext?,
-    ) -> RuntimeResult {
-        finalizeVisibleResumptionTerminal(
-            host: host,
-            runReference: terminal.runReference,
-            lease: lease,
-            restoredContext: restoredContext,
-        )
-        return terminal.outcome == providerResult.outcome ? providerResult : terminal
     }
 
     private func mapRestoredResumeRaceFailure(_ error: any Error) -> RuntimeRestoredResumeRaceFailure {
@@ -897,11 +895,12 @@ public extension RuntimeControlPlane {
     ) async throws -> RuntimeResult? {
         if error is CancellationError { throw CancellationError() }
         do {
-            if let terminal = try await readRepairExactRunDurableTerminal(
+            if let terminal = try await convergedExactRunTerminal(
                 host: host,
                 runReference: runReference,
                 lease: lease,
                 restoredContext: restoredContext,
+                providerResult: nil,
             ) {
                 return terminal
             }
@@ -925,6 +924,52 @@ public extension RuntimeControlPlane {
         }
     }
 
+    /// provider 중단(processExit/transportLoss) 경계를 정산하고 노출할 결과를 결정한다.
+    /// fencing 뒤 같은 run의 durable terminal이 있으면 채택하고, 만료 복구가 소유권 경계를
+    /// 회수했으면 heartbeat `.restoreClaim` 경계와 동일하게 persistenceConflict로 수렴한다.
+    /// 정리 실패는 주요 오류를 가리지 않으며 typed persistence/schema 오류는 그대로 전파한다.
+    private func resolveInterruptionBoundary(
+        _ error: RuntimeHostError,
+        claim: RestoredRunClaim,
+        host: ExternalAgentSessionReference,
+        restoredContext: RuntimeRestoredResumeContext,
+    ) async throws -> RestoredConsumptionResult {
+        let runReference = claim.receipt.runReference
+        let lease = claim.lease
+        var didRecoverExpiredClaimBoundary = false
+        do {
+            let hasPersistedProof = try await fencePersistedOwner(
+                host,
+                lease: lease,
+                runReference: runReference,
+                restoredContext: restoredContext,
+            )
+            if let terminal = storedTerminalResult(host: host, runReference: runReference) {
+                return .persistedTerminal(terminal)
+            }
+            if hasPersistedProof {
+                didRecoverExpiredClaimBoundary = try await recoverExpiredClaimBoundaryIfWon(
+                    host: host, runReference: runReference, lease: lease, restoredContext: restoredContext,
+                )
+            }
+            if !hasPersistedProof {
+                deactivateLocalResumptionLeaseIfOwned(host: host, runReference: runReference, lease: lease)
+            }
+        } catch {
+            // 정리 실패는 주요 오류를 가리지 않고, typed persistence/schema 오류만 그대로 전파한다.
+            applyCleanupFailedDecision(host: host, runReference: runReference)
+            deactivateLocalResumptionLeaseIfOwned(host: host, runReference: runReference, lease: lease)
+            if let fencingError = error as? RuntimeHostError,
+               case .invalidPersistedState = fencingError { throw fencingError }
+            if let fencingError = error as? RuntimeHostError,
+               case .unsupportedSchemaVersion = fencingError { throw fencingError }
+        }
+        if didRecoverExpiredClaimBoundary {
+            throw RuntimeHostError.persistenceConflict
+        }
+        throw error
+    }
+
     private func propagateResumedRunFailure(
         _ error: RuntimeHostError,
         claim: RestoredRunClaim,
@@ -938,63 +983,39 @@ public extension RuntimeControlPlane {
             try await restoreResumptionClaimIfNeeded(host, lease: lease)
             throw error
         case .adapterFailure(.processExit, _), .adapterFailure(.transportLoss, _):
-            do {
-                let hasPersistedProof = try await fencePersistedOwner(
-                    host,
-                    lease: lease,
-                    runReference: runReference,
-                    restoredContext: restoredContext,
-                )
-                if let terminal = storedTerminalResult(host: host, runReference: runReference) {
-                    return .persistedTerminal(terminal)
-                }
-                if hasPersistedProof,
-                   let session = sessions[host],
-                   session.stored.runReference == runReference,
-                   session.lease == .resuming(lease),
-                   restorationClaimState(session.stored.restorationClaim, now: restorationClock.now()) == .expired
-                {
-                    try await recoverRestorationClaimAfterExpiry(
-                        host: host,
-                        runReference: runReference,
-                        lease: lease,
-                        now: restorationClock.now(),
-                        restoredContext: restoredContext,
-                    )
-                }
-                if !hasPersistedProof {
-                    deactivateLocalResumptionLeaseIfOwned(
-                        host: host,
-                        runReference: runReference,
-                        lease: lease,
-                    )
-                }
-            } catch let fencingError as RuntimeHostError {
-                applyCleanupFailedDecision(host: host, runReference: runReference)
-                deactivateLocalResumptionLeaseIfOwned(
-                    host: host,
-                    runReference: runReference,
-                    lease: lease,
-                )
-                switch fencingError {
-                case .invalidPersistedState, .unsupportedSchemaVersion:
-                    throw fencingError
-                default:
-                    break
-                }
-            } catch {
-                applyCleanupFailedDecision(host: host, runReference: runReference)
-                deactivateLocalResumptionLeaseIfOwned(
-                    host: host,
-                    runReference: runReference,
-                    lease: lease,
-                )
-            }
-            throw error
+            return try await resolveInterruptionBoundary(
+                error,
+                claim: claim,
+                host: host,
+                restoredContext: restoredContext,
+            )
         default:
             try await restoreResumptionClaimIfNeeded(host, lease: lease)
             throw error
         }
+    }
+
+    /// provider 중단 경계에서 만료 복구를 heartbeat `.restoreClaim` 경계와 동일하게 수행하고,
+    /// 복구가 소유권 경계를 회수했는지 보고한다. 실패 시 false로 원래 오류를 유지한다.
+    private func recoverExpiredClaimBoundaryIfWon(
+        host: ExternalAgentSessionReference,
+        runReference: RuntimeRunReference,
+        lease: UInt64,
+        restoredContext: RuntimeRestoredResumeContext,
+    ) async throws -> Bool {
+        guard let session = sessions[host],
+              session.stored.runReference == runReference,
+              session.lease == .resuming(lease),
+              restorationClaimState(session.stored.restorationClaim, now: restorationClock.now()) == .expired
+        else { return false }
+        try await recoverRestorationClaimAfterExpiry(
+            host: host,
+            runReference: runReference,
+            lease: lease,
+            now: restorationClock.now(),
+            restoredContext: restoredContext,
+        )
+        return sessions[host]?.stored.restorationClaim == nil
     }
 
     private func renewRestorationClaim(

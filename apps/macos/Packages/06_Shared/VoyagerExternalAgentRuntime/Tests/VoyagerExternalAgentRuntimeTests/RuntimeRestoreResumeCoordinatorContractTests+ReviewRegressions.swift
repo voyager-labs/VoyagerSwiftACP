@@ -69,7 +69,8 @@ extension RuntimeRestoreResumeCoordinatorContractTests {
     /// provider interruption이 claim 만료 경계에서 발생해도 만료 claim을 복구하고 즉시 같은 plane의 restore를 허용하는지 검증한다.
     /// - 검증 내용: owned expired claim의 durable clear, local lease 비활성화, immediate restore 재획득.
     /// - 사전 조건: restored resume이 provider stream 경계에서 대기하고 injected clock이 claim expiry로 전진한다.
-    /// - 기대 결과: 원래 typed interruption은 유지되고 claim은 지워지며 다음 restore가 같은 run을 재획득한다.
+    /// - 기대 결과: heartbeat `.restoreClaim` 경계와의 정렬에 따라 persistenceConflict로 수렴하고 claim은 지워지며
+    ///   다음 restore가 같은 run을 재획득한다.
     @Test(arguments: ReviewAdapterInterruption.allCases)
     private func `expired owned claim is cleared before restore retry`(
         interruption: ReviewAdapterInterruption,
@@ -111,7 +112,8 @@ extension RuntimeRestoreResumeCoordinatorContractTests {
         clock.advance(by: 60)
         await failureGate.open()
 
-        await #expect(throws: interruption.hostError) { try await resume.value }
+        // 만료 복구가 소유권 경계를 회수하면 heartbeat `.restoreClaim`과 동일하게 persistenceConflict로 수렴한다.
+        await #expect(throws: RuntimeHostError.persistenceConflict) { try await resume.value }
 
         let persistedAfterFailure = try #require(await store.currentState()?.sessions.first)
         let ownerToken = await plane.restorationOwnerToken

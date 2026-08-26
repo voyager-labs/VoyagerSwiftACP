@@ -549,6 +549,72 @@ extension RuntimeRestoreResumeCoordinatorContractTests {
         #expect(counts.terminalResult == 1)
     }
 
+    /// VOY-747-restore_resume_ownership: cross-plane durable terminal wins provider persist boundary.
+    /// heartbeat 경합 없이 provider 결과가 먼저 도달해도 저장 경계의 CAS conflict 노출 전에
+    /// 같은 run의 cross-plane durable terminal이 수렴해야 한다.
+    /// - 검증 내용: persist 저장 경계 conflict 중 completed 수렴, 양쪽 terminal projection,
+    ///   lease none, durable claim 제거, provider stream/terminalResult 횟수.
+    /// - 사전 조건: 두 control plane이 하나의 in-memory store를 공유하고 resumer의 provider는
+    ///   gate에서 대기하며 heartbeat sleeper는 끝까지 재개되지 않는다. host terminal은
+    ///   provider gate 개방 전에 먼저 durable로 저장된다.
+    /// - 기대 결과: resume은 persistenceConflict 대신 durable completed로 수렴하고 소유자 lease는 정리된다.
+    @Test
+    func `cross-plane durable terminal wins provider persist boundary`() async throws {
+        let now = Date(timeIntervalSince1970: 4_102_444_800)
+        let clock = DeterministicRuntimeRestorationClock(currentDate: now)
+        let host = ExternalAgentSessionReference("host-persist-boundary-terminal")
+        let run = RuntimeRunReference("run-persist-boundary-terminal")
+        let context = makeContext()
+        let streamGate = RuntimeTestGate()
+        let stored = makeEqualitySession(
+            storedContext: RuntimeStoredContext(contextPolicy: context),
+            externalAgentSessionReference: host,
+            providerInternalSessionReference: ProviderInternalSessionReference("opaque-persist-boundary"),
+            runReference: run,
+            projection: .running,
+        )
+        let store = InMemoryRuntimeStateStore(state: makeState([stored]))
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            capabilities: .allSupported,
+            eventsByLaunch: [[]],
+            eventStreamGate: streamGate,
+        )
+        let resumingPlane = RuntimeControlPlane(
+            store: store,
+            restorationHeartbeatInterval: .seconds(20),
+            restorationClock: clock.runtimeClock,
+        )
+        try await resumingPlane.register(adapter)
+        #expect(try await resumingPlane.restore(hostReference: host, expectedContext: context) == .restored)
+
+        let resume = Task { try await resumingPlane.resumeRestoredRun(hostReference: host) }
+        await adapter.waitForEventStreamCount(1)
+
+        // 같은 run의 durable terminal을 provider gate 개방 전에 cross-plane에서 저장한다.
+        let hostPlane = RuntimeControlPlane(store: store)
+        #expect(try await hostPlane.ingestHostEvent(ownershipMakeHostTerminal(
+            host: host,
+            run: run,
+            sequence: 1,
+        ))?.outcome == .completed)
+
+        // heartbeat를 재개하지 않아 provider 결과가 저장 경계에 먼저 도달한다.
+        await streamGate.open()
+        #expect(try await resume.value.outcome == .completed)
+        #expect(await resumingPlane.projection(for: host) == .completed)
+        #expect(await hostPlane.projection(for: host) == .completed)
+        #expect(await resumingPlane.sessions[host]?.lease == RuntimeControlPlane.RuntimeLease.none)
+        #expect(await store.currentState()?.sessions.first?.projection == .completed)
+        #expect(await store.currentState()?.sessions.first?.restorationClaim == nil)
+        let counts = await adapter.counts()
+        #expect(counts.stream == 1)
+        #expect(counts.terminalResult == 1)
+
+        await clock.releaseSleepers()
+    }
+
     /// VOY-747-restore_resume_ownership: heartbeat persistence failure preserves resume claim.
     /// provider 소비 중 heartbeat conflict와 저장 실패를 run interruption으로 오인하지 않는지 검증한다.
     /// - 검증 내용: persistenceConflict/persistenceFailure 구분, running projection과 재개 가능한 claim 보존.

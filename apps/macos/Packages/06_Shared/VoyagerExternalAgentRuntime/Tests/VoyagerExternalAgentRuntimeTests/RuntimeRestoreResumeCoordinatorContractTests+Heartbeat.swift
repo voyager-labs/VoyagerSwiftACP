@@ -236,12 +236,19 @@ extension RuntimeRestoreResumeCoordinatorContractTests {
 
     /// VOY-747-heartbeat: an expired heartbeat claim is reacquirable by the same coordinator.
     /// replacement owner가 없는 상태에서 heartbeat claim이 만료되어도 같은 coordinator가 다시 restore/resume할 수 있는지 검증한다.
-    /// - 검증 내용: 만료 claim 정리, inactive local lease, 단일 cleanup apply, 재복원과 provider receipt의 재사용.
-    /// - 사전 조건: deterministic clock이 첫 heartbeat 이후 claim TTL을 넘기고 provider stream은 cleanup 경계에서 대기한다.
-    /// - 기대 결과: 첫 resume은 persistenceConflict를 반환하고 claim을 비운 뒤, 같은 coordinator가 새 claim으로 완료한다.
-    @Test
-    func `expired heartbeat claim is reacquirable by same coordinator`() async throws {
-        let fixture = makeExpiredHeartbeatFixture()
+    /// provider 중단(processExit/transportLoss)의 도달 순서와 무관하게 heartbeat `.restoreClaim`
+    /// 경계와 동일한 persistenceConflict로 수렴하는지 두 가지 deterministic 순서로 고정한다.
+    /// - 검증 내용: 만료 claim 정리, inactive local lease, 단일 cleanup apply, 재복원과 provider receipt의 재사용,
+    ///   provider 중단 우선/만료 복구 우선 두 순서 모두 persistenceConflict 수렴.
+    /// - 사전 조건: deterministic clock이 첫 heartbeat 이후 claim TTL을 넘기고 provider 중단과
+    ///   sleeper 재개 순서를 gate로 고정한다.
+    /// - 기대 결과: 첫 resume은 항상 persistenceConflict를 반환하고 claim을 비운 뒤, 같은 coordinator가 새 claim으로 완료한다.
+    @Test(arguments: ExpiredHeartbeatInterruption.allCases, ExpiredHeartbeatDeliveryOrder.allCases)
+    func `expired heartbeat claim is reacquirable by same coordinator`(
+        interruption: ExpiredHeartbeatInterruption,
+        order: ExpiredHeartbeatDeliveryOrder,
+    ) async throws {
+        let fixture = makeExpiredHeartbeatFixture(interruption: interruption)
         let fixtureContext = fixture.context
         let context = makeContext()
         let host = fixtureContext.host
@@ -259,13 +266,17 @@ extension RuntimeRestoreResumeCoordinatorContractTests {
         let initialDate = fixture.clock.currentDate
         fixture.clock.advance(by: 61)
         #expect(fixture.clock.runtimeClock.now() == initialDate.addingTimeInterval(61))
-        await fixture.clock.releaseSleepers()
-        for _ in 0 ..< 1000 {
-            if await plane.sessions[host]?.lease != .resuming(1) { break }
-            await Task.yield()
+        // provider 중단과 만료 복구의 도달 순서를 gate로 고정해 두 순서 모두 같은 경계로 수렴함을 검증한다.
+        // 각 순서는 resume이 먼저 정착한 뒤 다음 신호를 개방해 단일 신호로 결정적으로 고정한다.
+        if order == .providerInterruptionFirst {
+            await streamGate.open()
+            await #expect(throws: RuntimeHostError.persistenceConflict) { try await firstResume.value }
+            await fixture.clock.releaseSleepers()
+        } else {
+            await fixture.clock.releaseSleepers()
+            await #expect(throws: RuntimeHostError.persistenceConflict) { try await firstResume.value }
+            await streamGate.open()
         }
-        await streamGate.open()
-        await #expect(throws: RuntimeHostError.persistenceConflict) { try await firstResume.value }
 
         #expect(await plane.sessions[host]?.lease == RuntimeControlPlane.RuntimeLease.none)
         #expect(await store.currentState()?.sessions.first?.restorationClaim == nil)
@@ -513,15 +524,34 @@ private struct ExpiredHeartbeatFixture {
     let context: ExpiredHeartbeatRecoveryContext
 }
 
-private func makeExpiredHeartbeatFixture() -> ExpiredHeartbeatFixture {
+enum ExpiredHeartbeatInterruption: String, CaseIterable {
+    case processExit
+    case transportLoss
+
+    var kind: RuntimeAdapterFailureKind {
+        switch self {
+        case .processExit: .processExit
+        case .transportLoss: .transportLoss
+        }
+    }
+}
+
+enum ExpiredHeartbeatDeliveryOrder: String, CaseIterable {
+    case providerInterruptionFirst
+    case expiryRecoveryFirst
+}
+
+private func makeExpiredHeartbeatFixture(
+    interruption: ExpiredHeartbeatInterruption,
+) -> ExpiredHeartbeatFixture {
     let now = Date(timeIntervalSince1970: 4_102_444_800)
     let clock = DeterministicRuntimeRestorationClock(currentDate: now)
     let runtimeClock = RuntimeRestorationClock(
         now: { clock.currentDate },
         sleep: { duration in try await clock.runtimeClock.sleep(duration) },
     )
-    let host: ExternalAgentSessionReference = "heartbeat-expired-same-coordinator"
-    let run = RuntimeRunReference("heartbeat-expired-same-coordinator-run")
+    let host = ExternalAgentSessionReference("heartbeat-expired-same-coordinator-\(interruption.rawValue)")
+    let run = RuntimeRunReference("heartbeat-expired-same-coordinator-run-\(interruption.rawValue)")
     let context = makeContext()
     let streamGate = RuntimeTestGate()
     let stored = makeEqualitySession(
@@ -547,7 +577,7 @@ private func makeExpiredHeartbeatFixture() -> ExpiredHeartbeatFixture {
         ],
         eventStreamRuntimeFailuresByLaunch: [
             1: RuntimeAdapterFailure(
-                kind: .processExit,
+                kind: interruption.kind,
                 diagnosticCode: RuntimeDiagnosticCode("heartbeat-expired-provider"),
             ),
         ],
