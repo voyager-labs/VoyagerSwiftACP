@@ -75,6 +75,10 @@ public struct FileManagerContentFeature {
         }
 
         Reduce { state, action in
+            // 전이가 사라졌으면 폴더 hold 힌트도 함께 해제한다.
+            if state.pendingIdentityTransition == nil {
+                state.entryViewLayout.hierarchy.identityMigrationDeferredAfterIDByFolder.removeAll()
+            }
             let effect = handlePendingSelectionBeforeEntryLayoutLoaded(action, state: &state)
             markPreserveSelectionForReplacementProjection(on: action, state: &state)
             return effect
@@ -380,6 +384,23 @@ public struct FileManagerContentFeature {
             entries = items
             projectionOwner = .folder(id: folderID, generation: folderGeneration)
             appliesPendingExternalSelection = false
+            // 소유자 폴더 batch에 lexical after 행이 없으면 hierarchy reducer의
+            // retained 교체를 보류시킨다(도착 시 자연 해제).
+            if case let .folder(ownerID, _) = state.pendingIdentityTransition?.projectionOwner,
+               canonicalizedPath(ownerID) == canonicalizedPath(folderID),
+               let transition = state.pendingIdentityTransition
+            {
+                let afterIdentity = identityAfterLexicalPath(transition)
+                let hasAfterRow = items.contains {
+                    standardizedIdentityPath($0.id) == standardizedIdentityPath(afterIdentity)
+                }
+                if hasAfterRow {
+                    state.entryViewLayout.hierarchy.identityMigrationDeferredAfterIDByFolder[folderID] = nil
+                } else {
+                    state.entryViewLayout.hierarchy.identityMigrationDeferredAfterIDByFolder[folderID] =
+                        afterIdentity
+                }
+            }
 
         default:
             return .none

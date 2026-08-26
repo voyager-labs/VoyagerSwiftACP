@@ -420,7 +420,7 @@ extension EVM002FileManagerPagePresentationTests {
             }
             return projection.entries == [oldEntry]
         }
-        XCTAssertNotNil(store.state.content.pendingIdentityTransition)
+        XCTAssertNotNil(store.state.pendingIdentityTransition)
 
         // lexical link 행 도착: 한 번에 교체하고 migration한다.
         let linkRow = hierarchyFile(id: linkPath, name: "link")
@@ -429,7 +429,7 @@ extension EVM002FileManagerPagePresentationTests {
             event: .coreBatch(items: [unrelatedEntry, linkRow], batchIndex: 1),
         ))))))
         XCTAssertEqual(store.state.entryViewLayout.selectedIds, [linkPath])
-        XCTAssertNil(store.state.content.pendingIdentityTransition)
+        XCTAssertNil(store.state.pendingIdentityTransition)
     }
 
     func testUnrelatedFirstReplacementBatchRetainsSelectionUntilAfterPath() async {

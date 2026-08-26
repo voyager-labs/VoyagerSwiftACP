@@ -63,6 +63,10 @@ public struct FolderNodeState: Equatable, Sendable {
 }
 
 public struct EntryListHierarchyState: Equatable, Sendable {
+    /// identity migration 대기 중인 폴더가 lexical after 행 도착 전까지 retained
+    /// children 교체를 미루도록 하는 힌트. 값은 해당 폴더의 lexical after ID.
+    public var identityMigrationDeferredAfterIDByFolder: [EntryModel.ID: String] = [:]
+
     public private(set) var rootContextGeneration: Int
     public private(set) var rootPath: String
 

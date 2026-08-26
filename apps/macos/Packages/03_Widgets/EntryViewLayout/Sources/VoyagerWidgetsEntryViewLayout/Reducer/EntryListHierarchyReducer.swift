@@ -198,6 +198,22 @@ struct EntryListHierarchyReducer {
                 let previousRevision = state.outlineProjectionRevision
                 let previousSelectedIds = state.selectedIds
                 let wasCoreFinished = nodeState.folder.coreFinished
+                // identity migration 대기 폴더는 lexical after 행이 온 batch에서만
+                // retained children을 교체한다. 중간 batch는 커서만 소진해
+                // selection 행이 사라지는 깜빡임을 막는다.
+                if case let .event(.coreBatch(items, batchIndex)) = response,
+                   !nodeState.folder.hasAppliedContentBatch,
+                   !nodeState.folder.children.isEmpty,
+                   let deferredAfterID = state.hierarchy.identityMigrationDeferredAfterIDByFolder[folderID],
+                   !items.contains(where: {
+                       URL(fileURLWithPath: $0.id).standardizedFileURL.path
+                           == URL(fileURLWithPath: deferredAfterID).standardizedFileURL.path
+                   })
+                {
+                    nodeState.folder.expectedBatchIndex += 1
+                    state.hierarchy.nodesByID[folderID] = nodeState
+                    return .none
+                }
                 guard apply(response: response, to: &nodeState.folder) else { return .none }
                 // Update load phase based on response type
                 switch response {

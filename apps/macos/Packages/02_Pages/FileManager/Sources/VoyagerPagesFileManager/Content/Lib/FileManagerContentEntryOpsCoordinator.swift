@@ -433,7 +433,17 @@ enum FileManagerContentEntryOpsCoordinator {
         // 여기서 전이를 등록하고, 계층 무효화와 root reload를 수행해야 이전/다음 identity가
         // 반영되면서 선택 migration도 살아남는다.
         if case .folder = state.navigation.navigationState {
-            _ = recordIdentityTransitionIfEligible(record, state: &state)
+            // undo는 실행이 after→before로 뒤집히지만 updatedRecord는 원래 target을
+            // 유지한다. 선택된 항목은 실행 후 위치에 있으므로 실행 방향 기준으로
+            // 뒤집은 record를 전이 등록에 사용한다.
+            let effectiveRecord: EntryActionRecord = {
+                guard direction == .undo else { return record }
+                let targets = record.targets.map { target in
+                    EntryActionRecord.Target(beforePath: target.afterPath, afterPath: target.beforePath)
+                }
+                return EntryActionRecord(operationKind: record.operationKind, targets: targets)
+            }()
+            _ = recordIdentityTransitionIfEligible(effectiveRecord, state: &state)
             let affectedPaths = record.targets.flatMap { target in
                 [target.beforePath, target.afterPath].compactMap(\.self)
             }
