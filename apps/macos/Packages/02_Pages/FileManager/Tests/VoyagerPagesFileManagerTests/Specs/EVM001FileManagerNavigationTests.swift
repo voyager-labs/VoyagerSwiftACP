@@ -1626,15 +1626,6 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             .success(()),
         ))))
 
-        await store.receive { action in
-            guard case let .forwarded(.entryViewLayout(.entryOperations(.loading(.loadItems(
-                path,
-                showHidden,
-                priority,
-            ))))) =
-                action else { return false }
-            return path == folderPath && showHidden == false && priority == .none
-        }
         await store.finish()
     }
 
@@ -2331,12 +2322,6 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             .rename,
             .success(()),
         ))))
-        await store.receive { action in
-            guard case .content(.entryViewLayout(.entryOperations(.loading(.loadItems)))) = action else {
-                return false
-            }
-            return true
-        }
         await store.send(.bridge(.lifecycle(.entryActionCompleted(record))))
         await store.receive { action in
             guard case let .content(.entryViewLayout(.hierarchy(.hierarchyInvalidated(
@@ -2375,6 +2360,12 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             baselineInvalidations + 1,
             "일치하는 외부 이벤트는 계층 무효화를 추가하지 않고 무관한 이벤트만 추가한다",
         )
+        await store.receive { action in
+            guard case .content(.entryViewLayout(.entryOperations(.loading(.loadItems)))) = action else {
+                return false
+            }
+            return true
+        }
         XCTAssertEqual(
             store.state.rootReloadCount,
             baselineReloads + 1,
@@ -2409,12 +2400,6 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             .rename,
             .success(()),
         ))))
-        await store.receive { action in
-            guard case .content(.entryViewLayout(.entryOperations(.loading(.loadItems)))) = action else {
-                return false
-            }
-            return true
-        }
         await store.send(.bridge(.lifecycle(.entryActionCompleted(record))))
         await store.receive { action in
             guard case let .content(.entryViewLayout(.hierarchy(.hierarchyInvalidated(
@@ -2465,6 +2450,12 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
     /// - 사전 조건: 대기 전이와 무관한 행 선택
     /// - 기대 결과: 전이 nil, selectedIds는 사용자 선택 유지
     func testAbandonedBeforeSelectionConsumesPendingTransition() async {
+        await store.receive { action in
+            guard case .content(.entryViewLayout(.entryOperations(.loading(.loadItems)))) = action else {
+                return false
+            }
+            return true
+        }
         let folderPath = "/tmp/voyager-correlation"
         let oldPath = "\(folderPath)/old.txt"
         let newPath = "\(folderPath)/new.txt"
@@ -2525,12 +2516,6 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             .rename,
             .success(()),
         ))))
-        await store.receive { action in
-            guard case .content(.entryViewLayout(.entryOperations(.loading(.loadItems)))) = action else {
-                return false
-            }
-            return true
-        }
         await store.send(.bridge(.lifecycle(.entryActionCompleted(record))))
         await store.receive { action in
             guard case let .content(.entryViewLayout(.hierarchy(.hierarchyInvalidated(
@@ -2587,12 +2572,19 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         )
     }
 
-    /// EVM-001-command_external_refresh_correlation: 일치 외부 이벤트는 전이를 소비하지 않고 중복 refresh를 억제한다.
-    /// 명령 완료가 예약한 reload 이후에 도달한 일치 이벤트는 그 refresh로 병합되어
-    /// selection migration을 위한 전이가 보존되는지 검증한다.
-    /// - 검증 내용: 일치 이벤트 뒤 pendingIdentityTransition 유지 + root reload 미예약
-    /// - 사전 조건: folder 라우트에서 선택된 old.txt의 rename 완료 기록과 그 reload 실행
-    /// - 기대 결과: 일치 이벤트는 전이를 보존하고 중복 refresh를 예약하지 않는다
+    // EVM-001-command_external_refresh_correlation: 일치 외부 이벤트는 전이를 소비하지 않고 중복 refresh를 억제한다.
+    // 명령 완료가 예약한 reload 이후에 도달한 일치 이벤트는 그 refresh로 병합되어
+    // selection migration을 위한 전이가 보존되는지 검증한다.
+    // - 검증 내용: 일치 이벤트 뒤 pendingIdentityTransition 유지 + root reload 미예약
+    // - 사전 조건: folder 라우트에서 선택된 old.txt의 rename 완료 기록과 그 reload 실행
+    // - 기대 결과: 일치 이벤트는 전이를 보존하고 중복 refresh를 예약하지 않는다
+    await store.receive { action in
+        guard case .content(.entryViewLayout(.entryOperations(.loading(.loadItems)))) = action else {
+            return false
+        }
+        return true
+    }
+
     func testCorrelatedExternalEventRetainsPendingTransitionAndSuppressesRefresh() async {
         let folderPath = "/tmp/voyager-correlation"
         let oldPath = "\(folderPath)/old.txt"
@@ -2614,12 +2606,6 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             .rename,
             .success(()),
         ))))
-        await store.receive { action in
-            guard case .content(.entryViewLayout(.entryOperations(.loading(.loadItems)))) = action else {
-                return false
-            }
-            return true
-        }
         await store.send(.bridge(.lifecycle(.entryActionCompleted(record))))
         XCTAssertEqual(store.state.content.pendingIdentityTransition?.recordID, record.id)
         XCTAssertEqual(store.state.content.pendingIdentityTransition?.beforePath, Self.canonicalPath(oldPath))
@@ -2726,12 +2712,6 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             .rename,
             .success(()),
         ))))
-        await store.receive { action in
-            guard case .content(.entryViewLayout(.entryOperations(.loading(.loadItems)))) = action else {
-                return false
-            }
-            return true
-        }
         await store.send(.bridge(.lifecycle(.entryActionCompleted(record))))
         await store.receive { action in
             guard case let .content(.entryViewLayout(.hierarchy(.hierarchyInvalidated(
@@ -2817,6 +2797,12 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         await store.receive { action in
             guard case .content(.entryViewLayout(.entryOperations(.loading(.loadItems)))) = action else {
                 return false
+            }
+            await store.receive { action in
+                guard case .content(.entryViewLayout(.entryOperations(.loading(.loadItems)))) = action else {
+                    return false
+                }
+                return true
             }
             return true
         }
@@ -3127,12 +3113,6 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             .rename,
             .success(()),
         ))))
-        await store.receive { action in
-            guard case .content(.entryViewLayout(.entryOperations(.loading(.loadItems)))) = action else {
-                return false
-            }
-            return true
-        }
         await store.send(.bridge(.lifecycle(.entryActionCompleted(record))))
         await store.receive { action in
             guard case let .content(.entryViewLayout(.hierarchy(.hierarchyInvalidated(
@@ -3231,6 +3211,12 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
 
         // 같은 rename 종류라도 다른 경로의 실패는 전이와 무관하다.
         await store.send(.bridge(.lifecycle(.operationFinished(
+            store.receive { action in
+                guard case .content(.entryViewLayout(.entryOperations(.loading(.loadItems)))) = action else {
+                    return false
+                }
+                return true
+            }
             otherPath,
             .rename,
             .failure(.system(message: "forced failure")),

@@ -130,10 +130,20 @@ public struct FileManagerContentFeature {
             default:
                 false
             }
+            // 대기 중인 identity 전이의 after-path가 아직 배치에 없으면 부분 교체 대신
+            // 마지막 완전 projection을 유지한다. 물리 row 없는 논리 선택은 표시가
+            // 깜빡이므로, after-path 도착 또는 accepted completion에서 한 번에 교체한다.
+            let transitionHoldsProjection: Bool = {
+                guard let transition = state.pendingIdentityTransition else { return false }
+                guard case let .entryViewLayout(.entryOperations(.loading(.streamEvent(streamEvent)))) = action,
+                      case let .coreBatch(items, _) = streamEvent.event
+                else { return false }
+                return !items.contains { canonicalizedPath($0.id) == transition.afterPath }
+            }()
             let projectionEntries = if !useCollectionItems,
                                        isFolderRoute,
                                        isRetainedProjectionTrigger,
-                                       loadedProjectionEntries.isEmpty,
+                                       loadedProjectionEntries.isEmpty || transitionHoldsProjection,
                                        !state.entryViewLayout.entryOperations.loadingContext.coreFinished,
                                        !state.entryViewLayout.entries.isEmpty
             {

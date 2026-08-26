@@ -408,7 +408,7 @@ extension EVM002FileManagerPagePresentationTests {
             guard case let .entryViewLayout(.view(.applyContentProjection(projection))) = action else {
                 return false
             }
-            return projection.entries == [unrelatedEntry]
+            return projection.entries == [oldEntry]
         }
 
         XCTAssertEqual(
@@ -473,7 +473,8 @@ extension EVM002FileManagerPagePresentationTests {
         await store.send(.entryViewLayout(.internal(.applyClearSelection)))
         XCTAssertTrue(store.state.entryViewLayout.selectedIds.isEmpty)
 
-        // 비종료 무관 batch: deselect된 before-path를 되돌리지 않아야 한다.
+        // 비종료 무관 batch: before 선택이 없어 전이는 같은 패스에서 소비되고,
+        // 부분 batch가 정상 적용된다. deselect된 선택은 되돌려지지 않는다.
         await store.send(.entryViewLayout(.entryOperations(.loading(.streamEvent(.init(
             generation: 1,
             event: .coreBatch(items: [unrelatedEntry], batchIndex: 0),
@@ -489,7 +490,7 @@ extension EVM002FileManagerPagePresentationTests {
             store.state.entryViewLayout.selectedIds.isEmpty,
             "사용자 deselect는 비종료 batch에 의해 되돌려지지 않는다",
         )
-        XCTAssertNotNil(store.state.pendingIdentityTransition)
+        XCTAssertNil(store.state.pendingIdentityTransition, "before 선택 포기는 owning batch에서 전이를 소비한다")
     }
 
     /// EVM-002-command_external_refresh_correlation: 종료(accepted) projection에서 after-path가
@@ -787,11 +788,20 @@ extension EVM002FileManagerPagePresentationTests {
         }
         store.exhaustivity = .off
 
-        // 실제 순서: operationFinished 성공 → coordinator가 같은 root의 loadItems를 발행.
+        // 실제 순서: operationFinished 성공 → entryActionCompleted가 전이를 만든 뒤
+        // coordinator가 같은 root의 loadItems를 발행한다.
         await store.send(.entryViewLayout(.entryOperations(.lifecycle(.operationFinished(
             "\(rootPath)/file.txt",
             .rename,
             .success(()),
+        )))))
+        await store.send(.entryViewLayout(.entryOperations(.lifecycle(.entryActionCompleted(
+            EntryActionRecord(
+                operationKind: .rename,
+                targets: [
+                    .init(beforePath: "\(rootPath)/file.txt", afterPath: "\(rootPath)/renamed.txt"),
+                ],
+            ),
         )))))
         await store.receive { action in
             guard case let .entryViewLayout(.view(.applyContentProjection(projection))) = action else {
@@ -859,7 +869,7 @@ extension EVM002FileManagerPagePresentationTests {
             guard case let .entryViewLayout(.view(.applyContentProjection(projection))) = action else {
                 return false
             }
-            return projection.entries == [unrelatedEntry]
+            return projection.entries.map(\.id) == [lexicalOld]
         }
 
         XCTAssertEqual(
@@ -939,7 +949,7 @@ extension EVM002FileManagerPagePresentationTests {
             guard case let .entryViewLayout(.view(.applyContentProjection(projection))) = action else {
                 return false
             }
-            return projection.entries == [unrelatedEntry]
+            return projection.entries.map(\.id) == [lexicalBefore]
         }
 
         XCTAssertEqual(

@@ -25,7 +25,7 @@ enum FileManagerContentEntryOpsCoordinator {
         case let .lifecycle(.entryActionCompleted(record)):
             .merge(
                 recordIdentityTransitionIfEligible(record, state: &state),
-                handleEntryActionCompleted(record, state: state),
+                handleEntryActionCompleted(record, state: &state),
                 record.operationKind == .setTags ? setTagsRefreshEffect(record: record, state: state) : .none,
             )
 
@@ -340,7 +340,7 @@ enum FileManagerContentEntryOpsCoordinator {
 
     private static func handleEntryActionCompleted(
         _ record: EntryActionRecord,
-        state: FileManagerContentState,
+        state: inout FileManagerContentState,
     ) -> Effect<FileManagerContentAction> {
         if case let .folder(currentPath) = state.navigation.navigationState,
            let updatedRootPath = record.targets.first(where: {
@@ -358,10 +358,22 @@ enum FileManagerContentEntryOpsCoordinator {
                 ? record.targets.compactMap(\.beforePath)
                 : []
             guard !affectedPaths.isEmpty else { return .none }
-            return .send(.entryViewLayout(.hierarchy(.hierarchyInvalidated(
-                affectedPaths: affectedPaths.map(parentPath(for:)),
-                removedPrefixes: removedPrefixes,
-            ))))
+            let invalidation: Effect<FileManagerContentAction> =
+                .send(.entryViewLayout(.hierarchy(.hierarchyInvalidated(
+                    affectedPaths: affectedPaths.map(parentPath(for:)),
+                    removedPrefixes: removedPrefixes,
+                ))))
+            // record 기반 전이가 이 호출 직전에 기록된 뒤 reload 세대를 연다.
+            // 예약되는 reload가 세대를 올리므로 방금 기록된 root 소유자를 새 세대로
+            // 재기준화해 후속 batch에서 selection migration이 살아남게 한다.
+            guard record.operationKind == .rename || record.operationKind == .pasteFileMove else {
+                return invalidation
+            }
+            rebaseIdentityTransitionForNextRootReload(state: &state)
+            return .concatenate(
+                invalidation,
+                FileManagerContentEntryOpsCoordinator.reloadEntryItemsEffect(state: state),
+            )
         }
 
         guard case .collection = state.navigation.navigationState,
@@ -444,7 +456,16 @@ enum FileManagerContentEntryOpsCoordinator {
         // 포함하므로, 취소 아닌 실패는 선삭제가 반영됐을 수 있어 route 재로드로 수렴시킨다.
         let shouldReload: Bool = switch result {
         case .success:
-            kind != .setTags
+            if kind == .rename || kind == .pasteFileMove,
+               case .folder = state.navigation.navigationState
+            {
+                // 이 두 종류는 record가 operationFinished 뒤에 도착한다. 즉시 reload가
+                // reconcile로 before 선택을 지우면 record 기반 전이 생성 자격이 사라진다.
+                // folder route에서는 entryActionCompleted가 전이를 만든 뒤 reload를 시작한다.
+                false
+            } else {
+                kind != .setTags
+            }
         case let .failure(error):
             shouldReloadOnFailure(kind: kind, error: error)
         }
