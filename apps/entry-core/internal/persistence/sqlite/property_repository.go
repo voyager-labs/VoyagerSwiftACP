@@ -33,13 +33,22 @@ func NewEntryPropertyRepository(store *Store) *EntryPropertyRepository {
 // LoadAssignments는 요청한 (entry, property) 집합을 고정 4-쿼리 예산으로 읽어
 // domain fact 사전으로 반환한다. durable row가 없는 요청 키는 implicit unset
 // revision 0으로 채워진다. corrupt row와 참조 고아는 실패 닫기한다.
+//
+// ctx에 Store.WithTxScope가 붙인 tx 스코프가 있으면 반드시 그 트랜잭션 안에서
+// 읽는다. 스코프를 무시하면 열린 트랜잭션이 단일 커넥션 풀의 유일 연결을 점유한
+// 상태에서 두 번째 연결을 기다리게 되어 교착한다(ChangeService.Execute의
+// WithinTx 경계 안 읽기가 정확히 이 경로다).
 func (r *EntryPropertyRepository) LoadAssignments(
 	ctx context.Context,
 	wsctx domainentry.WorkspaceContext,
 	entryIDs []string,
 	propertyIDs []domainentry.PropertyID,
 ) (map[EntryPropertyRef]domainentry.EntryPropertyAssignment, error) {
-	return LoadEntryPropertyAssignments(r.store.db.WithContext(ctx), wsctx, entryIDs, propertyIDs)
+	db := r.store.db.WithContext(ctx)
+	if scope, ok := ctx.Value(txScopeKey{}).(*txScope); ok && scope != nil && scope.tx != nil {
+		db = scope.tx.WithContext(ctx)
+	}
+	return LoadEntryPropertyAssignments(db, wsctx, entryIDs, propertyIDs)
 }
 
 // SaveAssignments는 fact 집합을 하나의 원자적 트랜잭션으로 upsert한다. 모든

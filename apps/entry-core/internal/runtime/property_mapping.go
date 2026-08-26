@@ -142,7 +142,10 @@ func definitionViewToWire(view applicationproperty.DefinitionView) (schema.Prope
 		if option.Active {
 			optionState = "active"
 		}
-		options[index] = schema.PropertyOption{OptionID: option.OptionID.String(), Label: option.Label, Position: int64(option.Ordinal), State: optionState}
+		// wire position은 1-based다(domain ordinal + 1). decodePropertyDefinition이
+		// position ≥ 1을 요구하고 −1로 되돌리므로 0-based 값을 그대로 내보내면
+		// 모든 option-bearing 정의 응답이 정준 디코딩에 실패한다.
+		options[index] = schema.PropertyOption{OptionID: option.OptionID.String(), Label: option.Label, Position: int64(option.Ordinal) + 1, State: optionState}
 	}
 	definition := schema.PropertyDefinition{
 		PropertyID:  view.Definition.PropertyID.String(),

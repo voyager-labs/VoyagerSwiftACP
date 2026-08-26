@@ -15,7 +15,7 @@ func (service *CatalogService) CreateOption(
 	expectedRevision int,
 	label string,
 ) (DefinitionView, error) {
-	return service.mutateDefinition(ctx, workspace, propertyID, expectedRevision, func(record *domainentry.WorkspacePropertyDefinition) error {
+	return service.mutateDefinition(ctx, workspace, propertyID, expectedRevision, func(txCtx context.Context, record *domainentry.WorkspacePropertyDefinition) error {
 		if record.ValueType != domainentry.PropertyTypeSelect {
 			return ErrDefinitionNotSelectable
 		}
@@ -58,7 +58,7 @@ func (service *CatalogService) RenameOption(
 	if err := service.requireOptionOwnership(ctx, workspace, propertyID, optionID); err != nil {
 		return DefinitionView{}, err
 	}
-	return service.mutateOptions(ctx, workspace, propertyID, expectedRevision, func(options []domainentry.PropertyOption) ([]domainentry.PropertyOption, error) {
+	return service.mutateOptions(ctx, workspace, propertyID, expectedRevision, func(_ context.Context, options []domainentry.PropertyOption) ([]domainentry.PropertyOption, error) {
 		index, active, err := locateActiveOption(options, optionID)
 		if err != nil {
 			return nil, err
@@ -83,7 +83,7 @@ func (service *CatalogService) RecolorOption(
 	if err := service.requireOptionOwnership(ctx, workspace, propertyID, optionID); err != nil {
 		return DefinitionView{}, err
 	}
-	return service.mutateOptions(ctx, workspace, propertyID, expectedRevision, func(options []domainentry.PropertyOption) ([]domainentry.PropertyOption, error) {
+	return service.mutateOptions(ctx, workspace, propertyID, expectedRevision, func(_ context.Context, options []domainentry.PropertyOption) ([]domainentry.PropertyOption, error) {
 		index, active, err := locateActiveOption(options, optionID)
 		if err != nil {
 			return nil, err
@@ -107,7 +107,7 @@ func (service *CatalogService) ReorderOptions(
 	expectedRevision int,
 	orderedIDs []domainentry.PropertyOptionID,
 ) (DefinitionView, error) {
-	return service.mutateOptions(ctx, workspace, propertyID, expectedRevision, func(options []domainentry.PropertyOption) ([]domainentry.PropertyOption, error) {
+	return service.mutateOptions(ctx, workspace, propertyID, expectedRevision, func(_ context.Context, options []domainentry.PropertyOption) ([]domainentry.PropertyOption, error) {
 		reordered, err := reorderOptionRows(options, orderedIDs)
 		if err != nil {
 			return nil, err
@@ -128,7 +128,7 @@ func (service *CatalogService) DisableOption(
 	if err := service.requireOptionOwnership(ctx, workspace, propertyID, optionID); err != nil {
 		return DefinitionView{}, err
 	}
-	return service.mutateOptions(ctx, workspace, propertyID, expectedRevision, func(options []domainentry.PropertyOption) ([]domainentry.PropertyOption, error) {
+	return service.mutateOptions(ctx, workspace, propertyID, expectedRevision, func(_ context.Context, options []domainentry.PropertyOption) ([]domainentry.PropertyOption, error) {
 		index, active, err := locateActiveOption(options, optionID)
 		if err != nil {
 			return nil, err
@@ -149,24 +149,24 @@ func (service *CatalogService) mutateOptions(
 	workspace domainentry.WorkspaceContext,
 	propertyID domainentry.PropertyID,
 	expectedRevision int,
-	mutate func(options []domainentry.PropertyOption) ([]domainentry.PropertyOption, error),
+	mutate func(txCtx context.Context, options []domainentry.PropertyOption) ([]domainentry.PropertyOption, error),
 ) (DefinitionView, error) {
-	return service.mutateDefinition(ctx, workspace, propertyID, expectedRevision, func(record *domainentry.WorkspacePropertyDefinition) error {
+	return service.mutateDefinition(ctx, workspace, propertyID, expectedRevision, func(txCtx context.Context, record *domainentry.WorkspacePropertyDefinition) error {
 		if record.ValueType != domainentry.PropertyTypeSelect {
 			return ErrDefinitionNotSelectable
 		}
-		options, err := service.store.Options(ctx, workspace, propertyID)
+		options, err := service.store.Options(txCtx, workspace, propertyID)
 		if err != nil {
 			return err
 		}
-		updated, err := mutate(options)
+		updated, err := mutate(txCtx, options)
 		if err != nil {
 			return err
 		}
 		if err := domainentry.ValidatePropertyOptions(updated); err != nil {
 			return err
 		}
-		return service.store.SaveOptions(ctx, updated)
+		return service.store.SaveOptions(txCtx, updated)
 	})
 }
 

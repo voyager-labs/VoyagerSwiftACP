@@ -253,7 +253,7 @@ func (service *CatalogService) UpdateDefinitionMetadata(
 	expectedRevision int,
 	displayName string,
 ) (DefinitionView, error) {
-	return service.mutateDefinition(ctx, workspace, propertyID, expectedRevision, func(record *domainentry.WorkspacePropertyDefinition) error {
+	return service.mutateDefinition(ctx, workspace, propertyID, expectedRevision, func(_ context.Context, record *domainentry.WorkspacePropertyDefinition) error {
 		requested := *record
 		requested.DisplayName = displayName
 		updated, err := applyDefinitionUpdate(*record, requested)
@@ -274,7 +274,7 @@ func (service *CatalogService) DisableDefinition(
 	propertyID domainentry.PropertyID,
 	expectedRevision int,
 ) (DefinitionView, error) {
-	return service.mutateDefinition(ctx, workspace, propertyID, expectedRevision, func(record *domainentry.WorkspacePropertyDefinition) error {
+	return service.mutateDefinition(ctx, workspace, propertyID, expectedRevision, func(_ context.Context, record *domainentry.WorkspacePropertyDefinition) error {
 		record.Lifecycle = domainentry.PropertyLifecycleTombstoned
 		return nil
 	})
@@ -288,7 +288,7 @@ func (service *CatalogService) mutateDefinition(
 	workspace domainentry.WorkspaceContext,
 	propertyID domainentry.PropertyID,
 	expectedRevision int,
-	mutate func(record *domainentry.WorkspacePropertyDefinition) error,
+	mutate func(txCtx context.Context, record *domainentry.WorkspacePropertyDefinition) error,
 ) (DefinitionView, error) {
 	if err := ValidateWorkspaceContext(workspace); err != nil {
 		return DefinitionView{}, err
@@ -305,7 +305,7 @@ func (service *CatalogService) mutateDefinition(
 		if current.DefinitionRev != expectedRevision {
 			return ErrStaleDefinitionRevision
 		}
-		if err := mutate(&current); err != nil {
+		if err := mutate(txCtx, &current); err != nil {
 			return err
 		}
 		current.DefinitionRev++
