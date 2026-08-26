@@ -393,6 +393,31 @@ enum FileManagerContentEntryOpsCoordinator {
         record: EntryActionRecord,
         state: FileManagerContentState,
     ) -> Effect<FileManagerContentAction> {
+        // undo/redo는 entryActionCompleted 대신 replaySucceeded만 온다. folder route의
+        // identity 종류는 operationFinished에서 reload를 보류했으므로 완료 경로와 동일하게
+        // 여기서 계층 무효화와 root reload를 수행해야 이전/다음 identity가 반영된다.
+        if case .folder = state.navigation.navigationState {
+            let affectedPaths = record.targets.flatMap { target in
+                [target.beforePath, target.afterPath].compactMap(\.self)
+            }
+            let removedPrefixes = record.operationKind.removesSourceAtOrigin
+                ? record.targets.compactMap(\.beforePath)
+                : []
+            guard !affectedPaths.isEmpty else { return .none }
+            let invalidation: Effect<FileManagerContentAction> =
+                .send(.entryViewLayout(.hierarchy(.hierarchyInvalidated(
+                    affectedPaths: affectedPaths.map(parentPath(for:)),
+                    removedPrefixes: removedPrefixes,
+                ))))
+            guard record.operationKind == .rename || record.operationKind == .pasteFileMove else {
+                return invalidation
+            }
+            return .concatenate(
+                invalidation,
+                FileManagerContentEntryOpsCoordinator.reloadEntryItemsEffect(state: state),
+            )
+        }
+
         guard case .collection = state.navigation.navigationState,
               direction == .undo,
               record.operationKind == .moveToTrash

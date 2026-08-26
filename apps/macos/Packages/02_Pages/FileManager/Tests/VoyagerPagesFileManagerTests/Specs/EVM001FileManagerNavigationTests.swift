@@ -1802,6 +1802,48 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         await store.finish()
     }
 
+    /// EVM-001-reload_directory_page_on_external_change: undo/redo rename도 folder route에서 root reload를 유지한다.
+    /// replaySucceeded는 entryActionCompleted 없이 도착하므로 operationFinished에서 보류한
+    /// reload를 이 경로가 대신 수행하지 않으면 목록이 이전 identity에 머문다.
+    /// - 검증 내용: folder route replaySucceeded rename record가 loadItems forwarding을 내는지 검증
+    /// - 사전 조건: folder route의 LifecycleBridgeHarness
+    /// - 기대 결과: hierarchyInvalidated와 loadItems forwarding이 발생한다
+    func testUndoRedoReplayKeepsRootReloadForIdentityOperations() async {
+        let folderPath = "/tmp/voyager-undo-rename"
+        let store = TestStore(initialState: makeInitialState(folderPath: folderPath)) {
+            LifecycleBridgeHarness()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.bridge(.undoRedo(.replaySucceeded(
+            direction: .undo,
+            sourceRecordID: UUID(),
+            updatedRecord: EntryActionRecord(
+                operationKind: .rename,
+                targets: [
+                    .init(beforePath: "\(folderPath)/new.txt", afterPath: "\(folderPath)/old.txt"),
+                ],
+            ),
+        ))))
+        await store.receive { action in
+            guard case let .forwarded(.entryViewLayout(.hierarchy(.hierarchyInvalidated(
+                affectedPaths,
+                removedPrefixes,
+            )))) = action else { return false }
+            return affectedPaths == [folderPath, folderPath] && removedPrefixes == ["\(folderPath)/new.txt"]
+        }
+        await store.receive { action in
+            guard case let .forwarded(.entryViewLayout(.entryOperations(.loading(.loadItems(
+                path,
+                showHidden,
+                priority,
+            ))))) =
+                action else { return false }
+            return path == folderPath && showHidden == false && priority == .none
+        }
+        await store.finish()
+    }
+
     /// EVM-001-reload_directory_page_on_external_change: recents route entry operation 완료 시 recents reload forwarding
     /// FileManager content entry operation lifecycle bridge가 navigation route별 reload/restore boundary를 지키는지 검증.
     /// - 검증 내용: recents route에서 entry operation 완료 액션이 recents loader로 전달되는지 검증
@@ -2078,6 +2120,12 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             }
             await store.finish()
         }
+        await store.receive { action in
+            guard case .content(.entryViewLayout(.entryOperations(.loading(.loadItems)))) = action else {
+                return false
+            }
+            return true
+        }
     }
 
     /// EVM-001-reload_directory_page_on_external_change: source-relocating 완료 레코드는 원래 subtree를 제거한다.
@@ -2123,6 +2171,12 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
                     && removedPrefixes == [sourcePath]
             }
             await store.finish()
+        }
+        await store.receive { action in
+            guard case .content(.entryViewLayout(.entryOperations(.loading(.loadItems)))) = action else {
+                return false
+            }
+            return true
         }
     }
 
@@ -2271,6 +2325,12 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             )))) = action else { return false }
             return affectedPaths == [folderPath, folderPath] && removedPrefixes == [oldPath]
         }
+        await store.receive { action in
+            guard case .content(.entryViewLayout(.entryOperations(.loading(.loadItems)))) = action else {
+                return false
+            }
+            return true
+        }
 
         await store.send(.content(.externalFileSystemChanged(
             Self.externalChangeEvents([oldPath], flags: UInt32(kFSEventStreamEventFlagItemRenamed)),
@@ -2330,6 +2390,12 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             )))) = action else { return false }
             return affectedPaths == [folderPath, folderPath] && removedPrefixes == [oldPath]
         }
+        await store.receive { action in
+            guard case .content(.entryViewLayout(.entryOperations(.loading(.loadItems)))) = action else {
+                return false
+            }
+            return true
+        }
         let baselineInvalidations = store.state.hierarchyInvalidations.count
         let baselineReloads = store.state.rootReloadCount
 
@@ -2360,12 +2426,6 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             baselineInvalidations + 1,
             "일치하는 외부 이벤트는 계층 무효화를 추가하지 않고 무관한 이벤트만 추가한다",
         )
-        await store.receive { action in
-            guard case .content(.entryViewLayout(.entryOperations(.loading(.loadItems)))) = action else {
-                return false
-            }
-            return true
-        }
         XCTAssertEqual(
             store.state.rootReloadCount,
             baselineReloads + 1,
@@ -2407,6 +2467,12 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
                 removedPrefixes,
             )))) = action else { return false }
             return affectedPaths == [folderPath, folderPath] && removedPrefixes == [oldPath]
+        }
+        await store.receive { action in
+            guard case .content(.entryViewLayout(.entryOperations(.loading(.loadItems)))) = action else {
+                return false
+            }
+            return true
         }
         let baselineInvalidations = store.state.hierarchyInvalidations.count
         let baselineReloads = store.state.rootReloadCount
@@ -2450,12 +2516,6 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
     /// - 사전 조건: 대기 전이와 무관한 행 선택
     /// - 기대 결과: 전이 nil, selectedIds는 사용자 선택 유지
     func testAbandonedBeforeSelectionConsumesPendingTransition() async {
-        await store.receive { action in
-            guard case .content(.entryViewLayout(.entryOperations(.loading(.loadItems)))) = action else {
-                return false
-            }
-            return true
-        }
         let folderPath = "/tmp/voyager-correlation"
         let oldPath = "\(folderPath)/old.txt"
         let newPath = "\(folderPath)/new.txt"
@@ -2524,6 +2584,12 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             )))) = action else { return false }
             return affectedPaths == [folderPath, folderPath] && removedPrefixes == [oldPath]
         }
+        await store.receive { action in
+            guard case .content(.entryViewLayout(.entryOperations(.loading(.loadItems)))) = action else {
+                return false
+            }
+            return true
+        }
         let baselineInvalidations = store.state.hierarchyInvalidations.count
         let baselineReloads = store.state.rootReloadCount
 
@@ -2578,13 +2644,6 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
     // - 검증 내용: 일치 이벤트 뒤 pendingIdentityTransition 유지 + root reload 미예약
     // - 사전 조건: folder 라우트에서 선택된 old.txt의 rename 완료 기록과 그 reload 실행
     // - 기대 결과: 일치 이벤트는 전이를 보존하고 중복 refresh를 예약하지 않는다
-    await store.receive { action in
-        guard case .content(.entryViewLayout(.entryOperations(.loading(.loadItems)))) = action else {
-            return false
-        }
-        return true
-    }
-
     func testCorrelatedExternalEventRetainsPendingTransitionAndSuppressesRefresh() async {
         let folderPath = "/tmp/voyager-correlation"
         let oldPath = "\(folderPath)/old.txt"
@@ -2720,6 +2779,12 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             )))) = action else { return false }
             return affectedPaths == [folderPath, folderPath] && removedPrefixes == [oldPath]
         }
+        await store.receive { action in
+            guard case .content(.entryViewLayout(.entryOperations(.loading(.loadItems)))) = action else {
+                return false
+            }
+            return true
+        }
         let baselineInvalidations = store.state.hierarchyInvalidations.count
         let baselineReloads = store.state.rootReloadCount
 
@@ -2797,12 +2862,6 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         await store.receive { action in
             guard case .content(.entryViewLayout(.entryOperations(.loading(.loadItems)))) = action else {
                 return false
-            }
-            await store.receive { action in
-                guard case .content(.entryViewLayout(.entryOperations(.loading(.loadItems)))) = action else {
-                    return false
-                }
-                return true
             }
             return true
         }
@@ -3121,6 +3180,12 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             )))) = action else { return false }
             return affectedPaths == [folderPath, folderPath] && removedPrefixes == [oldPath]
         }
+        await store.receive { action in
+            guard case .content(.entryViewLayout(.entryOperations(.loading(.loadItems)))) = action else {
+                return false
+            }
+            return true
+        }
         let baselineInvalidations = store.state.hierarchyInvalidations.count
         let baselineReloads = store.state.rootReloadCount
 
@@ -3211,12 +3276,6 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
 
         // 같은 rename 종류라도 다른 경로의 실패는 전이와 무관하다.
         await store.send(.bridge(.lifecycle(.operationFinished(
-            store.receive { action in
-                guard case .content(.entryViewLayout(.entryOperations(.loading(.loadItems)))) = action else {
-                    return false
-                }
-                return true
-            }
             otherPath,
             .rename,
             .failure(.system(message: "forced failure")),
@@ -3566,6 +3625,12 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
                 removedPrefixes,
             )))) = action else { return false }
             return affectedPaths == [folderPath, folderPath] && removedPrefixes == [oldPath]
+        }
+        await store.receive { action in
+            guard case .content(.entryViewLayout(.entryOperations(.loading(.loadItems)))) = action else {
+                return false
+            }
+            return true
         }
         XCTAssertNotNil(store.state.content.pendingIdentityTransition)
         let baselineInvalidations = store.state.hierarchyInvalidations.count
