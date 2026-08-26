@@ -30,8 +30,10 @@ extension EntryGridCoordinator {
     }
 
     func handleSnapshotChanges(previous: RenderSnapshot, snapshot: RenderSnapshot) {
-        if shouldRebuildSections(previous: previous, snapshot: snapshot) {
-            rebuildSectionsAndReload()
+        let didRebuildSections = shouldRebuildSections(previous: previous, snapshot: snapshot)
+        var didScrollToSelection = false
+        if didRebuildSections {
+            didScrollToSelection = rebuildSectionsAndReload()
         } else if !applyIncrementalEntryRemoval(previous: previous, snapshot: snapshot) {
             reloadVisibleItemsForEntryContentChange(previous: previous, snapshot: snapshot)
         }
@@ -40,12 +42,18 @@ extension EntryGridCoordinator {
         syncRenamingIfNeeded(previous: previous, snapshot: snapshot)
         updateGridMetricsIfNeeded(previous: previous, snapshot: snapshot)
         saveScrollPositionIfNeeded(previous: previous, snapshot: snapshot)
-        scrollToSelectionIfNeeded(previous: previous, snapshot: snapshot)
+        // rebuild에서 selection scroll을 이미 처리했다면 snapshot 엣지 스크롤을 중복 실행하지 않는다.
+        if !didScrollToSelection {
+            didScrollToSelection = scrollToSelectionIfNeeded(previous: previous, snapshot: snapshot)
+        }
         consumeTypeScrollTargetIfNeeded(previous: previous, snapshot: snapshot)
         updateDropTargetBorderIfNeeded(previous: previous, snapshot: snapshot)
         syncThumbnailProjectionIfNeeded(previous: previous, snapshot: snapshot)
         resetThumbnailSessionIfNeeded(previous: previous, snapshot: snapshot)
-        restoreScrollOffsetIfNeeded(previous: previous, snapshot: snapshot)
+        // selection scroll이 성공하면 saved offset 복원보다 우선하므로 최종 복원을 생략한다.
+        if !didScrollToSelection {
+            restoreScrollOffsetIfNeeded(previous: previous, snapshot: snapshot)
+        }
         externalDropSessionController.handleSessionTerminal(
             previousActive: previous.activeExternalDrop,
             currentActive: snapshot.activeExternalDrop,
@@ -137,8 +145,10 @@ extension EntryGridCoordinator {
         if previous.showHiddenFiles != snapshot.showHiddenFiles { saveScrollPosition() }
     }
 
-    func scrollToSelectionIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
-        if !previous.shouldScrollToSelection, snapshot.shouldScrollToSelection { scrollToSelectionIfNeeded() }
+    /// shouldScrollToSelection false→true 엣지에서 selection scroll을 시도하고 성공 여부를 반환한다.
+    func scrollToSelectionIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) -> Bool {
+        guard !previous.shouldScrollToSelection, snapshot.shouldScrollToSelection else { return false }
+        return scrollToSelectionIfNeeded()
     }
 
     /// pending type-scroll target의 nil→id 엣지에서 첫 매칭 item으로 스크롤하고 reset한다.

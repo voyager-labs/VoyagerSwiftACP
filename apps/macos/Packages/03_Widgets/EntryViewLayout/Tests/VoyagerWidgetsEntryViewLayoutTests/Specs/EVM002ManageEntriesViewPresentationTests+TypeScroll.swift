@@ -658,6 +658,153 @@ extension EVM002ManageEntriesViewPresentationTests {
         XCTAssertNil(store.state.pendingTypeScrollTargetId)
     }
 
+    // MARK: - EVM-002-manage_entries_view_type_scroll_grid_selection_precedence
+
+    /// selection scroll 우선순위 회귀 테스트 공통 fixture 컨텍스트.
+    private struct GridSelectionScrollFixture {
+        let entries: [EntryModel]
+        let target: EntryModel
+        let store: StoreOf<EntryViewLayoutFeature>
+        let coordinator: EntryGridCoordinator
+        let view: EntryGridView
+    }
+
+    /// saved offset을 가진 grid를 window에 mount하고, bind 이후 키보드 선택 액션으로 scroll flag를 arm한다.
+    private func makeGridSelectionScrollFixture() -> GridSelectionScrollFixture {
+        let entries = (0 ..< 80).map { index in
+            EntryModel.temporaryFolder(id: "/root/\(index)", name: "file\(index)")
+        }
+        // offset -1 fallback은 마지막 entry를 선택하므로 target도 마지막 entry다.
+        let target = entries[79]
+        var state = EntryViewLayoutState()
+        state.entries = entries
+        state.savedScrollOffset = CGPoint(x: 0, y: 37)
+        let store = Store(initialState: state) { EntryViewLayoutFeature() }
+        let coordinator = EntryGridCoordinator(store: store)
+        let view = EntryGridView(frame: NSRect(x: 0, y: 0, width: 320, height: 240))
+        coordinator.bind(to: view)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 320, height: 240),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false,
+        )
+        window.contentView = view
+        view.layoutSubtreeIfNeeded()
+
+        // bind 시점의 초기 복원 소비를 무시하고, rebuild 시점에 entry 수 변화로 인한
+        // saved offset 복원 자격이 새로 생긴 상태를 재현한다.
+        coordinator.hasRestoredScrollPosition = false
+
+        // bind가 초기 flag를 소비하지 않도록 flag는 bind 이후 키보드 선택 액션으로 설정한다.
+        store.send(.internal(.applySelectionOffset(
+            offset: -1,
+            isShiftPressed: false,
+            orderedItemIds: entries.map(\.id),
+        )))
+        XCTAssertTrue(store.state.shouldScrollToSelection, "precondition: scroll flag armed")
+        return GridSelectionScrollFixture(
+            entries: entries,
+            target: target,
+            store: store,
+            coordinator: coordinator,
+            view: view,
+        )
+    }
+
+    /// 선택 의도 없는 이후 entry 수 변화(80→100, rebuild 경로)에서도 selection scroll 결과가
+    /// 유지되고 stale saved offset 복원이 발생하지 않음을 단언한다.
+    private func assertDeferredCountChangePreservesSelectionScroll(
+        fixture: GridSelectionScrollFixture,
+        originAfterSelectionScroll: CGPoint,
+    ) throws {
+        var laterState = fixture.store.state
+        laterState.entries = fixture.entries + (80 ..< 100).map { index in
+            EntryModel.temporaryFolder(id: "/root/\(index)", name: "file\(index)")
+        }
+        fixture.coordinator.handleSnapshotChanges(
+            previous: EntryGridRenderSnapshot(state: fixture.store.state),
+            snapshot: EntryGridRenderSnapshot(state: laterState),
+        )
+
+        XCTAssertNotEqual(
+            gridClipOrigin(fixture.view),
+            CGPoint(x: 0, y: 37),
+            "deferred stale offset must not be restored on later entry-count change",
+        )
+        XCTAssertEqual(
+            gridClipOrigin(fixture.view),
+            originAfterSelectionScroll,
+            "later structural change without selection intent must not move the clip origin",
+        )
+        let laterIndexPath = try XCTUnwrap(fixture.coordinator.indexPathByEntryId[fixture.target.id])
+        let laterFrame = try XCTUnwrap(
+            fixture.view.collectionView.collectionViewLayout?
+                .layoutAttributesForItem(at: laterIndexPath)?.frame,
+            "target must keep valid layout attributes after later change",
+        )
+        XCTAssertTrue(
+            fixture.view.scrollView.contentView.bounds.intersects(laterFrame),
+            "selection target must remain visible after later entry-count change",
+        )
+    }
+
+    /// EVM-002-manage_entries_view_type_scroll-grid_selection_scroll_wins_over_saved_offset:
+    /// snapshot rebuild 중 selection scroll이 saved offset 복원보다 우선하고, 성공한 selection scroll은
+    /// 이후 복원 기회를 소비해 뒤늦은 stale offset 점프도 차단한다.
+    /// rebuild로 section이 재구성되고 entry 수가 변해 복원 자격이 생겨도, selection scroll이 성공했다면
+    /// saved offset이 그 결과를 덮어쓰지 않아야 하고, 이후 선택 의도 없는 구조 변화에서도
+    /// stale saved offset으로 복원되지 않아야 한다.
+    /// - 검증 내용: rebuild + entry count 변화 + shouldScrollToSelection false→true 엣지에서 최종 clip origin이
+    ///   saved offset이 아니고, target이 visible로 유지되며, selection 불변과 scroll flag reset 계약이 유지된다.
+    ///   이어지는 선택 의도 없는 entry 수 변화 snapshot에서 clip origin이 saved offset으로 이동하지 않고
+    ///   selection scroll 결과 위치에 유지되며 target 가시성도 보존된다.
+    /// - 사전 조건: window에 mount된 grid에 80개 entry가 있고 savedScrollOffset(y=37)이 target center와
+    ///   다른 값으로 저장돼 있으며, 이전 snapshot은 40개 entry와 shouldScrollToSelection == false다.
+    /// - 기대 결과: selection scroll 후 saved offset 복원이 건너뛰어져 origin != savedOffset,
+    ///   target indexPath가 visible 목록에 남고, selectedIds 불변, shouldScrollToSelection == false.
+    ///   이후 80→100 entry 변화에서도 origin 불변(savedOffset 아님), target visible 유지.
+    func testGridSelectionScrollWinsOverSavedOffsetDuringSnapshotRebuild() throws {
+        let fixture = makeGridSelectionScrollFixture()
+
+        var previousState = EntryViewLayoutState()
+        previousState.entries = Array(fixture.entries.prefix(40))
+        previousState.savedScrollOffset = CGPoint(x: 0, y: 37)
+        previousState.shouldScrollToSelection = false
+
+        fixture.coordinator.handleSnapshotChanges(
+            previous: EntryGridRenderSnapshot(state: previousState),
+            snapshot: EntryGridRenderSnapshot(state: fixture.store.state),
+        )
+
+        XCTAssertNotEqual(
+            gridClipOrigin(fixture.view),
+            CGPoint(x: 0, y: 37),
+            "saved offset must not overwrite selection scroll during snapshot rebuild",
+        )
+        let targetIndexPath = try XCTUnwrap(fixture.coordinator.indexPathByEntryId[fixture.target.id])
+        // 프로그램 스크롤 직후에는 indexPathsForVisibleItems 캐시가 갱신되지 않으므로
+        // layout attribute frame과 clip bounds의 교차로 가시성을 결정적으로 검증한다.
+        let targetFrame = try XCTUnwrap(
+            fixture.view.collectionView.collectionViewLayout?
+                .layoutAttributesForItem(at: targetIndexPath)?.frame,
+            "target must have valid layout attributes",
+        )
+        XCTAssertTrue(
+            fixture.view.scrollView.contentView.bounds.intersects(targetFrame),
+            "selection target must remain visible after snapshot rebuild",
+        )
+        XCTAssertEqual(fixture.store.state.selectedIds, [fixture.target.id], "selection must be unchanged")
+        XCTAssertFalse(fixture.store.state.shouldScrollToSelection, "scroll flag must be reset after consume")
+
+        // 이후 선택 의도 없는 entry 수 변화에서 stale saved offset 복원이 발생하지 않는다.
+        // selection scroll이 복원 기회를 소비했음을 검증한다.
+        try assertDeferredCountChangePreservesSelectionScroll(
+            fixture: fixture,
+            originAfterSelectionScroll: gridClipOrigin(fixture.view),
+        )
+    }
+
     // MARK: - EVM-002-manage_entries_view_type_scroll_grid_initial_bind_consume
 
     /// EVM-002-manage_entries_view_type_scroll: grid는 첫 bind 전에 설정된 유효 pending target을 첫 layout까지
