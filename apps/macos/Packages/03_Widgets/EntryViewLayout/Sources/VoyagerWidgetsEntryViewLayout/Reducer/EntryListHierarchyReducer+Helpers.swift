@@ -135,7 +135,7 @@ extension EntryListHierarchyReducer {
 
     func reloadFoldersForPresentationChange(
         state: inout State,
-        retainsCompleteSnapshots _: Bool = false,
+        retainsCompleteSnapshots: Bool = false,
     ) -> Effect<Action> {
         let folderIDs = Array(state.hierarchy.nodesByID.keys)
         let expandedFolders = state.hierarchy.expandedFolderIDs

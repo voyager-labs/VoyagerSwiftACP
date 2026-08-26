@@ -251,6 +251,18 @@ enum FileManagerContentEntryOpsCoordinator {
         state.entryViewLayout.selectedIds = selectedIds
         state.entryViewLayout.lastSelectedId = matchedAfterID
         state.entryViewLayout.rangeAnchorId = matchedAfterID
+        // 정상 migration 완료 시 preservation(소스) 폴더에 누적된 staged 항목을 먼저
+        // 커밋한다. 이후 도착하는 소스 terminal이 retained snapshot을 마무리할 때
+        // 정상 항목이 함께 유지된다.
+        if case let .folder(preservationID, _) = transition.preservationOwner,
+           let staged = state.entryViewLayout.hierarchy.identityMigrationStagedChildrenByFolder[preservationID],
+           !staged.isEmpty
+        {
+            state.entryViewLayout.hierarchy.nodesByID[preservationID]?.folder.children = staged
+            state.entryViewLayout.hierarchy.nodesByID[preservationID]?.folder.hasAppliedContentBatch = true
+            state.entryViewLayout.hierarchy.identityMigrationStagedChildrenByFolder[preservationID] = nil
+            state.entryViewLayout.hierarchy.identityMigrationDeferredAfterIDByFolder[preservationID] = nil
+        }
         state.pendingIdentityTransition = nil
         return true
     }

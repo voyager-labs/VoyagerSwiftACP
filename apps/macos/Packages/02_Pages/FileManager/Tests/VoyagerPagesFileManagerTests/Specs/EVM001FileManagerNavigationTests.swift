@@ -3728,6 +3728,25 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             rootContextGeneration: rootContextGeneration,
             folderID: fixture.destination.id,
             folderGeneration: 3,
+            .event(.coreBatch(items: [fixture.after], batchIndex: 0)),
+        ))))
+        XCTAssertEqual(store.state.entryViewLayout.selectedIds, [fixture.after.id])
+        XCTAssertNil(store.state.pendingIdentityTransition)
+
+        // migration이 소스 staging을 커밋했으므로 소스 terminal은 정상 항목을 유지한다.
+        XCTAssertEqual(
+            store.state.entryViewLayout.hierarchy.nodesByID[fixture.source.id]?.folder.children,
+            [kept],
+            "migration 시점에 소스 staging이 커밋되어 terminal 이후에도 유지된다",
+        )
+        XCTAssertTrue(
+            store.state.entryViewLayout.hierarchy.nodesByID[fixture.source.id]?.folder.hasAppliedContentBatch == true,
+        )
+
+        await store.send(.entryViewLayout(.hierarchy(.folderChildrenResponse(
+            rootContextGeneration: rootContextGeneration,
+            folderID: fixture.destination.id,
+            folderGeneration: 3,
             .event(.coreFinished(batchCount: 1)),
         ))))
         XCTAssertEqual(store.state.entryViewLayout.selectedIds, [fixture.after.id])
