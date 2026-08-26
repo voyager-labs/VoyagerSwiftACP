@@ -2458,6 +2458,45 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         XCTAssertNotNil(store.state.content.pendingIdentityTransition, "수정 이벤트는 전이를 소비하지 않는다")
     }
 
+    /// EVM-001-command_external_refresh_correlation: 사용자가 before 선택을 포기하면 전이를 소비한다.
+    /// 소유자 세대가 일치하는 batch에서 before 선택이 없으면 migration 대상이 없으므로
+    /// 전이를 남겨두면 같은 경로의 실제 rename echo가 병합돼 목록 갱신이 누락된다.
+    /// - 검증 내용: before 미선택 상태의 owning batch가 전이를 소비하고 사용자 선택을 유지하는지 검증
+    /// - 사전 조건: 대기 전이와 무관한 행 선택
+    /// - 기대 결과: 전이 nil, selectedIds는 사용자 선택 유지
+    func testAbandonedBeforeSelectionConsumesPendingTransition() async {
+        let folderPath = "/tmp/voyager-correlation"
+        let oldPath = "\(folderPath)/old.txt"
+        let newPath = "\(folderPath)/new.txt"
+        let otherPath = "\(folderPath)/other.txt"
+        var initialState = makeCorrelationState(folderPath: folderPath)
+        initialState.content.pendingIdentityTransition = .init(
+            recordID: UUID(),
+            beforePath: Self.canonicalPath(oldPath),
+            afterPath: Self.canonicalPath(newPath),
+            rootPath: Self.canonicalPath(folderPath),
+            refreshGeneration: initialState.content.entryViewLayout.entryOperations.loadingContext.generation,
+        )
+        initialState.content.entryViewLayout.selectedIds = [otherPath]
+        let store = TestStore(initialState: initialState) {
+            CommandExternalRefreshHarness()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.bridge(.loading(.itemsLoaded([
+            makeCorrelationEntry(id: newPath, name: "new.txt"),
+        ]))))
+        XCTAssertNil(
+            store.state.content.pendingIdentityTransition,
+            "사용자가 before 선택을 포기했다면 owning batch에서 전이를 소비한다",
+        )
+        XCTAssertEqual(
+            store.state.content.entryViewLayout.selectedIds,
+            [otherPath],
+            "사용자 선택은 대체 batch에 의해 되돌려지지 않는다",
+        )
+    }
+
     /// EVM-001-command_external_refresh_correlation: 상관 배치의 추가 경로는 같은 refresh 창에서 계속 전달된다.
     /// 전이와 겹치는 경로와 무관한 경로가 한 배치에 섞이면 무관한 경로만 기존 라우트 동작으로
     /// refresh를 예약하고 겹치는 경로는 명령 refresh에 병합되는지 검증한다.

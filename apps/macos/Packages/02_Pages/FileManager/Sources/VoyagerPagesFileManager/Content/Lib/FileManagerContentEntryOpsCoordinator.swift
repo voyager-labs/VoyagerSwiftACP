@@ -232,7 +232,13 @@ enum FileManagerContentEntryOpsCoordinator {
         let matchedBeforeID = state.entryViewLayout.selectedIds.first {
             canonicalizedPath($0) == transition.beforePath
         }
-        guard let matchedBeforeID else { return false }
+        guard let matchedBeforeID else {
+            // 소유자 세대가 일치하는 batch까지 before 선택이 없으면 사용자가 포기한 것이다.
+            // 전이를 소비하지 않으면 잔존한 채 같은 경로의 실제 rename echo가 명령
+            // refresh로 병합되어 후속 목록 갱신이 누락된다.
+            state.pendingIdentityTransition = nil
+            return false
+        }
         let standardizedAfter = standardizedPath(transition.afterPath)
         let matchedAfterID = entries.first(where: { standardizedPath($0.id) == standardizedAfter })?.id
             ?? entries.first(where: { resolvedPath($0.id) == resolvedPath(transition.afterPath) })?.id
