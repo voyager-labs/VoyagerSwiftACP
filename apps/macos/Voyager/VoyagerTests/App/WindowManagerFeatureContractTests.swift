@@ -11175,11 +11175,11 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await store.finish()
     }
 
-    /// native activation 대상 창이 닫혀도 이미 settle된 pinned 복귀 상태는 보존되어 완료된다.
-    /// - 검증 내용: target 창 제거 시 settled ID가 유지되고 pinned 재전송 없이 남은 창으로 완료됨
+    /// request-bearing native activation 대상 창이 닫히면 제거된 route를 포함해 전체 배치를 stale 재계획한다.
+    /// - 검증 내용: target 창 제거 시 원래 request item과 route를 모두 유지한 replacement apply가 생성됨
     /// - 사전 조건: settle된 pinned 복귀 창과 별도 native activation 대상 창이 같은 배치에 있음
-    /// - 기대 결과: 재계획 없이 activation 완료 terminal이 전달되고 authorization이 해제됨
-    func testPlacementWindowRetryPreservesSettledPinnedReturnsWhenTargetCloses() async throws {
+    /// - 기대 결과: staleReplanCount 1이고 제거된 target route가 신규 reservation으로 보존됨
+    func testPlacementTargetRemovalReplansRequestBearingBatch() async throws {
         let fixture = Self.makePinnedCollectionActivationFixture(pendingOpen: false)
         let pinnedWindowID = fixture.plan.windows[0].windowID
         let pinnedRequestItem = try XCTUnwrap(fixture.plan.request?.items.first)
@@ -11253,7 +11253,10 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         } withDependencies: {
             $0.uuid = .incrementing
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
-            $0.fileManagerWindowClient.activate = { _ in .becameKey }
+            $0.fileManagerWindowClient.activate = { _ in
+                XCTFail("request-bearing target 제거는 native survivor activation 전에 재계획해야 함")
+                return .becameKey
+            }
             Self.configureAutoRegisteringWindowOpen(&$0.fileManagerWindowClient)
         }
         // store.exhaustivity = .off: 창 제거 후 native lifecycle은 기존 owner가 검증함.
@@ -11261,13 +11264,21 @@ final class WindowManagerFeatureContractTests: XCTestCase {
 
         await store.send(.event(.windowClosed(targetWindowID)))
         await store.receive { action in
-            guard case let .delegate(.externalOpenActivationCompleted(batchID)) = action else { return false }
-            return batchID == plan.batchID
+            guard case let .placement(.apply(replacementPlan, reservationsByItemID)) = action else {
+                return false
+            }
+            let targetItem = replacementPlan.orderedItems.first(where: { $0.itemID == targetItemID })
+            let survivorItem = replacementPlan.orderedItems.first(where: { $0.itemID == survivorItemID })
+            return replacementPlan.request?.staleReplanCount == 1
+                && replacementPlan.orderedItems.map(\.itemID) == request.items.map(\.itemID)
+                && targetItem?.tabID != targetTabID
+                && targetItem?.requiresReservation == true
+                && survivorItem?.tabID == survivorTabID
+                && survivorItem?.requiresReservation == false
+                && reservationsByItemID.count == 1
         }
+        await store.skipReceivedActions()
         await store.finish()
-
-        XCTAssertNil(store.state.authorizedExternalOpenBatchID)
-        XCTAssertNil(store.state.externalOpenActivationAttempt)
     }
 
     /// native activation 대상인 계획 창이 닫히면 그 창의 미정착 pinned 복귀를 실패로 소비해 재계획한다.
@@ -12815,7 +12826,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         }) ?? true)
     }
 
-    /// matching cancel은 batch가 만든 새 window만 rollback하고 기존 reservation과 unrelated state는 보존한다.
+    /// matching cancel은 새 window와 기존 window batch mutation을 rollback하고 unrelated state는 보존한다.
     /// 늦은 windowClosed callback과 stale cancel은 추가 native close나 state 변경을 만들지 않는다.
     func testPlacementCancellationRollsBackOnlyOwnedNewWindows() async {
         let batchID = UUID()
@@ -12904,7 +12915,14 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await fulfillment(of: [openStarted], timeout: 1)
         XCTAssertEqual(
             store.state.retainedExternalOpenPlacementOwnership,
-            .init(batchID: batchID, newWindowIDs: [newWindowID]),
+            .init(
+                batchID: batchID,
+                newWindowIDs: [newWindowID],
+                existingWindowSnapshots: [existingWindowID: .init(
+                    id: existingWindowID,
+                    window: existingWindow,
+                )],
+            ),
         )
         await store.send(.event(.windowBecameKey(newWindowID)))
 
@@ -12914,7 +12932,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertEqual(store.state.windows.map(\.id), [existingWindowID, unrelatedWindowID])
         XCTAssertEqual(
             store.state.windows[id: existingWindowID]?.window.contentTabs.tabs.map(\.id),
-            originalExistingTabIDs + [existingTabID],
+            originalExistingTabIDs,
         )
         var normalizedUnrelatedWindow = store.state.windows[id: unrelatedWindowID]?.window
         normalizedUnrelatedWindow?.sidebar.currentWindowID = nil

@@ -400,6 +400,27 @@ extension WindowManagerFeature {
             )
         }
         guard attempt.windowID == id else { return nil }
+        if let request = attempt.plan.request {
+            state.externalOpenActivationAttempt = nil
+            state.externalOpenActivationBecameKey = false
+            guard let retryRequest = request.retryRequest,
+                  case let .success(replacementPlan) = ExternalOpenPlacementPlanner.make(
+                      retryRequest,
+                      state: state,
+                      generateUUID: uuid(),
+                  )
+            else {
+                state.authorizedExternalOpenBatchID = nil
+                return .send(.delegate(.externalOpenActivationFailed(
+                    batchID: attempt.batchID,
+                    failure: .recoveryExhausted,
+                )))
+            }
+            return .send(.placement(.apply(
+                plan: replacementPlan,
+                reservationsByItemID: replacementPlan.reservationsByItemID,
+            )))
+        }
         return retryExternalOpenActivation(after: attempt, state: &state)
     }
 
