@@ -95,22 +95,36 @@ struct FileManagerContentSyncReducer {
         let normalizedPaths = scheduledEvents.map { normalizedPath(for: $0.path) }
         let affectedPaths = hierarchyAffectedPaths(for: normalizedPaths)
         let removedPrefixes = removedPrefixes(for: scheduledEvents)
-        let hierarchyAction: EntryListHierarchyAction = scheduledEvents
-            .contains(where: requiresCoarseHierarchyReload)
-            ? .coarseHierarchyInvalidated(removedPrefixes: removedPrefixes)
-            : .hierarchyInvalidated(
+        // coarse 재스캔은 모든 확장 폴더 스냅샷을 비워 대기 전이의 before 행 선택을
+        // 깬다. 전이의 소유자 폴더가 확장돼 있으면 이번 배치를 해당 폴더의 targeted
+        // 무효화로 격하한다(startLoad retained 경로로 완전 child snapshot 보존).
+        var downgradeOwnerFolderID: String?
+        if scheduledEvents.contains(where: requiresCoarseHierarchyReload),
+           let transition = state.pendingIdentityTransition,
+           case let .folder(id, _) = transition.projectionOwner,
+           state.entryViewLayout.hierarchy.expandedFolderIDs.contains(id)
+        {
+            downgradeOwnerFolderID = id
+        }
+        let rebaseAffectedPaths = downgradeOwnerFolderID.map { [$0] }
+            ?? (scheduledEvents.contains(where: requiresCoarseHierarchyReload)
+                ? Array(state.entryViewLayout.hierarchy.expandedFolderIDs)
+                : affectedPaths)
+        FileManagerContentEntryOpsCoordinator.rebaseIdentityTransitionForNextRootReload(state: &state)
+        FileManagerContentEntryOpsCoordinator.rebaseIdentityTransitionForHierarchyInvalidation(
+            affectedPaths: rebaseAffectedPaths,
+            state: &state,
+        )
+        let hierarchyAction: EntryListHierarchyAction = if let downgradeOwnerFolderID {
+            .hierarchyInvalidated(affectedPaths: [downgradeOwnerFolderID], removedPrefixes: [])
+        } else if scheduledEvents.contains(where: requiresCoarseHierarchyReload) {
+            .coarseHierarchyInvalidated(removedPrefixes: removedPrefixes)
+        } else {
+            .hierarchyInvalidated(
                 affectedPaths: affectedPaths,
                 removedPrefixes: removedPrefixes,
             )
-        // 예약되는 root reload는 begin에서 세대를 하나 올린다. 보존된 전이의 root 소유자를
-        // 재기준화해 후속 batch에서 selection migration이 살아남게 한다(무관 경로 통과분 포함).
-        FileManagerContentEntryOpsCoordinator.rebaseIdentityTransitionForNextRootReload(state: &state)
-        // 아래 invalidation이 확장 폴더 node를 재시작하면 그 세대도 올라가므로 해당
-        // 폴더 소유자도 함께 재기준화한다.
-        FileManagerContentEntryOpsCoordinator.rebaseIdentityTransitionForHierarchyInvalidation(
-            affectedPaths: affectedPaths,
-            state: &state,
-        )
+        }
         return .concatenate(
             .send(.entryViewLayout(.hierarchy(hierarchyAction))),
             FileManagerContentEntryOpsCoordinator.reloadEntryItemsEffect(state: state),

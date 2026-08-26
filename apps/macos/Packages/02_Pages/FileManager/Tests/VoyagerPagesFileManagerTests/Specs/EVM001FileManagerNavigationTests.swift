@@ -1928,6 +1928,95 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         )
     }
 
+    /// EVM-001-command_external_refresh_correlation: symlink after 행 도착 전 target fallback으로 선택하지 않는다.
+    /// 대상 실체 파일이 더 이른 batch에 먼저 와도 resolved 매칭 fallback이 이를
+    /// 가져가지 않고, renamed symlink lexical 행이 올 때까지 전이를 유지한다.
+    /// - 검증 내용: target 선행 batch에서 선택·전이 보존, link batch에서 migration 검증
+    /// - 사전 조건: canonical after가 target을 가리키는 대기 전이
+    /// - 기대 결과: 1차 batch 무변화, 2차 batch에서 lexical link 행 선택 + 전이 소비
+    func testSymlinkMigrationWaitsForLexicalAfterRowAcrossBatches() async {
+        let folderPath = "/tmp/voyager-correlation"
+        let oldPath = "\(folderPath)/old.txt"
+        let linkPath = "\(folderPath)/dst/link"
+        let targetPath = "/outside/target"
+        var initialState = makeCorrelationState(folderPath: folderPath)
+        initialState.content.entryViewLayout.selectedIds = [oldPath]
+        initialState.content.pendingIdentityTransition = .init(
+            recordID: UUID(),
+            beforePath: Self.canonicalPath(oldPath),
+            afterPath: Self.canonicalPath(linkPath),
+            rootPath: Self.canonicalPath(folderPath),
+            refreshGeneration: initialState.content.entryViewLayout.entryOperations.loadingContext.generation,
+            projectionOwner: .root(
+                generation: initialState.content.entryViewLayout.entryOperations.loadingContext.generation,
+            ),
+            preservationOwner: nil,
+            afterLexicalPath: linkPath,
+        )
+        let store = TestStore(initialState: initialState) {
+            CommandExternalRefreshHarness()
+        }
+        store.exhaustivity = .off
+
+        let targetRow = makeCorrelationEntry(id: targetPath, name: "target")
+        await store.send(.bridge(.loading(.itemsLoaded([targetRow]))))
+        XCTAssertEqual(
+            store.state.content.entryViewLayout.selectedIds,
+            [oldPath],
+            "resolved target 행이 lexical after보다 먼저 와도 선택을 옮기지 않는다",
+        )
+        XCTAssertNotNil(store.state.content.pendingIdentityTransition)
+
+        let linkRow = makeCorrelationEntry(id: linkPath, name: "link")
+        await store.send(.bridge(.loading(.itemsLoaded([targetRow, linkRow]))))
+        XCTAssertEqual(store.state.content.entryViewLayout.selectedIds, [linkPath])
+        XCTAssertNil(store.state.content.pendingIdentityTransition)
+    }
+
+    /// EVM-001-command_external_refresh_correlation: coarse 무효화도 폴더 소유자 세대를 재기준화한다.
+    /// MustScanSubDirs 재스캔은 모든 확장 폴더를 되감으므로 그 소유자로 저장된 전이도
+    /// 새 세대로 이동해야 후속 folder batch에서 selection migration이 살아남는다.
+    /// - 검증 내용: coarse 이벤트 뒤 projectionOwner 세대 +1 검증
+    /// - 사전 조건: src 확장 폴더(세대 3 완료)를 소유자로 가진 대기 전이
+    /// - 기대 결과: projectionOwner가 .folder(src, 4)로 갱신
+    func testCoarseInvalidationRebasesFolderOwnerGeneration() async {
+        let folderPath = "/tmp/voyager-correlation"
+        let srcPath = "\(folderPath)/src"
+        let oldPath = "\(folderPath)/old.txt"
+        var initialState = makeCorrelationState(folderPath: folderPath)
+        initialState.content.entryViewLayout.hierarchy.nodesByID[srcPath] = .init(
+            children: [],
+            loadPhase: .loaded,
+            generation: 3,
+            expectedBatchIndex: 0,
+            coreFinished: true,
+        )
+        initialState.content.entryViewLayout.hierarchy.setExpandedIDs([srcPath])
+        initialState.content.pendingIdentityTransition = .init(
+            recordID: UUID(),
+            beforePath: Self.canonicalPath(oldPath),
+            afterPath: Self.canonicalPath("\(folderPath)/new.txt"),
+            rootPath: Self.canonicalPath(folderPath),
+            refreshGeneration: initialState.content.entryViewLayout.entryOperations.loadingContext.generation,
+            projectionOwner: .folder(id: srcPath, generation: 3),
+            preservationOwner: nil,
+        )
+        let store = TestStore(initialState: initialState) {
+            CommandExternalRefreshHarness()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.content(.externalFileSystemChanged(Self.externalChangeEvents(
+            [folderPath],
+            flags: UInt32(kFSEventStreamEventFlagMustScanSubDirs),
+        ))))
+        XCTAssertEqual(
+            store.state.content.pendingIdentityTransition?.projectionOwner,
+            .folder(id: srcPath, generation: 4),
+            "coarse 재시작 대상 폴더의 세대로 전이가 재기준화된다",
+        )
+    }
+
     /// EVM-001-reload_directory_page_on_external_change: recents route entry operation 완료 시 recents reload forwarding
     /// FileManager content entry operation lifecycle bridge가 navigation route별 reload/restore boundary를 지키는지 검증.
     /// - 검증 내용: recents route에서 entry operation 완료 액션이 recents loader로 전달되는지 검증

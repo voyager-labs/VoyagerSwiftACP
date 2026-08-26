@@ -238,10 +238,11 @@ enum FileManagerContentEntryOpsCoordinator {
         }
         // 화면 row 매칭은 lexical identity가 우선이다. afterPath는 symlink를
         // 해석하므로 대상 실체 파일이 같은 목록에 있으면 잘못된 행을 먼저 고른다.
+        // leaf까지 resolve하는 fallback은 두지 않는다: 대상 파일이 더 이른 batch에
+        // 오면 renamed symlink 행 도착 전에 선택을 빼앗고 전이를 소비해 버린다.
         let lexicalAfterPath = transition.afterLexicalPath.isEmpty ? transition.afterPath : transition.afterLexicalPath
         let standardizedAfter = standardizedPath(lexicalAfterPath)
         let matchedAfterID = entries.first(where: { standardizedPath($0.id) == standardizedAfter })?.id
-            ?? entries.first(where: { resolvedPath($0.id) == resolvedPath(transition.afterPath) })?.id
         guard let matchedAfterID else { return false }
 
         var selectedIds = state.entryViewLayout.selectedIds
