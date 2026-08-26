@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -17,6 +16,7 @@ import (
 	entryruntime "github.com/voyager-labs/voyager-app/apps/entry-core/internal/runtime"
 	"github.com/voyager-labs/voyager-app/apps/entry-core/internal/source/fakeexternal"
 	"github.com/voyager-labs/voyager-app/apps/entry-core/internal/source/localfs"
+	"github.com/voyager-labs/voyager-app/apps/entry-core/internal/testfixture"
 	"github.com/voyager-labs/voyager-app/apps/entry-core/protocol/schema"
 )
 
@@ -65,10 +65,8 @@ func TestEntryContractUnifiedListResolve(t *testing.T) {
 func newUnifiedComposition(t *testing.T) unifiedComposition {
 	t.Helper()
 	localRoot := t.TempDir()
-	for _, name := range []string{"alpha.txt", "beta.txt"} {
-		if err := os.WriteFile(filepath.Join(localRoot, name), []byte(name), 0o600); err != nil {
-			t.Fatal(err)
-		}
+	for _, relativePath := range []string{"texts/plain/11.txt", "texts/plain/100.txt"} {
+		testfixture.CopyFile(t, filepath.Join(localRoot, filepath.Base(relativePath)), relativePath)
 	}
 	localAdapter, err := localfs.New(localfs.Config{Root: localRoot, Generation: "integration-local", CursorKey: bytes.Repeat([]byte{0x31}, 32)})
 	if err != nil {

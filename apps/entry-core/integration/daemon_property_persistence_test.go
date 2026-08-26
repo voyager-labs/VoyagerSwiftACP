@@ -20,6 +20,7 @@ import (
 
 	sqlite "github.com/voyager-labs/voyager-app/apps/entry-core/internal/persistence/sqlite"
 	"github.com/voyager-labs/voyager-app/apps/entry-core/internal/source/localfs"
+	"github.com/voyager-labs/voyager-app/apps/entry-core/internal/testfixture"
 	"github.com/voyager-labs/voyager-app/apps/entry-core/protocol/schema"
 )
 
@@ -342,11 +343,9 @@ func (oracle entryIDOracle) entryID(t *testing.T, localPath string) string {
 	return ref.EntryID
 }
 
-func writeSmokeFile(t *testing.T, path, content string) {
+func copySmokeFixture(t *testing.T, path string) {
 	t.Helper()
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("write smoke file %s: %v", path, err)
-	}
+	testfixture.CopyFile(t, path, testfixture.PlainText)
 }
 
 func writeNumberedFiles(t *testing.T, dir string, count int) []string {
@@ -357,7 +356,7 @@ func writeNumberedFiles(t *testing.T, dir string, count int) []string {
 	paths := make([]string, count)
 	for index := range count {
 		path := filepath.Join(dir, fmt.Sprintf("f%02d", index))
-		writeSmokeFile(t, path, "x")
+		copySmokeFixture(t, path)
 		paths[index] = path
 	}
 	return paths
@@ -449,7 +448,7 @@ func runPropertyAtomicPersistence(t *testing.T, env propertyPersistenceEnv) {
 		filepath.Join(env.tempRoot, "f02"),
 	}
 	for _, path := range lifecyclePaths {
-		writeSmokeFile(t, path, "x")
+		copySmokeFixture(t, path)
 	}
 	batchPaths := writeNumberedFiles(t, filepath.Join(env.tempRoot, "batch"), 32)
 	oracle := newEntryIDOracle(t)
@@ -705,7 +704,7 @@ func runPropertyStaleMiddleTarget(t *testing.T, env propertyPersistenceEnv) {
 		filepath.Join(env.tempRoot, "m2"),
 	}
 	for _, path := range paths {
-		writeSmokeFile(t, path, "x")
+		copySmokeFixture(t, path)
 	}
 	daemon := startDaemonWithDatabase(t, env.daemonPath, env.socketPath, dbPath)
 	waitForSocket(t, daemon, env.socketPath, 15*time.Second)
@@ -731,7 +730,7 @@ func runPropertyStaleMiddleTarget(t *testing.T, env propertyPersistenceEnv) {
 func runPropertyInvalidFinalTarget(t *testing.T, env propertyPersistenceEnv) {
 	dbPath := filepath.Join(env.tempRoot, "property-invalid-final.db")
 	firstPath := filepath.Join(env.tempRoot, "i0")
-	writeSmokeFile(t, firstPath, "x")
+	copySmokeFixture(t, firstPath)
 	missingPath := filepath.Join(env.tempRoot, "missing-target")
 	daemon := startDaemonWithDatabase(t, env.daemonPath, env.socketPath, dbPath)
 	waitForSocket(t, daemon, env.socketPath, 15*time.Second)
@@ -757,7 +756,7 @@ func runPropertyInaccessiblePath(t *testing.T, env propertyPersistenceEnv) {
 	}
 	dbPath := filepath.Join(env.tempRoot, "property-inaccessible.db")
 	guardedPath := filepath.Join(env.tempRoot, "a0")
-	writeSmokeFile(t, guardedPath, "secret-content")
+	copySmokeFixture(t, guardedPath)
 	if err := os.Chmod(guardedPath, 0o000); err != nil {
 		t.Fatalf("strip file permissions: %v", err)
 	}

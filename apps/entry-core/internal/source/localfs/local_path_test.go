@@ -10,6 +10,7 @@ import (
 
 	"github.com/voyager-labs/voyager-app/apps/entry-core/internal/domain/entry"
 	"github.com/voyager-labs/voyager-app/apps/entry-core/internal/source"
+	"github.com/voyager-labs/voyager-app/apps/entry-core/internal/testfixture"
 )
 
 // TestResolveLocalPathResolvesCleanAbsoluteTarget는 clean 절대 경로 하나가
@@ -22,7 +23,7 @@ func TestResolveLocalPathResolvesCleanAbsoluteTarget(t *testing.T) {
 		t.Fatal(err)
 	}
 	file := filepath.Join(docs, "notes.txt")
-	writeFile(t, file, "body")
+	testfixture.CopyFile(t, file, testfixture.PlainText)
 
 	adapter := mustAdapter(t, Config{Root: root, Generation: "generation-1", CursorKey: testCursorKey()})
 
@@ -71,7 +72,7 @@ func TestResolveLocalPathResolvesCleanAbsoluteTarget(t *testing.T) {
 // 경로가 typed source error로 거절되는지 테이블로 증명한다.
 func TestResolveLocalPathRejectsMalformedPath(t *testing.T) {
 	root := t.TempDir()
-	writeFile(t, filepath.Join(root, "real.txt"), "x")
+	testfixture.CopyFile(t, filepath.Join(root, "real.txt"), testfixture.PlainText)
 	adapter := mustAdapter(t, Config{Root: root, Generation: "generation-1", CursorKey: testCursorKey()})
 
 	cases := []struct {
@@ -123,7 +124,7 @@ func TestResolveLocalPathMapsMissingInaccessibleAndSymlinkTargets(t *testing.T) 
 		t.Fatal(err)
 	}
 	target := filepath.Join(hidden, "secret.txt")
-	writeFile(t, target, "s")
+	testfixture.CopyFile(t, target, testfixture.PlainText)
 	adapter := mustAdapter(t, Config{Root: root, Generation: "generation-1", CursorKey: testCursorKey()})
 
 	t.Run("missing file", func(t *testing.T) {
@@ -181,7 +182,7 @@ func TestResolveLocalPathRejectsOutsideRootAndCanceledContext(t *testing.T) {
 	root := t.TempDir()
 	outsideParent := filepath.Dir(root)
 	outside := filepath.Join(outsideParent, "voyager-localpath-outside.txt")
-	writeFile(t, outside, "o")
+	testfixture.CopyFile(t, outside, testfixture.PlainText)
 	defer func() { _ = os.Remove(outside) }()
 
 	adapter := mustAdapter(t, Config{Root: filepath.Join(root, "scope"), Generation: "generation-1", CursorKey: testCursorKey()})
