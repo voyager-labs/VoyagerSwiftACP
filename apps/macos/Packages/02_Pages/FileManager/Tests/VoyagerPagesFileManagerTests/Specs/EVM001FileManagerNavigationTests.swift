@@ -1824,7 +1824,9 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             updatedRecord: EntryActionRecord(
                 operationKind: .rename,
                 targets: [
-                    .init(beforePath: "\(folderPath)/new.txt", afterPath: "\(folderPath)/old.txt"),
+                    // 프로덕션 계약: updatedRecord는 원래(old→new) target을 유지하고
+                    // 실행만 after→before로 뒤집힌다.
+                    .init(beforePath: "\(folderPath)/old.txt", afterPath: "\(folderPath)/new.txt"),
                 ],
             ),
         ))))

@@ -407,14 +407,14 @@ public struct FileManagerContentFeature {
                     holdsProjection = false
                 }
                 switch holdsProjection {
-                case .some(true):
-                    state.entryViewLayout.hierarchy.identityMigrationDeferredAfterIDByFolder[folderID] = nil
                 case .some(false):
                     state.entryViewLayout.hierarchy.identityMigrationDeferredAfterIDByFolder[folderID] =
                         identityAfterLexicalPath(transition)
-                case .none:
-                    // 소유자가 아닌 폴더는 보류 대상이 아니다.
-                    state.entryViewLayout.hierarchy.identityMigrationDeferredAfterIDByFolder[folderID] = nil
+                default:
+                    // after 행이 포함된 batch(holdsProjection == true)와 소유자가 아닌
+                    // 폴더(.none)는 힌트를 건드리지 않는다. 커밋·소비는 hierarchy
+                    // reducer의 staged 결합 분기가 담당한다.
+                    break
                 }
             }
 

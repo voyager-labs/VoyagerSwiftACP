@@ -413,6 +413,11 @@ enum FileManagerContentEntryOpsCoordinator {
                     affectedPaths: affectedPaths.map(parentPath(for:)),
                     removedPrefixes: removedPrefixes,
                 ))))
+            // reload는 지연 대상 identity 종류에서만 발화한다. 나머지는 이미
+            // operationFinished 성공 경로가 reload를 소유하므로 이중 stream을 막는다.
+            guard record.operationKind == .rename || record.operationKind == .pasteFileMove else {
+                return invalidation
+            }
             // record 기반 전이가 이 호출 직전에 기록된 뒤 reload 세대를 연다.
             // 예약되는 reload가 세대를 올리므로 방금 기록된 root 소유자를 새 세대로
             // 재기준화해 후속 batch에서 selection migration이 살아남게 한다.
@@ -456,11 +461,13 @@ enum FileManagerContentEntryOpsCoordinator {
                 return EntryActionRecord(operationKind: record.operationKind, targets: targets)
             }()
             _ = recordIdentityTransitionIfEligible(effectiveRecord, state: &state)
-            let affectedPaths = record.targets.flatMap { target in
+            // 무효화·removed prefix도 실행 방향 기준으로 계산해 undo 시 복원된
+            // 경로가 제거되지 않고 실제 사라진 경로가 즉시 정리되게 한다.
+            let affectedPaths = effectiveRecord.targets.flatMap { target in
                 [target.beforePath, target.afterPath].compactMap(\.self)
             }
-            let removedPrefixes = record.operationKind.removesSourceAtOrigin
-                ? record.targets.compactMap(\.beforePath)
+            let removedPrefixes = effectiveRecord.operationKind.removesSourceAtOrigin
+                ? effectiveRecord.targets.compactMap(\.beforePath)
                 : []
             guard !affectedPaths.isEmpty else { return .none }
             let invalidation: Effect<FileManagerContentAction> =
