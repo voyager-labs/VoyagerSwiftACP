@@ -12467,19 +12467,32 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await store.finish()
     }
 
-    /// FMW-003: 새 external window가 native registry에 등록되지 않으면 apply를 실패로 종료한다.
-    /// open 반환만으로 placement 성공을 확정하지 않고 batch-owned window를 정리하는 경계를 검증한다.
-    /// - 검증 내용: registration 조회, typed failure terminal, logical/native window cleanup
-    /// - 사전 조건: external placement가 새 window를 만들지만 registeredWindowIDs는 빈 set을 반환함
-    /// - 기대 결과: success terminal 없이 failure가 한 번 방출되고 현재 batch ownership이 완전히 제거됨
+    /// FMW-003: mixed external placement의 새 window가 등록되지 않으면 전체 application을 롤백한다.
+    /// 기존 window reservation과 신규 batch-owned window를 함께 원자적으로 정리하는 경계를 검증한다.
+    /// - 검증 내용: registration 조회, typed failure terminal, existing snapshot 복원, logical/native window cleanup
+    /// - 사전 조건: 기존 window에 tab을 예약하고 overflow 새 window를 만들지만 registry는 빈 set을 반환함
+    /// - 기대 결과: 기존 window가 pre-apply 상태로 복원되고 신규 window는 제거되며 failure가 한 번 방출됨
     func testPlacementApplicationNativeRegistrationFailureRollsBackOwnedNewWindowsAndEmitsFailure() async {
         let batchID = UUID()
+        let existingWindowID = UUID()
         let windowID = UUID()
+        let existingItemID = UUID()
         let itemID = UUID()
+        let existingTabID = ContentTabID(rawValue: "registration-existing-reservation")
         let tabID = ContentTabID(rawValue: "unregistered-external-window")
+        let existingWindow = Self.makeWindow(id: existingWindowID, tabCount: 1)
         let plan = ExternalOpenPlacementPlan(
             batchID: batchID,
             windows: [
+                .init(
+                    windowID: existingWindowID,
+                    isNewWindow: false,
+                    items: [.init(
+                        itemID: existingItemID,
+                        tabID: existingTabID,
+                        anchor: .directory(path: "/tmp/registration-existing"),
+                    )],
+                ),
                 .init(
                     windowID: windowID,
                     isNewWindow: true,
@@ -12500,6 +12513,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         let completions = LockIsolated<[ExternalOpenPlacementApplicationCompletion]>([])
         let terminalReceived = expectation(description: "external open apply terminal received")
         var initialState = WindowManagerFeature.State()
+        initialState.windows = [existingWindow]
         initialState.authorizedExternalOpenBatchID = batchID
         let store = TestStore(initialState: initialState) {
             CombineReducers {
@@ -12527,6 +12541,8 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             $0.fileManagerWindowClient.finalizeClose = { id in
                 finalizedWindowIDs.withValue { $0.append(id) }
             }
+            $0.entryLoadingClient.loadItems = { _, _ in [] }
+            $0.fileChangeGatewayClient.observeEvents = { AsyncStream { $0.finish() } }
         }
         // store.exhaustivity = .off: child 준비 action보다 native registration failure와 batch cleanup 경계를 검증한다.
         store.exhaustivity = .off
@@ -12534,6 +12550,10 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await store.send(.placement(.apply(
             plan: plan,
             reservationsByItemID: [
+                existingItemID: .init(
+                    id: existingTabID,
+                    anchor: .directory(path: "/tmp/registration-existing"),
+                ),
                 itemID: .init(id: tabID, anchor: .directory(path: "/tmp/unregistered-external")),
             ],
         )))
@@ -12549,6 +12569,8 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             .init(batchID: batchID, result: .failure(.validationFailed)),
         ])
         XCTAssertNil(store.state.windows[id: windowID])
+        XCTAssertEqual(store.state.windows[id: existingWindowID], existingWindow)
+        XCTAssertNil(store.state.windows[id: existingWindowID]?.window.contentTabs.tabs[id: existingTabID])
         XCTAssertNil(store.state.authorizedExternalOpenBatchID)
         XCTAssertNil(store.state.retainedExternalOpenPlacementOwnership)
         XCTAssertNil(store.state.externalWindowBatchIDs[windowID])

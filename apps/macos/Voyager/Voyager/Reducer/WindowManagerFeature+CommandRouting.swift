@@ -29,6 +29,7 @@ extension WindowManagerFeature {
         reservationsByItemID: [UUID: ExternalContentTabReservation],
         state: inout State,
     ) -> Effect<Action> {
+        let existingWindowSnapshots = externalOpenExistingWindowSnapshots(for: plan, state: state)
         guard let application = ExternalOpenPlacementApplication.apply(
             plan,
             reservationsByItemID: reservationsByItemID,
@@ -53,7 +54,12 @@ extension WindowManagerFeature {
             ))))
         }
 
-        commitExternalOpenApplication(application, plan: plan, state: &state)
+        commitExternalOpenApplication(
+            application,
+            plan: plan,
+            existingWindowSnapshots: existingWindowSnapshots,
+            state: &state,
+        )
 
         var effects = externalOpenCommitEffects(application, state: state)
         if state.defaultWindowBootstrapWindowIDs.isEmpty,
@@ -79,17 +85,33 @@ extension WindowManagerFeature {
     private func commitExternalOpenApplication(
         _ application: ExternalOpenPlacementApplication.Result,
         plan: ExternalOpenPlacementPlan,
+        existingWindowSnapshots: [State.WindowID: WindowSessionFeature.State],
         state: inout State,
     ) {
         state.windows = application.windows
         state.refreshContentTabMoveTargets()
-        retainExternalOpenPlacementOwnership(plan.batchID, application.newWindowIDs, state: &state)
+        retainExternalOpenPlacementOwnership(
+            plan.batchID,
+            application.newWindowIDs,
+            state: &state,
+            existingWindowSnapshots: existingWindowSnapshots,
+        )
         for windowID in application.newWindowIDs {
             state.externalWindowBatchIDs[windowID] = plan.batchID
         }
         for windowID in plan.windows.map(\.windowID) {
             state.defaultWindowBootstrapWindowIDs.remove(windowID)
         }
+    }
+
+    private func externalOpenExistingWindowSnapshots(
+        for plan: ExternalOpenPlacementPlan,
+        state: State,
+    ) -> [State.WindowID: WindowSessionFeature.State] {
+        Dictionary(uniqueKeysWithValues: plan.windows.compactMap { window in
+            guard !window.isNewWindow, let snapshot = state.windows[id: window.windowID] else { return nil }
+            return (window.windowID, snapshot)
+        })
     }
 
     func handleExternalOpenApplyCompletion(

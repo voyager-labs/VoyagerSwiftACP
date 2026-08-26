@@ -79,6 +79,7 @@ extension WindowManagerFeature {
         _ batchID: UUID,
         _ newWindowIDs: [State.WindowID],
         state: inout State,
+        existingWindowSnapshots: [State.WindowID: WindowSessionFeature.State] = [:],
     ) {
         if newWindowIDs.isEmpty {
             if state.retainedExternalOpenPlacementOwnership?.batchID == batchID {
@@ -88,6 +89,7 @@ extension WindowManagerFeature {
             state.retainedExternalOpenPlacementOwnership = .init(
                 batchID: batchID,
                 newWindowIDs: newWindowIDs,
+                existingWindowSnapshots: existingWindowSnapshots,
             )
         }
     }
@@ -106,6 +108,10 @@ extension WindowManagerFeature {
               ownership.batchID == batchID
         else { return .concatenate(effects) }
         state.retainedExternalOpenPlacementOwnership = nil
+        for (windowID, snapshot) in ownership.existingWindowSnapshots {
+            guard state.windows[id: windowID] != nil else { continue }
+            state.windows[id: windowID] = snapshot
+        }
         let ownedWindowIDs = ownership.newWindowIDs.filter { state.externalWindowBatchIDs[$0] == batchID }
         for windowID in ownedWindowIDs {
             state.closingWindowIDs.insert(windowID)

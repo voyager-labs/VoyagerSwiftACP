@@ -47,6 +47,7 @@ struct WindowManagerTrackedSingletonWindow: Equatable {
 struct WindowManagerRetainedExternalOpenPlacementOwnership: Equatable {
     var batchID: UUID
     var newWindowIDs: [UUID]
+    var existingWindowSnapshots: [UUID: WindowSessionFeature.State] = [:]
 }
 
 struct ContentTabMoveTerminalRecord: Equatable {
