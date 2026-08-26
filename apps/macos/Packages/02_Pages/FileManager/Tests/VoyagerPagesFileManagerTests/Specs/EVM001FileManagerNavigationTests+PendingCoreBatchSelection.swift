@@ -111,4 +111,49 @@ extension EVM001FileManagerNavigationTests {
         await store.receive(\.entryViewLayout.delegate.selectionChanged)
         await store.finish()
     }
+
+    /// EVM-001-route_entry_selection_commands: 목적지와 다른 경로의 loadItems는 pending selection 세대를 바인딩하지 않는다.
+    /// stale 디렉터리 로드가 목적지 로드보다 먼저 통과해도 네비게이션 기원 pending이 잘못된 세대에 묶이지 않는지 검증한다.
+    /// - 검증 내용: loadItems 경로가 pending destination과 표준화 기준으로 일치할 때만 자식 리듀서가 증가시킨 현재 세대에
+    /// pendingSelectEntryLoadGeneration을 바인딩한다. /old 로드는 세대만 증가시키고 바인딩하지 않으며, /A(/A/. 표준화 동일) 로드는 바인딩한다.
+    /// - 사전 조건: route=/A, pending entry=/A/target, destination=/A/., loadingContext.generation=7이며 staged load stream은
+    /// 방출이 없다.
+    /// - 기대 결과: /old 로드 후 generation=8에서 pendingSelectEntryLoadGeneration=nil이 유지되고, /A 로드 후 generation=9에
+    /// pendingSelectEntryLoadGeneration=9가 바인딩된다.
+    func testStaleLoadItemsPathDoesNotBindPendingSelectionGeneration() async {
+        var state = FileManagerContentState()
+        state.navigation.navigationState = .folder("/A")
+        state.setPendingEntrySelection(entryID: "/A/target", destinationPath: "/A/.")
+        state.entryViewLayout.entryOperations.loadingContext.generation = 7
+
+        let store = TestStore(initialState: state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            // 방출 없는 결정적 staged load stream: 로딩 이벤트 없이 세대 증가와 바인딩 규칙만 검증한다.
+            $0.entryLoadingClient.stagedLoadItems = { _, _, _ in
+                AsyncThrowingStream { _ in }
+            }
+        }
+        // store.exhaustivity = .off: EntryViewLayout progressive loading의 부수 상태는 세대 바인딩 범위가 아님
+        store.exhaustivity = .off
+
+        await store.send(.entryViewLayout(.entryOperations(.loading(.loadItems(
+            path: "/old",
+            showHidden: false,
+            priority: .none,
+        )))))
+        XCTAssertEqual(store.state.entryViewLayout.entryOperations.loadingContext.generation, 8)
+        XCTAssertNil(store.state.pendingSelectEntryLoadGeneration)
+
+        await store.send(.entryViewLayout(.entryOperations(.loading(.loadItems(
+            path: "/A",
+            showHidden: false,
+            priority: .none,
+        )))))
+        XCTAssertEqual(store.state.entryViewLayout.entryOperations.loadingContext.generation, 9)
+        XCTAssertEqual(store.state.pendingSelectEntryLoadGeneration, 9)
+
+        await store.skipInFlightEffects()
+    }
 }

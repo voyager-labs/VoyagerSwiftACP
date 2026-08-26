@@ -71,12 +71,7 @@ public struct FileManagerContentFeature {
             CollectionFeature()
         }
 
-        Reduce { state, action in
-            if let effect = handlePendingSelectionTerminal(action, state: &state) {
-                return effect
-            }
-            return handlePendingSelectionBeforeEntryLayoutLoaded(action, state: &state)
-        }
+        FileManagerContentPendingSelectionReducer(phase: .beforeEntryViewLayout)
 
         Scope(state: \.entryViewLayout, action: \.entryViewLayout) {
             EntryViewLayoutFeature()
@@ -86,9 +81,7 @@ public struct FileManagerContentFeature {
             AiChatFeature()
         }
 
-        Reduce { state, action in
-            handlePendingSelectionAfterEntryLayoutLoaded(action, state: &state)
-        }
+        FileManagerContentPendingSelectionReducer(phase: .afterEntryViewLayout)
 
         FileManagerContentComposerReducer()
 
