@@ -103,8 +103,14 @@ struct FileManagerContentSyncReducer {
                 removedPrefixes: removedPrefixes,
             )
         // 예약되는 root reload는 begin에서 세대를 하나 올린다. 보존된 전이의 root 소유자를
-        // 재기준화해 후속 batch에서 선택 migration이 살아남게 한다(무관 경로 통과분 포함).
+        // 재기준화해 후속 batch에서 selection migration이 살아남게 한다(무관 경로 통과분 포함).
         FileManagerContentEntryOpsCoordinator.rebaseIdentityTransitionForNextRootReload(state: &state)
+        // 아래 invalidation이 확장 폴더 node를 재시작하면 그 세대도 올라가므로 해당
+        // 폴더 소유자도 함께 재기준화한다.
+        FileManagerContentEntryOpsCoordinator.rebaseIdentityTransitionForHierarchyInvalidation(
+            affectedPaths: affectedPaths,
+            state: &state,
+        )
         return .concatenate(
             .send(.entryViewLayout(.hierarchy(hierarchyAction))),
             FileManagerContentEntryOpsCoordinator.reloadEntryItemsEffect(state: state),

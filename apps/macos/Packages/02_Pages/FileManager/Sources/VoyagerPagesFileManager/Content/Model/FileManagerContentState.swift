@@ -34,8 +34,11 @@ public struct FileManagerContentState: Equatable {
         let recordID: UUID
         /// 표준화된 이전 경로
         let beforePath: String
-        /// 표준화된 이후 경로
+        /// 표준화된 이후 경로 (상관관계·동등성 판정용)
         let afterPath: String
+        /// symlink 해석 전 lexical 이후 경로. 화면 row identity 매칭에 사용하며
+        /// 대상 폴더에 target 실체가 함께 있어도 renamed symlink 행을 가리킨다.
+        var afterLexicalPath: String = ""
         /// 생성 시점의 표준화된 현재 폴더 경로
         let rootPath: String
         /// 생성 시점의 로딩 세대 (세대 불일치 시 만료)
@@ -63,6 +66,7 @@ public struct FileManagerContentState: Equatable {
             refreshGeneration: Int,
             projectionOwner: EntryIdentityTransitionProjectionOwner? = nil,
             preservationOwner: EntryIdentityTransitionProjectionOwner? = nil,
+            afterLexicalPath: String = "",
         ) {
             self.recordID = recordID
             self.beforePath = beforePath
@@ -71,6 +75,7 @@ public struct FileManagerContentState: Equatable {
             self.refreshGeneration = refreshGeneration
             self.projectionOwner = projectionOwner ?? .root(generation: refreshGeneration)
             self.preservationOwner = preservationOwner
+            self.afterLexicalPath = afterLexicalPath
         }
     }
 

@@ -23,15 +23,11 @@ enum FileManagerContentEntryOpsCoordinator {
             handleItemsLoaded(entries: entries, state: &state)
 
         case let .lifecycle(.entryActionCompleted(record)):
-            .merge(
-                recordIdentityTransitionIfEligible(record, state: &state),
-                handleEntryActionCompleted(record, state: &state),
-                record.operationKind == .setTags ? setTagsRefreshEffect(record: record, state: state) : .none,
-            )
+            entryActionCompletedEffect(record, state: &state)
 
         case let .undoRedo(.replaySucceeded(direction: direction, sourceRecordID: _, updatedRecord: record)):
             .merge(
-                handleEntryActionApplied(direction: direction, record: record, state: state),
+                handleEntryActionApplied(direction: direction, record: record, state: &state),
                 record.operationKind == .setTags ? setTagsRefreshEffect(record: record, state: state) : .none,
             )
 
@@ -176,6 +172,7 @@ enum FileManagerContentEntryOpsCoordinator {
             refreshGeneration: state.entryViewLayout.entryOperations.loadingContext.generation,
             projectionOwner: projectionOwner,
             preservationOwner: preservationOwner,
+            afterLexicalPath: move.rawAfter,
         )
         return .none
     }
@@ -239,7 +236,10 @@ enum FileManagerContentEntryOpsCoordinator {
             state.pendingIdentityTransition = nil
             return false
         }
-        let standardizedAfter = standardizedPath(transition.afterPath)
+        // 화면 row 매칭은 lexical identity가 우선이다. afterPath는 symlink를
+        // 해석하므로 대상 실체 파일이 같은 목록에 있으면 잘못된 행을 먼저 고른다.
+        let lexicalAfterPath = transition.afterLexicalPath.isEmpty ? transition.afterPath : transition.afterLexicalPath
+        let standardizedAfter = standardizedPath(lexicalAfterPath)
         let matchedAfterID = entries.first(where: { standardizedPath($0.id) == standardizedAfter })?.id
             ?? entries.first(where: { resolvedPath($0.id) == resolvedPath(transition.afterPath) })?.id
         guard let matchedAfterID else { return false }
@@ -281,6 +281,43 @@ enum FileManagerContentEntryOpsCoordinator {
         transition.projectionOwner = rebased(transition.projectionOwner)
         transition.preservationOwner = transition.preservationOwner.map(rebased)
         state.pendingIdentityTransition = transition
+    }
+
+    /// hierarchyInvalidated가 확장 폴더 node를 재시작하면 그 세대도 하나 올라간다.
+    /// 무효화 대상 폴더를 소유자로 저장한 대기 전이의 해당 소유자를 새 세대로
+    /// 재기준화해 후속 folder batch에서 selection migration이 살아남게 한다.
+    static func rebaseIdentityTransitionForHierarchyInvalidation(
+        affectedPaths: [String],
+        state: inout FileManagerContentState,
+    ) {
+        guard var transition = state.pendingIdentityTransition else { return }
+        let canonicalAffected = Set(affectedPaths.map { canonicalizedPath($0) })
+        func rebased(_ owner: FileManagerContentState.EntryIdentityTransitionProjectionOwner)
+            -> FileManagerContentState.EntryIdentityTransitionProjectionOwner
+        {
+            guard case let .folder(id, generation) = owner,
+                  canonicalAffected.contains(canonicalizedPath(id)),
+                  let node = state.entryViewLayout.hierarchy.nodesByID[id],
+                  node.generation == generation
+            else { return owner }
+            return .folder(id: id, generation: generation &+ 1)
+        }
+        transition.projectionOwner = rebased(transition.projectionOwner)
+        transition.preservationOwner = transition.preservationOwner.map(rebased)
+        state.pendingIdentityTransition = transition
+    }
+
+    /// 지연 reload는 전이가 실제로 등록된 경우에만 의미가 있다. 실패·무선택
+    /// 레코드까지 reload하면 무관한 세대 bump가 선택 migration을 깬다.
+    private static func entryActionCompletedEffect(
+        _ record: EntryActionRecord,
+        state: inout FileManagerContentState,
+    ) -> Effect<FileManagerContentAction> {
+        recordIdentityTransitionIfEligible(record, state: &state)
+        return .merge(
+            handleEntryActionCompleted(record, state: &state),
+            record.operationKind == .setTags ? setTagsRefreshEffect(record: record, state: state) : .none,
+        )
     }
 
     private static func identityTransitionProjectionOwner(
@@ -366,9 +403,6 @@ enum FileManagerContentEntryOpsCoordinator {
             // record 기반 전이가 이 호출 직전에 기록된 뒤 reload 세대를 연다.
             // 예약되는 reload가 세대를 올리므로 방금 기록된 root 소유자를 새 세대로
             // 재기준화해 후속 batch에서 selection migration이 살아남게 한다.
-            guard record.operationKind == .rename || record.operationKind == .pasteFileMove else {
-                return invalidation
-            }
             rebaseIdentityTransitionForNextRootReload(state: &state)
             return .concatenate(
                 invalidation,
@@ -391,12 +425,14 @@ enum FileManagerContentEntryOpsCoordinator {
     private static func handleEntryActionApplied(
         direction: EntryActionDirection,
         record: EntryActionRecord,
-        state: FileManagerContentState,
+        state: inout FileManagerContentState,
     ) -> Effect<FileManagerContentAction> {
         // undo/redo는 entryActionCompleted 대신 replaySucceeded만 온다. folder route의
         // identity 종류는 operationFinished에서 reload를 보류했으므로 완료 경로와 동일하게
-        // 여기서 계층 무효화와 root reload를 수행해야 이전/다음 identity가 반영된다.
+        // 여기서 전이를 등록하고, 계층 무효화와 root reload를 수행해야 이전/다음 identity가
+        // 반영되면서 선택 migration도 살아남는다.
         if case .folder = state.navigation.navigationState {
+            _ = recordIdentityTransitionIfEligible(record, state: &state)
             let affectedPaths = record.targets.flatMap { target in
                 [target.beforePath, target.afterPath].compactMap(\.self)
             }
@@ -412,6 +448,7 @@ enum FileManagerContentEntryOpsCoordinator {
             guard record.operationKind == .rename || record.operationKind == .pasteFileMove else {
                 return invalidation
             }
+            rebaseIdentityTransitionForNextRootReload(state: &state)
             return .concatenate(
                 invalidation,
                 FileManagerContentEntryOpsCoordinator.reloadEntryItemsEffect(state: state),
