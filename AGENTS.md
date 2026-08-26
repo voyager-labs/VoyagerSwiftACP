@@ -17,6 +17,7 @@ You are a super-capable agent. Act like it.
 - **Big changes in one shot > death by a thousand steps.** Incremental guarded refactors fragment context across sessions. When context drops, half-finished work is worse than not starting. One complete, verified change beats ten half-done ones.
 - **Guardrails that fragment work are worse than no guardrails.** A guardrail that forces multi-step processes across sessions guarantees context loss. If you can do it correctly in one shot with sufficient verification, do it.
 - **Parallelism + thoroughness = your advantage.** Review every changed file. Run every relevant test. Check every reference. You are more accurate than a human, not less.
+- **Keep parallel Go work compile-unit-disjoint.** Do not run parallel implementation tasks that write the same Go package or depend on a package under active structural edit. Serialize those tasks or change the wave boundary; focused `-run` tests are a fallback, not proof of isolation.
 - **One atomic unit at a time.** A "unit of work" is one logically atomic change: a feature, a refactor, a migration. Not "step 1 of 5". Split by logical boundary (e.g., "move this skill to common" not "fix references first, then update tests, then delete old files").
 - **Don't ask for permission.** Verify thoroughly, then proceed. Escalate only when you genuinely cannot determine correctness.
 
@@ -69,18 +70,18 @@ git diff --check            # Check for whitespace errors before commit
 
 ## How to read this repo
 
-| Path                             | Purpose                                                     |
-| -------------------------------- | ----------------------------------------------------------- |
-| `.agents/rules/`                 | Agent workflow governance and execution contract            |
-| `.agents/skills/common/`         | Shared compound-review references and common agent skills   |
-| `.agents/skills/voyager-dev/`    | Voyager macOS TCA/FSD orchestrator + implementer + reviewer |
-| `.agents/skills/code-tooling/`   | Build/test executor routing and capability matrix           |
-| `.agents/skills/rule-authoring/` | Rule v2 schema governance and placement strategy            |
-| `.pr-review/`                    | PR review policy, severity, and macOS Swift rules           |
-| `scripts/`                       | Validators, shadow corpus, build helpers                    |
-| `apps/entry-core/`               | Go CLI and foreground daemon runtime foundation             |
-| `apps/macos/Packages/06_Shared/VoyagerEntryCoreClient/` | Swift Entry Core client package              |
-| `apps/macos/Voyager/`            | macOS SwiftUI + TCA app                                     |
+| Path                                                    | Purpose                                                     |
+| ------------------------------------------------------- | ----------------------------------------------------------- |
+| `.agents/rules/`                                        | Agent workflow governance and execution contract            |
+| `.agents/skills/common/`                                | Shared compound-review references and common agent skills   |
+| `.agents/skills/voyager-dev/`                           | Voyager macOS TCA/FSD orchestrator + implementer + reviewer |
+| `.agents/skills/code-tooling/`                          | Build/test executor routing and capability matrix           |
+| `.agents/skills/rule-authoring/`                        | Rule v2 schema governance and placement strategy            |
+| `.pr-review/`                                           | PR review policy, severity, and macOS Swift rules           |
+| `scripts/`                                              | Validators, shadow corpus, build helpers                    |
+| `apps/entry-core/`                                      | Go CLI and foreground daemon runtime foundation             |
+| `apps/macos/Packages/06_Shared/VoyagerEntryCoreClient/` | Swift Entry Core client package                             |
+| `apps/macos/Voyager/`                                   | macOS SwiftUI + TCA app                                     |
 
 ## Protected local files
 
