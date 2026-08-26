@@ -95,28 +95,31 @@ struct FileManagerContentSyncReducer {
         let normalizedPaths = scheduledEvents.map { normalizedPath(for: $0.path) }
         let affectedPaths = hierarchyAffectedPaths(for: normalizedPaths)
         let removedPrefixes = removedPrefixes(for: scheduledEvents)
-        // coarse 재스캔은 모든 확장 폴더 스냅샷을 비워 대기 전이의 before 행 선택을
-        // 깬다. 전이의 소유자 폴더가 확장돼 있으면 이번 배치를 해당 폴더의 targeted
-        // 무효화로 격하한다(startLoad retained 경로로 완전 child snapshot 보존).
-        var downgradeOwnerFolderID: String?
+        // coarse 재스캔은 모든 확장 폴더를 되감는다. 전이의 폴더 소유자가 있으면
+        // coarse 전체 리셋 대신 모든 확장 폴더를 targeted 무효화로 보낸다.
+        // startLoad retained 경로가 완전 child snapshot을 유지해 선택이 살아남고,
+        // 나머지 캐시도 stale 없이 새 세대로 재시작된다.
+        var downgradeToTargetedExpanded = false
         if scheduledEvents.contains(where: requiresCoarseHierarchyReload),
            let transition = state.pendingIdentityTransition,
-           case let .folder(id, _) = transition.projectionOwner,
-           state.entryViewLayout.hierarchy.expandedFolderIDs.contains(id)
+           case .folder = transition.projectionOwner
         {
-            downgradeOwnerFolderID = id
+            downgradeToTargetedExpanded = true
         }
-        let rebaseAffectedPaths = downgradeOwnerFolderID.map { [$0] }
-            ?? (scheduledEvents.contains(where: requiresCoarseHierarchyReload)
-                ? Array(state.entryViewLayout.hierarchy.expandedFolderIDs)
-                : affectedPaths)
+        let rebaseAffectedPaths = downgradeToTargetedExpanded || scheduledEvents
+            .contains(where: requiresCoarseHierarchyReload)
+            ? Array(state.entryViewLayout.hierarchy.expandedFolderIDs)
+            : affectedPaths
         FileManagerContentEntryOpsCoordinator.rebaseIdentityTransitionForNextRootReload(state: &state)
         FileManagerContentEntryOpsCoordinator.rebaseIdentityTransitionForHierarchyInvalidation(
             affectedPaths: rebaseAffectedPaths,
             state: &state,
         )
-        let hierarchyAction: EntryListHierarchyAction = if let downgradeOwnerFolderID {
-            .hierarchyInvalidated(affectedPaths: [downgradeOwnerFolderID], removedPrefixes: [])
+        let hierarchyAction: EntryListHierarchyAction = if downgradeToTargetedExpanded {
+            .hierarchyInvalidated(
+                affectedPaths: Array(state.entryViewLayout.hierarchy.expandedFolderIDs),
+                removedPrefixes: [],
+            )
         } else if scheduledEvents.contains(where: requiresCoarseHierarchyReload) {
             .coarseHierarchyInvalidated(removedPrefixes: removedPrefixes)
         } else {

@@ -138,7 +138,13 @@ public struct FileManagerContentFeature {
                 guard case let .entryViewLayout(.entryOperations(.loading(.streamEvent(streamEvent)))) = action,
                       case let .coreBatch(items, _) = streamEvent.event
                 else { return false }
-                return !items.contains { canonicalizedPath($0.id) == transition.afterPath }
+                // symlink 이동은 resolved target 행을 after로 오인하지 않도록
+                // lexical identity로 hold 해제를 판정한다.
+                return !items
+                    .contains {
+                        standardizedIdentityPath($0.id) ==
+                            standardizedIdentityPath(identityAfterLexicalPath(transition))
+                    }
             }()
             let projectionEntries = if !useCollectionItems,
                                        isFolderRoute,
@@ -445,7 +451,7 @@ public struct FileManagerContentFeature {
             return
         }
         let beforePath = canonicalizedPath(transition.beforePath)
-        let afterPath = canonicalizedPath(transition.afterPath)
+        let afterPath = canonicalizedPath(identityAfterLexicalPath(transition))
         let selectedPaths = Set(state.entryViewLayout.selectedIds.map(canonicalizedPath))
         guard selectedPaths.contains(beforePath),
               !selectedPaths.contains(afterPath)
@@ -468,7 +474,7 @@ public struct FileManagerContentFeature {
     ) {
         guard var transition = state.pendingIdentityTransition else { return }
         guard identityReplacementTrigger(action, transition: transition) != nil else { return }
-        let afterPath = canonicalizedPath(transition.afterPath)
+        let afterPath = canonicalizedPath(identityAfterLexicalPath(transition))
         let selectedPaths = Set(state.entryViewLayout.selectedIds.map(canonicalizedPath))
 
         if transition.preserveSelectionForReplacementBatch {
@@ -629,6 +635,18 @@ public struct FileManagerContentFeature {
         return state.entryViewLayout.entries.allSatisfy { entry in
             URL(fileURLWithPath: entry.id).standardizedFileURL.deletingLastPathComponent().path == lexicalRoot
         }
+    }
+
+    /// 전이의 화면 row identity 매칭용 경로. symlink 해석 전 lexical after를
+    /// 우선하고 미지정 시 기존 afterPath를 쓴다.
+    private func identityAfterLexicalPath(
+        _ transition: FileManagerContentState.EntryIdentityTransition,
+    ) -> String {
+        transition.afterLexicalPath.isEmpty ? transition.afterPath : transition.afterLexicalPath
+    }
+
+    private func standardizedIdentityPath(_ path: String) -> String {
+        URL(fileURLWithPath: path).standardizedFileURL.path
     }
 
     private func canonicalizedPath(_ path: String) -> String {

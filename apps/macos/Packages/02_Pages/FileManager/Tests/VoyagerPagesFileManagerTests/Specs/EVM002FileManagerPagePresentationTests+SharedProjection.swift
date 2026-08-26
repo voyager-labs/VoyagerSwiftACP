@@ -367,6 +367,71 @@ extension EVM002FileManagerPagePresentationTests {
     /// - 검증 내용: after-path 없는 무관 batch 뒤에도 before-path 선택·전이 보존
     /// - 사전 조건: generation 1 reload 중인 root projection에 선택된 before→after 대기 전이
     /// - 기대 결과: 무관 batch에서 선택 유지, 이후 after-path batch에서 1회 migration + 전이 소비
+    /// EVM-002-command_external_refresh_correlation: symlink 이동의 projection hold도 lexical 행을 기다린다.
+    /// resolved target 행이 먼저 와도 after-path로 오인해 hold를 해제하지 않고,
+    /// lexical symlink 행 도착 시 한 번에 교체·migration한다.
+    /// - 검증 내용: canonical after가 target인 전이에서 target 선행 batch 보존 후 link batch 교체 검증
+    /// - 사전 조건: afterLexicalPath가 지정된 대기 전이와 root 재로드 스트림
+    /// - 기대 결과: 1차 batch는 마지막 완전 projection 유지, 2차 batch에서 link 선택 + 전이 소비
+    func testSymlinkProjectionHoldWaitsForLexicalRow() async {
+        let rootPath = "/root"
+        let oldPath = "/root/old.txt"
+        let linkPath = "/root/dst/link"
+        let targetPath = "/outside/target"
+        let oldEntry = hierarchyFile(id: oldPath, name: "old.txt")
+        let unrelatedEntry = hierarchyFile(id: "/root/unrelated.txt", name: "unrelated.txt")
+        var state = FileManagerContentState()
+        state.navigation.seedInitialFolderPath(rootPath)
+        state.entryViewLayout.mode = .list
+        state.entryViewLayout.hierarchy.replaceRoot(path: rootPath)
+        state.entryViewLayout.entryOperations.items = [oldEntry]
+        state.entryViewLayout.entries = [oldEntry]
+        state.entryViewLayout.selectedIds = [oldPath]
+        state.entryViewLayout.lastSelectedId = oldPath
+        state.entryViewLayout.rangeAnchorId = oldPath
+        state.entryViewLayout.entryOperations.loadingContext.generation = 1
+        state.entryViewLayout.entryOperations.isReloading = true
+        state.pendingIdentityTransition = .init(
+            recordID: UUID(),
+            beforePath: oldPath,
+            afterPath: URL(fileURLWithPath: linkPath).standardizedFileURL.resolvingSymlinksInPath().path,
+            rootPath: rootPath,
+            refreshGeneration: 1,
+            projectionOwner: .root(generation: 1),
+            preservationOwner: nil,
+            afterLexicalPath: linkPath,
+        )
+        let store = TestStore(initialState: state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.entryOpenClient = .testValue
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+        }
+        store.exhaustivity = .off
+
+        // target 실체 파일이 먼저 와도 hold를 유지한다.
+        await store.send(.entryViewLayout(.entryOperations(.loading(.streamEvent(.init(
+            generation: 1,
+            event: .coreBatch(items: [unrelatedEntry, hierarchyFile(id: targetPath, name: "target")], batchIndex: 0),
+        ))))))
+        await store.receive { action in
+            guard case let .entryViewLayout(.view(.applyContentProjection(projection))) = action else {
+                return false
+            }
+            return projection.entries == [oldEntry]
+        }
+        XCTAssertNotNil(store.state.content.pendingIdentityTransition)
+
+        // lexical link 행 도착: 한 번에 교체하고 migration한다.
+        let linkRow = hierarchyFile(id: linkPath, name: "link")
+        await store.send(.entryViewLayout(.entryOperations(.loading(.streamEvent(.init(
+            generation: 1,
+            event: .coreBatch(items: [unrelatedEntry, linkRow], batchIndex: 1),
+        ))))))
+        XCTAssertEqual(store.state.entryViewLayout.selectedIds, [linkPath])
+        XCTAssertNil(store.state.content.pendingIdentityTransition)
+    }
+
     func testUnrelatedFirstReplacementBatchRetainsSelectionUntilAfterPath() async {
         let rootPath = "/root"
         let oldPath = "/root/old.txt"

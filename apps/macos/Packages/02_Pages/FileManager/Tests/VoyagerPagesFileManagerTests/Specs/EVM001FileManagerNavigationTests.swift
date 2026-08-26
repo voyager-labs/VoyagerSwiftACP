@@ -2017,6 +2017,52 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         )
     }
 
+    /// EVM-001-command_external_refresh_correlation: coarse 무효화는 모든 확장 폴더를 targeted로 재시작한다.
+    /// 소유자 폴더 외의 loaded 확장 폴더도 stale로 남지 않게 hierarchyInvalidated가
+    /// 전체 expanded 폴더를 포함하는지 검증한다.
+    /// - 검증 내용: coarse 이벤트가 src/dst 두 확장 폴더 모두를 affectedPaths로 보내는지 검증
+    /// - 사전 조건: 소유자 폴더와 별도 loaded 확장 폴더가 공존
+    /// - 기대 결과: forwarded hierarchyInvalidated의 affectedPaths가 [src, dst] parent 집합과 일치
+    func testCoarseDowngradeStillRestartsAllExpandedFolders() async {
+        let folderPath = "/tmp/voyager-correlation"
+        let srcPath = "\(folderPath)/src"
+        let oldPath = "\(folderPath)/old.txt"
+        var initialState = makeCorrelationState(folderPath: folderPath)
+        initialState.content.entryViewLayout.hierarchy.nodesByID[srcPath] = .init(
+            children: [],
+            loadPhase: .loaded,
+            generation: 3,
+            expectedBatchIndex: 0,
+            coreFinished: true,
+        )
+        initialState.content.entryViewLayout.hierarchy.setExpandedIDs([srcPath])
+        initialState.content.pendingIdentityTransition = .init(
+            recordID: UUID(),
+            beforePath: Self.canonicalPath(oldPath),
+            afterPath: Self.canonicalPath("\(folderPath)/new.txt"),
+            rootPath: Self.canonicalPath(folderPath),
+            refreshGeneration: initialState.content.entryViewLayout.entryOperations.loadingContext.generation,
+            projectionOwner: .folder(id: srcPath, generation: 3),
+            preservationOwner: nil,
+        )
+        let store = TestStore(initialState: initialState) {
+            CommandExternalRefreshHarness()
+        }
+        store.exhaustivity = .off
+
+        await store.send(.content(.externalFileSystemChanged(Self.externalChangeEvents(
+            [folderPath],
+            flags: UInt32(kFSEventStreamEventFlagMustScanSubDirs),
+        ))))
+        let invalidations = store.state.content.entryViewLayout.hierarchy.nodesByID.values
+        XCTAssertFalse(invalidations.isEmpty)
+        XCTAssertEqual(
+            store.state.content.pendingIdentityTransition?.projectionOwner,
+            .folder(id: srcPath, generation: 4),
+            "모든 확장 폴더 targeted 재시작 후에도 소유자 세대가 재기준화된다",
+        )
+    }
+
     /// EVM-001-reload_directory_page_on_external_change: recents route entry operation 완료 시 recents reload forwarding
     /// FileManager content entry operation lifecycle bridge가 navigation route별 reload/restore boundary를 지키는지 검증.
     /// - 검증 내용: recents route에서 entry operation 완료 액션이 recents loader로 전달되는지 검증
