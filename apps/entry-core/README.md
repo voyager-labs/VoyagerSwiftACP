@@ -261,6 +261,18 @@ mise run entry-core-migration-validate
 
 The module uses a custom golang-migrate `database.Driver` (`sharedSQLiteDriver`) over the store's shared `*sql.DB`. It deliberately does **not** import `github.com/golang-migrate/migrate/v4/database/sqlite`: that package blank-imports `modernc.org/sqlite`, which registers the `sqlite` driver and collides with `github.com/glebarez/sqlite`'s registration, panicking with `sql: Register called twice for driver sqlite`. The shared driver also treats `Close` as a no-op because the Store owns the connection lifecycle.
 
+### SQLite/GORM implementation gotchas
+
+- modernc SQLite 빌드는 `DELETE ... LIMIT 1`을 지원하지 않는다. 제한 삭제가 필요하면 먼저 대상 키를 조회한 뒤 일반 `DELETE ... WHERE key = ?`를 사용한다.
+- `workspace_property_terms`에는 `lifecycle_state`가 없다. 다른 catalog family의 lifecycle 조건을 이 테이블에 복사하지 말고 seed 소유권과 실제 스키마를 기준으로 조회한다.
+- 같은 database path에 두 번째 `sqlite.Store`를 열면 lifetime flock 때문에 `ErrDatabaseLocked`가 발생한다. 테스트도 동시에 두 store를 열 수 있다고 가정하지 않는다.
+- catalog seed digest와 lifecycle state는 seed-owned row에만 적용한다. 사용자 또는 preset 소유 row를 seed drift 계산에 포함하지 않는다.
+- 한 GORM field에 `check:` tag를 여러 번 쓰면 앞 tag가 덮어써진다. 여러 조건은 하나의 `check:(condition_a AND condition_b)` 식으로 합친다.
+- GORM의 `check:name:expr` 형식은 이 loader에서 name을 expression에 섞는다. 이름 없는 `check:(expr)`를 사용하고 Atlas가 생성한 constraint name을 migration SQL과 맞춘다.
+- composite `uniqueIndex`는 참여하는 모든 field에 같은 index name을 붙여야 한다. 한 field에만 tag를 두면 composite index가 생성되지 않는다.
+- SQLite `pragma foreign_key_list` 결과는 선언 순서의 역순으로 반환될 수 있다. FK 구조 테스트의 expected order는 pragma의 실제 반환 계약을 따른다.
+- `.down.sql`을 직접 실행해도 golang-migrate의 `schema_migrations` ledger version은 자동으로 내려가지 않는다. down-then-up 테스트는 재적용 전에 ledger를 해당 이전 version으로 맞춘다.
+
 ## VOY-765 handoff
 
 > VOY-765는 이어받은 표면 위에 쓰기 가능한 Property backend를 이미 구현했다(위 "Property API (VOY-765)" 섹션). 아래는 VOY-663가 남긴 원본 인계 기록이다.
