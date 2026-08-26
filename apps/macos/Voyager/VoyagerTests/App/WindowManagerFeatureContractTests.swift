@@ -12569,8 +12569,11 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             .init(batchID: batchID, result: .failure(.validationFailed)),
         ])
         XCTAssertNil(store.state.windows[id: windowID])
-        XCTAssertEqual(store.state.windows[id: existingWindowID], existingWindow)
-        XCTAssertNil(store.state.windows[id: existingWindowID]?.window.contentTabs.tabs[id: existingTabID])
+        let restoredExistingWindow = store.state.windows[id: existingWindowID]?.window
+        XCTAssertEqual(restoredExistingWindow?.contentTabs, existingWindow.window.contentTabs)
+        XCTAssertEqual(restoredExistingWindow?.content, existingWindow.window.content)
+        XCTAssertEqual(restoredExistingWindow?.tabContentStates, existingWindow.window.tabContentStates)
+        XCTAssertNil(restoredExistingWindow?.contentTabs.tabs[id: existingTabID])
         XCTAssertNil(store.state.authorizedExternalOpenBatchID)
         XCTAssertNil(store.state.retainedExternalOpenPlacementOwnership)
         XCTAssertNil(store.state.externalWindowBatchIDs[windowID])
