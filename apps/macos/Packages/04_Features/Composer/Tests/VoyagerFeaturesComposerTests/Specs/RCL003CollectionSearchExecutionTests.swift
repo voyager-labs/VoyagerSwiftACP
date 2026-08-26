@@ -123,6 +123,33 @@ final class RCL003CollectionSearchExecutionTests: XCTestCase {
         XCTAssertNil(store.state.lastFiltersResponse)
     }
 
+    // MARK: - RCL-003-execute_filtered_collection_retrieval
+
+    /// RCL-003-execute_filtered_collection_retrieval: 검색 취소는 canonical metric만 기록함
+    /// 취소 action이 legacy alias와 canonical event를 중복 기록하지 않는지 검증한다.
+    /// - 검증 내용: canonical cancel capture 1건, legacy capture 0건, 검색 상태 초기화
+    /// - 사전 조건: 검색 요청이 진행 중인 Composer 상태와 실제 metric recorder
+    /// - 기대 결과: 취소 후 canonical metric만 관찰되고 활성 요청이 해제됨
+    func testCancelSearch_recordsCanonicalMetricOnceWithoutLegacyAlias() {
+        let recorder = ComposerMetricRecorder()
+        var state = ComposerState()
+        state.isLoadingSearch = true
+        state.activeSearchRequestID = UUID()
+
+        withDependencies {
+            $0.composerMetricClient = ComposerMetricClient { name, value, tags, level in
+                recorder.record(name: name, value: value, tags: tags, level: level)
+            }
+        } operation: {
+            _ = ComposerFeature().reduce(into: &state, action: .view(.cancelSearch))
+        }
+
+        XCTAssertEqual(recorder.names, [ComposerCollectionFilterMetrics.queryResult])
+        XCTAssertFalse(recorder.names.contains(ComposerCollectionFilterMetrics.legacySearchCancel))
+        XCTAssertNil(state.activeSearchRequestID)
+        XCTAssertFalse(state.isLoadingSearch)
+    }
+
     /// RCL-003-execute_filtered_collection_retrieval: value commit은 filter 실행을 한 번만 시작한다.
     /// parent condition mutation이 실제 SearchClient chain으로 이어질 때 중복 apply effect를 만들지 않는지 검증한다.
     /// - 검증 내용: single value commit, one applyFilters request, committed payload
@@ -233,6 +260,23 @@ private final class ApplyFiltersRecorder: @unchecked Sendable {
 
     func last() -> FiltersOnlyRequestPayload? {
         requests.last
+    }
+}
+
+final class ComposerMetricRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var calls: [String] = []
+
+    func record(name: String, value _: Double, tags _: [String: String]?, level _: ComposerMetricLevel) {
+        lock.lock()
+        calls.append(name)
+        lock.unlock()
+    }
+
+    var names: [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return calls
     }
 }
 

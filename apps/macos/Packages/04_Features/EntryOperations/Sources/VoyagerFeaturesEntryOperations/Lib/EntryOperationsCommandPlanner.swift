@@ -201,7 +201,7 @@ enum EntryOperationsCommandPlanner {
                 return [.delegate(.openCollectionFile(url))]
             }
 
-            if entry.isFolder {
+            if entry.isDirectoryNavigationTarget {
                 return [.delegate(.navigateToPath(entry.fullPath))]
             }
         }
@@ -244,7 +244,7 @@ enum EntryOperationsCommandPlanner {
     ) -> [EntryOperationsCommandOutput] {
         let selectedFolderPaths = Set(
             context.displayItems
-                .filter { context.selectedIds.contains($0.id) && $0.isFolder }
+                .filter { context.selectedIds.contains($0.id) && $0.isDirectoryNavigationTarget }
                 .map(\.fullPath),
         )
         let delegatedPaths = paths.filter { selectedFolderPaths.contains($0) }

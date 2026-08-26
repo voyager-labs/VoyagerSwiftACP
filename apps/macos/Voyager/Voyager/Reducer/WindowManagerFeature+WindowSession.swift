@@ -70,7 +70,7 @@ extension WindowManagerFeature {
                 return state.trackedSingletonWindow?.requestID
             })
             state.closingWindowIDs.formUnion(openWindowIDs)
-            state.focusedWindowID = nil
+            clearAllWindowFocus(openWindowIDs, state: &state)
             state.lastUsedWindowIDs.removeAll()
             state.refreshContentTabMoveTargets()
             state.defaultWindowBootstrapRequestID = nil
@@ -244,6 +244,7 @@ extension WindowManagerFeature {
     func closeWindow(_ id: State.WindowID, state: inout State) -> Effect<Action> {
         guard state.windows[id: id] != nil, !state.closingWindowIDs.contains(id) else { return .none }
         state.closingWindowIDs.insert(id)
+        clearWindowFocus(id, state: &state)
         state.refreshContentTabMoveTargets()
         if state.focusedWindowID == id {
             state.focusedWindowID = nil
@@ -283,6 +284,7 @@ extension WindowManagerFeature {
         guard state.windows[id: id] != nil else { return .none }
         let wasPendingOpen = state.pendingWindowOpenIDs.remove(id) != nil
         state.closingWindowIDs.insert(id)
+        clearWindowFocus(id, state: &state)
         state.deferredClosedWindowIDs.insert(id)
         state.lastUsedWindowIDs.removeAll { $0 == id }
         state.defaultWindowBootstrapWindowIDs.remove(id)
@@ -326,6 +328,7 @@ extension WindowManagerFeature {
     ) -> Effect<Action> {
         guard !state.invalidatingWindowIDs.contains(id) else { return .none }
         state.closingWindowIDs.insert(id)
+        clearWindowFocus(id, state: &state)
         state.invalidatingWindowIDs.insert(id)
         state.refreshContentTabMoveTargets()
         return .run { [undoManagerClient, fileManagerWindowClient] send in
@@ -348,6 +351,17 @@ extension WindowManagerFeature {
             windowIDs.insert(transaction.request.targetWindowID)
         }
         return windowIDs
+    }
+
+    func clearWindowFocus(_ id: State.WindowID, state: inout State) {
+        state.windows[id: id]?.window.isFocused = false
+    }
+
+    func clearAllWindowFocus(_ ids: [State.WindowID], state: inout State) {
+        state.focusedWindowID = nil
+        for id in ids {
+            clearWindowFocus(id, state: &state)
+        }
     }
 
     func finalizeWindowRemoval(

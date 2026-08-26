@@ -1,0 +1,142 @@
+/* File Manager UI kit — atom component styles */
+
+/* === MenuItem === */
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .fm-menu-item {
+  display: flex;
+  min-height: 24px;
+  align-items: center;
+  gap: var(--fm-space-4);
+  width: 100%;
+  border: 0;
+  border-radius: var(--fm-radius-xs);
+  background: transparent;
+  padding: 0 var(--fm-space-6);
+  color: var(--macos-label-color);
+  font-family: var(--fm-font-ui);
+  font-size: var(--fm-font-size-body);
+  line-height: var(--fm-line-tight);
+  text-align: left;
+  cursor: default;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+/* 네이티브 NSMenu 하이라이트: accent fill + 흰 라벨 */
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .fm-menu-item:hover:not(:disabled),
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .fm-menu-item:focus-visible {
+  outline: 0;
+  background: var(--macos-control-accent-color);
+  color: var(--fm-text-on-accent);
+}
+
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .fm-menu-item:is(:hover:not(:disabled), :focus-visible)
+  kbd,
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .fm-menu-item:is(:hover:not(:disabled), :focus-visible)
+  .fm-menu-item-detail {
+  color: inherit;
+  opacity: 0.75;
+}
+
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .fm-menu-item:disabled {
+  opacity: 0.4;
+}
+
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .fm-menu-item
+  kbd {
+  display: inline-flex;
+  gap: 5px;
+  align-items: baseline;
+  color: var(--macos-secondary-label-color);
+  font: inherit;
+  white-space: nowrap;
+}
+
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .fm-menu-item-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .fm-menu-item-detail {
+  flex-shrink: 0;
+  margin-left: auto;
+  color: var(--macos-tertiary-label-color);
+  font-size: var(--fm-font-size-caption);
+  white-space: nowrap;
+}
+
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .fm-menu-item-checkmark {
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--fm-font-ui);
+  font-size: 12px;
+  font-weight: var(--fm-weight-semibold);
+  line-height: 1;
+}
+
+/* 네이티브 NSMenu 규약: 메뉴에 checked 행이 하나라도 있으면 전체 행이 상태열 폭을 공유한다. */
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  :is(.fm-menu, .vc-combo-box-popover):has(.fm-menu-item-checkmark)
+  .fm-menu-item:not(:has(.fm-menu-item-checkmark)) {
+  padding-left: calc(var(--fm-space-6) + 16px + var(--fm-space-4));
+}
+
+/* 네이티브 NSMenu 규약: 단축키 행이 있는 메뉴는 라벨-단축키 호흡을 위해 최소 폭을 가진다. */
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  :is(.fm-menu, .vc-combo-box-popover):has(kbd) {
+  min-width: 220px;
+}
+
+/* === Tooltip === */
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .fm-tooltip {
+  position: relative;
+  display: inline-flex;
+}
+
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .fm-tooltip::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + var(--fm-space-3));
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  border-radius: var(--fm-radius-sm);
+  background: rgba(0, 0, 0, 0.85);
+  padding: var(--fm-space-2) var(--fm-space-4);
+  color: #fff;
+  font-size: var(--fm-font-size-caption);
+  line-height: 1.3;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 200ms ease;
+  z-index: 100;
+}
+
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .fm-tooltip:hover::after {
+  opacity: 1;
+}
+
+/* === TextField (textarea variant) === */
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  textarea.vc-form-field {
+  resize: none;
+  min-height: 60px;
+  line-height: var(--fm-line-body);
+}

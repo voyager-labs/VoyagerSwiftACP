@@ -17,7 +17,7 @@ export function verifyDesignVersionContract(packageRoot, storybookRoot, css) {
     "utf8",
   )
   const aiChatInputStorySource = readFileSync(
-    resolve(packageRoot, "src/Domains/Chat/AiChatInputBar.stories.tsx"),
+    resolve(storybookRoot, "src/FileManager/Domains/Chat/AiChatInputBar.stories.tsx"),
     "utf8",
   )
 

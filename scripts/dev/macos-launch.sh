@@ -72,6 +72,13 @@ if [[ -z "$SCHEME" ]]; then
   exit 1
 fi
 
+case "$CONFIGURATION" in
+  Dev-Debug|Dev-Release|Prod-Debug|Prod-Release) ;;
+  *)
+    echo "오류: 지원하지 않는 --configuration 값입니다: '$CONFIGURATION'. 허용 값: Dev-Debug, Dev-Release, Prod-Debug, Prod-Release." >&2
+    exit 2 ;;
+esac
+
 if [[ "$INJECTION_NEXT" -eq 1 ]]; then
   if [[ "$CONFIGURATION" != "Dev-Debug" ]] ||
     [[ "$SCHEME" != "FileManagerHost-Dev" && "$SCHEME" != "ComposerHost-Dev" ]]; then

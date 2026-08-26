@@ -6,7 +6,7 @@ export default defineConfig({
   plugins: [react()],
   build: {
     lib: {
-      entry: resolve(__dirname, "src/index.ts"),
+      entry: resolve(__dirname, "package-entry.ts"),
       name: "FileManagerIllustration",
       fileName: "index",
       cssFileName: "file-manager-illustration",

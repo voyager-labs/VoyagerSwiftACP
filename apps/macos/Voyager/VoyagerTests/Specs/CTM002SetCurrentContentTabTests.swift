@@ -89,7 +89,11 @@ final class CTM002SetCurrentContentTabTests: XCTestCase {
             let handled = AppKeyboardShortcutMonitor.handleKeyDown(
                 keyCode: UInt16(kVK_ANSI_1),
                 modifierFlags: [.command],
-                context: .init(hasFocusedWindow: true, isComposerPresented: false),
+                context: .init(
+                    hasFocusedWindow: true,
+                    isComposerPresented: false,
+                    isContentTabSwitcherPresented: false,
+                ),
                 firstResponder: responder,
                 onSelectContentTab: { selectedPositions.append($0) },
             )

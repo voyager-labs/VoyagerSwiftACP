@@ -4,6 +4,7 @@ import OrderedCollections
 @testable import Voyager
 import VoyagerEntitiesAi
 import VoyagerEntitiesAppPreferences
+import VoyagerEntitiesEntry
 import VoyagerFeaturesAiChat
 import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
@@ -410,6 +411,7 @@ final class FileManagerWindowManagerTests: XCTestCase {
         await store.send(.event(.windowClosed(firstID))) {
             $0.closingWindowIDs.insert(firstID)
             $0.invalidatingWindowIDs.insert(firstID)
+            $0.windows[id: firstID]?.window.isFocused = false
             $0.refreshContentTabMoveTargets()
         }
         await store.receive(\.windowInvalidationFinished) {
@@ -455,6 +457,7 @@ final class FileManagerWindowManagerTests: XCTestCase {
         await store.send(.window(.closeFocusedWindow)) {
             $0.closingWindowIDs.insert(focusedID)
             $0.focusedWindowID = nil
+            $0.windows[id: focusedID]?.window.isFocused = false
             $0.refreshContentTabMoveTargets()
         }
 
@@ -530,6 +533,7 @@ final class FileManagerWindowManagerTests: XCTestCase {
         await store.send(.window(.closeFocusedWindow)) {
             $0.closingWindowIDs.insert(windowID)
             $0.focusedWindowID = nil
+            $0.windows[id: windowID]?.window.isFocused = false
             $0.refreshContentTabMoveTargets()
         }
         await store.receive(\.pendingWindowCloseFinalized) {
@@ -583,6 +587,7 @@ final class FileManagerWindowManagerTests: XCTestCase {
         await store.send(.window(.closeFocusedWindow)) {
             $0.closingWindowIDs.insert(windowID)
             $0.focusedWindowID = nil
+            $0.windows[id: windowID]?.window.isFocused = false
             $0.refreshContentTabMoveTargets()
         }
         await store.send(.windowOpenCompleted(
@@ -662,6 +667,7 @@ final class FileManagerWindowManagerTests: XCTestCase {
         await store.send(.event(.windowClosed(windowID))) {
             $0.closingWindowIDs.insert(windowID)
             $0.invalidatingWindowIDs.insert(windowID)
+            $0.windows[id: windowID]?.window.isFocused = false
             $0.refreshContentTabMoveTargets()
         }
         await gate.waitUntilSuspended()
@@ -703,6 +709,7 @@ final class FileManagerWindowManagerTests: XCTestCase {
         await store.send(.window(.closeFocusedWindow)) {
             $0.closingWindowIDs.insert(closingID)
             $0.focusedWindowID = nil
+            $0.windows[id: closingID]?.window.isFocused = false
             $0.refreshContentTabMoveTargets()
         }
         await store.send(.event(.windowClosed(closingID))) {
@@ -720,6 +727,7 @@ final class FileManagerWindowManagerTests: XCTestCase {
         XCTAssertNotNil(store.state.windows[id: closingID])
         XCTAssertNotNil(store.state.windows[id: otherID])
         XCTAssertNil(store.state.focusedWindowID)
+        XCTAssertEqual(store.state.windows[id: closingID]?.window.isFocused, false)
         XCTAssertEqual(finalizeCalls.value, [])
         await store.finish()
     }
@@ -746,6 +754,7 @@ final class FileManagerWindowManagerTests: XCTestCase {
         await store.send(.window(.closeFocusedWindow)) {
             $0.closingWindowIDs.insert(closingID)
             $0.focusedWindowID = nil
+            $0.windows[id: closingID]?.window.isFocused = false
             $0.refreshContentTabMoveTargets()
         }
         XCTAssertEqual(store.state.lastUsedWindowIDs, [closingID, otherID])
@@ -754,11 +763,147 @@ final class FileManagerWindowManagerTests: XCTestCase {
         await store.send(.event(.windowBecameKey(otherID))) {
             $0.focusedWindowID = otherID
             $0.lastUsedWindowIDs = [otherID, closingID]
+            $0.windows[id: otherID]?.window.isFocused = true
+            $0.windows[id: closingID]?.window.isFocused = false
         }
 
         XCTAssertNotNil(store.state.windows[id: closingID])
         XCTAssertNotNil(store.state.windows[id: otherID])
         await store.finish()
+    }
+
+    /// VOY-618: windowBecameKey가 포커스 소유권을 각 윈도우 reducer의 isFocused에 반영한다.
+    /// - 검증 내용: becameKey 이벤트 후 focused 윈도우만 isFocused == true, 나머지는 false
+    func testWindowBecameKeySetsFocusOwnershipOnWindowState() async {
+        let firstID = UUID()
+        let secondID = UUID()
+        let store = makeStore(initialState: makeState(
+            focusedID: firstID,
+            windows: [(firstID, Spec.focusedPath), (secondID, Spec.backgroundPath)],
+        ))
+        store.exhaustivity = .off
+
+        await store.send(.event(.windowBecameKey(secondID)))
+
+        XCTAssertEqual(store.state.windows[id: secondID]?.window.isFocused, true)
+        XCTAssertEqual(store.state.windows[id: firstID]?.window.isFocused, false)
+    }
+
+    /// VOY-618: windowBecameKey가 포커스 소유권을 이전한 두 번째 윈도우의 활성 선택을
+    /// 프로세스 전역 Quick Look 패널과 정확히 한 번 동기화한다.
+    /// 배타적 포커스 소유권 이전 후 두 번째 윈도우만 활성 탭 선택을 resync해야 한다.
+    /// - 검증 내용: becameKey(secondID) 후 focusedWindowID == secondID, first isFocused == false,
+    ///   entryQuickLookClient.syncQuickLookSelection가 secondID 윈도우의 선택 payload로 정확히 한 번 호출
+    /// - 사전 조건: 두 윈도우 모두 활성 콘텐츠 선택을 명시적으로 구성하고,
+    ///   Quick Look client 경계를 LockIsolated payload 레코더로 대체
+    /// - 기대 결과: 동기화 payload는 secondID 윈도우의 선택 항목 하나만, 호출 횟수는 정확히 1
+    func testWindowBecameKeySynchronizesSecondWindowActiveSelectionOnce() async {
+        let firstID = UUID()
+        let secondID = UUID()
+        let syncCalls = LockIsolated<[[String]]>([])
+
+        // makeState(path:)는 활성 콘텐츠 선택을 구성하지 않으므로 두 윈도우 모두 명시적으로 설정한다.
+        var initialState = makeState(
+            focusedID: firstID,
+            windows: [(firstID, Spec.focusedPath), (secondID, Spec.backgroundPath)],
+        )
+        setActiveSelection(on: &initialState, windowID: firstID, entryPath: "/focused/entry-a")
+        setActiveSelection(on: &initialState, windowID: secondID, entryPath: "/background/entry-b")
+
+        let store = makeStore(initialState: initialState) {
+            $0.entryQuickLookClient = .init(
+                quickLook: { _, _ in },
+                syncQuickLookSelection: { urls, _ in
+                    syncCalls.withValue { $0.append(urls.map(\.path)) }
+                },
+            )
+        }
+        // store.exhaustivity = .off: focus ownership 자체는 위 테스트가 검증하며,
+        // 이 테스트는 포커스 이전 후 selection resync 발행 여부만 추적한다.
+        store.exhaustivity = .off
+
+        await store.send(.event(.windowBecameKey(secondID))) {
+            $0.focusedWindowID = secondID
+            $0.windows[id: secondID]?.window.isFocused = true
+            $0.windows[id: firstID]?.window.isFocused = false
+        }
+
+        // RED: 현재 생산 코드의 windowBecameKey는 .none을 반환해 selectionChanged를 라우팅하지 않으므로
+        // 아래 receive가 도달하지 않아 실패한다. VOY-618 수정 후 secondID로 selectionChanged가 라우팅되어야 한다.
+        await store.receive {
+            guard case let .windows(.element(
+                id: id,
+                action: .window(.content(.entryViewLayout(.delegate(.selectionChanged)))),
+            )) = $0 else {
+                return false
+            }
+            return id == secondID
+        }
+
+        XCTAssertEqual(
+            syncCalls.value,
+            [["/background/entry-b"]],
+            "포커스 이전된 두 번째 윈도우의 활성 선택이 정확히 한 번 동기화되어야 한다",
+        )
+    }
+
+    private func setActiveSelection(
+        on state: inout WindowManagerFeature.State,
+        windowID: UUID,
+        entryPath: String,
+    ) {
+        let entry = EntryModel.temporaryFolder(
+            id: entryPath,
+            name: (entryPath as NSString).lastPathComponent,
+        )
+        state.windows[id: windowID]?.window.content.entryViewLayout.entries = [entry]
+        state.windows[id: windowID]?.window.content.entryViewLayout.selectedIds = [entry.id]
+        state.windows[id: windowID]?.window.content.entryViewLayout.lastSelectedId = entry.id
+    }
+
+    /// VOY-618: 새 윈도우 append는 native key callback 전에 포커스 소유권을 획득하지 않는다.
+    /// - 검증 내용: 기존 key window만 focused이고 새 pending window는 unfocused
+    /// - 사전 조건: 기존 focused window 한 개와 고정된 새 window ID
+    /// - 기대 결과: windowBecameKey 전까지 isFocused == true인 window는 기존 window 하나뿐임
+    func testOpenWindowSessionDoesNotCreateSecondFocusOwnerBeforeBecameKey() async {
+        let existingID = UUID()
+        let newID = UUID()
+        let initialState = makeState(
+            focusedID: existingID,
+            windows: [(existingID, Spec.focusedPath)],
+        )
+        let store = makeStore(initialState: initialState, uuid: newID) {
+            $0.fileManagerWindowClient.open = { _ in }
+            $0.fileManagerWindowClient.registeredWindowIDs = { [newID] }
+        }
+        // store.exhaustivity = .off: 새 윈도우 준비 effect보다 key callback 전 focus ownership만 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.file(.newWindow(path: Spec.backgroundPath)))
+
+        XCTAssertEqual(store.state.windows[id: existingID]?.window.isFocused, true)
+        XCTAssertEqual(store.state.windows[id: newID]?.window.isFocused, false)
+        XCTAssertEqual(store.state.windows.filter(\.window.isFocused).count, 1)
+        await store.skipReceivedActions()
+        await store.finish()
+    }
+
+    /// VOY-618: key window resign은 해당 윈도우의 포커스 소유권을 제거한다.
+    /// - 검증 내용: focusedWindowID와 child isFocused를 함께 해제
+    /// - 사전 조건: 단일 key window
+    /// - 기대 결과: focusedWindowID == nil, isFocused == false
+    func testWindowResignedKeyClearsFocusOwnership() async {
+        let windowID = UUID()
+        let initialState = makeState(
+            focusedID: windowID,
+            windows: [(windowID, Spec.focusedPath)],
+        )
+        let store = makeStore(initialState: initialState)
+
+        await store.send(.event(.windowResignedKey(windowID))) {
+            $0.focusedWindowID = nil
+            $0.windows[id: windowID]?.window.isFocused = false
+        }
     }
 
     // MARK: - CTM-001-open_new_content_tab
@@ -789,6 +934,8 @@ final class FileManagerWindowManagerTests: XCTestCase {
         await store.send(.window(.closeAllWindows)) {
             $0.closingWindowIDs = [firstID, secondID]
             $0.focusedWindowID = nil
+            $0.windows[id: firstID]?.window.isFocused = false
+            $0.windows[id: secondID]?.window.isFocused = false
             $0.refreshContentTabMoveTargets()
         }
 
@@ -1387,7 +1534,9 @@ enum WindowManagerTestSupport {
     ) -> WindowManagerFeature.State {
         var state = WindowManagerFeature.State()
         state.windows = .init(uniqueElements: windows.map { id, path in
-            WindowSessionState(id: id, window: .makeInitial(path: path))
+            var window = FileManagerWindowFeature.State.makeInitial(path: path)
+            window.isFocused = id == focusedID
+            return WindowSessionState(id: id, window: window)
         })
         state.focusedWindowID = focusedID
         return state

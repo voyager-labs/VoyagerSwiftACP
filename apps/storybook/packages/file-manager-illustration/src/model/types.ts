@@ -1,5 +1,7 @@
 export type EntryKind = "pdf" | "image" | "folder" | "sheet" | "doc" | "video" | "archive"
 
+export type EntryViewMode = "grid" | "list"
+
 /** Public file projection — the only file shape consumers pass. */
 export type FileEntry = {
   readonly id: string
@@ -14,13 +16,13 @@ export type FileEntry = {
 
 export type EntrySelectionIntent = "replace" | "toggle" | "range"
 
-export type SidebarIconKind = "home" | "folder" | "folder-blue" | "collection" | "chat"
-
 /** Internal breadcrumb segment with SF Symbol name for icon rendering. */
 export type BreadcrumbSegment = {
   readonly label: string
   readonly symbolName: string
 }
+
+export type SidebarIconKind = "home" | "folder" | "folder-blue" | "collection" | "chat"
 
 export type SidebarTabItem = {
   readonly id: string
@@ -74,27 +76,20 @@ export type SidebarSectionProps = {
   readonly compact?: boolean
 }
 
-export type SidebarIconProps = {
-  readonly icon: SidebarIconKind
-  readonly isActive?: boolean
-}
+// 판별 유니온: label 항목과 구분선은 상호 배타다(둘 다 없거나 둘 다 있는 상태를 타입에서 차단)
+export type ContextMenuAction = ContextMenuActionItem | ContextMenuActionSeparator
 
-export type SidebarNavItemProps = {
-  readonly item: SidebarTabItem
-  readonly actionRevealed?: boolean
-  readonly onSelect?: SidebarTabAction
-  readonly onUnpin?: SidebarTabAction
-  readonly onClose?: SidebarTabAction
-}
-
-export type TrafficLightsProps = Record<string, never>
-
-export type ContextMenuAction = {
+export type ContextMenuActionItem = {
+  readonly kind: "item"
   readonly id: string
   readonly label: string
   readonly shortcut?: string
-  readonly destructive?: boolean
   readonly disabled?: boolean
+}
+
+export type ContextMenuActionSeparator = {
+  readonly kind: "separator"
+  readonly id: string
 }
 
 export type Entry = {
@@ -144,6 +139,8 @@ export type ChatSessionSection = {
   readonly title: string
   readonly rows: readonly ChatSessionRow[]
 }
+
+export type InspectorChatHeader = "sessions" | "chat"
 
 export type ChatConnectionError = {
   readonly title: string

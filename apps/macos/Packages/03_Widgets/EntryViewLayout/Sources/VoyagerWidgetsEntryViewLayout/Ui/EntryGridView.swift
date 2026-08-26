@@ -30,6 +30,10 @@ public struct EntryGridViewRepresentable: NSViewRepresentable {
         context.coordinator.updateView(view)
         view.collectionView.blankSpaceContextMenuProvider = blankSpaceMenuProvider
     }
+
+    public static func dismantleNSView(_: EntryGridView, coordinator: EntryGridCoordinator) {
+        coordinator.externalDropSessionController.cancel()
+    }
 }
 
 public final class EntryGridView: NSView {
@@ -220,7 +224,7 @@ public final class EntryGridView: NSView {
         )
         collectionView.setDraggingSourceOperationMask([.copy, .move], forLocal: true)
         collectionView.setDraggingSourceOperationMask([.copy], forLocal: false)
-        collectionView.registerForDraggedTypes([.fileURL])
+        collectionView.registerForDraggedTypes(EntryViewLayoutDropValidationAdapter.registeredDraggedTypes)
 
         scrollView.documentView = collectionView
         addSubview(scrollView)

@@ -2,6 +2,7 @@
 import ComposableArchitecture
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
+import VoyagerFeaturesEntryOperations
 import VoyagerShared
 
 @MainActor
@@ -36,8 +37,16 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
     var isLassoSelecting = false
     var lastRenamingItemId: EntryModel.ID?
     var hasRestoredScrollPosition = false
+    var hasCompletedFirstPhysicalLayout = false
     var dropTargetEntryId: EntryModel.ID?
     var validatedDropDestinationPath: String?
+    /// 외부 drop 획득 세션의 local 수명을 소유하는 controller. Grid마다 정확히 하나 보유한다.
+    /// cross-Grid/List 직렬화는 controller가 읽는 shared TCA `activeExternalDrop`이 담당한다.
+    lazy var externalDropSessionController: ExternalDropSessionController = .init(
+        store: store,
+        clientProvider: { [weak self] in self?.externalDropAcquisitionClient ?? .testValue },
+        clearDropState: { [weak self] in self?.clearExternalDropDropState() },
+    )
     var contextMenuAnchor: CGPoint?
     var lastLassoSelectedIds: Set<EntryModel.ID> = []
     var contextMenuCoordinator: EntryContextMenuCoordinator?
@@ -51,10 +60,14 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
     var workspaceClient
     @Dependency(\.entryThumbnailCacheClient)
     var entryThumbnailCacheClient
+    @Dependency(\.externalDropAcquisitionClient)
+    var externalDropAcquisitionClient
     @Dependency(\.finderFavoritesTagClient)
     var finderFavoritesTagClient
     @Dependency(\.entryOpenClient)
     var entryOpenClient
+    @Dependency(\.entryFileOpsClient)
+    var entryFileOpsClient
     @Dependency(\.notificationCenterClient)
     var notificationCenterClient
     let horizontalPadding: CGFloat = 12
@@ -80,6 +93,7 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
             guard let self else { return }
             updateLayout(for: width)
             updateGridColumnCountIfNeeded(for: width)
+            completePhysicalLayoutAndConsumePendingTypeScrollTarget()
         }
         ensureDoubleClickGesture()
         guard !didBind else {
@@ -95,6 +109,7 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
     func updateView(_ view: EntryGridView) {
         guard self.view !== view else { return }
         self.view = view
+        hasCompletedFirstPhysicalLayout = false
         collectionView.dataSource = self
         collectionView.delegate = self
         collectionView.contextMenuProvider = self
@@ -108,6 +123,7 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
             guard let self else { return }
             updateLayout(for: width)
             updateGridColumnCountIfNeeded(for: width)
+            completePhysicalLayoutAndConsumePendingTypeScrollTarget()
         }
         ensureDoubleClickGesture()
     }
@@ -261,6 +277,14 @@ extension EntryGridCoordinator {
         }
         collectionView.scrollToItems(at: [indexPath], scrollPosition: .centeredVertically)
         store.send(.view(.resetScrollFlag))
+    }
+
+    /// 타자 검색으로 설정된 pending target을 centered 스크롤하고 reset한다.
+    /// 성공 여부와 관계없이 resetTypeScrollTarget을 발행해 일회성 소비를 보장한다.
+    func scrollToTypeScrollTarget(_ targetId: EntryModel.ID) {
+        defer { store.send(.view(.resetTypeScrollTarget)) }
+        guard let indexPath = indexPathByEntryId[targetId] else { return }
+        collectionView.scrollToItems(at: [indexPath], scrollPosition: .centeredVertically)
     }
 
     func reloadVisibleItems() {

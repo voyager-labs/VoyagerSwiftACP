@@ -187,6 +187,7 @@ extension EVM002FileManagerPagePresentationTests {
         let store = Store(initialState: state) {
             FileManagerContentFeature()
         } withDependencies: {
+            $0.entryQuickLookClient = .init(quickLook: { _, _ in }, syncQuickLookSelection: { _, _ in })
             configureDeterministicDate(&$0)
         }
         let coordinator = EntryListCoordinator(store: store.scope(
@@ -223,6 +224,7 @@ extension EVM002FileManagerPagePresentationTests {
         let store = Store(initialState: nestedSelectionState(folder: folder, child: child)) {
             FileManagerContentFeature()
         } withDependencies: {
+            $0.entryQuickLookClient = .init(quickLook: { _, _ in }, syncQuickLookSelection: { _, _ in })
             configureDeterministicDate(&$0)
         }
         let coordinator = EntryListCoordinator(store: store.scope(
@@ -258,6 +260,7 @@ extension EVM002FileManagerPagePresentationTests {
         let store = Store(initialState: nestedSelectionState(folder: folder, child: child)) {
             FileManagerContentFeature()
         } withDependencies: {
+            $0.entryQuickLookClient = .init(quickLook: { _, _ in }, syncQuickLookSelection: { _, _ in })
             configureDeterministicDate(&$0)
         }
         let coordinator = EntryListCoordinator(store: store.scope(

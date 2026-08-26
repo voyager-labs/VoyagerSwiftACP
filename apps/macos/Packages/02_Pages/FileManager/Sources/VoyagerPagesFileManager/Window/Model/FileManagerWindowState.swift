@@ -196,6 +196,10 @@ public struct FileManagerWindowState: Equatable {
     var pendingRuntimePreservationRecords: [ContentTabID: ContentTabPinnedRecord] = [:]
     public var pendingContentTabTeardown: PendingContentTabTeardown?
     public var isClosing: Bool
+    /// 윈도우가 현재 key(포커스) 상태인지 여부.
+    /// 앱 레벨 `WindowManagerFeature`가 windowBecameKey/ResignedKey 이벤트로 설정한다.
+    /// 프로세스 전역 Quick Look 패널을 동기화할 수 있는 소유자(포커스된 윈도우의 활성 탭)를 판별하는 데 사용한다.
+    public var isFocused: Bool
     public var pendingDirectoryReloadTabIDs: Set<ContentTabID>
     public var undoManagerAvailability: UndoManagerAvailability
     public var undoRedoPhase: FileManagerUndoRedoPhase
@@ -235,6 +239,7 @@ public struct FileManagerWindowState: Equatable {
         deferredPinnedContentTabsMode = nil
         pendingContentTabTeardown = nil
         isClosing = false
+        isFocused = false
         pendingDirectoryReloadTabIDs = []
         undoManagerAvailability = .init()
         undoRedoPhase = .idle
@@ -396,6 +401,7 @@ public struct FileManagerWindowState: Equatable {
         deferredPinnedContentTabsMode = nil
         pendingContentTabTeardown = nil
         isClosing = false
+        isFocused = false
         pendingDirectoryReloadTabIDs = []
         undoManagerAvailability = .init()
         undoRedoPhase = .idle

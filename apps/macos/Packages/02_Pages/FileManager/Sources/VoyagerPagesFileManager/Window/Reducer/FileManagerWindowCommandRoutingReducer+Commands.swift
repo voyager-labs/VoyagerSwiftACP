@@ -247,8 +247,22 @@ extension FileManagerWindowCommandRoutingReducer {
         case .selectMostRecentlyUsedContentTab:
             handleSelectMostRecentlyUsedContentTab(state: &state)
 
+        case .activateContentTabSwitcherSelection:
+            // focused window command는 소유 presentation의 focusedCandidateID를 해석해 canonical helper로 보낸다.
+            if let focusedID = state.contentTabSwitcherPresentation?.focusedCandidateID {
+                handleActivateContentTabSwitcherCandidate(focusedID, state: &state)
+            } else {
+                Effect<Action>.none
+            }
+
         case let .presentContentTabSwitcher(source):
             handlePresentContentTabSwitcher(source: source, state: &state)
+
+        case let .moveContentTabSwitcherFocus(direction):
+            handleMoveContentTabSwitcherFocus(direction: direction, state: &state)
+
+        case .dismissContentTabSwitcher:
+            handleDismissContentTabSwitcher(state: &state)
 
         default:
             nil

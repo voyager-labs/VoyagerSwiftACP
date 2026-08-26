@@ -409,7 +409,30 @@ enum WindowManagerAction: CasePathable {
         case duplicateTab
         case selectContentTab(position: Int)
         case presentContentTabSwitcher
+        case presentContentTabSwitcherInWindow(
+            windowID: WindowManagerState.WindowID,
+            source: FileManagerContentTabSwitcherPresentation.Source,
+        )
         case selectMostRecentlyUsedContentTab
+        case activateContentTabSwitcherInWindow(
+            windowID: WindowManagerState.WindowID,
+            source: FileManagerContentTabSwitcherPresentation.Source,
+        )
+        case moveNextContentTabSwitcher
+        case moveNextContentTabSwitcherInWindow(
+            windowID: WindowManagerState.WindowID,
+            source: FileManagerContentTabSwitcherPresentation.Source,
+        )
+        case movePreviousContentTabSwitcher
+        case movePreviousContentTabSwitcherInWindow(
+            windowID: WindowManagerState.WindowID,
+            source: FileManagerContentTabSwitcherPresentation.Source,
+        )
+        case dismissContentTabSwitcher
+        case dismissContentTabSwitcherInWindow(
+            windowID: WindowManagerState.WindowID,
+            source: FileManagerContentTabSwitcherPresentation.Source,
+        )
         case newFolder
         case open
         case quickLook

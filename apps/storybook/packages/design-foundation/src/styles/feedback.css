@@ -1,0 +1,99 @@
+/* Feedback primitives — Alert, status indicators */
+
+/* === Alert === */
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .vc-alert {
+  display: flex;
+  gap: var(--fm-space-4);
+  min-width: 0;
+  border: 1px solid var(--macos-separator-color);
+  border-radius: var(--fm-radius-md);
+  background: var(--macos-control-color);
+  padding: var(--fm-space-5) var(--fm-space-6);
+  box-shadow: inset 0 1px 0 var(--fm-control-inner-highlight);
+  font-family: var(--fm-font-ui);
+}
+
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .vc-alert__icon {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  place-items: center;
+  border-radius: var(--fm-radius-round);
+  font-size: 12px;
+  font-weight: var(--fm-weight-bold);
+  line-height: 1;
+  color: var(--macos-alternate-selected-control-text-color);
+}
+
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .vc-alert--informational
+  .vc-alert__icon {
+  background: var(--macos-system-blue);
+}
+
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .vc-alert--warning
+  .vc-alert__icon {
+  background: var(--macos-system-orange);
+}
+
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .vc-alert--critical
+  .vc-alert__icon {
+  background: var(--macos-system-red);
+}
+
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .vc-alert__body {
+  display: grid;
+  min-width: 0;
+  gap: var(--fm-space-2);
+  flex: 1;
+}
+
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .vc-alert__title {
+  font-size: var(--fm-font-size-body);
+  font-weight: var(--fm-weight-semibold);
+  color: var(--macos-label-color);
+  line-height: var(--fm-line-tight);
+}
+
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .vc-alert__message {
+  margin: 0;
+  font-size: var(--fm-font-size-caption);
+  color: var(--macos-secondary-label-color);
+  line-height: var(--fm-line-body);
+}
+
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .vc-alert__actions {
+  display: flex;
+  gap: var(--fm-space-3);
+  margin-top: var(--fm-space-2);
+}
+
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .vc-alert--informational {
+  border-color: color-mix(in srgb, var(--macos-system-blue) 24%, transparent);
+  background: color-mix(in srgb, var(--macos-system-blue) 6%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--macos-system-blue) 10%, transparent);
+}
+
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .vc-alert--warning {
+  border-color: var(--fm-warning-outline);
+  background: color-mix(in srgb, var(--macos-system-orange) 6%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--macos-system-orange) 10%, transparent);
+}
+
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .vc-alert--critical {
+  border-color: var(--fm-danger-outline);
+  background: color-mix(in srgb, var(--macos-system-red) 6%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--macos-system-red) 10%, transparent);
+}

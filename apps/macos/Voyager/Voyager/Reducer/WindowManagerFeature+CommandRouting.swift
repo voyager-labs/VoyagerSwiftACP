@@ -88,11 +88,31 @@ extension WindowManagerFeature {
         _ state: State,
         _ command: FileManagerWindowAction.WindowCommand,
     ) -> Effect<Action> {
-        guard let id = state.focusedWindowID,
-              !state.closingWindowIDs.contains(id),
+        guard let id = state.focusedWindowID else { return .none }
+        return sendCommandToWindow(state, id: id, command: command)
+    }
+
+    func sendCommandToWindow(
+        _ state: State,
+        id: WindowManagerState.WindowID,
+        command: FileManagerWindowAction.WindowCommand,
+    ) -> Effect<Action> {
+        guard !state.closingWindowIDs.contains(id),
               state.windows[id: id] != nil
         else { return .none }
         return .send(.windows(.element(id: id, action: .window(.request(command)))))
+    }
+
+    func sendCommandToWindowIfPresentationMatches(
+        _ state: State,
+        id: WindowManagerState.WindowID,
+        source: FileManagerContentTabSwitcherPresentation.Source,
+        command: FileManagerWindowAction.WindowCommand,
+    ) -> Effect<Action> {
+        guard state.windows[id: id]?.window.contentTabSwitcherPresentation?.source == source else {
+            return .none
+        }
+        return sendCommandToWindow(state, id: id, command: command)
     }
 
     func sendContentTabCommandToFocusedWindow(

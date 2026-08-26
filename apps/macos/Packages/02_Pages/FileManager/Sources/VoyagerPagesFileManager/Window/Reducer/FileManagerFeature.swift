@@ -59,6 +59,11 @@ private extension FileManagerFeature {
 
                 let generation = undoManagerGeneration(tabID: tabID, state: state)
                 let isActiveTab = state.contentTabs.activeTabID == tabID
+                // 프로세스 전역 Quick Look 패널 동기화는 포커스된 윈도우의 활성 탭만 수행한다.
+                // 비활성 탭이나 백그라운드 윈도우의 selectionChanged는 visible 패널을 덮어쓰지 않도록 억제한다.
+                if isQuickLookSelectionSync(contentAction), !(isActiveTab && state.isFocused) {
+                    return .none
+                }
                 guard var contentState = isActiveTab ? state.content : state.tabContentStates[tabID] else {
                     return .none
                 }
@@ -490,6 +495,14 @@ private extension FileManagerFeature {
         }
 
         Reduce { state, action in
+            if case .request(.moveContentTabSwitcherFocus) = action {
+                // stale focus의 방향 정보는 command reducer에서 처리한다.
+            } else if case .request(.activateContentTabSwitcherSelection) = action {
+                // focused window command는 stale focus 보존을 위해 command reducer가 직접 처리한다.
+            } else if case .view(.activateContentTabSwitcherCandidate) = action {
+            } else {
+                reconcileContentTabSwitcherPresentation(state: &state)
+            }
             switch action {
             case let .contentTabs(.updateActivePageAnchor(tabID, _))
                 where state.contentTabs.activeTabID == tabID:
@@ -584,6 +597,15 @@ func fileManagerContentState(
     state: FileManagerWindowState,
 ) -> FileManagerContentFeature.State? {
     state.contentTabs.activeTabID == tabID ? state.content : state.tabContentStates[tabID]
+}
+
+/// 프로세스 전역 Quick Look 패널 동기화 action 여부.
+/// selectionChanged bridge가 발행하는 `.open(.syncQuickLookSelection)`만 해당한다.
+private func isQuickLookSelectionSync(_ action: FileManagerContentAction) -> Bool {
+    if case .entryViewLayout(.entryOperations(.open(.syncQuickLookSelection))) = action {
+        return true
+    }
+    return false
 }
 
 private func isComposerSaveRequest(_ action: FileManagerContentAction) -> Bool {
