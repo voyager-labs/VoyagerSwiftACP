@@ -639,12 +639,21 @@ extension RuntimeControlPlane {
                     host: host,
                     lease: lease,
                 ) else { return }
-                _ = try? await finishConsumedOutcome(
-                    consumed,
-                    receipt: receipt,
-                    host: host,
-                    lease: lease,
-                )
+                do {
+                    try await finishConsumedOutcome(
+                        consumed,
+                        receipt: receipt,
+                        host: host,
+                        lease: lease,
+                    )
+                } catch is CancellationError {
+                    return
+                } catch {
+                    applyCleanupFailedDecision(
+                        host: host,
+                        runReference: receipt.runReference,
+                    )
+                }
             case let .failed(failure):
                 _ = try? await recoverConsumptionFailure(failure, receipt: receipt, host: host, lease: lease)
             }

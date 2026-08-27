@@ -193,16 +193,7 @@ extension RuntimeFreshRunCoordinatorContractTests {
         try await plane.projectPrelaunch(request, as: .policyReady)
 
         let runTask = Task { try await plane.run(request) }
-        let recorder = ResumeProbeRecorder()
-        let monitor = Task {
-            do {
-                try await recorder.record(.result(runTask.value))
-            } catch is CancellationError {
-                await recorder.record(.cancellation)
-            } catch {
-                await recorder.record(.failure(String(describing: error)))
-            }
-        }
+        let (recorder, monitor) = monitorFreshRun(runTask)
         await adapter.waitForEventStreamCount(1)
         await invocationGate.waitUntilWaiting()
 
@@ -254,6 +245,149 @@ extension RuntimeFreshRunCoordinatorContractTests {
         #expect(try await plane.run(replacementRequest).outcome == .completed)
 
         _ = await monitor.value
+    }
+
+    /// VOY-747-fresh_uncooperative_provider: background terminal persistence failure remains observable and
+    /// recoverable.
+    /// caller 탈출 뒤 terminal result 저장이 실패해도 정리 실패 근거와 cross-plane 회복 경계가 유지되는지 고정한다.
+    /// - 검증 내용: save 5 실패 뒤 persistence evidence, running/detached 소유권, persisted terminal 동기화와 교체 승인.
+    /// - 사전 조건: 빈 provider stream이 invocation gate에서 대기하고 terminal result 저장만 실패한다.
+    /// - 기대 결과: 실패는 삼켜지지 않고 관찰되며 다른 plane의 terminal 저장 뒤 교체 prelaunch가 성공한다.
+    @Test
+    func `fresh background terminal persistence failure remains observable and recoverable`() async throws {
+        let host: ExternalAgentSessionReference = "uncooperative-terminal-persistence-host"
+        let run = RuntimeRunReference("uncooperative-terminal-persistence-run")
+        let replacementRun = RuntimeRunReference("uncooperative-terminal-persistence-replacement")
+        let invocationGate = RuntimeTestGate()
+        let store = InMemoryRuntimeStateStore(failingSaveNumbers: [5])
+        let terminal = RuntimeResult(runReference: run, outcome: .completed, artifactReferences: [])
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            capabilities: .allSupported,
+            eventsByEventStream: [[]],
+            eventStreamInvocationGate: invocationGate,
+            terminalResultOverride: terminal,
+        )
+        let plane = RuntimeControlPlane(store: store)
+        try await plane.register(adapter)
+        let request = makeLaunch(host: host, run: run, adapterID: "sdk")
+        let replacementRequest = makeLaunch(host: host, run: replacementRun, adapterID: "sdk")
+        try await plane.projectPrelaunch(request, as: .policyReady)
+
+        let runTask = Task { try await plane.run(request) }
+        let recorder = ResumeProbeRecorder()
+        let monitor = Task {
+            do {
+                try await recorder.record(.result(runTask.value))
+            } catch is CancellationError {
+                await recorder.record(.cancellation)
+            } catch {
+                await recorder.record(.failure(String(describing: error)))
+            }
+        }
+        await adapter.waitForEventStreamCount(1)
+        await invocationGate.waitUntilWaiting()
+
+        runTask.cancel()
+        guard await recorder.waitForValue(), await recorder.value == .cancellation else {
+            Issue.record("caller 취소는 terminal persistence 시도 전에 CancellationError로 탈출해야 한다")
+            await invocationGate.open()
+            _ = await monitor.value
+            return
+        }
+        let detached = try #require(await plane.sessions[host])
+        #expect(isDetachedConsuming(detached.lease))
+        #expect(detached.stored.projection == .running)
+
+        try await assertBackgroundTerminalPersistenceFailure(
+            plane: plane,
+            store: store,
+            invocationGate: invocationGate,
+            host: host,
+            run: run,
+        )
+        try await persistCrossPlaneTerminalAndAdmitReplacement(
+            plane: plane,
+            store: store,
+            request: replacementRequest,
+            originalRun: run,
+        )
+
+        _ = await monitor.value
+    }
+
+    private func assertBackgroundTerminalPersistenceFailure(
+        plane: RuntimeControlPlane,
+        store: InMemoryRuntimeStateStore,
+        invocationGate: RuntimeTestGate,
+        host: ExternalAgentSessionReference,
+        run: RuntimeRunReference,
+    ) async throws {
+        await invocationGate.open()
+        await store.waitForSaveCount(5)
+        var recordedFailure = false
+        for _ in 0 ..< 600 {
+            if await plane.cleanupFailureEvidence(for: host) != nil {
+                recordedFailure = true
+                break
+            }
+            try? await Task.sleep(nanoseconds: 5_000_000)
+        }
+        #expect(recordedFailure, "배경 terminal persistence 실패는 cleanup evidence로 관찰되어야 한다")
+        #expect(await plane.cleanupFailureEvidence(for: host) == RuntimeCleanupFailureEvidence(
+            runReference: run,
+            kind: .persistence,
+        ))
+        #expect(await plane.projection(for: host) == .running)
+        #expect(await store.currentState()?.sessions.first?.projection == .running)
+        #expect(await isDetachedConsuming(plane.sessions[host]?.lease))
+    }
+
+    private func monitorFreshRun(
+        _ runTask: Task<RuntimeResult, any Error>,
+    ) -> (ResumeProbeRecorder, Task<Void, Never>) {
+        let recorder = ResumeProbeRecorder()
+        let monitor = Task {
+            do {
+                try await recorder.record(.result(runTask.value))
+            } catch is CancellationError {
+                await recorder.record(.cancellation)
+            } catch {
+                await recorder.record(.failure(String(describing: error)))
+            }
+        }
+        return (recorder, monitor)
+    }
+
+    private func isDetachedConsuming(
+        _ lease: RuntimeControlPlane.RuntimeLease?,
+    ) -> Bool {
+        if case .detachedConsuming = lease { return true }
+        return false
+    }
+
+    private func persistCrossPlaneTerminalAndAdmitReplacement(
+        plane: RuntimeControlPlane,
+        store: InMemoryRuntimeStateStore,
+        request: RuntimeLaunchRequest,
+        originalRun: RuntimeRunReference,
+    ) async throws {
+        let terminalPlane = RuntimeControlPlane(store: store)
+        let terminalEvent = RuntimeEventEnvelope(
+            source: .host,
+            providerEventID: ProviderEventID("uncooperative-terminal-persistence-host-event"),
+            sequence: 1,
+            idempotencyKey: RuntimeIdempotencyKey("uncooperative-terminal-persistence-host-event"),
+            timestamp: Date(timeIntervalSince1970: 1),
+            externalAgentSessionReference: request.externalAgentSessionReference,
+            runReference: originalRun,
+            kind: .completed,
+        )
+        #expect(try await terminalPlane.ingestHostEvent(terminalEvent)?.outcome == .completed)
+        try await plane.projectPrelaunch(request, as: .policyReady)
+        #expect(await plane.projection(for: request.externalAgentSessionReference) == .policyReady)
+        #expect(await store.currentState()?.sessions.first?.runReference == request.runReference)
     }
 
     /// probe 종료 시 gate와 대기 작업을 반드시 정리해 테스트 뒤 유출이 없도록 한다.
