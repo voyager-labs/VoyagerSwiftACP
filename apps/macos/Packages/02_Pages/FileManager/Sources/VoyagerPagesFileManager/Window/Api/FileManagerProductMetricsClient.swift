@@ -1,10 +1,13 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerFeaturesContentPageNavigation
+import VoyagerFeaturesEntryOperations
 
 public enum FileManagerProductMetric: Equatable, Sendable {
     case contentBrowsing(
         result: ContentBrowsingResult,
         content: ContentBrowsingKind,
+        identity: ContentPageNavigationInteractionIdentity,
         source: ContentBrowsingSource,
         operationID: UUID,
     )
@@ -14,13 +17,47 @@ public enum FileManagerProductMetric: Equatable, Sendable {
         source: ContentTabActionSource,
         operationID: UUID,
     )
-    case entryAction(
+    case entryAction(EntryActionProductMetric)
+}
+
+public struct EntryActionProductMetric: Equatable, Sendable {
+    public let result: EntryActionResult
+    public let identity: EntryInteractionIdentity
+    public let source: EntryCommandSource
+    public let operationID: UUID
+    public let aggregate: EntryActionAggregate
+
+    public init(
         result: EntryActionResult,
-        action: EntryActionMetricKind,
-        source: EntryActionMetricSource,
+        identity: EntryInteractionIdentity,
+        source: EntryCommandSource,
         operationID: UUID,
         aggregate: EntryActionAggregate,
-    )
+    ) {
+        self.result = result
+        self.identity = identity
+        self.source = source
+        self.operationID = operationID
+        self.aggregate = aggregate
+    }
+}
+
+public extension FileManagerProductMetric {
+    static func entryAction(
+        result: EntryActionResult,
+        identity: EntryInteractionIdentity,
+        source: EntryCommandSource,
+        operationID: UUID,
+        aggregate: EntryActionAggregate,
+    ) -> Self {
+        .entryAction(.init(
+            result: result,
+            identity: identity,
+            source: source,
+            operationID: operationID,
+            aggregate: aggregate,
+        ))
+    }
 }
 
 public enum ContentBrowsingResult: String, Equatable, Sendable {
@@ -59,6 +96,7 @@ public enum ContentTabActionResult: String, Equatable, Sendable {
 public enum ContentTabInteractionIdentity: Equatable, Sendable {
     case openNewContentTab
     case closeContentTab
+    case closeSelectedContentTabs
     case duplicateContentTab
     case duplicateSelectedContentTabs
     case restoreLastClosedTab
@@ -73,7 +111,7 @@ public enum ContentTabInteractionIdentity: Equatable, Sendable {
     public var actionType: String {
         switch self {
         case .openNewContentTab: "open"
-        case .closeContentTab: "close"
+        case .closeContentTab, .closeSelectedContentTabs: "close"
         case .duplicateContentTab, .duplicateSelectedContentTabs: "duplicate"
         case .restoreLastClosedTab: "restore"
         case .reorderContentTab, .reorderSelectedContentTabs: "reorder"
@@ -103,39 +141,24 @@ public enum EntryActionResult: String, Equatable, Sendable {
     case unavailable
 }
 
-public enum EntryActionMetricKind: String, Equatable, Sendable {
-    case open
-    case quickLook = "quick_look"
-    case share
-    case revealInFinder = "reveal_in_finder"
-    case copyPath = "copy_path"
-    case create
-    case rename
-    case move
-    case copy
-    case trash
-    case restore
-    case tag
-}
-
-public enum EntryActionMetricSource: String, Equatable, Sendable {
-    case fileManagerContent = "file_manager_content"
-    case contextMenu = "context_menu"
-    case toolbar
-    case keyboardShortcut = "keyboard_shortcut"
-    case menuCommand = "menu_command"
-    case dragAndDrop = "drag_and_drop"
-}
-
 public struct EntryActionAggregate: Equatable, Sendable {
     public let attempted: Int
     public let succeeded: Int
     public let failed: Int
+    public let cancelled: Int
 
     public init(attempted: Int, succeeded: Int, failed: Int) {
         self.attempted = max(0, min(attempted, 1000))
         self.succeeded = max(0, min(succeeded, 1000))
         self.failed = max(0, min(failed, 1000))
+        cancelled = 0
+    }
+
+    public init(attempted: Int, succeeded: Int, failed: Int, cancelled: Int) {
+        self.attempted = max(0, min(attempted, 1000))
+        self.succeeded = max(0, min(succeeded, 1000))
+        self.failed = max(0, min(failed, 1000))
+        self.cancelled = max(0, min(cancelled, 1000))
     }
 }
 
@@ -169,6 +192,7 @@ public enum FileManagerProductMetricsProducer {
     public static func browsingTerminal(
         operationID: UUID,
         content: ContentBrowsingKind,
+        identity: ContentPageNavigationInteractionIdentity,
         source: ContentBrowsingSource,
         entryCount: Int?,
         failure: ContentBrowsingResult?,
@@ -179,6 +203,7 @@ public enum FileManagerProductMetricsProducer {
         return .contentBrowsing(
             result: result,
             content: content,
+            identity: identity,
             source: source,
             operationID: operationID,
         )
@@ -202,14 +227,14 @@ public enum FileManagerProductMetricsProducer {
 
     public static func entryTerminal(
         operationID: UUID,
-        action: EntryActionMetricKind,
-        source: EntryActionMetricSource,
+        identity: EntryInteractionIdentity,
+        source: EntryCommandSource,
         result: EntryActionResult,
         aggregate: EntryActionAggregate,
     ) -> FileManagerProductMetric {
         .entryAction(
             result: result,
-            action: action,
+            identity: identity,
             source: source,
             operationID: operationID,
             aggregate: aggregate,

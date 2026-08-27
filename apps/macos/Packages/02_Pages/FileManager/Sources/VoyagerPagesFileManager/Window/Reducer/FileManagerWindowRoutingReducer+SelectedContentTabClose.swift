@@ -22,13 +22,7 @@ extension FileManagerWindowRoutingReducer {
         else { return .none }
 
         guard pending.cursor < pending.orderedTargetIDs.count else {
-            let replayAction = takeDeferredPinnedContentTabsAction(state: &state)
-            state.pendingSelectedContentTabClose = nil
-            let cancelEffect = Effect<Action>.cancel(
-                id: SelectedContentTabCloseOperationCancelID(operationID: operationID),
-            )
-            guard let replayAction else { return cancelEffect }
-            return .concatenate(cancelEffect, .send(replayAction))
+            return completeSelectedContentTabClose(pending, state: &state)
         }
 
         let tabID = pending.orderedTargetIDs[pending.cursor]
@@ -63,6 +57,27 @@ extension FileManagerWindowRoutingReducer {
         )
     }
 
+    private func completeSelectedContentTabClose(
+        _ pending: PendingSelectedContentTabClose,
+        state: inout State,
+    ) -> Effect<Action> {
+        let replayAction = takeDeferredPinnedContentTabsAction(state: &state)
+        state.pendingSelectedContentTabClose = nil
+        if let result = pending.aggregateResult {
+            productMetricsClient.record(FileManagerProductMetricsProducer.contentTabTerminal(
+                operationID: pending.operationID,
+                identity: .closeSelectedContentTabs,
+                source: .contentTabBar,
+                result: result,
+            ))
+        }
+        let cancelEffect = Effect<Action>.cancel(
+            id: SelectedContentTabCloseOperationCancelID(operationID: pending.operationID),
+        )
+        guard let replayAction else { return cancelEffect }
+        return .concatenate(cancelEffect, .send(replayAction))
+    }
+
     func completeSelectedContentTabCloseItem(
         operationID: UUID,
         tabID: ContentTabID,
@@ -83,6 +98,10 @@ extension FileManagerWindowRoutingReducer {
                 state.contentTabs.selectedTabIDs.insert(tabID)
             }
         }
+        pending.aggregateResult = aggregateSelectedContentTabCloseResult(
+            pending.aggregateResult,
+            outcome: outcome,
+        )
         state.contentTabs.reconcileSelection()
 
         if pending.originalActiveTabID == tabID,
@@ -114,6 +133,27 @@ extension FileManagerWindowRoutingReducer {
         pending.currentTabID = nil
         state.pendingSelectedContentTabClose = pending
         return .send(.processNextSelectedContentTabClose(operationID: operationID))
+    }
+
+    private func aggregateSelectedContentTabCloseResult(
+        _ current: ContentTabActionResult?,
+        outcome: SelectedContentTabCloseOutcome,
+    ) -> ContentTabActionResult {
+        let next: ContentTabActionResult = switch outcome {
+        case .removed, .unpinned, .missing:
+            .success
+        case .cancelled:
+            .cancelled
+        case .failed:
+            .failure
+        }
+        if current == .failure || next == .failure {
+            return .failure
+        }
+        if current == .success || next == .success {
+            return .success
+        }
+        return .cancelled
     }
 
     func preferredSelectedContentTabCloseFallbackID(

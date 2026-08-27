@@ -528,6 +528,7 @@ public struct PendingSelectedContentTabClose: Equatable, Sendable {
     public var currentTabID: ContentTabID?
     public let originalActiveTabID: ContentTabID?
     public let preferredFallbackIDs: [ContentTabID]
+    public var aggregateResult: ContentTabActionResult?
 
     public init(
         operationID: UUID,
@@ -543,6 +544,7 @@ public struct PendingSelectedContentTabClose: Equatable, Sendable {
         self.currentTabID = currentTabID
         self.originalActiveTabID = originalActiveTabID
         self.preferredFallbackIDs = preferredFallbackIDs
+        aggregateResult = nil
     }
 
     public init(

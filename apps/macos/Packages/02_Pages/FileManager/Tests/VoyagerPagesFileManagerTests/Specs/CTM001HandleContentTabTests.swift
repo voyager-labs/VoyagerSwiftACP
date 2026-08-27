@@ -382,6 +382,12 @@ private struct SelectedCloseTerminalCase {
     let expectedOutcome: SelectedContentTabCloseOutcome
 }
 
+private struct SelectedCloseMetricPrecedenceCase {
+    let current: ContentTabActionResult
+    let outcome: SelectedContentTabCloseOutcome
+    let expected: ContentTabActionResult
+}
+
 private struct SelectedGroupReorderCase {
     let anchorID: ContentTabID
     let placement: FileManagerTopNavigationReorderPlacement
@@ -522,6 +528,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
         } assert: {
             $0.pendingSelectedContentTabClose?.cursor = 1
             $0.pendingSelectedContentTabClose?.currentTabID = nil
+            $0.pendingSelectedContentTabClose?.aggregateResult = .success
         }
         await store.receive(\.processNextSelectedContentTabClose, operationID) {
             $0.pendingSelectedContentTabClose = nil
@@ -1581,7 +1588,12 @@ final class CTM001HandleContentTabTests: XCTestCase {
         }
 
         await store.send(.view(.handleKeyCommand(command)))
-        await store.receive(\.entryViewLayout.delegate.executeCommand, "clipboard.duplicateSelectedItems")
+        await store.receive { action in
+            guard case let .entryViewLayout(.delegate(.executeCommand(command, source))) = action else {
+                return false
+            }
+            return command == "clipboard.duplicateSelectedItems" && source == .keyboardShortcut
+        }
         await store.finish()
     }
 
@@ -6061,12 +6073,12 @@ final class CTM001HandleContentTabTests: XCTestCase {
         ])
     }
 
-    /// CTM-001-content_tab_action_metrics: 배치 selected close는 항목별 close 메트릭을 억제한다.
-    /// coordinator 수명 동안 finalize가 N번 실행되어도 이벤트 중복이 없는지 검증한다.
-    /// - 검증 내용: 두 탭 제거 완료 후에도 레코더 빈 배열
+    /// CTM-001-content_tab_action_metrics: 배치 selected close는 항목별 close 대신 집계 terminal 한 건을 기록한다.
+    /// coordinator 수명 동안 finalize가 N번 실행되어도 batch operation ID로 이벤트 한 건만 기록하는지 검증한다.
+    /// - 검증 내용: 두 탭 제거 완료 후 `.success/.closeSelectedContentTabs` 한 건
     /// - 사전 조건: pinned-first interleaved 선택 상태에서 2개 대상 batch close
-    /// - 기대 결과: 메트릭 0건
-    func testBatchSelectedCloseSuppressesPerItemCloseMetrics() async throws {
+    /// - 기대 결과: 항목별 close 메트릭 없이 집계 메트릭 1건
+    func testBatchSelectedCloseEmitsSingleAggregateMetric() async throws {
         let activeID = ContentTabID(rawValue: "suppress-close-active")
         let pinnedID = ContentTabID(rawValue: "suppress-close-pinned")
         let visualRightID = ContentTabID(rawValue: "suppress-close-visual-right")
@@ -6107,7 +6119,128 @@ final class CTM001HandleContentTabTests: XCTestCase {
         XCTAssertNil(store.state.pendingSelectedContentTabClose)
         XCTAssertNil(store.state.contentTabs.tabs[id: targetID])
         XCTAssertNil(store.state.contentTabs.tabs[id: activeID])
+        XCTAssertEqual(recorder.metrics(), [
+            .contentTabAction(
+                result: .success,
+                identity: .closeSelectedContentTabs,
+                source: .contentTabBar,
+                operationID: operationID,
+            ),
+        ])
+    }
+
+    /// CTM-001-content_tab_action_metrics: selected close 집계 결과는 failure > success > cancelled 순서다.
+    /// 실제 item outcome 조합이 유한 result_status 하나로 결정되는지 검증한다.
+    /// - 검증 내용: mixed success/cancel, all cancel, success/failure 조합의 terminal
+    /// - 사전 조건: 마지막 item만 남은 상관된 pending batch
+    /// - 기대 결과: 각각 success, cancelled, failure 한 건
+    func testBatchSelectedCloseUsesDeterministicFiniteResultPrecedence() async {
+        let fixture = makeSelectedContentTabCloseFixture()
+        let cases = [
+            SelectedCloseMetricPrecedenceCase(current: .success, outcome: .cancelled, expected: .success),
+            SelectedCloseMetricPrecedenceCase(current: .cancelled, outcome: .cancelled, expected: .cancelled),
+            SelectedCloseMetricPrecedenceCase(current: .success, outcome: .failed, expected: .failure),
+        ]
+
+        for (index, testCase) in cases.enumerated() {
+            let operationID = UUID(uuid: (
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, UInt8(index + 1),
+            ))
+            var state = fixture.state
+            state.pendingSelectedContentTabClose = PendingSelectedContentTabClose(
+                operationID: operationID,
+                orderedTargetIDs: [fixture.tabA, fixture.tabB],
+                cursor: 1,
+                currentTabID: fixture.tabB,
+                originalActiveTabID: fixture.tabC,
+                preferredFallbackIDs: [fixture.tabD],
+            )
+            state.pendingSelectedContentTabClose?.aggregateResult = testCase.current
+            state.pendingContentTabClose = PendingContentTabClose(
+                tabID: fixture.tabB,
+                batchOperationID: operationID,
+            )
+            let recorder = FileManagerProductMetricRecorder()
+            let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
+                $0.fileManagerProductMetricsClient = recorder.client
+            }
+            // store.exhaustivity = .off: batch state 정산보다 aggregate result precedence에 집중함
+            store.exhaustivity = .off
+
+            await store.send(.selectedContentTabCloseItemCompleted(
+                operationID: operationID,
+                tabID: fixture.tabB,
+                outcome: testCase.outcome,
+            ))
+            await store.receive(\.processNextSelectedContentTabClose, operationID)
+
+            XCTAssertEqual(recorder.metrics(), [
+                .contentTabAction(
+                    result: testCase.expected,
+                    identity: .closeSelectedContentTabs,
+                    source: .contentTabBar,
+                    operationID: operationID,
+                ),
+            ])
+        }
+    }
+
+    /// CTM-001-content_tab_action_metrics: stale, duplicate, 시작 거부 selected close는 terminal을 만들지 않는다.
+    /// 수용된 batch의 true terminal만 기록되는지 검증한다.
+    /// - 검증 내용: wrong operation, duplicate completion, selected count 1 request 뒤 metric count 유지
+    /// - 사전 조건: 마지막 item pending batch와 단일 선택 state
+    /// - 기대 결과: 최초 정상 terminal 한 건 외 추가 메트릭 없음
+    func testBatchSelectedCloseRejectsStaleDuplicateAndUnacceptedMetrics() async {
+        let fixture = makeSelectedContentTabCloseFixture()
+        let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 4))
+        let staleOperationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 5))
+        var state = fixture.state
+        state.pendingSelectedContentTabClose = PendingSelectedContentTabClose(
+            operationID: operationID,
+            orderedTargetIDs: [fixture.tabA],
+            currentTabID: fixture.tabA,
+            originalActiveTabID: fixture.tabC,
+            preferredFallbackIDs: [fixture.tabD],
+        )
+        state.pendingContentTabClose = PendingContentTabClose(
+            tabID: fixture.tabA,
+            batchOperationID: operationID,
+        )
+        let recorder = FileManagerProductMetricRecorder()
+        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: 최초 terminal 이후 stale/duplicate metric no-op에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.selectedContentTabCloseItemCompleted(
+            operationID: staleOperationID,
+            tabID: fixture.tabA,
+            outcome: .failed,
+        ))
         XCTAssertTrue(recorder.metrics().isEmpty)
+        await store.send(.selectedContentTabCloseItemCompleted(
+            operationID: operationID,
+            tabID: fixture.tabA,
+            outcome: .removed,
+        ))
+        await store.receive(\.processNextSelectedContentTabClose, operationID)
+        XCTAssertEqual(recorder.metrics().count, 1)
+
+        await store.send(.selectedContentTabCloseItemCompleted(
+            operationID: operationID,
+            tabID: fixture.tabA,
+            outcome: .removed,
+        ))
+        await store.send(.processNextSelectedContentTabClose(operationID: operationID))
+        var rejectedState = fixture.state
+        rejectedState.contentTabs.selectedTabIDs = [fixture.tabA]
+        let rejectedStore = TestStore(initialState: rejectedState) { FileManagerFeature() } withDependencies: {
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        await rejectedStore.send(.requestCloseSelectedContentTabs)
+
+        XCTAssertEqual(recorder.metrics().count, 1)
     }
 
     // MARK: - CTM-001-handle_content_tab_invariants
