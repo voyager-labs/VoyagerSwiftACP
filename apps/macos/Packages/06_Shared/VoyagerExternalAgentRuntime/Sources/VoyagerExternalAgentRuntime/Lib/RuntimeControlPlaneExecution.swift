@@ -403,6 +403,15 @@ extension RuntimeControlPlane {
             } catch {
                 // 원래 adapter 오류를 우선하기 위해 fallback persistence 오류는 무시한다.
             }
+            applyCleanupFailedDecision(
+                host: reservation.host,
+                runReference: runReference,
+            )
+            detachTrustedLaunchOwner(
+                host: reservation.host,
+                runReference: runReference,
+                lease: reservation.lease,
+            )
         }
         throw primary
     }

@@ -142,4 +142,42 @@ extension RuntimeFreshRunCoordinatorContractTests {
         await streamGate.open()
         _ = await monitor.value
     }
+
+    /// VOY-746-coordinator_contract: failed launch persistence detaches its launch owner.
+    /// 접수 전 adapter 실패를 terminal로 저장하지 못해도 같은 run의 launching owner가 활성 상태로 남지 않는지 검증한다.
+    /// - 검증 내용: 원 adapter 오류, detached launching lease, cleanup evidence, no-relaunch.
+    /// - 사전 조건: policy-ready run의 세 번째 store apply가 실패하고 persisted terminal이 없다.
+    /// - 기대 결과: 원 오류가 전파되고 exact launch owner만 detached 상태로 전환된다.
+    @Test
+    func `pre-receipt adapter failure persistence failure detaches launch owner`() async throws {
+        let host: ExternalAgentSessionReference = "host-contract-launch-failure-persist-failure"
+        let run = RuntimeRunReference("run-contract-launch-failure-persist-failure")
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            eventsByLaunch: [[]],
+            failsLaunch: true,
+        )
+        let store = InMemoryRuntimeStateStore(failingSaveNumbers: [3])
+        let plane = RuntimeControlPlane(store: store)
+        try await plane.register(adapter)
+        let request = makeLaunch(host: host, run: run, adapterID: "sdk")
+        try await plane.projectPrelaunch(request, as: .policyReady)
+
+        await #expect(throws: RuntimeHostError.adapterUnavailable) {
+            _ = try await plane.run(request)
+        }
+        let session = try #require(await plane.sessions[host])
+        #expect(session.stored.projection == .launching)
+        guard case .detachedLaunching = session.lease else {
+            Issue.record("launch failure 저장 실패 뒤 owner가 detachedLaunching이어야 한다: \(session.lease)")
+            return
+        }
+        #expect(await plane.cleanupFailureEvidence(for: host) == RuntimeCleanupFailureEvidence(
+            runReference: run,
+            kind: .persistence,
+        ))
+        #expect(await store.currentState()?.sessions.first?.projection == .launching)
+        #expect(await adapter.counts().launch == 1)
+    }
 }
