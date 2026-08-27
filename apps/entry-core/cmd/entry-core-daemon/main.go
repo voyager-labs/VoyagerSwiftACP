@@ -111,6 +111,16 @@ func run(args []string, stdout io.Writer, stderr io.Writer, dependencies daemonD
 			_ = store.Close()
 			return 1
 		}
+		// preset 조정이 새 DB에서 카탈로그를 바꿀 수 있으므로 조립 전 스냅샷을
+		// 다시 로드한다. 이전 스냅샷으로 조립하면 프리셋 정의가 service.catalog에
+		// 빠져 재시작 전까지 overlay가 그 ID를 거절한다(composition_test의
+		// reconcile → load → compose 순서와 같다).
+		snapshot, err = store.ValidateActiveCatalog(ctx, wsctx)
+		if err != nil {
+			logger.Printf("startup failed: %v", err)
+			_ = store.Close()
+			return 1
+		}
 		// 조합 실패는 빈 runtime 폴백 없이 readiness 전에 실패 닫기한다.
 		runtime, err = store.ComposeServices(ctx, wsctx, snapshot)
 		if err != nil {

@@ -51,7 +51,7 @@ func TestCatalogStartupOrder(t *testing.T) {
 	if !constructorCalled {
 		t.Fatal("server constructor was not called after seed success")
 	}
-	if got := store.callOrder(); !slices.Equal(got, []string{"open", "migrate", "bootstrap", "seed", "validate", "presets", "compose", "close"}) {
+	if got := store.callOrder(); !slices.Equal(got, []string{"open", "migrate", "bootstrap", "seed", "validate", "presets", "validate", "compose", "close"}) {
 		t.Fatalf("call order = %v, want [open migrate bootstrap seed validate close]", got)
 	}
 	if strings.Contains(stderr.String(), "startup failed") {

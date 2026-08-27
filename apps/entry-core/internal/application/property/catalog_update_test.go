@@ -17,7 +17,7 @@ func TestUpdateDefinitionMetadataIncrementsRevisionExactlyOnce(t *testing.T) {
 
 	created := mustCreatedDefinition(t, service, workspace, "due_date")
 	updated, err := service.UpdateDefinitionMetadata(context.Background(), workspace,
-		created.Definition.PropertyID, created.Definition.DefinitionRev, "Renamed due date")
+		created.Definition.PropertyID, created.Definition.DefinitionRev, "req-test", "Renamed due date")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +47,7 @@ func TestUpdateDefinitionMetadataRejectsStaleRevisionAndLeavesStateUnchanged(t *
 	staleRevision := created.Definition.DefinitionRev - 1
 	before := snapshotStore(store)
 
-	_, err := service.UpdateDefinitionMetadata(ctx, workspace, created.Definition.PropertyID, staleRevision, "Too late")
+	_, err := service.UpdateDefinitionMetadata(ctx, workspace, created.Definition.PropertyID, staleRevision, "Too late", "req-test")
 	if !errors.Is(err, ErrStaleDefinitionRevision) {
 		t.Fatalf("stale revision error = %v, want %v", err, ErrStaleDefinitionRevision)
 	}
@@ -63,13 +63,13 @@ func TestUpdateDefinitionMetadataRejectsInactiveTarget(t *testing.T) {
 	ctx := context.Background()
 
 	created := mustCreatedDefinition(t, service, workspace, "due_date")
-	disabled, err := service.DisableDefinition(ctx, workspace, created.Definition.PropertyID, created.Definition.DefinitionRev)
+	disabled, err := service.DisableDefinition(ctx, workspace, created.Definition.PropertyID, created.Definition.DefinitionRev, "req-test")
 	if err != nil {
 		t.Fatal(err)
 	}
 	before := snapshotStore(store)
 
-	_, err = service.UpdateDefinitionMetadata(ctx, workspace, created.Definition.PropertyID, disabled.Definition.DefinitionRev, "Zombie")
+	_, err = service.UpdateDefinitionMetadata(ctx, workspace, created.Definition.PropertyID, disabled.Definition.DefinitionRev, "Zombie", "req-test")
 	if !errors.Is(err, ErrDefinitionInactive) {
 		t.Fatalf("inactive target error = %v, want %v", err, ErrDefinitionInactive)
 	}
@@ -118,7 +118,7 @@ func TestDisableDefinitionIsDurableIdentityPreservingAndTerminal(t *testing.T) {
 	ctx := context.Background()
 
 	selectDef := mustCreatedSelectDefinition(t, service, workspace, "status")
-	disabled, err := service.DisableDefinition(ctx, workspace, selectDef.Definition.PropertyID, selectDef.Definition.DefinitionRev)
+	disabled, err := service.DisableDefinition(ctx, workspace, selectDef.Definition.PropertyID, selectDef.Definition.DefinitionRev, "req-test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +143,7 @@ func TestDisableDefinitionIsDurableIdentityPreservingAndTerminal(t *testing.T) {
 	}
 
 	before := snapshotStore(store)
-	if _, err := service.DisableDefinition(ctx, workspace, selectDef.Definition.PropertyID, disabled.Definition.DefinitionRev); !errors.Is(err, ErrDefinitionInactive) {
+	if _, err := service.DisableDefinition(ctx, workspace, selectDef.Definition.PropertyID, disabled.Definition.DefinitionRev, "req-test"); !errors.Is(err, ErrDefinitionInactive) {
 		t.Fatalf("repeat disable error = %v, want %v", err, ErrDefinitionInactive)
 	}
 	mustEqualSnapshot(t, before, snapshotStore(store))

@@ -88,7 +88,7 @@ func TestCompositionStartupOrderInstallsPresetsAndComposesBeforeReady(t *testing
 	if captured == nil {
 		t.Fatal("composed runtime was not handed to the server constructor")
 	}
-	want := []string{"open", "migrate", "bootstrap", "seed", "validate", "presets", "compose", "close"}
+	want := []string{"open", "migrate", "bootstrap", "seed", "validate", "presets", "validate", "compose", "close"}
 	if got := store.callOrder(); !slices.Equal(got, want) {
 		t.Fatalf("call order = %v, want %v", got, want)
 	}
@@ -175,7 +175,7 @@ func TestCompositionComposeFailurePreventsReadiness(t *testing.T) {
 	if _, err := os.Lstat(socketPath); !os.IsNotExist(err) {
 		t.Fatalf("socket created despite composition failure: %v", err)
 	}
-	if got := store.callOrder(); !slices.Equal(got, []string{"open", "migrate", "bootstrap", "seed", "validate", "presets", "compose", "close"}) {
+	if got := store.callOrder(); !slices.Equal(got, []string{"open", "migrate", "bootstrap", "seed", "validate", "presets", "validate", "compose", "close"}) {
 		t.Fatalf("call order = %v, want [open migrate bootstrap seed validate presets compose close]", got)
 	}
 }

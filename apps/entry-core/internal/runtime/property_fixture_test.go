@@ -58,41 +58,41 @@ func (service *recordingPropertyService) CreateDefinition(ctx context.Context, w
 	return service.view, service.serviceErr
 }
 
-func (service *recordingPropertyService) UpdateDefinitionMetadata(ctx context.Context, workspace domainentry.WorkspaceContext, propertyID domainentry.PropertyID, expectedRevision int, displayName string) (applicationproperty.DefinitionView, error) {
+func (service *recordingPropertyService) UpdateDefinitionMetadata(ctx context.Context, workspace domainentry.WorkspaceContext, propertyID domainentry.PropertyID, expectedRevision int, requestID string, displayName string) (applicationproperty.DefinitionView, error) {
 	service.record("update_definition", workspace)
 	service.lastExpectedRev = expectedRevision
 	service.lastLabel = displayName
 	return service.view, service.serviceErr
 }
 
-func (service *recordingPropertyService) DisableDefinition(ctx context.Context, workspace domainentry.WorkspaceContext, propertyID domainentry.PropertyID, expectedRevision int) (applicationproperty.DefinitionView, error) {
+func (service *recordingPropertyService) DisableDefinition(ctx context.Context, workspace domainentry.WorkspaceContext, propertyID domainentry.PropertyID, expectedRevision int, requestID string) (applicationproperty.DefinitionView, error) {
 	service.record("disable_definition", workspace)
 	service.lastExpectedRev = expectedRevision
 	return service.view, service.serviceErr
 }
 
-func (service *recordingPropertyService) CreateOption(ctx context.Context, workspace domainentry.WorkspaceContext, propertyID domainentry.PropertyID, expectedRevision int, label string) (applicationproperty.DefinitionView, error) {
+func (service *recordingPropertyService) CreateOption(ctx context.Context, workspace domainentry.WorkspaceContext, propertyID domainentry.PropertyID, expectedRevision int, requestID string, label string) (applicationproperty.DefinitionView, error) {
 	service.record("create_option", workspace)
 	service.lastExpectedRev = expectedRevision
 	service.lastLabel = label
 	return service.view, service.serviceErr
 }
 
-func (service *recordingPropertyService) RenameOption(ctx context.Context, workspace domainentry.WorkspaceContext, propertyID domainentry.PropertyID, optionID domainentry.PropertyOptionID, expectedRevision int, label string) (applicationproperty.DefinitionView, error) {
+func (service *recordingPropertyService) RenameOption(ctx context.Context, workspace domainentry.WorkspaceContext, propertyID domainentry.PropertyID, optionID domainentry.PropertyOptionID, expectedRevision int, requestID string, label string) (applicationproperty.DefinitionView, error) {
 	service.record("rename_option", workspace)
 	service.lastExpectedRev = expectedRevision
 	service.lastLabel = label
 	return service.view, service.serviceErr
 }
 
-func (service *recordingPropertyService) ReorderOptions(ctx context.Context, workspace domainentry.WorkspaceContext, propertyID domainentry.PropertyID, expectedRevision int, orderedIDs []domainentry.PropertyOptionID) (applicationproperty.DefinitionView, error) {
+func (service *recordingPropertyService) ReorderOptions(ctx context.Context, workspace domainentry.WorkspaceContext, propertyID domainentry.PropertyID, expectedRevision int, requestID string, orderedIDs []domainentry.PropertyOptionID) (applicationproperty.DefinitionView, error) {
 	service.record("reorder_options", workspace)
 	service.lastExpectedRev = expectedRevision
 	service.lastOptionIDs = orderedIDs
 	return service.view, service.serviceErr
 }
 
-func (service *recordingPropertyService) DisableOption(ctx context.Context, workspace domainentry.WorkspaceContext, propertyID domainentry.PropertyID, optionID domainentry.PropertyOptionID, expectedRevision int) (applicationproperty.DefinitionView, error) {
+func (service *recordingPropertyService) DisableOption(ctx context.Context, workspace domainentry.WorkspaceContext, propertyID domainentry.PropertyID, optionID domainentry.PropertyOptionID, expectedRevision int, requestID string) (applicationproperty.DefinitionView, error) {
 	service.record("disable_option", workspace)
 	service.lastExpectedRev = expectedRevision
 	return service.view, service.serviceErr

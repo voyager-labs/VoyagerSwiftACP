@@ -277,7 +277,7 @@ func TestDaemonDatabaseLifecycleLog(t *testing.T) {
 			if !strings.Contains(stderr.String(), test.wantLog) {
 				t.Fatalf("stderr = %q, want it to contain %q", stderr.String(), test.wantLog)
 			}
-			if got := store.callOrder(); !slices.Equal(got, []string{"open", "migrate", "bootstrap", "seed", "validate", "presets", "compose", "close"}) {
+			if got := store.callOrder(); !slices.Equal(got, []string{"open", "migrate", "bootstrap", "seed", "validate", "presets", "validate", "compose", "close"}) {
 				t.Fatalf("call order = %v, want [open migrate bootstrap seed validate close]", got)
 			}
 		})
@@ -367,7 +367,7 @@ func TestDaemonGracefulShutdownStoreCloseFailure(t *testing.T) {
 	if !strings.Contains(stderr.String(), "store close failed") {
 		t.Fatalf("stderr = %q, want it to contain the store close failure", stderr.String())
 	}
-	if got := store.callOrder(); !slices.Equal(got, []string{"open", "migrate", "bootstrap", "seed", "validate", "presets", "compose", "close"}) {
+	if got := store.callOrder(); !slices.Equal(got, []string{"open", "migrate", "bootstrap", "seed", "validate", "presets", "validate", "compose", "close"}) {
 		t.Fatalf("call order = %v, want [open migrate bootstrap seed validate close]", got)
 	}
 }

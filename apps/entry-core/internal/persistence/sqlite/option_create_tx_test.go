@@ -62,7 +62,7 @@ func TestCreateOptionParticipatesInDefinitionTransaction(t *testing.T) {
 
 	txCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	updated, err := service.CreateOption(txCtx, workspace, view.Definition.PropertyID, view.Definition.DefinitionRev, "done")
+	updated, err := service.CreateOption(txCtx, workspace, view.Definition.PropertyID, view.Definition.DefinitionRev, "req-tx", "done")
 	if err != nil {
 		t.Fatalf("CreateOption: %v", err)
 	}

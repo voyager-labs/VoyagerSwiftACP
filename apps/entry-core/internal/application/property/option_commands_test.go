@@ -17,7 +17,7 @@ func TestCreateOptionAppendsOrdinalAndBumpsOwnerRevision(t *testing.T) {
 	ctx := context.Background()
 
 	created := mustCreatedSelectDefinition(t, service, workspace, "status")
-	updated, err := service.CreateOption(ctx, workspace, created.Definition.PropertyID, created.Definition.DefinitionRev, "third")
+	updated, err := service.CreateOption(ctx, workspace, created.Definition.PropertyID, created.Definition.DefinitionRev, "req-test", "third")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +46,7 @@ func TestCreateOptionRejectsWrongOwnerTypeState(t *testing.T) {
 
 	textDef := mustCreatedDefinition(t, service, workspace, "title")
 	selectDef := mustCreatedSelectDefinition(t, service, workspace, "status")
-	disabled, err := service.DisableDefinition(ctx, workspace, selectDef.Definition.PropertyID, selectDef.Definition.DefinitionRev)
+	disabled, err := service.DisableDefinition(ctx, workspace, selectDef.Definition.PropertyID, selectDef.Definition.DefinitionRev, "req-test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +65,7 @@ func TestCreateOptionRejectsWrongOwnerTypeState(t *testing.T) {
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
-			_, err := service.CreateOption(ctx, workspace, testCase.propertyID, testCase.revision, "late")
+			_, err := service.CreateOption(ctx, workspace, testCase.propertyID, testCase.revision, "late", "req-test")
 			if !errors.Is(err, testCase.want) {
 				t.Fatalf("error = %v, want %v", err, testCase.want)
 			}
@@ -85,7 +85,7 @@ func TestRenameRecolorAndDisableOptionPreserveIdentity(t *testing.T) {
 	created := mustCreatedSelectDefinition(t, service, workspace, "status")
 	optionID := created.Options[0].OptionID
 
-	renamed, err := service.RenameOption(ctx, workspace, created.Definition.PropertyID, optionID, created.Definition.DefinitionRev, "primary")
+	renamed, err := service.RenameOption(ctx, workspace, created.Definition.PropertyID, optionID, created.Definition.DefinitionRev, "req-test", "primary")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +97,7 @@ func TestRenameRecolorAndDisableOptionPreserveIdentity(t *testing.T) {
 	}
 
 	recolorTarget := renamed.Definition.DefinitionRev
-	colored, err := service.RecolorOption(ctx, workspace, created.Definition.PropertyID, optionID, recolorTarget, "#ff0000")
+	colored, err := service.RecolorOption(ctx, workspace, created.Definition.PropertyID, optionID, recolorTarget, "req-test", "#ff0000")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +108,7 @@ func TestRenameRecolorAndDisableOptionPreserveIdentity(t *testing.T) {
 		t.Fatalf("revision after recolor = %d, want +1", colored.Definition.DefinitionRev)
 	}
 
-	disabled, err := service.DisableOption(ctx, workspace, created.Definition.PropertyID, optionID, colored.Definition.DefinitionRev)
+	disabled, err := service.DisableOption(ctx, workspace, created.Definition.PropertyID, optionID, colored.Definition.DefinitionRev, "req-test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,11 +121,11 @@ func TestRenameRecolorAndDisableOptionPreserveIdentity(t *testing.T) {
 
 	before := snapshotStore(store)
 	staleRevision := disabled.Definition.DefinitionRev - 1
-	if _, err := service.RenameOption(ctx, workspace, created.Definition.PropertyID, optionID, staleRevision, "zombie"); !errors.Is(err, ErrStaleDefinitionRevision) {
+	if _, err := service.RenameOption(ctx, workspace, created.Definition.PropertyID, optionID, staleRevision, "zombie", "req-test"); !errors.Is(err, ErrStaleDefinitionRevision) {
 		t.Fatalf("stale revision error = %v, want %v", err, ErrStaleDefinitionRevision)
 	}
 	currentRevision := disabled.Definition.DefinitionRev
-	if _, err := service.RenameOption(ctx, workspace, created.Definition.PropertyID, optionID, currentRevision, "zombie"); !errors.Is(err, ErrOptionInactive) {
+	if _, err := service.RenameOption(ctx, workspace, created.Definition.PropertyID, optionID, currentRevision, "zombie", "req-test"); !errors.Is(err, ErrOptionInactive) {
 		t.Fatalf("inactive option error = %v, want %v", err, ErrOptionInactive)
 	}
 	mustEqualSnapshot(t, before, snapshotStore(store))
@@ -145,7 +145,7 @@ func TestCrossDefinitionOptionReferenceIsRejected(t *testing.T) {
 	before := snapshotStore(store)
 
 	_, err := service.RenameOption(ctx, workspace, first.Definition.PropertyID, foreignOptionID,
-		first.Definition.DefinitionRev, "hijacked")
+		first.Definition.DefinitionRev, "hijacked", "req-test")
 	if !errors.Is(err, ErrInvalidOptionOwner) {
 		t.Fatalf("cross-definition error = %v, want %v", err, ErrInvalidOptionOwner)
 	}

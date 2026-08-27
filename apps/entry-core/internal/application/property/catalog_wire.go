@@ -5,8 +5,9 @@ import (
 )
 
 // DefinitionViewToWire는 정의 뷰를 wire DTO로 사상한다. tombstoned는 wire의
-// disabled 상태에 대응한다. runtime dispatch와 create의 커밋 전 응답 예산
-// 검사가 같은 사상을 공유해야 하므로 application 패키지가 단일 소유자다.
+// disabled 상태에 대응한다. runtime dispatch와 카탈로그 mutation의 커밋 전
+// 응답 예산 검사가 같은 사상을 공유해야 하므로 application 패키지가 단일
+// 소유자다.
 func DefinitionViewToWire(view DefinitionView) (schema.PropertyDefinition, schema.ErrorCode) {
 	state := "disabled"
 	if view.IsActive() {
@@ -39,10 +40,11 @@ func DefinitionViewToWire(view DefinitionView) (schema.PropertyDefinition, schem
 	return definition, ""
 }
 
-// encodedCreateResponseFits은 definition 생성 결과의 성공 응답이 wire 봉투에
-// 들어가는지 protocol EncodedSuccessBytes로 검사한다. execute의 commit 전 예산
-// 검사와 같은 65,536바이트 기준이다.
-func encodedCreateResponseFits(requestID string, view DefinitionView) bool {
+// encodedDefinitionResponseFits은 정의 뷰 결과의 성공 응답이 wire 봉투에 들어가는지
+// protocol EncodedSuccessBytes로 검사한다. execute의 commit 전 예산 검사와 같은
+// 65,536바이트 기준이다. 요청이 봉투에 들어도 발급 UUID와 상태 필드가 추가된
+// 성공 응답은 초과할 수 있으므로 모든 카탈로그 mutation이 커밋 전에 이를 확인한다.
+func encodedDefinitionResponseFits(requestID string, view DefinitionView) bool {
 	wire, code := DefinitionViewToWire(view)
 	if code != "" {
 		return false

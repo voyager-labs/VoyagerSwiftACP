@@ -57,7 +57,7 @@ func dispatchPropertyDefinitionUpdate(ctx context.Context, request schema.Reques
 	if err != nil {
 		return dispatchError(request, schema.ErrorInvalidRequest)
 	}
-	view, err := service.UpdateDefinitionMetadata(ctx, workspace, propertyID, int(params.ExpectedDefinitionRevision), params.Name)
+	view, err := service.UpdateDefinitionMetadata(ctx, workspace, propertyID, int(params.ExpectedDefinitionRevision), request.RequestID, params.Name)
 	if err != nil {
 		return dispatchError(request, protocolCodeForPropertyError(err))
 	}
@@ -74,7 +74,7 @@ func dispatchPropertyDefinitionDisable(ctx context.Context, request schema.Reque
 	if err != nil {
 		return dispatchError(request, schema.ErrorInvalidRequest)
 	}
-	view, err := service.DisableDefinition(ctx, workspace, propertyID, int(params.ExpectedDefinitionRevision))
+	view, err := service.DisableDefinition(ctx, workspace, propertyID, int(params.ExpectedDefinitionRevision), request.RequestID)
 	if err != nil {
 		return dispatchError(request, protocolCodeForPropertyError(err))
 	}
@@ -91,7 +91,7 @@ func dispatchPropertyOptionCreate(ctx context.Context, request schema.Request, w
 	if err != nil {
 		return dispatchError(request, schema.ErrorInvalidRequest)
 	}
-	view, err := service.CreateOption(ctx, workspace, propertyID, int(params.ExpectedDefinitionRevision), params.Label)
+	view, err := service.CreateOption(ctx, workspace, propertyID, int(params.ExpectedDefinitionRevision), request.RequestID, params.Label)
 	if err != nil {
 		return dispatchError(request, protocolCodeForPropertyError(err))
 	}
@@ -108,7 +108,7 @@ func dispatchPropertyOptionUpdate(ctx context.Context, request schema.Request, w
 	if code != "" {
 		return dispatchError(request, code)
 	}
-	view, err := service.RenameOption(ctx, workspace, ids.propertyID, ids.optionID, int(params.ExpectedDefinitionRevision), params.Label)
+	view, err := service.RenameOption(ctx, workspace, ids.propertyID, ids.optionID, int(params.ExpectedDefinitionRevision), request.RequestID, params.Label)
 	if err != nil {
 		return dispatchError(request, protocolCodeForPropertyError(err))
 	}
@@ -133,7 +133,7 @@ func dispatchPropertyOptionReorder(ctx context.Context, request schema.Request, 
 		}
 		orderedIDs[index] = optionID
 	}
-	view, err := service.ReorderOptions(ctx, workspace, propertyID, int(params.ExpectedDefinitionRevision), orderedIDs)
+	view, err := service.ReorderOptions(ctx, workspace, propertyID, int(params.ExpectedDefinitionRevision), request.RequestID, orderedIDs)
 	if err != nil {
 		return dispatchError(request, protocolCodeForPropertyError(err))
 	}
@@ -150,7 +150,7 @@ func dispatchPropertyOptionDisable(ctx context.Context, request schema.Request, 
 	if code != "" {
 		return dispatchError(request, code)
 	}
-	view, err := service.DisableOption(ctx, workspace, ids.propertyID, ids.optionID, int(params.ExpectedDefinitionRevision))
+	view, err := service.DisableOption(ctx, workspace, ids.propertyID, ids.optionID, int(params.ExpectedDefinitionRevision), request.RequestID)
 	if err != nil {
 		return dispatchError(request, protocolCodeForPropertyError(err))
 	}

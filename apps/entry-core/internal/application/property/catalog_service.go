@@ -108,7 +108,7 @@ func (service *CatalogService) CreateDefinition(
 		// 커밋 전 응답 봉투 예산 검사다. 요청이 봉투에 들어도 발급 UUID와 상태
 		// 필드가 추가된 성공 응답은 초과할 수 있으므로, 초과 예상은 쓰기 없이
 		// scope_too_large로 실패 닫기한다(execute의 사전 검사와 같은 계약).
-		if !encodedCreateResponseFits(input.RequestID, DefinitionView{Definition: definition, Options: options}) {
+		if !encodedDefinitionResponseFits(input.RequestID, DefinitionView{Definition: definition, Options: options}) {
 			return ErrScopeTooLarge
 		}
 		if err := service.store.PutDefinition(txCtx, definition); err != nil {
@@ -263,9 +263,10 @@ func (service *CatalogService) UpdateDefinitionMetadata(
 	workspace domainentry.WorkspaceContext,
 	propertyID domainentry.PropertyID,
 	expectedRevision int,
+	requestID string,
 	displayName string,
 ) (DefinitionView, error) {
-	return service.mutateDefinition(ctx, workspace, propertyID, expectedRevision, func(_ context.Context, record *domainentry.WorkspacePropertyDefinition) error {
+	return service.mutateDefinition(ctx, workspace, propertyID, expectedRevision, requestID, func(_ context.Context, record *domainentry.WorkspacePropertyDefinition) error {
 		requested := *record
 		requested.DisplayName = displayName
 		updated, err := applyDefinitionUpdate(*record, requested)
@@ -285,8 +286,9 @@ func (service *CatalogService) DisableDefinition(
 	workspace domainentry.WorkspaceContext,
 	propertyID domainentry.PropertyID,
 	expectedRevision int,
+	requestID string,
 ) (DefinitionView, error) {
-	return service.mutateDefinition(ctx, workspace, propertyID, expectedRevision, func(_ context.Context, record *domainentry.WorkspacePropertyDefinition) error {
+	return service.mutateDefinition(ctx, workspace, propertyID, expectedRevision, requestID, func(_ context.Context, record *domainentry.WorkspacePropertyDefinition) error {
 		record.Lifecycle = domainentry.PropertyLifecycleTombstoned
 		return nil
 	})
@@ -294,16 +296,25 @@ func (service *CatalogService) DisableDefinition(
 
 // mutateDefinition은 모든 정의 mutation의 공통 골격이다. tx 안에서 대상을
 // 읽고, 활성 상태와 CAS 예상 revision을 검사한 뒤 mutate를 적용하고,
-// revision을 정확히 1 올려 저장한다.
+// revision을 정확히 1 올려 저장한다. 저장 후 결과 뷰(정의+전체 선택지)를
+// 기준으로 커밋 전 응답 예산을 다시 검사해 초과 예상은 쓰기 0으로 실패 닫기
+// 한다. 봉투 초과 판정에는 응답 echo ID가 필요하므로 요청 ID를 골격까지
+// 전달한다.
 func (service *CatalogService) mutateDefinition(
 	ctx context.Context,
 	workspace domainentry.WorkspaceContext,
 	propertyID domainentry.PropertyID,
 	expectedRevision int,
+	requestID string,
 	mutate func(txCtx context.Context, record *domainentry.WorkspacePropertyDefinition) error,
 ) (DefinitionView, error) {
 	if err := ValidateWorkspaceContext(workspace); err != nil {
 		return DefinitionView{}, err
+	}
+	// create와 같은 echo ID 검증 계약이다(change.execute도 동일). 유효하지 않은
+	// 요청 ID로는 커밋 전 예산 판정 자체가 불가능하므로 tx 밖에서 먼저 거절한다.
+	if !utf8.ValidString(requestID) || len(requestID) == 0 || len(requestID) > maximumEchoIDBytes {
+		return DefinitionView{}, ErrInvalidChangeRequest
 	}
 	var result DefinitionView
 	if err := service.runner.WithinTx(ctx, func(txCtx context.Context) error {
@@ -332,6 +343,12 @@ func (service *CatalogService) mutateDefinition(
 			return err
 		}
 		result = DefinitionView{Definition: current, Options: options}
+		// tx 안이므로 ErrScopeTooLarge 반환 시 골격 쓰기까지 롤백되어 쓰기 0이
+		// 보장된다. 정의·선택지 mutation의 최종 결과 뷰에 대해 검사하는 것은
+		// update가 이름/라벨 길이를 키워 응답 크기를 바꿀 수 있기 때문이다.
+		if !encodedDefinitionResponseFits(requestID, result) {
+			return ErrScopeTooLarge
+		}
 		return nil
 	}); err != nil {
 		return DefinitionView{}, err

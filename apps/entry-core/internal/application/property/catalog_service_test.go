@@ -94,7 +94,7 @@ func TestCreateDefinitionRejectsDuplicateKeyAgainstAnyLifecycle(t *testing.T) {
 
 			first := mustCreatedDefinition(t, service, workspace, "due_date")
 			if disableFirst {
-				if _, err := service.DisableDefinition(ctx, workspace, first.Definition.PropertyID, first.Definition.DefinitionRev); err != nil {
+				if _, err := service.DisableDefinition(ctx, workspace, first.Definition.PropertyID, first.Definition.DefinitionRev, "req-test"); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -125,7 +125,7 @@ func TestListDefinitionsIncludesDisabledAndGetResolvesHistoricalRows(t *testing.
 
 	kept := mustCreatedDefinition(t, service, workspace, "kept")
 	disabled := mustCreatedDefinition(t, service, workspace, "disabled")
-	if _, err := service.DisableDefinition(ctx, workspace, disabled.Definition.PropertyID, disabled.Definition.DefinitionRev); err != nil {
+	if _, err := service.DisableDefinition(ctx, workspace, disabled.Definition.PropertyID, disabled.Definition.DefinitionRev, "req-test"); err != nil {
 		t.Fatal(err)
 	}
 

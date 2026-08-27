@@ -17,12 +17,12 @@ func TestReorderOptionsRequiresExactActivePermutation(t *testing.T) {
 	ctx := context.Background()
 
 	created := mustCreatedSelectDefinition(t, service, workspace, "status")
-	third, err := service.CreateOption(ctx, workspace, created.Definition.PropertyID, created.Definition.DefinitionRev, "third")
+	third, err := service.CreateOption(ctx, workspace, created.Definition.PropertyID, created.Definition.DefinitionRev, "req-test", "third")
 	if err != nil {
 		t.Fatal(err)
 	}
 	disabled, err := service.DisableOption(ctx, workspace, created.Definition.PropertyID,
-		third.Options[0].OptionID, third.Definition.DefinitionRev)
+		third.Options[0].OptionID, third.Definition.DefinitionRev, "req-test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,7 +31,7 @@ func TestReorderOptionsRequiresExactActivePermutation(t *testing.T) {
 	activeThird := disabled.Options[2].OptionID
 
 	reordered, err := service.ReorderOptions(ctx, workspace, created.Definition.PropertyID,
-		disabled.Definition.DefinitionRev, []domainentry.PropertyOptionID{activeThird, activeSecond})
+		disabled.Definition.DefinitionRev, "req-test", []domainentry.PropertyOptionID{activeThird, activeSecond})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +64,7 @@ func TestReorderOptionsRequiresExactActivePermutation(t *testing.T) {
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
 			_, err := service.ReorderOptions(ctx, workspace, created.Definition.PropertyID,
-				reordered.Definition.DefinitionRev, testCase.order)
+				reordered.Definition.DefinitionRev, "req-test", testCase.order)
 			if !errors.Is(err, ErrInvalidOptionOrder) {
 				t.Fatalf("illegal reorder error = %v, want %v", err, ErrInvalidOptionOrder)
 			}
@@ -103,7 +103,7 @@ func TestDefinitionRevisionMatrixCoversEveryMutationKind(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			_, err = service.UpdateDefinitionMetadata(ctx, workspace, view.Definition.PropertyID, view.Definition.DefinitionRev, "Matrix status v2")
+			_, err = service.UpdateDefinitionMetadata(ctx, workspace, view.Definition.PropertyID, view.Definition.DefinitionRev, "req-test", "Matrix status v2")
 			return err
 		}, 1},
 		{"create_option", func() error {
@@ -111,7 +111,7 @@ func TestDefinitionRevisionMatrixCoversEveryMutationKind(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			_, err = service.CreateOption(ctx, workspace, view.Definition.PropertyID, view.Definition.DefinitionRev, "closed")
+			_, err = service.CreateOption(ctx, workspace, view.Definition.PropertyID, view.Definition.DefinitionRev, "req-test", "closed")
 			return err
 		}, 1},
 		{"rename_option", func() error {
@@ -119,7 +119,7 @@ func TestDefinitionRevisionMatrixCoversEveryMutationKind(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			_, err = service.RenameOption(ctx, workspace, view.Definition.PropertyID, view.Options[0].OptionID, view.Definition.DefinitionRev, "reopened")
+			_, err = service.RenameOption(ctx, workspace, view.Definition.PropertyID, view.Options[0].OptionID, view.Definition.DefinitionRev, "req-test", "reopened")
 			return err
 		}, 1},
 		{"recolor_option", func() error {
@@ -127,7 +127,7 @@ func TestDefinitionRevisionMatrixCoversEveryMutationKind(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			_, err = service.RecolorOption(ctx, workspace, view.Definition.PropertyID, view.Options[0].OptionID, view.Definition.DefinitionRev, "#00ff00")
+			_, err = service.RecolorOption(ctx, workspace, view.Definition.PropertyID, view.Options[0].OptionID, view.Definition.DefinitionRev, "req-test", "#00ff00")
 			return err
 		}, 1},
 		{"reorder_options", func() error {
@@ -136,7 +136,7 @@ func TestDefinitionRevisionMatrixCoversEveryMutationKind(t *testing.T) {
 				return err
 			}
 			_, err = service.ReorderOptions(ctx, workspace, view.Definition.PropertyID, view.Definition.DefinitionRev,
-				[]domainentry.PropertyOptionID{view.Options[1].OptionID, view.Options[0].OptionID})
+				"req-test", []domainentry.PropertyOptionID{view.Options[1].OptionID, view.Options[0].OptionID})
 			return err
 		}, 1},
 		{"disable_option", func() error {
@@ -144,7 +144,7 @@ func TestDefinitionRevisionMatrixCoversEveryMutationKind(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			_, err = service.DisableOption(ctx, workspace, view.Definition.PropertyID, view.Options[0].OptionID, view.Definition.DefinitionRev)
+			_, err = service.DisableOption(ctx, workspace, view.Definition.PropertyID, view.Options[0].OptionID, view.Definition.DefinitionRev, "req-test")
 			return err
 		}, 1},
 		{"disable_definition", func() error {
@@ -152,7 +152,7 @@ func TestDefinitionRevisionMatrixCoversEveryMutationKind(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			_, err = service.DisableDefinition(ctx, workspace, view.Definition.PropertyID, view.Definition.DefinitionRev)
+			_, err = service.DisableDefinition(ctx, workspace, view.Definition.PropertyID, view.Definition.DefinitionRev, "req-test")
 			return err
 		}, 1},
 	}
@@ -189,16 +189,28 @@ func TestZeroWorkspaceIsRejectedForEveryServiceMethod(t *testing.T) {
 			_, err := service.CreateDefinition(ctx, zero, CreateDefinitionInput{Key: "k", RequestID: "req"})
 			return err
 		},
-		"list":            func() error { _, err := service.ListDefinitions(ctx, zero); return err },
-		"get":             func() error { _, err := service.Definition(ctx, zero, propertyID); return err },
-		"get_by_key":      func() error { _, err := service.definitionByKey(ctx, zero, userDefinitionNamespace, "k"); return err },
-		"update":          func() error { _, err := service.UpdateDefinitionMetadata(ctx, zero, propertyID, 1, "n"); return err },
-		"disable_def":     func() error { _, err := service.DisableDefinition(ctx, zero, propertyID, 1); return err },
-		"create_option":   func() error { _, err := service.CreateOption(ctx, zero, propertyID, 1, "l"); return err },
-		"rename_option":   func() error { _, err := service.RenameOption(ctx, zero, propertyID, optionID, 1, "l"); return err },
-		"recolor_option":  func() error { _, err := service.RecolorOption(ctx, zero, propertyID, optionID, 1, "#fff"); return err },
-		"reorder_options": func() error { _, err := service.ReorderOptions(ctx, zero, propertyID, 1, nil); return err },
-		"disable_option":  func() error { _, err := service.DisableOption(ctx, zero, propertyID, optionID, 1); return err },
+		"list":       func() error { _, err := service.ListDefinitions(ctx, zero); return err },
+		"get":        func() error { _, err := service.Definition(ctx, zero, propertyID); return err },
+		"get_by_key": func() error { _, err := service.definitionByKey(ctx, zero, userDefinitionNamespace, "k"); return err },
+		"update": func() error {
+			_, err := service.UpdateDefinitionMetadata(ctx, zero, propertyID, 1, "n", "req-test")
+			return err
+		},
+		"disable_def":   func() error { _, err := service.DisableDefinition(ctx, zero, propertyID, 1, "req-test"); return err },
+		"create_option": func() error { _, err := service.CreateOption(ctx, zero, propertyID, 1, "l", "req-test"); return err },
+		"rename_option": func() error {
+			_, err := service.RenameOption(ctx, zero, propertyID, optionID, 1, "l", "req-test")
+			return err
+		},
+		"recolor_option": func() error {
+			_, err := service.RecolorOption(ctx, zero, propertyID, optionID, 1, "#fff", "req-test")
+			return err
+		},
+		"reorder_options": func() error { _, err := service.ReorderOptions(ctx, zero, propertyID, 1, "req-test", nil); return err },
+		"disable_option": func() error {
+			_, err := service.DisableOption(ctx, zero, propertyID, optionID, 1, "req-test")
+			return err
+		},
 	}
 	for name, check := range checks {
 		t.Run(name, func(t *testing.T) {
