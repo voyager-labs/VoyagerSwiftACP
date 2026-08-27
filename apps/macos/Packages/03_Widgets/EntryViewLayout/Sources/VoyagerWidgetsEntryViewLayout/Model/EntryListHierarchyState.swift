@@ -122,6 +122,10 @@ public struct EntryListHierarchyState: Equatable, Sendable {
         deferredFolderReplacements.removeValue(forKey: folderID)?.stagedChildren
     }
 
+    public mutating func discardDeferredFolderReplacement(folderID: EntryModel.ID) {
+        deferredFolderReplacements.removeValue(forKey: folderID)
+    }
+
     public func deferredFolderReplacement(folderID: EntryModel.ID) -> DeferredFolderReplacement? {
         deferredFolderReplacements[folderID]
     }

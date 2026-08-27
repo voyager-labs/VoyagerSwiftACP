@@ -35,6 +35,10 @@ extension EntryListHierarchyReducer {
         id: EntryModel.ID,
         state: inout State,
     ) -> Effect<Action> {
+        // 새 세대 진입 시 이전 세대의 deferred staging을 폐기한다. staging은 특정 세대의
+        // batch 수신과 연관되므로, 세대가 재시작되면 남은 항목이 새 listing에 중복·stale로
+        // 합쳐지지 않게 새로 초기화되어야 한다.
+        state.hierarchy.discardDeferredFolderReplacement(folderID: id)
         var nodeState = reloadedNodeState(for: state.hierarchy.nodesByID[id] ?? FolderNodeState())
         // parentID를 설정한다: nodesByID에서 이 node를 children으로 포함하는 node를 찾는다.
         if nodeState.parentID == nil {

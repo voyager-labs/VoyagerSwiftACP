@@ -1014,6 +1014,54 @@ extension EVM002ManageEntriesViewPresentationTests {
         )
     }
 
+    /// EVM-002-replacement_reload_snapshot_retention: 새 folder 세대 재시작 시 이전 deferred staging을 초기화한다.
+    /// - 검증 내용: staged batch가 남은 상태에서 hierarchyInvalidated가 세대를 재시작하면 staging이 비워진다.
+    /// - 사전 조건: deferred replacement가 batch 0을 staging한 loadingCore 폴더가 다시 invalidation된다.
+    /// - 기대 결과: 재시작 후 deferred staging이 비워지고 새 세대가 첫 batch를 재초기화한다.
+    func testGenerationRestartClearsStaleDeferredStaging() {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let old = hierarchyFile(id: "/root/a/old", name: "old")
+        let before = hierarchyFile(id: "/root/a/before", name: "before")
+        var state = hierarchyState(roots: [folder])
+        state.hierarchy.nodesByID[folder.id as String] = .init(
+            children: [old], loadPhase: .loaded, generation: 3,
+        )
+        state.hierarchy.setExpandedIDs([folder.id as String])
+        let reducer = EntryListHierarchyReducer()
+
+        _ = reducer.reduce(
+            into: &state,
+            action: .hierarchy(.hierarchyInvalidated(affectedPaths: [folder.id as String], removedPrefixes: [])),
+        )
+        state.hierarchy.beginDeferredFolderReplacement(
+            folderID: folder.id as String,
+            untilEntryID: "/root/a/after",
+        )
+        _ = reducer.reduce(
+            into: &state,
+            action: folderResponse(
+                folder.id,
+                .event(.coreBatch(items: [before], batchIndex: 0)),
+                folderGeneration: 4,
+            ),
+        )
+        XCTAssertEqual(
+            state.hierarchy.deferredFolderReplacements[folder.id as String]?.stagedChildren,
+            [before],
+            "재시작 전에는 staging이 유지된다",
+        )
+
+        _ = reducer.reduce(
+            into: &state,
+            action: .hierarchy(.hierarchyInvalidated(affectedPaths: [folder.id as String], removedPrefixes: [])),
+        )
+
+        XCTAssertNil(
+            state.hierarchy.deferredFolderReplacements[folder.id as String],
+            "새 세대 재시작 시 이전 staging을 초기화한다",
+        )
+    }
+
     /// EVM-002-replacement_reload_snapshot_retention: 교체 스트림 실패는 보존된 children을 유지한다.
     /// - 검증 내용: failed 응답 뒤에도 retained children과 미완료 상태가 유지된다.
     /// - 사전 조건: 완료 스냅샷을 보존한 채 재로드가 시작된 loadingCore 폴더.

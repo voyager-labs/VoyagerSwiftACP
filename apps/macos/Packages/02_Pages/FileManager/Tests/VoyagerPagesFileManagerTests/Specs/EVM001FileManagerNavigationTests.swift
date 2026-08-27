@@ -2382,7 +2382,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             store.exhaustivity = .off
 
             await store.send(.bridge(.lifecycle(.entryActionCompleted(record))))
-            await store.receive { action in
+            await store.receive { (action: LifecycleBridgeHarness.Action) in
                 guard case let .forwarded(.entryViewLayout(.hierarchy(.hierarchyInvalidated(
                     affectedPaths,
                     removedPrefixes,
@@ -2721,6 +2721,83 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             "독립 수정 이벤트는 root reload를 예약해야 한다",
         )
         XCTAssertNotNil(store.state.content.pendingIdentityTransition, "수정 이벤트는 전이를 소비하지 않는다")
+    }
+
+    /// EVM-001-command_external_refresh_correlation: rename+modification 결합 이벤트는 순수 rename echo로 보지 않는다.
+    /// Helper gateway가 같은 경로의 플래그를 `existingEvent.flags | event.flags`로 병합하면
+    /// rename과 후속 modification이 하나의 delivery로 합쳐질 수 있다. 이때 ItemRenamed 비트만
+    /// 보고 전체를 command echo로 제거하면 독립 수정을 유실한다.
+    /// - 검증 내용: ItemRenamed|ItemModified 결합 이벤트가 계층 무효화와 reload를 예약하는지 검증
+    /// - 사전 조건: 현재 root에서 old→new rename 전이가 같은 generation으로 대기 중
+    /// - 기대 결과: hierarchyInvalidated 1회와 loadItems forwarding이 발생하고 전이는 소비되지 않는다
+    func testCorrelatedCoalescedRenameModifiedEventStillSchedulesRefresh() async {
+        let folderPath = "/tmp/voyager-correlation"
+        let oldPath = "\(folderPath)/old.txt"
+        let newPath = "\(folderPath)/new.txt"
+        var initialState = makeCorrelationState(folderPath: folderPath)
+        initialState.content.entryViewLayout.selectedIds = [oldPath]
+        let store = TestStore(initialState: initialState) {
+            CommandExternalRefreshHarness()
+        }
+        store.exhaustivity = .off
+
+        let record = EntryActionRecord(
+            operationKind: .rename,
+            targets: [.init(beforePath: oldPath, afterPath: newPath)],
+        )
+        await store.send(.bridge(.lifecycle(.operationFinished(
+            oldPath,
+            .rename,
+            .success(()),
+        ))))
+        await store.send(.bridge(.lifecycle(.entryActionCompleted(record))))
+        await store.receive { action in
+            guard case .content(.entryViewLayout(.hierarchy(.hierarchyInvalidated(_, _)))) = action else {
+                return false
+            }
+            return true
+        }
+        await store.receive { action in
+            guard case .content(.entryViewLayout(.entryOperations(.loading(.loadItems)))) = action else {
+                return false
+            }
+            return true
+        }
+        let baselineInvalidations = store.state.hierarchyInvalidations.count
+        let baselineReloads = store.state.rootReloadCount
+
+        let coalescedFlags = UInt32(kFSEventStreamEventFlagItemRenamed)
+            | UInt32(kFSEventStreamEventFlagItemModified)
+        await store.send(.content(.externalFileSystemChanged(
+            Self.externalChangeEvents([newPath], flags: coalescedFlags),
+            deliveryChainToken: nil,
+        )))
+        await store.receive { action in
+            guard case let .content(.entryViewLayout(.hierarchy(.hierarchyInvalidated(
+                affectedPaths,
+                removedPrefixes,
+            )))) = action else { return false }
+            return affectedPaths == [Self.canonicalPath(newPath), Self.canonicalPath(folderPath)]
+                && removedPrefixes == [Self.canonicalPath(newPath)]
+        }
+        await store.receive { action in
+            guard case .content(.entryViewLayout(.entryOperations(.loading(.loadItems)))) = action else {
+                return false
+            }
+            return true
+        }
+
+        XCTAssertEqual(
+            store.state.hierarchyInvalidations.count,
+            baselineInvalidations + 1,
+            "결합 이벤트의 독립 수정은 계층 무효화를 예약해야 한다",
+        )
+        XCTAssertEqual(
+            store.state.rootReloadCount,
+            baselineReloads + 1,
+            "결합 이벤트는 root reload를 예약해야 한다",
+        )
+        XCTAssertNotNil(store.state.content.pendingIdentityTransition, "결합 이벤트는 전이를 소비하지 않는다")
     }
 
     /// EVM-001-command_external_refresh_correlation: 사용자가 before 선택을 포기하면 전이를 소비한다.
