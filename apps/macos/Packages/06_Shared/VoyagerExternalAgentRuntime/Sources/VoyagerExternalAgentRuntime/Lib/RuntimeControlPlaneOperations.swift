@@ -141,8 +141,9 @@ public extension RuntimeControlPlane {
         _ original: Session,
         at host: ExternalAgentSessionReference,
     ) async throws -> RuntimeRestoreResult {
+        let acquisition: RestoreClaimAcquisition
         do {
-            return try await commit(host: host) { plane, registry in
+            acquisition = try await commit(host: host) { plane, registry in
                 guard plane.sessionUnchanged(original, at: host, in: registry),
                       let current = registry[host]
                 else { return .stale }
@@ -151,11 +152,16 @@ public extension RuntimeControlPlane {
                     return .stale
                 case .acquireClaim:
                     var replacement = current
+                    let claim = plane.makeRestorationClaim()
                     replacement.stored = replacement.stored
-                        .withRestorationClaim(plane.makeRestorationClaim())
-                    _ = replacement.issueLease(RuntimeLease.restored)
+                        .withRestorationClaim(claim)
+                    let lease = replacement.issueLease(RuntimeLease.restored)
                     registry[host] = replacement
-                    return .restored
+                    return .restored(
+                        runReference: replacement.stored.runReference,
+                        claim: claim,
+                        lease: lease,
+                    )
                 case let .throwHost(error):
                     throw error
                 case .beginResume, .renewClaim, .restoreClaim, .adoptPersisted:
@@ -165,6 +171,117 @@ public extension RuntimeControlPlane {
         } catch RuntimeHostError.persistenceConflict {
             return try await reconcileRestoreClaimConflict(at: host)
         }
+        return try await finishRestoreClaimAcquisition(acquisition, at: host)
+    }
+
+    private func finishRestoreClaimAcquisition(
+        _ acquisition: RestoreClaimAcquisition,
+        at host: ExternalAgentSessionReference,
+    ) async throws -> RuntimeRestoreResult {
+        switch acquisition {
+        case .stale:
+            return .stale
+        case let .restored(runReference, claim, lease):
+            do {
+                try Task.checkCancellation()
+                return .restored
+            } catch is CancellationError {
+                if deactivateCancelledRestoreClaim(
+                    at: host,
+                    runReference: runReference,
+                    claim: claim,
+                    lease: lease,
+                ) {
+                    await Task.detached { [self] in
+                        await releaseCancelledRestoreClaim(
+                            at: host,
+                            runReference: runReference,
+                            claim: claim,
+                        )
+                    }.value
+                }
+                throw CancellationError()
+            }
+        }
+    }
+
+    private func deactivateCancelledRestoreClaim(
+        at host: ExternalAgentSessionReference,
+        runReference: RuntimeRunReference,
+        claim: RuntimeRestorationClaim,
+        lease: UInt64,
+    ) -> Bool {
+        guard var current = sessions[host],
+              current.stored.runReference == runReference,
+              current.stored.restorationClaim == claim,
+              current.lease == .restored(lease)
+        else { return false }
+        current.lease = .none
+        current.revision += 1
+        sessions[host] = current
+        return true
+    }
+
+    private func releaseCancelledRestoreClaim(
+        at host: ExternalAgentSessionReference,
+        runReference: RuntimeRunReference,
+        claim: RuntimeRestorationClaim,
+    ) async {
+        do {
+            try await commit(host: host) { _, registry in
+                guard var current = registry[host],
+                      current.stored.runReference == runReference,
+                      current.stored.restorationClaim == claim,
+                      current.lease == .none
+                else { return }
+                current.stored = current.stored.withRestorationClaim(nil)
+                current.revision += 1
+                registry[host] = current
+            }
+            return
+        } catch RuntimeHostError.persistenceConflict {
+            do {
+                try await withPersistedState { plane, loaded in
+                    guard let loaded else { return }
+                    plane.sessions = plane.reconciledRegistry(
+                        candidate: plane.sessions,
+                        persisted: loaded,
+                    )
+                }
+            } catch {
+                recordCancelledRestoreClaimCleanupFailure(
+                    at: host,
+                    runReference: runReference,
+                    claim: claim,
+                )
+                return
+            }
+        } catch {
+            recordCancelledRestoreClaimCleanupFailure(
+                at: host,
+                runReference: runReference,
+                claim: claim,
+            )
+            return
+        }
+        recordCancelledRestoreClaimCleanupFailure(
+            at: host,
+            runReference: runReference,
+            claim: claim,
+        )
+    }
+
+    private func recordCancelledRestoreClaimCleanupFailure(
+        at host: ExternalAgentSessionReference,
+        runReference: RuntimeRunReference,
+        claim: RuntimeRestorationClaim,
+    ) {
+        guard let current = sessions[host],
+              current.stored.runReference == runReference,
+              current.stored.restorationClaim == claim,
+              current.lease == .none
+        else { return }
+        applyCleanupFailedDecision(host: host, runReference: runReference)
     }
 
     private func canAcquireRestorationClaim(
@@ -321,6 +438,15 @@ public extension RuntimeControlPlane {
             throw RuntimeHostError.capabilityUnsupported(capability)
         }
     }
+}
+
+private enum RestoreClaimAcquisition {
+    case stale
+    case restored(
+        runReference: RuntimeRunReference,
+        claim: RuntimeRestorationClaim,
+        lease: UInt64,
+    )
 }
 
 struct OperationClaim {

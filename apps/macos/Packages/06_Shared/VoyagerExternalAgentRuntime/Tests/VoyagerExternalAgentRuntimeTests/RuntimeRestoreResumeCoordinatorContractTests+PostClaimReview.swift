@@ -100,6 +100,46 @@ extension RuntimeRestoreResumeCoordinatorContractTests {
         #expect(counts.terminalResult == 0)
     }
 
+    /// VOY-747-post_claim_cancel: restore claim commit 중 취소된 caller는 claim을 소유하지 않는다.
+    /// cancellation-neutral store apply가 끝난 직후 취소를 관찰하고 방금 발급한 exact claim만 회수하는 경계를 검증한다.
+    /// - 검증 내용: CancellationError, durable claim 제거, inactive lease, provider 미호출과 즉시 재시도.
+    /// - 사전 조건: restore claim apply가 gate에서 대기하는 동안 caller가 취소된다.
+    /// - 기대 결과: 취소된 restore는 `.restored`를 반환하지 않고 후속 restore가 즉시 claim을 획득한다.
+    @Test
+    func `post-commit cancelled restore clears only its exact claim`() async throws {
+        let gate = RuntimeTestGate()
+        let host: ExternalAgentSessionReference = "post-claim-restore-cancel-host"
+        let run = RuntimeRunReference("post-claim-restore-cancel-run")
+        let context = makeContext()
+        let stored = postClaimStoredSession(host: host, run: run, context: context)
+        let store = InMemoryRuntimeStateStore(
+            state: makeState([stored]),
+            saveGates: [1: gate],
+        )
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            capabilities: .allSupported,
+            eventsByLaunch: [[]],
+        )
+        let plane = RuntimeControlPlane(store: store)
+        try await plane.register(adapter)
+
+        let restore = Task { try await plane.restore(hostReference: host, expectedContext: context) }
+        await store.waitForSaveCount(1)
+        restore.cancel()
+        await gate.open()
+
+        await #expect(throws: CancellationError.self) { try await restore.value }
+        let persistedAfterCancellation = try #require(await store.currentState()?.sessions.first)
+        #expect(persistedAfterCancellation.restorationClaim == nil)
+        #expect(await plane.sessions[host]?.lease == RuntimeControlPlane.RuntimeLease.none)
+        #expect(await adapter.counts().stream == 0)
+        #expect(await adapter.counts().terminalResult == 0)
+        #expect(try await plane.restore(hostReference: host, expectedContext: context) == .restored)
+
+        try await assertPostCommitCancellationCleanupPersistenceFailure()
+    }
+
     /// VOY-747-nested_fence_error: expired claim clear 충돌 뒤 두 번째 fencing load의 typed 오류를 보존한다.
     /// process/transport interruption cleanup의 nested persisted read가 손상/schema 오류를 반환하는 경계를 검증한다.
     /// - 검증 내용: exact typed 오류, exact local owner 비활성화, cleanup evidence, bounded store/provider 호출.
@@ -134,6 +174,45 @@ extension RuntimeRestoreResumeCoordinatorContractTests {
         #expect(await fixture.adapter.counts().stream == 1)
         #expect(await fixture.adapter.counts().terminalResult == 0)
     }
+}
+
+private func assertPostCommitCancellationCleanupPersistenceFailure() async throws {
+    let gate = RuntimeTestGate()
+    let host: ExternalAgentSessionReference = "post-claim-cleanup-failure-host"
+    let run = RuntimeRunReference("post-claim-cleanup-failure-run")
+    let context = makeContext()
+    let stored = postClaimStoredSession(host: host, run: run, context: context)
+    let store = InMemoryRuntimeStateStore(
+        state: makeState([stored]),
+        failingSaveNumbers: [2],
+        saveGates: [1: gate],
+    )
+    let adapter = DeterministicRuntimeAdapter(
+        id: "sdk",
+        capabilities: .allSupported,
+        eventsByLaunch: [[]],
+    )
+    let plane = RuntimeControlPlane(store: store)
+    try await plane.register(adapter)
+
+    let restore = Task { try await plane.restore(hostReference: host, expectedContext: context) }
+    await store.waitForSaveCount(1)
+    restore.cancel()
+    await gate.open()
+
+    await #expect(throws: CancellationError.self) { try await restore.value }
+    let persisted = try #require(await store.currentState()?.sessions.first)
+    let local = try #require(await plane.sessions[host])
+    #expect(persisted.restorationClaim != nil)
+    #expect(local.stored.restorationClaim == persisted.restorationClaim)
+    #expect(local.lease == RuntimeControlPlane.RuntimeLease.none)
+    #expect(await plane.cleanupFailureEvidence(for: host) == RuntimeCleanupFailureEvidence(
+        runReference: run,
+        kind: .persistence,
+    ))
+    #expect(await adapter.counts().stream == 0)
+    #expect(await adapter.counts().terminalResult == 0)
+    #expect(try await plane.restore(hostReference: host, expectedContext: context) == .restored)
 }
 
 private struct PostClaimTypedFencingFixture {
