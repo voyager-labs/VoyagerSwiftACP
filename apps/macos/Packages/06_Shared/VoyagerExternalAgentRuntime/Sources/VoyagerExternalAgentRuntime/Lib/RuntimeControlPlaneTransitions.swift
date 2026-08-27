@@ -361,13 +361,16 @@ extension RuntimeControlPlane {
 
     func recoverTerminalPersistenceClaimTransition(
         host: ExternalAgentSessionReference,
+        runReference: RuntimeRunReference,
         lease: UInt64,
     ) {
-        guard var session = sessions[host] else { return }
+        guard var session = sessions[host],
+              session.stored.runReference == runReference
+        else { return }
         switch session.lease {
-        case .consuming(lease):
+        case let .consuming(currentLease) where currentLease == lease:
             session.lease = .none
-        case .resuming(lease):
+        case let .resuming(currentLease) where currentLease == lease:
             session.lease = .restored(lease)
         default:
             return

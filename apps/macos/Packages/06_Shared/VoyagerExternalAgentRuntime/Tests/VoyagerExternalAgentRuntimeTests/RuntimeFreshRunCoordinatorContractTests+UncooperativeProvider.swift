@@ -247,6 +247,87 @@ extension RuntimeFreshRunCoordinatorContractTests {
         _ = await monitor.value
     }
 
+    /// VOY-438-p1_a: abandoned provider persistence-conflict cleanup remains observable.
+    /// caller 탈출 뒤 provider terminal 수렴과 detached owner 복구가 persistence conflict로 실패해도 실패 근거가 유실되지 않는지 고정한다.
+    /// - 검증 내용: caller CancellationError, background failed convergence, exact persistence cleanup evidence, no
+    /// relaunch/retry.
+    /// - 사전 조건: provider의 completed event 저장과 abandoned detached owner 복구 저장이 연속으로 persistence conflict를 반환한다.
+    /// - 기대 결과: caller 취소는 보존되고 detached consuming 이후 배경 실패가 같은 run의 persistence evidence로 관찰되며 provider는 재호출되지 않는다.
+    @Test
+    func `abandoned provider persistence conflict records cleanup failure`() async throws {
+        let host: ExternalAgentSessionReference = "uncooperative-abandoned-persistence-conflict-host"
+        let run = RuntimeRunReference("uncooperative-abandoned-persistence-conflict-run")
+        let invocationGate = RuntimeTestGate()
+        let completed = makeEvent(
+            host: host,
+            run: run,
+            sequence: 1,
+            idempotencyKey: "uncooperative-abandoned-persistence-conflict-completed",
+            kind: .completed,
+        )
+        let store = InMemoryRuntimeStateStore(conflictingSaveNumbers: [5, 6])
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            capabilities: .allSupported,
+            eventsByEventStream: [[completed]],
+            eventStreamInvocationGate: invocationGate,
+        )
+        let plane = RuntimeControlPlane(store: store)
+        try await plane.register(adapter)
+        let request = makeLaunch(host: host, run: run, adapterID: "sdk")
+        try await plane.projectPrelaunch(request, as: .policyReady)
+
+        let runTask = Task { try await plane.run(request) }
+        let (recorder, monitor) = monitorFreshRun(runTask)
+        await adapter.waitForEventStreamCount(1)
+        await invocationGate.waitUntilWaiting()
+
+        runTask.cancel()
+        #expect(await recorder.waitForValue(), "caller cancellation must escape before the provider gate opens")
+        #expect(await recorder.value == .cancellation, "caller cancellation must remain CancellationError")
+
+        let detached = try #require(await plane.sessions[host])
+        guard case .detachedConsuming = detached.lease else {
+            Issue.record("caller escape must establish detached consuming ownership: \(detached.lease)")
+            await invocationGate.open()
+            _ = await monitor.value
+            return
+        }
+
+        await invocationGate.open()
+        await store.waitForSaveCount(6)
+        let recordedFailure = await waitForCleanupFailureEvidence(plane: plane, host: host)
+
+        #expect(recordedFailure, "abandoned failed convergence must retain cleanup failure evidence")
+        #expect(await plane.cleanupFailureEvidence(for: host) == RuntimeCleanupFailureEvidence(
+            runReference: run,
+            kind: .persistence,
+        ))
+        #expect(await store.applyCount == 6, "provider failure and detached recovery must each reach the conflict seam")
+        let leaseAfterRecovery = await plane.sessions[host]?.lease
+        #expect(
+            isDetachedConsuming(leaseAfterRecovery),
+            "failed recovery must preserve the detached owner for later convergence: \(String(describing: leaseAfterRecovery))",
+        )
+        let counts = await adapter.counts()
+        #expect(counts.launch == 1)
+        #expect(counts.stream == 1)
+        #expect(counts.terminalResult == 0)
+        _ = await monitor.value
+    }
+
+    private func waitForCleanupFailureEvidence(
+        plane: RuntimeControlPlane,
+        host: ExternalAgentSessionReference,
+    ) async -> Bool {
+        for _ in 0 ..< 600 {
+            if await plane.cleanupFailureEvidence(for: host) != nil { return true }
+            try? await Task.sleep(nanoseconds: 5_000_000)
+        }
+        return false
+    }
+
     /// VOY-747-fresh_uncooperative_provider: background terminal persistence failure remains observable and
     /// recoverable.
     /// caller 탈출 뒤 terminal result 저장이 실패해도 정리 실패 근거와 cross-plane 회복 경계가 유지되는지 고정한다.

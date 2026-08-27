@@ -583,10 +583,18 @@ extension RuntimeControlPlane {
                 receipt: receipt,
             )
         case .admissionRejected:
-            try? await recoverTerminalPersistenceClaim(host: host, lease: lease)
+            try? await recoverTerminalPersistenceClaim(
+                host: host,
+                runReference: receipt.runReference,
+                lease: lease,
+            )
             throw RuntimeHostError.invalidEvent
         case .host(.persistenceConflict):
-            try? await recoverTerminalPersistenceClaim(host: host, lease: lease)
+            try? await recoverTerminalPersistenceClaim(
+                host: host,
+                runReference: receipt.runReference,
+                lease: lease,
+            )
             throw RuntimeHostError.persistenceConflict
         case let .host(error):
             do {
@@ -603,7 +611,11 @@ extension RuntimeControlPlane {
                 )
             } catch {
                 applyCleanupFailedDecision(host: host, runReference: receipt.runReference)
-                try? await recoverTerminalPersistenceClaim(host: host, lease: lease)
+                try? await recoverTerminalPersistenceClaim(
+                    host: host,
+                    runReference: receipt.runReference,
+                    lease: lease,
+                )
             }
             throw error
         }
@@ -655,7 +667,18 @@ extension RuntimeControlPlane {
                     )
                 }
             case let .failed(failure):
-                _ = try? await recoverConsumptionFailure(failure, receipt: receipt, host: host, lease: lease)
+                do {
+                    _ = try await recoverConsumptionFailure(failure, receipt: receipt, host: host, lease: lease)
+                } catch is CancellationError {
+                    return
+                } catch {
+                    if case .host(.persistenceConflict) = failure {
+                        applyCleanupFailedDecision(
+                            host: host,
+                            runReference: receipt.runReference,
+                        )
+                    }
+                }
             }
         }
     }
@@ -708,7 +731,11 @@ extension RuntimeControlPlane {
                 receipt: receipt,
             )
         } catch {
-            try? await recoverTerminalPersistenceClaim(host: host, lease: lease)
+            try? await recoverTerminalPersistenceClaim(
+                host: host,
+                runReference: receipt.runReference,
+                lease: lease,
+            )
             throw error
         }
     }
@@ -785,12 +812,17 @@ extension RuntimeControlPlane {
 
     func recoverTerminalPersistenceClaim(
         host: ExternalAgentSessionReference,
+        runReference: RuntimeRunReference,
         lease: UInt64,
     ) async throws {
         // caller 취소가 persistence waiter를 탈출시켜도 terminal claim 회수는 반드시 반영된다.
         try await Task { [self] in
             try await mutateAfterPersistedTransitions { plane in
-                plane.recoverTerminalPersistenceClaimTransition(host: host, lease: lease)
+                plane.recoverTerminalPersistenceClaimTransition(
+                    host: host,
+                    runReference: runReference,
+                    lease: lease,
+                )
             }
         }.value
     }
