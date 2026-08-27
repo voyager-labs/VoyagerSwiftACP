@@ -6,6 +6,7 @@ import SwiftUI
 import VoyagerEntitiesCollection
 import VoyagerFeaturesAiChat
 import VoyagerFeaturesComposer
+import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
 import VoyagerPagesFileManager
 import VoyagerPagesOnboarding
@@ -23,6 +24,29 @@ private final class AppRootStoreReference {
         await store.send(.lifecycle(.delegate(.openInitialWindowIfNeeded))).finish()
     }
 }
+
+nonisolated private let entryCanonicalMetricKeys: [EntryInteractionIdentity: String] = [
+    .openEntryWithDefaultApp: "voy_691_eop_001_open_entry_with_default_app",
+    .openEntryWithSelectedApp: "voy_691_eop_001_open_entry_with_selected_app",
+    .quickLookEntry: "voy_691_eop_001_quick_look_entry",
+    .copyEntries: "voy_691_eop_002_copy_entries",
+    .createEntryAlias: "voy_691_eop_002_create_entry_alias",
+    .createNewFolder: "voy_691_eop_002_create_new_folder",
+    .cutEntries: "voy_691_eop_002_cut_entries",
+    .duplicateEntries: "voy_691_eop_002_duplicate_entries",
+    .moveEntries: "voy_691_eop_002_move_entries",
+    .pasteEntries: "voy_691_eop_002_paste_entries",
+    .deleteEntriesImmediately: "voy_691_eop_003_delete_entries_immediately",
+    .emptyTrash: "voy_691_eop_003_empty_trash",
+    .moveEntriesToTrash: "voy_691_eop_003_move_entries_to_trash",
+    .putDeletedEntriesBack: "voy_691_eop_003_put_deleted_entries_back",
+    .editEntryTags: "voy_691_eop_004_edit_entry_tags",
+    .renameEntry: "voy_691_eop_004_rename_entry",
+    .copyAbsolutePaths: "voy_691_eop_006_copy_absolute_paths_of_entries",
+    .copyURLs: "voy_691_eop_006_copy_urls_of_entries",
+    .revealEntriesInFinder: "voy_691_eop_007_reveal_entries_in_finder",
+    .shareEntries: "voy_691_eop_007_share_entries_via_system_share_sheet",
+]
 
 @main
 struct VoyagerApp: App {
@@ -214,11 +238,34 @@ struct VoyagerApp: App {
             "voy_691_ctm_003_pin_content_tab_s"
         case .unpinContentTabs:
             "voy_691_ctm_003_unpin_content_tab_s"
+        case .closeSelectedContentTabs:
+            "voy_691_ctm_001_close_selected_content_tabs"
         case .openNewContentTab, .closeContentTab, .duplicateContentTab,
              .duplicateSelectedContentTabs, .restoreLastClosedTab, .reorderContentTab,
              .reorderSelectedContentTabs, .moveContentTabToAnotherWindow,
              .moveSelectedContentTabsToAnotherWindow:
             contentTabLifecycleCanonicalMetricKey(identity)
+        }
+    }
+
+    nonisolated static func entryCanonicalMetricKey(_ identity: EntryInteractionIdentity) -> String? {
+        entryCanonicalMetricKeys[identity]
+    }
+
+    nonisolated static func contentBrowsingCanonicalMetricKey(
+        _ identity: ContentPageNavigationInteractionIdentity,
+    ) -> String? {
+        switch identity {
+        case .direct:
+            "voy_691_evm_001_navigate_pages"
+        case .back:
+            "voy_691_evm_001_go_page_history_back"
+        case .forward:
+            "voy_691_evm_001_forward_page_history"
+        case .enclosingDirectory:
+            "voy_691_evm_001_go_to_enclosing_directory"
+        case .history:
+            nil
         }
     }
 
@@ -245,7 +292,7 @@ struct VoyagerApp: App {
             "voy_691_ctm_001_move_content_tab_to_another_file_manager_window"
         case .moveSelectedContentTabsToAnotherWindow:
             "voy_691_ctm_001_move_selected_content_tabs_to_another_file_manager_window"
-        case .pinContentTabs, .unpinContentTabs:
+        case .closeSelectedContentTabs, .pinContentTabs, .unpinContentTabs:
             // CTM-003 key는 상위 함수가 소유한다.
             contentTabCanonicalMetricKey(identity)
         }
@@ -265,26 +312,31 @@ struct VoyagerApp: App {
         environment: EnvironmentLoader.AppEnv,
     ) -> FileManagerProductMetricsClient {
         FileManagerProductMetricsClient { metric in
-            let request: (String, [String: ProductAnalyticsPropertyValue], UUID) = switch metric {
-            case let .contentBrowsing(result, content, source, operationID):
-                ("voy_691_evm_001_navigate_pages", [
-                    "result_status": .string(result.rawValue),
-                    "content_kind": .string(content.rawValue),
-                    "source_surface": .string(source.rawValue),
-                ], operationID)
+            let request: (String, [String: ProductAnalyticsPropertyValue], UUID)? = switch metric {
+            case let .contentBrowsing(result, content, identity, source, operationID):
+                Self.contentBrowsingCanonicalMetricKey(identity).map { key in
+                    (key, [
+                        "result_status": .string(result.rawValue),
+                        "content_kind": .string(content.rawValue),
+                        "source_surface": .string(source.rawValue),
+                    ], operationID)
+                }
             case let .contentTabAction(result, identity, source, operationID):
                 (Self.contentTabCanonicalMetricKey(identity), [
                     "result_status": .string(result.rawValue),
                     "action_type": .string(identity.actionType),
                     "source_surface": .string(source.rawValue),
                 ], operationID)
-            case let .entryAction(result, action, source, operationID, _):
-                ("voy_691_eop_001_open_entry_with_default_app", [
-                    "result_status": .string(result.rawValue),
-                    "action_type": .string(action.rawValue),
-                    "source_surface": .string(source.rawValue),
-                ], operationID)
+            case let .entryAction(metric):
+                Self.entryCanonicalMetricKey(metric.identity).map { key in
+                    (key, [
+                        "result_status": .string(metric.result.rawValue),
+                        "action_type": .string(metric.identity.actionType),
+                        "source_surface": .string(metric.source.rawValue),
+                    ], metric.operationID)
+                }
             }
+            guard let request else { return }
             captureProductMetric(
                 request.0,
                 properties: request.1,
@@ -307,8 +359,8 @@ struct VoyagerApp: App {
                     "result_status": .string("accepted"),
                     "source_surface": .string(source.rawValue),
                 ], operationID)
-            case let .turnResult(operationID, result, source):
-                ("voy_691_cbw_003_generate_contextual_chat_response", [
+            case let .turnResult(operationID, interaction, result, source):
+                (Self.aiChatResultCanonicalMetricKey(interaction), [
                     "result_status": .string(result.rawValue),
                     "source_surface": .string(source.rawValue),
                 ], operationID)
@@ -321,6 +373,17 @@ struct VoyagerApp: App {
                 client: client,
                 environment: environment,
             )
+        }
+    }
+
+    nonisolated private static func aiChatResultCanonicalMetricKey(
+        _ interaction: AiChatProductMetricInteractionIdentity,
+    ) -> String {
+        switch interaction {
+        case .generateContextualChatResponse:
+            "voy_691_cbw_003_generate_contextual_chat_response"
+        case .cancelActiveChatRequest:
+            "voy_691_cbw_001_cancel_active_chat_request"
         }
     }
 
