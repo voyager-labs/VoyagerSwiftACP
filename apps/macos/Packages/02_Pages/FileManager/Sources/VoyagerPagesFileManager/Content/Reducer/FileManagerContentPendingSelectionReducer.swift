@@ -48,6 +48,11 @@ struct FileManagerContentPendingSelectionReducer {
         else {
             return .none
         }
+        guard !isCurrentNavigationPendingSelection(state)
+            || state.pendingSelectEntryLoadGeneration == streamEvent.generation
+        else {
+            return .none
+        }
         guard FileManagerContentEntryOpsCoordinator.applyPendingSelectionForLoadedEntries(
             entries: entries,
             state: &state,

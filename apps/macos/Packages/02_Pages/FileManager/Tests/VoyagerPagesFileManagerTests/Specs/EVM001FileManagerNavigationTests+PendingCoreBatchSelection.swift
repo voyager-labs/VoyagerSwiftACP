@@ -78,6 +78,105 @@ extension EVM001FileManagerNavigationTests {
         await store.finish()
     }
 
+    /// EVM-001-route_entry_selection_commands: 목적지 로드 전 현재 배치는 미바인딩 navigation pending을 소비하지 않는다.
+    /// 떠난 child의 alias가 pending target과 같은 경로로 해소되어도 목적지 세대에 바인딩되기 전에는 선택하지 않는지 검증한다.
+    /// - 검증 내용: generation 7의 alias batch는 pending과 빈 selection을 유지하고 delegate를 발행하지 않으며,
+    /// destination loadItems로 바인딩된 generation 8의 실제 child batch만 pending을 소비하고 selectionChanged를 한 번 발행한다.
+    /// - 사전 조건: 실제 parent/child/alias가 있고 alias와 pending target은 symlink 해소 경로가 같으며 load generation은 nil이다.
+    /// - 기대 결과: stale alias는 거부되고 destination child가 선택·anchor·scroll 상태를 설정하며 모든 pending 필드를 지운다.
+    func testUnboundCurrentCoreBatchDoesNotConsumePendingSelectionBeforeDestinationLoad() async throws {
+        let rootURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let parentURL = rootURL.appendingPathComponent("parent", isDirectory: true)
+        let departedChildURL = parentURL.appendingPathComponent("child", isDirectory: true)
+        let aliasURL = departedChildURL.appendingPathComponent("alias", isDirectory: true)
+        try FileManager.default.createDirectory(at: departedChildURL, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: aliasURL, withDestinationURL: departedChildURL)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let pendingTargetPath = departedChildURL.path
+        let resolvedPendingPath = URL(fileURLWithPath: pendingTargetPath).resolvingSymlinksInPath().path
+        XCTAssertEqual(aliasURL.resolvingSymlinksInPath().path, resolvedPendingPath)
+        let aliasEntry = EntryModel.temporaryFolder(id: aliasURL.path, name: aliasURL.lastPathComponent)
+        let actualChildEntry = EntryModel.temporaryFolder(
+            id: pendingTargetPath,
+            name: departedChildURL.lastPathComponent,
+        )
+        var state = FileManagerContentState()
+        state.navigation.navigationState = .folder(parentURL.path)
+        state.setPendingEntrySelection(entryID: pendingTargetPath, destinationPath: parentURL.path)
+        state.entryViewLayout.entryOperations.loadingContext.generation = 7
+
+        let store = TestStore(initialState: state) {
+            CombineReducers {
+                FileManagerContentPendingSelectionReducer(phase: .beforeEntryViewLayout)
+                Scope(state: \.entryViewLayout.entryOperations, action: \.entryViewLayout.entryOperations) {
+                    EntryOperationsLoadingReducer()
+                }
+                FileManagerContentPendingSelectionReducer(phase: .afterEntryViewLayout)
+            }
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.entryLoadingClient.stagedLoadItems = { _, _, _ in
+                AsyncThrowingStream { _ in }
+            }
+        }
+
+        await store.send(.entryViewLayout(.entryOperations(.loading(.streamEvent(.init(
+            generation: 7,
+            event: .coreBatch(items: [aliasEntry], batchIndex: 0),
+        )))))) {
+            $0.entryViewLayout.entryOperations.loadingContext.items = [aliasEntry]
+            $0.entryViewLayout.entryOperations.loadingContext.expectedCoreBatchIndex = 1
+        }
+        XCTAssertEqual(store.state.pendingSelectEntryID, pendingTargetPath)
+        XCTAssertEqual(store.state.pendingSelectEntryDestinationPath, parentURL.path)
+        XCTAssertNil(store.state.pendingSelectEntryLoadGeneration)
+        XCTAssertTrue(store.state.entryViewLayout.selectedIds.isEmpty)
+
+        await assertDestinationLoadConsumesPending(
+            store,
+            parentPath: parentURL.path,
+            actualChildEntry: actualChildEntry,
+        )
+    }
+
+    private func assertDestinationLoadConsumesPending(
+        _ store: TestStore<FileManagerContentState, FileManagerContentAction>,
+        parentPath: String,
+        actualChildEntry: EntryModel,
+    ) async {
+        await store.send(.entryViewLayout(.entryOperations(.loading(.loadItems(
+            path: parentPath,
+            showHidden: false,
+            priority: .none,
+        ))))) {
+            $0.entryViewLayout.entryOperations.loadingContext.items = []
+            $0.entryViewLayout.entryOperations.loadingContext.generation = 8
+            $0.entryViewLayout.entryOperations.loadingContext.expectedCoreBatchIndex = 0
+            $0.entryViewLayout.entryOperations.loadingContext.sourceKind = .directory
+            $0.entryViewLayout.entryOperations.isLoading = true
+            $0.pendingSelectEntryLoadGeneration = 8
+        }
+
+        await store.send(.entryViewLayout(.entryOperations(.loading(.streamEvent(.init(
+            generation: 8,
+            event: .coreBatch(items: [actualChildEntry], batchIndex: 0),
+        )))))) {
+            $0.pendingSelectEntryID = nil
+            $0.pendingSelectEntryDestinationPath = nil
+            $0.pendingSelectEntryLoadGeneration = nil
+            $0.entryViewLayout.entryOperations.loadingContext.items = [actualChildEntry]
+            $0.entryViewLayout.entryOperations.loadingContext.expectedCoreBatchIndex = 1
+            $0.entryViewLayout.entryOperations.isLoading = false
+            $0.entryViewLayout.selectedIds = [actualChildEntry.id]
+            $0.entryViewLayout.lastSelectedId = actualChildEntry.id
+            $0.entryViewLayout.rangeAnchorId = actualChildEntry.id
+            $0.entryViewLayout.shouldScrollToSelection = true
+        }
+        await store.receive(\.entryViewLayout.delegate.selectionChanged)
+        await store.skipInFlightEffects()
+    }
+
     /// EVM-001-route_entry_selection_commands: current coreBatch는 pending selection을 적용한다.
     /// 현재 로딩 세대의 기대한 배치가 대상 entry를 전달하면 네비게이션 요청 선택을 복원하는지 검증한다.
     /// - 검증 내용: generation과 batchIndex가 loadingContext와 일치하는 coreBatch가 pendingSelectEntryID를 소비하고 selectionChanged를
