@@ -40,11 +40,13 @@ final class CBW003AiChatRequestResolutionTests: XCTestCase {
 
         client.record(.turnResult(
             operationID: operationID,
+            interaction: .generateContextualChatResponse,
             result: .success,
             sourceSurface: .aiChatContent,
         ))
         client.record(.turnResult(
             operationID: operationID,
+            interaction: .cancelActiveChatRequest,
             result: .cancelled,
             sourceSurface: .aiChatContent,
         ))
@@ -54,11 +56,13 @@ final class CBW003AiChatRequestResolutionTests: XCTestCase {
             [
                 .turnResult(
                     operationID: operationID,
+                    interaction: .generateContextualChatResponse,
                     result: .success,
                     sourceSurface: .aiChatContent,
                 ),
                 .turnResult(
                     operationID: operationID,
+                    interaction: .cancelActiveChatRequest,
                     result: .cancelled,
                     sourceSurface: .aiChatContent,
                 ),
@@ -133,7 +137,8 @@ final class CBW003AiChatRequestResolutionTests: XCTestCase {
         let recorded = metrics.value
         XCTAssertEqual(recorded.count(where: { if case .turnSubmitted = $0 { true } else { false } }), 1)
         XCTAssertEqual(
-            recorded.count(where: { if case let .turnResult(_, result, _) = $0 { result == .failure } else { false } }),
+            recorded
+                .count(where: { if case let .turnResult(_, _, result, _) = $0 { result == .failure } else { false } }),
             1,
         )
     }
@@ -211,6 +216,7 @@ final class CBW003AiChatRequestResolutionTests: XCTestCase {
             ),
             .turnResult(
                 operationID: makeUUID("00000000-0000-0000-0000-000000000000"),
+                interaction: .generateContextualChatResponse,
                 result: .failure,
                 sourceSurface: .aiChatInspector,
             ),
@@ -287,6 +293,7 @@ final class CBW003AiChatRequestResolutionTests: XCTestCase {
             ),
             .turnResult(
                 operationID: makeUUID("00000000-0000-0000-0000-000000000000"),
+                interaction: .generateContextualChatResponse,
                 result: .failure,
                 sourceSurface: .aiChatContent,
             ),

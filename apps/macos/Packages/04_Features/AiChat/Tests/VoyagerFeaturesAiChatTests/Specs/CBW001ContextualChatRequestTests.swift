@@ -109,14 +109,15 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
             guard case let .turnSubmitted(operationID, _) = metric else { return nil }
             return operationID
         }
-        let results = metrics.compactMap { metric -> (UUID, AiChatProductMetricResult)? in
-            guard case let .turnResult(operationID, result, _) = metric else { return nil }
-            return (operationID, result)
-        }
+        let results = metrics.filter { if case .turnResult = $0 { true } else { false } }
         XCTAssertEqual(submitted.count, 1)
         XCTAssertEqual(results.count, 1)
-        XCTAssertEqual(results.first?.0, submitted.first)
-        XCTAssertEqual(results.first?.1, .success)
+        guard case let .turnResult(operationID, interaction, result, _)? = results.first else {
+            return XCTFail("Expected one terminal result")
+        }
+        XCTAssertEqual(operationID, submitted.first)
+        XCTAssertEqual(interaction, .generateContextualChatResponse)
+        XCTAssertEqual(result, .success)
     }
 
     /// CBW-001-cancel_active_chat_request: explicit cancellation records one cancelled result and ignores late failure.
@@ -141,16 +142,15 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         await fixture.store.finish()
 
         let metrics = fixture.metrics.value
-        XCTAssertEqual(metrics.count(where: { if case .turnSubmitted = $0 { true } else { false } }), 1)
-        XCTAssertEqual(
-            metrics
-                .count(where: { if case let .turnResult(_, result, _) = $0 { result == .cancelled } else { false } }),
-            1,
-        )
-        XCTAssertEqual(
-            metrics.count(where: { if case let .turnResult(_, result, _) = $0 { result == .failure } else { false } }),
-            0,
-        )
+        XCTAssertEqual(metrics.count, 2)
+        guard case let .turnSubmitted(operationID, submittedSource) = metrics[0],
+              case let .turnResult(terminalOperationID, interaction, result, terminalSource) = metrics[1]
+        else { return XCTFail("Expected one submitted event followed by one terminal event") }
+        XCTAssertEqual(terminalOperationID, operationID)
+        XCTAssertEqual(interaction, .cancelActiveChatRequest)
+        XCTAssertEqual(result, .cancelled)
+        XCTAssertEqual(submittedSource, .aiChatContent)
+        XCTAssertEqual(terminalSource, submittedSource)
     }
 
     /// CBW-001-cancel_active_chat_request: teardown은 submitted 이후 정확히 한 번 cancelled terminal을 기록한다.
@@ -183,7 +183,11 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         XCTAssertEqual(metrics.count(where: { if case .turnSubmitted = $0 { true } else { false } }), 1)
         XCTAssertEqual(
             metrics
-                .count(where: { if case let .turnResult(_, result, _) = $0 { result == .cancelled } else { false } }),
+                .count(where: {
+                    if case let .turnResult(_, interaction, result, _) = $0 {
+                        interaction == .generateContextualChatResponse && result == .cancelled
+                    } else { false }
+                }),
             1,
         )
         XCTAssertEqual(metrics.count(where: { if case .turnResult = $0 { true } else { false } }), 1)
@@ -220,12 +224,17 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         XCTAssertEqual(metrics.count(where: { if case .turnSubmitted = $0 { true } else { false } }), 1)
         XCTAssertEqual(
             metrics
-                .count(where: { if case let .turnResult(_, result, _) = $0 { result == .cancelled } else { false } }),
+                .count(where: {
+                    if case let .turnResult(_, interaction, result, _) = $0 {
+                        interaction == .generateContextualChatResponse && result == .cancelled
+                    } else { false }
+                }),
             1,
         )
         XCTAssertEqual(
             metrics
-                .count(where: { if case let .turnResult(_, result, _) = $0 { result != .cancelled } else { false } }),
+                .count(where: { if case let .turnResult(_, _, result, _) = $0 { result != .cancelled } else { false }
+                }),
             0,
         )
     }
@@ -241,6 +250,23 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
 
         await fixture.store.send(.submitTapped)
         await fixture.store.send(.resetTapped)
+        fixture.stream.finish()
+        await fixture.store.finish()
+
+        XCTAssertTrue(fixture.metrics.value.isEmpty)
+    }
+
+    /// CBW-001-cancel_active_chat_request: requestPrepared 이전 Stop은 metric 이벤트 없이 조용히 끝난다.
+    /// pending context resolution 단계에는 correlation이 없으므로 explicit Stop도 terminal을 만들지 않습니다.
+    /// - 검증 내용: pending resolution 상태에서 cancel 후 recorder가 비어 있는지 확인합니다.
+    /// - 사전 조건: submitTapped 직후 requestPrepared 이전 상태입니다.
+    /// - 기대 결과: turnSubmitted와 turnResult 모두 0회입니다.
+    func testReducerMetricsCancelBeforeRequestPreparedStaysSilent() async {
+        let fixture = makeStreamFixture(draftText: "Pending cancel", fixedMs: 1_700_000_000_255)
+        applyObservationFocusedExhaustivity(to: fixture.store)
+
+        await fixture.store.send(.submitTapped)
+        await fixture.store.send(.cancelTapped)
         fixture.stream.finish()
         await fixture.store.finish()
 

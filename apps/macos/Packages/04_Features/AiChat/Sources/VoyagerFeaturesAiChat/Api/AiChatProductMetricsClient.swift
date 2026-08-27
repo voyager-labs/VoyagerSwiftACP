@@ -14,10 +14,16 @@ public enum AiChatProductMetricSourceSurface: String, Equatable, Sendable {
     case aiChatInspector = "ai_chat_inspector"
 }
 
+public enum AiChatProductMetricInteractionIdentity: Equatable, Sendable {
+    case generateContextualChatResponse
+    case cancelActiveChatRequest
+}
+
 public enum AiChatProductMetric: Equatable, Sendable {
     case turnSubmitted(operationID: UUID, sourceSurface: AiChatProductMetricSourceSurface)
     case turnResult(
         operationID: UUID,
+        interaction: AiChatProductMetricInteractionIdentity,
         result: AiChatProductMetricResult,
         sourceSurface: AiChatProductMetricSourceSurface,
     )

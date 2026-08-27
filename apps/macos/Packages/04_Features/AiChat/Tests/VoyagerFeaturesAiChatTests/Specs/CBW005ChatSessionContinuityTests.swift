@@ -2988,7 +2988,11 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         XCTAssertEqual(recorded.count(where: { if case .turnSubmitted = $0 { true } else { false } }), 1)
         XCTAssertEqual(
             recorded
-                .count(where: { if case let .turnResult(_, result, _) = $0 { result == .cancelled } else { false } }),
+                .count(where: {
+                    if case let .turnResult(_, interaction, result, _) = $0 {
+                        interaction == .generateContextualChatResponse && result == .cancelled
+                    } else { false }
+                }),
             1,
         )
         XCTAssertEqual(recorded.count(where: { if case .turnResult = $0 { true } else { false } }), 1)

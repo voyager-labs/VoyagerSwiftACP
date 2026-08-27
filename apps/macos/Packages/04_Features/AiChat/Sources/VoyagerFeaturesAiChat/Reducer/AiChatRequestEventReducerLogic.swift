@@ -85,9 +85,7 @@ extension AiChatFeature {
     private func handleFinalEvent(_ response: AiChatResponse, state: inout State) -> Effect<Action> {
         guard let matched = processingLock(matching: response.context, state: state) else { return .none }
         recordProductResult(
-            for: response.context,
-            result: .success,
-            state: &state,
+            for: response.context, interaction: .generateContextualChatResponse, result: .success, state: &state,
         )
 
         let terminalTimestampMs = currentTimestampMs()
@@ -220,7 +218,7 @@ extension AiChatFeature {
     ) -> Effect<Action> {
         guard let matched = processingLock(matching: context, state: state) else { return .none }
         let result: AiChatProductMetricResult = reason == .cancelled ? .cancelled : .failure
-        recordProductResult(for: context, result: result, state: &state)
+        recordProductResult(for: context, interaction: .generateContextualChatResponse, result: result, state: &state)
 
         let failedLock = matched.lock.recordingTerminal(
             at: currentTimestampMs(),
@@ -256,6 +254,7 @@ extension AiChatFeature {
 
     func recordProductResult(
         for context: AiChatRequestContextSnapshot,
+        interaction: AiChatProductMetricInteractionIdentity,
         result: AiChatProductMetricResult,
         state: inout State,
     ) {
@@ -266,6 +265,7 @@ extension AiChatFeature {
         aiChatProductMetricsClient.record(
             .turnResult(
                 operationID: operation.operationID,
+                interaction: interaction,
                 result: result,
                 sourceSurface: state.productMetricSourceSurface,
             ),
