@@ -24,22 +24,46 @@ struct PermissionsFeature {
     @Dependency(\.onboardingProductMetricsClient)
     var metricsClient
 
-    private let appDidBecomeActiveObserverCancelID = "PermissionsFeature.appDidBecomeActiveObserver"
+    private enum CancelID {
+        case appDidBecomeActiveObserver
+        case helperFolderAccessRequest
+        case initialStateLoad
+        case permissionRefresh
+    }
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
             case .onAppear:
                 return .merge(
-                    loadInitialState(),
+                    loadInitialState()
+                        .cancellable(id: CancelID.initialStateLoad, cancelInFlight: true),
                     observeAppDidBecomeActive(),
                 )
 
             case .onDisappear:
+                if let operationID = state.pendingHelperFolderOperationID {
+                    metricsClient.record(.helperFolderAccess(
+                        operationID: operationID,
+                        result: .unavailable,
+                    ))
+                }
+                if let operationID = state.pendingFullDiskAccessOperationID {
+                    metricsClient.record(.fullDiskAccess(
+                        operationID: operationID,
+                        result: .unavailable,
+                    ))
+                }
                 state.pendingHelperFolderOperationID = nil
                 state.pendingFullDiskAccessOperationID = nil
                 state.pendingFullDiskAccessGeneration = nil
-                return .cancel(id: appDidBecomeActiveObserverCancelID)
+                state.isRequestingHelperFolderAccess = false
+                return .merge(
+                    .cancel(id: CancelID.helperFolderAccessRequest),
+                    .cancel(id: CancelID.appDidBecomeActiveObserver),
+                    .cancel(id: CancelID.initialStateLoad),
+                    .cancel(id: CancelID.permissionRefresh),
+                )
 
             case .appDidBecomeActive:
                 state.latestAppActiveRefreshGeneration += 1
@@ -51,6 +75,7 @@ struct PermissionsFeature {
                     refreshFullDiskAccess(generation: generation),
                     refreshHelperFolderAccess(generation: generation),
                 )
+                .cancellable(id: CancelID.permissionRefresh, cancelInFlight: true)
 
             case let .fullDiskAccessRefreshResponse(generation, status):
                 guard generation == state.latestAppActiveRefreshGeneration else { return .none }
@@ -110,6 +135,7 @@ struct PermissionsFeature {
                     let result = await helperFolderAccessClient.requestAccess()
                     await send(.helperFolderAccessResponse(result))
                 }
+                .cancellable(id: CancelID.helperFolderAccessRequest, cancelInFlight: true)
 
             case let .helperFolderAccessResponse(result):
                 guard let operationID = state.pendingHelperFolderOperationID else { return .none }
@@ -187,8 +213,10 @@ struct PermissionsFeature {
             let status = fullDiskAccessClient.status()
             await send(.fullDiskAccessStatusResponse(status))
             let helperFolderAccess = await helperFolderAccessClient.checkAccess()
+            guard !Task.isCancelled else { return }
             await send(.helperFolderAccessStatusLoaded(helperFolderAccess))
             let isEnabled = launchAtLoginClient.isEnabled()
+            guard !Task.isCancelled else { return }
             await send(.launchAtLoginStateLoaded(isEnabled))
         }
     }
@@ -202,12 +230,13 @@ struct PermissionsFeature {
                 await send(.appDidBecomeActive)
             }
         }
-        .cancellable(id: appDidBecomeActiveObserverCancelID, cancelInFlight: true)
+        .cancellable(id: CancelID.appDidBecomeActiveObserver, cancelInFlight: true)
     }
 
     private func refreshFullDiskAccess(generation: Int) -> Effect<Action> {
         .run { [fullDiskAccessClient] send in
             let status = fullDiskAccessClient.status()
+            guard !Task.isCancelled else { return }
             await send(.fullDiskAccessRefreshResponse(generation, status))
         }
     }
@@ -215,6 +244,7 @@ struct PermissionsFeature {
     private func refreshHelperFolderAccess(generation: Int) -> Effect<Action> {
         .run { [helperFolderAccessClient] send in
             let result = await helperFolderAccessClient.checkAccess()
+            guard !Task.isCancelled else { return }
             await send(.helperFolderAccessRefreshLoaded(generation, result))
         }
     }
