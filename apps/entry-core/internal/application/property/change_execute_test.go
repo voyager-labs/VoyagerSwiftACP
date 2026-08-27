@@ -46,17 +46,17 @@ func TestExecuteAppliesMultiTargetChangesAtomicallyWithCanonicalReadBack(t *test
 	if err != nil {
 		t.Fatalf("execute error = %v", err)
 	}
-	if len(readBack) != 3 {
-		t.Fatalf("read-back count = %d, want 3", len(readBack))
+	if len(readBack.Facts) != 3 {
+		t.Fatalf("read-back count = %d, want 3", len(readBack.Facts))
 	}
-	if readBack[0].RecordRevision != 1 || readBack[0].State != domainentry.AssignmentStateValue {
-		t.Fatalf("first-touch read-back = rev %d state %s, want rev 1 value", readBack[0].RecordRevision, readBack[0].State)
+	if readBack.Facts[0].RecordRevision != 1 || readBack.Facts[0].State != domainentry.AssignmentStateValue {
+		t.Fatalf("first-touch read-back = rev %d state %s, want rev 1 value", readBack.Facts[0].RecordRevision, readBack.Facts[0].State)
 	}
-	if len(readBack[1].Many) != 2 || *readBack[1].Many[0].Value.OptionID != second || *readBack[1].Many[1].Value.OptionID != first {
+	if len(readBack.Facts[1].Many) != 2 || *readBack.Facts[1].Many[0].Value.OptionID != second || *readBack.Facts[1].Many[1].Value.OptionID != first {
 		t.Fatal("ordered replace did not preserve request order")
 	}
-	if readBack[2].RecordRevision != 2 || readBack[2].State != domainentry.AssignmentStateUnset || readBack[2].Scalar != nil {
-		t.Fatalf("clear read-back = rev %d state %s, want rev 2 unset without payload", readBack[2].RecordRevision, readBack[2].State)
+	if readBack.Facts[2].RecordRevision != 2 || readBack.Facts[2].State != domainentry.AssignmentStateUnset || readBack.Facts[2].Scalar != nil {
+		t.Fatalf("clear read-back = rev %d state %s, want rev 2 unset without payload", readBack.Facts[2].RecordRevision, readBack.Facts[2].State)
 	}
 	if harness.runner.calls != 1 {
 		t.Fatalf("execute ran %d WithinTx calls, want exactly 1", harness.runner.calls)
@@ -74,7 +74,7 @@ func TestExecuteAppliesMultiTargetChangesAtomicallyWithCanonicalReadBack(t *test
 	for _, fact := range committed {
 		committedByKey[keyOf(fact)] = fact
 	}
-	for index, row := range readBack {
+	for index, row := range readBack.Facts {
 		stored, ok := committedByKey[factKey{entryID: row.EntryID, propertyID: row.PropertyID}]
 		if !ok || !reflect.DeepEqual(stored, row) {
 			t.Fatalf("read-back %d differs from canonical persisted state", index)
@@ -182,8 +182,8 @@ func TestExecuteEmptyManyPersistsAsValueWithoutMembers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execute error = %v", err)
 	}
-	if readBack[0].State != domainentry.AssignmentStateValue || readBack[0].Many == nil || len(readBack[0].Many) != 0 {
-		t.Fatalf("empty-many read-back = state %s many %v, want value with zero members", readBack[0].State, readBack[0].Many)
+	if readBack.Facts[0].State != domainentry.AssignmentStateValue || readBack.Facts[0].Many == nil || len(readBack.Facts[0].Many) != 0 {
+		t.Fatalf("empty-many read-back = state %s many %v, want value with zero members", readBack.Facts[0].State, readBack.Facts[0].Many)
 	}
 }
 

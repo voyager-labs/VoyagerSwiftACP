@@ -89,6 +89,30 @@ func (s *EntryPropertyFactStore) LoadAssignmentsByRefs(
 	return ordered, nil
 }
 
+// LoadAssignmentsPage는 assignment.list의 저장소 단계 페이징을 위임한다.
+// 제외·정렬 규칙은 LoadAssignments와 동일하다.
+func (s *EntryPropertyFactStore) LoadAssignmentsPage(
+	ctx context.Context,
+	workspace domainentry.WorkspaceContext,
+	entryID string,
+	requestedIDs []domainentry.PropertyID,
+	after *domainentry.PropertyID,
+	limit int,
+) ([]domainentry.EntryPropertyAssignment, *domainentry.PropertyID, bool, error) {
+	facts, next, hasMore, err := s.repository.LoadAssignmentsPage(ctx, workspace, entryID, requestedIDs, after, limit)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	ordered := make([]domainentry.EntryPropertyAssignment, 0, len(facts))
+	for _, fact := range facts {
+		if fact.RecordRevision == 0 {
+			continue
+		}
+		ordered = append(ordered, fact)
+	}
+	return ordered, next, hasMore, nil
+}
+
 // SaveAssignments는 fact 배치를 하나의 원자적 트랜잭션으로 위임한다.
 func (s *EntryPropertyFactStore) SaveAssignments(
 	ctx context.Context,

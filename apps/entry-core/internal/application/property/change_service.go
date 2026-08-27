@@ -136,25 +136,43 @@ func (service *ChangeService) Prepare(
 // assignment revision을 재조회·비교한 뒤 모든 대상을 적용하고 정준 persisted
 // read-back을 재조회한다. 응답 인코딩이 65,536바이트를 넘으면 commit 전에
 // 실패한다.
+// ExecuteResult는 execute의 커밋 결과다. Definitions은 트랜잭션 안에서 검증에
+// 쓴 정의 계약 그대로라서 커밋 뒤 추가 카탈로그 조회 없이 응답을 매핑할 수
+// 있다(커밋 뒤 조회 실패는 영속화된 변경을 conflict로 만든다).
+type ExecuteResult struct {
+	Facts       []domainentry.EntryPropertyAssignment
+	Definitions map[domainentry.PropertyID]domainentry.WorkspacePropertyDefinition
+}
+
+// DefinitionViews는 정의를 뷰(선택지 미포함 — assignment 매핑은 유형·카디널리티만
+// 사용)로 변환해 돌려준다.
+func (result ExecuteResult) DefinitionViews() map[domainentry.PropertyID]DefinitionView {
+	views := make(map[domainentry.PropertyID]DefinitionView, len(result.Definitions))
+	for id, definition := range result.Definitions {
+		views[id] = DefinitionView{Definition: definition}
+	}
+	return views
+}
+
 func (service *ChangeService) Execute(
 	ctx context.Context,
 	workspace domainentry.WorkspaceContext,
 	requestID string,
 	changes []ChangeTarget,
-) ([]domainentry.EntryPropertyAssignment, error) {
+) (ExecuteResult, error) {
 	if err := ValidateWorkspaceContext(workspace); err != nil {
-		return nil, err
+		return ExecuteResult{}, err
 	}
 	if !utf8.ValidString(requestID) || len(requestID) == 0 || len(requestID) > maximumEchoIDBytes {
-		return nil, ErrInvalidChangeRequest
+		return ExecuteResult{}, ErrInvalidChangeRequest
 	}
 	resolved, err := resolveChangeTargets(service.targets, ctx, changes)
 	if err != nil {
-		return nil, err
+		return ExecuteResult{}, err
 	}
 	propertyIDs := changePropertyIDs(resolved)
 
-	var readBack []domainentry.EntryPropertyAssignment
+	var result ExecuteResult
 	err = service.runner.WithinTx(ctx, func(txCtx context.Context) error {
 		snapshot, err := service.loadContracts(txCtx, workspace, propertyIDs)
 		if err != nil {
@@ -186,13 +204,57 @@ func (service *ChangeService) Execute(
 		if _, ok := encodedExecuteResponseBytes(requestID, rows); !ok {
 			return ErrScopeTooLarge
 		}
-		readBack = factsInOrder
+		result = ExecuteResult{Facts: factsInOrder, Definitions: snapshot.definitions}
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		return ExecuteResult{}, err
 	}
-	return readBack, nil
+	return result, nil
+}
+
+// ListAssignmentsPage는 assignment.list의 페이징 유스케이스다. 창 잘라내기를
+// 저장소 쿼리로 밀어 넣고, 페이지 property의 정의 뷰만 batched로 읽는다.
+// next는 다음 페이지의 after 커서다(has_more일 때만 유효).
+func (service *ChangeService) ListAssignmentsPage(
+	ctx context.Context,
+	workspace domainentry.WorkspaceContext,
+	localPath string,
+	requestedIDs []domainentry.PropertyID,
+	after *domainentry.PropertyID,
+	limit int,
+) ([]domainentry.EntryPropertyAssignment, map[domainentry.PropertyID]DefinitionView, *domainentry.PropertyID, bool, error) {
+	if err := ValidateWorkspaceContext(workspace); err != nil {
+		return nil, nil, nil, false, err
+	}
+	if len(requestedIDs) > maximumChangeTargets {
+		return nil, nil, nil, false, ErrInvalidChangeRequest
+	}
+	target, err := service.targets.ResolveLocalPath(ctx, localPath)
+	if err != nil {
+		return nil, nil, nil, false, err
+	}
+	facts, next, hasMore, err := service.facts.LoadAssignmentsPage(ctx, workspace, target.EntryRef.EntryID, requestedIDs, after, limit)
+	if err != nil {
+		return nil, nil, nil, false, err
+	}
+	propertyIDs := make([]domainentry.PropertyID, 0, len(facts))
+	for _, fact := range facts {
+		propertyIDs = append(propertyIDs, fact.PropertyID)
+	}
+	definitions, _, _, err := service.catalog.DefinitionsPage(ctx, workspace, false, propertyIDs, nil, len(propertyIDs))
+	if err != nil {
+		return nil, nil, nil, false, err
+	}
+	optionsByProperty, err := service.catalog.OptionsForDefinitions(ctx, workspace, propertyIDs)
+	if err != nil {
+		return nil, nil, nil, false, err
+	}
+	views := make(map[domainentry.PropertyID]DefinitionView, len(definitions))
+	for _, definition := range definitions {
+		views[definition.PropertyID] = DefinitionView{Definition: definition, Options: optionsByProperty[definition.PropertyID]}
+	}
+	return facts, views, next, hasMore, nil
 }
 
 // ListAssignments는 한 대상의 assignment fact를 bounded로 읽어 PropertyID

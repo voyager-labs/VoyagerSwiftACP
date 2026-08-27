@@ -145,18 +145,55 @@ func (service *recordingPropertyService) Prepare(ctx context.Context, workspace 
 	return service.proposal, service.serviceErr
 }
 
-func (service *recordingPropertyService) Execute(ctx context.Context, workspace domainentry.WorkspaceContext, requestID string, changes []applicationproperty.ChangeTarget) ([]domainentry.EntryPropertyAssignment, error) {
+func (service *recordingPropertyService) Execute(ctx context.Context, workspace domainentry.WorkspaceContext, requestID string, changes []applicationproperty.ChangeTarget) (applicationproperty.ExecuteResult, error) {
 	service.record("execute", workspace)
 	service.lastRequestID = requestID
 	service.lastChanges = changes
-	return service.facts, service.serviceErr
+	definitions := make(map[domainentry.PropertyID]domainentry.WorkspacePropertyDefinition, len(service.listDefinitions))
+	for _, view := range service.listDefinitions {
+		definitions[view.Definition.PropertyID] = view.Definition
+	}
+	return applicationproperty.ExecuteResult{Facts: service.facts, Definitions: definitions}, service.serviceErr
 }
 
-func (service *recordingPropertyService) ListAssignments(ctx context.Context, workspace domainentry.WorkspaceContext, localPath string, propertyIDs []domainentry.PropertyID) ([]domainentry.EntryPropertyAssignment, error) {
+func (service *recordingPropertyService) ListAssignmentsPage(ctx context.Context, workspace domainentry.WorkspaceContext, localPath string, requestedIDs []domainentry.PropertyID, after *domainentry.PropertyID, limit int) ([]domainentry.EntryPropertyAssignment, map[domainentry.PropertyID]applicationproperty.DefinitionView, *domainentry.PropertyID, bool, error) {
 	service.record("list_assignments", workspace)
 	service.lastLocalPath = localPath
-	service.lastPropertyIDs = propertyIDs
-	return service.facts, service.serviceErr
+	service.lastPropertyIDs = requestedIDs
+	facts := make([]domainentry.EntryPropertyAssignment, 0, len(service.facts))
+	for _, fact := range service.facts {
+		wanted := len(requestedIDs) == 0
+		for _, id := range requestedIDs {
+			if fact.PropertyID == id {
+				wanted = true
+				break
+			}
+		}
+		if !wanted {
+			continue
+		}
+		if after != nil && !(fact.PropertyID.String() > after.String()) {
+			continue
+		}
+		facts = append(facts, fact)
+	}
+	sort.Slice(facts, func(i, j int) bool {
+		return facts[i].PropertyID.String() < facts[j].PropertyID.String()
+	})
+	hasMore := len(facts) > limit
+	if hasMore {
+		facts = facts[:limit]
+	}
+	var next *domainentry.PropertyID
+	if len(facts) > 0 {
+		id := facts[len(facts)-1].PropertyID
+		next = &id
+	}
+	views := make(map[domainentry.PropertyID]applicationproperty.DefinitionView, len(service.listDefinitions))
+	for _, view := range service.listDefinitions {
+		views[view.Definition.PropertyID] = view
+	}
+	return facts, views, next, hasMore, service.serviceErr
 }
 
 func newPropertyRuntime(service *recordingPropertyService) *Runtime {

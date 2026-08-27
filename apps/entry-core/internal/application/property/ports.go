@@ -48,6 +48,9 @@ type AssignmentRepository interface {
 // 호출되며 부분 집합이 아닌 전체 배치를 한 번에 받는다.
 type AssignmentFactRepository interface {
 	LoadAssignments(ctx context.Context, workspace domainentry.WorkspaceContext, entryIDs []string, propertyIDs []domainentry.PropertyID) ([]domainentry.EntryPropertyAssignment, error)
+	// LoadAssignmentsPage는 assignment.list의 저장소 단계 페이징이다. page_size
+	// 적용 전 전체 header/value/정의 적재를 차단한다.
+	LoadAssignmentsPage(ctx context.Context, workspace domainentry.WorkspaceContext, entryID string, requestedIDs []domainentry.PropertyID, after *domainentry.PropertyID, limit int) ([]domainentry.EntryPropertyAssignment, *domainentry.PropertyID, bool, error)
 	LoadAssignmentsByRefs(ctx context.Context, workspace domainentry.WorkspaceContext, refs []AssignmentRef) ([]domainentry.EntryPropertyAssignment, error)
 	SaveAssignments(ctx context.Context, workspace domainentry.WorkspaceContext, facts []domainentry.EntryPropertyAssignment) error
 }

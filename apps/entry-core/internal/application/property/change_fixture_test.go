@@ -53,6 +53,45 @@ func (store *memFactStore) rollback() {
 	store.pending = nil
 }
 
+func (store *memFactStore) LoadAssignmentsPage(_ context.Context, workspace domainentry.WorkspaceContext, entryID string, requestedIDs []domainentry.PropertyID, after *domainentry.PropertyID, limit int) ([]domainentry.EntryPropertyAssignment, *domainentry.PropertyID, bool, error) {
+	if err := ValidateWorkspaceContext(workspace); err != nil {
+		return nil, nil, false, err
+	}
+	facts := make([]domainentry.EntryPropertyAssignment, 0)
+	for key, fact := range store.facts {
+		if key.entryID != entryID {
+			continue
+		}
+		wanted := len(requestedIDs) == 0
+		for _, id := range requestedIDs {
+			if key.propertyID == id {
+				wanted = true
+				break
+			}
+		}
+		if !wanted {
+			continue
+		}
+		if after != nil && !(fact.PropertyID.String() > after.String()) {
+			continue
+		}
+		facts = append(facts, fact)
+	}
+	sort.Slice(facts, func(i, j int) bool {
+		return facts[i].PropertyID.String() < facts[j].PropertyID.String()
+	})
+	hasMore := len(facts) > limit
+	if hasMore {
+		facts = facts[:limit]
+	}
+	var next *domainentry.PropertyID
+	if len(facts) > 0 {
+		id := facts[len(facts)-1].PropertyID
+		next = &id
+	}
+	return facts, next, hasMore, nil
+}
+
 func (store *memFactStore) LoadAssignmentsByRefs(_ context.Context, workspace domainentry.WorkspaceContext, refs []AssignmentRef) ([]domainentry.EntryPropertyAssignment, error) {
 	if err := ValidateWorkspaceContext(workspace); err != nil {
 		return nil, err

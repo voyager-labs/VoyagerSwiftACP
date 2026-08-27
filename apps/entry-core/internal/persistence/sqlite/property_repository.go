@@ -51,6 +51,23 @@ func (r *EntryPropertyRepository) LoadAssignments(
 	return LoadEntryPropertyAssignments(db, wsctx, entryIDs, propertyIDs)
 }
 
+// LoadAssignmentsPage는 assignment.list의 저장소 단계 페이징이다. 자세한 계약은
+// LoadEntryPropertyAssignmentsPage다.
+func (r *EntryPropertyRepository) LoadAssignmentsPage(
+	ctx context.Context,
+	wsctx domainentry.WorkspaceContext,
+	entryID string,
+	requestedIDs []domainentry.PropertyID,
+	after *domainentry.PropertyID,
+	limit int,
+) ([]domainentry.EntryPropertyAssignment, *domainentry.PropertyID, bool, error) {
+	db := r.store.db.WithContext(ctx)
+	if scope, ok := ctx.Value(txScopeKey{}).(*txScope); ok && scope != nil && scope.tx != nil {
+		db = scope.tx.WithContext(ctx)
+	}
+	return LoadEntryPropertyAssignmentsPage(db, wsctx, entryID, requestedIDs, after, limit)
+}
+
 // LoadAssignmentsByRefs는 exact-pair change 경로 읽기다. 자세한 계약은
 // LoadEntryPropertyAssignmentsByRefs다.
 func (r *EntryPropertyRepository) LoadAssignmentsByRefs(
@@ -403,4 +420,81 @@ func LoadEntryPropertyAssignmentsByRefs(
 		}
 	}
 	return result, nil
+}
+
+// LoadEntryPropertyAssignmentsPage는 assignment.list의 저장소 단계 페이징이다.
+// 단일 entry의 property_id 오름차순 창(after 이후 limit+1행)만 읽고, 값·정의·
+// 선택지도 페이지 property에 한정해 조회한다. durable row가 없는 property는
+// 결과에서 제외된다(implicit unset). next는 다음 페이지의 after 커서다.
+func LoadEntryPropertyAssignmentsPage(
+	db *gorm.DB,
+	wsctx domainentry.WorkspaceContext,
+	entryID string,
+	requestedIDs []domainentry.PropertyID,
+	after *domainentry.PropertyID,
+	limit int,
+) ([]domainentry.EntryPropertyAssignment, *domainentry.PropertyID, bool, error) {
+	if wsctx.ID == (domainentry.WorkspaceID{}) {
+		return nil, nil, false, ErrInvalidPropertyRow
+	}
+	if !validEntryIDShape(entryID) {
+		return nil, nil, false, ErrInvalidPropertyRow
+	}
+	wsBytes := wsctx.ID.Bytes()
+	headerQuery := db.Where("workspace_id = ? AND entry_id = ?", wsBytes, entryID)
+	if len(requestedIDs) > 0 {
+		headerQuery = headerQuery.Where(propertyIDFilter(requestedIDs), idFilterArg(requestedIDs))
+	}
+	if after != nil {
+		headerQuery = headerQuery.Where("property_id > ?", after.Bytes())
+	}
+	var headerRows []EntryPropertyAssignmentRow
+	if err := headerQuery.Order("property_id ASC").Limit(limit + 1).Find(&headerRows).Error; err != nil {
+		return nil, nil, false, err
+	}
+	hasMore := len(headerRows) > limit
+	if hasMore {
+		headerRows = headerRows[:limit]
+	}
+	if len(headerRows) == 0 {
+		return []domainentry.EntryPropertyAssignment{}, nil, false, nil
+	}
+	pageIDs := make([]domainentry.PropertyID, 0, len(headerRows))
+	for _, header := range headerRows {
+		id, err := parsePropertyIDBlob(header.PropertyID)
+		if err != nil {
+			return nil, nil, false, err
+		}
+		pageIDs = append(pageIDs, id)
+	}
+
+	var valueRows []EntryPropertyAssignmentValueRow
+	if err := db.Where("workspace_id = ? AND entry_id = ?", wsBytes, entryID).
+		Where(propertyIDFilter(pageIDs), idFilterArg(pageIDs)).
+		Order("property_id ASC, ordinal ASC").Find(&valueRows).Error; err != nil {
+		return nil, nil, false, err
+	}
+	var defRows []WorkspacePropertyDefinitionRow
+	if err := db.Where("workspace_id = ?", wsBytes).Where(propertyIDFilter(pageIDs), idFilterArg(pageIDs)).
+		Find(&defRows).Error; err != nil {
+		return nil, nil, false, err
+	}
+	var optionRows []WorkspacePropertyOptionRow
+	if err := db.Where("workspace_id = ?", wsBytes).Where(propertyIDFilter(pageIDs), idFilterArg(pageIDs)).
+		Find(&optionRows).Error; err != nil {
+		return nil, nil, false, err
+	}
+
+	result, err := assembleEntryPropertyAssignments(headerRows, valueRows, defRows, optionRows)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	facts := make([]domainentry.EntryPropertyAssignment, 0, len(result))
+	for _, id := range pageIDs {
+		if fact, ok := result[EntryPropertyRef{EntryID: entryID, PropertyID: id}]; ok {
+			facts = append(facts, fact)
+		}
+	}
+	next := pageIDs[len(pageIDs)-1]
+	return facts, &next, hasMore, nil
 }

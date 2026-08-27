@@ -23,8 +23,8 @@ type PropertyService interface {
 	ReorderOptions(ctx context.Context, workspace domainentry.WorkspaceContext, propertyID domainentry.PropertyID, expectedRevision int, requestID string, orderedIDs []domainentry.PropertyOptionID) (applicationproperty.DefinitionView, error)
 	DisableOption(ctx context.Context, workspace domainentry.WorkspaceContext, propertyID domainentry.PropertyID, optionID domainentry.PropertyOptionID, expectedRevision int, requestID string) (applicationproperty.DefinitionView, error)
 	Prepare(ctx context.Context, workspace domainentry.WorkspaceContext, changes []applicationproperty.ChangeTarget) (applicationproperty.Proposal, error)
-	Execute(ctx context.Context, workspace domainentry.WorkspaceContext, requestID string, changes []applicationproperty.ChangeTarget) ([]domainentry.EntryPropertyAssignment, error)
-	ListAssignments(ctx context.Context, workspace domainentry.WorkspaceContext, localPath string, propertyIDs []domainentry.PropertyID) ([]domainentry.EntryPropertyAssignment, error)
+	Execute(ctx context.Context, workspace domainentry.WorkspaceContext, requestID string, changes []applicationproperty.ChangeTarget) (applicationproperty.ExecuteResult, error)
+	ListAssignmentsPage(ctx context.Context, workspace domainentry.WorkspaceContext, localPath string, requestedIDs []domainentry.PropertyID, after *domainentry.PropertyID, limit int) ([]domainentry.EntryPropertyAssignment, map[domainentry.PropertyID]applicationproperty.DefinitionView, *domainentry.PropertyID, bool, error)
 }
 
 // NewWithPropertyService는 Property 전용 테스트·조합 생성자다. 워크스페이스
@@ -111,15 +111,33 @@ func dispatchPropertyAssignmentList(ctx context.Context, request schema.Request,
 	if err != nil {
 		return dispatchError(request, schema.ErrorInvalidRequest)
 	}
-	facts, err := service.ListAssignments(ctx, workspace, params.Target.LocalPath, propertyIDs)
+	// 필터·정렬·창 잘라내기를 저장소 쿼리로 밀어 넣는다. page_size 적용 전에
+	// 전체 header/value/카탈로그를 적재하면 단일 연결을 오래 점유한다.
+	var after *domainentry.PropertyID
+	if params.PageToken != nil {
+		parsed, parseErr := domainentry.ParsePropertyID(*params.PageToken)
+		if parseErr != nil {
+			return dispatchError(request, schema.ErrorInvalidRequest)
+		}
+		after = &parsed
+	}
+	facts, definitions, next, hasMore, err := service.ListAssignmentsPage(ctx, workspace, params.Target.LocalPath, propertyIDs, after, params.PageSize)
 	if err != nil {
 		return dispatchError(request, protocolCodeForPropertyError(err))
 	}
-	definitions, err := loadDefinitionIndex(ctx, workspace, service)
-	if err != nil {
-		return dispatchError(request, protocolCodeForPropertyError(err))
+	assignments := make([]schema.PropertyAssignment, len(facts))
+	for index, fact := range facts {
+		mapped, mapCode := assignmentFactToWire(fact, definitions)
+		if mapCode != "" {
+			return dispatchError(request, mapCode)
+		}
+		assignments[index] = mapped
 	}
-	assignments, nextToken, hasMore := pageAssignmentFacts(facts, definitions, params)
+	var nextToken *string
+	if hasMore && next != nil {
+		token := next.String()
+		nextToken = &token
+	}
 	result := schema.PropertyAssignmentListResult{Assignments: assignments, NextPageToken: nextToken, HasMore: hasMore}
 	return dispatchPropertySuccess(request, result)
 }
@@ -157,17 +175,16 @@ func dispatchPropertyChangeExecute(ctx context.Context, request schema.Request, 
 	if code != "" {
 		return dispatchError(request, code)
 	}
-	facts, err := service.Execute(ctx, workspace, request.RequestID, changes)
+	executed, err := service.Execute(ctx, workspace, request.RequestID, changes)
 	if err != nil {
 		return dispatchError(request, protocolCodeForPropertyError(err))
 	}
-	definitions, err := loadDefinitionIndex(ctx, workspace, service)
-	if err != nil {
-		return dispatchError(request, protocolCodeForPropertyError(err))
-	}
-	assignments := make([]schema.PropertyAssignment, len(facts))
-	for index, fact := range facts {
-		mapped, mapCode := assignmentFactToWire(fact, definitions)
+	// 응답 매핑은 트랜잭션 안에서 검증된 정의 계약으로 완성한다. 커밋 뒤
+	// 카탈로그를 다시 읽으면 조회 실패 시 영속화된 변경이 internal_error와
+	// 재시도 conflict로 남는다.
+	assignments := make([]schema.PropertyAssignment, len(executed.Facts))
+	for index, fact := range executed.Facts {
+		mapped, mapCode := assignmentFactToWire(fact, executed.DefinitionViews())
 		if mapCode != "" {
 			return dispatchError(request, mapCode)
 		}
