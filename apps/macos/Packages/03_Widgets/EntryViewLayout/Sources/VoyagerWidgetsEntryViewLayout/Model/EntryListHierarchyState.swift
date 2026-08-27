@@ -161,6 +161,9 @@ public struct EntryListHierarchyState: Equatable, Sendable {
             node.folder.children = replacement.stagedChildren
             node.folder.hasAppliedContentBatch = !replacement.stagedChildren.isEmpty
             nodesByID[folderID] = node
+            if node.folder.coreFinished {
+                reconcileNodesAfterMigrationCommit(folderID: folderID)
+            }
         }
         deferredFolderReplacements = [:]
     }
@@ -168,19 +171,30 @@ public struct EntryListHierarchyState: Equatable, Sendable {
     /// migration이 폴더 children을 교체한 뒤 남은 stale 로드 하위 node를 정리한다.
     /// 같은 경로의 폴더를 다시 펼칠 때 과거 캐시가 재사용되지 않도록 parent edge와 함께 제거한다.
     public mutating func reconcileNodesAfterMigrationCommit(folderID: EntryModel.ID) {
-        guard nodesByID[folderID] != nil else { return }
-        let liveChildIDs = Set(nodesByID[folderID]!.folder.children.map(\.id))
+        guard let folderNode = nodesByID[folderID] else { return }
+        let liveChildIDs = Set(folderNode.folder.children.map(\.id))
         for childID in liveChildIDs where nodesByID[childID] != nil {
             nodesByID[childID]?.parentID = folderID
         }
-        let staleIDs = nodesByID.keys.filter { id in
+        let folderComponents = URL(fileURLWithPath: folderID).standardizedFileURL.pathComponents
+        let staleRoots = Set(nodesByID.keys.filter { id in
             guard id != folderID, !liveChildIDs.contains(id) else { return false }
+            if nodesByID[id]?.parentID == folderID { return true }
+            let childComponents = URL(fileURLWithPath: id).standardizedFileURL.pathComponents
+            return childComponents.count == folderComponents.count + 1
+                && childComponents.starts(with: folderComponents)
+        })
+        var staleIDs = staleRoots
+        for id in nodesByID.keys where !staleRoots.contains(id) {
             var currentParent = nodesByID[id]?.parentID
-            while let parentID = currentParent {
-                if parentID == folderID { return true }
+            var visited = Set<EntryModel.ID>()
+            while let parentID = currentParent, visited.insert(parentID).inserted {
+                if staleRoots.contains(parentID) {
+                    staleIDs.insert(id)
+                    break
+                }
                 currentParent = nodesByID[parentID]?.parentID
             }
-            return false
         }
         for id in staleIDs {
             nodesByID[id] = nil
