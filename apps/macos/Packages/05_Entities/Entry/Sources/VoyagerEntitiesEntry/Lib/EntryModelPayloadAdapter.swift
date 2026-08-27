@@ -20,6 +20,7 @@ enum EntryModelPayloadAdapter {
                 tags: payload.tags?.map { Tag(name: $0.name, colorCode: $0.colorCode) },
                 supplementaryMetadata: makeSupplementaryMetadata(payload.supplementaryMetadata),
             ),
+            isPackage: payload.isPackage,
         )
     }
 

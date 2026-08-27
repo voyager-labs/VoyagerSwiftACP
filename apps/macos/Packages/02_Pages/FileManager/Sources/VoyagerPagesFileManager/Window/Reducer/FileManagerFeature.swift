@@ -495,6 +495,14 @@ private extension FileManagerFeature {
         }
 
         Reduce { state, action in
+            if case .request(.moveContentTabSwitcherFocus) = action {
+                // stale focus의 방향 정보는 command reducer에서 처리한다.
+            } else if case .request(.activateContentTabSwitcherSelection) = action {
+                // focused window command는 stale focus 보존을 위해 command reducer가 직접 처리한다.
+            } else if case .view(.activateContentTabSwitcherCandidate) = action {
+            } else {
+                reconcileContentTabSwitcherPresentation(state: &state)
+            }
             switch action {
             case let .contentTabs(.updateActivePageAnchor(tabID, _))
                 where state.contentTabs.activeTabID == tabID:
@@ -591,8 +599,6 @@ func fileManagerContentState(
     state.contentTabs.activeTabID == tabID ? state.content : state.tabContentStates[tabID]
 }
 
-/// 프로세스 전역 Quick Look 패널 동기화 action 여부.
-/// selectionChanged bridge가 발행하는 `.open(.syncQuickLookSelection)`만 해당한다.
 private func isQuickLookSelectionSync(_ action: FileManagerContentAction) -> Bool {
     if case .entryViewLayout(.entryOperations(.open(.syncQuickLookSelection))) = action {
         return true
@@ -785,13 +791,10 @@ struct ContentTabPinnedRecordPersistenceResult {
 
 extension FileManagerWindowState {
     func isCurrentSelectedContentTabClose(operationID: UUID, tabID: ContentTabID) -> Bool {
-        guard !isClosing,
-              let batch = pendingSelectedContentTabClose,
+        guard !isClosing, let batch = pendingSelectedContentTabClose,
               let pendingClose = pendingContentTabClose
         else { return false }
-        return batch.operationID == operationID
-            && batch.currentTabID == tabID
-            && pendingClose.batchOperationID == operationID
-            && pendingClose.tabID == tabID
+        return batch.operationID == operationID && batch.currentTabID == tabID
+            && pendingClose.batchOperationID == operationID && pendingClose.tabID == tabID
     }
 }

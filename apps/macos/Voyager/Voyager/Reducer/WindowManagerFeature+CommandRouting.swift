@@ -88,11 +88,31 @@ extension WindowManagerFeature {
         _ state: State,
         _ command: FileManagerWindowAction.WindowCommand,
     ) -> Effect<Action> {
-        guard let id = state.focusedWindowID,
-              !state.closingWindowIDs.contains(id),
+        guard let id = state.focusedWindowID else { return .none }
+        return sendCommandToWindow(state, id: id, command: command)
+    }
+
+    func sendCommandToWindow(
+        _ state: State,
+        id: WindowManagerState.WindowID,
+        command: FileManagerWindowAction.WindowCommand,
+    ) -> Effect<Action> {
+        guard !state.closingWindowIDs.contains(id),
               state.windows[id: id] != nil
         else { return .none }
         return .send(.windows(.element(id: id, action: .window(.request(command)))))
+    }
+
+    func sendCommandToWindowIfPresentationMatches(
+        _ state: State,
+        id: WindowManagerState.WindowID,
+        source: FileManagerContentTabSwitcherPresentation.Source,
+        command: FileManagerWindowAction.WindowCommand,
+    ) -> Effect<Action> {
+        guard state.windows[id: id]?.window.contentTabSwitcherPresentation?.source == source else {
+            return .none
+        }
+        return sendCommandToWindow(state, id: id, command: command)
     }
 
     func sendContentTabCommandToFocusedWindow(
@@ -256,7 +276,11 @@ extension WindowManagerFeature {
         }
     }
 
-    func makeWindowSession(path: String?, selectEntryID: String? = nil) -> WindowSessionState {
+    func makeWindowSession(
+        path: String?,
+        startPage: StartPage? = nil,
+        selectEntryID: String? = nil,
+    ) -> WindowSessionState {
         let id = uuid()
 
         if let path {
@@ -268,15 +292,53 @@ extension WindowManagerFeature {
             return .init(id: id, window: windowState)
         }
 
-        // Default window: Home shell immediately, no synchronous IO.
-        // Pinned store restore/seed/validation runs asynchronously via
-        // runDefaultWindowBootstrapEffect() attached in openWindowSession.
+        let initialPath: String? = switch startPage ?? .home {
+        case .home:
+            nil
+        case let .directory(path):
+            path
+        }
         let windowState = FileManagerWindowFeature.State.makeInitial(
-            path: nil,
+            path: initialPath,
             selectEntryID: selectEntryID,
             windowID: id,
         )
         return .init(id: id, window: windowState)
+    }
+
+    /// 시작 페이지 디렉터리 프로브(stat/resourceValues)를 비동기 effect로 실행한다.
+    /// request-time snapshot 계약: 액션 시작 시 캡처한 snapshot만 사용하고,
+    /// 완료 후 preference를 재조회하지 않는다.
+    func resolveDefaultStartPageEffect(
+        resolutionID: UUID,
+        snapshot: StartPage,
+        makeAction: @escaping @Sendable (StartPage) -> Action,
+    ) -> Effect<Action> {
+        let availabilityClient = startPageAvailabilityClient
+        return .run { send in
+            let (resolutions, continuation) = AsyncStream<StartPageResolution>.makeStream()
+            DispatchQueue.global(qos: .userInitiated).async {
+                let resolution = withDependencies {
+                    $0.startPageAvailabilityClient = availabilityClient
+                } operation: {
+                    StartPageResolver.resolve(snapshot)
+                }
+                continuation.yield(resolution)
+                continuation.finish()
+            }
+            let resolution = await withTaskCancellationHandler(
+                operation: { () async -> StartPageResolution? in
+                    for await resolution in resolutions {
+                        return resolution
+                    }
+                    return nil
+                },
+                onCancel: { continuation.finish() },
+            )
+            guard let resolution, !Task.isCancelled else { return }
+            await send(makeAction(resolution.effectiveStartPage))
+        }
+        .cancellable(id: CancelID.defaultStartPageResolution(resolutionID))
     }
 }
 
@@ -284,11 +346,13 @@ extension WindowManagerFeature {
     func handleLifecycleAction(_ action: Action, state: inout State) -> Effect<Action>? {
         switch action {
         case .lifecycle(.openInitialWindowIfNeeded):
-            guard state.windows.ids.allSatisfy(state.closingWindowIDs.contains) else { return .none }
+            guard state.windows.ids.allSatisfy(state.closingWindowIDs.contains),
+                  state.pendingDefaultStartPageResolutions.isEmpty
+            else { return .none }
             return .send(.file(.newWindow(path: nil)))
 
         case let .lifecycle(.reopenWindowIfNeeded(hasVisibleWindows: flag)):
-            guard !flag else { return .none }
+            guard !flag, state.pendingDefaultStartPageResolutions.isEmpty else { return .none }
 
             guard let reopenWindowID = state.focusedWindowID.flatMap({ id in
                 isWindowReady(id, state: state) ? id : nil

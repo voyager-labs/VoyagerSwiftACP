@@ -22,6 +22,7 @@ struct WindowManagerFeature {
 
     nonisolated enum CancelID: Hashable {
         case defaultWindowBootstrap
+        case defaultStartPageResolution(UUID)
         case windowOpen(State.WindowID)
         case externalOpenBatch(UUID)
         case trackedSingletonNativeOpen(UUID)
@@ -70,6 +71,9 @@ struct WindowManagerFeature {
     @Dependency(\.workspaceClient)
     var workspaceClient
 
+    @Dependency(\.startPageAvailabilityClient)
+    var startPageAvailabilityClient
+
     @Dependency(\.date)
     var date
 
@@ -113,8 +117,73 @@ struct WindowManagerFeature {
                 guard let id = state.focusedWindowID, isWindowReady(id, state: state) else { return .none }
                 return sendCommandToFocusedWindow(state, .presentContentTabSwitcher(source: .automatic))
 
+            case let .file(.presentContentTabSwitcherInWindow(windowID: id, source: source)):
+                guard state.focusedWindowID == id,
+                      state.windows[id: id]?.window.contentTabSwitcherPresentation == nil,
+                      isWindowReady(id, state: state)
+                else { return .none }
+                return sendCommandToWindow(state, id: id, command: .presentContentTabSwitcher(source: source))
+
             case .file(.selectMostRecentlyUsedContentTab):
+                guard let id = state.focusedWindowID, isWindowReady(id, state: state) else { return .none }
                 return sendCommandToFocusedWindow(state, .selectMostRecentlyUsedContentTab)
+
+            case let .file(.activateContentTabSwitcherInWindow(windowID: id, source: source)):
+                guard isWindowReady(id, state: state) else { return .none }
+                return sendCommandToWindowIfPresentationMatches(
+                    state,
+                    id: id,
+                    source: source,
+                    command: .activateContentTabSwitcherSelection,
+                )
+
+            case .file(.moveNextContentTabSwitcher):
+                guard let id = state.focusedWindowID, isWindowReady(id, state: state) else { return .none }
+                return sendCommandToFocusedWindow(
+                    state,
+                    .moveNextContentTabSwitcher,
+                )
+
+            case let .file(.moveNextContentTabSwitcherInWindow(windowID: id, source: source)):
+                guard isWindowReady(id, state: state) else { return .none }
+                return sendCommandToWindowIfPresentationMatches(
+                    state,
+                    id: id,
+                    source: source,
+                    command: .moveNextContentTabSwitcher,
+                )
+
+            case .file(.movePreviousContentTabSwitcher):
+                guard let id = state.focusedWindowID, isWindowReady(id, state: state) else { return .none }
+                return sendCommandToFocusedWindow(
+                    state,
+                    .movePreviousContentTabSwitcher,
+                )
+
+            case let .file(.movePreviousContentTabSwitcherInWindow(windowID: id, source: source)):
+                guard isWindowReady(id, state: state) else { return .none }
+                return sendCommandToWindowIfPresentationMatches(
+                    state,
+                    id: id,
+                    source: source,
+                    command: .movePreviousContentTabSwitcher,
+                )
+
+            case .file(.dismissContentTabSwitcher):
+                guard let id = state.focusedWindowID,
+                      !state.closingWindowIDs.contains(id),
+                      isWindowReady(id, state: state)
+                else { return .none }
+                return sendCommandToFocusedWindow(state, .dismissContentTabSwitcher)
+
+            case let .file(.dismissContentTabSwitcherInWindow(windowID: id, source: source)):
+                guard isWindowReady(id, state: state) else { return .none }
+                return sendCommandToWindowIfPresentationMatches(
+                    state,
+                    id: id,
+                    source: source,
+                    command: .dismissContentTabSwitcher,
+                )
 
             case .file(.newFolder):
                 return sendCommandToFocusedWindow(state, .newFolder)
@@ -159,11 +228,14 @@ struct WindowManagerFeature {
                 )))
 
             case let .event(.windowResignedKey(id)):
+                let dismissEffect = state.windows[id: id]?.window.contentTabSwitcherPresentation == nil
+                    ? Effect<Action>.none
+                    : sendCommandToWindow(state, id: id, command: .dismissContentTabSwitcher)
                 if state.focusedWindowID == id {
                     state.focusedWindowID = nil
                 }
                 state.windows[id: id]?.window.isFocused = false
-                return .none
+                return dismissEffect
 
             case let .windowOpenCompleted(id, shouldBootstrapDefaultWindow, isRegistered):
                 guard state.pendingWindowOpenIDs.contains(id),
@@ -480,6 +552,15 @@ struct WindowManagerFeature {
                 default:
                     return .none
                 }
+
+            case let .defaultStartPageResolved(resolutionID, requestID, selectEntryID, startPage):
+                return resumeDefaultStartPageResolution(
+                    resolutionID: resolutionID,
+                    requestID: requestID,
+                    selectEntryID: selectEntryID,
+                    startPage: startPage,
+                    state: &state,
+                )
 
             case .delegate, .windows:
                 return .none

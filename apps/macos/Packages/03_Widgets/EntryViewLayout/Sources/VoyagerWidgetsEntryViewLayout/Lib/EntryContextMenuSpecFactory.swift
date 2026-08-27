@@ -102,7 +102,7 @@ enum EntryContextMenuSpecFactory {
 
         return .init(
             selectedCount: effectiveSelectedCount,
-            rowEntryPathForOpenInNewWindow: rowEntry?.isFolder == true ? rowEntry?.fullPath : nil,
+            rowEntryPathForOpenInNewWindow: rowEntry?.isDirectoryNavigationTarget == true ? rowEntry?.fullPath : nil,
             openInNewTabPaths: openInNewTabPaths,
             serviceNames: serviceNames,
             canPaste: canPaste,
@@ -137,7 +137,7 @@ enum EntryContextMenuSpecFactory {
     /// 모든 선택 항목이 폴더일 때만 display 순서의 폴더 경로를 반환하고, 그 외에는 nil이다.
     private static func resolveOpenInNewTabPaths(selectedEntries: [EntryModel]) -> [String]? {
         guard !selectedEntries.isEmpty,
-              selectedEntries.allSatisfy(\.isFolder)
+              selectedEntries.allSatisfy(\.isDirectoryNavigationTarget)
         else {
             return nil
         }

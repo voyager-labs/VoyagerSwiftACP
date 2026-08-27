@@ -31,7 +31,9 @@ enum FileManagerContentEntryOpsCoordinator {
             // 경로·종류를 추측해 전이를 만료하면 무관한 실패가 성공한 전이를 파괴한다.
             // 따라서 실패로는 전이를 직접 만료하지 않는다. after-path가 끝내 도착하지
             // 않으면 종료(accepted) projection의 소비 경로가 정리한다.
-            handleOperationFinished(path: path, kind: kind, result: result, state: state)
+            kind == .externalObjectImportItem
+                ? .none
+                : handleOperationFinished(path: path, kind: kind, result: result, state: state)
 
         case .edit(.cancelRename):
             // 편집 취소는 이미 완료된 identity 연산과 무관하므로 대기 전이를 만료하지 않는다.
@@ -39,6 +41,9 @@ enum FileManagerContentEntryOpsCoordinator {
 
         case let .lifecycle(.dropOperationFinished(path, kind, result)):
             handleDropOperationFinished(path: path, kind: kind, result: result, state: state)
+
+        case let .externalDrop(.importFinished(result)):
+            handleExternalImportFinished(result: result, state: state)
 
         case .lifecycle(.emptyTrashCompleted):
             .send(.delegate(.closeWindow))
@@ -104,7 +109,7 @@ enum FileManagerContentEntryOpsCoordinator {
 
         let selectedIds = Set([matchedID])
         let didChangeSelection = state.entryViewLayout.selectedIds != selectedIds
-        state.pendingSelectEntryID = nil
+        state.setPendingEntrySelection(entryID: nil, destinationPath: nil)
         state.entryViewLayout.selectedIds = selectedIds
         state.entryViewLayout.lastSelectedId = matchedID
         state.entryViewLayout.rangeAnchorId = matchedID
@@ -142,6 +147,20 @@ enum FileManagerContentEntryOpsCoordinator {
         return .merge(
             handleEntryActionCompleted(record, state: &state),
             record.operationKind == .setTags ? setTagsRefreshEffect(record: record, state: state) : .none,
+        )
+    }
+
+    private static func handleExternalImportFinished(
+        result: ExternalDropImportResult,
+        state: FileManagerContentState,
+    ) -> Effect<FileManagerContentAction> {
+        guard case .collection = state.navigation.navigationState else {
+            return reloadEntryItemsEffect(state: state)
+        }
+        guard !result.succeededPaths.isEmpty else { return .none }
+        return .concatenate(
+            .send(.collection(.externalPathsChanged(result.succeededPaths))),
+            .send(.view(.refreshStaleCollection)),
         )
     }
 

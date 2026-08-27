@@ -1,4 +1,5 @@
-@_spi(Internals) import ComposableArchitecture
+@_spi(Internals)
+import ComposableArchitecture
 import Foundation
 @_spi(Testing)
 @testable import VoyagerEntitiesCollection
@@ -836,6 +837,27 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
     }
 
     // MARK: - RCL-002-alert_unsaved_collection_filter_changes
+
+    /// RCL-002-alert_unsaved_collection_filter_changes: cancel does not install a navigation reveal.
+    /// Cancelled dirty navigation must not create a pending entry ID or destination guard.
+    /// - 검증 내용: unsaved alert cancel leaves both pending-selection fields empty.
+    /// - 사전 조건: dirty collection state and a Back navigation request.
+    /// - 기대 결과: cancel response completes with no pending reveal state.
+    func testAlertUnsavedCollectionFilterChanges_cancelLeavesRevealStateEmpty() async {
+        let store = TestStore(initialState: makeDirtyWindowState()) {
+            FileManagerNavigationActionReducer()
+        } withDependencies: {
+            $0.collectionAlertClient.showUnsavedNavigationAlert = { .cancel }
+        }
+
+        await store.send(.navigation(.view(.goBack)))
+        await store.receive(\.navigation.internal.showUnsavedNavigationAlert)
+        await store.receive(\.navigation.internal.unsavedNavigationAlertResponse)
+        await store.finish()
+
+        XCTAssertNil(store.state.content.pendingSelectEntryID)
+        XCTAssertNil(store.state.content.pendingSelectEntryDestinationPath)
+    }
 
     /// RCL-002-alert_unsaved_collection_filter_changes: dirty collection navigation은 unsaved alert로 라우팅됨
     /// 저장되지 않은 collection filter 변경이 있을 때 window navigation reducer가 alert action을 내보내는지 검증한다.

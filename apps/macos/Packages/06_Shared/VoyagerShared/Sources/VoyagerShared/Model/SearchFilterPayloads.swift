@@ -329,6 +329,25 @@ nonisolated public struct SearchEntryPayload: Codable, Equatable, Sendable {
     public let creatorApplication: String?
     public let tags: [SearchTagPayload]?
     public let supplementaryMetadata: SearchEntrySupplementaryMetadataPayload?
+    public let isPackage: Bool
+
+    public enum CodingKeys: String, CodingKey {
+        case name
+        case fullPath
+        case isFolder
+        case isHidden
+        case size
+        case modifiedDate
+        case fileExtension
+        case createdDate
+        case addedDate
+        case lastOpenedDate
+        case kind
+        case creatorApplication
+        case tags
+        case supplementaryMetadata
+        case isPackage
+    }
 
     public init(
         name: String,
@@ -345,6 +364,7 @@ nonisolated public struct SearchEntryPayload: Codable, Equatable, Sendable {
         creatorApplication: String?,
         tags: [SearchTagPayload]?,
         supplementaryMetadata: SearchEntrySupplementaryMetadataPayload?,
+        isPackage: Bool = false,
     ) {
         self.name = name
         self.fullPath = fullPath
@@ -360,6 +380,30 @@ nonisolated public struct SearchEntryPayload: Codable, Equatable, Sendable {
         self.creatorApplication = creatorApplication
         self.tags = tags
         self.supplementaryMetadata = supplementaryMetadata
+        self.isPackage = isPackage
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        name = try container.decode(String.self, forKey: .name)
+        fullPath = try container.decode(String.self, forKey: .fullPath)
+        isFolder = try container.decode(Bool.self, forKey: .isFolder)
+        isHidden = try container.decode(Bool.self, forKey: .isHidden)
+        size = try container.decode(Int64.self, forKey: .size)
+        modifiedDate = try container.decode(Date.self, forKey: .modifiedDate)
+        fileExtension = try container.decode(String.self, forKey: .fileExtension)
+        createdDate = try container.decode(Date.self, forKey: .createdDate)
+        addedDate = try container.decode(Date.self, forKey: .addedDate)
+        lastOpenedDate = try container.decodeIfPresent(Date.self, forKey: .lastOpenedDate)
+        kind = try container.decode(String.self, forKey: .kind)
+        creatorApplication = try container.decodeIfPresent(String.self, forKey: .creatorApplication)
+        tags = try container.decodeIfPresent([SearchTagPayload].self, forKey: .tags)
+        supplementaryMetadata = try container.decodeIfPresent(
+            SearchEntrySupplementaryMetadataPayload.self,
+            forKey: .supplementaryMetadata,
+        )
+        // legacy JSON에 isPackage key가 없으면 false로 후방 호환 보정
+        isPackage = try container.decodeIfPresent(Bool.self, forKey: .isPackage) ?? false
     }
 }
 

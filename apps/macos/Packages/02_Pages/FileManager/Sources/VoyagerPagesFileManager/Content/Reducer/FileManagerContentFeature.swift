@@ -26,6 +26,9 @@ public struct FileManagerContentFeature {
     public var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
+            case let .internal(.setPendingEntrySelection(entryID, destinationPath)):
+                state.setPendingEntrySelection(entryID: entryID, destinationPath: destinationPath)
+                return .none
             case let .collection(.saveCompleted(result)):
                 return handleCollectionSaveCompleted(result: result, state: &state)
             case let .entryViewLayout(.entryOperations(.lifecycle(.windowIDChanged(windowID)))):
@@ -77,8 +80,10 @@ public struct FileManagerContentFeature {
             CollectionFeature()
         }
 
+        FileManagerContentPendingSelectionReducer(phase: .beforeEntryViewLayout)
+
         Reduce { state, action in
-            let effect = handlePendingSelectionBeforeEntryLayoutLoaded(action, state: &state)
+            let effect = handleIdentityTransitionBeforeEntryLayoutLoaded(action, state: &state)
             FileManagerContentIdentityTransitionCoordinator.markReplacementSelection(
                 on: action,
                 state: &state,
@@ -94,8 +99,9 @@ public struct FileManagerContentFeature {
             AiChatFeature()
         }
 
+        FileManagerContentPendingSelectionReducer(phase: .afterEntryViewLayout)
+
         Reduce { state, action in
-            let effect = handlePendingSelectionAfterEntryLayoutLoaded(action, state: &state)
             FileManagerContentIdentityTransitionCoordinator.rebaseFolderOwnersAfterRootSnapshot(
                 on: action,
                 state: &state,
@@ -108,7 +114,7 @@ public struct FileManagerContentFeature {
                 on: action,
                 state: &state,
             )
-            return effect
+            return .none
         }
 
         FileManagerContentComposerReducer()
@@ -125,7 +131,7 @@ public struct FileManagerContentFeature {
 
         // Feature → Widget projection (replaces catch-all sync)
         Reduce { state, action in
-            let shouldProject = FileManagerContentFeature.shouldProjectContent(action)
+            let shouldProject = FileManagerContentFeature.shouldProjectContent(action, state: state)
             guard shouldProject else { return .none }
 
             let isClearingCollection = FileManagerContentFeature.isClearingCollectionMode(action)
@@ -344,20 +350,18 @@ public struct FileManagerContentFeature {
         )
     }
 
-    private func handlePendingSelectionBeforeEntryLayoutLoaded(
+    private func handleIdentityTransitionBeforeEntryLayoutLoaded(
         _ action: Action,
         state: inout State,
     ) -> Effect<Action> {
         let entries: [EntryModel]
         let projectionOwner: FileManagerContentState.EntryIdentityTransitionProjectionOwner
-        let appliesPendingExternalSelection: Bool
         switch action {
         case let .entryViewLayout(.entryOperations(.loading(.itemsLoaded(items)))):
             entries = items
             projectionOwner = .root(
                 generation: state.entryViewLayout.entryOperations.loadingContext.generation,
             )
-            appliesPendingExternalSelection = true
 
         case let .entryViewLayout(.entryOperations(.loading(.streamEvent(streamEvent)))):
             guard case let .coreBatch(items: items, batchIndex: batchIndex) = streamEvent.event,
@@ -366,7 +370,6 @@ public struct FileManagerContentFeature {
             else { return .none }
             entries = items
             projectionOwner = .root(generation: streamEvent.generation)
-            appliesPendingExternalSelection = true
 
         case let .entryViewLayout(.hierarchy(.folderChildrenResponse(
             rootContextGeneration,
@@ -383,7 +386,6 @@ public struct FileManagerContentFeature {
             else { return .none }
             entries = items
             projectionOwner = .folder(id: folderID, generation: folderGeneration)
-            appliesPendingExternalSelection = false
             FileManagerContentIdentityTransitionCoordinator.beginDeferredFolderReplacementIfNeeded(
                 folderID: folderID,
                 items: items,
@@ -394,40 +396,12 @@ public struct FileManagerContentFeature {
             return .none
         }
 
-        let pendingSelectionApplied = appliesPendingExternalSelection
-            && FileManagerContentEntryOpsCoordinator.applyPendingSelectionForLoadedEntries(
-                entries: entries,
-                state: &state,
-            )
         let identityMigrated = FileManagerContentIdentityTransitionCoordinator.migrateSelection(
             entries: entries,
             projectionOwner: projectionOwner,
             state: &state,
         )
-        guard pendingSelectionApplied || identityMigrated else { return .none }
-        return .send(.entryViewLayout(.delegate(.selectionChanged)))
-    }
-
-    private func handlePendingSelectionAfterEntryLayoutLoaded(
-        _ action: Action,
-        state: inout State,
-    ) -> Effect<Action> {
-        let entries: [EntryModel]
-        switch action {
-        case let .entryViewLayout(.entryOperations(.loading(.itemsLoaded(loadedEntries)))):
-            entries = loadedEntries
-        case let .entryViewLayout(.entryOperations(.loading(.streamEvent(streamEvent)))):
-            guard case .coreBatch = streamEvent.event else { return .none }
-            entries = Array(state.entryViewLayout.entryOperations.loadingContext.items)
-        default:
-            return .none
-        }
-        guard FileManagerContentEntryOpsCoordinator.applyPendingSelectionForLoadedEntries(
-            entries: entries,
-            state: &state,
-        ) else {
-            return .none
-        }
+        guard identityMigrated else { return .none }
         return .send(.entryViewLayout(.delegate(.selectionChanged)))
     }
 
@@ -451,7 +425,16 @@ public struct FileManagerContentFeature {
 
     // MARK: - Projection Bridge
 
-    static func shouldProjectContent(_ action: Action) -> Bool {
+    static func shouldProjectContent(_ action: Action, state: State) -> Bool {
+        // 보존 디렉터리 reload buffering 중에는 core stream 진행 상황을 projection에 노출하지 않는다.
+        if state.entryViewLayout.entryOperations.loadingContext.isBufferingPreservedDirectoryReload,
+           case let .entryViewLayout(.entryOperations(.loading(.streamEvent(streamEvent)))) = action
+        {
+            switch streamEvent.event {
+            case .coreBatch, .coreFinished, .metadataPatches:
+                return false
+            }
+        }
         switch action {
         case .entryViewLayout(.entryOperations(.loading(.loadItems))),
              .entryViewLayout(.entryOperations(.loading(.loadRecentItems))),
@@ -488,9 +471,9 @@ public struct FileManagerContentFeature {
              .externalFileSystemChanged,
              .internal(.clearCollectionMode),
              .internal(.exitCollectionMode):
-            true
+            return true
         default:
-            false
+            return false
         }
     }
 
@@ -501,7 +484,13 @@ public struct FileManagerContentFeature {
         case let .entryViewLayout(.entryOperations(.loading(.streamEvent(streamEvent)))):
             guard case .coreFinished = streamEvent.event,
                   state.entryViewLayout.entryOperations.loadingContext.acceptedCoreFinishedGeneration == streamEvent
-                  .generation
+                  .generation,
+                  !state.entryViewLayout.entryOperations.loadingContext.isBufferingPreservedDirectoryReload
+            else { return false }
+            state.entryViewLayout.entryOperations.loadingContext.acceptedCoreFinishedGeneration = nil
+            return true
+        case let .entryViewLayout(.entryOperations(.loading(.streamFinished(generation)))):
+            guard state.entryViewLayout.entryOperations.loadingContext.acceptedCoreFinishedGeneration == generation
             else { return false }
             state.entryViewLayout.entryOperations.loadingContext.acceptedCoreFinishedGeneration = nil
             return true

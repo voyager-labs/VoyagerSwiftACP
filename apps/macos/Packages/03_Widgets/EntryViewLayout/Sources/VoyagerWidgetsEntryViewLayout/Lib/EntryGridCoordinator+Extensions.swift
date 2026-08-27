@@ -4,6 +4,7 @@ import Foundation
 import SwiftNavigation
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
+import VoyagerFeaturesEntryOperations
 import VoyagerShared
 
 extension EntryGridCoordinator {
@@ -29,10 +30,12 @@ extension EntryGridCoordinator {
     }
 
     func handleSnapshotChanges(previous: RenderSnapshot, snapshot: RenderSnapshot) {
+        resetThumbnailSessionIfNeeded(previous: previous, snapshot: snapshot)
         // 한 Store emission당 change set을 한 번만 계산해 모든 렌더 헬퍼가 재사용한다.
         let changes = snapshot.presentation.changes(from: previous.presentation)
+        var didScrollToSelection = false
         if shouldRebuildSections(previous: previous, snapshot: snapshot, changes: changes) {
-            rebuildSectionsAndReload(presentation: snapshot.presentation)
+            didScrollToSelection = rebuildSectionsAndReload(presentation: snapshot.presentation)
         } else if !applyIncrementalEntryChanges(previous: previous, snapshot: snapshot, changes: changes) {
             reloadVisibleItemsForEntryContentChange(snapshot: snapshot, changes: changes)
         }
@@ -41,12 +44,21 @@ extension EntryGridCoordinator {
         syncRenamingIfNeeded(previous: previous, snapshot: snapshot)
         updateGridMetricsIfNeeded(previous: previous, snapshot: snapshot)
         saveScrollPositionIfNeeded(previous: previous, snapshot: snapshot)
-        scrollToSelectionIfNeeded(previous: previous, snapshot: snapshot)
+        // rebuild에서 selection scroll을 이미 처리했다면 snapshot 엣지 스크롤을 중복 실행하지 않는다.
+        if !didScrollToSelection {
+            didScrollToSelection = scrollToSelectionIfNeeded(previous: previous, snapshot: snapshot)
+        }
         consumeTypeScrollTargetIfNeeded(previous: previous, snapshot: snapshot)
         updateDropTargetBorderIfNeeded(previous: previous, snapshot: snapshot)
         syncThumbnailProjectionIfNeeded(previous: previous, snapshot: snapshot)
-        resetThumbnailSessionIfNeeded(previous: previous, snapshot: snapshot)
-        restoreScrollOffsetIfNeeded(previous: previous, snapshot: snapshot)
+        // selection scroll이 성공하면 saved offset 복원보다 우선하므로 최종 복원을 생략한다.
+        if !didScrollToSelection {
+            restoreScrollOffsetIfNeeded(previous: previous, snapshot: snapshot)
+        }
+        externalDropSessionController.handleSessionTerminal(
+            previousActive: previous.activeExternalDrop,
+            currentActive: snapshot.activeExternalDrop,
+        )
     }
 
     func shouldRebuildSections(
@@ -181,8 +193,10 @@ extension EntryGridCoordinator {
         if previous.showHiddenFiles != snapshot.showHiddenFiles { saveScrollPosition() }
     }
 
-    func scrollToSelectionIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
-        if !previous.shouldScrollToSelection, snapshot.shouldScrollToSelection { scrollToSelectionIfNeeded() }
+    /// shouldScrollToSelection false→true 엣지에서 selection scroll을 시도하고 성공 여부를 반환한다.
+    func scrollToSelectionIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) -> Bool {
+        guard !previous.shouldScrollToSelection, snapshot.shouldScrollToSelection else { return false }
+        return scrollToSelectionIfNeeded()
     }
 
     /// pending type-scroll target의 nil→id 엣지에서 첫 매칭 item으로 스크롤하고 reset한다.
@@ -218,6 +232,10 @@ extension EntryGridCoordinator {
 
     func resetThumbnailSessionIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
         if previous.currentPath != snapshot.currentPath {
+            // snapshot diff 함수는 main queue에서 실행되므로 main actor 격리를 단언한다.
+            MainActor.assumeIsolated {
+                externalDropSessionController.cancel()
+            }
             resetThumbnailSession()
             hasRestoredScrollPosition = false
         }
@@ -477,7 +495,7 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
             return entry.fullPath
         }
         guard !paths.isEmpty else { return }
-        store.send(.view(.startDrag(paths: paths)))
+        entryFileOpsClient.saveDragPaths(paths)
     }
 
     public func collectionView(
@@ -487,14 +505,14 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
         dragOperation operation: NSDragOperation,
     ) {
         guard EntryViewLayoutDragStateClearRuleSet.shouldClearAfterSessionEnd(operation: operation) else { return }
-        store.send(.view(.startDrag(paths: [])))
+        entryFileOpsClient.saveDragPaths([])
         clearDropTargetState()
         store.send(.view(.setDropTargeted(false)))
     }
 
     @MainActor
     public func collectionView(
-        _: NSCollectionView,
+        _ collectionView: NSCollectionView,
         validateDrop draggingInfo: any NSDraggingInfo,
         proposedIndexPath proposedDropIndexPath: AutoreleasingUnsafeMutablePointer<NSIndexPath>,
         dropOperation proposedDropOperation: UnsafeMutablePointer<NSCollectionView.DropOperation>,
@@ -515,8 +533,7 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
         var destinationPath = state.currentPath
         var targetEntryId: EntryModel.ID?
         if let entry = entry(at: indexPath),
-           entry.isFolder,
-           !entry.isPackage
+           entry.acceptsDropInto
         {
             destinationPath = entry.fullPath
             targetEntryId = entry.id
@@ -524,52 +541,115 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
         } else {
             proposedDropOperation.pointee = .before
         }
-        let validation = EntryViewLayoutDropValidationAdapter.resolve(
+        let origin = resolveDropOrigin(draggingInfo, ownView: collectionView)
+        let verdict = EntryViewLayoutDropValidationAdapter.resolveExternalDropOperation(
             draggingInfo: draggingInfo,
+            isInternalDrag: origin.isInternal,
+            sourcePaths: origin.sourcePaths,
             destinationPath: destinationPath,
+            allowedOperations: draggingInfo.draggingSourceOperationMask,
+            prefersCopy: origin.wantsCopy,
         )
-        let operation = EntryViewLayoutDropValidationAdapter.dragOperation(from: validation.resolvedOperation)
+        let operation = EntryViewLayoutDropValidationAdapter.dragOperation(from: verdict)
         setDropTargetEntryId(operation.isEmpty ? nil : targetEntryId)
         validatedDropDestinationPath = operation.isEmpty ? nil : destinationPath
-        store.send(.view(.setDropTargeted(!operation.isEmpty)))
+        if state.isDropTargeted != !operation.isEmpty {
+            store.send(.view(.setDropTargeted(!operation.isEmpty)))
+        }
 
         return operation
     }
 
     public func collectionView(
-        _: NSCollectionView,
+        _ collectionView: NSCollectionView,
         acceptDrop draggingInfo: NSDraggingInfo,
         indexPath _: IndexPath,
         dropOperation _: NSCollectionView.DropOperation,
     ) -> Bool {
+        // accept-time destination: validate에서 current target을 기준으로 확정한 destination을 사용한다.
+        // Grid 테스트 seam은 accept indexPath를 실제 entry로 해석할 수 없어 validate destination을 따른다.
         let destinationPath = validatedDropDestinationPath ?? state.currentPath
-        let pasteboard = draggingInfo.draggingPasteboard
-        let options: [NSPasteboard.ReadingOptionKey: Any] = [.urlReadingFileURLsOnly: true]
-        guard let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: options) as? [URL],
-              !urls.isEmpty
-        else {
+        let origin = resolveDropOrigin(draggingInfo, ownView: collectionView)
+        // promise/mixed 외부 drop은 path 기반 이동이 아니라 ExternalDropAcquisitionClient로
+        // 획득 세션을 시작하고, 그 결과를 EntryOperations에 accepted action으로 전달한다.
+        // promise-only는 source path가 없어 아래 empty-source guard보다 먼저 처리해야 한다.
+        let negotiation = VoyagerFeaturesEntryOperations.ExternalDropNegotiation.negotiateExternalDrop(
+            from: draggingInfo.draggingPasteboard,
+            wantsCopy: origin.wantsCopy,
+        )
+        if !negotiation.promisedOrdinals.isEmpty || !negotiation.dataFlavors.isEmpty {
+            return externalDropSessionController.beginAcquisition(
+                draggingInfo: draggingInfo,
+                negotiation: negotiation,
+                destinationPath: destinationPath,
+            )
+        }
+        // 빈 source는 항상 no-op으로 처리한다 (reducer의 empty-source 방어 이전 단계).
+        guard !origin.sourcePaths.isEmpty else {
+            entryFileOpsClient.saveDragPaths([])
             clearDropTargetState()
             store.send(.view(.setDropTargeted(false)))
             return false
         }
-        let sourcePaths = urls.map(\.path)
         let validation = EntryViewLayoutDropValidationAdapter.resolve(
-            sourcePaths: sourcePaths,
+            sourcePaths: origin.sourcePaths,
             destinationPath: destinationPath,
             allowedOperations: draggingInfo.draggingSourceOperationMask,
-            prefersCopy: NSEvent.modifierFlags.contains(.option),
+            prefersCopy: origin.wantsCopy,
         )
-        guard !EntryViewLayoutDropValidationAdapter.dragOperation(from: validation.resolvedOperation).isEmpty else {
+        let resolvedOperation = EntryViewLayoutDropValidationAdapter.dragOperation(from: validation.resolvedOperation)
+        guard !resolvedOperation.isEmpty else {
+            // accept-reject terminal path: transport/visual 상태를 정리한다.
+            entryFileOpsClient.saveDragPaths([])
             clearDropTargetState()
             store.send(.view(.setDropTargeted(false)))
             return false
         }
         store.send(.view(.dropItems(
-            sourcePaths: sourcePaths,
+            sourcePaths: origin.sourcePaths,
             destinationPath: destinationPath,
             isOptionDrag: validation.isOptionDrag,
         )))
+        if !origin.isInternal {
+            // 외부 accept는 transport를 정리하고 visual highlight를 유지하지 않는다.
+            // 내부 accept transport 정리는 `draggingSession endedAt` + `EntryViewLayoutDragStateClearRuleSet`이 담당한다.
+            entryFileOpsClient.saveDragPaths([])
+            clearDropTargetState()
+            store.send(.view(.setDropTargeted(false)))
+        }
         return true
+    }
+
+    /// 외부 drop 세션 진입/거절 시 transport·visual highlight를 정리한다 (Grid 기존 동작 유지).
+    @MainActor
+    func clearExternalDropDropState() {
+        entryFileOpsClient.saveDragPaths([])
+        clearDropTargetState()
+        store.send(.view(.setDropTargeted(false)))
+    }
+
+    /// 내부/외부 drop origin과 active source path를 결정한다.
+    /// 외부 session 진입 시 stale 내부 transport를 무효화한다 (FIX 7).
+    @MainActor
+    private func resolveDropOrigin(
+        _ draggingInfo: any NSDraggingInfo,
+        ownView: AnyObject?,
+    ) -> EntryViewLayoutDropValidationAdapter.DropOrigin {
+        let transportPaths = entryFileOpsClient.loadDragPaths()
+        let isInternal = EntryViewLayoutDropValidationAdapter.isInternalDrag(draggingInfo, ownView: ownView)
+        if isInternal {
+            return .init(
+                sourcePaths: transportPaths,
+                wantsCopy: NSEvent.modifierFlags.contains(.option),
+                isInternal: true,
+            )
+        }
+        entryFileOpsClient.saveDragPaths([])
+        return .init(
+            sourcePaths: EntryViewLayoutDropValidationAdapter.sourcePaths(from: draggingInfo.draggingPasteboard),
+            wantsCopy: NSEvent.modifierFlags.contains(.option),
+            isInternal: false,
+        )
     }
 
     public func updateSelectionFromCollectionView(_ collectionView: NSCollectionView) {

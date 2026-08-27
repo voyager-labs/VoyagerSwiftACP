@@ -32,26 +32,11 @@ const scopeSummary = (scopes: readonly string[], excludedScopes: readonly string
 }
 
 const baseDraft = (): DraftState => ({
-  query: "Find PDFs modified this month",
-  scopes: ["/VoyagerFixtures/Documents"],
+  query: composerFixtures.populatedDraft.query,
+  scopes: composerFixtures.populatedDraft.scopes,
   excludedScopes: [],
   includeSubfolders: true,
-  conditions: [
-    {
-      id: "file_kind",
-      property: "Kind",
-      propertySymbol: "tag",
-      operator: "Contains any",
-      value: "PDF",
-    },
-    {
-      id: "modification_date",
-      property: "Content modification date",
-      propertySymbol: "calendar.badge.clock",
-      operator: "Is greater than",
-      value: "2026-08-01",
-    },
-  ],
+  conditions: composerFixtures.populatedDraft.conditions,
 })
 
 const ComposerSelectionFlow = ({
@@ -102,7 +87,6 @@ const ComposerSelectionFlow = ({
   const [toast, setToast] = useState<
     { readonly type: "info" | "error"; readonly message: string } | undefined
   >()
-  const [duplicateMessage, setDuplicateMessage] = useState<string>()
   const [editingPropertyId, setEditingPropertyId] = useState<string>()
   // 네이티브 cancelSearch/cancelFilters: Stop은 진행 중 타이머를 취소한다
   const submitTimer = useRef<number | undefined>(undefined)
@@ -129,10 +113,11 @@ const ComposerSelectionFlow = ({
   const undo = () => {
     setFuture((current) => [draft, ...current])
     // 네이티브 ComposerHistoryReducer와 동일한 LIFO: 마지막 스냅샷을 복원한다
+    // 네이티브 setText처럼 쿼리는 히스토리 밖 상태다: 복원 시 현재 쿼리를 유지한다
     setHistory((current) => {
       const last = current.at(-1)
       if (last != null) {
-        setDraft(last)
+        setDraft({ ...last, query: draft.query })
         closePicker()
       }
       return current.slice(0, -1)
@@ -144,7 +129,7 @@ const ComposerSelectionFlow = ({
     setFuture((current) => {
       const [next, ...rest] = current
       if (next != null) {
-        setDraft(next)
+        setDraft({ ...next, query: draft.query })
         closePicker()
       }
       return rest
@@ -180,7 +165,6 @@ const ComposerSelectionFlow = ({
 
   const addCondition = () => {
     // 네이티브 ComposerHistoryReducer: 실제 변경 시에만 스냅샷을 기록한다 (피커 열기는 step만 변경)
-    setDuplicateMessage(undefined)
     setEditingPropertyId(undefined)
     setStep("property")
   }
@@ -208,7 +192,7 @@ const ComposerSelectionFlow = ({
   }
 
   const selectScope = (item: string) => {
-    const resolved = item.startsWith("/") ? item : `/VoyagerFixtures/${item}`
+    const resolved = item.startsWith("/") ? item : `/Fixture/${item}`
     // 네이티브 pushHistory 계약: 동일 scope 재선택 시 빈 Undo 스냅샷을 만들지 않는다
     if (draft.scopes.length !== 1 || draft.scopes[0] !== resolved) {
       commit({ ...draft, scopes: [resolved] })
@@ -279,7 +263,8 @@ const ComposerSelectionFlow = ({
               .map((condition) => condition.id)
               .filter((id) => id !== editingPropertyId),
             editingKey: editingPropertyId,
-            duplicateMessage,
+            // 네이티브 selectedKey: 편집 중 조건의 현재 property에 체크마크를 표시한다
+            selectedKey: editingPropertyId,
           }
         : step === "operator" && property != null
           ? {
@@ -304,10 +289,10 @@ const ComposerSelectionFlow = ({
                   rootOnly: draft.scopes.length === 0,
                   // 네이티브 makeScopeSections: 행 상태를 현재 selection에서 파생한다
                   items: [
-                    "/VoyagerFixtures/Documents",
-                    "/VoyagerFixtures/Projects",
-                    "/VoyagerFixtures/Projects/Legacy",
-                    "/VoyagerFixtures/Inbox",
+                    "/Fixture/Documents",
+                    "/Fixture/Projects",
+                    "/Fixture/Projects/Legacy",
+                    "/Fixture/Inbox",
                   ].map((path) => {
                     // 네이티브 resolvedCandidateState: direct base는 included+clearDirectRule,
                     // 상속 하위는 subfolders on일 때만 included(상속)이며 exclude를 제공한다
@@ -329,7 +314,7 @@ const ComposerSelectionFlow = ({
                       depth: Math.max(
                         0,
                         path.split("/").filter(Boolean).length -
-                          "/VoyagerFixtures".split("/").filter(Boolean).length -
+                          "/Fixture".split("/").filter(Boolean).length -
                           1,
                       ),
                       status: isExcluded
@@ -357,6 +342,7 @@ const ComposerSelectionFlow = ({
       onRedo={redo}
       onClear={clear}
       onSave={save}
+      onQueryChange={(query) => setDraft((current) => ({ ...current, query }))}
       onEditScope={() => {
         setStep("complete")
         setScopePickerOpen((open) => !open)
@@ -387,21 +373,12 @@ const ComposerSelectionFlow = ({
         setEditingPropertyId(id)
         setStep("property")
       }}
-      onDismissDuplicate={() => setDuplicateMessage(undefined)}
       onPropertySelect={(propertyKey) => {
         const selectedProperty = composerPropertyOption(propertyKey)
         if (selectedProperty == null) return
-        // 네이티브 handleAddCondition: 중복 키면 경고를 띄우고 picker를 유지한다 (편집 대상은 예외)
-        if (
-          propertyKey !== editingPropertyId &&
-          draft.conditions.some((condition) => condition.id === propertyKey)
-        ) {
-          setDuplicateMessage(`"${selectedProperty.label}" is already added.`)
-          return
-        }
+        // 네이티브 startEditing: 편집 컨텍스트에서는 기존 조건을 교체한다
         setProperty(selectedProperty)
         setOperator(undefined)
-        setDuplicateMessage(undefined)
         // 네이티브 startEditing: 편집 컨텍스트에서는 기존 조건을 교체한다
         const replacing =
           editingPropertyId != null
@@ -502,6 +479,13 @@ const meta = {
   tags: ["autodocs"],
   parameters: { layout: "fullscreen" },
   args: { fixture: composerFixtures.emptyDraft },
+  decorators: [
+    (Story) => (
+      <div className="collection-composer-story-frame">
+        <Story />
+      </div>
+    ),
+  ],
 } satisfies Meta<typeof CollectionComposer>
 
 export default meta
@@ -509,8 +493,7 @@ type Story = StoryObj<typeof meta>
 
 export const EmptyDraft: Story = {}
 export const PopulatedDraft: Story = { args: { fixture: composerFixtures.populatedDraft } }
-export const DiscardMode: Story = { args: { fixture: composerFixtures.discardMode } }
-export const SaveAsMode: Story = { args: { fixture: composerFixtures.saveAsMode } }
+export const OverflowMenu: Story = { args: { fixture: composerFixtures.overflowMenu } }
 export const SavedConfirmation: Story = { args: { fixture: composerFixtures.savedConfirmation } }
 export const CompactNarrow: Story = {
   args: { fixture: composerFixtures.populatedDraft },

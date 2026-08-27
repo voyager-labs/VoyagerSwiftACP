@@ -20,7 +20,8 @@ extension EVM002FileManagerPagePresentationTests {
             .entryViewLayout(.entryOperations(.loading(.loadComputerItems))),
         ]
 
-        XCTAssertTrue(actions.allSatisfy(FileManagerContentFeature.shouldProjectContent))
+        let state = FileManagerContentState()
+        XCTAssertTrue(actions.allSatisfy { FileManagerContentFeature.shouldProjectContent($0, state: state) })
     }
 
     /// EVM-002-switch_entries_view: FileManager는 arrangement 결과를 Widget presentation으로 투영한다.

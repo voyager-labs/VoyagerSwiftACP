@@ -71,7 +71,7 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
             return entry.fullPath
         }
         guard !paths.isEmpty else { return }
-        store.send(.view(.startDrag(paths: paths)))
+        entryFileOpsClient.saveDragPaths(paths)
     }
 
     public func outlineView(
@@ -81,7 +81,7 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
         operation: NSDragOperation,
     ) {
         guard EntryViewLayoutDragStateClearRuleSet.shouldClearAfterSessionEnd(operation: operation) else { return }
-        store.send(.view(.startDrag(paths: [])))
+        entryFileOpsClient.saveDragPaths([])
         store.send(.view(.setDropTargeted(false)))
     }
 
@@ -359,6 +359,10 @@ extension EntryListCoordinator {
         consumeTypeScrollTargetIfNeeded(previous: previous, snapshot: snapshot)
         updateDropTargetBorderIfNeeded(previous: previous, snapshot: snapshot)
         syncThumbnailProjectionIfNeeded(previous: previous, snapshot: snapshot)
+        externalDropSessionController.handleSessionTerminal(
+            previousActive: previous.activeExternalDrop,
+            currentActive: snapshot.activeExternalDrop,
+        )
     }
 
     func handleVisibleColumnsChange(previous: RenderSnapshot, snapshot: RenderSnapshot) {
@@ -624,6 +628,10 @@ extension EntryListCoordinator {
 
     func resetThumbnailSessionIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
         if previous.currentPath != snapshot.currentPath {
+            // snapshot diff 함수는 main queue에서 실행되므로 main actor 격리를 단언한다.
+            MainActor.assumeIsolated {
+                externalDropSessionController.cancel()
+            }
             resetThumbnailSession()
             restoredScrollForCurrentPath = false
         }
@@ -763,10 +771,8 @@ public extension EntryListCoordinator {
     func refreshVisibleNameCellIcons(for paths: Set<String>? = nil) {
         guard tableView.numberOfRows > 0 else { return }
         guard let nameColumnIndex else { return }
-
         let visibleRange = tableView.rows(in: tableView.visibleRect)
         guard visibleRange.length > 0 else { return }
-
         let dateModifiedWidth = tableView
             .tableColumn(withIdentifier: NSUserInterfaceItemIdentifier(EntryListColumn.dateModified.rawValue))?
             .width ?? 0
@@ -780,7 +786,6 @@ public extension EntryListCoordinator {
             guard let outlineItem = tableView.item(atRow: row) as? OutlineItem else { continue }
             guard case let .entry(entry) = outlineItem.kind else { continue }
             if let paths, !paths.contains(entry.fullPath) { continue }
-
             let thumbnail = thumbnailImagesByPath[entry.fullPath]
             let configuration = makeEntryCellConfiguration(
                 entry: entry,

@@ -5,6 +5,43 @@
  */
 
 /* ============================================================
+ * Menu — shared AppKit-style menu surface
+ * ============================================================ */
+
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .fm-menu {
+  display: inline-grid;
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--fm-window-border);
+  border-radius: 10px;
+  background: var(--fm-elevated);
+  padding: var(--fm-space-2);
+  box-shadow: var(--fm-shadow-card);
+  backdrop-filter: var(--fm-backdrop-blur);
+  -webkit-backdrop-filter: var(--fm-backdrop-blur);
+  color: var(--macos-label-color);
+  font-family: var(--fm-font-ui);
+  font-size: var(--fm-font-size-body);
+}
+
+/* 높이 상한을 가진 팝업 계열은 세로 스크롤 계약을 유지한다(공용 표면은 모서리 클리핑만 소유) */
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .fm-menu.vc-popup-menu,
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .fm-menu.vc-pulldown-menu {
+  overflow-y: auto;
+}
+
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .fm-menu
+  .fm-menu-separator {
+  height: 1px;
+  margin: var(--fm-space-2) calc(var(--fm-space-2) * -1);
+  background: var(--fm-separator);
+}
+
+/* ============================================================
  * Toggle (switch) — small variant
  * ============================================================ */
 
@@ -64,50 +101,17 @@
 }
 
 :where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
+  .vc-button.vc-popup-trigger[aria-expanded="true"] {
+  background: var(--fm-selection);
+  color: var(--fm-selection-label);
+}
+
+:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
   .vc-popup-trigger[aria-expanded="true"]::after,
 :where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
   .vc-pulldown-trigger[aria-expanded="true"]::after {
+  color: inherit;
   transform: rotate(180deg);
-}
-
-/* ============================================================
- * PopUpButton / PullDownButton — menu scroll & overflow
- * ============================================================ */
-
-:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
-  .vc-popup-menu,
-:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
-  .vc-pulldown-menu {
-  max-height: 320px;
-  overflow-y: auto;
-}
-
-:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
-  .vc-popup-option.selected
-  .vc-popup-option-check {
-  display: inline;
-}
-
-:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
-  .vc-popup-option
-  .vc-popup-option-check {
-  display: none;
-}
-
-:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
-  .vc-popup-option-detail {
-  color: var(--macos-tertiary-label-color);
-  font-size: var(--fm-font-size-caption);
-  margin-left: auto;
-  white-space: nowrap;
-}
-
-:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
-  .vc-pulldown-option-detail {
-  color: var(--macos-tertiary-label-color);
-  font-size: var(--fm-font-size-caption);
-  margin-left: auto;
-  white-space: nowrap;
 }
 
 /* ============================================================

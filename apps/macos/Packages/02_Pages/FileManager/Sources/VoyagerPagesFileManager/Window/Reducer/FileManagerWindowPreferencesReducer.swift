@@ -12,6 +12,7 @@ struct FileManagerWindowPreferencesReducer {
         Reduce { state, action in
             switch action {
             case let .applyAppPreferences(preferences):
+                state.defaultStartPage = preferences.defaultStartPage
                 state.sidebar.sidebarVisible = preferences.sidebarVisible
                 state.sidebar.sidebarWidth = preferences.sidebarWidth
                 state.inspector.inspectorWidth = preferences.inspectorWidth

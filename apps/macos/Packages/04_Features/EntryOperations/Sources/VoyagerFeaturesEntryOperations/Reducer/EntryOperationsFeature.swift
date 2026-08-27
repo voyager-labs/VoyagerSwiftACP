@@ -22,6 +22,7 @@ public struct EntryOperationsFeature {
             EntryTrashOperationsReducer()
             EntryArchiveOperationsReducer()
             EntryTaggingOperationsReducer()
+            EntryExternalDropOperationsReducer()
         }
     }
 }

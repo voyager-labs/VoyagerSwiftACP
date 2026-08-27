@@ -21,6 +21,27 @@ public enum EntryOperationsAction: CasePathable, Sendable {
     case archive(Archive)
     case tagging(Tagging)
     case undoRedo(UndoRedo)
+    case externalDrop(ExternalDrop)
+
+    @CasePathable
+    public enum ExternalDrop: CasePathable, Sendable {
+        /// Grid/List `acceptDrop`이 동기적으로 받아들인 획득 요청. 배리어 세션을 연다.
+        case accepted(request: ExternalDropAcceptedRequest)
+        /// reducer가 구독한 획득 이벤트 스트림에서 온 이벤트.
+        case event(ExternalDropAcquisitionEvent)
+        /// 정확한 세션을 취소한다 (멱등).
+        case cancelSession(ExternalDropSessionID)
+        /// 정확한 세션을 정상 종료한다 (멱등).
+        case finishSession(ExternalDropSessionID)
+        /// internal: all-promises 성공 시 reducer가 emit하는 import-placement action.
+        /// 실제 복사 배치는 Todo 7 seam이 이 action을 소비해 수행한다.
+        case applyImport(ExternalDropImportPlan)
+        /// internal: placement 진입 직전 source descriptor 고정 결과.
+        case placementSourcesPrepared(plan: ExternalDropImportPlan, isValid: Bool)
+        /// internal: placement의 모든 항목이 종료된 뒤 reducer가 emit하는 종합 완료 action.
+        /// 성공 목적지 경로/실패와 종단 상태를 담으며, FileManager가 정확히 한 번 reload한다.
+        case importFinished(ExternalDropImportResult)
+    }
 
     @CasePathable
     public enum Delegate: CasePathable, Sendable {

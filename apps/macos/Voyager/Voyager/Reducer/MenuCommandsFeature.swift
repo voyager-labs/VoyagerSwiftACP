@@ -84,6 +84,10 @@ struct MenuCommandsFeature {
     }
 
     private func routeFileAppCommand(_ command: MenuCommandItem.AppCommand) -> Effect<Action>? {
+        routeFileSessionAppCommand(command) ?? routeContentTabAppCommand(command)
+    }
+
+    private func routeFileSessionAppCommand(_ command: MenuCommandItem.AppCommand) -> Effect<Action>? {
         switch command {
         case let .newWindow(path): .send(.delegate(.windowManager(.file(.newWindow(path: path)))))
         case .newTab: .send(.delegate(.windowManager(.file(.newTab))))
@@ -91,12 +95,24 @@ struct MenuCommandsFeature {
         case .togglePinTab: .send(.delegate(.windowManager(.file(.togglePinTab))))
         case .restoreLastClosedTab: .send(.delegate(.windowManager(.file(.restoreLastClosedTab))))
         case .duplicateTab: .send(.delegate(.windowManager(.file(.duplicateTab))))
+        default: nil
+        }
+    }
+
+    private func routeContentTabAppCommand(_ command: MenuCommandItem.AppCommand) -> Effect<Action>? {
+        switch command {
         case let .selectContentTab(position):
             .send(.delegate(.windowManager(.file(.selectContentTab(position: position)))))
         case .presentContentTabSwitcher:
             .send(.delegate(.windowManager(.file(.presentContentTabSwitcher))))
         case .selectMostRecentlyUsedContentTab:
             .send(.delegate(.windowManager(.file(.selectMostRecentlyUsedContentTab))))
+        case .moveNextContentTabSwitcher:
+            .send(.delegate(.windowManager(.file(.moveNextContentTabSwitcher))))
+        case .movePreviousContentTabSwitcher:
+            .send(.delegate(.windowManager(.file(.movePreviousContentTabSwitcher))))
+        case .dismissContentTabSwitcher:
+            .send(.delegate(.windowManager(.file(.dismissContentTabSwitcher))))
         default: nil
         }
     }

@@ -17,6 +17,9 @@ public struct FileManagerContentState: Equatable {
     public var aiChat: AiChatFeature.State = .init()
     /// 외부에서 오픈 요청된 파일의 선택 focus ID (itemsLoaded 후 소비됨)
     public var pendingSelectEntryID: String?
+    public var pendingSelectEntryDestinationPath: String?
+    /// 네비게이션 기원 pending selection이 바인딩된 목적지 로딩 세대. nil이면 미바인딩(외부 기원 또는 로드 전) 상태다.
+    var pendingSelectEntryLoadGeneration: Int?
 
     /// 성공한 rename/move 명령의 consume-once 경로 전이.
     /// 동일 identity 변경을 알리는 외부 파일시스템 이벤트가 명령 완료 시 예약된 refresh를
@@ -91,6 +94,12 @@ public struct FileManagerContentState: Equatable {
 
     var isCollectionMode: Bool {
         entryViewLayout.isCollectionMode
+    }
+
+    mutating func setPendingEntrySelection(entryID: String?, destinationPath: String?, generation: Int? = nil) {
+        pendingSelectEntryID = entryID
+        pendingSelectEntryDestinationPath = destinationPath
+        pendingSelectEntryLoadGeneration = generation
     }
 
     var isOrdinaryDirectoryLoading: Bool {
