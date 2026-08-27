@@ -22,6 +22,7 @@ struct WindowManagerFeature {
 
     nonisolated enum CancelID: Hashable {
         case defaultWindowBootstrap
+        case defaultStartPageResolution(UUID)
         case windowOpen(State.WindowID)
         case externalOpenBatch(UUID)
         case trackedSingletonNativeOpen(UUID)
@@ -69,6 +70,9 @@ struct WindowManagerFeature {
     var metricsClient
     @Dependency(\.workspaceClient)
     var workspaceClient
+
+    @Dependency(\.startPageAvailabilityClient)
+    var startPageAvailabilityClient
 
     @Dependency(\.date)
     var date
@@ -548,6 +552,15 @@ struct WindowManagerFeature {
                 default:
                     return .none
                 }
+
+            case let .defaultStartPageResolved(resolutionID, requestID, selectEntryID, startPage):
+                return resumeDefaultStartPageResolution(
+                    resolutionID: resolutionID,
+                    requestID: requestID,
+                    selectEntryID: selectEntryID,
+                    startPage: startPage,
+                    state: &state,
+                )
 
             case .delegate, .windows:
                 return .none

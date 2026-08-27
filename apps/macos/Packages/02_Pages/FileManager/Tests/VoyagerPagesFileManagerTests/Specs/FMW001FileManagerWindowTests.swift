@@ -1751,6 +1751,48 @@ final class FMW001FileManagerWindowTests: XCTestCase {
             makeContentViewController: { _, _ in NSViewController() },
         )
     }
+
+    // MARK: - EVM-001-view_current_page_title
+
+    /// EVM-001-view_current_page_title: Home 초기 상태의 창 제목은 "Home"
+    /// legacy defaultTabPath 페이로드가 유지되더라도 초기 route(.home)에 바인딩된 창 제목은 "Home"이어야 한다.
+    /// - 검증 내용: makeInitial(path: nil) 상태에서 navigationState == .home, titlePath == "Home", makeTitle 결과 == "Home"
+    /// - 사전 조건: path 없이 생성한 FileManagerWindowState
+    /// - 기대 결과: 창 제목 계산 결과가 legacy 홈 디렉터리 경로가 아닌 "Home"
+    func testWindowTitleForHomeInitialStateShowsHome() {
+        let state = FileManagerWindowState.makeInitial(path: nil)
+
+        XCTAssertEqual(state.content.navigation.navigationState, .home)
+        XCTAssertEqual(state.content.navigation.titlePath, "Home")
+
+        let title = FileManagerWindowChrome.makeTitle(
+            openedCollectionName: nil,
+            isCollectionMode: false,
+            titlePath: state.content.navigation.titlePath,
+            makeWindowTitle: { $0 },
+        )
+        XCTAssertEqual(title, "Home")
+    }
+
+    /// EVM-001-view_current_page_title: Directory seed 상태의 창 제목은 경로 유지
+    /// seedInitialFolderPath로 시작한 Directory route의 창 제목은 해당 경로 그대로여야 한다.
+    /// - 검증 내용: makeInitial(path:) 상태에서 titlePath와 makeTitle 결과가 시드 경로와 일치
+    /// - 사전 조건: path "/tmp/voyager-directory"로 생성한 FileManagerWindowState
+    /// - 기대 결과: Directory route의 제목은 경로 식별자 그대로 유지
+    func testWindowTitleForDirectorySeedKeepsPath() {
+        let state = FileManagerWindowState.makeInitial(path: "/tmp/voyager-directory")
+
+        XCTAssertEqual(state.content.navigation.navigationState, .folder("/tmp/voyager-directory"))
+        XCTAssertEqual(state.content.navigation.titlePath, "/tmp/voyager-directory")
+
+        let title = FileManagerWindowChrome.makeTitle(
+            openedCollectionName: nil,
+            isCollectionMode: false,
+            titlePath: state.content.navigation.titlePath,
+            makeWindowTitle: { $0 },
+        )
+        XCTAssertEqual(title, "/tmp/voyager-directory")
+    }
 }
 
 private final class ForeignUndoTarget {

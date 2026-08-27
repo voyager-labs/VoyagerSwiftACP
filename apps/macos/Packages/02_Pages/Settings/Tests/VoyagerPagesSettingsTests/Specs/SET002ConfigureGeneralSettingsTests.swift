@@ -86,6 +86,83 @@ final class SET002ConfigureGeneralSettingsTests: XCTestCase {
 
     // MARK: - SET-002-configure_initial_page
 
+    /// SET-002-configure_initial_page: initial page 선택은 typed preference discriminator를 저장한다.
+    /// Home과 predefined directory가 filesystem path sentinel 없이 서로 다른 typed 값으로 저장되는지 검증한다.
+    /// - 검증 내용: 다섯 option의 선택 결과가 `.home` 또는 `.directory(path)`로 저장된다.
+    /// - 사전 조건: 표준 디렉터리 lookup이 deterministic path를 반환한다.
+    /// - 기대 결과: Home은 type만 쓰고, directory option은 type과 path를 함께 쓴다.
+    func testStartPageOptionsPersistExactTypedValues() async {
+        let store = makeStore(homePath: "/home/user")
+        store.exhaustivity = .off
+        await store.send(.loadSettings)
+
+        await store.send(.selectStartPageOption(.home))
+        XCTAssertEqual(storage.getString(SettingsKeys.defaultStartPageType), "home")
+        XCTAssertEqual(storage.getString(SettingsKeys.defaultTabPath), nil)
+
+        await store.send(.selectStartPageOption(.homeDirectory))
+        XCTAssertEqual(storage.getString(SettingsKeys.defaultStartPageType), "directory")
+        XCTAssertEqual(storage.getString(SettingsKeys.defaultTabPath), "/home/user")
+
+        await store.send(.selectStartPageOption(.documents))
+        XCTAssertEqual(storage.getString(SettingsKeys.defaultTabPath), "/home/user/Documents")
+
+        await store.send(.selectStartPageOption(.downloads))
+        XCTAssertEqual(storage.getString(SettingsKeys.defaultTabPath), "/home/user/Downloads")
+    }
+
+    /// SET-002-configure_initial_page: Home 선택은 retained legacy directory payload를 보존한다.
+    /// Home type 전환이 legacy path를 sentinel이나 빈 문자열로 덮어쓰지 않는지 검증한다.
+    /// - 검증 내용: type만 `home`으로 바뀌고 `defaultTabPath`는 기존 raw value를 유지한다.
+    /// - 사전 조건: 기존 typed directory preference와 legacy path가 저장되어 있다.
+    /// - 기대 결과: reload 후 Home으로 해석되며 legacy path 문자열은 그대로 남는다.
+    func testHomeSelectionPreservesRetainedLegacyPath() async {
+        let retainedPath = "/Users/test/retained-dir"
+        storage.setString("directory", forKey: SettingsKeys.defaultStartPageType)
+        storage.setString(retainedPath, forKey: SettingsKeys.defaultTabPath)
+        let store = makeStore(homePath: "/home/user")
+        store.exhaustivity = .off
+
+        await store.send(.loadSettings)
+        await store.send(.selectStartPageOption(.home))
+
+        XCTAssertEqual(storage.getString(SettingsKeys.defaultStartPageType), "home")
+        XCTAssertEqual(storage.getString(SettingsKeys.defaultTabPath), retainedPath)
+        XCTAssertEqual(store.state.defaultStartPage, .home)
+    }
+
+    /// SET-002-configure_initial_page: invalid picker 결과는 기존 typed preference를 보존한다.
+    /// cancel, regular file, missing, permission failure가 persistence와 UI selection을 건드리지 않는지 검증한다.
+    /// - 검증 내용: 실패 결과마다 UserDefaults write가 발생하지 않고 기존 StartPage가 유지된다.
+    /// - 사전 조건: valid directory를 먼저 저장한 뒤 각 실패 probe를 주입한다.
+    /// - 기대 결과: 기존 type/path/selection은 동일하고 picker 진행 상태만 종료된다.
+    func testInvalidPickerResultsPreserveTypedPreferenceWithoutWrites() async {
+        let store = makeStore(homePath: "/home/user")
+        store.exhaustivity = .off
+        await store.send(.loadSettings)
+        await store.send(.selectStartPageOption(.homeDirectory))
+        let previousType = storage.getString(SettingsKeys.defaultStartPageType)
+        let previousPath = storage.getString(SettingsKeys.defaultTabPath)
+        let previousSelection = store.state.selectedStartPageOption
+        let initialWrites = storage.stringWriteCount
+
+        await store.send(.startingDirectorySelected(nil))
+        XCTAssertEqual(storage.stringWriteCount, initialWrites)
+        XCTAssertEqual(store.state.selectedStartPageOption, previousSelection)
+
+        await store.send(.startingDirectorySelected("/tmp/regular-file"))
+        XCTAssertEqual(storage.stringWriteCount, initialWrites)
+        XCTAssertEqual(storage.getString(SettingsKeys.defaultStartPageType), previousType)
+        XCTAssertEqual(storage.getString(SettingsKeys.defaultTabPath), previousPath)
+
+        await store.send(.startingDirectorySelected("/tmp/missing"))
+        XCTAssertEqual(storage.stringWriteCount, initialWrites)
+
+        await store.send(.startingDirectorySelected("/tmp/permission-denied"))
+        XCTAssertEqual(storage.stringWriteCount, initialWrites)
+        XCTAssertEqual(store.state.selectedStartPageOption, previousSelection)
+    }
+
     /// 디렉터리 로드
     /// SET-002-configure_initial_page: 저장된 시작 경로가 없으면 home directory를 기본 시작 위치로 사용한다.
     /// General tab 첫 로드에서 사용자가 별도 시작 폴더를 저장하지 않은 fresh 상태를 검증한다.
@@ -117,6 +194,142 @@ final class SET002ConfigureGeneralSettingsTests: XCTestCase {
         await store.send(.loadSettings)
 
         XCTAssertEqual(store.state.startingDirectory, "/Users/test/saved-dir")
+    }
+
+    /// SET-002-configure_initial_page: typed preference를 reload하면 같은 option과 directory payload를 복원한다.
+    /// 앱 재실행 경계에서 discriminator와 legacy directory payload가 함께 유지되는지 검증한다.
+    /// - 검증 내용: `.loadSettings`가 `directory` type과 path를 typed state로 복원하고 custom option으로 투영한다.
+    /// - 사전 조건: storage에 `defaultStartPageType=directory`와 real directory path가 저장되어 있다.
+    /// - 기대 결과: `defaultStartPage = .directory(path)`, selected option은 `.custom(path)`이고 라벨은 마지막 경로 구성요소다.
+    func testLoadSettingsRestoresTypedDirectoryPreference() async {
+        storage.setString("directory", forKey: SettingsKeys.defaultStartPageType)
+        storage.setString("/Users/test/saved-dir", forKey: SettingsKeys.defaultTabPath)
+        let store = makeStore(homePath: "/home/user")
+        store.exhaustivity = .off
+
+        await store.send(.loadSettings)
+
+        XCTAssertEqual(store.state.defaultStartPage, .directory("/Users/test/saved-dir"))
+        XCTAssertEqual(store.state.selectedStartPageOption, .custom("/Users/test/saved-dir"))
+        XCTAssertEqual(
+            store.state.selectedStartPageOption.displayName(using: store.state.standardDirectories),
+            "saved-dir",
+        )
+    }
+
+    /// SET-002-configure_initial_page: discriminator 없는 custom legacy path는 custom option으로 복원된다.
+    /// 의도적 마이그레이션이 만든 `.directory(path)`가 generic Other 대신 마지막 경로 구성요소 라벨로 보이는지 검증한다.
+    /// - 검증 내용: load 후 `defaultStartPage`는 `.directory(path)`를 유지하고 selection은 `.custom(path)`로 투영되며 재투영이 path를 보존한다.
+    /// - 사전 조건: `defaultStartPageType` 없이 `defaultTabPath="/Users/test/custom-dir"`만 저장되어 있다.
+    /// - 기대 결과: selection은 `.custom(...)`이고 displayName은 "custom-dir"이며 `startPage(using:)`가 원래 path를 반환한다.
+    func testInitialPageLegacyCustomPathProjectsWithoutDiscriminator() async {
+        storage.setString("/Users/test/custom-dir", forKey: SettingsKeys.defaultTabPath)
+        let store = makeStore(homePath: "/home/user")
+        store.exhaustivity = .off
+
+        await store.send(.loadSettings)
+
+        XCTAssertEqual(store.state.defaultStartPage, .directory("/Users/test/custom-dir"))
+        XCTAssertEqual(store.state.selectedStartPageOption, .custom("/Users/test/custom-dir"))
+        XCTAssertEqual(
+            store.state.selectedStartPageOption.displayName(using: store.state.standardDirectories),
+            "custom-dir",
+        )
+        XCTAssertEqual(
+            store.state.selectedStartPageOption.startPage(using: store.state.standardDirectories),
+            .directory("/Users/test/custom-dir"),
+        )
+    }
+
+    /// SET-002-configure_initial_page: Home Directory 라벨은 literal 대신 주입된 home folder 이름을 보여준다.
+    /// VOY-744에서 "Home Directory" 고정 문자열이 표준 디렉터리 lookup을 무시하는 버그를 검증한다.
+    /// - 검증 내용: `.homeDirectory`의 displayName이 `StandardDirectories.homeDisplayName`과 같다.
+    /// - 사전 조건: homeDisplayName이 "user"로 주입된 StandardDirectories를 사용한다.
+    /// - 기대 결과: displayName이 "user"를 반환한다.
+    func testInitialPageHomeDirectoryDisplaysInjectedHomeName() {
+        let directories = StandardDirectories(
+            homePath: "/home/user",
+            homeDisplayName: "user",
+            desktopPath: nil,
+            documentsPath: nil,
+            downloadsPath: nil,
+        )
+        XCTAssertEqual(StartPageOption.homeDirectory.displayName(using: directories), "user")
+    }
+
+    /// SET-002-configure_initial_page: fresh 상태에서는 Home 옵션이 선택되고 literal Home 라벨을 유지한다.
+    /// 저장된 키가 전혀 없을 때 로드 결과가 Home으로 수렴하는 회귀 가드를 검증한다.
+    /// - 검증 내용: absent keys에서 defaultStartPage와 selectedStartPageOption이 `.home`이고 라벨은 "Home"이다.
+    /// - 사전 조건: InMemoryStorage가 비어 있고 home path는 "/home/user"로 주입된다.
+    /// - 기대 결과: selection은 `.home`이고 displayName은 "Home"이다.
+    func testInitialPageFreshStateLoadsAndDisplaysHome() async {
+        let store = makeStore(homePath: "/home/user")
+        store.exhaustivity = .off
+
+        await store.send(.loadSettings)
+
+        XCTAssertEqual(store.state.defaultStartPage, .home)
+        XCTAssertEqual(store.state.selectedStartPageOption, .home)
+        XCTAssertEqual(
+            store.state.selectedStartPageOption.displayName(using: store.state.standardDirectories),
+            "Home",
+        )
+    }
+
+    /// SET-002-configure_initial_page: generic Other 메뉴 액션은 allCases에 남고 정확한 라벨을 유지한다.
+    /// custom projection이 picker 여는 메뉴 항목 목록을 오염시키지 않는지 검증한다.
+    /// - 검증 내용: `.other`는 allCases에 포함되고 displayName은 정확히 "Other…"이며 `.custom`은 allCases에서 제외된다.
+    /// - 사전 조건: 모델 수준 검사만 수행한다.
+    /// - 기대 결과: Other… 라벨 유지, custom은 메뉴에 나타나지 않고 안정적인 id를 가진다.
+    func testInitialPageOtherStaysGenericMenuAction() {
+        XCTAssertTrue(StartPageOption.allCases.contains(.other))
+        XCTAssertFalse(
+            StartPageOption.allCases.contains(where: { option in
+                if case .custom = option { return true }
+                return false
+            }),
+        )
+        let directories = StandardDirectories(
+            homePath: "/",
+            homeDisplayName: "Home",
+            desktopPath: nil,
+            documentsPath: nil,
+            downloadsPath: nil,
+        )
+        XCTAssertEqual(StartPageOption.other.displayName(using: directories), "Other…")
+        XCTAssertEqual(StartPageOption.custom("/tmp/x").id, "custom:/tmp/x")
+    }
+
+    /// SET-002-configure_initial_page: Desktop은 Initial page의 고정 표준 옵션이다.
+    /// VOY-744 이전 DirectoryOption.standardOptions로 노출되던 Desktop 시작 위치가 StartPageOption 메뉴 모델에서도 고정 옵션으로 유지되는지 검증한다.
+    /// - 검증 내용: allCases 순서에 desktop이 포함되고 아이콘·라벨·투영·역투영·선택 저장값이 표준 디렉터리 규약을 따른다.
+    /// - 사전 조건: desktopPath가 "/home/user/Desktop"으로 주입된 StandardDirectories와 fresh storage를 사용한다.
+    /// - 기대 결과: desktop은 homeDirectory와 documents 사이에 있고 선택 시 type=directory, path=/home/user/Desktop이 저장된다.
+    func testInitialPageDesktopIsFixedStandardOption() async {
+        let expectedIDs = ["home", "homeDirectory", "desktop", "documents", "downloads", "other"]
+        XCTAssertEqual(StartPageOption.allCases.map(\.id), expectedIDs)
+        guard let desktop = StartPageOption.allCases.first(where: { $0.id == "desktop" }) else {
+            return XCTFail("Desktop must stay a fixed Initial page standard option")
+        }
+        let directories = StandardDirectories(
+            homePath: "/home/user",
+            homeDisplayName: "user",
+            desktopPath: "/home/user/Desktop",
+            documentsPath: "/home/user/Documents",
+            downloadsPath: "/home/user/Downloads",
+        )
+        XCTAssertEqual(desktop.iconName, "desktopcomputer")
+        XCTAssertEqual(desktop.displayName(using: directories), "Desktop")
+        XCTAssertEqual(StartPageOption.from(.directory("/home/user/Desktop"), using: directories), desktop)
+        XCTAssertEqual(desktop.startPage(using: directories), .directory("/home/user/Desktop"))
+
+        let store = makeStore(homePath: "/home/user")
+        // store.exhaustivity = .off: Desktop 선택과 persistence 투영만 검증하고 loadSettings의 관련 없는 필드 갱신은 의도적으로 추적하지 않는다.
+        store.exhaustivity = .off
+        await store.send(.loadSettings)
+        await store.send(.selectStartPageOption(desktop))
+        XCTAssertEqual(storage.getString(SettingsKeys.defaultStartPageType), "directory")
+        XCTAssertEqual(storage.getString(SettingsKeys.defaultTabPath), "/home/user/Desktop")
     }
 
     // MARK: - SET-002-configure_initial_page
@@ -281,6 +494,8 @@ final class SET002ConfigureGeneralSettingsTests: XCTestCase {
             state.isSelectingDirectory = false
         }
         await store.receive(\.setStartingDirectory) { state in
+            state.defaultStartPage = .directory(validPath)
+            state.selectedStartPageOption = .custom(validPath)
             state.startingDirectory = validPath
             state.selectedDirectoryOption = .custom(validPath)
             state.startingDirectoryError = nil

@@ -369,7 +369,16 @@ extension FileManagerWindowCommandRoutingReducer {
         switch command {
         case .openNewContentTab:
             guard state.contentTabs.tabs.count < ContentTabConstants.maxTabs else { return .none }
-            return .send(.contentTabs(.open(.homeDefault)))
+            let startPageSnapshot = state.defaultStartPage
+            if case .home = startPageSnapshot {
+                // home 선호는 IO가 없으므로 동기 fast path로 즉시 생성한다.
+                return .send(.contentTabs(.open(.homeDefault)))
+            }
+            // 클라우드 placeholder stat이 메인 스레드를 막지 않도록 프로브를 effect로 미룬다.
+            return Effect.run { send in
+                let resolution = StartPageResolver.resolve(startPageSnapshot)
+                await send(.internal(.defaultStartPageResolved(resolution.effectiveStartPage)))
+            }
 
         case let .selectContentTab(position):
             guard state.pendingSelectedContentTabClose == nil,

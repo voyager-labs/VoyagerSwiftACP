@@ -156,9 +156,7 @@ extension FileManagerWindowRoutingReducer {
         if keepPendingContentTabCloseFocusedAfterOpen(state: &state) {
             return .none
         }
-        let openedTabID = state.activeTabContentStateMissing
-            ? state.contentTabs.activeTabID
-            : nil
+        let openedTabID = state.activeTabContentStateMissing ? state.contentTabs.activeTabID : nil
         let shouldResyncContentNavigation = state.contentTabs.previousActiveTabID != nil
             || state.activeTabContentStateMissing
         let handoffCleanupEffect: Effect<Action>
