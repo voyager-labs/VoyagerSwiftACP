@@ -76,7 +76,7 @@ func (r *EntryPropertyRepository) DeleteAssignments(
 }
 
 // LoadEntryPropertyAssignments는 tx-scoped *gorm.DB에서 고정 4-쿼리 예산으로
-// assignment를 읽는다: headers, values, active definitions, options. 이후
+// assignment를 읽는다: headers, values, definitions(비활성 포함), options. 이후
 // todo 7/8이 같은 트랜잭션 안에서 조합할 수 있도록 패키지 수준으로 노출한다.
 func LoadEntryPropertyAssignments(
 	db *gorm.DB,
@@ -108,7 +108,10 @@ func LoadEntryPropertyAssignments(
 
 	defFilter := propertyIDFilter(propertyIDs)
 	var defRows []WorkspacePropertyDefinitionRow
-	defQuery := db.Where("workspace_id = ? AND lifecycle_state = ?", wsBytes, "active")
+	// 읽기 경로는 tombstoned 정의도 포함해 과거 assignment 해석을 보존한다.
+	// disable이 기존 assignment read-back을 깨지 않게 하는 계약이며, 신규 쓰기의
+	// active 검증은 loadWriteContracts가 소관이다.
+	defQuery := db.Where("workspace_id = ?", wsBytes)
 	if defFilter != "" {
 		defQuery = defQuery.Where(defFilter, idFilterArg(propertyIDs))
 	}

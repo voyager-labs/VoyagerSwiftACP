@@ -80,7 +80,8 @@ func TestPropertyRepositoryFailClosed(t *testing.T) {
 		t.Fatalf("duplicate ref write = %v, want ErrDuplicateAssignmentRef", err)
 	}
 
-	// FK를 우회해 심은 고아 값 행과 tombstoned 정의 header는 read에서 실패 닫기.
+	// FK를 우회해 심은 고아 값 행은 read에서 실패 닫기다. 반면 tombstoned 정의의
+	// header는 disable 계약(기존 read-back 보존)에 따라 성공적으로 해석돼야 한다.
 	if _, err := store.SQLDB().ExecContext(ctx, "PRAGMA foreign_keys = OFF"); err != nil {
 		t.Fatalf("disable FK: %v", err)
 	}
@@ -122,8 +123,8 @@ func TestPropertyRepositoryFailClosed(t *testing.T) {
 		fx.wsctx.ID.Bytes(), testEntryID(511), tombstoned.Bytes()); err != nil {
 		t.Fatalf("seed tombstoned-header assignment: %v", err)
 	}
-	if _, err := repo.LoadAssignments(ctx, fx.wsctx, []string{testEntryID(511)}, nil); !errors.Is(err, ErrEntryPropertyOrphanRef) {
-		t.Fatalf("tombstoned-definition header load = %v, want ErrEntryPropertyOrphanRef", err)
+	if _, err := repo.LoadAssignments(ctx, fx.wsctx, []string{testEntryID(511)}, nil); err != nil {
+		t.Fatalf("tombstoned-definition header load = %v, want read-back preservation", err)
 	}
 }
 

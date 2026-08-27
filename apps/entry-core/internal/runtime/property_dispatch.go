@@ -186,7 +186,7 @@ func dispatchPropertySuccess(request schema.Request, result schema.Result) schem
 }
 
 func definitionViewResponse(request schema.Request, view applicationproperty.DefinitionView) schema.Response {
-	definition, code := definitionViewToWire(view)
+	definition, code := applicationproperty.DefinitionViewToWire(view)
 	if code != "" {
 		return dispatchError(request, code)
 	}

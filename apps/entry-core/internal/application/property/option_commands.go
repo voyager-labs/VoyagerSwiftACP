@@ -19,7 +19,9 @@ func (service *CatalogService) CreateOption(
 		if record.ValueType != domainentry.PropertyTypeSelect {
 			return ErrDefinitionNotSelectable
 		}
-		options, err := service.store.Options(ctx, workspace, propertyID)
+		// 조회·쓰기 모두 tx 스코프 컨텍스트를 써야 정의 revision 갱신과 같은
+		// 트랜잭션에 참여한다. 원본 ctx는 단일 연결 풀에서 교착을 만든다.
+		options, err := service.store.Options(txCtx, workspace, propertyID)
 		if err != nil {
 			return err
 		}
@@ -41,7 +43,7 @@ func (service *CatalogService) CreateOption(
 		if err := domainentry.ValidatePropertyOptions(expanded); err != nil {
 			return err
 		}
-		return service.store.PutOption(ctx, option)
+		return service.store.PutOption(txCtx, option)
 	})
 }
 

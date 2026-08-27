@@ -38,7 +38,7 @@ func pageDefinitionViews(views []applicationproperty.DefinitionView, params *sch
 	}
 	definitions := make([]schema.PropertyDefinition, 0, end-start)
 	for _, view := range filtered[start:end] {
-		definition, code := definitionViewToWire(view)
+		definition, code := applicationproperty.DefinitionViewToWire(view)
 		if code != "" {
 			return nil, nil, false
 		}

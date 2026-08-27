@@ -24,6 +24,7 @@ func mustMultiSelectDefinition(t *testing.T, service *CatalogService, workspace 
 		ValueType:    domainentry.PropertyTypeSelect,
 		Cardinality:  domainentry.PropertyCardinalityMany,
 		OptionLabels: []string{"first", "second"},
+		RequestID:    "req",
 	})
 	if err != nil {
 		t.Fatal(err)

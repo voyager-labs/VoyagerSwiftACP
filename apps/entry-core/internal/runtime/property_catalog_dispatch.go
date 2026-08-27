@@ -38,6 +38,7 @@ func dispatchPropertyDefinitionCreate(ctx context.Context, request schema.Reques
 		ValueType:    domainentry.PropertyType(params.ValueType),
 		Cardinality:  domainentry.PropertyCardinality(params.Cardinality),
 		OptionLabels: append([]string{}, params.OptionLabels...),
+		RequestID:    request.RequestID,
 	}
 	view, err := service.CreateDefinition(ctx, workspace, input)
 	if err != nil {

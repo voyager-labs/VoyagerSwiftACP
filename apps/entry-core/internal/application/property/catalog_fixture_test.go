@@ -196,6 +196,7 @@ func mustCreatedDefinition(t *testing.T, service *CatalogService, workspace doma
 		DisplayName: key + " display",
 		ValueType:   domainentry.PropertyTypeText,
 		Cardinality: domainentry.PropertyCardinalityOne,
+		RequestID:   "req",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -212,6 +213,7 @@ func mustCreatedSelectDefinition(t *testing.T, service *CatalogService, workspac
 		ValueType:    domainentry.PropertyTypeSelect,
 		Cardinality:  domainentry.PropertyCardinalityOne,
 		OptionLabels: []string{"first", "second"},
+		RequestID:    "req",
 	})
 	if err != nil {
 		t.Fatal(err)

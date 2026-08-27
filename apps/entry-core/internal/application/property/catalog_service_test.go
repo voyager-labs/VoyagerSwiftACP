@@ -20,6 +20,7 @@ func TestCreateDefinitionAssignsIdentityAndCanonicalDefaults(t *testing.T) {
 		DisplayName: "Due date",
 		ValueType:   domainentry.PropertyTypeDate,
 		Cardinality: domainentry.PropertyCardinalityOne,
+		RequestID:   "req",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -62,6 +63,7 @@ func TestCreateDefinitionSelectRequiresNonEmptyOptionSet(t *testing.T) {
 		DisplayName: "Status",
 		ValueType:   domainentry.PropertyTypeSelect,
 		Cardinality: domainentry.PropertyCardinalityOne,
+		RequestID:   "req",
 	}); !errors.Is(err, domainentry.ErrInvalidPropertyOptionSet) {
 		t.Fatalf("select without options error = %v, want %v", err, domainentry.ErrInvalidPropertyOptionSet)
 	}
@@ -71,6 +73,7 @@ func TestCreateDefinitionSelectRequiresNonEmptyOptionSet(t *testing.T) {
 		ValueType:    domainentry.PropertyTypeText,
 		Cardinality:  domainentry.PropertyCardinalityOne,
 		OptionLabels: []string{"unused"},
+		RequestID:    "req",
 	}); !errors.Is(err, domainentry.ErrInvalidPropertyOptionSet) {
 		t.Fatalf("text with options error = %v, want %v", err, domainentry.ErrInvalidPropertyOptionSet)
 	}
@@ -102,6 +105,7 @@ func TestCreateDefinitionRejectsDuplicateKeyAgainstAnyLifecycle(t *testing.T) {
 				DisplayName: "Another due date",
 				ValueType:   domainentry.PropertyTypeText,
 				Cardinality: domainentry.PropertyCardinalityOne,
+				RequestID:   "req",
 			})
 			if !errors.Is(err, ErrDuplicateDefinitionKey) {
 				t.Fatalf("duplicate key error = %v, want %v", err, ErrDuplicateDefinitionKey)

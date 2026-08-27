@@ -2,6 +2,7 @@ package property
 
 import (
 	"context"
+	"unicode/utf8"
 
 	domainentry "github.com/voyager-labs/voyager-app/apps/entry-core/internal/domain/entry"
 )
@@ -28,13 +29,15 @@ func NewCatalogService(store CatalogRepository, runner TransactionRunner) (*Cata
 }
 
 // CreateDefinitionInput은 정의 생성 요청이다. ID·namespace·기본값은 서비스가
-// 발급하므로 요청은 사용자가 고르는 필드만 운반한다.
+// 발급하므로 요청은 사용자가 고르는 필드만 운반한다. RequestID는 커밋 전 응답
+// 봉투 예산 검사에 쓰이는 echo ID다.
 type CreateDefinitionInput struct {
 	Key          string
 	DisplayName  string
 	ValueType    domainentry.PropertyType
 	Cardinality  domainentry.PropertyCardinality
 	OptionLabels []string
+	RequestID    string
 }
 
 // newIssuedPropertyID와 newIssuedOptionID는 도메인의 UUIDv7 발급기를
@@ -60,6 +63,9 @@ func (service *CatalogService) CreateDefinition(
 ) (DefinitionView, error) {
 	if err := ValidateWorkspaceContext(workspace); err != nil {
 		return DefinitionView{}, err
+	}
+	if !utf8.ValidString(input.RequestID) || len(input.RequestID) == 0 || len(input.RequestID) > maximumEchoIDBytes {
+		return DefinitionView{}, ErrInvalidChangeRequest
 	}
 	propertyID, err := newIssuedPropertyID()
 	if err != nil {
@@ -98,6 +104,12 @@ func (service *CatalogService) CreateDefinition(
 			if candidate.Namespace == definition.Namespace && candidate.CanonicalKey == definition.CanonicalKey {
 				return ErrDuplicateDefinitionKey
 			}
+		}
+		// 커밋 전 응답 봉투 예산 검사다. 요청이 봉투에 들어도 발급 UUID와 상태
+		// 필드가 추가된 성공 응답은 초과할 수 있으므로, 초과 예상은 쓰기 없이
+		// scope_too_large로 실패 닫기한다(execute의 사전 검사와 같은 계약).
+		if !encodedCreateResponseFits(input.RequestID, DefinitionView{Definition: definition, Options: options}) {
+			return ErrScopeTooLarge
 		}
 		if err := service.store.PutDefinition(txCtx, definition); err != nil {
 			return err

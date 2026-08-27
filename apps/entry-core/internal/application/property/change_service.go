@@ -24,9 +24,10 @@ var (
 	ErrStaleAssignmentRevision = errors.New("stale property assignment revision")
 	// ErrDefinitionNotEditable은 편집 불가 정의에 대한 값 지정을 거절한다.
 	ErrDefinitionNotEditable = errors.New("property definition not editable")
-	// ErrScopeTooLarge는 정준 read-back 응답 인코딩이 wire 봉투를 초과해 commit
-	// 전에 거절될 때 반환된다. runtime dispatch가 protocol scope_too_large로
-	// 매핑한다.
+	// ErrScopeTooLarge는 정준 응답 인코딩이 wire 봉투를 초과해 commit 전에
+	// 거절될 때 반환된다. execute의 read-back과 definition.create의 생성 결과
+	// 예상 검사가 이 센티널을 공유한다. runtime dispatch가 protocol
+	// scope_too_large로 매핑한다.
 	ErrScopeTooLarge = errors.New("property change response exceeds wire budget")
 	// ErrCanonicalReadBackIncomplete은 커밋 직전 재조회에서 대상 fact가 사라진
 	// 저장소 계약 위반을 거절한다.

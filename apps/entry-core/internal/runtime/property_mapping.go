@@ -129,40 +129,6 @@ func manyFromWire(valueType string, members any) ([]domainentry.AssignmentValue,
 	}
 }
 
-// definitionViewToWire는 정의 뷰를 wire DTO로 사상한다. tombstoned는 wire의
-// disabled 상태에 대응한다.
-func definitionViewToWire(view applicationproperty.DefinitionView) (schema.PropertyDefinition, schema.ErrorCode) {
-	state := "disabled"
-	if view.IsActive() {
-		state = "active"
-	}
-	options := make([]schema.PropertyOption, len(view.Options))
-	for index, option := range view.Options {
-		optionState := "disabled"
-		if option.Active {
-			optionState = "active"
-		}
-		// wire position은 1-based다(domain ordinal + 1). decodePropertyDefinition이
-		// position ≥ 1을 요구하고 −1로 되돌리므로 0-based 값을 그대로 내보내면
-		// 모든 option-bearing 정의 응답이 정준 디코딩에 실패한다.
-		options[index] = schema.PropertyOption{OptionID: option.OptionID.String(), Label: option.Label, Position: int64(option.Ordinal) + 1, State: optionState}
-	}
-	definition := schema.PropertyDefinition{
-		PropertyID:  view.Definition.PropertyID.String(),
-		Key:         view.Definition.CanonicalKey,
-		Name:        view.Definition.DisplayName,
-		ValueType:   string(view.Definition.ValueType),
-		Cardinality: string(view.Definition.Cardinality),
-		State:       state,
-		Revision:    int64(view.Definition.DefinitionRev),
-		Options:     options,
-	}
-	if definition.Validate() != nil {
-		return schema.PropertyDefinition{}, schema.ErrorInternal
-	}
-	return definition, ""
-}
-
 // prepareResultFromApplication은 제안을 wire 결과로 사상한다. wire 계약은
 // requires_confirmation을 항상 true로 요구하므로(todo-3 동결) application의
 // 세분화 신호는 표현되지 않는다. Before가 nil이면 implicit unset이다.

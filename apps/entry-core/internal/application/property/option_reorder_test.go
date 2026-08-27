@@ -94,6 +94,7 @@ func TestDefinitionRevisionMatrixCoversEveryMutationKind(t *testing.T) {
 				ValueType:    domainentry.PropertyTypeSelect,
 				Cardinality:  domainentry.PropertyCardinalityOne,
 				OptionLabels: []string{"open"},
+				RequestID:    "req",
 			})
 			return err
 		}, 1},
@@ -185,7 +186,7 @@ func TestZeroWorkspaceIsRejectedForEveryServiceMethod(t *testing.T) {
 
 	checks := map[string]func() error{
 		"create": func() error {
-			_, err := service.CreateDefinition(ctx, zero, CreateDefinitionInput{Key: "k"})
+			_, err := service.CreateDefinition(ctx, zero, CreateDefinitionInput{Key: "k", RequestID: "req"})
 			return err
 		},
 		"list":            func() error { _, err := service.ListDefinitions(ctx, zero); return err },
