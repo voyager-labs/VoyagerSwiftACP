@@ -5,9 +5,11 @@ package sqlite
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -279,5 +281,65 @@ func TestPropertyLoadByRefsReturnsOnlyRequestedPairs(t *testing.T) {
 			t.Fatalf("unrequested pair %v loaded: rev %d", ref, fact.RecordRevision)
 		}
 		_ = fact
+	}
+}
+
+// 12 entry × 256 many = 3,072개 값 행은 단일 INSERT의 bind 변수 한도
+// (32,766)를 넘는다. 동일 트랜잭션 안의 배치 삽입으로 성공해야 한다.
+func TestPropertySaveAssignmentsHandlesLargeManyBatches(t *testing.T) {
+	ctx := context.Background()
+	store := migratedStore(t)
+	defer store.Close()
+	fx := buildPropertyFixture(t, store)
+
+	textManyID := domainentry.MustPropertyID("0198c0de-f00d-7000-8000-3b9ac9e19999")
+	now := time.Now()
+	if err := store.db.Create(&WorkspacePropertyDefinitionRow{
+		WorkspaceID: fx.wsctx.ID.Bytes(), PropertyID: textManyID.Bytes(),
+		Origin: "built_in", IdentityScheme: string(domainentry.PropertyIdentitySchemeVoyagerIssued),
+		Namespace: "system", CanonicalKey: "test.text_many", DisplayName: "Text many",
+		ValueType: "text", Cardinality: "many", Nullable: false, Editable: true,
+		DefinitionRev: 1, LifecycleState: "active", CreatedAt: now, UpdatedAt: now,
+	}).Error; err != nil {
+		t.Fatalf("create text many definition: %v", err)
+	}
+	contract := domainentry.AssignmentContract{Type: domainentry.PropertyTypeText, Cardinality: domainentry.PropertyCardinalityMany}
+	facts := make([]domainentry.EntryPropertyAssignment, 0, 12)
+	for entryIndex := range 12 {
+		entryID := testEntryID(entryIndex + 100)
+		members := make([]domainentry.OrderedAssignmentValue, 256)
+		for ordinal := range members {
+			text := fmt.Sprintf("value-%d-%d", entryIndex, ordinal)
+			members[ordinal] = domainentry.OrderedAssignmentValue{Ordinal: ordinal, Value: domainentry.AssignmentValue{Text: &text}}
+		}
+		fact := domainentry.ImplicitUnsetEntryPropertyAssignment(fx.wsctx.ID, entryID, textManyID)
+		fact.RecordRevision = 1
+		fact.ValueContractRevision = 1
+		fact.TargetKind = domainentry.AssignmentTargetLocatorDerived
+		fact.State = domainentry.AssignmentStateValue
+		fact.Many = members
+		validated, err := domainentry.NewEntryPropertyAssignment(fact, contract)
+		if err != nil {
+			t.Fatalf("stage fact %d: %v", entryIndex, err)
+		}
+		facts = append(facts, validated)
+	}
+
+	repo := NewEntryPropertyRepository(store)
+	if err := repo.SaveAssignments(ctx, fx.wsctx, facts); err != nil {
+		t.Fatalf("SaveAssignments with 3,072 value rows = %v, want batched insert to succeed", err)
+	}
+
+	result, err := repo.LoadAssignmentsByRefs(ctx, fx.wsctx, []EntryPropertyRef{
+		{EntryID: testEntryID(100), PropertyID: textManyID},
+		{EntryID: testEntryID(111), PropertyID: textManyID},
+	})
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	for ref, fact := range result {
+		if len(fact.Many) != 256 {
+			t.Fatalf("ref %v values = %d, want 256", ref, len(fact.Many))
+		}
 	}
 }

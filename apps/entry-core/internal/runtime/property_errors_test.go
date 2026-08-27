@@ -44,17 +44,21 @@ func TestPropertyDispatchResponseTooLarge(t *testing.T) {
 	options := make([]domainentry.PropertyOption, 256)
 	for index := range options {
 		options[index] = domainentry.PropertyOption{
-			OptionID: domainentry.MustPropertyOptionID(fmt.Sprintf("0198c0a2-7b3f-7%03x-8f2a-4b6e8d0f1a2c", index)),
-			Label:    strings.Repeat("a", 256),
-			Ordinal:  index,
-			Active:   true,
+			OptionID:   domainentry.MustPropertyOptionID(fmt.Sprintf("0198c0a2-7b3f-7%03x-8f2a-4b6e8d0f1a2c", index)),
+			PropertyID: domainentry.MustPropertyID(testPropertyID),
+			Label:      strings.Repeat("a", 256),
+			Ordinal:    index,
+			Active:     true,
 		}
 	}
 	service := newRecordingPropertyService()
 	service.listDefinitions = []applicationproperty.DefinitionView{{
 		Definition: domainentry.WorkspacePropertyDefinition{
 			PropertyID: domainentry.MustPropertyID(testPropertyID), Lifecycle: domainentry.PropertyLifecycleActive,
-			ValueType: domainentry.PropertyTypeSelect, Cardinality: domainentry.PropertyCardinalityOne, DefinitionRev: 1,
+			Origin: domainentry.PropertyOriginBuiltIn, IdentityScheme: domainentry.PropertyIdentitySchemeVoyagerIssued,
+			Namespace: "system", CanonicalKey: "local.large", DisplayName: "Large",
+			ValueType: domainentry.PropertyTypeSelect, Cardinality: domainentry.PropertyCardinalityOne,
+			Provenance: domainentry.PropertyProvenanceSystem, DefinitionRev: 1,
 		},
 		Options: options,
 	}}
@@ -62,7 +66,7 @@ func TestPropertyDispatchResponseTooLarge(t *testing.T) {
 	request := schema.Request{RequestID: "id", Method: schema.MethodPropertyDefinitionList, PropertyDefinitionListParams: &schema.PropertyDefinitionListParams{PageSize: 8, RequestedPropertyIDs: []string{}}}
 	response := runtime.Dispatch(context.Background(), request)
 	if response.Error == nil || response.Error.Code != schema.ErrorResponseTooLarge {
-		t.Fatalf("response=%#v", response)
+		t.Fatalf("response=%v", response.Error)
 	}
 }
 

@@ -65,6 +65,12 @@ func (view DefinitionView) IsActive() bool {
 type CatalogRepository interface {
 	Definition(ctx context.Context, workspace domainentry.WorkspaceContext, propertyID domainentry.PropertyID) (domainentry.WorkspacePropertyDefinition, error)
 	Definitions(ctx context.Context, workspace domainentry.WorkspaceContext) ([]domainentry.WorkspacePropertyDefinition, error)
+	// DefinitionsPage는 definition.list의 저장소 단계 페이징이다. property_id
+	// 오름차순으로 after 이후 limit+1행을 읽어 has_more과 다음 커서를 돌려준다.
+	// page_size 적용 전 전체 적재와 N+1 옵션 조회를 차단한다.
+	DefinitionsPage(ctx context.Context, workspace domainentry.WorkspaceContext, activeOnly bool, idFilter []domainentry.PropertyID, after *domainentry.PropertyID, limit int) ([]domainentry.WorkspacePropertyDefinition, *domainentry.PropertyID, bool, error)
+	// OptionsForDefinitions은 페이지 정의들의 선택지를 단일 IN 쿼리로 읽는다.
+	OptionsForDefinitions(ctx context.Context, workspace domainentry.WorkspaceContext, propertyIDs []domainentry.PropertyID) (map[domainentry.PropertyID][]domainentry.PropertyOption, error)
 	Option(ctx context.Context, workspace domainentry.WorkspaceContext, optionID domainentry.PropertyOptionID) (domainentry.PropertyOption, error)
 	Options(ctx context.Context, workspace domainentry.WorkspaceContext, propertyID domainentry.PropertyID) ([]domainentry.PropertyOption, error)
 	PutDefinition(ctx context.Context, definition domainentry.WorkspacePropertyDefinition) error

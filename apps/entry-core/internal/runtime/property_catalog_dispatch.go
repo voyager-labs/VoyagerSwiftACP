@@ -17,11 +17,44 @@ func dispatchPropertyDefinitionList(ctx context.Context, request schema.Request,
 		return dispatchError(request, schema.ErrorInternal)
 	}
 	params := request.PropertyDefinitionListParams
-	views, err := service.ListDefinitions(ctx, workspace)
+	// 필터·정렬·창 잘라내기를 저장소 쿼리로 밀어 넣는다. page_size 적용 전에
+	// 전체 정의와 모든 옵션을 적재하면 단일 연결을 오래 점유한다.
+	var after *domainentry.PropertyID
+	if params.PageToken != nil {
+		parsed, parseErr := domainentry.ParsePropertyID(*params.PageToken)
+		if parseErr != nil {
+			return dispatchError(request, schema.ErrorInvalidRequest)
+		}
+		after = &parsed
+	}
+	var idFilter []domainentry.PropertyID
+	if len(params.RequestedPropertyIDs) > 0 {
+		idFilter = make([]domainentry.PropertyID, 0, len(params.RequestedPropertyIDs))
+		for _, text := range params.RequestedPropertyIDs {
+			parsed, parseErr := domainentry.ParsePropertyID(text)
+			if parseErr != nil {
+				return dispatchError(request, schema.ErrorInvalidRequest)
+			}
+			idFilter = append(idFilter, parsed)
+		}
+	}
+	views, next, hasMore, err := service.ListDefinitionsPage(ctx, workspace, !params.IncludeDisabled, idFilter, after, params.PageSize)
 	if err != nil {
 		return dispatchError(request, protocolCodeForPropertyError(err))
 	}
-	definitions, nextToken, hasMore := pageDefinitionViews(views, params)
+	definitions := make([]schema.PropertyDefinition, 0, len(views))
+	for _, view := range views {
+		definition, code := applicationproperty.DefinitionViewToWire(view)
+		if code != "" {
+			return dispatchError(request, code)
+		}
+		definitions = append(definitions, definition)
+	}
+	var nextToken *string
+	if hasMore && next != nil {
+		token := next.String()
+		nextToken = &token
+	}
 	result := schema.PropertyDefinitionListResult{Definitions: definitions, NextPageToken: nextToken, HasMore: hasMore}
 	return dispatchPropertySuccess(request, result)
 }

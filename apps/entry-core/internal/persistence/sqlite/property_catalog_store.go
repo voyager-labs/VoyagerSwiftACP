@@ -200,3 +200,99 @@ func optionToRow(option domainentry.PropertyOption, workspace []byte, now time.T
 		UpdatedAt:   now,
 	}, nil
 }
+
+// DefinitionsPage는 definition.list의 저장소 단계 페이징이다. property_id
+// 오름차순으로 after 이후 limit+1행만 읽어 has_more과 다음 커서를 계산한다.
+// page_size 적용 전의 전체 적재를 차단한다.
+func (s *PropertyCatalogStore) DefinitionsPage(
+	ctx context.Context,
+	workspace domainentry.WorkspaceContext,
+	activeOnly bool,
+	idFilter []domainentry.PropertyID,
+	after *domainentry.PropertyID,
+	limit int,
+) ([]domainentry.WorkspacePropertyDefinition, *domainentry.PropertyID, bool, error) {
+	if err := s.requireWorkspace(workspace); err != nil {
+		return nil, nil, false, err
+	}
+	db, err := s.session(ctx)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	wsBytes := workspace.ID.Bytes()
+	query := db.Where("workspace_id = ?", wsBytes)
+	if activeOnly {
+		query = query.Where("lifecycle_state = ?", "active")
+	}
+	if len(idFilter) > 0 {
+		args := make([]interface{}, 0, len(idFilter))
+		for _, id := range idFilter {
+			args = append(args, id.Bytes())
+		}
+		query = query.Where("property_id IN ?", args)
+	}
+	if after != nil {
+		query = query.Where("property_id > ?", after.Bytes())
+	}
+	var rows []WorkspacePropertyDefinitionRow
+	if err := query.Order("property_id ASC").Limit(limit + 1).Find(&rows).Error; err != nil {
+		return nil, nil, false, err
+	}
+	hasMore := len(rows) > limit
+	if hasMore {
+		rows = rows[:limit]
+	}
+	definitions := make([]domainentry.WorkspacePropertyDefinition, 0, len(rows))
+	var next *domainentry.PropertyID
+	for _, row := range rows {
+		definition, mapErr := mapDefinitionRow(row)
+		if mapErr != nil {
+			return nil, nil, false, mapErr
+		}
+		definitions = append(definitions, definition)
+		id := definition.PropertyID
+		next = &id
+	}
+	return definitions, next, hasMore, nil
+}
+
+// OptionsForDefinitions은 페이지 정의들의 선택지를 단일 IN 쿼리로 읽어
+// property별 ordinal 오름차순 목록으로 묶는다.
+func (s *PropertyCatalogStore) OptionsForDefinitions(
+	ctx context.Context,
+	workspace domainentry.WorkspaceContext,
+	propertyIDs []domainentry.PropertyID,
+) (map[domainentry.PropertyID][]domainentry.PropertyOption, error) {
+	result := make(map[domainentry.PropertyID][]domainentry.PropertyOption, len(propertyIDs))
+	if len(propertyIDs) == 0 {
+		return result, nil
+	}
+	if err := s.requireWorkspace(workspace); err != nil {
+		return nil, err
+	}
+	db, err := s.session(ctx)
+	if err != nil {
+		return nil, err
+	}
+	args := make([]interface{}, 0, len(propertyIDs))
+	for _, id := range propertyIDs {
+		args = append(args, id.Bytes())
+	}
+	var rows []WorkspacePropertyOptionRow
+	if err := db.Where("workspace_id = ?", workspace.ID.Bytes()).Where("property_id IN ?", args).
+		Order("property_id ASC, ordinal ASC").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		propertyID, err := parsePropertyIDBlob(row.PropertyID)
+		if err != nil {
+			return nil, err
+		}
+		option, err := mapOptionRow(row)
+		if err != nil {
+			return nil, err
+		}
+		result[propertyID] = append(result[propertyID], option)
+	}
+	return result, nil
+}

@@ -5,6 +5,7 @@ package runtime
 
 import (
 	"context"
+	"sort"
 	"strings"
 	"testing"
 
@@ -45,6 +46,46 @@ func newRecordingPropertyService() *recordingPropertyService {
 func (service *recordingPropertyService) record(name string, workspace domainentry.WorkspaceContext) {
 	service.calls[name]++
 	service.lastWorkspace = workspace
+}
+
+func (service *recordingPropertyService) ListDefinitionsPage(ctx context.Context, workspace domainentry.WorkspaceContext, activeOnly bool, idFilter []domainentry.PropertyID, after *domainentry.PropertyID, limit int) ([]applicationproperty.DefinitionView, *domainentry.PropertyID, bool, error) {
+	views, err := service.ListDefinitions(ctx, workspace)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	filtered := make([]applicationproperty.DefinitionView, 0, len(views))
+	for _, view := range views {
+		if activeOnly && !view.IsActive() {
+			continue
+		}
+		wanted := len(idFilter) == 0
+		for _, id := range idFilter {
+			if view.Definition.PropertyID == id {
+				wanted = true
+				break
+			}
+		}
+		if !wanted {
+			continue
+		}
+		if after != nil && !(view.Definition.PropertyID.String() > after.String()) {
+			continue
+		}
+		filtered = append(filtered, view)
+	}
+	sort.Slice(filtered, func(i, j int) bool {
+		return filtered[i].Definition.PropertyID.String() < filtered[j].Definition.PropertyID.String()
+	})
+	hasMore := len(filtered) > limit
+	if hasMore {
+		filtered = filtered[:limit]
+	}
+	var next *domainentry.PropertyID
+	if len(filtered) > 0 {
+		id := filtered[len(filtered)-1].Definition.PropertyID
+		next = &id
+	}
+	return filtered, next, hasMore, nil
 }
 
 func (service *recordingPropertyService) ListDefinitions(ctx context.Context, workspace domainentry.WorkspaceContext) ([]applicationproperty.DefinitionView, error) {

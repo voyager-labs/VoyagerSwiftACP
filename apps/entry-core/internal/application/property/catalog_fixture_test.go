@@ -220,3 +220,69 @@ func mustCreatedSelectDefinition(t *testing.T, service *CatalogService, workspac
 	}
 	return view
 }
+
+func (store *memCatalogStore) DefinitionsPage(
+	_ context.Context,
+	workspace domainentry.WorkspaceContext,
+	activeOnly bool,
+	idFilter []domainentry.PropertyID,
+	after *domainentry.PropertyID,
+	limit int,
+) ([]domainentry.WorkspacePropertyDefinition, *domainentry.PropertyID, bool, error) {
+	if err := ValidateWorkspaceContext(workspace); err != nil {
+		return nil, nil, false, err
+	}
+	if err := ValidateWorkspaceContext(workspace); err != nil {
+		return nil, nil, false, err
+	}
+	filtered := make([]domainentry.WorkspacePropertyDefinition, 0, len(store.defs))
+	for _, def := range store.defs {
+		if activeOnly && def.Lifecycle != domainentry.PropertyLifecycleActive {
+			continue
+		}
+		wanted := len(idFilter) == 0
+		for _, id := range idFilter {
+			if def.PropertyID == id {
+				wanted = true
+				break
+			}
+		}
+		if !wanted {
+			continue
+		}
+		if after != nil && !(def.PropertyID.String() > after.String()) {
+			continue
+		}
+		filtered = append(filtered, def)
+	}
+	sort.Slice(filtered, func(i, j int) bool { return filtered[i].PropertyID.String() < filtered[j].PropertyID.String() })
+	hasMore := len(filtered) > limit
+	if hasMore {
+		filtered = filtered[:limit]
+	}
+	var next *domainentry.PropertyID
+	if len(filtered) > 0 {
+		id := filtered[len(filtered)-1].PropertyID
+		next = &id
+	}
+	return filtered, next, hasMore, nil
+}
+
+func (store *memCatalogStore) OptionsForDefinitions(
+	ctx context.Context,
+	workspace domainentry.WorkspaceContext,
+	propertyIDs []domainentry.PropertyID,
+) (map[domainentry.PropertyID][]domainentry.PropertyOption, error) {
+	if err := ValidateWorkspaceContext(workspace); err != nil {
+		return nil, err
+	}
+	result := make(map[domainentry.PropertyID][]domainentry.PropertyOption, len(propertyIDs))
+	for _, propertyID := range propertyIDs {
+		options, err := store.Options(ctx, workspace, propertyID)
+		if err != nil {
+			return nil, err
+		}
+		result[propertyID] = options
+	}
+	return result, nil
+}

@@ -14,6 +14,10 @@ import (
 	domainentry "github.com/voyager-labs/voyager-app/apps/entry-core/internal/domain/entry"
 )
 
+// propertyValueInsertBatchSize는 값 행 배치 삽입의 최대 행 수다. 11 컬럼
+// 기준 32,766 변수 한도 내로 유지한다(11 × 2000 = 22,000).
+const propertyValueInsertBatchSize = 2000
+
 func WriteEntryPropertyAssignments(
 	tx *gorm.DB,
 	wsctx domainentry.WorkspaceContext,
@@ -199,7 +203,10 @@ func persistEntryPropertyAssignments(
 	if len(valueRows) == 0 {
 		return nil
 	}
-	return tx.Create(&valueRows).Error
+	// 단일 INSERT의 bind 변수는 11 컬럼 × 행 수로 늘어난다(12 entry × 256
+	// many = 3,072행이면 33,792개). modernc SQLite의 32,766 변수 한도를 넘기
+	// 때문에 동일 트랜잭션 안에서 배치로 나눠 삽입한다.
+	return tx.CreateInBatches(&valueRows, propertyValueInsertBatchSize).Error
 }
 
 // deleteEntryPropertyValues는 참조 집합의 값 행만 삭제한다.

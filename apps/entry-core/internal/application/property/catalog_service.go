@@ -192,6 +192,39 @@ func (service *CatalogService) ListDefinitions(
 	return views, nil
 }
 
+// ListDefinitionsPage는 definition.list의 페이징 유스케이스다. 필터·정렬·창
+// 잘라내기를 저장소 쿼리로 밀어 넣고, 반환된 페이지 정의의 선택지만 batched로
+// 읽는다. next는 다음 페이지의 after 커서다(has_more일 때만 유효).
+func (service *CatalogService) ListDefinitionsPage(
+	ctx context.Context,
+	workspace domainentry.WorkspaceContext,
+	activeOnly bool,
+	idFilter []domainentry.PropertyID,
+	after *domainentry.PropertyID,
+	limit int,
+) ([]DefinitionView, *domainentry.PropertyID, bool, error) {
+	if err := ValidateWorkspaceContext(workspace); err != nil {
+		return nil, nil, false, err
+	}
+	definitions, next, hasMore, err := service.store.DefinitionsPage(ctx, workspace, activeOnly, idFilter, after, limit)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	propertyIDs := make([]domainentry.PropertyID, 0, len(definitions))
+	for _, definition := range definitions {
+		propertyIDs = append(propertyIDs, definition.PropertyID)
+	}
+	optionsByProperty, err := service.store.OptionsForDefinitions(ctx, workspace, propertyIDs)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	views := make([]DefinitionView, 0, len(definitions))
+	for _, definition := range definitions {
+		views = append(views, DefinitionView{Definition: definition, Options: optionsByProperty[definition.PropertyID]})
+	}
+	return views, next, hasMore, nil
+}
+
 // Definition은 정의 하나와 그 선택지를 돌려준다. 비활성 행도 과거 assignment
 // 해석을 위해 그대로 읽힌다.
 func (service *CatalogService) Definition(

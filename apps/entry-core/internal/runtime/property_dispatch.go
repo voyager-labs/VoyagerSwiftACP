@@ -14,6 +14,7 @@ import (
 // 접근하지 않고 이 좁은 인터페이스를 통해서만 정의·선택지·할당 명령을 수행한다.
 type PropertyService interface {
 	ListDefinitions(ctx context.Context, workspace domainentry.WorkspaceContext) ([]applicationproperty.DefinitionView, error)
+	ListDefinitionsPage(ctx context.Context, workspace domainentry.WorkspaceContext, activeOnly bool, idFilter []domainentry.PropertyID, after *domainentry.PropertyID, limit int) ([]applicationproperty.DefinitionView, *domainentry.PropertyID, bool, error)
 	CreateDefinition(ctx context.Context, workspace domainentry.WorkspaceContext, input applicationproperty.CreateDefinitionInput) (applicationproperty.DefinitionView, error)
 	UpdateDefinitionMetadata(ctx context.Context, workspace domainentry.WorkspaceContext, propertyID domainentry.PropertyID, expectedRevision int, requestID string, displayName string) (applicationproperty.DefinitionView, error)
 	DisableDefinition(ctx context.Context, workspace domainentry.WorkspaceContext, propertyID domainentry.PropertyID, expectedRevision int, requestID string) (applicationproperty.DefinitionView, error)
