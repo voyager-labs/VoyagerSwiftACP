@@ -326,7 +326,10 @@ final class FMW001FileManagerWindowTests: XCTestCase {
 
         await store.send(.request(.openSelectedItem))
         await store.receive {
-            guard case .content(.entryViewLayout(.delegate(.executeCommand("navigation.openSelectedItem")))) = $0
+            guard case .content(.entryViewLayout(.delegate(.executeCommand(
+                "navigation.openSelectedItem",
+                source: .menuCommand,
+            )))) = $0
             else { return false }
             return true
         }
@@ -345,7 +348,10 @@ final class FMW001FileManagerWindowTests: XCTestCase {
 
         await store.send(.request(.openSelectedItem))
         await store.receive {
-            guard case .content(.entryViewLayout(.delegate(.executeCommand("navigation.openSelectedItem")))) = $0
+            guard case .content(.entryViewLayout(.delegate(.executeCommand(
+                "navigation.openSelectedItem",
+                source: .menuCommand,
+            )))) = $0
             else { return false }
             return true
         }
@@ -392,7 +398,10 @@ final class FMW001FileManagerWindowTests: XCTestCase {
 
         await store.send(.request(.quickLookSelectedItem))
         await store.receive {
-            guard case .content(.entryViewLayout(.delegate(.executeCommand("navigation.quickLookSelectedItem")))) = $0
+            guard case .content(.entryViewLayout(.delegate(.executeCommand(
+                "navigation.quickLookSelectedItem",
+                source: .menuCommand,
+            )))) = $0
             else { return false }
             return true
         }
@@ -411,7 +420,10 @@ final class FMW001FileManagerWindowTests: XCTestCase {
 
         await store.send(.request(.quickLookSelectedItem))
         await store.receive {
-            guard case .content(.entryViewLayout(.delegate(.executeCommand("navigation.quickLookSelectedItem")))) = $0
+            guard case .content(.entryViewLayout(.delegate(.executeCommand(
+                "navigation.quickLookSelectedItem",
+                source: .menuCommand,
+            )))) = $0
             else { return false }
             return true
         }
@@ -1663,18 +1675,36 @@ final class FMW001FileManagerWindowTests: XCTestCase {
         _ action: FileManagerWindowAction,
     ) -> Bool {
         switch (command, action) {
-        case (.newFolder, .content(.entryViewLayout(.entryOperations(.edit(.createNewFolder))))),
-             (
-                 .openSelectedItem,
-                 .content(.entryViewLayout(.delegate(.executeCommand("navigation.openSelectedItem")))),
-             ),
-             (
-                 .quickLookSelectedItem,
-                 .content(.entryViewLayout(.delegate(.executeCommand("navigation.quickLookSelectedItem")))),
-             ),
-             (.cut, .content(.entryViewLayout(.delegate(.executeCommand("clipboard.cutSelectedItems"))))),
-             (.copy, .content(.entryViewLayout(.delegate(.executeCommand("clipboard.copySelectedItems"))))),
-             (.paste, .content(.entryViewLayout(.delegate(.executeCommand("clipboard.pasteItems"))))):
+        case (
+            .newFolder,
+            .content(.entryViewLayout(.delegate(.executeCommand("mutation.createNewFolder", source: .menuCommand)))),
+        ),
+        (
+            .openSelectedItem,
+            .content(.entryViewLayout(.delegate(.executeCommand(
+                "navigation.openSelectedItem",
+                source: .menuCommand,
+            )))),
+        ),
+        (
+            .quickLookSelectedItem,
+            .content(.entryViewLayout(.delegate(.executeCommand(
+                "navigation.quickLookSelectedItem",
+                source: .menuCommand,
+            )))),
+        ),
+        (.cut, .content(.entryViewLayout(.delegate(.executeCommand(
+            "clipboard.cutSelectedItems",
+            source: .menuCommand,
+        ))))),
+        (.copy, .content(.entryViewLayout(.delegate(.executeCommand(
+            "clipboard.copySelectedItems",
+            source: .menuCommand,
+        ))))),
+        (.paste, .content(.entryViewLayout(.delegate(.executeCommand(
+            "clipboard.pasteItems",
+            source: .menuCommand,
+        ))))):
             true
 
         default:
@@ -1687,17 +1717,29 @@ final class FMW001FileManagerWindowTests: XCTestCase {
         _ action: FileManagerWindowAction,
     ) -> Bool {
         switch (command, action) {
-        case (.duplicate, .content(.entryViewLayout(.delegate(.executeCommand("clipboard.duplicateSelectedItems"))))),
-             (
-                 .makeAlias,
-                 .content(.entryViewLayout(.delegate(.executeCommand("mutation.createAliasForSelectedItems")))),
-             ),
-             (.selectAll, .content(.view(.selectAllEntries))),
-             (
-                 .copyAbsolutePaths,
-                 .content(.entryViewLayout(.delegate(.executeCommand("clipboard.copySelectedAbsolutePaths")))),
-             ),
-             (.copyURLs, .content(.entryViewLayout(.delegate(.executeCommand("clipboard.copySelectedURLs"))))):
+        case (.duplicate, .content(.entryViewLayout(.delegate(.executeCommand(
+            "clipboard.duplicateSelectedItems",
+            source: .menuCommand,
+        ))))),
+        (
+            .makeAlias,
+            .content(.entryViewLayout(.delegate(.executeCommand(
+                "mutation.createAliasForSelectedItems",
+                source: .menuCommand,
+            )))),
+        ),
+        (.selectAll, .content(.view(.selectAllEntries))),
+        (
+            .copyAbsolutePaths,
+            .content(.entryViewLayout(.delegate(.executeCommand(
+                "clipboard.copySelectedAbsolutePaths",
+                source: .menuCommand,
+            )))),
+        ),
+        (.copyURLs, .content(.entryViewLayout(.delegate(.executeCommand(
+            "clipboard.copySelectedURLs",
+            source: .menuCommand,
+        ))))):
             true
 
         default:

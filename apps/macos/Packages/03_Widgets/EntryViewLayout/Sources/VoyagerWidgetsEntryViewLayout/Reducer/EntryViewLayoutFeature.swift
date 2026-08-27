@@ -196,8 +196,8 @@ public struct EntryViewLayoutFeature {
                     isOptionDrag: isOptionDrag,
                 )))
 
-            case let .view(.executeCommand(command)):
-                return .send(.delegate(.executeCommand(command)))
+            case let .view(.executeCommand(command, source)):
+                return .send(.delegate(.executeCommand(command, source: source)))
 
             case let .view(.openPathInNewWindow(path)):
                 return .send(.delegate(.openPathInNewWindow(path)))
@@ -229,14 +229,14 @@ public struct EntryViewLayoutFeature {
             case let .view(.preloadOpenWithApplications(entries)):
                 return .send(.delegate(.preloadOpenWithApplications(entries)))
 
-            case let .view(.openWithApp(bundleID)):
-                return .send(.delegate(.openWithApp(bundleID: bundleID)))
+            case let .view(.openWithApp(bundleID, source)):
+                return .send(.delegate(.openWithApp(bundleID: bundleID, source: source)))
 
-            case let .view(.toggleTag(tagName)):
-                return .send(.delegate(.toggleTag(tagName: tagName)))
+            case let .view(.toggleTag(tagName, source)):
+                return .send(.delegate(.toggleTag(tagName: tagName, source: source)))
 
-            case let .view(.mutateTag(name, mode)):
-                return .send(.delegate(.tagMutation(tagName: name, mode: mode)))
+            case let .view(.mutateTag(name, mode, source)):
+                return .send(.delegate(.tagMutation(tagName: name, mode: mode, source: source)))
 
             case let .view(.expandFolder(id)):
                 return .send(.hierarchy(.folderExpansionRequested(id: id)))
@@ -247,8 +247,8 @@ public struct EntryViewLayoutFeature {
             case let .view(.retryFolder(id)):
                 return .send(.hierarchy(.folderRetryRequested(id: id)))
 
-            case .view(.openSelectedItem):
-                return .send(.delegate(.executeCommand("navigation.openSelectedItem")))
+            case let .view(.openSelectedItem(source)):
+                return .send(.delegate(.executeCommand("navigation.openSelectedItem", source: source)))
 
             case .view(.selectNextItem),
                  .view(.selectPreviousItem),

@@ -182,6 +182,16 @@ struct EntryEditOperationsReducer {
                     let confirmed = await alertClient.showRenameExtensionChangeAlert(item.name, trimmed)
                     if confirmed {
                         await send(.edit(.renameItem(oldPath: item.fullPath, newPath: newPath)))
+                    } else {
+                        await send(.lifecycle(.entryActionCompleted(EntryActionRecord(
+                            operationKind: .rename,
+                            targets: [],
+                            failedCount: 0,
+                            cancelledCount: 1,
+                            succeededCount: 0,
+                            id: UUID(),
+                            timestamp: Date(),
+                        ))))
                     }
                 }
 

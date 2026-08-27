@@ -457,19 +457,14 @@ extension FileManagerWindowCommandRoutingReducer {
         _ command: Action.WindowCommand,
         state: State,
     ) -> Effect<Action>? {
-        guard case let .folder(currentPath) = state.content.navigation.navigationState else { return nil }
+        guard case .folder = state.content.navigation.navigationState else { return nil }
 
         switch command {
         case .newFolder:
-            return .send(.content(.entryViewLayout(.entryOperations(
-                .edit(.createNewFolder(
-                    parentPath: currentPath,
-                    siblingNames: state.content.entryViewLayout.entries.map(\.name),
-                )),
-            ))))
+            return entryMenuCommandEffect("mutation.createNewFolder")
 
         case .paste:
-            return .send(.content(.entryViewLayout(.delegate(.executeCommand("clipboard.pasteItems")))))
+            return entryMenuCommandEffect("clipboard.pasteItems")
 
         default:
             return nil
@@ -482,13 +477,13 @@ extension FileManagerWindowCommandRoutingReducer {
             guard !state.content.isOrdinaryDirectoryLoading,
                   !state.content.entryViewLayout.selectedIds.isEmpty
             else { return .none }
-            return .send(.content(.entryViewLayout(.delegate(.executeCommand("navigation.openSelectedItem")))))
+            return entryMenuCommandEffect("navigation.openSelectedItem")
 
         case .quickLookSelectedItem:
             guard !state.content.isOrdinaryDirectoryLoading,
                   !state.content.entryViewLayout.selectedIds.isEmpty
             else { return .none }
-            return .send(.content(.entryViewLayout(.delegate(.executeCommand("navigation.quickLookSelectedItem")))))
+            return entryMenuCommandEffect("navigation.quickLookSelectedItem")
 
         case .selectAll:
             return .send(.content(.view(.selectAllEntries)))
@@ -501,16 +496,16 @@ extension FileManagerWindowCommandRoutingReducer {
     func handleEntryRequestEditing(_ command: Action.WindowCommand) -> Effect<Action>? {
         switch command {
         case .cut:
-            .send(.content(.entryViewLayout(.delegate(.executeCommand("clipboard.cutSelectedItems")))))
+            entryMenuCommandEffect("clipboard.cutSelectedItems")
 
         case .copy:
-            .send(.content(.entryViewLayout(.delegate(.executeCommand("clipboard.copySelectedItems")))))
+            entryMenuCommandEffect("clipboard.copySelectedItems")
 
         case .duplicate:
-            .send(.content(.entryViewLayout(.delegate(.executeCommand("clipboard.duplicateSelectedItems")))))
+            entryMenuCommandEffect("clipboard.duplicateSelectedItems")
 
         case .makeAlias:
-            .send(.content(.entryViewLayout(.delegate(.executeCommand("mutation.createAliasForSelectedItems")))))
+            entryMenuCommandEffect("mutation.createAliasForSelectedItems")
 
         default:
             nil
@@ -520,14 +515,18 @@ extension FileManagerWindowCommandRoutingReducer {
     func handleEntryRequestCopying(_ command: Action.WindowCommand) -> Effect<Action>? {
         switch command {
         case .copyAbsolutePaths:
-            .send(.content(.entryViewLayout(.delegate(.executeCommand("clipboard.copySelectedAbsolutePaths")))))
+            entryMenuCommandEffect("clipboard.copySelectedAbsolutePaths")
 
         case .copyURLs:
-            .send(.content(.entryViewLayout(.delegate(.executeCommand("clipboard.copySelectedURLs")))))
+            entryMenuCommandEffect("clipboard.copySelectedURLs")
 
         default:
             nil
         }
+    }
+
+    private func entryMenuCommandEffect(_ command: String) -> Effect<Action> {
+        .send(.content(.entryViewLayout(.delegate(.executeCommand(command, source: .menuCommand)))))
     }
 
     func handleEntryRequestViewOptions(_ command: Action.WindowCommand) -> Effect<Action>? {

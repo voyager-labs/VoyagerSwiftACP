@@ -15,13 +15,21 @@ struct EntryOperationsCommandRoutingReducer {
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
-            case let .routing(.executeCommand(command, context)):
+            case let .routing(.executeCommand(command, context, metadata)):
                 let outputs = EntryOperationsCommandPlanner.plan(
                     command: command,
                     context: context,
                 )
                 guard !outputs.isEmpty else { return .none }
-                return .merge(outputs.map(effect(for:)))
+                return .merge(outputs.map { effect(for: $0, metadata: metadata) })
+
+            case let .acceptedCommand(metadata, nestedAction):
+                let effect = if case .routing = nestedAction {
+                    EntryOperationsCommandRoutingReducer().reduce(into: &state, action: nestedAction)
+                } else {
+                    EntryOperationsExecutionReducer().reduce(into: &state, action: nestedAction)
+                }
+                return effect.map { Self.propagate(metadata, through: $0) }
 
             case let .routing(.validateDrop(context)):
                 state.dropValidationResult = EntryDropValidationResolver.resolve(context)
@@ -91,12 +99,29 @@ struct EntryOperationsCommandRoutingReducer {
         }
     }
 
-    private func effect(for output: EntryOperationsCommandOutput) -> Effect<Action> {
+    private func effect(
+        for output: EntryOperationsCommandOutput,
+        metadata: EntryCommandMetadata,
+    ) -> Effect<Action> {
         switch output {
         case let .entryOperations(action):
-            .send(action)
+            .send(.acceptedCommand(metadata: metadata, action: action))
         case let .delegate(delegate):
             .send(.delegate(delegate))
+        }
+    }
+
+    private static func propagate(
+        _ metadata: EntryCommandMetadata,
+        through action: Action,
+    ) -> Action {
+        switch action {
+        case let .lifecycle(.entryActionCompleted(record)):
+            .lifecycle(.entryActionCompleted(record.attaching(command: metadata)))
+        case .lifecycle, .delegate, .outcome:
+            action
+        default:
+            .acceptedCommand(metadata: metadata, action: action)
         }
     }
 

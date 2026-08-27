@@ -72,6 +72,11 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             $0.cutClearSession = nil
         }
 
+        await store.receive { action in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return false }
+            return record.succeededCount == 1 && record.failedCount == 0
+        }
+
         await store.finish()
 
         XCTAssertEqual(recorder.writtenObjectPaths, [[sandbox.fileURL.path]])
@@ -289,9 +294,9 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
 
     /// EOP-002-duplicate_entries: 서로 다른 계층의 선택 항목을 각 원본 부모에 복제한다.
     /// 계층 projection에서 선택된 중첩 항목이 현재 root로 이동하지 않고 원래 sibling 위치에 복제되는지 검증한다.
-    /// - 검증 내용: duplicate command plan이 선택 path를 원본 부모별 paste action으로 분리함
+    /// - 검증 내용: duplicate command plan이 선택 path를 원본 부모별 group으로 분리함
     /// - 사전 조건: 서로 다른 부모를 가진 두 항목이 선택되고 currentPath는 상위 root임
-    /// - 기대 결과: 각 paste destination은 해당 source의 deletingLastPathComponent 경로임
+    /// - 기대 결과: 각 group destination은 해당 source의 deletingLastPathComponent 경로임
     func testDuplicateCommandPlansEachSourceParentDestination() {
         let first = EntryModelFixtures.makeEntry(path: "/root/folder/first.txt")
         let second = EntryModelFixtures.makeEntry(path: "/root/other/second.txt")
@@ -306,25 +311,22 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             context: context,
         )
 
-        XCTAssertEqual(outputs.count, 2)
-        guard outputs.count == 2,
-              case let .entryOperations(.clipboard(.pasteItems(firstPaths, firstDestination, _, _))) = outputs[0],
-              case let .entryOperations(.clipboard(.pasteItems(secondPaths, secondDestination, _, _))) = outputs[1]
+        XCTAssertEqual(outputs.count, 1)
+        guard case let .entryOperations(.clipboard(.duplicateItems(groups))) = outputs.first,
+              groups.count == 2
         else {
-            XCTFail("Expected duplicate paste plans grouped by source parent")
+            XCTFail("Expected one duplicate plan grouped by source parent")
             return
         }
-        XCTAssertEqual(firstPaths, [first.fullPath])
-        XCTAssertEqual(firstDestination, "/root/folder")
-        XCTAssertEqual(secondPaths, [second.fullPath])
-        XCTAssertEqual(secondDestination, "/root/other")
+        XCTAssertEqual(groups[0], .init(sourcePaths: [first.fullPath], destinationPath: "/root/folder"))
+        XCTAssertEqual(groups[1], .init(sourcePaths: [second.fullPath], destinationPath: "/root/other"))
     }
 
     /// EOP-002-duplicate_entries: 부모와 자식을 함께 선택하면 부모만 복제한다.
     /// 계층 projection에서 선택된 폴더의 하위 항목을 별도 복제해 중복 결과를 만들지 않는지 검증한다.
     /// - 검증 내용: duplicate command plan이 선택된 ancestor의 descendant path를 제외함
     /// - 사전 조건: 폴더와 해당 폴더의 자식 파일이 동시에 선택됨
-    /// - 기대 결과: paste source에는 부모 폴더만 포함됨
+    /// - 기대 결과: duplicate group source에는 부모 폴더만 포함됨
     func testDuplicateCommandOmitsDescendantOfSelectedFolder() {
         let folder = EntryModelFixtures.makeEntry(path: "/root/folder")
         let child = EntryModelFixtures.makeEntry(path: "/root/folder/child.txt")
@@ -340,12 +342,13 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         )
 
         XCTAssertEqual(outputs.count, 1)
-        guard case let .entryOperations(.clipboard(.pasteItems(paths, destination, _, _))) = outputs.first else {
-            XCTFail("Expected one duplicate paste plan")
+        guard case let .entryOperations(.clipboard(.duplicateItems(groups))) = outputs.first,
+              let group = groups.first
+        else {
+            XCTFail("Expected one duplicate group plan")
             return
         }
-        XCTAssertEqual(paths, [folder.fullPath])
-        XCTAssertEqual(destination, "/root")
+        XCTAssertEqual(group, .init(sourcePaths: [folder.fullPath], destinationPath: "/root"))
     }
 
     /// EOP-002-duplicate_entries: 일부 선택 항목이 사라진 상태에서도 앞선 항목 복제는 유지되는지 검증한다.
@@ -406,9 +409,9 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
     /// EOP-002-duplicate_entries: 서로 다른 부모의 교차 선택은 부모별로 같은 디렉터리에 복제하도록 계획한다.
     /// 사용자가 root와 두 nested 폴더의 항목을 표시 순서대로 교차 선택해 duplicate할 때 각 항목이 원래 부모에 남는 경로를 확인한다.
     /// - 검증 내용: `.routing(.executeCommand)`가 display 순서로 선택을 필터링하고, 첫 등장 부모 순서 및 부모별 source 순서를 보존한
-    /// `.clipboard(.pasteItems)`를 만든다.
+    /// `.clipboard(.duplicateItems)` group을 만든다.
     /// - 사전 조건: `fixtures/fixtures/texts/plain/11.txt`를 FixtureSandbox로 복사하고, 샌드박스 root 및 두 nested 디렉터리에 실제 파일을 준비한다.
-    /// - 기대 결과: root, 첫 번째 nested 부모, 두 번째 nested 부모 순서로 각각 하나의 duplicate paste action이 방출되고, root 항목의 destination은
+    /// - 기대 결과: root, 첫 번째 nested 부모, 두 번째 nested 부모 순서의 group 하나가 방출되고, root 항목의 destination은
     /// context.currentPath와 같다.
     func testDuplicateEntries_groupsInterleavedSelectionsByParentInDisplayOrder() async throws {
         let scenario = try makeInterleavedDuplicateScenario()
@@ -421,17 +424,17 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         await store.send(.routing(.executeCommand(
             command: .clipboard(.duplicateSelectedItems),
             context: scenario.context,
+            metadata: .init(id: UUID(), interaction: .duplicateEntries, source: .fileManagerContent),
         )))
-        for group in scenario.expectedGroups {
-            await store.receive { action in
-                guard case let .clipboard(.pasteItems(sourcePaths, destinationPath, operation, operationKind)) = action
-                else {
-                    return false
-                }
-                return sourcePaths == group.sourcePaths
-                    && destinationPath == group.destinationPath
-                    && operation == .copy
-                    && operationKind == .pasteFileDuplicate
+        await store.receive { action in
+            guard case let .acceptedCommand(_, .clipboard(.duplicateItems(groups))) = action else {
+                return false
+            }
+            return groups == scenario.expectedGroups.map {
+                EntryOperationsDuplicateGroup(
+                    sourcePaths: $0.sourcePaths,
+                    destinationPath: $0.destinationPath,
+                )
             }
         }
         await store.finish()

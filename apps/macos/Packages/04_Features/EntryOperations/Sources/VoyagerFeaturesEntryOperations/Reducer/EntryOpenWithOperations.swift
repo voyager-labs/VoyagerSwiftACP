@@ -251,7 +251,18 @@ struct EntryOpenWithOperationsReducer {
                 fileURLs,
                 defaultChecked,
                 workspaceClient,
-            ) else { return }
+            ) else {
+                await send(.lifecycle(.entryActionCompleted(EntryActionRecord(
+                    operationKind: .openWithApp(""),
+                    targets: [],
+                    failedCount: 0,
+                    cancelledCount: 1,
+                    succeededCount: 0,
+                    id: UUID(),
+                    timestamp: Date(),
+                ))))
+                return
+            }
 
             for file in files {
                 var actions: [Action] = []

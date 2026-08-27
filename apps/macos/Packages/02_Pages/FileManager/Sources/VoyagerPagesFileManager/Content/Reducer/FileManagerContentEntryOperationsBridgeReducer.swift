@@ -49,12 +49,13 @@ struct FileManagerContentEntryOperationsBridgeReducer {
         state: inout State,
     ) -> Effect<Action>? {
         switch delegateAction {
-        case let .executeCommand(command):
+        case let .executeCommand(command, source):
             guard let entryCommand = entryOperationsCommand(from: command, currentPath: state.navigation.currentPath)
             else { return .none }
             let entryOperationsAction = EntryOperationsAction.routing(.executeCommand(
                 command: entryCommand,
                 context: makeEntryOperationsCommandContext(command: entryCommand, state: state),
+                metadata: makeCommandMetadata(command: entryCommand, source: source),
             ))
             return sendEntryOperations(entryOperationsAction)
 
@@ -67,26 +68,36 @@ struct FileManagerContentEntryOperationsBridgeReducer {
                     displayItems: [entry],
                     currentPath: state.navigation.currentPath,
                 ),
+                metadata: makeCommandMetadata(command: command, source: .fileManagerContent),
             )))
 
-        case let .openWithApp(bundleID):
+        case let .openWithApp(bundleID, source):
             let command = EntryOperationsCommand.navigation(.openWithSelectedItem(
                 bundleID: bundleID, shouldSetAsDefault: false,
             ))
             return sendEntryOperations(.routing(.executeCommand(
                 command: command,
                 context: makeEntryOperationsCommandContext(command: command, state: state),
+                metadata: makeCommandMetadata(command: command, source: source),
             )))
 
         case let .preloadOpenWithApplications(entries):
             return sendEntryOperations(.openWith(.loadCommonApplicationsForFiles(files: entries)))
 
         case let .dropItems(sourcePaths, destinationPath, isOptionDrag):
-            return sendEntryOperations(.routing(.dropItems(
-                sourcePaths: sourcePaths,
-                destinationPath: destinationPath,
-                isOptionDrag: isOptionDrag,
-            )))
+            let metadata = EntryCommandMetadata(
+                id: productMetricsClient.makeOperationID(),
+                interaction: isOptionDrag ? .copyEntries : .moveEntries,
+                source: .dragAndDrop,
+            )
+            return sendEntryOperations(.acceptedCommand(
+                metadata: metadata,
+                action: .routing(.dropItems(
+                    sourcePaths: sourcePaths,
+                    destinationPath: destinationPath,
+                    isOptionDrag: isOptionDrag,
+                )),
+            ))
 
         default:
             return handleMutationIntentDelegate(delegateAction, state: &state)
@@ -102,26 +113,47 @@ struct FileManagerContentEntryOperationsBridgeReducer {
             return sendEntryOperations(.edit(.startRename(item: item, text: text)))
 
         case let .renameCommitted(_, newName):
+            let metadata = EntryCommandMetadata(
+                id: productMetricsClient.makeOperationID(),
+                interaction: .renameEntry,
+                source: .fileManagerContent,
+            )
             return .concatenate(
                 sendEntryOperations(.edit(.updateRenamingText(newName))),
-                sendEntryOperations(.edit(.commitRename)),
+                sendEntryOperations(.acceptedCommand(metadata: metadata, action: .edit(.commitRename))),
             )
 
         case .renameCanceled:
             return sendEntryOperations(.edit(.cancelRename))
 
-        case let .tagMutation(tagName, mode):
+        case let .tagMutation(tagName, mode, source):
             let paths = selectedItemPaths(in: state)
             let featureMode: TagMutationRequest.Mode = mode == .add ? .add : .remove
-            return sendEntryOperations(.tagging(.requestTagMutation(
-                request: .init(mode: featureMode, tagName: tagName, paths: paths),
-            )))
+            let metadata = EntryCommandMetadata(
+                id: productMetricsClient.makeOperationID(),
+                interaction: .editEntryTags,
+                source: source,
+            )
+            return sendEntryOperations(.acceptedCommand(
+                metadata: metadata,
+                action: .tagging(.requestTagMutation(
+                    request: .init(mode: featureMode, tagName: tagName, paths: paths),
+                )),
+            ))
 
-        case let .toggleTag(tagName):
+        case let .toggleTag(tagName, source):
             let paths = selectedItemPaths(in: state)
-            return sendEntryOperations(.tagging(.requestTagMutation(
-                request: .init(mode: .toggle, tagName: tagName, paths: paths),
-            )))
+            let metadata = EntryCommandMetadata(
+                id: productMetricsClient.makeOperationID(),
+                interaction: .editEntryTags,
+                source: source,
+            )
+            return sendEntryOperations(.acceptedCommand(
+                metadata: metadata,
+                action: .tagging(.requestTagMutation(
+                    request: .init(mode: .toggle, tagName: tagName, paths: paths),
+                )),
+            ))
 
         default:
             return nil
@@ -262,6 +294,7 @@ struct FileManagerContentEntryOperationsBridgeReducer {
                     .unavailable(description: description)
                 }
                 if let operationID = state.productBrowsingOperationID,
+                   let identity = state.productBrowsingIdentity,
                    let source = state.productBrowsingSource,
                    let content = state.productBrowsingContent
                 {
@@ -271,10 +304,12 @@ struct FileManagerContentEntryOperationsBridgeReducer {
                     productMetricsClient.record(.contentBrowsing(
                         result: result,
                         content: content,
+                        identity: identity,
                         source: source,
                         operationID: operationID,
                     ))
                     state.productBrowsingOperationID = nil
+                    state.productBrowsingIdentity = nil
                     state.productBrowsingSource = nil
                     state.productBrowsingContent = nil
                 }
@@ -310,11 +345,13 @@ struct FileManagerContentEntryOperationsBridgeReducer {
 
         if case let .loading(.itemsLoaded(entries)) = action,
            let operationID = state.productBrowsingOperationID,
+           let identity = state.productBrowsingIdentity,
            let source = state.productBrowsingSource,
            let content = state.productBrowsingContent,
            let metric = FileManagerProductMetricsProducer.browsingTerminal(
                operationID: operationID,
                content: content,
+               identity: identity,
                source: source,
                entryCount: entries.count,
                failure: nil,
@@ -322,15 +359,18 @@ struct FileManagerContentEntryOperationsBridgeReducer {
         {
             productMetricsClient.record(metric)
             state.productBrowsingOperationID = nil
+            state.productBrowsingIdentity = nil
             state.productBrowsingSource = nil
             state.productBrowsingContent = nil
         } else if case .loading(.itemsLoadFailed) = action,
                   let operationID = state.productBrowsingOperationID,
+                  let identity = state.productBrowsingIdentity,
                   let source = state.productBrowsingSource,
                   let content = state.productBrowsingContent,
                   let metric = FileManagerProductMetricsProducer.browsingTerminal(
                       operationID: operationID,
                       content: content,
+                      identity: identity,
                       source: source,
                       entryCount: nil,
                       failure: .unavailable,
@@ -338,63 +378,37 @@ struct FileManagerContentEntryOperationsBridgeReducer {
         {
             productMetricsClient.record(metric)
             state.productBrowsingOperationID = nil
+            state.productBrowsingIdentity = nil
             state.productBrowsingSource = nil
             state.productBrowsingContent = nil
         }
 
-        // entryActionCompleted가 유일한 command-level terminal seam이다.
-        // record.id/kind/aggregate로 자기 완료를 상관하므로 겹친 명령·역순 완료에서도
-        // 단일 슬롯 덮어쓰기에 따른 stale/misattribution이 없다.
-        if case let .lifecycle(.entryActionCompleted(record)) = action {
+        if case let .lifecycle(.entryActionCompleted(record)) = action,
+           let command = record.command,
+           state.recordedEntryCommandIDs.insert(command.id).inserted
+        {
             let succeeded = record.succeededCount
             let failed = record.failedCount
+            let cancelled = record.cancelledCount
             productMetricsClient.record(FileManagerProductMetricsProducer.entryTerminal(
-                operationID: record.id,
-                action: Self.metricKind(for: record.operationKind),
-                source: .fileManagerContent,
-                result: Self.entryResult(succeeded: succeeded, failed: failed),
-                aggregate: .init(attempted: record.attemptedCount, succeeded: succeeded, failed: failed),
+                operationID: command.id,
+                identity: command.interaction,
+                source: command.source,
+                result: Self.entryResult(succeeded: succeeded, failed: failed, cancelled: cancelled),
+                aggregate: .init(
+                    attempted: record.attemptedCount,
+                    succeeded: succeeded,
+                    failed: failed,
+                    cancelled: cancelled,
+                ),
             ))
         }
     }
 
-    /// 성공/실패 개수로 result를 truthfully 매핑한다.
-    /// succeeded>0 failed=0 => success, succeeded>0 failed>0 => partial, succeeded=0 failed>0 => failure.
-    /// 시도 자체가 없는 비-undo 완료(0/0)는 실패 없이 완료된 것이므로 success다.
-    private static func entryResult(succeeded: Int, failed: Int) -> EntryActionResult {
-        if failed == 0 { return .success }
-        return succeeded > 0 ? .partial : .failure
-    }
-
-    private static func metricKind(for operationKind: OperationKind) -> EntryActionMetricKind {
-        switch operationKind {
-        case .openDefault, .openWithApp, .setDefaultApp, .getInfo, .performService:
-            .open
-        case .quickLook:
-            .quickLook
-        case .share:
-            .share
-        case .revealInFinder:
-            .revealInFinder
-        case .copyPath:
-            .copyPath
-        case .createFolder, .createAlias:
-            .create
-        case .pasteFileCopy, .pasteFileDuplicate:
-            .copy
-        case .pasteFileMove:
-            .move
-        case .rename:
-            .rename
-        case .moveToTrash, .deleteImmediately:
-            .trash
-        case .putBack:
-            .restore
-        case .setTags:
-            .tag
-        case .compress, .extract:
-            .copy
-        }
+    private static func entryResult(succeeded: Int, failed: Int, cancelled: Int) -> EntryActionResult {
+        if succeeded > 0 { return failed + cancelled > 0 ? .partial : .success }
+        if failed > 0 { return .failure }
+        return cancelled > 0 ? .cancelled : .success
     }
 
     // MARK: - Helpers
@@ -427,11 +441,13 @@ struct FileManagerContentEntryOperationsBridgeReducer {
             return false
         }
         guard let operationID = state.productBrowsingOperationID,
+              let identity = state.productBrowsingIdentity,
               let source = state.productBrowsingSource,
               let content = state.productBrowsingContent,
               let metric = FileManagerProductMetricsProducer.browsingTerminal(
                   operationID: operationID,
                   content: content,
+                  identity: identity,
                   source: source,
                   entryCount: entryCount,
                   failure: failure,
@@ -439,6 +455,7 @@ struct FileManagerContentEntryOperationsBridgeReducer {
         else { return false }
         productMetricsClient.record(metric)
         state.productBrowsingOperationID = nil
+        state.productBrowsingIdentity = nil
         state.productBrowsingSource = nil
         state.productBrowsingContent = nil
         return true
@@ -465,6 +482,17 @@ struct FileManagerContentEntryOperationsBridgeReducer {
             selectedIds: state.entryViewLayout.selectedIds,
             displayItems: displayItems,
             currentPath: state.navigation.currentPath,
+        )
+    }
+
+    private func makeCommandMetadata(
+        command: EntryOperationsCommand,
+        source: EntryCommandSource,
+    ) -> EntryCommandMetadata {
+        EntryCommandMetadata(
+            id: productMetricsClient.makeOperationID(),
+            interaction: command.interactionIdentity,
+            source: source,
         )
     }
 
@@ -507,6 +535,7 @@ struct FileManagerContentEntryOperationsBridgeReducer {
 
     private func mutationCommand(action: String) -> EntryOperationsCommand? {
         switch action {
+        case "createNewFolder": .mutation(.createNewFolder)
         case "emptyTrash": .mutation(.emptyTrash)
         case "deleteSelectedItemsImmediately": .mutation(.deleteSelectedItemsImmediately)
         case "moveSelectedItemsToTrash": .mutation(.moveSelectedItemsToTrash)

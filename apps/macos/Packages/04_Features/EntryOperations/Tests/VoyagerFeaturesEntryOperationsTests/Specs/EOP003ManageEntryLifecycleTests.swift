@@ -2897,6 +2897,36 @@ extension EOP003ManageEntryLifecycleTests {
         await store.finish()
     }
 
+    /// EOP-003-put_deleted_entries_back: 사용자 취소는 실패가 아닌 cancelled terminal로 집계된다.
+    /// Put Back 경계가 `.cancelled`를 반환하면 command aggregate가 실패율을 오염시키지 않는지 검증한다.
+    /// - 검증 내용: 성공 0, 실패 0, 취소 1인 terminal record가 한 번 방출된다.
+    /// - 사전 조건: Trash metadata는 존재하고 putBack client가 `.cancelled`를 반환한다.
+    /// - 기대 결과: attemptedCount 1, succeededCount 0, failedCount 0이다.
+    func testPutBackCancellationDoesNotCountAsFailure() async {
+        let trashPath = "/tmp/.Trash/cancelled.txt"
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryFileOpsClient.putBackFromTrash = { _, _ in throw FileOpError.cancelled }
+        }
+        await store.dependencies.trashMetadataStoreClient.save(TrashMetadata(
+            trashPath: trashPath,
+            originalPath: "/tmp/cancelled.txt",
+            deletedDate: .distantPast,
+        ))
+        // store.exhaustivity = .off: 취소 aggregate terminal만 검증하고 중간 lifecycle action은 생략함
+        store.exhaustivity = .off
+
+        await store.send(.trash(.putBackFromTrash(paths: [trashPath])))
+        await store.receive { action in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return false }
+            return record.operationKind == .putBack
+                && record.attemptedCount == 1
+                && record.succeededCount == 0
+                && record.failedCount == 0
+                && record.cancelledCount == 1
+        }
+        await store.finish()
+    }
+
     /// EOP-003-product_batch_metrics: 전체 실패 배치 record는 성공 사운드를 재생하지 않는다.
     /// - 검증 내용: targets가 비은 moveToTrash/pasteFileMove 완료에서 soundClient 호출이 없다.
     /// - 사전 조건: 성공 target 1개짜리 대조 레코드와 전체 실패 레코드

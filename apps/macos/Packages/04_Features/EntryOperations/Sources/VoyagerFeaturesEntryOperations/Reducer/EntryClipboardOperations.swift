@@ -103,10 +103,15 @@ struct EntryClipboardOperationsReducer {
                 pasteboardClient.clearContents()
 
                 let urls = files.map { URL(fileURLWithPath: $0.fullPath) }
-                _ = pasteboardClient.writeObjects(urls as [NSURL])
+                let didWrite = pasteboardClient.writeObjects(urls as [NSURL])
                 entryFileOpsClient.postFileSystemChanged([])
 
-                return .none
+                return .send(.lifecycle(.entryActionCompleted(EntryActionRecord(
+                    operationKind: .copyPath,
+                    targets: [],
+                    failedCount: didWrite ? 0 : 1,
+                    succeededCount: didWrite ? 1 : 0,
+                ))))
 
             case .lifecycle(.loadClipboardState):
                 let (clipboardPaths, clipboardOperation) = entryFileOpsClient.loadClipboardPaths()
@@ -262,6 +267,22 @@ struct EntryClipboardOperationsReducer {
                     mutationImpactDestinationPath: nil,
                 )
 
+            case let .clipboard(.duplicateItems(groups)):
+                let destinations = groups.flatMap { group in
+                    EntryClipboardOperationsSupport.avoidNameCollisions(
+                        sourcePaths: group.sourcePaths,
+                        destinationURL: URL(fileURLWithPath: group.destinationPath),
+                        operation: .copy,
+                        entryFileOpsClient: entryFileOpsClient,
+                    )
+                }
+                return pasteDestinationsEffect(
+                    destinations,
+                    operation: .copy,
+                    operationKind: .pasteFileDuplicate,
+                    mutationImpactDestinationPath: nil,
+                )
+
             case let .clipboard(.performDrop(sourcePaths, destinationPath, isOptionDrag)):
                 let operation: ClipboardOperation = isOptionDrag ? .copy : .cut
                 let operationKind: OperationKind = operation == .copy ? .pasteFileCopy : .pasteFileMove
@@ -298,6 +319,20 @@ struct EntryClipboardOperationsReducer {
                 : .none
         }
 
+        return pasteDestinationsEffect(
+            destinations,
+            operation: operation,
+            operationKind: operationKind,
+            mutationImpactDestinationPath: mutationImpactDestinationPath,
+        )
+    }
+
+    private func pasteDestinationsEffect(
+        _ destinations: [(URL, URL)],
+        operation: ClipboardOperation,
+        operationKind: OperationKind,
+        mutationImpactDestinationPath: String?,
+    ) -> Effect<Action> {
         let executor = EntryClipboardOperationsSupport.PasteExecutor(
             entryFileOpsClient: entryFileOpsClient,
             alertClient: alertClient,
@@ -306,23 +341,31 @@ struct EntryClipboardOperationsReducer {
         return .run { send in
             var targets: [EntryActionRecord.Target] = []
             var failedCount = 0
+            var cancelledCount = 0
             for (sourceURL, destinationURL) in destinations {
                 await send(.lifecycle(.operationStarted(sourceURL.path, operationKind)))
-                if let target = await executor.execute(
+                let result = await executor.execute(
                     sourceURL: sourceURL,
                     destinationURL: destinationURL,
                     isCopy: operation == .copy,
                     operationKind: operationKind,
                     send: send,
-                ) {
+                )
+                switch result {
+                case let .success(target):
                     targets.append(target)
-                } else {
-                    failedCount += 1
+                case let .failure(error):
+                    if error == .cancelled {
+                        cancelledCount += 1
+                    } else {
+                        failedCount += 1
+                    }
                 }
             }
             await executor.finishBatch(
                 targets,
                 failedCount: failedCount,
+                cancelledCount: cancelledCount,
                 operationKind: operationKind,
                 send: send,
             )
@@ -342,11 +385,11 @@ private enum EntryClipboardOperationsSupport {
             isCopy: Bool,
             operationKind: OperationKind,
             send: Send<EntryOperationsAction>,
-        ) async -> EntryActionRecord.Target? {
+        ) async -> Result<EntryActionRecord.Target, FileOpError> {
             let context = OperationContext(isCopy: isCopy, operationKind: operationKind)
             do {
                 try await mutate(sourceURL: sourceURL, destinationURL: destinationURL, isCopy: isCopy)
-                return await finishSuccess(
+                return await .success(finishSuccess(
                     sourceURL: sourceURL,
                     destinationURL: destinationURL,
                     context: .init(
@@ -355,7 +398,7 @@ private enum EntryClipboardOperationsSupport {
                         repeatsPathsMutation: true,
                     ),
                     send: send,
-                )
+                ))
             } catch let error as FileOpError where error.isFileExists {
                 return await replaceExistingItem(
                     sourceURL: sourceURL,
@@ -370,13 +413,14 @@ private enum EntryClipboardOperationsSupport {
                     operationKind: operationKind,
                     result: .failure(error.fileOpError),
                 ))
-                return nil
+                return .failure(error.fileOpError)
             }
         }
 
         func finishBatch(
             _ targets: [EntryActionRecord.Target],
             failedCount: Int,
+            cancelledCount: Int,
             operationKind: OperationKind,
             send: Send<EntryOperationsAction>,
         ) async {
@@ -387,6 +431,10 @@ private enum EntryClipboardOperationsSupport {
                     operationKind: operationKind,
                     targets: targets,
                     failedCount: failedCount,
+                    cancelledCount: cancelledCount,
+                    succeededCount: targets.count,
+                    id: UUID(),
+                    timestamp: Date(),
                 )
                 await send(.lifecycle(.entryActionCompleted(record)))
             }
@@ -404,14 +452,14 @@ private enum EntryClipboardOperationsSupport {
             context: OperationContext,
             error: FileOpError,
             send: Send<EntryOperationsAction>,
-        ) async -> EntryActionRecord.Target? {
+        ) async -> Result<EntryActionRecord.Target, FileOpError> {
             guard let itemName = error.itemName else {
                 await send(completionAction(
                     sourceURL.path,
                     operationKind: context.operationKind,
                     result: .failure(error),
                 ))
-                return nil
+                return .failure(error)
             }
             guard await alertClient.showReplaceAlert(itemName, .move) == .replace else {
                 await send(completionAction(
@@ -419,12 +467,12 @@ private enum EntryClipboardOperationsSupport {
                     operationKind: context.operationKind,
                     result: .failure(.cancelled),
                 ))
-                return nil
+                return .failure(.cancelled)
             }
             do {
                 try await entryFileOpsClient.deleteImmediately(destinationURL)
                 try await mutate(sourceURL: sourceURL, destinationURL: destinationURL, isCopy: context.isCopy)
-                return await finishSuccess(
+                return await .success(finishSuccess(
                     sourceURL: sourceURL,
                     destinationURL: destinationURL,
                     context: .init(
@@ -433,14 +481,14 @@ private enum EntryClipboardOperationsSupport {
                         repeatsPathsMutation: false,
                     ),
                     send: send,
-                )
+                ))
             } catch {
                 await send(completionAction(
                     sourceURL.path,
                     operationKind: context.operationKind,
                     result: .failure(error.fileOpError),
                 ))
-                return nil
+                return .failure(error.fileOpError)
             }
         }
 

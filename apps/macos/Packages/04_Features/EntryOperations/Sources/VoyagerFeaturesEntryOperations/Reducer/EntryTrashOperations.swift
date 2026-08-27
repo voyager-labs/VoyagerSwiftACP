@@ -51,9 +51,23 @@ struct EntryTrashOperationsReducer {
 
                 return .run { send in
                     let confirmed = await alertClient.showDeleteConfirmationAlert(itemNames)
-                    guard confirmed else { return }
+                    guard confirmed else {
+                        await send(.trash(.deleteImmediatelyCancelled))
+                        return
+                    }
                     await send(.trash(.deleteImmediatelyConfirmed(paths: paths)))
                 }
+
+            case .trash(.deleteImmediatelyCancelled):
+                return .send(.lifecycle(.entryActionCompleted(EntryActionRecord(
+                    operationKind: .deleteImmediately,
+                    targets: [],
+                    failedCount: 0,
+                    cancelledCount: 1,
+                    succeededCount: 0,
+                    id: UUID(),
+                    timestamp: Date(),
+                ))))
 
             case let .trash(.deleteImmediatelyConfirmed(paths)):
                 return EntryOperationsExecutionSupport.runParallel(
@@ -83,9 +97,18 @@ struct EntryTrashOperationsReducer {
                 }
 
             case .trash(.emptyTrashCancelled):
+                let cancelledCount = max(1, state.pendingEmptyTrashItemCount)
                 state.pendingEmptyTrashItemCount = 0
                 state.emptyTrashCompletedCount = 0
-                return .none
+                return .send(.lifecycle(.entryActionCompleted(EntryActionRecord(
+                    operationKind: .deleteImmediately,
+                    targets: [],
+                    failedCount: 0,
+                    cancelledCount: cancelledCount,
+                    succeededCount: 0,
+                    id: UUID(),
+                    timestamp: Date(),
+                ))))
 
             case .lifecycle(.emptyTrashCompleted):
                 state.pendingEmptyTrashItemCount = 0
@@ -108,6 +131,7 @@ struct EntryTrashOperationsReducer {
                 return .run { [entryFileOpsClient, trashMetadataStoreClient, alertClient] send in
                     var targets: [EntryActionRecord.Target] = []
                     var failedCount = 0
+                    var cancelledCount = 0
 
                     for path in paths {
                         await send(.lifecycle(.operationStarted(path, .putBack)))
@@ -170,12 +194,17 @@ struct EntryTrashOperationsReducer {
                                     )))
                                 }
                             } else {
-                                failedCount += 1
+                                cancelledCount += 1
                                 await send(.lifecycle(.operationFinished(path, .putBack, .failure(.cancelled))))
                             }
                         } catch {
-                            failedCount += 1
-                            await send(.lifecycle(.operationFinished(path, .putBack, .failure(error.fileOpError))))
+                            let failure = error.fileOpError
+                            if failure == .cancelled {
+                                cancelledCount += 1
+                            } else {
+                                failedCount += 1
+                            }
+                            await send(.lifecycle(.operationFinished(path, .putBack, .failure(failure))))
                         }
                     }
 
@@ -184,6 +213,10 @@ struct EntryTrashOperationsReducer {
                         operationKind: .putBack,
                         targets: targets,
                         failedCount: failedCount,
+                        cancelledCount: cancelledCount,
+                        succeededCount: targets.count,
+                        id: UUID(),
+                        timestamp: Date(),
                     )
                     await send(.lifecycle(.entryActionCompleted(record)))
                 }

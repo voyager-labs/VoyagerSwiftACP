@@ -66,6 +66,7 @@ extension EOP002ArrangeEntriesTests {
         await store.send(.routing(.executeCommand(
             command: .clipboard(.duplicateSelectedItems),
             context: scenario.context,
+            metadata: .init(id: UUID(), interaction: .duplicateEntries, source: .fileManagerContent),
         )))
         await store.finish()
         await store.skipReceivedActions()

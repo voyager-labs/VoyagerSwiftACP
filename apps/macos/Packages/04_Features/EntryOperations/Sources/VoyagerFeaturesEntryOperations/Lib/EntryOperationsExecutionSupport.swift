@@ -15,6 +15,7 @@ enum EntryOperationsExecutionSupport {
     private actor EntryActionTargetAccumulator {
         private var storage: [EntryActionRecord.Target] = []
         private var failures = 0
+        private var cancellations = 0
         private var successes = 0
 
         func append(_ target: EntryActionRecord.Target) {
@@ -29,8 +30,12 @@ enum EntryOperationsExecutionSupport {
             successes += 1
         }
 
-        func recordFailure() {
-            failures += 1
+        func recordFailure(_ error: FileOpError) {
+            if error == .cancelled {
+                cancellations += 1
+            } else {
+                failures += 1
+            }
         }
 
         var failedCount: Int {
@@ -39,6 +44,10 @@ enum EntryOperationsExecutionSupport {
 
         var succeededCount: Int {
             successes
+        }
+
+        var cancelledCount: Int {
+            cancellations
         }
     }
 
@@ -51,13 +60,19 @@ enum EntryOperationsExecutionSupport {
             await send(.lifecycle(.operationStarted(filePath, kind)))
             var succeededCount = 0
             var failedCount = 0
+            var cancelledCount = 0
             do {
                 try await operation()
                 succeededCount = 1
                 await send(.lifecycle(.operationFinished(filePath, kind, .success(()))))
             } catch {
-                failedCount = 1
-                await send(.lifecycle(.operationFinished(filePath, kind, .failure(error.fileOpError))))
+                let failure = error.fileOpError
+                if failure == .cancelled {
+                    cancelledCount = 1
+                } else {
+                    failedCount = 1
+                }
+                await send(.lifecycle(.operationFinished(filePath, kind, .failure(failure))))
             }
             // 비-undo 단일 명령도 정확히 한 건의 command-level terminal로 마무리한다.
             await send(.lifecycle(.entryActionCompleted(
@@ -65,7 +80,10 @@ enum EntryOperationsExecutionSupport {
                     operationKind: kind,
                     targets: [],
                     failedCount: failedCount,
+                    cancelledCount: cancelledCount,
                     succeededCount: succeededCount,
+                    id: UUID(),
+                    timestamp: Date(),
                 ),
             )))
         }
@@ -95,11 +113,12 @@ enum EntryOperationsExecutionSupport {
                             }
                             await send(.lifecycle(.operationFinished(path, kind, .success(()))))
                         } catch {
-                            await accumulator.recordFailure()
+                            let failure = error.fileOpError
+                            await accumulator.recordFailure(failure)
                             await send(.lifecycle(.operationFinished(
                                 path,
                                 kind,
-                                .failure(error.fileOpError),
+                                .failure(failure),
                             )))
                         }
                     }
@@ -109,12 +128,16 @@ enum EntryOperationsExecutionSupport {
             // 전체 실패 배치도 실패 aggregate를 담은 terminal로 마무리한다.
             let failedCount = await accumulator.failedCount
             let succeededCount = await accumulator.succeededCount
+            let cancelledCount = await accumulator.cancelledCount
             await send(.lifecycle(.entryActionCompleted(
                 EntryActionRecord(
                     operationKind: kind,
                     targets: [],
                     failedCount: failedCount,
+                    cancelledCount: cancelledCount,
                     succeededCount: succeededCount,
+                    id: UUID(),
+                    timestamp: Date(),
                 ),
             )))
 
@@ -141,16 +164,18 @@ enum EntryOperationsExecutionSupport {
                             let target = try await operation(url)
                             if let target {
                                 await accumulator.append(target)
+                                await accumulator.recordSuccess()
                                 await send(.lifecycle(.pathsMutated([target.beforePath, target.afterPath]
                                         .compactMap(\.self))))
                             }
                             await send(.lifecycle(.operationFinished(path, kind, .success(()))))
                         } catch {
-                            await accumulator.recordFailure()
+                            let failure = error.fileOpError
+                            await accumulator.recordFailure(failure)
                             await send(.lifecycle(.operationFinished(
                                 path,
                                 kind,
-                                .failure(error.fileOpError),
+                                .failure(failure),
                             )))
                         }
                     }
@@ -159,12 +184,18 @@ enum EntryOperationsExecutionSupport {
 
             let targets = await accumulator.targets
             let failedCount = await accumulator.failedCount
+            let cancelledCount = await accumulator.cancelledCount
+            let succeededCount = await accumulator.succeededCount
             // 성공 여부와 무관하게 수용된 배치는 정확히 한 건의 terminal로 마무리한다.
             // undo 등록은 소비자가 successful targets 존재로 게이트한다.
             let record = EntryActionRecord(
                 operationKind: operationKind,
                 targets: targets,
                 failedCount: failedCount,
+                cancelledCount: cancelledCount,
+                succeededCount: succeededCount,
+                id: UUID(),
+                timestamp: Date(),
             )
             await send(.lifecycle(.entryActionCompleted(record)))
         }

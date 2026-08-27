@@ -8,6 +8,7 @@ import VoyagerShared
 
 @CasePathable
 public enum EntryOperationsAction: CasePathable, Sendable {
+    indirect case acceptedCommand(metadata: EntryCommandMetadata, action: EntryOperationsAction)
     case delegate(Delegate)
     case outcome(Outcome)
     case routing(Routing)
@@ -41,7 +42,11 @@ public enum EntryOperationsAction: CasePathable, Sendable {
 
     @CasePathable
     public enum Routing: CasePathable, @unchecked Sendable {
-        case executeCommand(command: EntryOperationsCommand, context: EntryOperationsCommandContext)
+        case executeCommand(
+            command: EntryOperationsCommand,
+            context: EntryOperationsCommandContext,
+            metadata: EntryCommandMetadata,
+        )
         case validateDrop(context: EntryDropValidationContext)
         case saveDragPaths([String])
         case handleDrop(providers: [NSItemProvider], destinationPath: String, isOptionDrag: Bool)
@@ -140,6 +145,7 @@ public enum EntryOperationsAction: CasePathable, Sendable {
             operation: ClipboardOperation,
             operationKind: OperationKind,
         )
+        case duplicateItems(groups: [EntryOperationsDuplicateGroup])
         case performDrop(sourcePaths: [String], destinationPath: String, isOptionDrag: Bool)
     }
 
@@ -148,6 +154,7 @@ public enum EntryOperationsAction: CasePathable, Sendable {
         case moveToTrash(paths: [String])
         case deleteImmediately(paths: [String])
         case deleteImmediatelyConfirmed(paths: [String])
+        case deleteImmediatelyCancelled
         case putBackFromTrash(paths: [String])
         case emptyTrash(paths: [String])
         case emptyTrashConfirmed(paths: [String])
@@ -178,6 +185,16 @@ public enum EntryOperationsAction: CasePathable, Sendable {
             updatedRecord: EntryActionRecord,
         )
         case replayFailed(direction: EntryActionDirection, appliedTargets: [EntryActionRecord.Target])
+    }
+}
+
+public struct EntryOperationsDuplicateGroup: Equatable, Sendable {
+    public let sourcePaths: [String]
+    public let destinationPath: String
+
+    public init(sourcePaths: [String], destinationPath: String) {
+        self.sourcePaths = sourcePaths
+        self.destinationPath = destinationPath
     }
 }
 

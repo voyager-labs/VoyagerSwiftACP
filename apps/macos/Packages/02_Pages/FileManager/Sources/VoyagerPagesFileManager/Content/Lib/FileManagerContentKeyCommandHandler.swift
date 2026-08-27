@@ -45,7 +45,10 @@ enum FileManagerContentKeyCommandHandler {
 
         guard !state.entryViewLayout.selectedIds.isEmpty else { return .none }
 
-        return .send(.entryViewLayout(.delegate(.executeCommand("navigation.quickLookSelectedItem"))))
+        return .send(.entryViewLayout(.delegate(.executeCommand(
+            "navigation.quickLookSelectedItem",
+            source: .keyboardShortcut,
+        ))))
     }
 
     private static func deleteKeyEffect(
@@ -61,10 +64,12 @@ enum FileManagerContentKeyCommandHandler {
         if command.modifiers.contains(.option) {
             return .send(.entryViewLayout(.delegate(.executeCommand(
                 "mutation.deleteSelectedItemsImmediately",
+                source: .keyboardShortcut,
             ))))
         }
         return .send(.entryViewLayout(.delegate(.executeCommand(
             "mutation.moveSelectedItemsToTrash",
+            source: .keyboardShortcut,
         ))))
     }
 
@@ -129,7 +134,10 @@ enum FileManagerContentKeyCommandHandler {
            command.modifiers.isDisjoint(with: [.option, .control, .shift])
         {
             guard !state.entryViewLayout.selectedIds.isEmpty else { return .none }
-            return .send(.entryViewLayout(.delegate(.executeCommand("navigation.openSelectedItem"))))
+            return .send(.entryViewLayout(.delegate(.executeCommand(
+                "navigation.openSelectedItem",
+                source: .keyboardShortcut,
+            ))))
         }
 
         guard command.modifiers.isDisjoint(with: [.option, .control, .shift]),
@@ -140,16 +148,28 @@ enum FileManagerContentKeyCommandHandler {
 
         switch key {
         case "x":
-            return .send(.entryViewLayout(.delegate(.executeCommand("clipboard.cutSelectedItems"))))
+            return .send(.entryViewLayout(.delegate(.executeCommand(
+                "clipboard.cutSelectedItems",
+                source: .keyboardShortcut,
+            ))))
 
         case "c":
-            return .send(.entryViewLayout(.delegate(.executeCommand("clipboard.copySelectedItems"))))
+            return .send(.entryViewLayout(.delegate(.executeCommand(
+                "clipboard.copySelectedItems",
+                source: .keyboardShortcut,
+            ))))
 
         case "v":
-            return .send(.entryViewLayout(.delegate(.executeCommand("clipboard.pasteItems"))))
+            return .send(.entryViewLayout(.delegate(.executeCommand(
+                "clipboard.pasteItems",
+                source: .keyboardShortcut,
+            ))))
 
         case "d":
-            return .send(.entryViewLayout(.delegate(.executeCommand("clipboard.duplicateSelectedItems"))))
+            return .send(.entryViewLayout(.delegate(.executeCommand(
+                "clipboard.duplicateSelectedItems",
+                source: .keyboardShortcut,
+            ))))
 
         default:
             return nil
