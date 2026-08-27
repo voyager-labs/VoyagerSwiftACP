@@ -48,6 +48,24 @@ enum RuntimeFreshRunDecisionTable {
         return snapshot.projection == .policyReady || snapshot.projection == .launchFailed
     }
 
+    static func allowsPrelaunchTransition(
+        from current: RuntimeProjection,
+        to requested: RuntimeProjection,
+    ) -> Bool {
+        switch (current, requested) {
+        case (.policyPending, .policyPending),
+             (.policyPending, .policyReady),
+             (.policyPending, .launchBlocked),
+             (.policyPending, .launchCancelled),
+             (.policyReady, .policyReady),
+             (.policyReady, .launchBlocked),
+             (.policyReady, .launchCancelled):
+            true
+        default:
+            false
+        }
+    }
+
     private static func activeDecision(
         _ signal: RuntimeFreshRunSignal,
         on snapshot: RuntimeFreshRunSnapshot,

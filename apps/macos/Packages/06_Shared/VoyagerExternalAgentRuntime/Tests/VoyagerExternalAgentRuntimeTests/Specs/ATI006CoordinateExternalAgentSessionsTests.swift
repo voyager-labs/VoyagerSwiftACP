@@ -536,6 +536,37 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         #expect(await adapter.counts().launch == 1)
     }
 
+    /// ATI-006-capture_external_agent_context_policy: policy ready prelaunch is idempotent and cannot regress.
+    /// 승인된 policy snapshot이 동일 요청의 반복 투영이나 pending 역행 요청으로 훼손되지 않는지 검증한다.
+    /// - 검증 내용: ready 멱등 허용, ready에서 pending 역행 거부, 거부 시 persistence mutation 없음.
+    /// - 사전 조건: 동일 host/run/context 요청이 policy ready로 저장되어 있다.
+    /// - 기대 결과: 역행은 invalidEvent이고 local/durable projection은 policy ready를 유지한다.
+    @Test
+    func `policy ready prelaunch is idempotent and cannot regress to policy pending`() async throws {
+        let store = InMemoryRuntimeStateStore()
+        let adapter = finalReviewTestsMakeAdapter()
+        let plane = RuntimeControlPlane(store: store)
+        try await plane.register(adapter)
+        let request = makeLaunch(
+            host: "host-policy-ready-monotonic",
+            run: RuntimeRunReference("run-policy-ready-monotonic"),
+            adapterID: "sdk",
+        )
+
+        try await plane.projectPrelaunch(request, as: .policyReady)
+        try await plane.projectPrelaunch(request, as: .policyReady)
+        #expect(await plane.projection(for: request.externalAgentSessionReference) == .policyReady)
+        #expect(await store.currentState()?.sessions.first?.projection == .policyReady)
+        let saveCountBeforeRegression = await store.saveCount
+
+        await #expect(throws: RuntimeHostError.invalidEvent) {
+            try await plane.projectPrelaunch(request, as: .policyPending)
+        }
+        #expect(await plane.projection(for: request.externalAgentSessionReference) == .policyReady)
+        #expect(await store.currentState()?.sessions.first?.projection == .policyReady)
+        #expect(await store.saveCount == saveCountBeforeRegression)
+    }
+
     /// ATI-006-capture_external_agent_context_policy: requested working directory requires adapter capability.
     /// working directory를 적용할 수 없는 adapter가 승인된 실행 컨텍스트 밖에서 시작되지 않는지 검증한다.
     /// - 검증 내용: unknown/unsupported workingDirectory capability의 typed launch 거부.

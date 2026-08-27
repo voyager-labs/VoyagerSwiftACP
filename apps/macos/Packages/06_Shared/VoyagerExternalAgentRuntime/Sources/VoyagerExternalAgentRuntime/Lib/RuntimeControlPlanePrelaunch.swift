@@ -19,6 +19,7 @@ public extension RuntimeControlPlane {
                 try plane.validatePrelaunchTransition(
                     current,
                     request: request,
+                    projection: projection,
                     descriptor: adapter.descriptor,
                 )
             } else {
@@ -87,6 +88,7 @@ private extension RuntimeControlPlane {
     func validatePrelaunchTransition(
         _ current: Session,
         request: RuntimeLaunchRequest,
+        projection: RuntimePrelaunchProjection,
         descriptor: RuntimeAdapterDescriptor,
     ) throws {
         guard !current.lease.isActive else { throw RuntimeHostError.activeRunExists }
@@ -105,6 +107,15 @@ private extension RuntimeControlPlane {
            current.stored.providerLaunchAttempted != false
         {
             throw RuntimeHostError.duplicateRunReference
+        }
+        if sameRun,
+           [.policyPending, .policyReady].contains(current.stored.projection),
+           !RuntimeFreshRunDecisionTable.allowsPrelaunchTransition(
+               from: current.stored.projection,
+               to: projection.projection,
+           )
+        {
+            throw RuntimeHostError.invalidEvent
         }
         if !current.stored.projection.isTerminal, !mayAdvancePrelaunch {
             throw RuntimeHostError.activeRunExists
