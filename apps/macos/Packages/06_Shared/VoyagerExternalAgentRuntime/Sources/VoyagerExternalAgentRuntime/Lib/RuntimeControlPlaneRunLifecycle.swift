@@ -170,7 +170,14 @@ extension RuntimeControlPlane {
         host: ExternalAgentSessionReference,
         restoredContext: RuntimeRestoredResumeContext?,
     ) async throws -> RuntimeResult {
-        guard adapter.descriptor.capabilities.terminalResult == .supported else { return terminal }
+        guard adapter.descriptor.capabilities.terminalResult == .supported else {
+            try validateBoundary(
+                terminal,
+                runReference: receipt.runReference,
+                outcome: terminal.outcome,
+            )
+            return terminal
+        }
         if let restoredContext {
             try requireRestoredResumeContext(
                 restoredContext,
@@ -186,12 +193,11 @@ extension RuntimeControlPlane {
                 runReference: receipt.runReference,
             )
         }
-        guard result.runReference == receipt.runReference else {
-            throw RuntimeHostError.malformedAdapterResponse
-        }
-        guard result.outcome == terminal.outcome else {
-            throw RuntimeHostError.malformedAdapterResponse
-        }
+        try validateBoundary(
+            result,
+            runReference: receipt.runReference,
+            outcome: terminal.outcome,
+        )
         return result
     }
 
@@ -355,9 +361,7 @@ extension RuntimeControlPlane {
                 runReference: receipt.runReference,
             )
         }
-        guard result.runReference == receipt.runReference else {
-            throw RuntimeHostError.malformedAdapterResponse
-        }
+        try validateBoundary(result, runReference: receipt.runReference)
         return result
     }
 

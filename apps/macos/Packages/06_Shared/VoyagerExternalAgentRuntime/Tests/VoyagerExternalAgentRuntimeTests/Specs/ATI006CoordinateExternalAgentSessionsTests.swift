@@ -43,6 +43,28 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         }
     }
 
+    private struct ArtifactIngressCase {
+        let capabilities: RuntimeCapabilities
+        let transport: RuntimeTransportKind
+        let artifacts: [String]
+        let expectedProjection: RuntimeProjection
+        let succeeds: Bool
+
+        init(
+            _ capabilities: RuntimeCapabilities,
+            _ transport: RuntimeTransportKind,
+            _ artifacts: [String],
+            _ expectedProjection: RuntimeProjection,
+            _ succeeds: Bool,
+        ) {
+            self.capabilities = capabilities
+            self.transport = transport
+            self.artifacts = artifacts
+            self.expectedProjection = expectedProjection
+            self.succeeds = succeeds
+        }
+    }
+
     // MARK: - ATI-006-coordinate_external_agent_launch
 
     // MARK: - ATI-006-project_external_agent_run_events
@@ -2660,6 +2682,95 @@ struct ATI006CoordinateExternalAgentSessionsTests {
 
         #expect(result.outcome == .completed)
         #expect(await adapter.counts().stream == 0)
+    }
+
+    /// ATI-006-project_external_agent_run_events: terminal result artifact metadata obeys ingress bounds.
+    /// terminal-only와 streaming provider terminal-result 수렴이 artifact metadata 경계를 동일하게 적용하는지 검증한다.
+    /// - 검증 내용: 256개 및 4096 Unicode scalar artifact 허용, 257개 및 4097 scalar artifact 거부, 호출 횟수와 terminal projection.
+    /// - 사전 조건: DeterministicRuntimeAdapter가 terminal-only 또는 streaming ingress와 지정된 artifactReferences를 반환한다.
+    /// - 기대 결과: 허용된 결과만 반환되고 초과 결과는 malformedAdapterResponse로 거부되며 재시도나 재실행 없이 ingress별 terminal projection을 유지한다.
+    @Test
+    func `terminal result artifact metadata obeys ingress bounds`() async throws {
+        let validArtifact = String(repeating: "x", count: 4096)
+        let validArtifacts = Array(repeating: validArtifact, count: 256)
+        let tooManyArtifacts = Array(repeating: "artifact://too-many", count: 257)
+        let tooLongArtifact = String(repeating: "x", count: 4097)
+        let cases = [
+            ArtifactIngressCase(.terminalOnly, .processJSONL, validArtifacts, .completed, true),
+            ArtifactIngressCase(.allSupported, .sdkAsyncStream, validArtifacts, .completed, true),
+            ArtifactIngressCase(.terminalOnly, .processJSONL, tooManyArtifacts, .interrupted, false),
+            ArtifactIngressCase(.allSupported, .sdkAsyncStream, tooManyArtifacts, .completed, false),
+            ArtifactIngressCase(.terminalOnly, .processJSONL, [tooLongArtifact], .interrupted, false),
+            ArtifactIngressCase(.allSupported, .sdkAsyncStream, [tooLongArtifact], .completed, false),
+        ]
+        for testCase in cases {
+            try await exerciseArtifactIngress(testCase)
+        }
+    }
+
+    private func exerciseArtifactIngress(_ testCase: ArtifactIngressCase) async throws {
+        let host = ExternalAgentSessionReference("host-artifact-bounds")
+        let run = RuntimeRunReference("run-artifact-bounds")
+        let isStreaming = testCase.capabilities.eventStream == .supported
+        let eventsByLaunch: [[RuntimeEventEnvelope]] = if isStreaming {
+            [[makeEvent(
+                host: host,
+                run: run,
+                sequence: 1,
+                idempotencyKey: "completed",
+                kind: .completed,
+            )]]
+        } else {
+            [[]]
+        }
+        let adapter = DeterministicRuntimeAdapter(
+            id: "runtime",
+            transport: testCase.transport,
+            capabilities: testCase.capabilities,
+            eventsByLaunch: eventsByLaunch,
+            terminalResultOverride: RuntimeResult(
+                runReference: run,
+                outcome: .completed,
+                artifactReferences: testCase.artifacts,
+            ),
+        )
+        let plane = RuntimeControlPlane(store: InMemoryRuntimeStateStore())
+        try await plane.register(adapter)
+        let request = makeLaunch(host: host, run: run, adapterID: "runtime")
+
+        if testCase.succeeds {
+            let result = try await runPolicyReady(plane, request)
+            #expect(result.artifactReferences == testCase.artifacts)
+        } else {
+            await #expect(throws: RuntimeHostError.malformedAdapterResponse) {
+                _ = try await runPolicyReady(plane, request)
+            }
+        }
+        try await expectArtifactIngressState(
+            adapter: adapter,
+            plane: plane,
+            testCase: testCase,
+            isStreaming: isStreaming,
+        )
+    }
+
+    private func expectArtifactIngressState(
+        adapter: DeterministicRuntimeAdapter,
+        plane: RuntimeControlPlane,
+        testCase: ArtifactIngressCase,
+        isStreaming: Bool,
+    ) async throws {
+        let host = ExternalAgentSessionReference("host-artifact-bounds")
+        let run = RuntimeRunReference("run-artifact-bounds")
+        let counts = await adapter.counts()
+        #expect(counts.launch == 1)
+        #expect(counts.terminalResult == 1)
+        #expect(counts.stream == (isStreaming ? 1 : 0))
+        #expect(await plane.projection(for: host) == testCase.expectedProjection)
+        if !testCase.succeeds {
+            #expect(await plane.storedTerminalResult(host: host, runReference: run)?.artifactReferences
+                .isEmpty == true)
+        }
     }
 
     /// ATI-006-project_external_agent_run_events: streaming terminal event preserves provider result metadata.

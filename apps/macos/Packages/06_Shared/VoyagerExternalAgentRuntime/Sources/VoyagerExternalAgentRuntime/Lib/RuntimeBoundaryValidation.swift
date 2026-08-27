@@ -9,6 +9,8 @@ enum RuntimeBoundaryLimits {
     static let allowedRoots = 32
     static let persistedEventEntries = 256
     static let acceptedEventsPerRun = 10000
+    static let artifactReferences = 256
+    static let artifactReferenceScalars = 4096
     static let persistedSessions = 512
     static let persistenceMutationWaiters = 512
     static let snapshotBytes = 4 * 1024 * 1024
@@ -45,6 +47,20 @@ extension RuntimeControlPlane {
                   $0.unicodeScalars.count <= RuntimeBoundaryLimits.contextScalars
               }),
               context.requestContext?.unicodeScalars.count ?? 0 <= RuntimeBoundaryLimits.requestContextScalars
+        else { throw RuntimeHostError.malformedAdapterResponse }
+    }
+
+    func validateBoundary(
+        _ result: RuntimeResult,
+        runReference: RuntimeRunReference,
+        outcome: RuntimeOutcome? = nil,
+    ) throws {
+        guard result.runReference == runReference,
+              outcome.map({ result.outcome == $0 }) ?? true,
+              result.artifactReferences.count <= RuntimeBoundaryLimits.artifactReferences,
+              result.artifactReferences.allSatisfy({
+                  $0.unicodeScalars.count <= RuntimeBoundaryLimits.artifactReferenceScalars
+              })
         else { throw RuntimeHostError.malformedAdapterResponse }
     }
 
