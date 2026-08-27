@@ -110,6 +110,8 @@ enum FileManagerContentIdentityTransitionCoordinator {
                 targetNode.folder.children = staged
                 targetNode.folder.hasAppliedContentBatch = true
                 state.entryViewLayout.hierarchy.nodesByID[preservationID] = targetNode
+                // 이동 전 경로의 stale 로드 하위 node를 정리해 재확장 시 과거 캐시 재사용을 막는다.
+                state.entryViewLayout.hierarchy.reconcileNodesAfterMigrationCommit(folderID: preservationID)
             }
         }
         if case .root = projectionOwner {

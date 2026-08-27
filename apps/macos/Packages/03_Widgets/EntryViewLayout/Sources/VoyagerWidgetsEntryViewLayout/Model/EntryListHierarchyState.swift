@@ -153,12 +153,38 @@ public struct EntryListHierarchyState: Equatable, Sendable {
     /// 빈 staging은 authoritative 내용이 아니므로 retained children을 건드리지 않는다.
     public mutating func commitDeferredFolderReplacementsOnCancel() {
         for (folderID, replacement) in deferredFolderReplacements {
-            guard var node = nodesByID[folderID], !replacement.stagedChildren.isEmpty else { continue }
+            guard var node = nodesByID[folderID] else { continue }
+            // 실패한 스트림의 부분 staging은 불완전 목록이라 마지막 완전 snapshot을 덮지 않는다.
+            if case .failed = node.loadPhase { continue }
+            // terminal(coreFinished)이 검증한 빈 배열만 authoritative 비어있는 결과로 커밋한다.
+            if replacement.stagedChildren.isEmpty, !node.folder.coreFinished { continue }
             node.folder.children = replacement.stagedChildren
-            node.folder.hasAppliedContentBatch = true
+            node.folder.hasAppliedContentBatch = !replacement.stagedChildren.isEmpty
             nodesByID[folderID] = node
         }
         deferredFolderReplacements = [:]
+    }
+
+    /// migration이 폴더 children을 교체한 뒤 남은 stale 로드 하위 node를 정리한다.
+    /// 같은 경로의 폴더를 다시 펼칠 때 과거 캐시가 재사용되지 않도록 parent edge와 함께 제거한다.
+    public mutating func reconcileNodesAfterMigrationCommit(folderID: EntryModel.ID) {
+        guard nodesByID[folderID] != nil else { return }
+        let liveChildIDs = Set(nodesByID[folderID]!.folder.children.map(\.id))
+        for childID in liveChildIDs where nodesByID[childID] != nil {
+            nodesByID[childID]?.parentID = folderID
+        }
+        let staleIDs = nodesByID.keys.filter { id in
+            guard id != folderID, !liveChildIDs.contains(id) else { return false }
+            var currentParent = nodesByID[id]?.parentID
+            while let parentID = currentParent {
+                if parentID == folderID { return true }
+                currentParent = nodesByID[parentID]?.parentID
+            }
+            return false
+        }
+        for id in staleIDs {
+            nodesByID[id] = nil
+        }
     }
 }
 
