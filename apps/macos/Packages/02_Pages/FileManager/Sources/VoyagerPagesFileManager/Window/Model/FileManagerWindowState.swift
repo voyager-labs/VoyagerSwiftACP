@@ -123,11 +123,11 @@ extension FileManagerTopNavigationIntent {
 /// direct pin/unpin 터미널을 탭별로 상관하기 위한 메트릭 키.
 public struct ProductContentTabPinMutationMetric: Equatable, Sendable {
     public let operationID: UUID
-    public let action: ContentTabActionKind
+    public let identity: ContentTabInteractionIdentity
 
-    public init(operationID: UUID, action: ContentTabActionKind) {
+    public init(operationID: UUID, identity: ContentTabInteractionIdentity) {
         self.operationID = operationID
-        self.action = action
+        self.identity = identity
     }
 }
 

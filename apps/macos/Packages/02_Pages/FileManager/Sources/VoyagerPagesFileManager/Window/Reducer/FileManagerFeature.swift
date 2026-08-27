@@ -203,7 +203,7 @@ private extension FileManagerFeature {
                 }
                 state.productContentTabPinMutationMetrics[tabID] = ProductContentTabPinMutationMetric(
                     operationID: productMetricsClient.makeOperationID(),
-                    action: .pin,
+                    identity: .pinContentTabs,
                 )
                 return .none
 
@@ -217,7 +217,7 @@ private extension FileManagerFeature {
                 }
                 state.productContentTabPinMutationMetrics[tabID] = ProductContentTabPinMutationMetric(
                     operationID: productMetricsClient.makeOperationID(),
-                    action: .unpin,
+                    identity: .unpinContentTabs,
                 )
                 return .none
 

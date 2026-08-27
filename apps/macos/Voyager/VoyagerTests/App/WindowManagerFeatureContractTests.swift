@@ -1722,7 +1722,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             metrics.value,
             [.contentTabAction(
                 result: .success,
-                action: .pin,
+                identity: .pinContentTabs,
                 source: .contentTabBar,
                 operationID: pinOperationID,
             )],
@@ -1802,7 +1802,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             metrics.value,
             [.contentTabAction(
                 result: .unavailable,
-                action: .pin,
+                identity: .pinContentTabs,
                 source: .contentTabBar,
                 operationID: pinOperationID,
             )],

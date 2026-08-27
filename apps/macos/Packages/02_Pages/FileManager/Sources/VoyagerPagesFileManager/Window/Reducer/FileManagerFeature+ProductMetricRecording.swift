@@ -44,7 +44,7 @@ extension FileManagerFeature {
         else { return }
         productMetricsClient.record(FileManagerProductMetricsProducer.contentTabTerminal(
             operationID: correlation.operationID,
-            action: correlation.action,
+            identity: correlation.identity,
             source: .contentTabBar,
             result: result,
         ))
