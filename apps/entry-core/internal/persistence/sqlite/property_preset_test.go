@@ -19,6 +19,7 @@ func TestPropertyPreset(t *testing.T) {
 	t.Run("SecondRunNoOp", testPropertyPresetSecondRunNoOp)
 	t.Run("IndependentDatabasesDistinctIDs", testPropertyPresetIndependentDatabasesDistinctIDs)
 	t.Run("UserEditsPreserved", testPropertyPresetUserEditsPreserved)
+	t.Run("OptionRenameDoesNotDuplicate", testPropertyPresetOptionRenameDoesNotDuplicate)
 	t.Run("PartialMissingGainsOnlyMissing", testPropertyPresetPartialMissingGainsOnlyMissing)
 	t.Run("RollbackLeavesNoPartial", testPropertyPresetRollbackLeavesNoPartial)
 	t.Run("DescriptorEnumerationCompleteness", testPropertyPresetDescriptorEnumerationCompleteness)
@@ -435,5 +436,60 @@ func testPropertyPresetDescriptorEnumerationCompleteness(t *testing.T) {
 		if _, ok := gotKeys[key]; !ok {
 			t.Fatalf("missing preset member %q", key)
 		}
+	}
+}
+
+// 사용자가 option.update로 프리셋 멤버 라벨을 바꾼 뒤 재조정하면, label 매칭
+// 누락 복구는 그 편집을 누락으로 오판해 중복 행을 만든다. 기존 정의는
+// 아무것도 건드리지 않는 계약을 잠근다.
+func testPropertyPresetOptionRenameDoesNotDuplicate(t *testing.T) {
+	store, wsctx := presetTestStore(t)
+	if err := store.ApplyPropertyPresets(context.Background(), wsctx); err != nil {
+		t.Fatalf("ApplyPropertyPresets: %v", err)
+	}
+	ctx := context.Background()
+	defs, options := loadPresetRows(t, store, wsctx)
+
+	var statusDef WorkspacePropertyDefinitionRow
+	var todoOption WorkspacePropertyOptionRow
+	for _, def := range defs {
+		if def.CanonicalKey == "status" {
+			statusDef = def
+		}
+	}
+	for _, option := range options {
+		if option.Label == "Todo" && string(option.PropertyID) == string(statusDef.PropertyID) {
+			todoOption = option
+		}
+	}
+	if err := store.db.WithContext(ctx).Model(&WorkspacePropertyOptionRow{}).
+		Where("workspace_id = ? AND option_id = ?", wsctx.ID.Bytes(), todoOption.OptionID).
+		Update("label", "Next").Error; err != nil {
+		t.Fatalf("rename option: %v", err)
+	}
+
+	time.Sleep(2 * time.Millisecond)
+	if err := store.ApplyPropertyPresets(context.Background(), wsctx); err != nil {
+		t.Fatalf("re-apply: %v", err)
+	}
+
+	afterDefs, afterOptions := loadPresetRows(t, store, wsctx)
+	if len(afterDefs) != len(defs) || len(afterOptions) != len(options) {
+		t.Fatalf("re-apply changed row counts: defs %d→%d options %d→%d, want unchanged",
+			len(defs), len(afterDefs), len(options), len(afterOptions))
+	}
+	renamedStillThere := false
+	for _, option := range afterOptions {
+		if string(option.OptionID) == string(todoOption.OptionID) {
+			if option.Label == "Next" && option.Active {
+				renamedStillThere = true
+			}
+		}
+		if option.Label == "Todo" && string(option.PropertyID) == string(statusDef.PropertyID) {
+			t.Fatal("duplicate Todo option created after user rename")
+		}
+	}
+	if !renamedStillThere {
+		t.Fatal("user-renamed option lost")
 	}
 }

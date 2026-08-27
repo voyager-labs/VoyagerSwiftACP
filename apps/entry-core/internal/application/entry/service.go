@@ -31,10 +31,49 @@ type UnifiedService struct {
 	clock           func() time.Time
 	observed        atomic.Uint64
 	propertyOverlay PropertyOverlayLoader
+	// liveDefinitions는 카탈로그 mutation이 실행 중에도 requested property
+	// 검증에 반영되게 하는 정의 공급자다(비활성 정의 포함). nil이면 시작
+	// 시점 snapshot만 사용한다.
+	liveDefinitions func(ctx context.Context) ([]domainentry.WorkspacePropertyDefinition, error)
 }
 
 // UnifiedServiceOption은 UnifiedService 생성 시 선택 기능을 주입하는 함수다.
 type UnifiedServiceOption func(*UnifiedService) error
+
+// WithLiveDefinitions는 requested property 검증에 쓸 실시간 정의 공급자를
+// 주입한다. workspace 정의 전체(비활성 포함)를 반환해야 하며, nil과 중복 주입은
+// ErrInvalidService로 거절한다.
+func WithLiveDefinitions(provider func(ctx context.Context) ([]domainentry.WorkspacePropertyDefinition, error)) UnifiedServiceOption {
+	return func(service *UnifiedService) error {
+		if provider == nil || service.liveDefinitions != nil {
+			return ErrInvalidService
+		}
+		service.liveDefinitions = provider
+		return nil
+	}
+}
+
+// definitionIndex는 requested property 검증의 정의 인덱스를 만든다.
+// liveDefinitions가 주입됐으면 저장소의 현재 정의 전체를, 아니면 시작 시점
+// snapshot을 쓴다.
+func (service *UnifiedService) definitionIndex(ctx context.Context) ([]domainentry.WorkspacePropertyDefinition, map[domainentry.PropertyID]domainentry.WorkspacePropertyDefinition, error) {
+	if service.liveDefinitions == nil {
+		return service.catalog.Definitions, definitionIndexFrom(service.catalog.Definitions), nil
+	}
+	definitions, err := service.liveDefinitions(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	return definitions, definitionIndexFrom(definitions), nil
+}
+
+func definitionIndexFrom(definitions []domainentry.WorkspacePropertyDefinition) map[domainentry.PropertyID]domainentry.WorkspacePropertyDefinition {
+	index := make(map[domainentry.PropertyID]domainentry.WorkspacePropertyDefinition, len(definitions))
+	for _, definition := range definitions {
+		index[definition.PropertyID] = definition
+	}
+	return index
+}
 
 // WithPropertyOverlayLoader는 batched Property overlay loader를 주입한다. nil과
 // 중복 주입은 ErrInvalidService로 거절한다.
@@ -107,14 +146,14 @@ func NewUnifiedServiceWithCatalog(registry MountRegistry, bindings []ResourceAda
 	return service, nil
 }
 
-func (service *UnifiedService) propertyDefinitions(requestedProperties []string) (map[string]domainentry.PropertyDefinition, error) {
-	definitions := make(map[domainentry.PropertyID]domainentry.WorkspacePropertyDefinition, len(service.catalog.Definitions))
-	for _, definition := range service.catalog.Definitions {
-		definitions[definition.PropertyID] = definition
+func (service *UnifiedService) propertyDefinitions(ctx context.Context, requestedProperties []string) (map[string]domainentry.PropertyDefinition, error) {
+	definitionList, definitions, err := service.definitionIndex(ctx)
+	if err != nil {
+		return nil, newApplicationError("internal_error", "catalog_unavailable", err)
 	}
 	resolved := make(map[string]domainentry.PropertyDefinition, len(requestedProperties))
 	for _, requested := range requestedProperties {
-		catalogDefinition, found, resolveErr := service.catalogDefinitionFor(requested, definitions)
+		catalogDefinition, found, resolveErr := service.catalogDefinitionFor(requested, definitionList, definitions)
 		if resolveErr != nil {
 			message := "ambiguous_property_selector"
 			if errors.Is(resolveErr, ErrUnregisteredPropertyID) {
@@ -141,10 +180,10 @@ func (service *UnifiedService) propertyDefinitions(requestedProperties []string)
 	return resolved, nil
 }
 
-func (service *UnifiedService) normalizeRequestedProperties(requestedProperties []string) ([]string, error) {
-	definitions := make(map[domainentry.PropertyID]domainentry.WorkspacePropertyDefinition, len(service.catalog.Definitions))
-	for _, definition := range service.catalog.Definitions {
-		definitions[definition.PropertyID] = definition
+func (service *UnifiedService) normalizeRequestedProperties(ctx context.Context, requestedProperties []string) ([]string, error) {
+	definitionList, definitions, err := service.definitionIndex(ctx)
+	if err != nil {
+		return nil, err
 	}
 	seenSelectors := make(map[string]struct{}, len(requestedProperties))
 	seenPropertyIDs := make(map[domainentry.PropertyID]struct{}, len(requestedProperties))
@@ -154,7 +193,7 @@ func (service *UnifiedService) normalizeRequestedProperties(requestedProperties 
 			continue
 		}
 		seenSelectors[requested] = struct{}{}
-		definition, found, err := service.catalogDefinitionFor(requested, definitions)
+		definition, found, err := service.catalogDefinitionFor(requested, definitionList, definitions)
 		if err != nil {
 			return nil, err
 		}
@@ -174,7 +213,7 @@ func (service *UnifiedService) normalizeRequestedProperties(requestedProperties 
 // 적중이면 그 정의를, 미등록이면 ErrUnregisteredPropertyID로 실패 닫기하고 alias/canonical
 // 검색과 registry 재해싱을 시도하지 않는다. 같은 별칭이나 canonical key가 서로 다른
 // PropertyID에 걸리면 순서 의존 첫 매칭 대신 ErrAmbiguousPropertySelector로 실패 닫기한다.
-func (service *UnifiedService) catalogDefinitionFor(requested string, definitions map[domainentry.PropertyID]domainentry.WorkspacePropertyDefinition) (domainentry.WorkspacePropertyDefinition, bool, error) {
+func (service *UnifiedService) catalogDefinitionFor(requested string, definitionList []domainentry.WorkspacePropertyDefinition, definitions map[domainentry.PropertyID]domainentry.WorkspacePropertyDefinition) (domainentry.WorkspacePropertyDefinition, bool, error) {
 	if id, err := domainentry.ParsePropertyID(requested); err == nil {
 		if definition, ok := definitions[id]; ok {
 			return definition, true, nil
@@ -199,7 +238,7 @@ func (service *UnifiedService) catalogDefinitionFor(requested string, definition
 	if found {
 		return matched, true, nil
 	}
-	for _, definition := range service.catalog.Definitions {
+	for _, definition := range definitionList {
 		if definition.CanonicalKey != requested {
 			continue
 		}
@@ -375,7 +414,7 @@ func (service *UnifiedService) UnifiedList(ctx context.Context, request UnifiedL
 		request.PageSize < 1 || request.PageSize > 256 || !validApplicationProperties(request.RequestedProperties) || !validOptionalToken(request.PageToken) {
 		return UnifiedListResult{}, newApplicationError("invalid_request", "invalid_request", ErrInvalidRequest)
 	}
-	requestedProperties, normalizeErr := service.normalizeRequestedProperties(request.RequestedProperties)
+	requestedProperties, normalizeErr := service.normalizeRequestedProperties(ctx, request.RequestedProperties)
 	if normalizeErr != nil {
 		return UnifiedListResult{}, newApplicationError("invalid_request", "invalid_property_selector", normalizeErr)
 	}
@@ -425,7 +464,7 @@ func (service *UnifiedService) UnifiedList(ctx context.Context, request UnifiedL
 		states = decoded.States
 		roundRobinStart = decoded.RoundRobinStart
 	}
-	definitions, definitionsErr := service.propertyDefinitions(requestedProperties)
+	definitions, definitionsErr := service.propertyDefinitions(ctx, requestedProperties)
 	if definitionsErr != nil {
 		return UnifiedListResult{}, definitionsErr
 	}
@@ -532,7 +571,7 @@ func (service *UnifiedService) ResolveEntry(ctx context.Context, request Resolve
 		(request.EntryRef != nil && request.MountID == nil) || (request.VirtualPath != nil && request.MountID != nil) {
 		return ResolveResult{}, newApplicationError("invalid_selector", "invalid_selector", ErrInvalidSelector)
 	}
-	requestedProperties, normalizeErr := service.normalizeRequestedProperties(request.RequestedProperties)
+	requestedProperties, normalizeErr := service.normalizeRequestedProperties(ctx, request.RequestedProperties)
 	if normalizeErr != nil {
 		return ResolveResult{}, newApplicationError("invalid_request", "invalid_property_selector", normalizeErr)
 	}
@@ -571,7 +610,7 @@ func (service *UnifiedService) ResolveEntry(ctx context.Context, request Resolve
 	if err != nil {
 		return ResolveResult{}, newApplicationError("invalid_selector", "invalid_selector", ErrInvalidSelector)
 	}
-	definitions, definitionsErr := service.propertyDefinitions(requestedProperties)
+	definitions, definitionsErr := service.propertyDefinitions(ctx, requestedProperties)
 	if definitionsErr != nil {
 		return ResolveResult{}, definitionsErr
 	}

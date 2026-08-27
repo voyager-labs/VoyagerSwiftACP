@@ -91,7 +91,7 @@ func overlayFixture(t *testing.T, loader PropertyOverlayLoader) (*mount.Registry
 	if err != nil {
 		t.Fatal(err)
 	}
-	definitions, err := service.propertyDefinitions([]string{overlayTitleKey, overlayNoteName})
+	definitions, err := service.propertyDefinitions(context.Background(), []string{overlayTitleKey, overlayNoteName})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -440,4 +440,56 @@ func TestPropertyOverlayFailsClosed(t *testing.T) {
 			t.Fatalf("conflict error = %v, want property_overlay_failed", err)
 		}
 	})
+}
+
+// live 정의 공급자가 주입되면 시작 시점 snapshot에 없는 정의도 requested
+// property 검증을 통과하고, 비활성(tombstoned) 정의도 여전히 존재로 인정된다.
+// snapshot 고정은 실행 중 생성 정의를 unregistered_property_selector로
+// 거절하고 재시작 시 active-only 로더가 read-back을 깨뜨린다.
+func TestLiveDefinitionsServeRequestedPropertyResolution(t *testing.T) {
+	nextID := overlayNoteID
+	nextID[15] ^= 0x01
+	tombID := overlayNoteID
+	tombID[15] ^= 0x02
+	extra := domainentry.WorkspacePropertyDefinition{
+		PropertyID: nextID, Origin: domainentry.PropertyOriginUserDefined,
+		IdentityScheme: domainentry.PropertyIdentitySchemeVoyagerIssued,
+		Namespace:      "user", CanonicalKey: "user.created", DisplayName: "Created",
+		ValueType: domainentry.PropertyTypeText, Cardinality: domainentry.PropertyCardinalityOne,
+		Editable: true, Provenance: domainentry.PropertyProvenanceUserDefined, Lifecycle: domainentry.PropertyLifecycleActive,
+	}
+	tombstoned := domainentry.WorkspacePropertyDefinition{
+		PropertyID: tombID, Origin: domainentry.PropertyOriginUserDefined,
+		IdentityScheme: domainentry.PropertyIdentitySchemeVoyagerIssued,
+		Namespace:      "user", CanonicalKey: "user.removed", DisplayName: "Removed",
+		ValueType: domainentry.PropertyTypeText, Cardinality: domainentry.PropertyCardinalityOne,
+		Editable: true, Provenance: domainentry.PropertyProvenanceUserDefined, Lifecycle: domainentry.PropertyLifecycleTombstoned,
+	}
+	provider := func(_ context.Context) ([]domainentry.WorkspacePropertyDefinition, error) {
+		return append(overlayCatalogFixture().Definitions, extra, tombstoned), nil
+	}
+	_, _, service, _ := overlayFixture(t, nil)
+	service.liveDefinitions = provider
+
+	resolved, err := service.propertyDefinitions(context.Background(), []string{"user.created"})
+	if err != nil {
+		t.Fatalf("created definition rejected: %v", err)
+	}
+	if _, ok := resolved["user.created"]; !ok {
+		t.Fatal("created definition missing from resolution")
+	}
+
+	resolved, err = service.propertyDefinitions(context.Background(), []string{"user.removed"})
+	if err != nil {
+		t.Fatalf("tombstoned definition rejected: %v", err)
+	}
+	if _, ok := resolved["user.removed"]; !ok {
+		t.Fatal("tombstoned definition missing from resolution")
+	}
+
+	unknown := overlayNoteID
+	unknown[15] ^= 0xff
+	if _, err := service.propertyDefinitions(context.Background(), []string{unknown.String()}); err == nil {
+		t.Fatal("unknown property id must stay rejected")
+	}
 }

@@ -104,9 +104,10 @@ func newVoyagerIssuedID() (domainentry.PropertyID, error) {
 
 // ApplyPropertyPresets는 Status/Project/Priority 사전 설정을 멱등하게
 // 재조정한다. 전체 동작은 하나의 top-level Store.WithinTx 안에서 실행되므로
-// 중간 실패는 부분 사전 설정을 남기지 않는다. 첫 실행은 누락 정의/선택지를
-// voyager_issued UUIDv7로 만들고, 이후 실행은 누락 멤버만 추가하며 기존 행의
-// ID·이름·레이블·순서·색·메타데이터·비활성 상태는 절대 덮어쓰지 않는다.
+// 중간 실패는 부분 사전 설정을 남기지 않는다. 누락 정의와 그 규정 선택지를
+// voyager_issued UUIDv7로 만들고, 이미 존재하는 정의는 아무것도 건드리지
+// 않는다 — label 매칭 누락 복구는 사용자 rename을 중복 생성으로 왜곡하므로
+// 하지 않는다.
 func (store *Store) ApplyPropertyPresets(ctx context.Context, wsctx domainentry.WorkspaceContext) error {
 	return store.WithinTx(ctx, func(tx *gorm.DB) error {
 		return applyPropertyPresetsInTx(tx, wsctx)
@@ -169,13 +170,20 @@ func applyPropertyPresetsInTx(tx *gorm.DB, wsctx domainentry.WorkspaceContext) e
 				WorkspaceID: wsBytes,
 				PropertyID:  defID.Bytes(),
 			}
+			// 옵션 보충은 정의를 새로 만들 때만 한다. 기존 정의의 규정 멤버
+			// 누락 복구는 label 매칭의 오판 위험 때문에 하지 않는다.
+			if optErr := reconcilePresetOptions(tx, wsBytes, existing.PropertyID, descriptor.Options, now); optErr != nil {
+				return optErr
+			}
 		default:
 			return err
 		}
 
-		if err := reconcilePresetOptions(tx, wsBytes, existing.PropertyID, descriptor.Options, now); err != nil {
-			return err
-		}
+		// 기존 정의는 아무것도 하지 않는다. 선택지 보충을 label 매칭으로 하면
+		// 사용자가 option.update로 바꾼 라벨을 누락으로 오판해 중복 행을
+		// 만들고(직접 삽입이라 revision도 증가하지 않는다), 반복 편집 시 wire
+		// 256 상한까지 증폭된다. "사용자가 편집한 행은 절대 덮쓰지 않는다"
+		// 계약은 누락 복구보다 우선이다.
 	}
 	return nil
 }

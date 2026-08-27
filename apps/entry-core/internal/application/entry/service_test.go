@@ -298,7 +298,7 @@ func TestPropertyDefinitionsResolveCatalogTerms(t *testing.T) {
 		}},
 		Terms: []domainentry.WorkspacePropertyTerm{{PropertyID: titleID, TermKind: "legacy_alias", TermValue: "title"}},
 	}}
-	definitions, err := service.propertyDefinitions([]string{"title"})
+	definitions, err := service.propertyDefinitions(context.Background(), []string{"title"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -321,11 +321,11 @@ func TestPropertyDefinitionsResolveCanonicalKeySameAsAlias(t *testing.T) {
 		}},
 		Terms: []domainentry.WorkspacePropertyTerm{{PropertyID: titleID, TermKind: "legacy_alias", TermValue: "title"}},
 	}}
-	aliasDefinitions, err := service.propertyDefinitions([]string{"title"})
+	aliasDefinitions, err := service.propertyDefinitions(context.Background(), []string{"title"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	canonicalDefinitions, err := service.propertyDefinitions([]string{"common.title"})
+	canonicalDefinitions, err := service.propertyDefinitions(context.Background(), []string{"common.title"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -355,7 +355,7 @@ func TestNormalizeRequestedPropertiesDeduplicatesSemanticSelectors(t *testing.T)
 		}},
 		Terms: []domainentry.WorkspacePropertyTerm{{PropertyID: titleID, TermKind: "legacy_alias", TermValue: "title"}},
 	}}
-	normalized, err := service.normalizeRequestedProperties([]string{"common.title", "title"})
+	normalized, err := service.normalizeRequestedProperties(context.Background(), []string{"common.title", "title"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -380,7 +380,7 @@ func TestPropertyDefinitionsPreserveUnitContract(t *testing.T) {
 			},
 		}},
 	}}
-	definitions, err := service.propertyDefinitions([]string{"misc.size"})
+	definitions, err := service.propertyDefinitions(context.Background(), []string{"misc.size"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -414,7 +414,7 @@ func TestPropertyDefinitionsPreserveNullableContract(t *testing.T) {
 			Provenance: domainentry.PropertyProvenanceSystem,
 		}},
 	}}
-	definitions, err := service.propertyDefinitions([]string{"misc.size"})
+	definitions, err := service.propertyDefinitions(context.Background(), []string{"misc.size"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -444,7 +444,7 @@ func TestPropertyDefinitionsPropagatesInvalidCatalogDefinition(t *testing.T) {
 			Provenance: domainentry.PropertyProvenanceSystem,
 		}},
 	}}
-	definitions, err := service.propertyDefinitions([]string{"misc.size"})
+	definitions, err := service.propertyDefinitions(context.Background(), []string{"misc.size"})
 	if err == nil || !errors.Is(err, domainentry.ErrInvalidPropertyDefinition) {
 		t.Fatalf("propertyDefinitions() error = %v, want wrapped ErrInvalidPropertyDefinition", err)
 	}
@@ -465,7 +465,7 @@ func TestPropertyDefinitionsResolveVoyagerIssuedTerm(t *testing.T) {
 		}},
 		Terms: []domainentry.WorkspacePropertyTerm{{PropertyID: v7ID, TermKind: "legacy_alias", TermValue: "title"}},
 	}}
-	definitions, err := service.propertyDefinitions([]string{"title"})
+	definitions, err := service.propertyDefinitions(context.Background(), []string{"title"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -499,7 +499,7 @@ func TestPropertyDefinitionsRejectsAmbiguousAlias(t *testing.T) {
 			{PropertyID: secondID, TermKind: "legacy_alias", TermValue: "shared"},
 		},
 	}}
-	definitions, err := service.propertyDefinitions([]string{"shared"})
+	definitions, err := service.propertyDefinitions(context.Background(), []string{"shared"})
 	if !errors.Is(err, ErrAmbiguousPropertySelector) {
 		t.Fatalf("propertyDefinitions() error = %v, want %v", err, ErrAmbiguousPropertySelector)
 	}
@@ -528,7 +528,7 @@ func TestPropertyDefinitionsRejectsAmbiguousCanonicalKey(t *testing.T) {
 			},
 		},
 	}}
-	definitions, err := service.propertyDefinitions([]string{"common.dup"})
+	definitions, err := service.propertyDefinitions(context.Background(), []string{"common.dup"})
 	if !errors.Is(err, ErrAmbiguousPropertySelector) {
 		t.Fatalf("propertyDefinitions() error = %v, want %v", err, ErrAmbiguousPropertySelector)
 	}

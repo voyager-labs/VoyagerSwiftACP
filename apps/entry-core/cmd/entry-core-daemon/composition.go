@@ -101,6 +101,13 @@ func composeWorkspaceServices(
 		cursorKey,
 		time.Now,
 		applicationentry.WithPropertyOverlayLoader(propertyOverlayStore{catalog: catalogStore, facts: facts}),
+		// requested property 검증은 시작 시점 snapshot이 아니라 저장소의 현재
+		// 정의(비활성 포함)로 한다. 그러지 않으면 실행 중 생성한 정의가
+		// unregistered_property_selector로 거절되고, 재시작 시 active-only
+		// snapshot이 tombstoned 정의를 빠뜨려 read-back이 깨진다.
+		applicationentry.WithLiveDefinitions(func(ctx context.Context) ([]domainentry.WorkspacePropertyDefinition, error) {
+			return catalogStore.Definitions(ctx, wsctx)
+		}),
 	)
 	if err != nil {
 		return nil, err
