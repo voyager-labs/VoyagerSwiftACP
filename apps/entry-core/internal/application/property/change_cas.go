@@ -15,39 +15,36 @@ type changeSnapshot struct {
 	current     map[assignmentRef]*domainentry.EntryPropertyAssignment
 }
 
-// loadContracts는 정의 전체를 한 번의 batched 읽기로 로드하고 요청 Property만
-// 남긴 뒤, select 정의의 활성 선택지로 쓰기 시점 계약을 만든다.
+// loadContracts는 요청 Property 집합의 정의와 선택지만 batched로 읽어 쓰기
+// 시점 계약을 만든다. 전체 카탈로그를 읽으면 대상이 하나인 변경도 커밋 경계
+// 안에서 전체 정의 스캔으로 단일 연결을 점유한다. 비활성 정의도 포함해 기존
+// 오류 분류(ErrDefinitionNotFound)를 보존한다.
 func (service *ChangeService) loadContracts(
 	ctx context.Context,
 	workspace domainentry.WorkspaceContext,
 	propertyIDs []domainentry.PropertyID,
 ) (changeSnapshot, error) {
-	wanted := make(map[domainentry.PropertyID]struct{}, len(propertyIDs))
-	for _, id := range propertyIDs {
-		wanted[id] = struct{}{}
-	}
-	all, err := service.catalog.Definitions(ctx, workspace)
+	definitions, _, _, err := service.catalog.DefinitionsPage(ctx, workspace, false, propertyIDs, nil, len(propertyIDs))
 	if err != nil {
 		return changeSnapshot{}, err
 	}
-	definitions := make(map[domainentry.PropertyID]domainentry.WorkspacePropertyDefinition, len(propertyIDs))
-	for _, definition := range all {
-		if _, want := wanted[definition.PropertyID]; want {
-			definitions[definition.PropertyID] = definition
-		}
+	definitionByID := make(map[domainentry.PropertyID]domainentry.WorkspacePropertyDefinition, len(definitions))
+	for _, definition := range definitions {
+		definitionByID[definition.PropertyID] = definition
 	}
-	contracts := make(map[domainentry.PropertyID]domainentry.AssignmentContract, len(definitions))
-	for id, definition := range definitions {
-		options, err := service.catalog.Options(ctx, workspace, id)
-		if err != nil {
-			return changeSnapshot{}, err
-		}
+	optionsByProperty, err := service.catalog.OptionsForDefinitions(ctx, workspace, propertyIDs)
+	if err != nil {
+		return changeSnapshot{}, err
+	}
+	contracts := make(map[domainentry.PropertyID]domainentry.AssignmentContract, len(definitionByID))
+	for id, definition := range definitionByID {
 		contract := domainentry.AssignmentContract{
 			Type:        definition.ValueType,
 			Cardinality: definition.Cardinality,
 			Nullable:    definition.Nullable,
 		}
 		if contract.Type == domainentry.PropertyTypeSelect {
+			options := optionsByProperty[id]
 			contract.ActiveOptions = make(map[domainentry.PropertyOptionID]struct{}, len(options))
 			for _, option := range options {
 				if option.Active {
@@ -57,7 +54,7 @@ func (service *ChangeService) loadContracts(
 		}
 		contracts[id] = contract
 	}
-	return changeSnapshot{definitions: definitions, contracts: contracts}, nil
+	return changeSnapshot{definitions: definitionByID, contracts: contracts}, nil
 }
 
 // stageChanges는 현재 fact 위에 각 변경의 다음 상태를 계산하고 CAS와 도메인 검증을
