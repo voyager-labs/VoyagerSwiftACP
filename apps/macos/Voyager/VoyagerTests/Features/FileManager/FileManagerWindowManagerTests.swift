@@ -96,7 +96,7 @@ final class FileManagerWindowManagerTests: XCTestCase {
         // 디렉터리 프로브는 비동기 effect로 실행되므로 해석 완료 액션 이후 창이 생성된다.
         await store.send(.file(.newWindow(path: nil)))
         await store.receive { action in
-            guard case let .defaultStartPageResolved(requestID, selectEntryID, startPage) = action,
+            guard case let .defaultStartPageResolved(_, requestID, selectEntryID, startPage) = action,
                   requestID == nil,
                   selectEntryID == nil,
                   startPage == .directory(directory)
@@ -134,7 +134,7 @@ final class FileManagerWindowManagerTests: XCTestCase {
             return true
         }
         await store.receive { action in
-            guard case let .defaultStartPageResolved(requestID, selectEntryID, startPage) = action,
+            guard case let .defaultStartPageResolved(_, requestID, selectEntryID, startPage) = action,
                   requestID == nil,
                   selectEntryID == nil,
                   startPage == .directory(directory)
@@ -146,6 +146,199 @@ final class FileManagerWindowManagerTests: XCTestCase {
             .folder(directory),
         )
         await store.finish()
+    }
+
+    /// FMW-001-open_new_file_manager_window: 진행 중인 Directory 해석은 initial/reopen 중복 요청을 막는다.
+    /// - 검증 내용: probe 중 반복 lifecycle 요청 뒤에도 probe와 생성 창이 각각 하나인지 검증
+    /// - 사전 조건: 기존 창이 없고 default Directory probe가 제어 gate에서 중단됨
+    /// - 기대 결과: pending 해석 하나만 유지되고 완료 후 창 하나만 생성됨
+    func testPendingDefaultStartPageResolutionBlocksDuplicateInitialAndReopenRequests() async {
+        let windowID = UUID()
+        let directory = "/slow-initial-directory"
+        let probeGate = DirectoryProbeGate()
+        let probeCount = LockIsolated(0)
+        var initialState = WindowManagerFeature.State()
+        initialState.appPreferences.defaultStartPage = .directory(directory)
+        let store = makeStore(initialState: initialState, uuid: windowID) {
+            $0.startPageAvailabilityClient = .init { _ in
+                probeCount.withValue { $0 += 1 }
+                probeGate.suspend()
+                return .availableDirectory
+            }
+            $0.fileManagerWindowClient.registeredWindowIDs = { [windowID] }
+        }
+        // store.exhaustivity = .off: lifecycle 중복 방지와 최종 창 identity만 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.lifecycle(.openInitialWindowIfNeeded))
+        await store.receive(\.file.newWindow)
+        await probeGate.waitUntilSuspended()
+        XCTAssertEqual(store.state.pendingDefaultStartPageResolutions.count, 1)
+
+        await store.send(.lifecycle(.openInitialWindowIfNeeded))
+        await store.send(.lifecycle(.reopenWindowIfNeeded(hasVisibleWindows: false)))
+        var updatedPreferences = store.state.appPreferences
+        updatedPreferences.defaultStartPage = .home
+        await store.send(.lifecycle(.applyAppPreferences(updatedPreferences)))
+        probeGate.resume()
+        await store.receive(\.defaultStartPageResolved)
+        await store.finish()
+
+        XCTAssertEqual(probeCount.value, 1)
+        XCTAssertEqual(store.state.windows.count, 1)
+        XCTAssertEqual(
+            store.state.windows[id: windowID]?.window.content.navigation.navigationState,
+            .folder(directory),
+        )
+        XCTAssertTrue(store.state.pendingDefaultStartPageResolutions.isEmpty)
+    }
+
+    /// FMW-001-quit_voyager: Close All은 진행 중인 Directory 해석을 취소한다.
+    /// - 검증 내용: Close All 뒤 늦은 probe 반환이 창을 생성하지 않는지 검증
+    /// - 사전 조건: 기존 창 없이 default Directory probe가 제어 gate에서 중단됨
+    /// - 기대 결과: probe 반환 뒤에도 window와 native open 호출이 없음
+    func testCloseAllCancelsPendingDefaultStartPageResolution() async {
+        let directory = "/slow-close-all-directory"
+        let probeGate = DirectoryProbeGate()
+        let openedIDs = LockIsolated<[UUID]>([])
+        var initialState = WindowManagerFeature.State()
+        initialState.appPreferences.defaultStartPage = .directory(directory)
+        let store = makeStore(initialState: initialState) {
+            $0.startPageAvailabilityClient = .init { _ in
+                probeGate.suspend()
+                return .availableDirectory
+            }
+            $0.fileManagerWindowClient.open = { id in openedIDs.withValue { $0.append(id) } }
+        }
+        // store.exhaustivity = .off: 취소 뒤 late completion의 무효화만 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.file(.newWindow(path: nil)))
+        await probeGate.waitUntilSuspended()
+        XCTAssertEqual(store.state.pendingDefaultStartPageResolutions.count, 1)
+        await store.send(.window(.closeAllWindows))
+        probeGate.resume()
+        await store.finish()
+
+        XCTAssertTrue(store.state.windows.isEmpty)
+        XCTAssertTrue(openedIDs.value.isEmpty)
+        XCTAssertTrue(store.state.pendingDefaultStartPageResolutions.isEmpty)
+    }
+
+    /// FMW-001-open_new_file_manager_window: 소유권 없는 Directory 해석 completion은 stale no-op이다.
+    /// - 검증 내용: 임의 completion이 window session을 만들지 않는지 검증
+    /// - 사전 조건: pending Directory 해석이 없는 빈 상태
+    /// - 기대 결과: 상태와 native open 호출이 모두 불변임
+    func testStaleDefaultStartPageResolutionCompletionIsNoOp() async {
+        let openedIDs = LockIsolated<[UUID]>([])
+        let store = makeStore {
+            $0.fileManagerWindowClient.open = { id in openedIDs.withValue { $0.append(id) } }
+        }
+        // store.exhaustivity = .off: stale completion이 downstream action을 만들지 않는지만 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.defaultStartPageResolved(
+            resolutionID: UUID(),
+            requestID: nil,
+            selectEntryID: nil,
+            startPage: .directory("/stale-directory"),
+        ))
+        await store.finish()
+
+        XCTAssertTrue(store.state.windows.isEmpty)
+        XCTAssertTrue(openedIDs.value.isEmpty)
+    }
+
+    /// FMW-001-open_new_file_manager_window: tracked revoke는 pending probe를 취소하고 terminal을 한 번만 보낸다.
+    /// - 검증 내용: revoke 뒤 late probe 반환, window 미생성, terminal 정확히 한 번을 검증
+    /// - 사전 조건: authorized tracked initial 요청의 Directory probe가 제어 gate에서 중단됨
+    /// - 기대 결과: revoke completion 하나만 방출되고 stale probe는 no-op임
+    func testTrackedRevokeCancelsPendingDefaultStartPageResolutionExactlyOnce() async {
+        let requestID = UUID()
+        let directory = "/slow-tracked-directory"
+        let probeGate = DirectoryProbeGate()
+        let terminalCount = LockIsolated(0)
+        var initialState = WindowManagerFeature.State()
+        initialState.authorizedTrackedSingletonRequestID = requestID
+        initialState.appPreferences.defaultStartPage = .directory(directory)
+        let store = TestStore(initialState: initialState) {
+            CombineReducers {
+                WindowManagerFeature()
+                Reduce { _, action in
+                    if case .delegate(.trackedSingletonCompleted(requestID: requestID)) = action {
+                        terminalCount.withValue { $0 += 1 }
+                    }
+                    return .none
+                }
+            }
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.startPageAvailabilityClient = .init { _ in
+                probeGate.suspend()
+                return .availableDirectory
+            }
+        }
+        // store.exhaustivity = .off: revoke cancellation과 terminal exactly-once만 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.trackedSingleton(.openInitialWindow(requestID: requestID)))
+        await probeGate.waitUntilSuspended()
+        XCTAssertEqual(store.state.pendingDefaultStartPageResolutions.count, 1)
+        await store.send(.trackedSingleton(.revoke(requestID: requestID)))
+        await store.receive(\.delegate.trackedSingletonCompleted, requestID)
+        probeGate.resume()
+        await store.finish()
+
+        XCTAssertTrue(store.state.windows.isEmpty)
+        XCTAssertTrue(store.state.pendingDefaultStartPageResolutions.isEmpty)
+        XCTAssertEqual(terminalCount.value, 1)
+    }
+
+    /// FMW-001-quit_voyager: Close All은 tracked pending probe를 취소하고 terminal을 한 번만 보낸다.
+    /// - 검증 내용: Close All 뒤 late probe 반환, window 미생성, terminal 정확히 한 번을 검증
+    /// - 사전 조건: authorized tracked initial 요청의 Directory probe가 제어 gate에서 중단됨
+    /// - 기대 결과: Close All completion 하나만 방출되고 stale probe는 no-op임
+    func testCloseAllCancelsTrackedPendingDefaultStartPageResolutionExactlyOnce() async {
+        let requestID = UUID()
+        let directory = "/slow-tracked-close-all-directory"
+        let probeGate = DirectoryProbeGate()
+        let terminalCount = LockIsolated(0)
+        var initialState = WindowManagerFeature.State()
+        initialState.authorizedTrackedSingletonRequestID = requestID
+        initialState.appPreferences.defaultStartPage = .directory(directory)
+        let store = TestStore(initialState: initialState) {
+            CombineReducers {
+                WindowManagerFeature()
+                Reduce { _, action in
+                    if case .delegate(.trackedSingletonCompleted(requestID: requestID)) = action {
+                        terminalCount.withValue { $0 += 1 }
+                    }
+                    return .none
+                }
+            }
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.startPageAvailabilityClient = .init { _ in
+                probeGate.suspend()
+                return .availableDirectory
+            }
+        }
+        // store.exhaustivity = .off: Close All cancellation과 tracked terminal exactly-once만 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.trackedSingleton(.openInitialWindow(requestID: requestID)))
+        await probeGate.waitUntilSuspended()
+        XCTAssertEqual(store.state.pendingDefaultStartPageResolutions.count, 1)
+        await store.send(.window(.closeAllWindows))
+        await store.receive(\.delegate.trackedSingletonCompleted, requestID)
+        probeGate.resume()
+        await store.finish()
+
+        XCTAssertTrue(store.state.windows.isEmpty)
+        XCTAssertTrue(store.state.pendingDefaultStartPageResolutions.isEmpty)
+        XCTAssertEqual(terminalCount.value, 1)
     }
 
     /// FMW-001-open_new_file_manager_window: unavailable default는 Home으로 fallback하고 explicit path가 우선한다.
@@ -167,7 +360,7 @@ final class FileManagerWindowManagerTests: XCTestCase {
         await store.send(.file(.newWindow(path: nil)))
         // probe 실패(missing)는 Home으로 fallback된다.
         await store.receive { action in
-            guard case let .defaultStartPageResolved(requestID, selectEntryID, startPage) = action,
+            guard case let .defaultStartPageResolved(_, requestID, selectEntryID, startPage) = action,
                   requestID == nil,
                   selectEntryID == nil,
                   startPage == .home
@@ -186,6 +379,7 @@ final class FileManagerWindowManagerTests: XCTestCase {
             store.state.windows[id: secondWindowID]?.window.content.navigation.navigationState,
             .folder(explicitDirectory),
         )
+        XCTAssertTrue(store.state.pendingDefaultStartPageResolutions.isEmpty)
         await store.finish()
     }
 
@@ -226,7 +420,7 @@ final class FileManagerWindowManagerTests: XCTestCase {
 
         await store.send(.file(.newWindow(path: nil)))
         await store.receive { action in
-            guard case let .defaultStartPageResolved(requestID, selectEntryID, startPage) = action,
+            guard case let .defaultStartPageResolved(_, requestID, selectEntryID, startPage) = action,
                   requestID == nil,
                   selectEntryID == nil,
                   startPage == .directory(secondDirectory)
@@ -1586,5 +1780,28 @@ private actor WindowInvalidationGate {
     func resume() {
         continuation?.resume()
         continuation = nil
+    }
+}
+
+private final class DirectoryProbeGate: @unchecked Sendable {
+    private let entered = DispatchSemaphore(value: 0)
+    private let release = DispatchSemaphore(value: 0)
+
+    func suspend() {
+        entered.signal()
+        release.wait()
+    }
+
+    func waitUntilSuspended() async {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global().async { [entered] in
+                entered.wait()
+                continuation.resume()
+            }
+        }
+    }
+
+    func resume() {
+        release.signal()
     }
 }

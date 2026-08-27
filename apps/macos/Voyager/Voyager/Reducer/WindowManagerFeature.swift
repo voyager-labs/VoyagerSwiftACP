@@ -22,6 +22,7 @@ struct WindowManagerFeature {
 
     nonisolated enum CancelID: Hashable {
         case defaultWindowBootstrap
+        case defaultStartPageResolution(UUID)
         case windowOpen(State.WindowID)
         case externalOpenBatch(UUID)
         case trackedSingletonNativeOpen(UUID)
@@ -552,8 +553,9 @@ struct WindowManagerFeature {
                     return .none
                 }
 
-            case let .defaultStartPageResolved(requestID, selectEntryID, startPage):
+            case let .defaultStartPageResolved(resolutionID, requestID, selectEntryID, startPage):
                 return resumeDefaultStartPageResolution(
+                    resolutionID: resolutionID,
                     requestID: requestID,
                     selectEntryID: selectEntryID,
                     startPage: startPage,

@@ -341,6 +341,7 @@ enum WindowManagerAction: CasePathable {
     case defaultWindowBootstrapCompleted(requestID: UUID, result: DefaultWindowBootstrapResult)
     case defaultWindowBootstrapFailed(requestID: UUID)
     case defaultStartPageResolved(
+        resolutionID: UUID,
         requestID: UUID?,
         selectEntryID: String?,
         startPage: StartPage,

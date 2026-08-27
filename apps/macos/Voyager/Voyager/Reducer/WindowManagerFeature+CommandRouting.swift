@@ -310,13 +310,35 @@ extension WindowManagerFeature {
     /// request-time snapshot 계약: 액션 시작 시 캡처한 snapshot만 사용하고,
     /// 완료 후 preference를 재조회하지 않는다.
     func resolveDefaultStartPageEffect(
+        resolutionID: UUID,
         snapshot: StartPage,
         makeAction: @escaping @Sendable (StartPage) -> Action,
     ) -> Effect<Action> {
-        .run { send in
-            let resolution = StartPageResolver.resolve(snapshot)
+        let availabilityClient = startPageAvailabilityClient
+        return .run { send in
+            let (resolutions, continuation) = AsyncStream<StartPageResolution>.makeStream()
+            DispatchQueue.global(qos: .userInitiated).async {
+                let resolution = withDependencies {
+                    $0.startPageAvailabilityClient = availabilityClient
+                } operation: {
+                    StartPageResolver.resolve(snapshot)
+                }
+                continuation.yield(resolution)
+                continuation.finish()
+            }
+            let resolution = await withTaskCancellationHandler(
+                operation: { () async -> StartPageResolution? in
+                    for await resolution in resolutions {
+                        return resolution
+                    }
+                    return nil
+                },
+                onCancel: { continuation.finish() },
+            )
+            guard let resolution, !Task.isCancelled else { return }
             await send(makeAction(resolution.effectiveStartPage))
         }
+        .cancellable(id: CancelID.defaultStartPageResolution(resolutionID))
     }
 }
 
@@ -324,11 +346,13 @@ extension WindowManagerFeature {
     func handleLifecycleAction(_ action: Action, state: inout State) -> Effect<Action>? {
         switch action {
         case .lifecycle(.openInitialWindowIfNeeded):
-            guard state.windows.ids.allSatisfy(state.closingWindowIDs.contains) else { return .none }
+            guard state.windows.ids.allSatisfy(state.closingWindowIDs.contains),
+                  state.pendingDefaultStartPageResolutions.isEmpty
+            else { return .none }
             return .send(.file(.newWindow(path: nil)))
 
         case let .lifecycle(.reopenWindowIfNeeded(hasVisibleWindows: flag)):
-            guard !flag else { return .none }
+            guard !flag, state.pendingDefaultStartPageResolutions.isEmpty else { return .none }
 
             guard let reopenWindowID = state.focusedWindowID.flatMap({ id in
                 isWindowReady(id, state: state) ? id : nil

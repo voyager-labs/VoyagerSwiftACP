@@ -44,6 +44,10 @@ struct WindowManagerTrackedSingletonWindow: Equatable {
     var terminalOutcomeEmitted = false
 }
 
+struct WindowManagerPendingDefaultStartPageResolution: Equatable {
+    let trackedRequestID: UUID?
+}
+
 struct WindowManagerRetainedExternalOpenPlacementOwnership: Equatable {
     var batchID: UUID
     var newWindowIDs: [UUID]
@@ -166,6 +170,7 @@ struct WindowManagerState: Equatable {
     var lastUsedWindowIDs: [WindowID] = []
     var defaultWindowBootstrapRequestID: UUID?
     var defaultWindowBootstrapWindowIDs: Set<WindowID> = []
+    var pendingDefaultStartPageResolutions: [UUID: WindowManagerPendingDefaultStartPageResolution] = [:]
     var externalWindowBatchIDs: [WindowID: UUID] = [:]
     var retainedExternalOpenPlacementOwnership: WindowManagerRetainedExternalOpenPlacementOwnership?
     var authorizedExternalOpenBatchID: UUID?
