@@ -232,6 +232,16 @@ enum FileManagerContentEntryOpsCoordinator {
                 }
                 return EntryActionRecord(operationKind: record.operationKind, targets: targets)
             }()
+            // 현재 표시 중인 root 폴더 자체가 실행되는 move라면 존재하지 않는 경로를
+            // reload하는 대신 실행 방향 destination으로 이동해 창을 살아있는 폴더에 둔다.
+            if case let .folder(navigationRoot) = state.navigation.navigationState,
+               let selfMove = effectiveRecord.targets.first(where: {
+                   $0.beforePath.map { canonicalizedPath($0) == canonicalizedPath(navigationRoot) } == true
+               }),
+               let relocatedRoot = selfMove.afterPath
+            {
+                return .send(.internal(.requestNavigation(.view(.navigateToPath(relocatedRoot)))))
+            }
             _ = FileManagerContentIdentityTransitionCoordinator.recordIfEligible(effectiveRecord, state: &state)
             // 무효화·removed prefix도 실행 방향 기준으로 계산해 undo 시 복원된
             // 경로가 제거되지 않고 실제 사라진 경로가 즉시 정리되게 한다.

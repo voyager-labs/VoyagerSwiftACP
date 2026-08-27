@@ -48,7 +48,9 @@ enum FileManagerContentIdentityTransitionCoordinator {
             rootPath: normalizedRoot,
             state: state,
         )
-        state.entryViewLayout.hierarchy.discardAllDeferredFolderReplacements()
+        // 새 전이로 덮기 전에 이전 staging을 폴더에 반영한다: cursor는 이미 증가했으므로
+        // 버리면 후속 generic batch에서 누락 항목이 생긴다.
+        state.entryViewLayout.hierarchy.commitDeferredFolderReplacementsOnCancel()
         state.pendingIdentityTransition = .init(
             recordID: record.id,
             beforePath: move.before,
