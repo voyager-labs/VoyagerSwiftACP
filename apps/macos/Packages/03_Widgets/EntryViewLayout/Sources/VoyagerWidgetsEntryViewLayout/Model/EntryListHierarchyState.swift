@@ -146,6 +146,20 @@ public struct EntryListHierarchyState: Equatable, Sendable {
     public mutating func discardAllDeferredFolderReplacements() {
         deferredFolderReplacements = [:]
     }
+
+    /// 전이 취소 시 staging을 그대로 버리지 않고 폴더에 반영한다.
+    /// staging 누적 동안 expectedBatchIndex가 증가했으므로 이를 폐기하면 같은 세대의
+    /// 후속 batch가 generic 경로에서 cursor 어긋남 없이 처리되기 위해 누적 결과가 필요하다.
+    /// 빈 staging은 authoritative 내용이 아니므로 retained children을 건드리지 않는다.
+    public mutating func commitDeferredFolderReplacementsOnCancel() {
+        for (folderID, replacement) in deferredFolderReplacements {
+            guard var node = nodesByID[folderID], !replacement.stagedChildren.isEmpty else { continue }
+            node.folder.children = replacement.stagedChildren
+            node.folder.hasAppliedContentBatch = true
+            nodesByID[folderID] = node
+        }
+        deferredFolderReplacements = [:]
+    }
 }
 
 // MARK: - Convenience init for FolderNodeState

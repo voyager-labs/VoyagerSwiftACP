@@ -105,9 +105,12 @@ enum FileManagerContentIdentityTransitionCoordinator {
            let staged = state.entryViewLayout.hierarchy.takeDeferredFolderReplacement(folderID: preservationID),
            !targetNode.folder.hasAppliedContentBatch
         {
-            targetNode.folder.children = staged
-            targetNode.folder.hasAppliedContentBatch = true
-            state.entryViewLayout.hierarchy.nodesByID[preservationID] = targetNode
+            // 실패한 소스 스트림이 남긴 부분 staging은 불완전 목록이라 커밋하지 않고 폐기한다.
+            if case .failed = targetNode.loadPhase {} else {
+                targetNode.folder.children = staged
+                targetNode.folder.hasAppliedContentBatch = true
+                state.entryViewLayout.hierarchy.nodesByID[preservationID] = targetNode
+            }
         }
         if case .root = projectionOwner {
             discard(state: &state)
@@ -178,7 +181,9 @@ enum FileManagerContentIdentityTransitionCoordinator {
 
     static func discard(state: inout FileManagerContentState) {
         state.pendingIdentityTransition = nil
-        state.entryViewLayout.hierarchy.discardAllDeferredFolderReplacements()
+        // 취소된 전이의 folder staging은 버리지 않는다: staging 누적 동안 이미 증가한
+        // batch cursor와 children 불일치가 남아 같은 세대 후속 batch가 어긋난다.
+        state.entryViewLayout.hierarchy.commitDeferredFolderReplacementsOnCancel()
     }
 
     static func afterLexicalPath(
