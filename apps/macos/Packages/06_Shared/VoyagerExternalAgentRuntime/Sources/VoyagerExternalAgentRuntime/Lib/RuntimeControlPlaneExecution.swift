@@ -919,7 +919,29 @@ extension RuntimeControlPlane {
         } catch RuntimeHostError.persistenceConflict {
             _ = try? await readRepairPersistedHostTerminal(host: reservation.host)
             throw RuntimeHostError.persistenceConflict
+        } catch RuntimeHostError.persistenceFailure {
+            recoverStartedProviderCleanupFailure(reservation: reservation, receipt: receipt)
+            throw RuntimeHostError.persistenceFailure
         }
+    }
+
+    private func recoverStartedProviderCleanupFailure(
+        reservation: RunReservation,
+        receipt: RuntimeLaunchReceipt,
+    ) {
+        guard let session = sessions[reservation.host],
+              session.stored.runReference == receipt.runReference,
+              session.lease == .launching(reservation.lease)
+        else { return }
+        applyCleanupFailedDecision(
+            host: reservation.host,
+            runReference: receipt.runReference,
+        )
+        detachTrustedLaunchOwner(
+            host: reservation.host,
+            runReference: receipt.runReference,
+            lease: reservation.lease,
+        )
     }
 
     private func readRepairPersistedHostTerminal(

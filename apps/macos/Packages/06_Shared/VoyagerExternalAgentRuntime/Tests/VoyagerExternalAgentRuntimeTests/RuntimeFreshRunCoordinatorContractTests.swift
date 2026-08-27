@@ -874,6 +874,61 @@ extension RuntimeFreshRunCoordinatorContractTests {
         #expect(await adapter.counts().launch == 1)
     }
 
+    /// VOY-746-coordinator_contract: receipt cleanup persistence failure detaches the launch owner.
+    /// receipt 저장과 후속 정리가 연속 실패해도 owner 없는 launching lease를 남기지 않는 계약을 고정한다.
+    /// - 검증 내용: 원 persistenceFailure, detachedLaunching lease, cleanup evidence와 launch count.
+    /// - 사전 조건: receipt save 3과 receipt-failure cleanup save 4가 모두 실패한다.
+    /// - 기대 결과: 원 오류를 유지하고 exact run owner를 분리하며 provider를 재실행하지 않는다.
+    @Test
+    func `receipt cleanup persistence failure detaches the launch owner`() async throws {
+        let host = ExternalAgentSessionReference("host-contract-receipt-cleanup-failure")
+        let run = RuntimeRunReference("run-contract-receipt-cleanup-failure")
+        let launchGate = RuntimeTestGate()
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            eventsByLaunch: [[]],
+            launchGate: launchGate,
+        )
+        let store = InMemoryRuntimeStateStore(failingSaveNumbers: [3, 4])
+        let plane = RuntimeControlPlane(store: store)
+        try await plane.register(adapter)
+        let request = makeLaunch(host: host, run: run, adapterID: "sdk")
+        try await plane.projectPrelaunch(request, as: .policyReady)
+
+        let runTask = Task { try await plane.run(request) }
+        await adapter.waitForLaunchCount(1)
+        let launching = try #require(await plane.sessions[host])
+        guard case let .launching(expectedLease) = launching.lease else {
+            Issue.record("receipt 저장 전 exact launch owner가 필요하다: \(launching.lease)")
+            return
+        }
+        await launchGate.open()
+
+        await #expect(throws: RuntimeHostError.persistenceFailure) {
+            _ = try await runTask.value
+        }
+
+        let local = try #require(await plane.sessions[host])
+        let durable = try #require(await store.currentState()?.sessions.first)
+        #expect(local.stored.runReference == run)
+        #expect(local.stored.projection == .launching)
+        guard case let .detachedLaunching(lease) = local.lease else {
+            Issue.record("receipt cleanup 실패 뒤 launch owner가 detachedLaunching이어야 한다: \(local.lease)")
+            return
+        }
+        #expect(lease == expectedLease)
+        #expect(durable.runReference == run)
+        #expect(durable.projection == .launching)
+        #expect(durable.providerInternalSessionReference == nil)
+        #expect(await plane.cleanupFailureEvidence(for: host) == RuntimeCleanupFailureEvidence(
+            runReference: run,
+            kind: .persistence,
+        ))
+        #expect(await store.saveCount == 4)
+        #expect(await adapter.counts().launch == 1)
+    }
+
     /// VOY-746-coordinator_contract: a receipt CAS conflict adopts a persisted terminal without relaunch.
     /// receipt CAS conflict 뒤 durable terminal을 채택하고 provider를 재시작하지 않는지 검증한다.
     /// - 검증 내용: receipt binding 병합, terminal 결과, exact apply/update와 launch count.
