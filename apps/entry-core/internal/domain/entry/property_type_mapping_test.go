@@ -34,13 +34,6 @@ func TestPropertyTypeMappingExhaustive(t *testing.T) {
 		PropertyTypeBoolean:  {PropertyValueKindBoolean},
 		PropertyTypeSelect:   {PropertyValueKindOptionRef},
 	}
-	expectedMany := map[PropertyValueType]bool{
-		PropertyTypeText: false, PropertyTypeNumber: false, PropertyTypeDate: false,
-		PropertyTypeDateTime: false, PropertyTypeBoolean: false, PropertyTypeSelect: true,
-		PropertyValueTypeString: false, PropertyValueTypeInt64: false, PropertyValueTypeDecimal: false,
-		PropertyValueTypeBool: false, PropertyValueTypeTimestamp: false, PropertyValueTypeStringList: false,
-	}
-
 	for _, valueType := range allTypes {
 		kinds, err := propertyTypeValueKinds(valueType)
 		if want, mapped := expectedKinds[valueType], expectedKinds[valueType] != nil; mapped {
@@ -61,9 +54,6 @@ func TestPropertyTypeMappingExhaustive(t *testing.T) {
 		} else if !errors.Is(err, ErrUnsupportedPropertyType) {
 			// Then: 거부 목록의 유형은 typed 오류로 실패 닫기한다.
 			t.Fatalf("legacy type %q must be rejected with ErrUnsupportedPropertyType, got %v", valueType, err)
-		}
-		if supportsMany := typeSupportsMany(valueType); supportsMany != expectedMany[valueType] {
-			t.Fatalf("type %q supportsMany = %v, want %v", valueType, supportsMany, expectedMany[valueType])
 		}
 	}
 }

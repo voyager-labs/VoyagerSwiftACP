@@ -113,7 +113,7 @@ func (service *ChangeService) Prepare(
 	if err != nil {
 		return Proposal{}, err
 	}
-	current, err := service.facts.LoadAssignments(ctx, workspace, changeEntryIDs(resolved), changePropertyIDs(resolved))
+	current, err := service.facts.LoadAssignmentsByRefs(ctx, workspace, changeRefs(resolved))
 	if err != nil {
 		return Proposal{}, err
 	}
@@ -148,7 +148,6 @@ func (service *ChangeService) Execute(
 	if err != nil {
 		return nil, err
 	}
-	entryIDs := changeEntryIDs(resolved)
 	propertyIDs := changePropertyIDs(resolved)
 
 	var readBack []domainentry.EntryPropertyAssignment
@@ -157,7 +156,7 @@ func (service *ChangeService) Execute(
 		if err != nil {
 			return err
 		}
-		current, err := service.facts.LoadAssignments(txCtx, workspace, entryIDs, propertyIDs)
+		current, err := service.facts.LoadAssignmentsByRefs(txCtx, workspace, changeRefs(resolved))
 		if err != nil {
 			return err
 		}
@@ -172,7 +171,7 @@ func (service *ChangeService) Execute(
 		if err := service.facts.SaveAssignments(txCtx, workspace, stagedFacts(staged)); err != nil {
 			return err
 		}
-		reread, err := service.facts.LoadAssignments(txCtx, workspace, entryIDs, propertyIDs)
+		reread, err := service.facts.LoadAssignmentsByRefs(txCtx, workspace, changeRefs(resolved))
 		if err != nil {
 			return err
 		}

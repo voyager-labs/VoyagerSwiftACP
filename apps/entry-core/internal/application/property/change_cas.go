@@ -191,15 +191,16 @@ func stagedFacts(staged []resolvedChange) []domainentry.EntryPropertyAssignment 
 	return facts
 }
 
-// changeEntryIDs와 changePropertyIDs는 batched 읽기에 필요한 참조 집합을 모은다.
-func changeEntryIDs(resolved []resolvedChange) []string {
-	entryIDs := make([]string, 0, len(resolved))
+// changeRefs는 exact-pair 읽기에 필요한 요청 쌍을 모은다.
+func changeRefs(resolved []resolvedChange) []AssignmentRef {
+	refs := make([]AssignmentRef, 0, len(resolved))
 	for _, change := range resolved {
-		entryIDs = append(entryIDs, change.entryID)
+		refs = append(refs, AssignmentRef{EntryID: change.entryID, PropertyID: change.input.PropertyID})
 	}
-	return entryIDs
+	return refs
 }
 
+// changePropertyIDs는 정의 계약 읽기에 필요한 참조 집합을 모은다.
 func changePropertyIDs(resolved []resolvedChange) []domainentry.PropertyID {
 	propertyIDs := make([]domainentry.PropertyID, 0, len(resolved))
 	for _, change := range resolved {

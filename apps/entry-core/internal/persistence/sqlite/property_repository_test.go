@@ -213,3 +213,71 @@ func TestPropertyLoadImplicitUnset(t *testing.T) {
 		t.Fatalf("implicit unset = %+v, want %+v", got, want)
 	}
 }
+
+// 교차 저장된 fact가 있어도 exact-pair 읽기는 요청 쌍만 결과로 돌려준다.
+// change 경로가 카테시안 조회로 전환되는 회귀를 잠근다.
+func TestPropertyLoadByRefsReturnsOnlyRequestedPairs(t *testing.T) {
+	ctx := context.Background()
+	store := migratedStore(t)
+	defer store.Close()
+	fx := buildPropertyFixture(t, store)
+	contracts := fixtureContracts(fx)
+
+	entryA, entryB, entryC := testEntryID(1), testEntryID(2), testEntryID(3)
+	saveText := func(entryID string, propertyID domainentry.PropertyID, text string) {
+		fact := domainentry.ImplicitUnsetEntryPropertyAssignment(fx.wsctx.ID, entryID, propertyID)
+		fact.RecordRevision = 1
+		fact.ValueContractRevision = 1
+		fact.TargetKind = domainentry.AssignmentTargetLocatorDerived
+		fact.State = domainentry.AssignmentStateValue
+		fact.Scalar = &domainentry.AssignmentValue{Text: &text}
+		validated, err := domainentry.NewEntryPropertyAssignment(fact, contracts[propertyID])
+		if err != nil {
+			t.Fatalf("stage fact: %v", err)
+		}
+		if err := NewEntryPropertyRepository(store).SaveAssignments(ctx, fx.wsctx, []domainentry.EntryPropertyAssignment{validated}); err != nil {
+			t.Fatalf("save fact: %v", err)
+		}
+	}
+	// 2×2 교차 저장: A/B entry × text/number 정의.
+	saveText(entryA, fx.textDef, "a-text")
+	saveText(entryB, fx.textDef, "b-text")
+	saveText(entryA, fx.nullableDef, "a-null")
+	saveText(entryB, fx.nullableDef, "b-null")
+
+	repo := NewEntryPropertyRepository(store)
+	// 요청은 (A, text)와 (C, number) — 교차 저장 집합의 부분집합 + 저장 안 된 쌍.
+	result, err := repo.LoadAssignmentsByRefs(ctx, fx.wsctx, []EntryPropertyRef{
+		{EntryID: entryA, PropertyID: fx.textDef},
+		{EntryID: entryC, PropertyID: fx.numberDef},
+	})
+	if err != nil {
+		t.Fatalf("load by refs: %v", err)
+	}
+	if len(result) != 2 {
+		t.Fatalf("result size = %d, want 2 (exact pairs only)", len(result))
+	}
+	aText := result[EntryPropertyRef{EntryID: entryA, PropertyID: fx.textDef}]
+	if aText.RecordRevision != 1 || aText.Scalar == nil || *aText.Scalar.Text != "a-text" {
+		t.Fatalf("(A,text) = %+v, want persisted value", aText)
+	}
+	cNumber := result[EntryPropertyRef{EntryID: entryC, PropertyID: fx.numberDef}]
+	if cNumber.RecordRevision != 0 {
+		t.Fatalf("(C,number) = %+v, want implicit unset", cNumber)
+	}
+	// 교차 저장된 다른 쌍(A,nullable)/(B,text)/(B,nullable)은 결과에 없다.
+	for _, ref := range []EntryPropertyRef{
+		{EntryID: entryA, PropertyID: fx.nullableDef},
+		{EntryID: entryB, PropertyID: fx.textDef},
+		{EntryID: entryB, PropertyID: fx.nullableDef},
+	} {
+		if _, requested := result[ref]; requested {
+			continue
+		}
+		fact, ok := result[ref]
+		if ok && fact.RecordRevision != 0 {
+			t.Fatalf("unrequested pair %v loaded: rev %d", ref, fact.RecordRevision)
+		}
+		_ = fact
+	}
+}

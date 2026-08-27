@@ -78,12 +78,6 @@ func propertyTypeValueKinds(valueType PropertyType) ([]PropertyValueKind, error)
 	}
 }
 
-// typeSupportsMany는 many 개수 규칙을 지원하는 유형을 select로 한정한다.
-// multi-select가 유일한 many 사례다.
-func typeSupportsMany(valueType PropertyType) bool {
-	return valueType == PropertyTypeSelect
-}
-
 // validateScalarContent는 스칼라 값 내용이 종류별 형식을 만족하는지 검사한다.
 // 빈 문자열은 ErrAssignmentEmptyScalar, 형식 위반은 ErrInvalidAssignmentScalar로
 // 구분해 실패 닫기한다.

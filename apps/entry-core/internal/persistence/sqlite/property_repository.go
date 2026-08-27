@@ -51,6 +51,20 @@ func (r *EntryPropertyRepository) LoadAssignments(
 	return LoadEntryPropertyAssignments(db, wsctx, entryIDs, propertyIDs)
 }
 
+// LoadAssignmentsByRefs는 exact-pair change 경로 읽기다. 자세한 계약은
+// LoadEntryPropertyAssignmentsByRefs다.
+func (r *EntryPropertyRepository) LoadAssignmentsByRefs(
+	ctx context.Context,
+	wsctx domainentry.WorkspaceContext,
+	refs []EntryPropertyRef,
+) (map[EntryPropertyRef]domainentry.EntryPropertyAssignment, error) {
+	db := r.store.db.WithContext(ctx)
+	if scope, ok := ctx.Value(txScopeKey{}).(*txScope); ok && scope != nil && scope.tx != nil {
+		db = scope.tx.WithContext(ctx)
+	}
+	return LoadEntryPropertyAssignmentsByRefs(db, wsctx, refs)
+}
+
 // SaveAssignments는 fact 집합을 하나의 원자적 트랜잭션으로 upsert한다. 모든
 // public mutation 진입점은 Store.WithinTx만 사용한다.
 func (r *EntryPropertyRepository) SaveAssignments(
@@ -317,4 +331,76 @@ func refOfRow(workspace []byte, entryID string, property []byte) (EntryPropertyR
 		return EntryPropertyRef{}, err
 	}
 	return EntryPropertyRef{EntryID: entryID, PropertyID: propertyID}, nil
+}
+
+// LoadEntryPropertyAssignmentsByRefs는 change 경로용 exact-pair 읽기다.
+// entry IN × property IN의 교차 적재가 아니라 요청된 (entry_id, property_id)
+// 쌍만 읽어 단일 연결 점유 시간을 요청 규모(≤256쌍)로 제한한다. 정의·선택지는
+// 쌍의 property 집합으로만 필터링한다. overlay가 쓰는 LoadEntryPropertyAssignments는
+// 교차 조회가 목적에 맞아 그대로 유지한다.
+func LoadEntryPropertyAssignmentsByRefs(
+	db *gorm.DB,
+	wsctx domainentry.WorkspaceContext,
+	refs []EntryPropertyRef,
+) (map[EntryPropertyRef]domainentry.EntryPropertyAssignment, error) {
+	if wsctx.ID == (domainentry.WorkspaceID{}) {
+		return nil, ErrInvalidPropertyRow
+	}
+	if len(refs) == 0 {
+		return map[EntryPropertyRef]domainentry.EntryPropertyAssignment{}, nil
+	}
+	seen := make(map[EntryPropertyRef]struct{}, len(refs))
+	pairs := make([][]interface{}, 0, len(refs))
+	propertySeen := make(map[domainentry.PropertyID]struct{}, len(refs))
+	var propertyIDs []domainentry.PropertyID
+	for _, ref := range refs {
+		if !validEntryIDShape(ref.EntryID) {
+			return nil, ErrInvalidPropertyRow
+		}
+		if _, duplicate := seen[ref]; duplicate {
+			continue
+		}
+		seen[ref] = struct{}{}
+		pairs = append(pairs, []interface{}{ref.EntryID, ref.PropertyID.Bytes()})
+		if _, ok := propertySeen[ref.PropertyID]; !ok {
+			propertySeen[ref.PropertyID] = struct{}{}
+			propertyIDs = append(propertyIDs, ref.PropertyID)
+		}
+	}
+	wsBytes := wsctx.ID.Bytes()
+	pairScope := func(db *gorm.DB) *gorm.DB {
+		return db.Where("workspace_id = ?", wsBytes).Where("(entry_id, property_id) IN ?", pairs)
+	}
+
+	var headerRows []EntryPropertyAssignmentRow
+	if err := pairScope(db.Model(&EntryPropertyAssignmentRow{})).Find(&headerRows).Error; err != nil {
+		return nil, err
+	}
+	var valueRows []EntryPropertyAssignmentValueRow
+	if err := pairScope(db.Model(&EntryPropertyAssignmentValueRow{})).Order("ordinal").Find(&valueRows).Error; err != nil {
+		return nil, err
+	}
+
+	var defRows []WorkspacePropertyDefinitionRow
+	if err := db.Where("workspace_id = ?", wsBytes).Where(propertyIDFilter(propertyIDs), idFilterArg(propertyIDs)).
+		Find(&defRows).Error; err != nil {
+		return nil, err
+	}
+	var optionRows []WorkspacePropertyOptionRow
+	if err := db.Where("workspace_id = ?", wsBytes).Where(propertyIDFilter(propertyIDs), idFilterArg(propertyIDs)).
+		Find(&optionRows).Error; err != nil {
+		return nil, err
+	}
+
+	result, err := assembleEntryPropertyAssignments(headerRows, valueRows, defRows, optionRows)
+	if err != nil {
+		return nil, err
+	}
+	// durable row가 없는 요청 키는 implicit unset revision 0으로 채운다.
+	for _, ref := range refs {
+		if _, ok := result[ref]; !ok {
+			result[ref] = domainentry.ImplicitUnsetEntryPropertyAssignment(wsctx.ID, ref.EntryID, ref.PropertyID)
+		}
+	}
+	return result, nil
 }

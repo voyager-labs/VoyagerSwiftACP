@@ -53,6 +53,35 @@ func (store *memFactStore) rollback() {
 	store.pending = nil
 }
 
+func (store *memFactStore) LoadAssignmentsByRefs(_ context.Context, workspace domainentry.WorkspaceContext, refs []AssignmentRef) ([]domainentry.EntryPropertyAssignment, error) {
+	if err := ValidateWorkspaceContext(workspace); err != nil {
+		return nil, err
+	}
+	store.loadCalls++
+	wanted := make(map[factKey]struct{}, len(refs))
+	for _, ref := range refs {
+		wanted[factKey{entryID: ref.EntryID, propertyID: ref.PropertyID}] = struct{}{}
+	}
+	out := make([]domainentry.EntryPropertyAssignment, 0)
+	for key, fact := range store.facts {
+		if _, want := wanted[key]; want {
+			out = append(out, fact)
+		}
+	}
+	for key, fact := range store.pending {
+		if _, want := wanted[key]; want {
+			out = append(out, fact)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].EntryID != out[j].EntryID {
+			return out[i].EntryID < out[j].EntryID
+		}
+		return out[i].PropertyID.String() < out[j].PropertyID.String()
+	})
+	return out, nil
+}
+
 func (store *memFactStore) LoadAssignments(_ context.Context, workspace domainentry.WorkspaceContext, entryIDs []string, propertyIDs []domainentry.PropertyID) ([]domainentry.EntryPropertyAssignment, error) {
 	if err := ValidateWorkspaceContext(workspace); err != nil {
 		return nil, err

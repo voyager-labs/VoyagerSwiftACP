@@ -74,9 +74,6 @@ func (contract AssignmentContract) Validate() error {
 	if !contract.Cardinality.valid() {
 		return ErrInvalidAssignmentContract
 	}
-	if contract.Cardinality == PropertyCardinalityMany && !typeSupportsMany(contract.Type) {
-		return ErrInvalidAssignmentContract
-	}
 	if contract.Type == PropertyTypeSelect && contract.ActiveOptions == nil {
 		return ErrInvalidAssignmentContract
 	}
@@ -227,18 +224,40 @@ func (assignment EntryPropertyAssignment) validateScalarValue(allowedKinds []Pro
 }
 
 func (assignment EntryPropertyAssignment) validateManyValues(contract AssignmentContract) error {
+	// many는 select뿐 아니라 스칼라 유형도 지원한다(System Registry 2.4.1의
+	// text+many 정의가 authority). select는 옵션 참조 검증을, 나머지는 정의
+	// 유형과 일치하는 스칼라 내용 검증을 적용한다.
+	expectedKind, err := soleKind(contract.Type)
+	if err != nil {
+		return err
+	}
 	for index, member := range assignment.Many {
 		// ordinal은 0부터 연속 증가해야 한다. 중복과 간격을 한 규칙으로 실패 닫기한다.
 		if member.Ordinal != index {
 			return ErrAssignmentDuplicateOrdinal
 		}
 		kind, ok := member.Value.Kind()
-		if !ok || kind != PropertyValueKindOptionRef {
+		if !ok {
 			return ErrAssignmentValueTypeMismatch
 		}
-		if _, active := contract.ActiveOptions[*member.Value.OptionID]; !active {
-			return ErrAssignmentInactiveOption
+		if contract.Type == PropertyTypeSelect {
+			if kind != PropertyValueKindOptionRef {
+				return ErrAssignmentValueTypeMismatch
+			}
+			if _, active := contract.ActiveOptions[*member.Value.OptionID]; !active {
+				return ErrAssignmentInactiveOption
+			}
+			continue
 		}
+		if kind != expectedKind {
+			return ErrAssignmentValueTypeMismatch
+		}
+		if err := validateScalarContent(kind, member.Value); err != nil {
+			return err
+		}
+	}
+	if contract.Type != PropertyTypeSelect {
+		return nil
 	}
 	seenOptions := make(map[PropertyOptionID]struct{}, len(assignment.Many))
 	for _, member := range assignment.Many {
@@ -248,6 +267,16 @@ func (assignment EntryPropertyAssignment) validateManyValues(contract Assignment
 		seenOptions[*member.Value.OptionID] = struct{}{}
 	}
 	return nil
+}
+
+// soleKind는 정의 유형이 운반하는 단일 값 종류를 돌려준다. canonical 유형의
+// 허용 종류는 항상 하나다.
+func soleKind(valueType PropertyType) (PropertyValueKind, error) {
+	kinds, err := propertyTypeValueKinds(valueType)
+	if err != nil {
+		return "", err
+	}
+	return kinds[0], nil
 }
 
 // hasObservationFields는 권위 assignment가 관측 필드를 carry하지 않음을 실행

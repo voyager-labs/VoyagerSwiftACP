@@ -6,6 +6,7 @@ import (
 
 	"gorm.io/gorm"
 
+	applicationproperty "github.com/voyager-labs/voyager-app/apps/entry-core/internal/application/property"
 	domainentry "github.com/voyager-labs/voyager-app/apps/entry-core/internal/domain/entry"
 )
 
@@ -38,6 +39,37 @@ func (s *EntryPropertyFactStore) LoadAssignments(
 	propertyIDs []domainentry.PropertyID,
 ) ([]domainentry.EntryPropertyAssignment, error) {
 	facts, err := s.repository.LoadAssignments(ctx, workspace, entryIDs, propertyIDs)
+	if err != nil {
+		return nil, err
+	}
+	ordered := make([]domainentry.EntryPropertyAssignment, 0, len(facts))
+	for _, fact := range facts {
+		if fact.RecordRevision == 0 {
+			continue
+		}
+		ordered = append(ordered, fact)
+	}
+	sort.Slice(ordered, func(left, right int) bool {
+		if ordered[left].EntryID != ordered[right].EntryID {
+			return ordered[left].EntryID < ordered[right].EntryID
+		}
+		return ordered[left].PropertyID.String() < ordered[right].PropertyID.String()
+	})
+	return ordered, nil
+}
+
+// LoadAssignmentsByRefs는 change 경로 exact-pair 읽기를 슬라이스 계약으로
+// 위임한다. 제외·정렬 규칙은 LoadAssignments와 동일하다.
+func (s *EntryPropertyFactStore) LoadAssignmentsByRefs(
+	ctx context.Context,
+	workspace domainentry.WorkspaceContext,
+	refs []applicationproperty.AssignmentRef,
+) ([]domainentry.EntryPropertyAssignment, error) {
+	pairs := make([]EntryPropertyRef, 0, len(refs))
+	for _, ref := range refs {
+		pairs = append(pairs, EntryPropertyRef{EntryID: ref.EntryID, PropertyID: ref.PropertyID})
+	}
+	facts, err := s.repository.LoadAssignmentsByRefs(ctx, workspace, pairs)
 	if err != nil {
 		return nil, err
 	}

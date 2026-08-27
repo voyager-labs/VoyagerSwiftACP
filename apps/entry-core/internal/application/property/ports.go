@@ -48,7 +48,15 @@ type AssignmentRepository interface {
 // 호출되며 부분 집합이 아닌 전체 배치를 한 번에 받는다.
 type AssignmentFactRepository interface {
 	LoadAssignments(ctx context.Context, workspace domainentry.WorkspaceContext, entryIDs []string, propertyIDs []domainentry.PropertyID) ([]domainentry.EntryPropertyAssignment, error)
+	LoadAssignmentsByRefs(ctx context.Context, workspace domainentry.WorkspaceContext, refs []AssignmentRef) ([]domainentry.EntryPropertyAssignment, error)
 	SaveAssignments(ctx context.Context, workspace domainentry.WorkspaceContext, facts []domainentry.EntryPropertyAssignment) error
+}
+
+// AssignmentRef는 change 경로 exact-pair 읽기의 요청 키다. entry IN × property
+// IN 교차가 아니라 이 쌍들만 저장소가 읽는다.
+type AssignmentRef struct {
+	EntryID    string
+	PropertyID domainentry.PropertyID
 }
 
 // TransactionRunner는 하나의 원자적 mutation boundary를 제공한다. 구현은

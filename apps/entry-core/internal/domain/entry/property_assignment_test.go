@@ -409,3 +409,58 @@ func TestPropertyOptionValidateAndSet(t *testing.T) {
 		}
 	})
 }
+
+var (
+	firstDescription  = "first description"
+	secondDescription = "second description"
+	notANumber        = "not a number"
+	emptyMemberText   = ""
+	gapFirst          = "first"
+	gapThird          = "third"
+)
+
+// text+many 정의(System Registry 2.4.1 시드가 27개 보유)는 many 스칼라
+// assignment가 가능해야 한다. select 한정이었던 구계약의 회귀를 잠근다.
+func TestManySupportsScalarTypes(t *testing.T) {
+	contract := AssignmentContract{Type: PropertyTypeText, Cardinality: PropertyCardinalityMany}
+	fact := EntryPropertyAssignment{
+		WorkspaceID: testAssignmentWorkspace, EntryID: testAssignmentEntryID, PropertyID: testAssignmentProperty,
+		TargetKind: AssignmentTargetLocatorDerived, State: AssignmentStateValue,
+		RecordRevision: 1, ValueContractRevision: 1,
+		Many: []OrderedAssignmentValue{
+			{Ordinal: 0, Value: AssignmentValue{Text: &firstDescription}},
+			{Ordinal: 1, Value: AssignmentValue{Text: &secondDescription}},
+		},
+	}
+	if _, err := NewEntryPropertyAssignment(fact, contract); err != nil {
+		t.Fatalf("text+many assignment = %v, want accepted", err)
+	}
+
+	// 멤버 내용 검증은 one과 같은 스칼라 규칙을 따른다.
+	badNumber := fact
+	badNumber.Many = []OrderedAssignmentValue{
+		{Ordinal: 0, Value: AssignmentValue{Text: &notANumber}},
+	}
+	numberContract := AssignmentContract{Type: PropertyTypeNumber, Cardinality: PropertyCardinalityMany}
+	if _, err := NewEntryPropertyAssignment(badNumber, numberContract); !errors.Is(err, ErrAssignmentValueTypeMismatch) {
+		t.Fatalf("kind mismatch = %v, want ErrAssignmentValueTypeMismatch", err)
+	}
+
+	badFormat := fact
+	badFormat.Many = []OrderedAssignmentValue{
+		{Ordinal: 0, Value: AssignmentValue{Text: &emptyMemberText}},
+	}
+	if _, err := NewEntryPropertyAssignment(badFormat, contract); !errors.Is(err, ErrAssignmentEmptyScalar) {
+		t.Fatalf("empty member = %v, want ErrAssignmentEmptyScalar", err)
+	}
+
+	// ordinal 연속 규칙은 유형과 무관하게 유지된다.
+	gapped := fact
+	gapped.Many = []OrderedAssignmentValue{
+		{Ordinal: 0, Value: AssignmentValue{Text: &gapFirst}},
+		{Ordinal: 2, Value: AssignmentValue{Text: &gapThird}},
+	}
+	if _, err := NewEntryPropertyAssignment(gapped, contract); !errors.Is(err, ErrAssignmentDuplicateOrdinal) {
+		t.Fatalf("gap = %v, want ErrAssignmentDuplicateOrdinal", err)
+	}
+}
