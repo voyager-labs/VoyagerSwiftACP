@@ -89,8 +89,11 @@ extension FileManagerContentIdentityTransitionCoordinator {
     ) {
         guard var transition = state.pendingIdentityTransition else { return }
         guard replacementTrigger(action, transition: transition) != nil else { return }
-        let afterPath = canonicalizedPath(afterLexicalPath(transition))
-        let selectedPaths = Set(state.entryViewLayout.selectedIds.map(canonicalizedPath))
+        // after-path와 선택 비교는 symlink를 해석하지 않는 lexical identity로 판정한다.
+        // canonical 비교는 rename된 symlink의 target 선택을 after 도착으로 오인해
+        // 전이를 조기 폐기시킨다(migrateSelection의 lexical 1차 매칭과 동일 기준).
+        let afterPath = standardizedPath(afterLexicalPath(transition))
+        let selectedPaths = Set(state.entryViewLayout.selectedIds.map(standardizedPath))
         if transition.preserveSelectionForReplacementBatch {
             transition.preserveSelectionForReplacementBatch = false
             let preservedLexicalBeforeID = transition.preservedLexicalBeforeID
@@ -100,7 +103,7 @@ extension FileManagerContentIdentityTransitionCoordinator {
                 discard(state: &state)
                 return
             }
-            let beforePath = canonicalizedPath(transition.beforePath)
+            let beforePath = standardizedPath(transition.beforePath)
             guard !selectedPaths.contains(beforePath), !selectedPaths.contains(afterPath) else { return }
             let restoredID = preservedLexicalBeforeID ?? transition.beforePath
             state.entryViewLayout.selectedIds.insert(restoredID)
@@ -238,11 +241,11 @@ extension FileManagerContentIdentityTransitionCoordinator {
     }
 
     private static func visibleEntryPaths(in state: FileManagerContentState) -> Set<String> {
-        let flatPaths = state.entryViewLayout.entries.map(\.id).map(canonicalizedPath)
+        let flatPaths = state.entryViewLayout.entries.map(\.id).map(standardizedPath)
         let hierarchyPaths = state.entryViewLayout.hierarchy.nodesByID.values
             .flatMap(\.folder.children)
             .map(\.id)
-            .map(canonicalizedPath)
+            .map(standardizedPath)
         return Set(flatPaths + hierarchyPaths)
     }
 

@@ -96,12 +96,18 @@ enum FileManagerContentIdentityTransitionCoordinator {
         state.entryViewLayout.selectedIds.insert(matchedAfterID)
         state.entryViewLayout.lastSelectedId = matchedAfterID
         state.entryViewLayout.rangeAnchorId = matchedAfterID
+        // takeDeferredFolderReplacement는 이미 staging을 제거하므로, 빈 snapshot도
+        // authoritative 결과로 커밋해 retained before 행이 terminal 뒤에 남지 않게 한다.
+        // 단 이번 세대에 generic 적용이 먼저 일어난 폴더(hasAppliedContentBatch=true)의
+        // 실제 children을 빈 staging으로 덮어쓰지 않는다.
         if case let .folder(preservationID, _) = transition.preservationOwner,
+           var targetNode = state.entryViewLayout.hierarchy.nodesByID[preservationID],
            let staged = state.entryViewLayout.hierarchy.takeDeferredFolderReplacement(folderID: preservationID),
-           !staged.isEmpty
+           !targetNode.folder.hasAppliedContentBatch
         {
-            state.entryViewLayout.hierarchy.nodesByID[preservationID]?.folder.children = staged
-            state.entryViewLayout.hierarchy.nodesByID[preservationID]?.folder.hasAppliedContentBatch = true
+            targetNode.folder.children = staged
+            targetNode.folder.hasAppliedContentBatch = true
+            state.entryViewLayout.hierarchy.nodesByID[preservationID] = targetNode
         }
         if case .root = projectionOwner {
             discard(state: &state)
