@@ -32,23 +32,21 @@ public struct FileManagerContentFeature {
                 return handleCollectionSaveCompleted(result: result, state: &state)
             case let .internal(.requestNavigation(.view(viewAction))):
                 guard shouldBeginProductBrowsing(viewAction, navigation: state.navigation) else {
+                    state.pendingProductBrowsingSource = nil
                     return .none
                 }
                 switch viewAction {
-                case let .navigateToPath(path):
-                    state.productBrowsingOperationID = productMetricsClient.makeOperationID()
-                    state.productBrowsingSource = .fileManagerContent
-                    state.productBrowsingContent = .folder
-                case .goBack, .goForward, .goToHistoryIndex, .goToEnclosingDirectory:
-                    state.productBrowsingOperationID = productMetricsClient.makeOperationID()
-                    state.productBrowsingSource = .fileManagerContent
-                    state.productBrowsingContent = nil
-                case .showRecents, .showComputer, .showTag:
-                    state.productBrowsingOperationID = productMetricsClient.makeOperationID()
-                    state.productBrowsingSource = .fileManagerContent
-                    state.productBrowsingContent = .collection
+                case .navigateToPath,
+                     .goBack,
+                     .goForward,
+                     .goToHistoryIndex,
+                     .goToEnclosingDirectory,
+                     .showRecents,
+                     .showComputer,
+                     .showTag:
+                    state.pendingProductBrowsingSource = .fileManagerContent
                 default:
-                    break
+                    state.pendingProductBrowsingSource = nil
                 }
                 return .none
             case let .entryViewLayout(.entryOperations(.lifecycle(.windowIDChanged(windowID)))):

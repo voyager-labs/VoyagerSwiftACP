@@ -21,6 +21,7 @@ final class EVM001ContentPageNavigationRoutingTests: XCTestCase {
         await store.receive(.delegate(.logDAUNavigation(
             previous: .folder("/seed"),
             next: .folder("/seed"),
+            identity: .direct,
         )))
         await store.receive(.delegate(.navigateToState(.folder("/seed"))))
     }
@@ -41,7 +42,11 @@ final class EVM001ContentPageNavigationRoutingTests: XCTestCase {
         }
 
         await store.receive(.delegate(.resetComposer))
-        await store.receive(.delegate(.logDAUNavigation(previous: .folder("/seed"), next: .folder("/next"))))
+        await store.receive(.delegate(.logDAUNavigation(
+            previous: .folder("/seed"),
+            next: .folder("/next"),
+            identity: .direct,
+        )))
         await store.receive(.delegate(.navigateToState(.folder("/next"))))
     }
 
@@ -61,7 +66,11 @@ final class EVM001ContentPageNavigationRoutingTests: XCTestCase {
         }
 
         await store.receive(.delegate(.resetComposer))
-        await store.receive(.delegate(.logDAUNavigation(previous: .folder("/seed"), next: .recents)))
+        await store.receive(.delegate(.logDAUNavigation(
+            previous: .folder("/seed"),
+            next: .recents,
+            identity: .direct,
+        )))
         await store.receive(.delegate(.navigateToState(.recents)))
     }
 
@@ -81,7 +90,11 @@ final class EVM001ContentPageNavigationRoutingTests: XCTestCase {
         }
 
         await store.receive(.delegate(.resetComposer))
-        await store.receive(.delegate(.logDAUNavigation(previous: .folder("/seed"), next: .tags("work"))))
+        await store.receive(.delegate(.logDAUNavigation(
+            previous: .folder("/seed"),
+            next: .tags("work"),
+            identity: .direct,
+        )))
         await store.receive(.delegate(.navigateToState(.tags("work"))))
     }
 
@@ -101,7 +114,11 @@ final class EVM001ContentPageNavigationRoutingTests: XCTestCase {
         }
 
         await store.receive(.delegate(.resetComposer))
-        await store.receive(.delegate(.logDAUNavigation(previous: .folder("/seed"), next: .computer)))
+        await store.receive(.delegate(.logDAUNavigation(
+            previous: .folder("/seed"),
+            next: .computer,
+            identity: .direct,
+        )))
         await store.receive(.delegate(.navigateToState(.computer)))
     }
 
@@ -133,7 +150,11 @@ final class EVM001ContentPageNavigationRoutingTests: XCTestCase {
             $0.forwardHistory = [ContentPageNavigationHistorySnapshot(navigationState: .folder("/folder"))]
         }
 
-        await store.receive(.delegate(.logDAUNavigation(previous: .folder("/folder"), next: collectionRoute)))
+        await store.receive(.delegate(.logDAUNavigation(
+            previous: .folder("/folder"),
+            next: collectionRoute,
+            identity: .back,
+        )))
         await store.receive(.delegate(.navigateToState(collectionRoute)))
     }
 
@@ -187,7 +208,11 @@ final class EVM001ContentPageNavigationRoutingTests: XCTestCase {
             $0.forwardHistory = []
         }
         await store.receive(.delegate(.resetComposer))
-        await store.receive(.delegate(.logDAUNavigation(previous: .folder("/seed"), next: .folder("/next"))))
+        await store.receive(.delegate(.logDAUNavigation(
+            previous: .folder("/seed"),
+            next: .folder("/next"),
+            identity: .direct,
+        )))
         await store.receive(.delegate(.navigateToState(.folder("/next"))))
 
         // back: /next → /seed
@@ -197,7 +222,11 @@ final class EVM001ContentPageNavigationRoutingTests: XCTestCase {
             $0.forwardHistory = [ContentPageNavigationHistorySnapshot(navigationState: .folder("/next"))]
         }
         await store.receive(.delegate(.resetComposer))
-        await store.receive(.delegate(.logDAUNavigation(previous: .folder("/next"), next: .folder("/seed"))))
+        await store.receive(.delegate(.logDAUNavigation(
+            previous: .folder("/next"),
+            next: .folder("/seed"),
+            identity: .back,
+        )))
         await store.receive(.delegate(.navigateToState(.folder("/seed"))))
     }
 
@@ -229,7 +258,11 @@ final class EVM001ContentPageNavigationRoutingTests: XCTestCase {
             $0.forwardHistory = []
         }
         await store.receive(.delegate(.resetComposer))
-        await store.receive(.delegate(.logDAUNavigation(previous: .folder("/seed"), next: .folder("/next"))))
+        await store.receive(.delegate(.logDAUNavigation(
+            previous: .folder("/seed"),
+            next: .folder("/next"),
+            identity: .direct,
+        )))
         await store.receive(.delegate(.navigateToState(.folder("/next"))))
 
         // back: /next → /seed
@@ -239,7 +272,11 @@ final class EVM001ContentPageNavigationRoutingTests: XCTestCase {
             $0.forwardHistory = [ContentPageNavigationHistorySnapshot(navigationState: .folder("/next"))]
         }
         await store.receive(.delegate(.resetComposer))
-        await store.receive(.delegate(.logDAUNavigation(previous: .folder("/next"), next: .folder("/seed"))))
+        await store.receive(.delegate(.logDAUNavigation(
+            previous: .folder("/next"),
+            next: .folder("/seed"),
+            identity: .back,
+        )))
         await store.receive(.delegate(.navigateToState(.folder("/seed"))))
 
         // forward: /seed → /next
@@ -249,7 +286,11 @@ final class EVM001ContentPageNavigationRoutingTests: XCTestCase {
             $0.forwardHistory = []
         }
         await store.receive(.delegate(.resetComposer))
-        await store.receive(.delegate(.logDAUNavigation(previous: .folder("/seed"), next: .folder("/next"))))
+        await store.receive(.delegate(.logDAUNavigation(
+            previous: .folder("/seed"),
+            next: .folder("/next"),
+            identity: .forward,
+        )))
         await store.receive(.delegate(.navigateToState(.folder("/next"))))
     }
 
@@ -295,7 +336,11 @@ final class EVM001ContentPageNavigationRoutingTests: XCTestCase {
         }
 
         await store.receive(.delegate(.resetComposer))
-        await store.receive(.delegate(.logDAUNavigation(previous: .folder("/c"), next: .folder("/seed"))))
+        await store.receive(.delegate(.logDAUNavigation(
+            previous: .folder("/c"),
+            next: .folder("/seed"),
+            identity: .history,
+        )))
         await store.receive(.delegate(.navigateToState(.folder("/seed"))))
 
         await store.finish()
@@ -356,7 +401,11 @@ final class EVM001ContentPageNavigationRoutingTests: XCTestCase {
         }
 
         await store.receive(.delegate(.resetComposer))
-        await store.receive(.delegate(.logDAUNavigation(previous: .folder("/a/b"), next: .folder("/a"))))
+        await store.receive(.delegate(.logDAUNavigation(
+            previous: .folder("/a/b"),
+            next: .folder("/a"),
+            identity: .enclosingDirectory,
+        )))
         await store.receive(.delegate(.navigateToState(.folder("/a"))))
     }
 
@@ -382,7 +431,11 @@ final class EVM001ContentPageNavigationRoutingTests: XCTestCase {
             // titlePath는 그대로 "/seed" — 리듀서가 변경하지 않음
         }
         await store.receive(.delegate(.resetComposer))
-        await store.receive(.delegate(.logDAUNavigation(previous: .folder("/seed"), next: .folder("/next"))))
+        await store.receive(.delegate(.logDAUNavigation(
+            previous: .folder("/seed"),
+            next: .folder("/next"),
+            identity: .direct,
+        )))
         await store.receive(.delegate(.navigateToState(.folder("/next"))))
 
         // titlePath가 여전히 seed 값을 유지 — view 레이어 책임

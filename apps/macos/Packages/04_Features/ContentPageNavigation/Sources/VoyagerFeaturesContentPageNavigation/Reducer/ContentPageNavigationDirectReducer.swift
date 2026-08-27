@@ -195,7 +195,11 @@ struct ContentPageNavigationDirectReducer {
         }
 
         effects.append(
-            .send(.delegate(.logDAUNavigation(previous: previousNavigationState, next: nextNavigationState))),
+            .send(.delegate(.logDAUNavigation(
+                previous: previousNavigationState,
+                next: nextNavigationState,
+                identity: .direct,
+            ))),
         )
         effects.append(.send(.delegate(.navigateToState(nextNavigationState))))
 

@@ -42,6 +42,14 @@ public struct ContentPageCollectionOpenRequest: Equatable, Sendable {
     }
 }
 
+public enum ContentPageNavigationInteractionIdentity: Equatable, Sendable {
+    case direct
+    case back
+    case forward
+    case history
+    case enclosingDirectory
+}
+
 @CasePathable
 public enum ContentPageNavigationAction: ViewAction, Equatable, Sendable {
     case view(View)
@@ -98,6 +106,7 @@ public enum ContentPageNavigationAction: ViewAction, Equatable, Sendable {
         case logDAUNavigation(
             previous: ContentPageNavigationRoute,
             next: ContentPageNavigationRoute,
+            identity: ContentPageNavigationInteractionIdentity,
         )
         case resetComposer
     }

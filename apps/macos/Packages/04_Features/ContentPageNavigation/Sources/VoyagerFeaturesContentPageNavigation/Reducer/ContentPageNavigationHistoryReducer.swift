@@ -49,6 +49,7 @@ struct ContentPageNavigationHistoryReducer {
         return historyNavigationEffects(
             previousNavigationState: previousNavigationState,
             nextNavigationState: state.navigationState,
+            identity: .back,
         )
     }
 
@@ -62,6 +63,7 @@ struct ContentPageNavigationHistoryReducer {
         return historyNavigationEffects(
             previousNavigationState: previousNavigationState,
             nextNavigationState: state.navigationState,
+            identity: .forward,
         )
     }
 
@@ -87,6 +89,7 @@ struct ContentPageNavigationHistoryReducer {
             return historyNavigationEffects(
                 previousNavigationState: previousNavigationState,
                 nextNavigationState: state.navigationState,
+                identity: .history,
             )
         }
 
@@ -105,6 +108,7 @@ struct ContentPageNavigationHistoryReducer {
         return historyNavigationEffects(
             previousNavigationState: previousNavigationState,
             nextNavigationState: state.navigationState,
+            identity: .history,
         )
     }
 
@@ -120,12 +124,14 @@ struct ContentPageNavigationHistoryReducer {
         return historyNavigationEffects(
             previousNavigationState: previousNavigationState,
             nextNavigationState: state.navigationState,
+            identity: .enclosingDirectory,
         )
     }
 
     private func historyNavigationEffects(
         previousNavigationState: ContentPageNavigationRoute,
         nextNavigationState: ContentPageNavigationRoute,
+        identity: ContentPageNavigationInteractionIdentity,
     ) -> Effect<Action> {
         var effects: [Effect<Action>] = []
 
@@ -135,7 +141,11 @@ struct ContentPageNavigationHistoryReducer {
         }
 
         effects.append(
-            .send(.delegate(.logDAUNavigation(previous: previousNavigationState, next: nextNavigationState))),
+            .send(.delegate(.logDAUNavigation(
+                previous: previousNavigationState,
+                next: nextNavigationState,
+                identity: identity,
+            ))),
         )
         effects.append(.send(.delegate(.navigateToState(nextNavigationState))))
 

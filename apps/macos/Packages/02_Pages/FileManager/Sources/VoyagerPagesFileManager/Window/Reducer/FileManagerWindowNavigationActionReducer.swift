@@ -41,6 +41,7 @@ struct FileManagerNavigationActionReducer {
         state: inout State,
     ) -> Effect<Action> {
         guard state.pendingContentTabClose == nil || !isUserNavigationRequest(action) else {
+            state.content.pendingProductBrowsingSource = nil
             return .none
         }
 
@@ -246,6 +247,7 @@ struct FileManagerNavigationActionReducer {
     ) -> Effect<Action> {
         switch choice {
         case .cancel:
+            state.content.pendingProductBrowsingSource = nil
             return .none
         case .discard:
             state.content.resetComposerOnNextDirectoryNavigation = true

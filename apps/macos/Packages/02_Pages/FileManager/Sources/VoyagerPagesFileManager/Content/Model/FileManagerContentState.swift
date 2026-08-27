@@ -19,8 +19,11 @@ public struct FileManagerContentState: Equatable {
     public var pendingSelectEntryID: String?
 
     var productBrowsingOperationID: UUID?
+    var productBrowsingIdentity: ContentPageNavigationInteractionIdentity?
     var productBrowsingSource: ContentBrowsingSource?
     var productBrowsingContent: ContentBrowsingKind?
+    var pendingProductBrowsingSource: ContentBrowsingSource?
+    var recordedEntryCommandIDs: Set<UUID> = []
 
     var homeFavoriteItems: [FileManagerHomeFavoriteItem] = []
     var homeLocationItems: [FileManagerFixedLocationItem] = []

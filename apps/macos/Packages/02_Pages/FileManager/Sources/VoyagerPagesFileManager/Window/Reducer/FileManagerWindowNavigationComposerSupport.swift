@@ -11,7 +11,7 @@ func handleNavigationDelegate(
 ) -> Effect<FileManagerWindowAction> {
     switch delegateAction {
     case let .navigateToState(navigationState):
-        return .concatenate(
+        .concatenate(
             syncActiveContentTabEffect(navigationState, state: state, computerName: computerName),
             handleNavigateToState(navigationState, state: &state),
             syncPinnedContentTabRuntimeNavigationEffect(
@@ -21,16 +21,17 @@ func handleNavigationDelegate(
             ),
         )
 
-    case let .logDAUNavigation(previous, next):
-        guard previous != next else { return .none }
-        return syncProductBrowsingCorrelation(
+    case let .logDAUNavigation(previous, next, identity):
+        syncProductBrowsingCorrelation(
+            previous: previous,
             next: next,
+            identity: identity,
             state: &state,
             productMetricsClient: productMetricsClient,
         )
 
     case .resetComposer:
-        return resetComposerAndExitCollectionModeEffect()
+        resetComposerAndExitCollectionModeEffect()
     }
 }
 
@@ -38,10 +39,15 @@ func handleNavigationDelegate(
 /// entry-loading route만 correlation을 성립시키고, 이미 성립된
 /// 콘텐츠 기원 correlation은 덮어쓰지 않으며, 비로딩 route는 미완료 correlation을 정리한다.
 private func syncProductBrowsingCorrelation(
+    previous: ContentPageNavigationRoute,
     next: ContentPageNavigationRoute,
+    identity: ContentPageNavigationInteractionIdentity,
     state: inout FileManagerWindowState,
     productMetricsClient: FileManagerProductMetricsClient,
 ) -> Effect<FileManagerWindowAction> {
+    let source = state.content.pendingProductBrowsingSource ?? .fileManagerSidebar
+    state.content.pendingProductBrowsingSource = nil
+    guard previous != next else { return .none }
     let content: ContentBrowsingKind? = switch next {
     case .folder:
         .folder
@@ -52,13 +58,15 @@ private func syncProductBrowsingCorrelation(
     }
     guard let content else {
         state.content.productBrowsingOperationID = nil
+        state.content.productBrowsingIdentity = nil
         state.content.productBrowsingSource = nil
         state.content.productBrowsingContent = nil
         return .none
     }
     if state.content.productBrowsingOperationID == nil {
         state.content.productBrowsingOperationID = productMetricsClient.makeOperationID()
-        state.content.productBrowsingSource = .fileManagerSidebar
+        state.content.productBrowsingIdentity = identity
+        state.content.productBrowsingSource = source
     }
     state.content.productBrowsingContent = content
     return .none
