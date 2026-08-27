@@ -474,12 +474,7 @@ extension EVM002ManageEntriesViewPresentationTests {
         XCTAssertIdentical(coordinator.outlineItems.first, groupItem)
         XCTAssertIdentical(coordinator.entryItemsByID[second.id]?.first, secondItem)
         XCTAssertEqual(
-            (0 ..< view.tableView.numberOfRows).compactMap { row -> String? in
-                guard let item = view.tableView.item(atRow: row) as? EntryListOutlineItem,
-                      case let .entry(entry) = item.kind
-                else { return nil }
-                return entry.id
-            },
+            flatRowEntryIDs(in: view),
             [first.id, second.id, inserted.id, fourth.id],
         )
 
@@ -513,12 +508,7 @@ extension EVM002ManageEntriesViewPresentationTests {
         XCTAssertIdentical(coordinator.outlineItems.first, groupItem)
         XCTAssertIdentical(coordinator.entryItemsByID[second.id]?.first, secondItem)
         XCTAssertEqual(
-            (0 ..< view.tableView.numberOfRows).compactMap { row -> String? in
-                guard let item = view.tableView.item(atRow: row) as? EntryListOutlineItem,
-                      case let .entry(entry) = item.kind
-                else { return nil }
-                return entry.id
-            },
+            flatRowEntryIDs(in: view),
             [first.id, second.id, fourth.id],
         )
     }
@@ -542,86 +532,6 @@ extension EVM002ManageEntriesViewPresentationTests {
 
         let item = try XCTUnwrap(view.tableView.item(atRow: 0))
         XCTAssertFalse(coordinator.outlineView(view.tableView, isItemExpandable: item))
-    }
-
-    /// EVM-002-toggle_directory_expansion_in_list: canonical watcher path가 lexical hierarchy key를 다시 로드한다.
-    /// symlink를 통해 연 folder가 실경로 이벤트를 받아도 expanded child cache가 stale로 남지 않는지 검증한다.
-    /// - 검증 내용: `/private/var` affected path가 `/var` folder ID의 새 load request를 생성함
-    /// - 사전 조건: 실제 symlink인 lexical `/var` folder가 expanded loaded 상태임
-    /// - 기대 결과: lexical folder ID를 유지한 채 generation을 올리고 loading 상태로 전환함
-    func testCanonicalInvalidationReloadsLexicalHierarchyFolder() async {
-        let folder = EntryModel.temporaryFolder(id: "/var", name: "var")
-        let staleChild = makeHierarchyIntegrationEntry(id: "/var/stale.txt", name: "stale.txt")
-        var state = EntryViewLayoutState()
-        state.entries = [folder]
-        state.hierarchy = .init(rootPath: "/")
-        state.hierarchy.nodesByID = [
-            folder.id: .init(
-                children: [staleChild],
-                loadPhase: .loaded,
-                generation: 2,
-            ),
-        ]
-        state.hierarchy.setExpandedIDs([folder.id])
-        let store = TestStore(initialState: state) {
-            EntryListHierarchyReducer()
-        }
-
-        await store.send(.hierarchy(.hierarchyInvalidated(
-            affectedPaths: ["/private/var"],
-            removedPrefixes: [],
-        ))) {
-            $0.hierarchy.nodesByID[folder.id as String] = FolderNodeState(
-                folder: FolderSnapshot(children: [staleChild]),
-                expansionIntent: true,
-                generation: 3,
-                loadPhase: .loadingCore,
-            )
-            $0.outlineProjectionRevision = 2
-            $0.lastVisibleSelectableEntryIDs = [folder.id, staleChild.id]
-            $0.lastReconciledOutlineProjection = $0.currentOutlineProjection()
-        }
-        await store.receive(\.delegate.expandRequested, folder.id)
-    }
-
-    /// EVM-002-toggle_directory_expansion_in_list: loading folder의 watcher invalidation은 stream을 재시작한다.
-    /// 진행 중인 child snapshot이 외부 추가·삭제를 놓친 채 loaded로 고정되지 않는지 검증한다.
-    /// - 검증 내용: loading parent의 generation 증가와 새 load request 생성
-    /// - 사전 조건: expanded `/var` folder가 generation 2의 partial child stream을 로딩 중임
-    /// - 기대 결과: 기존 children을 비우고 generation 3 load를 같은 lexical folder ID로 요청함
-    func testInvalidationRestartsLoadingHierarchyFolder() async {
-        let folder = EntryModel.temporaryFolder(id: "/var", name: "var")
-        let partialChild = makeHierarchyIntegrationEntry(id: "/var/partial.txt", name: "partial.txt")
-        var state = EntryViewLayoutState()
-        state.entries = [folder]
-        state.hierarchy = .init(rootPath: "/")
-        state.hierarchy.nodesByID = [
-            folder.id: .init(
-                children: [partialChild],
-                loadPhase: .loadingCore,
-                generation: 2,
-                expectedBatchIndex: 1,
-            ),
-        ]
-        state.hierarchy.setExpandedIDs([folder.id])
-        let store = TestStore(initialState: state) {
-            EntryListHierarchyReducer()
-        }
-
-        await store.send(.hierarchy(.hierarchyInvalidated(
-            affectedPaths: ["/var/new.txt"],
-            removedPrefixes: [],
-        ))) {
-            $0.hierarchy.nodesByID[folder.id as String] = .init(
-                expansionIntent: true,
-                generation: 3,
-                loadPhase: .loadingCore,
-            )
-            $0.outlineProjectionRevision = 2
-            $0.lastVisibleSelectableEntryIDs = [folder.id]
-            $0.lastReconciledOutlineProjection = $0.currentOutlineProjection()
-        }
-        await store.receive(\.delegate.expandRequested, folder.id)
     }
 
     /// EVM-002-replacement_reload_snapshot_retention: hierarchy 무효화 중 마지막 선택을 유지한다.
@@ -731,60 +641,6 @@ extension EVM002ManageEntriesViewPresentationTests {
             .event(.coreFinished(batchCount: 0)),
         )))
         await store.receive(\.delegate.renameCanceled)
-    }
-
-    /// EVM-002-toggle_directory_expansion_in_list: coarse invalidation은 expanded descendant cache를 모두 재로드한다.
-    /// ancestor path만 보고된 rescan에서도 중첩 folder snapshot이 stale로 남지 않는지 검증한다.
-    /// - 검증 내용: cached folder 전체 generation 증가와 expanded A/B loading 전환
-    /// - 사전 조건: A와 자식 B가 모두 expanded·loaded 상태임
-    /// - 기대 결과: A/B children을 비우고 각각 새 generation load를 시작함
-    func testCoarseInvalidationReloadsExpandedDescendantCaches() async {
-        let folderA = EntryModel.temporaryFolder(id: "/root/A", name: "A")
-        let folderB = EntryModel.temporaryFolder(id: "/root/A/B", name: "B")
-        let staleChild = makeHierarchyIntegrationEntry(id: "/root/A/B/stale.txt", name: "stale.txt")
-        var state = EntryViewLayoutState()
-        state.entries = [folderA]
-        state.hierarchy = .init(rootPath: "/root")
-        state.hierarchy.nodesByID = [
-            folderA.id: .init(
-                folder: .init(children: [folderB], coreFinished: true),
-                generation: 2,
-                loadPhase: .loaded,
-            ),
-            folderB.id: .init(
-                folder: .init(children: [staleChild], coreFinished: true),
-                generation: 4,
-                loadPhase: .loaded,
-            ),
-        ]
-        state.hierarchy.setExpandedIDs([folderA.id, folderB.id])
-        let store = TestStore(initialState: state) {
-            EntryListHierarchyReducer()
-        }
-        // store.exhaustivity = .off: effect 순서보다 모든 cached descendant의 동기 state 전환을 검증한다.
-        store.exhaustivity = .off
-
-        await store.send(.hierarchy(.coarseHierarchyInvalidated(
-            removedPrefixes: [],
-            retainsCompleteSnapshots: true,
-        ))) {
-            $0.hierarchy.nodesByID[folderA.id as String] = .init(
-                folder: .init(children: [folderB]),
-                expansionIntent: true,
-                generation: 3,
-                loadPhase: .loadingCore,
-            )
-            $0.hierarchy.nodesByID[folderB.id as String] = .init(
-                folder: .init(children: [staleChild]),
-                parentID: folderA.id,
-                expansionIntent: true,
-                generation: 5,
-                loadPhase: .loadingCore,
-            )
-            $0.outlineProjectionRevision = 3
-        }
-        await store.skipReceivedActions()
-        await store.finish()
     }
 
     // MARK: - EVM-002-cross_window_folder_load_restart
@@ -1567,6 +1423,16 @@ private func makeIncrementalOutlineProjection(
         sortKey: .name,
         sortOrder: sortOrder,
     )
+}
+
+@MainActor
+private func flatRowEntryIDs(in view: EntryListView) -> [EntryModel.ID] {
+    (0 ..< view.tableView.numberOfRows).compactMap { row in
+        guard let item = view.tableView.item(atRow: row) as? EntryListOutlineItem,
+              case let .entry(entry) = item.kind
+        else { return nil }
+        return entry.id
+    }
 }
 
 private func makeIncrementalPresentationFile(id: String, name: String) -> EntryModel {

@@ -13,17 +13,21 @@ public struct FolderSnapshot: Equatable, Sendable {
     /// startLoad가 이전 세대 완료 스냅샷을 보존(retained)할 때 false로 유지되어,
     /// 아직 새 내용을 받지 않은 상태에서 첫 내용 배치가 retained children을 교체하도록 표시한다.
     public var hasAppliedContentBatch: Bool
+    /// children이 현재 generation의 부분 결과가 아니라 이전 완료 generation에서 보존됐는지 여부.
+    public var retainsPreviousGenerationChildren: Bool
 
     public init(
         children: [EntryModel] = [],
         expectedBatchIndex: Int = 0,
         coreFinished: Bool = false,
         hasAppliedContentBatch: Bool = false,
+        retainsPreviousGenerationChildren: Bool = false,
     ) {
         self.children = children
         self.expectedBatchIndex = expectedBatchIndex
         self.coreFinished = coreFinished
         self.hasAppliedContentBatch = hasAppliedContentBatch
+        self.retainsPreviousGenerationChildren = retainsPreviousGenerationChildren
     }
 }
 

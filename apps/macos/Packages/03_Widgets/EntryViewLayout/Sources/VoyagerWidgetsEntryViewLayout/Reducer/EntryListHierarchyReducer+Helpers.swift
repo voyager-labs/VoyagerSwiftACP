@@ -13,10 +13,11 @@ extension EntryListHierarchyReducer {
     /// 실패 재시도는 cursor가 아니라 content provenance로 이전 완전 세대와 부분 수신을 구분한다.
     func reloadedNodeState(for nodeState: FolderNodeState) -> FolderNodeState {
         var refreshedNode = nodeState
-        var retainsCompleteSnapshot = refreshedNode.folder.coreFinished || refreshedNode.loadPhase == .loaded
+        var retainsCompleteSnapshot = refreshedNode.folder.coreFinished
+            || refreshedNode.loadPhase == .loaded
+            || refreshedNode.folder.retainsPreviousGenerationChildren
         if case .failed = refreshedNode.loadPhase {
-            retainsCompleteSnapshot = !refreshedNode.folder.children.isEmpty && !refreshedNode.folder
-                .hasAppliedContentBatch
+            retainsCompleteSnapshot = refreshedNode.folder.retainsPreviousGenerationChildren
         }
         refreshedNode.generation &+= 1
         refreshedNode.loadPhase = FolderLoadPhase.loadingCore
@@ -24,6 +25,7 @@ extension EntryListHierarchyReducer {
             refreshedNode.folder.coreFinished = false
             refreshedNode.folder.expectedBatchIndex = 0
             refreshedNode.folder.hasAppliedContentBatch = false
+            refreshedNode.folder.retainsPreviousGenerationChildren = true
         } else {
             refreshedNode.folder = FolderSnapshot()
         }
@@ -292,6 +294,7 @@ extension EntryListHierarchyReducer {
             }
             snapshot.children = items
             snapshot.hasAppliedContentBatch = true
+            snapshot.retainsPreviousGenerationChildren = false
             snapshot.expectedBatchIndex += 1
             return true
         }
@@ -320,6 +323,7 @@ extension EntryListHierarchyReducer {
         if !snapshot.hasAppliedContentBatch {
             snapshot.children = []
         }
+        snapshot.retainsPreviousGenerationChildren = false
         snapshot.coreFinished = true
         return true
     }

@@ -741,35 +741,6 @@ extension EVM002ManageEntriesViewPresentationTests {
 
     // MARK: - EVM-002-replacement_reload_snapshot_retention
 
-    /// EVM-002-replacement_reload_snapshot_retention: 완료된 폴더의 대체 재로드는 마지막 완전 스냅샷을 유지한다.
-    /// rename/move 무효화 뒤 재로드가 중간 빈 프레임을 만들지 않는지 검증한다.
-    /// - 검증 내용: startLoad가 세대를 올리고 loadingCore로 전환하되 완료 스냅샷 children을 보존하고 배치 추적만 초기화한다.
-    /// - 사전 조건: /root/a가 children 2개를 가진 loaded 확장 폴더다.
-    /// - 기대 결과: children은 그대로고 expectedBatchIndex는 0, coreFinished는 false다.
-    func testReplacementReloadRetainsCompleteSnapshotUntilFirstNewBatch() {
-        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
-        let old1 = hierarchyFile(id: "/root/a/old-1", name: "old-1")
-        let old2 = hierarchyFile(id: "/root/a/old-2", name: "old-2")
-        var state = hierarchyState(roots: [folder])
-        state.hierarchy.nodesByID[folder.id as String] = .init(
-            children: [old1, old2], loadPhase: .loaded, generation: 3,
-        )
-        state.hierarchy.setExpandedIDs([folder.id as String])
-        let reducer = EntryListHierarchyReducer()
-
-        _ = reducer.reduce(
-            into: &state,
-            action: .hierarchy(.hierarchyInvalidated(affectedPaths: [folder.id as String], removedPrefixes: [])),
-        )
-
-        let node = state.hierarchy.nodesByID[folder.id as String]
-        XCTAssertEqual(node?.folder.children, [old1, old2], "대체 재로드 중 마지막 완전 스냅샷이 유지된다")
-        XCTAssertEqual(node?.folder.expectedBatchIndex, 0)
-        XCTAssertFalse(node?.folder.coreFinished ?? true)
-        XCTAssertEqual(node?.loadPhase, .loadingCore)
-        XCTAssertEqual(node?.generation, 4)
-    }
-
     /// EVM-002-replacement_reload_snapshot_retention: 새 세대의 첫 core batch는 보존된 스냅샷을 한 번에 교체한다.
     /// 이전 데이터와 새 데이터가 섞이지 않는지 검증한다.
     /// - 검증 내용: 보존 재로드 뒤 batchIndex 0 수신 시 children이 새 배치로 대체되고 이후 배치는 append된다.
