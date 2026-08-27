@@ -153,12 +153,13 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
         )
     }
 
-    /// CBW-001-cancel_active_chat_request: teardown cancellation is intentionally no-event.
-    /// Teardown clears the product correlation before a late terminal callback can arrive.
-    /// - 검증 내용: teardown 이후 late final callback이 terminal metric을 만들지 않는지 확인합니다.
+    /// CBW-001-cancel_active_chat_request: teardown은 submitted 이후 정확히 한 번 cancelled terminal을 기록한다.
+    /// requestPrepared가 turnSubmitted를 기록한 뒤 teardown이 correlation을 소비하므로 late terminal callback 앞에
+    /// cancelled 결과를 확정해야 합니다.
+    /// - 검증 내용: teardown 시 cancelled result 1회와 이후 late final callback의 무시를 확인합니다.
     /// - 사전 조건: requestPrepared 이후 teardownRequested가 처리됩니다.
-    /// - 기대 결과: submitted 1회, terminal result 0회입니다.
-    func testReducerMetricsTeardownClearsCorrelationWithoutResult() async {
+    /// - 기대 결과: submitted 1회, cancelled result 1회, success/failure result 0회입니다.
+    func testReducerMetricsTeardownRecordsCancelledAndIgnoresLateTerminal() async {
         let fixture = makeStreamFixture(draftText: "Teardown", fixedMs: 1_700_000_000_252)
         applyObservationFocusedExhaustivity(to: fixture.store)
 
@@ -180,7 +181,70 @@ final class CBW001ContextualChatRequestTests: XCTestCase {
 
         let metrics = fixture.metrics.value
         XCTAssertEqual(metrics.count(where: { if case .turnSubmitted = $0 { true } else { false } }), 1)
-        XCTAssertEqual(metrics.count(where: { if case .turnResult = $0 { true } else { false } }), 0)
+        XCTAssertEqual(
+            metrics
+                .count(where: { if case let .turnResult(_, result, _) = $0 { result == .cancelled } else { false } }),
+            1,
+        )
+        XCTAssertEqual(metrics.count(where: { if case .turnResult = $0 { true } else { false } }), 1)
+    }
+
+    /// CBW-001-cancel_active_chat_request: reset은 foreground correlation을 정확히 한 번 cancelled로 마무리한다.
+    /// requestPrepared 이후 resetTapped가 correlation을 소비할 때 late failed/final callback 앞에
+    /// cancelled terminal을 한 번만 확정하는지 검증합니다.
+    /// - 검증 내용: reset 시 cancelled result 1회와 late failed·final callback의 dedupe를 확인합니다.
+    /// - 사전 조건: requestPrepared 이후 processing 요청이 활성화되어 있습니다.
+    /// - 기대 결과: submitted 1회, cancelled result 1회, failure/success result 0회입니다.
+    func testReducerMetricsResetRecordsCancelledOnceAndIgnoresLateTerminals() async {
+        let fixture = makeStreamFixture(draftText: "Reset", fixedMs: 1_700_000_000_253)
+        applyObservationFocusedExhaustivity(to: fixture.store)
+
+        await fixture.store.send(.submitTapped)
+        await resolvePendingRequestContext(fixture.store) { state in
+            state.draftText = ""
+            state.lockedModelHandle = fixture.selectedHandle
+        }
+        let request = fixture.stream.requests[0]
+        await fixture.store.send(.executionEvent(.requestPrepared(context: request.context)))
+        await fixture.store.send(.resetTapped)
+        await fixture.store.send(.executionEvent(.failed(context: request.context, reason: .network)))
+        await fixture.store.send(.executionEvent(.final(response: AiChatResponse(
+            context: request.context,
+            assistantMessage: AiChatMessage(role: .assistant, content: "late"),
+            completedAtMs: fixture.fixedMs,
+        ))))
+        fixture.stream.finish()
+        await fixture.store.finish()
+
+        let metrics = fixture.metrics.value
+        XCTAssertEqual(metrics.count(where: { if case .turnSubmitted = $0 { true } else { false } }), 1)
+        XCTAssertEqual(
+            metrics
+                .count(where: { if case let .turnResult(_, result, _) = $0 { result == .cancelled } else { false } }),
+            1,
+        )
+        XCTAssertEqual(
+            metrics
+                .count(where: { if case let .turnResult(_, result, _) = $0 { result != .cancelled } else { false } }),
+            0,
+        )
+    }
+
+    /// CBW-001-cancel_active_chat_request: requestPrepared 이전 reset은 metric 이벤트 없이 조용히 끝난다.
+    /// pending context resolution 단계에는 correlation이 없으므로 submitted/result 어느 쪽도 기록하지 않아야 합니다.
+    /// - 검증 내용: pending resolution 상태에서 reset 후 recorder가 비어 있는지 확인합니다.
+    /// - 사전 조건: submitTapped 직후 requestPrepared 이전 상태입니다.
+    /// - 기대 결과: turnSubmitted와 turnResult 모두 0회입니다.
+    func testReducerMetricsResetBeforeRequestPreparedStaysSilent() async {
+        let fixture = makeStreamFixture(draftText: "Pending", fixedMs: 1_700_000_000_254)
+        applyObservationFocusedExhaustivity(to: fixture.store)
+
+        await fixture.store.send(.submitTapped)
+        await fixture.store.send(.resetTapped)
+        fixture.stream.finish()
+        await fixture.store.finish()
+
+        XCTAssertTrue(fixture.metrics.value.isEmpty)
     }
 
     /// CBW-001-open_contextual_chat: 같은 composer identity의 remount는 focus를 보존한다.
