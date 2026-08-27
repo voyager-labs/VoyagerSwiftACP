@@ -31,6 +31,7 @@ func protocolCodeForPropertyError(err error) schema.ErrorCode {
 		errors.Is(err, applicationproperty.ErrOptionNotFound):
 		return schema.ErrorPropertyNotFound
 	case errors.Is(err, applicationproperty.ErrDefinitionNotEditable),
+		errors.Is(err, applicationproperty.ErrRegistryOwnedDefinition),
 		errors.Is(err, applicationproperty.ErrDefinitionNotSelectable):
 		return schema.ErrorUnsupported
 	case isPropertyClientContractError(err):

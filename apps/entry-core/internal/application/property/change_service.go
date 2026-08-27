@@ -24,6 +24,10 @@ var (
 	ErrStaleAssignmentRevision = errors.New("stale property assignment revision")
 	// ErrDefinitionNotEditable은 편집 불가 정의에 대한 값 지정을 거절한다.
 	ErrDefinitionNotEditable = errors.New("property definition not editable")
+	// ErrRegistryOwnedDefinition은 System Registry 시드(registry_derived) 정의에
+	// 대한 사용자 mutation을 거절한다. 시드 digest나 lifecycle을 바꾸면 다음 시작의
+	// ApplyCatalogSeed/assembleSnapshot이 실패해 daemon이 기동 전에 종료된다.
+	ErrRegistryOwnedDefinition = errors.New("property definition is registry owned")
 	// ErrScopeTooLarge는 정준 응답 인코딩이 wire 봉투를 초과해 commit 전에
 	// 거절될 때 반환된다. execute의 read-back과 definition.create의 생성 결과
 	// 예상 검사가 이 센티널을 공유한다. runtime dispatch가 protocol

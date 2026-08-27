@@ -355,6 +355,12 @@ func (service *CatalogService) mutateDefinition(
 		if err != nil {
 			return err
 		}
+		if current.IdentityScheme != domainentry.PropertyIdentitySchemeVoyagerIssued {
+			// System Registry 시드(registry_derived) 정의는 사용자 mutation
+			// 대상이 아니다. digest나 lifecycle을 바꾸면 다음 시작의 seed
+			// 검증이 실패해 daemon이 기동 전에 종료된다.
+			return ErrRegistryOwnedDefinition
+		}
 		if current.Lifecycle != domainentry.PropertyLifecycleActive {
 			return ErrDefinitionInactive
 		}

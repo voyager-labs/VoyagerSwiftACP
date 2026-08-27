@@ -148,3 +148,35 @@ func TestDisableDefinitionIsDurableIdentityPreservingAndTerminal(t *testing.T) {
 	}
 	mustEqualSnapshot(t, before, snapshotStore(store))
 }
+
+// System Registry 시드(registry_derived) 정의는 사용자 mutation 대상이 아니다.
+// update/disable이 seed digest나 lifecycle을 바꾸면 다음 시작의 seed 검증이
+// 실패해 daemon이 기동 전에 종료된다.
+func TestRegistryOwnedDefinitionsRejectCatalogMutations(t *testing.T) {
+	store := newMemCatalogStore()
+	service := mustCatalogService(t, store)
+	workspace := mustWorkspaceContext(t)
+	registryScheme := domainentry.PropertyIdentityScheme("registry_derived")
+	propertyID := domainentry.MustPropertyID("0198c0de-f00d-7000-8000-3b9ac9e18888")
+
+	store.defs[propertyID] = domainentry.WorkspacePropertyDefinition{
+		PropertyID: propertyID, Origin: domainentry.PropertyOriginBuiltIn,
+		IdentityScheme: registryScheme, Namespace: "system", CanonicalKey: "seeded.text",
+		DisplayName: "Seeded", ValueType: domainentry.PropertyTypeText,
+		Cardinality: domainentry.PropertyCardinalityOne, Editable: true,
+		DefinitionRev: 1, Lifecycle: domainentry.PropertyLifecycleActive,
+	}
+	before := snapshotStore(store)
+	ctx := context.Background()
+
+	if _, err := service.UpdateDefinitionMetadata(ctx, workspace, propertyID, 1, "req-seed", "Renamed"); !errors.Is(err, ErrRegistryOwnedDefinition) {
+		t.Fatalf("registry update error = %v, want ErrRegistryOwnedDefinition", err)
+	}
+	if _, err := service.DisableDefinition(ctx, workspace, propertyID, 1, "req-seed"); !errors.Is(err, ErrRegistryOwnedDefinition) {
+		t.Fatalf("registry disable error = %v, want ErrRegistryOwnedDefinition", err)
+	}
+	if _, err := service.CreateOption(ctx, workspace, propertyID, 1, "req-seed", "extra"); !errors.Is(err, ErrRegistryOwnedDefinition) {
+		t.Fatalf("registry create option error = %v, want ErrRegistryOwnedDefinition", err)
+	}
+	mustEqualSnapshot(t, before, snapshotStore(store))
+}
