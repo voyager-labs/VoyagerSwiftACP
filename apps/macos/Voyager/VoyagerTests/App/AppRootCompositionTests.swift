@@ -45,6 +45,57 @@ final class AppRootCompositionTests: XCTestCase {
         XCTAssertTrue(requests.value.isEmpty)
     }
 
+    /// provider-independent skipped는 start가 아니라 skip canonical key로 기록된다.
+    /// - 검증 내용: `.aiProvider(.skipped)`의 skip metricKey와 result_status/source_surface
+    /// - 사전 조건: adapter 주입 client
+    /// - 기대 결과: voy_691_onb_004_skip_ai_provider_setup_during_onboarding 1건
+    func testOnboardingSkippedAIProviderUsesSkipCanonicalKey() {
+        let requests = LockIsolated<[ProductAnalyticsMetricRequest]>([])
+        let client = ProductAnalyticsClient { request in requests.withValue { $0.append(request) } }
+        let operationID = UUID()
+
+        VoyagerApp.makeOnboardingProductMetricsClient(client: client, environment: .dev)
+            .record(.aiProvider(operationID: operationID, result: .skipped))
+
+        XCTAssertEqual(requests.value.count, 1)
+        XCTAssertEqual(
+            requests.value.first?.metricKey,
+            "voy_691_onb_004_skip_ai_provider_setup_during_onboarding",
+        )
+        XCTAssertEqual(requests.value.first?.operationID, operationID)
+        XCTAssertEqual(requests.value.first?.properties["result_status"], .string("skipped"))
+        XCTAssertEqual(requests.value.first?.properties["source_surface"], .string("onboarding"))
+    }
+
+    /// provider-nil skipped도 skip key로, success/failure는 start key를 유지한다.
+    /// - 검증 내용: WithKind nil+skipped → skip key(provider_kind 없음), kind+success → start key,
+    ///   nil+failure → 무이벤트
+    /// - 사전 조건: adapter 주입 client
+    /// - 기대 결과: 세 케이스의 key/property 계약 일치
+    func testOnboardingAIProviderWithKindSkipsMapToSkipKeyAndSuccessKeepsStartKey() {
+        let requests = LockIsolated<[ProductAnalyticsMetricRequest]>([])
+        let client = ProductAnalyticsClient { request in requests.withValue { $0.append(request) } }
+        let recordClient = VoyagerApp.makeOnboardingProductMetricsClient(client: client, environment: .dev)
+
+        recordClient.record(.aiProviderWithKind(operationID: UUID(), provider: nil, result: .skipped))
+        recordClient.record(.aiProviderWithKind(operationID: UUID(), provider: .openai, result: .success))
+        recordClient.record(.aiProviderWithKind(operationID: UUID(), provider: nil, result: .failure))
+
+        XCTAssertEqual(requests.value.count, 2)
+        XCTAssertEqual(
+            requests.value[0].metricKey,
+            "voy_691_onb_004_skip_ai_provider_setup_during_onboarding",
+        )
+        XCTAssertNil(requests.value[0].properties["provider_kind"])
+        XCTAssertEqual(requests.value[0].properties["result_status"], .string("skipped"))
+        XCTAssertEqual(
+            requests.value[1].metricKey,
+            "voy_691_onb_004_start_ai_provider_connection_from_onboarding",
+        )
+        XCTAssertEqual(requests.value[1].properties["provider_kind"], .string("openai"))
+        XCTAssertEqual(requests.value[1].properties["result_status"], .string("success"))
+    }
+
     func testFileManagerProductMetricBridgeCapturesCanonicalRequestOnce() {
         let requests = LockIsolated<[ProductAnalyticsMetricRequest]>([])
         let client = ProductAnalyticsClient { request in requests.withValue { $0.append(request) } }
@@ -53,7 +104,7 @@ final class AppRootCompositionTests: XCTestCase {
         VoyagerApp.makeFileManagerProductMetricsClient(client: client, environment: .dev)
             .record(.contentTabAction(
                 result: .success,
-                action: .open,
+                identity: .openNewContentTab,
                 source: .contentTabBar,
                 operationID: operationID,
             ))
@@ -65,6 +116,76 @@ final class AppRootCompositionTests: XCTestCase {
         XCTAssertEqual(requests.value.first?.properties["result_status"], .string("success"))
         XCTAssertEqual(requests.value.first?.properties["action_type"], .string("open"))
         XCTAssertEqual(requests.value.first?.properties["source_surface"], .string("content_tab_bar"))
+    }
+
+    /// Content Tab identity별 canonical key 사상이 registry의 implemented key와 1:1로 대응하는지 검증한다.
+    /// action_type 단독으로는 interaction을 특정할 수 없으므로 identity가 유일한 정규 소스다.
+    /// - 검증 내용: 11개 identity 전부가 서로 다른 implemented metricKey로 기록되고 registry resolve에 성공함
+    /// - 사전 조건: host bundle registry와 adapter 주입 client
+    /// - 기대 결과: identity→key 매트릭스 일치, 모든 요소 registry capture 통과
+    func testFileManagerContentTabIdentitiesMapToDistinctCanonicalRegistryKeys() throws {
+        let expectedKeys: [ContentTabInteractionIdentity: String] = [
+            .openNewContentTab: "voy_691_ctm_001_open_new_content_tab",
+            .closeContentTab: "voy_691_ctm_001_close_content_tab",
+            .duplicateContentTab: "voy_691_ctm_001_duplicate_content_tab",
+            .duplicateSelectedContentTabs: "voy_691_ctm_001_duplicate_selected_content_tabs",
+            .restoreLastClosedTab: "voy_691_ctm_001_restore_last_closed_tab",
+            .reorderContentTab: "voy_691_ctm_001_reorder_content_tab",
+            .reorderSelectedContentTabs: "voy_691_ctm_001_reorder_selected_content_tabs",
+            .moveContentTabToAnotherWindow:
+                "voy_691_ctm_001_move_content_tab_to_another_file_manager_window",
+            .moveSelectedContentTabsToAnotherWindow:
+                "voy_691_ctm_001_move_selected_content_tabs_to_another_file_manager_window",
+            .pinContentTabs: "voy_691_ctm_003_pin_content_tab_s",
+            .unpinContentTabs: "voy_691_ctm_003_unpin_content_tab_s",
+        ]
+        let identities: [ContentTabInteractionIdentity] = [
+            .openNewContentTab,
+            .closeContentTab,
+            .duplicateContentTab,
+            .duplicateSelectedContentTabs,
+            .restoreLastClosedTab,
+            .reorderContentTab,
+            .reorderSelectedContentTabs,
+            .moveContentTabToAnotherWindow,
+            .moveSelectedContentTabsToAnotherWindow,
+            .pinContentTabs,
+            .unpinContentTabs,
+        ]
+        XCTAssertEqual(identities.count, expectedKeys.count)
+
+        let requests = LockIsolated<[ProductAnalyticsMetricRequest]>([])
+        let client = ProductAnalyticsClient { request in requests.withValue { $0.append(request) } }
+        let recordClient = VoyagerApp.makeFileManagerProductMetricsClient(client: client, environment: .dev)
+        for (index, identity) in identities.enumerated() {
+            recordClient.record(.contentTabAction(
+                result: .success,
+                identity: identity,
+                source: .contentTabBar,
+                operationID: UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 9, UInt8(index + 1))),
+            ))
+        }
+        let recorded = requests.value
+        XCTAssertEqual(recorded.count, identities.count)
+        XCTAssertEqual(Set(recorded.map(\.metricKey)).count, identities.count)
+
+        let registry = ProductAnalyticsRegistry.load(bundle: VoyagerTestSupport.hostApplicationBundle())
+        for (index, identity) in identities.enumerated() {
+            let request = recorded[index]
+            XCTAssertEqual(request.metricKey, try XCTUnwrap(expectedKeys[identity]))
+            XCTAssertEqual(request.properties["action_type"], .string(identity.actionType))
+            let result = registry.resolve(
+                metricKey: request.metricKey,
+                identity: .device("test-device-id"),
+                context: request.context,
+                properties: request.properties,
+                eventVersion: request.eventVersion,
+                operationID: request.operationID,
+            )
+            guard case .capture = result else {
+                return XCTFail("identity metric did not resolve: \(request.metricKey), result: \(result)")
+            }
+        }
     }
 
     func testAiChatProductMetricBridgeCapturesCanonicalRequestOnce() {

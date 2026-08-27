@@ -178,11 +178,12 @@ struct VoyagerApp: App {
                 ]
                 if let provider {
                     properties["provider_kind"] = .string(provider.rawValue)
-                } else if result != .skipped {
-                    return
                 }
+                // provider 미확정 success/failure는 이벤트가 없고, skipped는 provider 유무와 무관하게
+                // skip interaction key로 사상한다. success/failure는 start key를 유지한다.
+                guard provider != nil || result == .skipped else { return }
                 captureProductMetric(
-                    "voy_691_onb_004_start_ai_provider_connection_from_onboarding",
+                    Self.aiProviderCanonicalMetricKey(result),
                     properties: properties,
                     eventVersion: "1",
                     operationID: operationID,
@@ -192,7 +193,7 @@ struct VoyagerApp: App {
             case let .aiProvider(operationID, result):
                 guard result == .skipped else { return }
                 captureProductMetric(
-                    "voy_691_onb_004_start_ai_provider_connection_from_onboarding",
+                    Self.aiProviderCanonicalMetricKey(result),
                     properties: [
                         "result_status": .string(result.rawValue),
                         "source_surface": .string("onboarding"),
@@ -204,6 +205,59 @@ struct VoyagerApp: App {
                 )
             }
         }
+    }
+
+    /// Content Tab identity를 registry의 implemented canonical key로 사상한다.
+    nonisolated static func contentTabCanonicalMetricKey(_ identity: ContentTabInteractionIdentity) -> String {
+        switch identity {
+        case .pinContentTabs:
+            "voy_691_ctm_003_pin_content_tab_s"
+        case .unpinContentTabs:
+            "voy_691_ctm_003_unpin_content_tab_s"
+        case .openNewContentTab, .closeContentTab, .duplicateContentTab,
+             .duplicateSelectedContentTabs, .restoreLastClosedTab, .reorderContentTab,
+             .reorderSelectedContentTabs, .moveContentTabToAnotherWindow,
+             .moveSelectedContentTabsToAnotherWindow:
+            contentTabLifecycleCanonicalMetricKey(identity)
+        }
+    }
+
+    /// CTM-001 상호작용의 canonical key 사상.
+    nonisolated private static func contentTabLifecycleCanonicalMetricKey(
+        _ identity: ContentTabInteractionIdentity,
+    ) -> String {
+        switch identity {
+        case .openNewContentTab:
+            "voy_691_ctm_001_open_new_content_tab"
+        case .closeContentTab:
+            "voy_691_ctm_001_close_content_tab"
+        case .duplicateContentTab:
+            "voy_691_ctm_001_duplicate_content_tab"
+        case .duplicateSelectedContentTabs:
+            "voy_691_ctm_001_duplicate_selected_content_tabs"
+        case .restoreLastClosedTab:
+            "voy_691_ctm_001_restore_last_closed_tab"
+        case .reorderContentTab:
+            "voy_691_ctm_001_reorder_content_tab"
+        case .reorderSelectedContentTabs:
+            "voy_691_ctm_001_reorder_selected_content_tabs"
+        case .moveContentTabToAnotherWindow:
+            "voy_691_ctm_001_move_content_tab_to_another_file_manager_window"
+        case .moveSelectedContentTabsToAnotherWindow:
+            "voy_691_ctm_001_move_selected_content_tabs_to_another_file_manager_window"
+        case .pinContentTabs, .unpinContentTabs:
+            // CTM-003 key는 상위 함수가 소유한다.
+            contentTabCanonicalMetricKey(identity)
+        }
+    }
+
+    /// skipped는 skip interaction, success/failure는 start interaction이다.
+    nonisolated private static func aiProviderCanonicalMetricKey(
+        _ result: OnboardingProductMetric.AIProviderResult,
+    ) -> String {
+        result == .skipped
+            ? "voy_691_onb_004_skip_ai_provider_setup_during_onboarding"
+            : "voy_691_onb_004_start_ai_provider_connection_from_onboarding"
     }
 
     static func makeFileManagerProductMetricsClient(
@@ -218,10 +272,10 @@ struct VoyagerApp: App {
                     "content_kind": .string(content.rawValue),
                     "source_surface": .string(source.rawValue),
                 ], operationID)
-            case let .contentTabAction(result, action, source, operationID):
-                ("voy_691_ctm_001_open_new_content_tab", [
+            case let .contentTabAction(result, identity, source, operationID):
+                (Self.contentTabCanonicalMetricKey(identity), [
                     "result_status": .string(result.rawValue),
-                    "action_type": .string(action.rawValue),
+                    "action_type": .string(identity.actionType),
                     "source_surface": .string(source.rawValue),
                 ], operationID)
             case let .entryAction(result, action, source, operationID, _):
