@@ -30,6 +30,7 @@ extension EntryGridCoordinator {
     }
 
     func handleSnapshotChanges(previous: RenderSnapshot, snapshot: RenderSnapshot) {
+        resetThumbnailSessionIfNeeded(previous: previous, snapshot: snapshot)
         let didRebuildSections = shouldRebuildSections(previous: previous, snapshot: snapshot)
         var didScrollToSelection = false
         if didRebuildSections {
@@ -49,7 +50,6 @@ extension EntryGridCoordinator {
         consumeTypeScrollTargetIfNeeded(previous: previous, snapshot: snapshot)
         updateDropTargetBorderIfNeeded(previous: previous, snapshot: snapshot)
         syncThumbnailProjectionIfNeeded(previous: previous, snapshot: snapshot)
-        resetThumbnailSessionIfNeeded(previous: previous, snapshot: snapshot)
         // selection scroll이 성공하면 saved offset 복원보다 우선하므로 최종 복원을 생략한다.
         if !didScrollToSelection {
             restoreScrollOffsetIfNeeded(previous: previous, snapshot: snapshot)

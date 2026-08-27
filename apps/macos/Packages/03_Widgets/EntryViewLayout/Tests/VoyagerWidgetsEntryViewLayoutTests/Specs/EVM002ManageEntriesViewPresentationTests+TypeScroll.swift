@@ -752,15 +752,15 @@ extension EVM002ManageEntriesViewPresentationTests {
     /// EVM-002-manage_entries_view_type_scroll-grid_selection_scroll_wins_over_saved_offset:
     /// snapshot rebuild 중 selection scroll이 saved offset 복원보다 우선하고, 성공한 selection scroll은
     /// 이후 복원 기회를 소비해 뒤늦은 stale offset 점프도 차단한다.
-    /// rebuild로 section이 재구성되고 entry 수가 변해 복원 자격이 생겨도, selection scroll이 성공했다면
+    /// 경로 변경과 rebuild로 section이 재구성되고 entry 수가 변해 복원 자격이 생겨도, selection scroll이 성공했다면
     /// saved offset이 그 결과를 덮어쓰지 않아야 하고, 이후 선택 의도 없는 구조 변화에서도
     /// stale saved offset으로 복원되지 않아야 한다.
     /// - 검증 내용: rebuild + entry count 변화 + shouldScrollToSelection false→true 엣지에서 최종 clip origin이
     ///   saved offset이 아니고, target이 visible로 유지되며, selection 불변과 scroll flag reset 계약이 유지된다.
     ///   이어지는 선택 의도 없는 entry 수 변화 snapshot에서 clip origin이 saved offset으로 이동하지 않고
     ///   selection scroll 결과 위치에 유지되며 target 가시성도 보존된다.
-    /// - 사전 조건: window에 mount된 grid에 80개 entry가 있고 savedScrollOffset(y=37)이 target center와
-    ///   다른 값으로 저장돼 있으며, 이전 snapshot은 40개 entry와 shouldScrollToSelection == false다.
+    /// - 사전 조건: `/root`에 mount된 grid에 80개 entry가 있고 savedScrollOffset(y=37)이 target center와
+    ///   다른 값으로 저장돼 있으며, 이전 `/parent` snapshot은 40개 entry와 shouldScrollToSelection == false다.
     /// - 기대 결과: selection scroll 후 saved offset 복원이 건너뛰어져 origin != savedOffset,
     ///   target indexPath가 visible 목록에 남고, selectedIds 불변, shouldScrollToSelection == false.
     ///   이후 80→100 entry 변화에서도 origin 불변(savedOffset 아님), target visible 유지.
@@ -768,6 +768,7 @@ extension EVM002ManageEntriesViewPresentationTests {
         let fixture = makeGridSelectionScrollFixture()
 
         var previousState = EntryViewLayoutState()
+        previousState.currentPath = "/parent"
         previousState.entries = Array(fixture.entries.prefix(40))
         previousState.savedScrollOffset = CGPoint(x: 0, y: 37)
         previousState.shouldScrollToSelection = false
@@ -821,6 +822,7 @@ extension EVM002ManageEntriesViewPresentationTests {
         }
         let target = entries[70]
         var state = EntryViewLayoutState()
+        state.currentPath = "/root"
         state.entries = entries
         state.selectedIds = [entries[0].id]
         // bind 이전부터 pending target이 설정돼 있다 (unmount 중 생성 시나리오).
