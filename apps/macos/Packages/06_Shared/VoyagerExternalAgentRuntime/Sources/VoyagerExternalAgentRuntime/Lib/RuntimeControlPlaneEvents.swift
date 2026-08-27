@@ -170,20 +170,25 @@ extension RuntimeControlPlane {
         try validate(event, host: host, expectedSource: expectedSource, in: registry)
         guard var session = registry[host] else { throw RuntimeHostError.malformedAdapterResponse }
         let isProvider = expectedSource == .provider
-        try advanceProcessedCount(in: &session, isProvider: isProvider)
         let cursor = eventCursor(for: session, isProvider: isProvider)
+        // 예산 포화 시 유일한 예외는 새로운 멱등키의 연속 단말 이벤트(정책 투영이 단말로 수렴)뿐이며,
+        // 중복·stale·gap·nonterminal은 fail-closed로 거부되고 어떤 저장 변화도 남기지 않는다.
+        let saturatingTerminal = try resolveSaturatedAdmission(
+            event,
+            terminal: terminal,
+            session: session,
+            isProvider: isProvider,
+            cursor: cursor,
+        )
+        try advanceProcessedCount(in: &session, isProvider: isProvider, saturating: saturatingTerminal)
         if try applyReplayEvidence(
             event,
             session: &session,
             cursor: cursor,
             registry: &registry,
+            bypassesBudget: saturatingTerminal,
         ) { return nil }
-        let expected = cursor.lastSequence + 1
-        let hasGap = event.sequence != expected
-        if hasGap { session.stored = session.stored.withEvidence(.sequenceGap(
-            expected: expected,
-            received: event.sequence,
-        )) }
+        let hasGap = gapEvidence(for: event, cursor: cursor, session: &session)
         let accepted = acceptedEventProjection(
             event,
             terminal: terminal,
@@ -211,6 +216,7 @@ extension RuntimeControlPlane {
         session: inout Session,
         cursor: EventCursor,
         registry: inout SessionRegistry,
+        bypassesBudget bypassesBudget: Bool = false,
     ) throws -> Bool {
         let host = event.externalAgentSessionReference
         if cursor.acceptedKeys.contains(event.idempotencyKey) {
@@ -233,10 +239,75 @@ extension RuntimeControlPlane {
             registry[host] = session
             return true
         }
-        guard cursor.acceptedCount < RuntimeBoundaryLimits.acceptedEventsPerRun else {
+        guard bypassesBudget || cursor.acceptedCount < RuntimeBoundaryLimits.acceptedEventsPerRun else {
             throw RuntimeHostError.malformedAdapterResponse
         }
         return false
+    }
+
+    private func budgetSaturated(session: Session, cursor: EventCursor, isProvider: Bool) -> Bool {
+        let processed = isProvider ? session.processedCount : session.hostProcessedCount
+        return processed >= RuntimeBoundaryLimits.acceptedEventsPerRun
+            || cursor.acceptedCount >= RuntimeBoundaryLimits.acceptedEventsPerRun
+    }
+
+    /// 예산 포화 여부를 판정하고, 포화 상태에서 수용 가능한 단말 예외가 아니면 fail-closed로 거부한다.
+    private func resolveSaturatedAdmission(
+        _ event: RuntimeEventEnvelope,
+        terminal: RuntimeResult?,
+        session: Session,
+        isProvider: Bool,
+        cursor: EventCursor,
+    ) throws -> Bool {
+        let saturated = budgetSaturated(session: session, cursor: cursor, isProvider: isProvider)
+        let saturatingTerminal = saturated && admitsSaturatedTerminal(
+            event,
+            terminal: terminal,
+            session: session,
+            isProvider: isProvider,
+            cursor: cursor,
+        )
+        if saturated, !saturatingTerminal {
+            throw RuntimeHostError.malformedAdapterResponse
+        }
+        return saturatingTerminal
+    }
+
+    /// 예산 포화 상태에서 수용 가능한 유일한 예외인지 판정한다.
+    /// 새로운 멱등키로 연속 시퀀스에 도착한 단말 이벤트이면서 정책 투영이 단말로 수렴할 때만 참이다.
+    private func admitsSaturatedTerminal(
+        _ event: RuntimeEventEnvelope,
+        terminal: RuntimeResult?,
+        session: Session,
+        isProvider: Bool,
+        cursor: EventCursor,
+    ) -> Bool {
+        guard let terminal,
+              !cursor.acceptedKeys.contains(event.idempotencyKey),
+              event.sequence > cursor.lastSequence,
+              event.sequence - cursor.lastSequence == 1
+        else { return false }
+        let accepted = acceptedEventProjection(
+            event,
+            terminal: terminal,
+            session: session,
+            isProvider: isProvider,
+            hasGap: false,
+        )
+        return accepted.projection.isTerminal
+    }
+
+    /// 뺄셈 기반 연속성 판정으로 lastSequence + 1 계산의 UInt64 오버플로를 원천 차단하고,
+    /// 갭이 감지되면 시퀀스 갭 증거를 기록한다.
+    private func gapEvidence(for event: RuntimeEventEnvelope, cursor: EventCursor, session: inout Session) -> Bool {
+        // applyReplayEvidence가 false를 반환하면 event.sequence > cursor.lastSequence가 보장된다.
+        let hasGap = event.sequence - cursor.lastSequence != 1
+        guard hasGap else { return false }
+        session.stored = session.stored.withEvidence(.sequenceGap(
+            expected: cursor.lastSequence &+ 1,
+            received: event.sequence,
+        ))
+        return true
     }
 
     private func acceptedEventProjection(
@@ -306,10 +377,12 @@ extension RuntimeControlPlane {
         }
     }
 
-    private func advanceProcessedCount(in session: inout Session, isProvider: Bool) throws {
+    private func advanceProcessedCount(in session: inout Session, isProvider: Bool, saturating: Bool = false) throws {
         let count = isProvider ? session.processedCount : session.hostProcessedCount
         guard count < RuntimeBoundaryLimits.acceptedEventsPerRun else {
-            throw RuntimeHostError.malformedAdapterResponse
+            // 포화 예외가 허용된 단말 이벤트는 처리 카운터를 상한에 고정한다(초과 증가 금지).
+            guard saturating else { throw RuntimeHostError.malformedAdapterResponse }
+            return
         }
         if isProvider {
             session.processedCount += 1
@@ -366,9 +439,10 @@ extension RuntimeControlPlane {
         let isProvider = source == .provider
         let restorationClaim = session.stored.restorationClaim
         if isProvider {
-            session.acceptedCount += 1
+            // 수용 카운터는 상한에서 포화되며 어떤 경로로도 초과하지 않는다.
+            session.acceptedCount = min(session.acceptedCount + 1, RuntimeBoundaryLimits.acceptedEventsPerRun)
         } else {
-            session.hostAcceptedCount += 1
+            session.hostAcceptedCount = min(session.hostAcceptedCount + 1, RuntimeBoundaryLimits.acceptedEventsPerRun)
         }
         let providerKeys = isProvider
             ? Array((session.stored.acceptedIdempotencyKeys + [event.idempotencyKey])
