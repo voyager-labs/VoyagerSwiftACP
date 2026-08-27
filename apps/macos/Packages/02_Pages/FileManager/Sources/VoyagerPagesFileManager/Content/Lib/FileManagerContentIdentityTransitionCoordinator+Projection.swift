@@ -10,6 +10,7 @@ extension FileManagerContentIdentityTransitionCoordinator {
     ) {
         guard let transition = state.pendingIdentityTransition else { return }
         var shouldDefer: Bool?
+        var holdsUntilMigration = false
         if case let .folder(ownerID, _) = transition.projectionOwner,
            canonicalizedPath(ownerID) == canonicalizedPath(folderID)
         {
@@ -23,11 +24,15 @@ extension FileManagerContentIdentityTransitionCoordinator {
            shouldDefer == nil
         {
             shouldDefer = true
+            // 보존(소스) 폴더는 destination migration까지 staging을 보류한다.
+            // 소스 coreFinished가 먼저 도착해도 retained before 행을 유지해 선택 깜빡임을 막는다.
+            holdsUntilMigration = true
         }
         guard shouldDefer == true else { return }
         state.entryViewLayout.hierarchy.beginDeferredFolderReplacement(
             folderID: folderID,
             untilEntryID: afterLexicalPath(transition),
+            holdsUntilMigration: holdsUntilMigration,
         )
     }
 

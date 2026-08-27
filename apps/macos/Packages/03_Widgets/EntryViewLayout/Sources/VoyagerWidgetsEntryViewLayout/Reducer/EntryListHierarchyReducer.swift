@@ -83,6 +83,8 @@ struct EntryListHierarchyReducer {
                           nodeState.expansionIntent,
                           nodeState.loadPhase != .loaded
                     else { continue }
+                    // startLoad와 동일하게 세대 재시작 전 이전 세대의 deferred staging을 폐기한다.
+                    state.hierarchy.discardDeferredFolderReplacement(folderID: folder.id)
                     state.hierarchy.nodesByID[folder.id] = reloadedNodeState(for: nodeState)
                     effects.append(.send(.delegate(.expandRequested(folder.id))))
                 }
@@ -227,6 +229,14 @@ struct EntryListHierarchyReducer {
                    let replacement = state.hierarchy.deferredFolderReplacements[folderID]
                 {
                     guard batchCount == nodeState.folder.expectedBatchIndex else { return .none }
+                    if replacement.holdsUntilMigration {
+                        // 보존(소스) 폴더: destination migration까지 retained projection을 유지한다.
+                        // coreFinished는 terminal만 기록하고 children·staging은 건드리지 않는다.
+                        // 실제 staging 커밋은 migrateSelection이 담당한다.
+                        nodeState.folder.coreFinished = true
+                        state.hierarchy.nodesByID[folderID] = nodeState
+                        return .none
+                    }
                     nodeState.folder.children = replacement.stagedChildren
                     nodeState.folder.hasAppliedContentBatch = !replacement.stagedChildren.isEmpty
                     nodeState.folder.coreFinished = true

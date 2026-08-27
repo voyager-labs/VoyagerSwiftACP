@@ -2800,6 +2800,80 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         XCTAssertNotNil(store.state.content.pendingIdentityTransition, "결합 이벤트는 전이를 소비하지 않는다")
     }
 
+    /// EVM-001-command_external_refresh_correlation: rename+create 결합 이벤트도 순수 rename echo로 보지 않는다.
+    /// - 검증 내용: ItemRenamed|ItemCreated 결합 이벤트가 계층 무효화와 reload를 예약하는지 검증
+    /// - 사전 조건: 현재 root에서 old→new rename 전이가 같은 generation으로 대기 중
+    /// - 기대 결과: hierarchyInvalidated 1회와 loadItems forwarding이 발생하고 전이는 소비되지 않는다
+    func testCorrelatedCoalescedRenameCreatedEventStillSchedulesRefresh() async {
+        let folderPath = "/tmp/voyager-correlation"
+        let oldPath = "\(folderPath)/old.txt"
+        let newPath = "\(folderPath)/new.txt"
+        var initialState = makeCorrelationState(folderPath: folderPath)
+        initialState.content.entryViewLayout.selectedIds = [oldPath]
+        let store = TestStore(initialState: initialState) {
+            CommandExternalRefreshHarness()
+        }
+        store.exhaustivity = .off
+
+        let record = EntryActionRecord(
+            operationKind: .rename,
+            targets: [.init(beforePath: oldPath, afterPath: newPath)],
+        )
+        await store.send(.bridge(.lifecycle(.operationFinished(
+            oldPath,
+            .rename,
+            .success(()),
+        ))))
+        await store.send(.bridge(.lifecycle(.entryActionCompleted(record))))
+        await store.receive { action in
+            guard case .content(.entryViewLayout(.hierarchy(.hierarchyInvalidated(_, _)))) = action else {
+                return false
+            }
+            return true
+        }
+        await store.receive { action in
+            guard case .content(.entryViewLayout(.entryOperations(.loading(.loadItems)))) = action else {
+                return false
+            }
+            return true
+        }
+        let baselineInvalidations = store.state.hierarchyInvalidations.count
+        let baselineReloads = store.state.rootReloadCount
+
+        let coalescedFlags = UInt32(kFSEventStreamEventFlagItemRenamed)
+            | UInt32(kFSEventStreamEventFlagItemCreated)
+        await store.send(.content(.externalFileSystemChanged(
+            Self.externalChangeEvents([newPath], flags: coalescedFlags),
+            deliveryChainToken: nil,
+        )))
+        await store.receive { action in
+            guard case let .content(.entryViewLayout(.hierarchy(.hierarchyInvalidated(
+                affectedPaths,
+                removedPrefixes,
+            )))) = action else { return false }
+            return affectedPaths == [Self.canonicalPath(newPath), Self.canonicalPath(folderPath)]
+                && removedPrefixes == [Self.canonicalPath(newPath)]
+        }
+        await store.receive { action in
+            guard case .content(.entryViewLayout(.entryOperations(.loading(.loadItems)))) = action else {
+                return false
+            }
+            return true
+        }
+
+        XCTAssertEqual(
+            store.state.hierarchyInvalidations.count,
+            baselineInvalidations + 1,
+            "rename+create 결합 이벤트의 독립 생성은 계층 무효화를 예약해야 한다",
+        )
+        XCTAssertEqual(
+            store.state.rootReloadCount,
+            baselineReloads + 1,
+            "rename+create 결합 이벤트는 root reload를 예약해야 한다",
+        )
+        XCTAssertNotNil(store.state.content.pendingIdentityTransition, "결합 이벤트는 전이를 소비하지 않는다")
+    }
+
     /// EVM-001-command_external_refresh_correlation: 사용자가 before 선택을 포기하면 전이를 소비한다.
     /// 소유자 세대가 일치하는 batch에서 before 선택이 없으면 migration 대상이 없으므로
     /// 전이를 남겨두면 같은 경로의 실제 rename echo가 병합돼 목록 갱신이 누락된다.

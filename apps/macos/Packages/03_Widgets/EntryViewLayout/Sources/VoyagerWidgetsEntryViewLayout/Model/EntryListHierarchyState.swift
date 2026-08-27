@@ -65,10 +65,19 @@ public struct FolderNodeState: Equatable, Sendable {
 public struct DeferredFolderReplacement: Equatable, Sendable {
     public let untilEntryID: EntryModel.ID
     public var stagedChildren: [EntryModel]
+    /// 보존(preservation) 소유자 폴더처럼 migration 완료까지 staging을 보류해야 하는지 여부.
+    /// true면 해당 폴더의 coreFinished가 terminal만 기록하고 retained children과 staging을 유지하며,
+    /// 실제 커밋은 destination migration(migrateSelection)이 담당한다.
+    public let holdsUntilMigration: Bool
 
-    public init(untilEntryID: EntryModel.ID, stagedChildren: [EntryModel] = []) {
+    public init(
+        untilEntryID: EntryModel.ID,
+        stagedChildren: [EntryModel] = [],
+        holdsUntilMigration: Bool = false,
+    ) {
         self.untilEntryID = untilEntryID
         self.stagedChildren = stagedChildren
+        self.holdsUntilMigration = holdsUntilMigration
     }
 }
 
@@ -113,9 +122,13 @@ public struct EntryListHierarchyState: Equatable, Sendable {
     public mutating func beginDeferredFolderReplacement(
         folderID: EntryModel.ID,
         untilEntryID: EntryModel.ID,
+        holdsUntilMigration: Bool = false,
     ) {
         guard deferredFolderReplacements[folderID] == nil else { return }
-        deferredFolderReplacements[folderID] = .init(untilEntryID: untilEntryID)
+        deferredFolderReplacements[folderID] = .init(
+            untilEntryID: untilEntryID,
+            holdsUntilMigration: holdsUntilMigration,
+        )
     }
 
     public mutating func takeDeferredFolderReplacement(folderID: EntryModel.ID) -> [EntryModel]? {
