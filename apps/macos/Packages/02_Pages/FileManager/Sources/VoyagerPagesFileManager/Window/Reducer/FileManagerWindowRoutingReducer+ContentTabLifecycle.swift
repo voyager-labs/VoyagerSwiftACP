@@ -241,7 +241,7 @@ extension FileManagerWindowRoutingReducer {
         else { return }
         productMetricsClient.record(FileManagerProductMetricsProducer.contentTabTerminal(
             operationID: productMetricsClient.makeOperationID(),
-            action: .close,
+            identity: .closeContentTab,
             source: .contentTabBar,
             result: .success,
         ))

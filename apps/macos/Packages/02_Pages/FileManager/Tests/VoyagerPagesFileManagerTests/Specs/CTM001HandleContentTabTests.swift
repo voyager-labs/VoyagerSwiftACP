@@ -5428,7 +5428,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
         XCTAssertEqual(recorder.metrics(), [
             .contentTabAction(
                 result: .success,
-                action: .open,
+                identity: .openNewContentTab,
                 source: .contentTabBar,
                 operationID: operationID,
             ),
@@ -5518,7 +5518,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
         XCTAssertEqual(recorder.metrics(), [
             .contentTabAction(
                 result: .success,
-                action: .close,
+                identity: .closeContentTab,
                 source: .contentTabBar,
                 operationID: operationID,
             ),
@@ -5614,7 +5614,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
         XCTAssertEqual(recorder.metrics(), [
             .contentTabAction(
                 result: .success,
-                action: .restore,
+                identity: .restoreLastClosedTab,
                 source: .contentTabBar,
                 operationID: operationID,
             ),
@@ -5704,7 +5704,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
         XCTAssertEqual(recorder.metrics(), [
             .contentTabAction(
                 result: .success,
-                action: .reorder,
+                identity: .reorderContentTab,
                 source: .contentTabBar,
                 operationID: operationID,
             ),
@@ -5797,7 +5797,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
         XCTAssertEqual(recorder.metrics(), [
             .contentTabAction(
                 result: .success,
-                action: .duplicate,
+                identity: .duplicateContentTab,
                 source: .contentTabBar,
                 operationID: operationID,
             ),
@@ -5853,7 +5853,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
 
     /// CTM-001-content_tab_action_metrics: commit된 top navigation move는 move 메트릭 한 건을 기록하고
     /// 지연/중복 terminal은 추가 이벤트를 만들지 않는다.
-    /// - 검증 내용: committed terminal의 `.success/.move` 1건, intent·상관 키 제거, late terminal 무이벤트
+    /// - 검증 내용: committed terminal의 `.success/.reorderContentTab` 1건, intent·상관 키 제거, late terminal 무이벤트
     /// - 사전 조건: pinned Directory 2개와 optimistic order [first, second]
     /// - 기대 결과: 레코더에 move success 메트릭 정확히 1건 유지
     func testTopNavigationMoveCommitEmitsSingleMoveMetricOnce() async throws {
@@ -5931,7 +5931,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
         XCTAssertEqual(recorder.metrics(), [
             .contentTabAction(
                 result: .success,
-                action: .move,
+                identity: .reorderContentTab,
                 source: .contentTabBar,
                 operationID: operationID,
             ),
@@ -5998,7 +5998,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
     }
 
     /// CTM-001-content_tab_action_metrics: save 실패 terminal은 failure move 메트릭 한 건으로 매핑된다.
-    /// - 검증 내용: `.failed(.save)` terminal의 `.failure/.move` 메트릭 1건
+    /// - 검증 내용: `.failed(.save)` terminal의 `.failure/.reorderContentTab` 메트릭 1건
     /// - 사전 조건: 수용된 move intent 하나
     /// - 기대 결과: 레코더에 move failure 메트릭 1건만 기록됨
     func testTopNavigationMoveSaveFailureEmitsSingleFailureMetric() async throws {
@@ -6054,7 +6054,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
         XCTAssertEqual(recorder.metrics(), [
             .contentTabAction(
                 result: .failure,
-                action: .move,
+                identity: .reorderContentTab,
                 source: .contentTabBar,
                 operationID: operationID,
             ),

@@ -463,8 +463,10 @@ extension FileManagerFeature {
         isCurrentTerminal: Bool? = nil,
     ) -> Effect<Action> {
         let hadPendingIntent = state.pendingTopNavigationIntents.contains { $0.token == token }
-        let isMoveMetricPending = hadPendingIntent
-            && pendingTopNavigationIntent(token: token, state: state)?.intent.isContentTabMoveMetricEligible == true
+        let moveMetricIntent = hadPendingIntent
+            ? pendingTopNavigationIntent(token: token, state: state)?.intent
+            : nil
+        let isMoveMetricPending = moveMetricIntent?.isContentTabMoveMetricEligible == true
         let isRelevantCurrentTerminal = hadPendingIntent
             && (isCurrentTerminal ?? contentTabPinnedRecordClient.isCurrentTopNavigationOperationToken(token))
         switch terminal {
@@ -499,7 +501,7 @@ extension FileManagerFeature {
         }
         state.pendingTopNavigationIntents.removeAll { $0.token == token }
         if isMoveMetricPending {
-            recordContentTabMoveMetric(token: token, terminal: terminal, state: &state)
+            recordContentTabMoveMetric(token: token, terminal: terminal, intent: moveMetricIntent, state: &state)
         }
         state.replayTopNavigationOverlays()
         return .none
@@ -514,17 +516,24 @@ extension FileManagerFeature {
 
     /// move persistence terminal을 operation ID와 상관해 정확히 한 번 기록하고 상관 키를 함께 제거한다.
     /// intent가 이미 제거된 지연/중복 terminal은 이벤트를 만들지 않는다.
+    /// 같은 창 top-navigation 이동은 inter-window move가 아니므로 reorder family identity로 보고한다.
     private func recordContentTabMoveMetric(
         token: FileManagerTopNavigationOperationToken,
         terminal: FileManagerTopNavigationIntentTerminal,
+        intent: FileManagerTopNavigationIntent?,
         state: inout State,
     ) {
         guard let operationID = state.productContentTabMoveOperationIDs.removeValue(forKey: token) else {
             return
         }
+        let identity: ContentTabInteractionIdentity = if case .movePinnedGroup = intent {
+            .reorderSelectedContentTabs
+        } else {
+            .reorderContentTab
+        }
         productMetricsClient.record(FileManagerProductMetricsProducer.contentTabTerminal(
             operationID: operationID,
-            action: .move,
+            identity: identity,
             source: .contentTabBar,
             result: contentTabActionResult(from: terminal),
         ))
@@ -646,14 +655,18 @@ extension FileManagerFeature {
         case open(previousTabCount: Int)
         case restore(hadRecentlyClosed: Bool, previousTabCount: Int)
         case reorder(previousOrder: [ContentTabID])
+        case reorderGroup(previousOrder: [ContentTabID])
         case duplicate(previousIDs: Set<ContentTabID>, duplicateIDs: [ContentTabID])
+        case duplicateSelected(previousIDs: Set<ContentTabID>, duplicateIDs: [ContentTabID])
 
-        var kind: ContentTabActionKind {
+        var identity: ContentTabInteractionIdentity {
             switch self {
-            case .open: .open
-            case .restore: .restore
-            case .reorder: .reorder
-            case .duplicate: .duplicate
+            case .open: .openNewContentTab
+            case .restore: .restoreLastClosedTab
+            case .reorder: .reorderContentTab
+            case .reorderGroup: .reorderSelectedContentTabs
+            case .duplicate: .duplicateContentTab
+            case .duplicateSelected: .duplicateSelectedContentTabs
             }
         }
     }
@@ -670,12 +683,14 @@ extension FileManagerFeature {
                 hadRecentlyClosed: state.contentTabs.recentlyClosed != nil,
                 previousTabCount: state.contentTabs.tabs.count,
             )
-        case .reorder, .reorderGroup:
+        case .reorder:
             .reorder(previousOrder: state.contentTabs.tabs.map(\.id))
+        case .reorderGroup:
+            .reorderGroup(previousOrder: state.contentTabs.tabs.map(\.id))
         case let .duplicate(_, duplicateID):
             .duplicate(previousIDs: Set(state.contentTabs.tabs.ids), duplicateIDs: [duplicateID])
         case let .duplicateSelected(requests):
-            .duplicate(
+            .duplicateSelected(
                 previousIDs: Set(state.contentTabs.tabs.ids),
                 duplicateIDs: requests.map(\.duplicateID),
             )
@@ -695,9 +710,9 @@ extension FileManagerFeature {
             state.contentTabs.tabs.count > previousTabCount
         case let .restore(hadRecentlyClosed, previousTabCount):
             hadRecentlyClosed && state.contentTabs.tabs.count > previousTabCount
-        case let .reorder(previousOrder):
+        case let .reorder(previousOrder), let .reorderGroup(previousOrder):
             state.contentTabs.tabs.map(\.id) != previousOrder
-        case let .duplicate(previousIDs, duplicateIDs):
+        case let .duplicate(previousIDs, duplicateIDs), let .duplicateSelected(previousIDs, duplicateIDs):
             duplicateIDs.contains { duplicateID in
                 !previousIDs.contains(duplicateID) && state.contentTabs.tabs[id: duplicateID] != nil
             }
@@ -705,7 +720,7 @@ extension FileManagerFeature {
         guard accepted else { return }
         productMetricsClient.record(FileManagerProductMetricsProducer.contentTabTerminal(
             operationID: productMetricsClient.makeOperationID(),
-            action: observation.kind,
+            identity: observation.identity,
             source: .contentTabBar,
             result: .success,
         ))

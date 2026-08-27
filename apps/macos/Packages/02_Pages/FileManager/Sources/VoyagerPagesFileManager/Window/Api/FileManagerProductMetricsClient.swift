@@ -10,7 +10,7 @@ public enum FileManagerProductMetric: Equatable, Sendable {
     )
     case contentTabAction(
         result: ContentTabActionResult,
-        action: ContentTabActionKind,
+        identity: ContentTabInteractionIdentity,
         source: ContentTabActionSource,
         operationID: UUID,
     )
@@ -52,15 +52,37 @@ public enum ContentTabActionResult: String, Equatable, Sendable {
     case unavailable
 }
 
-public enum ContentTabActionKind: String, Equatable, Sendable {
-    case open
-    case close
-    case pin
-    case unpin
-    case duplicate
-    case restore
-    case reorder
-    case move
+/// Content Tab 터미널의 유한한 정규 interaction identity.
+/// action_type 단독으로는 registry interaction을 특정할 수 없으므로(예: inter-window 이동과
+/// 같은 창 재배치가 모두 move로 보고될 수 있음) 생산자가 수용된 interaction의 정확한
+/// identity를 전달하고 앱 어댑터가 이를 implemented voy_691_* canonical key로 사상한다.
+public enum ContentTabInteractionIdentity: Equatable, Sendable {
+    case openNewContentTab
+    case closeContentTab
+    case duplicateContentTab
+    case duplicateSelectedContentTabs
+    case restoreLastClosedTab
+    case reorderContentTab
+    case reorderSelectedContentTabs
+    case moveContentTabToAnotherWindow
+    case moveSelectedContentTabsToAnotherWindow
+    case pinContentTabs
+    case unpinContentTabs
+
+    /// registry property_value_allowlist와 일치하는 action_type 값.
+    public var actionType: String {
+        switch self {
+        case .openNewContentTab: "open"
+        case .closeContentTab: "close"
+        case .duplicateContentTab, .duplicateSelectedContentTabs: "duplicate"
+        case .restoreLastClosedTab: "restore"
+        case .reorderContentTab, .reorderSelectedContentTabs: "reorder"
+        case .moveContentTabToAnotherWindow, .moveSelectedContentTabsToAnotherWindow:
+            "move"
+        case .pinContentTabs: "pin"
+        case .unpinContentTabs: "unpin"
+        }
+    }
 }
 
 public enum ContentTabActionSource: String, Equatable, Sendable {
@@ -171,11 +193,11 @@ public enum FileManagerProductMetricsProducer {
 
     public static func contentTabTerminal(
         operationID: UUID,
-        action: ContentTabActionKind,
+        identity: ContentTabInteractionIdentity,
         source: ContentTabActionSource,
         result: ContentTabActionResult,
     ) -> FileManagerProductMetric {
-        .contentTabAction(result: result, action: action, source: source, operationID: operationID)
+        .contentTabAction(result: result, identity: identity, source: source, operationID: operationID)
     }
 
     public static func entryTerminal(
