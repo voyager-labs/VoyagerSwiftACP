@@ -42,6 +42,19 @@ private struct BatchPendingCloseFixture {
     let state: FileManagerFeature.State
 }
 
+private struct ConfiguredDirectoryHandoffFixture {
+    let preferences: VoyagerPagesFileManager.AppPreferencesState
+    let state: FileManagerFeature.State
+    let previousID: ContentTabID
+    let sourcePath: String
+    let directoryPath: String
+}
+
+private struct ConfiguredDirectoryHandoffRecorders {
+    let cancellationCount = LockIsolated(0)
+    let loadPaths = LockIsolated<[String]>([])
+}
+
 @MainActor
 private func makeBatchDirectorySourceContent() -> FileManagerContentFeature.State {
     var content = FileManagerContentFeature.State.initialContent(
@@ -5643,16 +5656,19 @@ final class CTM001HandleContentTabTests: XCTestCase {
     private func makeConfiguredDirectoryHandoffState(
         directoryPath: String,
         sourcePath: String,
-    ) throws
-        -> (preferences: VoyagerPagesFileManager.AppPreferencesState, state: FileManagerFeature.State,
-            previousID: ContentTabID)
-    {
+    ) throws -> ConfiguredDirectoryHandoffFixture {
         var preferences = VoyagerPagesFileManager.AppPreferencesState()
         preferences.defaultStartPage = .directory(directoryPath)
         var state = FileManagerWindowState.makeInitial(path: sourcePath)
         let previousID = try XCTUnwrap(state.contentTabs.activeTabID)
         state.content.navigation.backHistory = [ContentPageNavigationHistorySnapshot(navigationState: .recents)]
-        return (preferences, state, previousID)
+        return .init(
+            preferences: preferences,
+            state: state,
+            previousID: previousID,
+            sourcePath: sourcePath,
+            directoryPath: directoryPath,
+        )
     }
 
     private func receiveConfiguredDirectoryHandoffActions(
@@ -5691,22 +5707,19 @@ final class CTM001HandleContentTabTests: XCTestCase {
 
     private func verifyConfiguredDirectoryHandoffResult(
         _ state: FileManagerFeature.State,
-        previousID: ContentTabID,
-        sourcePath: String,
-        directoryPath: String,
-        cancellationCount: LockIsolated<Int>,
-        loadPaths: LockIsolated<[String]>,
+        fixture: ConfiguredDirectoryHandoffFixture,
+        recorders: ConfiguredDirectoryHandoffRecorders,
     ) throws {
         let newTabID = try XCTUnwrap(state.contentTabs.activeTabID)
-        XCTAssertNotEqual(newTabID, previousID)
-        XCTAssertEqual(state.contentTabs.tabs[id: newTabID]?.anchor, .directory(path: directoryPath))
+        XCTAssertNotEqual(newTabID, fixture.previousID)
+        XCTAssertEqual(state.contentTabs.tabs[id: newTabID]?.anchor, .directory(path: fixture.directoryPath))
         XCTAssertEqual(state.content.navigation.backHistory.count, 0)
         XCTAssertFalse(state.content.entryViewLayout.entryOperations.isLoading)
-        XCTAssertEqual(state.content.navigation.currentPath, directoryPath)
-        let savedPreviousContent = try XCTUnwrap(state.tabContentStates[previousID])
+        XCTAssertEqual(state.content.navigation.currentPath, fixture.directoryPath)
+        let savedPreviousContent = try XCTUnwrap(state.tabContentStates[fixture.previousID])
         XCTAssertEqual(savedPreviousContent.navigation.backHistory.map(\.navigationState), [.recents])
-        XCTAssertEqual(cancellationCount.value, 1)
-        XCTAssertEqual(loadPaths.value, [sourcePath, directoryPath])
+        XCTAssertEqual(recorders.cancellationCount.value, 1)
+        XCTAssertEqual(recorders.loadPaths.value, [fixture.sourcePath, fixture.directoryPath])
     }
 
     /// CTM-001-open_new_content_tab_handoff: Directory 시작 페이지 새 탭은 정상 handoff cleanup과 navigation resync를 수행함
@@ -5719,10 +5732,10 @@ final class CTM001HandleContentTabTests: XCTestCase {
     func testOpenNewContentTab_configuredDirectoryStartPage_performsHandoffCleanupAndResync() async throws {
         let directory = try FileManagerFixtureSandbox.readOnlyDirectory(from: "fixtures/fixtures/documents")
         let sourcePath = "/seed"
-        let outgoingLoadStarted = expectation(description: "outgoing load started")
-        let outgoingLoadCancelled = expectation(description: "outgoing load cancelled")
+        let outgoingLoadStarted = expectation(description: "outgoing load started"),
+            outgoingLoadCancelled = expectation(description: "outgoing load cancelled")
         let outgoingLoadGate = AsyncStream<Void>.makeStream()
-        let cancellationCount = LockIsolated(0), loadPaths = LockIsolated<[String]>([])
+        let recorders = ConfiguredDirectoryHandoffRecorders()
         let fixture = try makeConfiguredDirectoryHandoffState(directoryPath: directory.path, sourcePath: sourcePath)
         let store = TestStore(initialState: fixture.state) {
             FileManagerFeature()
@@ -5730,14 +5743,14 @@ final class CTM001HandleContentTabTests: XCTestCase {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
             $0.startPageAvailabilityClient.probeDirectory = { _ in .availableDirectory }
             $0.entryLoadingClient.loadItems = { url, _ in
-                loadPaths.withValue { $0.append(url.path) }
+                recorders.loadPaths.withValue { $0.append(url.path) }
                 guard url.path == sourcePath else { return [] }
                 outgoingLoadStarted.fulfill()
                 return await withTaskCancellationHandler {
                     for await _ in outgoingLoadGate.stream {}
                     return []
                 } onCancel: {
-                    cancellationCount.withValue { $0 += 1 }
+                    recorders.cancellationCount.withValue { $0 += 1 }
                     outgoingLoadGate.continuation.finish()
                     outgoingLoadCancelled.fulfill()
                 }
@@ -5765,11 +5778,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
         await store.finish()
         try verifyConfiguredDirectoryHandoffResult(
             store.state,
-            previousID: fixture.previousID,
-            sourcePath: sourcePath,
-            directoryPath: directory.path,
-            cancellationCount: cancellationCount,
-            loadPaths: loadPaths,
+            fixture: fixture,
+            recorders: recorders,
         )
     }
 
