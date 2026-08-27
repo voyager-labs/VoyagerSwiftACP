@@ -21,7 +21,11 @@ public struct StartPageAvailabilityClient: Sendable {
 }
 
 extension StartPageAvailabilityClient: DependencyKey {
-    nonisolated public static var liveValue: StartPageAvailabilityClient {
+    package static func live(
+        contentsOfDirectory: @escaping @Sendable (String) throws -> [String] = {
+            try FileManager.default.contentsOfDirectory(atPath: $0)
+        },
+    ) -> StartPageAvailabilityClient {
         StartPageAvailabilityClient { path in
             let url = URL(fileURLWithPath: path)
             do {
@@ -46,8 +50,18 @@ extension StartPageAvailabilityClient: DependencyKey {
                 return errno == EACCES || errno == EPERM ? .permissionDenied : .missing
             }
             guard (statBuffer.st_mode & S_IFMT) == S_IFDIR else { return .nonDirectory }
-            return .availableDirectory
+
+            do {
+                _ = try contentsOfDirectory(path)
+                return .availableDirectory
+            } catch {
+                return error.isPermissionDenied ? .permissionDenied : .missing
+            }
         }
+    }
+
+    nonisolated public static var liveValue: StartPageAvailabilityClient {
+        .live()
     }
 
     nonisolated public static var testValue: StartPageAvailabilityClient {
@@ -105,7 +119,8 @@ public struct StartPageResolution: Equatable, Sendable {
 
 public enum StartPageResolver {
     public static func resolve(_ startPage: StartPage) -> StartPageResolution {
-        @Dependency(\.startPageAvailabilityClient) var availabilityClient
+        @Dependency(\.startPageAvailabilityClient)
+        var availabilityClient
 
         switch startPage {
         case .home:

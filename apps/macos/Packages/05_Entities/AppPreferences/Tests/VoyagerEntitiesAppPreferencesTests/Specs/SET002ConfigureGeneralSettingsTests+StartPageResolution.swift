@@ -1,6 +1,6 @@
 import ComposableArchitecture
 import Foundation
-import VoyagerEntitiesAppPreferences
+@testable import VoyagerEntitiesAppPreferences
 import VoyagerShared
 import XCTest
 
@@ -112,5 +112,43 @@ extension SET002ConfigureGeneralSettingsTests {
 
         XCTAssertEqual(result.effectiveStartPage, .directory(sandbox.directory.path))
         XCTAssertNil(result.fallbackReason)
+    }
+
+    /// SET-002-configure_initial_page: directory 열거 권한 오류는 home으로 폴백한다.
+    /// stat 성공만으로 접근 가능하다고 판단하지 않고 권한 오류 폴백과 비저장을 확인한다.
+    /// - 검증 내용: EACCES와 EPERM 각각에 대해 열거가 1회 호출되고 home 폴백, permissionDenied,
+    ///   쓰기 0회, 기존 저장값 유지, 결과 문자열의 경로 비노출을 검증한다.
+    /// - 사전 조건: 실제 임시 디렉터리가 생성되어 cloud metadata/stat은 성공하고 열거만 합성 권한 오류를 반환한다.
+    /// - 기대 결과: 두 권한 오류 모두 effectiveStartPage는 .home이며 저장값과 결과 경로가 변하지 않는다.
+    func testLiveProbePermissionErrorsFallbackToHomeWithoutPersistence() throws {
+        let sandbox = try FileManagerFixtureSandbox()
+        defer { sandbox.cleanup() }
+
+        for code in [EACCES, EPERM] {
+            let path = sandbox.directory.path
+            let storage = RecordingUserDefaults()
+            storage.values[SettingsKeys.defaultStartPageType] = "directory"
+            storage.values[SettingsKeys.defaultTabPath] = path
+            let enumerationCount = Counter()
+            let result = withDependencies {
+                $0.startPageAvailabilityClient = .live(contentsOfDirectory: { requestedPath in
+                    if requestedPath == path {
+                        enumerationCount.value += 1
+                    }
+                    throw NSError(domain: NSPOSIXErrorDomain, code: Int(code))
+                })
+                $0.userDefaultsClient = storage.client
+            } operation: {
+                StartPageResolver.resolve(.directory(path))
+            }
+
+            XCTAssertEqual(enumerationCount.value, 1)
+            XCTAssertEqual(result.effectiveStartPage, StartPage.home)
+            XCTAssertEqual(result.fallbackReason, StartPageFallbackReason.permissionDenied)
+            XCTAssertEqual(storage.writeCount, 0)
+            XCTAssertEqual(storage.values[SettingsKeys.defaultStartPageType], "directory")
+            XCTAssertEqual(storage.values[SettingsKeys.defaultTabPath], path)
+            XCTAssertFalse(String(describing: result).contains(path))
+        }
     }
 }
