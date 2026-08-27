@@ -209,6 +209,40 @@ final class RCL003CollectionSearchExecutionTests: XCTestCase {
         XCTAssertTrue(recorder.names.isEmpty)
     }
 
+    /// RCL-003-execute_filtered_collection_retrieval: collection cleanup은 활성 query terminal을 한 번 기록함
+    /// cleanup 이후 반복 cleanup과 늦은 response가 중복 terminal event를 만들지 않는지 검증한다.
+    /// - 검증 내용: cancelled query event 1건, 기존 operation ID와 duration, 활성 요청 해제
+    /// - 사전 조건: 시작 시각과 request ID가 있는 활성 query
+    /// - 기대 결과: 첫 cleanup만 terminal을 기록하고 후속 cleanup/response는 무시됨
+    func testCleanupCollectionWork_withActiveQuery_recordsOneCancelledTerminal() throws {
+        let recorder = ComposerMetricRecorder()
+        let requestID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000023"))
+        var state = ComposerState()
+        state.isLoadingSearch = true
+        state.activeSearchRequestID = requestID
+        state.searchStartedAt = Date(timeIntervalSinceNow: -0.1)
+
+        withDependencies {
+            $0.composerMetricClient = ComposerMetricClient(recordProductMetric: recorder.record)
+        } operation: {
+            let feature = ComposerFeature()
+            _ = feature.reduce(into: &state, action: .internal(.cleanupCollectionWork))
+            _ = feature.reduce(into: &state, action: .internal(.cleanupCollectionWork))
+            _ = feature.reduce(
+                into: &state,
+                action: .internal(.searchResponse(requestID, .success(SearchResponsePayload(itemCount: 1)))),
+            )
+        }
+
+        XCTAssertEqual(recorder.names, [ComposerCollectionFilterMetrics.queryResult])
+        let call = try XCTUnwrap(recorder.callsSnapshot.first)
+        XCTAssertEqual(call.tags?["result_status"], "cancelled")
+        XCTAssertEqual(call.tags?["operation_id"], requestID.uuidString.lowercased())
+        XCTAssertNotNil(Int(call.tags?["duration_ms"] ?? ""))
+        XCTAssertNil(state.activeSearchRequestID)
+        XCTAssertFalse(state.isLoadingSearch)
+    }
+
     /// RCL-003-execute_filtered_collection_retrieval: value commit은 filter 실행을 한 번만 시작한다.
     /// parent condition mutation이 실제 SearchClient chain으로 이어질 때 중복 apply effect를 만들지 않는지 검증한다.
     /// - 검증 내용: single value commit, one applyFilters request, committed payload

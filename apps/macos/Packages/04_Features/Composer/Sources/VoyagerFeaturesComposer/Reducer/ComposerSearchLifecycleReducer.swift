@@ -327,7 +327,7 @@ private func makeSearchRequest(
     )
 }
 
-private func handleCancelSearch(
+func handleCancelSearch(
     state: inout ComposerFeature.State,
     composerMetricClient: ComposerMetricClient,
 ) -> Effect<ComposerFeature.Action> {
@@ -335,20 +335,20 @@ private func handleCancelSearch(
         return .cancel(id: ComposerFeature.CancelID.search(ownerID: state.cancellationOwnerID))
     }
     let startedAt = state.searchStartedAt
-    state.isLoadingSearch = false
-    state.activeSearchRequestID = nil
-    state.searchStartedAt = nil
-    state.resolveScopeChangeFeedback(.search(requestID), phase: .visible)
-    applyQueryPhaseTransition(.reset, state: &state)
     composerMetricClient.record(.queryResult(
         operationID: requestID,
         result: .cancelled,
         durationMilliseconds: ComposerCollectionFilterMetrics.boundedDurationMilliseconds(startedAt: startedAt),
     ))
+    state.isLoadingSearch = false
+    state.activeSearchRequestID = nil
+    state.searchStartedAt = nil
+    state.resolveScopeChangeFeedback(.search(requestID), phase: .visible)
+    applyQueryPhaseTransition(.reset, state: &state)
     return .cancel(id: ComposerFeature.CancelID.search(ownerID: state.cancellationOwnerID))
 }
 
-private func handleCancelFilters(
+func handleCancelFilters(
     state: inout ComposerFeature.State,
     composerMetricClient: ComposerMetricClient,
 ) -> Effect<ComposerFeature.Action> {
@@ -356,6 +356,11 @@ private func handleCancelFilters(
         return .cancel(id: ComposerFeature.CancelID.filters(ownerID: state.cancellationOwnerID))
     }
     let startedAt = state.filtersStartedAt
+    composerMetricClient.record(.applyResult(
+        operationID: requestID,
+        result: .cancelled,
+        durationMilliseconds: ComposerCollectionFilterMetrics.boundedDurationMilliseconds(startedAt: startedAt),
+    ))
     state.isLoadingFilters = false
     state.isFilteringInFlight = false
     state.activeFiltersRequestID = nil
@@ -364,11 +369,6 @@ private func handleCancelFilters(
     state.pendingSearchQuery = nil
     state.resolveScopeChangeFeedback(.filters(requestID), phase: .visible)
     applyQueryPhaseTransition(.reset, state: &state)
-    composerMetricClient.record(.applyResult(
-        operationID: requestID,
-        result: .cancelled,
-        durationMilliseconds: ComposerCollectionFilterMetrics.boundedDurationMilliseconds(startedAt: startedAt),
-    ))
     return .cancel(id: ComposerFeature.CancelID.filters(ownerID: state.cancellationOwnerID))
 }
 

@@ -394,6 +394,37 @@ final class RCL004ComposeCollectionFilterTests: XCTestCase {
         XCTAssertEqual(state.conditions.map(\.property.key), ["kind"])
     }
 
+    /// RCL-004-apply_generated_filter_changes: collection cleanup은 활성 apply terminal을 한 번 기록함
+    /// cleanup 이후 반복 cleanup과 늦은 response가 중복 terminal event를 만들지 않는지 검증한다.
+    /// - 검증 내용: cancelled apply event 1건, 기존 operation ID와 duration, 활성 요청 해제
+    /// - 사전 조건: 시작 시각과 request ID가 있는 활성 filter apply
+    /// - 기대 결과: 첫 cleanup만 terminal을 기록하고 후속 cleanup/response는 무시됨
+    func testCleanupCollectionWork_withActiveApply_recordsOneCancelledTerminal() throws {
+        let recorder = RCL004MetricRecorder()
+        let requestID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000024"))
+        var state = makeFiltersLoadingState(activeRequestID: requestID)
+
+        withDependencies {
+            $0.composerMetricClient = ComposerMetricClient(recordProductMetric: recorder.record)
+        } operation: {
+            let feature = ComposerFeature()
+            _ = feature.reduce(into: &state, action: .internal(.cleanupCollectionWork))
+            _ = feature.reduce(into: &state, action: .internal(.cleanupCollectionWork))
+            _ = feature.reduce(
+                into: &state,
+                action: .internal(.filtersResponse(requestID, .success(SearchResponsePayload(itemCount: 1)))),
+            )
+        }
+
+        XCTAssertEqual(recorder.calls.map(\.name), [ComposerCollectionFilterMetrics.applyResult])
+        let call = try XCTUnwrap(recorder.calls.first)
+        XCTAssertEqual(call.tags?["result_status"], "cancelled")
+        XCTAssertEqual(call.tags?["operation_id"], requestID.uuidString.lowercased())
+        XCTAssertNotNil(Int(call.tags?["duration_ms"] ?? ""))
+        XCTAssertNil(state.activeFiltersRequestID)
+        XCTAssertFalse(state.isFilteringInFlight)
+    }
+
     /// RCL-004-show_query_execution_failure_feedback: collection cleanup은 실행 중 effect를 함께 취소함
     /// semantic cleanup이 search client 작업과 transient feedback timer를 모두 종료하는지 검증한다.
     /// - 검증 내용: search cancellation handler 실행 및 feedback dismiss action 미발생

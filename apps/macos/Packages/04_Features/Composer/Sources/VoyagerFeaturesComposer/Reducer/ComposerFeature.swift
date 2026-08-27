@@ -36,6 +36,8 @@ public struct ComposerFeature {
     var uuid
     @Dependency(\.continuousClock)
     var continuousClock
+    @Dependency(\.composerMetricClient)
+    var composerMetricClient
 
     nonisolated enum CancelID: Hashable {
         case search(ownerID: UUID?)
@@ -111,12 +113,14 @@ public struct ComposerFeature {
                 return .cancel(id: CancelID.feedbackDismiss(ownerID: state.cancellationOwnerID))
 
             case .internal(.cleanupCollectionWork):
-                if let requestID = state.activeSearchRequestID {
-                    state.resolveScopeChangeFeedback(.search(requestID), phase: .visible)
-                }
-                if let requestID = state.activeFiltersRequestID {
-                    state.resolveScopeChangeFeedback(.filters(requestID), phase: .visible)
-                }
+                let searchCancellation = handleCancelSearch(
+                    state: &state,
+                    composerMetricClient: composerMetricClient,
+                )
+                let filtersCancellation = handleCancelFilters(
+                    state: &state,
+                    composerMetricClient: composerMetricClient,
+                )
                 state.transientFeedback = nil
                 state.isLoadingSearch = false
                 state.isLoadingFilters = false
@@ -131,8 +135,8 @@ public struct ComposerFeature {
                 state.activeFiltersMetricSource = nil
                 applyQueryPhaseTransition(.reset, state: &state)
                 return .merge(
-                    .cancel(id: CancelID.search(ownerID: state.cancellationOwnerID)),
-                    .cancel(id: CancelID.filters(ownerID: state.cancellationOwnerID)),
+                    searchCancellation,
+                    filtersCancellation,
                     .cancel(id: CancelID.feedbackDismiss(ownerID: state.cancellationOwnerID)),
                 )
 
