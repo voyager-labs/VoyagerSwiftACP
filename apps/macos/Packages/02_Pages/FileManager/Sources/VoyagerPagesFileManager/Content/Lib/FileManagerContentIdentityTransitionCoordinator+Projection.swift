@@ -76,13 +76,13 @@ extension FileManagerContentIdentityTransitionCoordinator {
         {
             return
         }
-        let beforePath = canonicalizedPath(transition.beforePath)
-        let afterPath = canonicalizedPath(afterLexicalPath(transition))
-        let selectedPaths = Set(state.entryViewLayout.selectedIds.map(canonicalizedPath))
+        let beforePath = standardizedPath(transition.beforePath)
+        let afterPath = standardizedPath(afterLexicalPath(transition))
+        let selectedPaths = Set(state.entryViewLayout.selectedIds.map(standardizedPath))
         guard selectedPaths.contains(beforePath), !selectedPaths.contains(afterPath) else { return }
         guard !replacementProjectionPaths(owner: triggerOwner, state: state).contains(afterPath) else { return }
         transition.preservedLexicalBeforeID = state.entryViewLayout.selectedIds.first {
-            canonicalizedPath($0) == beforePath
+            standardizedPath($0) == beforePath
         }
         transition.preserveSelectionForReplacementBatch = true
         state.pendingIdentityTransition = transition
@@ -237,10 +237,10 @@ extension FileManagerContentIdentityTransitionCoordinator {
     ) -> Set<String> {
         switch owner {
         case .root:
-            Set(state.entryViewLayout.entryOperations.loadingContext.items.map { canonicalizedPath($0.id) })
+            Set(state.entryViewLayout.entryOperations.loadingContext.items.map { standardizedPath($0.id) })
         case let .folder(id, _):
             Set(state.entryViewLayout.hierarchy.nodesByID[id]?.folder.children.map {
-                canonicalizedPath($0.id)
+                standardizedPath($0.id)
             } ?? [])
         }
     }

@@ -1513,6 +1513,48 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         return state
     }
 
+    /// EVM-001-reload_directory_page_on_external_change: replacement 선택 보존은 lexical after identity로 판정한다.
+    /// - 검증 내용: canonical after와 같은 target이 선택·projection에 있어도 lexical after 미도착을 구분한다.
+    /// - 사전 조건: before symlink와 실제 target이 함께 선택되고 target row만 로드된 대기 전이.
+    /// - 기대 결과: before lexical ID가 replacement batch 선택 보존 대상으로 기록된다.
+    func testReplacementSelectionMarkingIgnoresSelectedCanonicalAfterAlias() throws {
+        let folderURL = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("voyager-identity-boundary-\(UUID().uuidString)")
+        let targetURL = folderURL.appendingPathComponent("target")
+        let linkURL = folderURL.appendingPathComponent("renamed-link")
+        try FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: true)
+        _ = FileManager.default.createFile(atPath: targetURL.path, contents: Data())
+        try FileManager.default.createSymbolicLink(at: linkURL, withDestinationURL: targetURL)
+        defer { try? FileManager.default.removeItem(at: folderURL) }
+
+        let oldPath = folderURL.appendingPathComponent("old-link").path
+        let targetRow = makeCorrelationEntry(id: targetURL.path, name: "target")
+        var state = FileManagerContentState()
+        state.navigation.seedInitialFolderPath(folderURL.path)
+        state.navigation.navigationState = .folder(folderURL.path)
+        state.entryViewLayout.selectedIds = [oldPath, targetURL.path]
+        state.entryViewLayout.entryOperations.loadingContext.generation = 1
+        state.entryViewLayout.entryOperations.loadingContext.items = [targetRow]
+        state.pendingIdentityTransition = .init(
+            recordID: UUID(),
+            beforePath: oldPath,
+            afterPath: targetURL.path,
+            rootPath: Self.canonicalPath(folderURL.path),
+            refreshGeneration: 1,
+            projectionOwner: .root(generation: 1),
+            preservationOwner: nil,
+            afterLexicalPath: linkURL.path,
+        )
+
+        FileManagerContentIdentityTransitionCoordinator.markReplacementSelection(
+            on: .entryViewLayout(.entryOperations(.loading(.itemsLoaded([targetRow])))),
+            state: &state,
+        )
+
+        XCTAssertEqual(state.pendingIdentityTransition?.preserveSelectionForReplacementBatch, true)
+        XCTAssertEqual(state.pendingIdentityTransition?.preservedLexicalBeforeID, oldPath)
+    }
+
     private func makeExpandedChildTransitionFixture() -> ExpandedChildTransitionFixture {
         let rootPath = "/tmp/voyager-correlation"
         let folder = EntryModel.temporaryFolder(id: "\(rootPath)/folder", name: "folder")
