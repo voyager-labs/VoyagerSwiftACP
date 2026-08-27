@@ -389,4 +389,31 @@ final class EVM001ContentPageNavigationRoutingTests: XCTestCase {
         XCTAssertEqual(store.state.titlePath, "/seed")
         XCTAssertEqual(store.state.navigationState, .folder("/next"))
     }
+
+    /// EVM-001-view_current_page_title: 초기 route(.home)에 대응하는 titlePath로 초기화
+    /// legacy defaultTabPath 페이로드가 유지되더라도 기본 생성 상태의 제목은 Home route를 반영해야 한다.
+    /// - 검증 내용: 기본 init 직후 navigationState == .home, titlePath == "Home", currentPath == "Home"
+    /// - 사전 조건: 기본 init으로 생성한 ContentPageNavigationState
+    /// - 기대 결과: 초기 제목이 legacy 홈 디렉터리 경로가 아닌 "Home"
+    func testInitialStateSeedsTitlePathToHomeRoute() {
+        let state = ContentPageNavigationState()
+
+        XCTAssertEqual(state.navigationState, .home)
+        XCTAssertEqual(state.titlePath, "Home")
+        XCTAssertEqual(state.currentPath, "Home")
+    }
+
+    /// EVM-001-view_current_page_title: Directory seed는 경로 제목을 유지
+    /// seedInitialFolderPath는 navigationState와 titlePath를 모두 해당 경로로 설정한다.
+    /// - 검증 내용: seedInitialFolderPath("/tmp/voyager-seed") 후 titlePath와 currentPath가 시드 경로와 일치
+    /// - 사전 조건: 기본 init으로 생성한 ContentPageNavigationState
+    /// - 기대 결과: Directory route의 제목은 경로 그대로 유지
+    func testSeedInitialFolderPathKeepsDirectoryTitleAsPath() {
+        var state = ContentPageNavigationState()
+        state.seedInitialFolderPath("/tmp/voyager-seed")
+
+        XCTAssertEqual(state.navigationState, .folder("/tmp/voyager-seed"))
+        XCTAssertEqual(state.titlePath, "/tmp/voyager-seed")
+        XCTAssertEqual(state.currentPath, "/tmp/voyager-seed")
+    }
 }
