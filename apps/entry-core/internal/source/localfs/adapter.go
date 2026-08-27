@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 	"unicode/utf8"
 
@@ -306,7 +307,16 @@ func localFilesystemError(err, notExist error) error {
 }
 
 func (adapter *Adapter) makeItem(parent string, directoryEntry os.DirEntry) (source.SourceItem, error) {
-	name := directoryEntry.Name()
+	info, err := directoryEntry.Info()
+	if err != nil || info.Mode()&os.ModeSymlink != 0 {
+		return source.SourceItem{}, source.ErrAdapterFailure
+	}
+	return adapter.makeItemFromInfo(parent, directoryEntry.Name(), info)
+}
+
+// makeItemFromInfo는 FileInfo에서 SourceItem을 만든다. symlink는 이미 걸러진
+// 상태로 들어온다.
+func (adapter *Adapter) makeItemFromInfo(parent, name string, info os.FileInfo) (source.SourceItem, error) {
 	if !utf8.ValidString(name) {
 		return source.SourceItem{}, source.ErrAdapterFailure
 	}
@@ -315,10 +325,6 @@ func (adapter *Adapter) makeItem(parent string, directoryEntry os.DirEntry) (sou
 		relativePath = parent + "/" + name
 	}
 	if !source.ValidateRelativePath(relativePath) {
-		return source.SourceItem{}, source.ErrAdapterFailure
-	}
-	info, err := directoryEntry.Info()
-	if err != nil || info.Mode()&os.ModeSymlink != 0 {
 		return source.SourceItem{}, source.ErrAdapterFailure
 	}
 
@@ -539,21 +545,24 @@ func (adapter *Adapter) resolveItem(ctx context.Context, relativePath string) (s
 		return source.SourceItem{}, false, err
 	}
 	defer directory.Close()
-	entries, err := directory.ReadDir(maximumDirectoryEntries + 1)
-	if err != nil && !errors.Is(err, io.EOF) {
-		return source.SourceItem{}, false, source.ErrAdapterFailure
-	}
-	if len(entries) > maximumDirectoryEntries {
-		return source.SourceItem{}, false, source.ErrAdapterFailure
-	}
-	for _, candidate := range entries {
-		if candidate.Name() != name || candidate.Type()&os.ModeSymlink != 0 {
-			continue
+	// 단일 대상 해석은 부모를 열거하지 않는다. 목록 API의 디렉터리 예산
+	// (1,024)을 여기 전파하면 큰 폴더의 존재하는 파일을 ErrAdapterFailure로
+	// 거절한다. Lstat 직접 조회로 이름을 찾고 symlink는 목록 경로와 동일하게
+	// 부재로 취급한다.
+	info, statErr := os.Lstat(filepath.Join(root.Name(), filepath.FromSlash(relativePath)))
+	if statErr != nil {
+		// 부재와 이름 길이 초과(4,096 경계 경로)는 목록 경로와 동일하게
+		// 부재로 취급한다. 나머지 오류만 접근 실패로 실패 닫기한다.
+		if errors.Is(statErr, fs.ErrNotExist) || errors.Is(statErr, syscall.ENAMETOOLONG) {
+			return source.SourceItem{}, false, nil
 		}
-		item, makeErr := adapter.makeItem(parent, candidate)
-		return item, makeErr == nil, makeErr
+		return source.SourceItem{}, false, source.ErrAdapterFailure
 	}
-	return source.SourceItem{}, false, nil
+	if info.Mode()&os.ModeSymlink != 0 {
+		return source.SourceItem{}, false, nil
+	}
+	item, makeErr := adapter.makeItemFromInfo(parent, name, info)
+	return item, makeErr == nil, makeErr
 }
 
 func (adapter *Adapter) canonicalLocatorRef(item source.SourceItem) (entry.LocatorRef, error) {

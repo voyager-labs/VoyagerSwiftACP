@@ -3,6 +3,7 @@ package localfs
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -198,5 +199,49 @@ func TestResolveLocalPathRejectsOutsideRootAndCanceledContext(t *testing.T) {
 	cancel()
 	if _, err := adapter.ResolveLocalPath(canceled, filepath.Join(root, "scope")); !errors.Is(err, source.ErrAdapterFailure) {
 		t.Fatalf("canceled context error = %v, want %v", err, source.ErrAdapterFailure)
+	}
+}
+
+// 단일 대상 해석은 부모 디렉터리 전체를 열거하지 않는다. 목록 API의 1,024
+// 예산을 해석 경로에 전파하면 큰 폴더의 존재하는 파일이 ErrAdapterFailure로
+// 거절되어 property.change 대상에서 제외된다.
+func TestResolveLocalPathWithLargeParentDirectory(t *testing.T) {
+	root := t.TempDir()
+	big := filepath.Join(root, "big")
+	if err := os.Mkdir(big, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for index := range 1030 {
+		name := filepath.Join(big, "filler-"+strings.Repeat("f", 4)+"-"+fmt.Sprintf("%04d", index)+".txt")
+		if err := os.WriteFile(name, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	target := filepath.Join(big, "target.txt")
+	testfixture.CopyFile(t, target, testfixture.PlainText)
+
+	adapter := mustAdapter(t, Config{Root: root, Generation: "generation-1", CursorKey: testCursorKey()})
+
+	ref, err := adapter.ResolveLocalPath(context.Background(), target)
+	if err != nil {
+		t.Fatalf("ResolveLocalPath in large parent = %v, want resolved", err)
+	}
+	if ref.SourceObjectKey != "big/target.txt" {
+		t.Fatalf("source object key = %q", ref.SourceObjectKey)
+	}
+	if ref.ResourceType != "file" {
+		t.Fatalf("resource type = %q", ref.ResourceType)
+	}
+
+	// 부재 파일과 symlink는 목록 경로와 동일하게 부재로 처리된다(entry not found).
+	if _, err := adapter.ResolveLocalPath(context.Background(), filepath.Join(big, "missing.txt")); err == nil {
+		t.Fatal("missing target must not resolve")
+	}
+	symlinkPath := filepath.Join(big, "link.txt")
+	if err := os.Symlink(target, symlinkPath); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := adapter.ResolveLocalPath(context.Background(), symlinkPath); err == nil {
+		t.Fatal("symlink target must not resolve")
 	}
 }

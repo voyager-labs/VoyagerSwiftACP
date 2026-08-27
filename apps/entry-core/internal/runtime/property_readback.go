@@ -101,7 +101,7 @@ func payloadFromFact(fact domainentry.EntryPropertyAssignment, view applicationp
 		}
 		items = append(items, item)
 	}
-	return schema.NewPropertyPayload(valueType, cardinality, nil, wireManySlice(items))
+	return schema.NewPropertyPayload(valueType, cardinality, nil, wireManySlice(valueType, items))
 }
 
 // wireScalarMember는 typed 멤버 하나를 JSON 원시 값과 유형 검증 쌍으로 바꾼다.
@@ -125,15 +125,17 @@ func wireScalarMember(value domainentry.AssignmentValue, valueType string) (any,
 }
 
 // wireManySlice는 유형별 many 배열을 NewPropertyPayload 기대 형태로 정규화한다.
-func wireManySlice(items []any) any {
-	if len(items) > 0 {
-		if _, isBool := items[0].(bool); isBool {
-			values := make([]bool, len(items))
-			for index, item := range items {
-				values[index] = item.(bool)
-			}
-			return values
+// 타입 판정은 원소가 아니라 정의 valueType으로 한다 — 빈 배열은 원소로 유형을
+// 추론할 수 없고 boolean many 빈 값을 []string으로 복원하면 커밋 후
+// internal_error가 된다.
+func wireManySlice(valueType string, items []any) any {
+	if valueType == "boolean" {
+		values := make([]bool, len(items))
+		for index, item := range items {
+			value, _ := item.(bool)
+			values[index] = value
 		}
+		return values
 	}
 	values := make([]string, len(items))
 	for index, item := range items {
