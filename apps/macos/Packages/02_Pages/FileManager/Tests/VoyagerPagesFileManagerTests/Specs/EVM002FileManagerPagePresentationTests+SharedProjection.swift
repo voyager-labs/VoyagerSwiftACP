@@ -1124,6 +1124,78 @@ extension EVM002FileManagerPagePresentationTests {
         XCTAssertNil(state.pendingIdentityTransition)
     }
 
+    /// EVM-002-command_external_refresh_correlation: root source stream이 destination folder보다 먼저 끝나도
+    /// before row와 선택을 destination migration까지 유지한다.
+    /// - 검증 내용: root batch·terminal 뒤 before projection·선택·destination owner 전이 보존
+    /// - 사전 조건: root의 선택 항목을 expanded destination folder로 이동하는 대기 전이
+    /// - 기대 결과: root terminal은 전이를 소비하지 않고 destination migration을 계속 기다린다.
+    func testRootSourceCompletionWaitsForDestinationFolderMigration() async {
+        let rootPath = "/root"
+        let before = hierarchyFile(id: "/root/before.txt", name: "before.txt")
+        let destination = EntryModel.temporaryFolder(id: "/root/destination", name: "destination")
+        let after = hierarchyFile(id: "/root/destination/after.txt", name: "after.txt")
+        var state = FileManagerContentState()
+        state.navigation.seedInitialFolderPath(rootPath)
+        state.entryViewLayout.mode = .list
+        state.entryViewLayout.entries = [before, destination]
+        state.entryViewLayout.entryOperations.items = [before, destination]
+        state.entryViewLayout.entryOperations.loadingContext.generation = 7
+        state.entryViewLayout.entryOperations.loadingContext.expectedCoreBatchIndex = 0
+        state.entryViewLayout.entryOperations.isReloading = true
+        state.entryViewLayout.hierarchy.replaceRoot(path: rootPath)
+        state.entryViewLayout.hierarchy.nodesByID[destination.id] = makeExpandedLoadingFolderNode(children: [])
+        state.entryViewLayout.hierarchy.setExpandedIDs([destination.id])
+        state.entryViewLayout.selectedIds = [before.id]
+        state.entryViewLayout.lastSelectedId = before.id
+        state.entryViewLayout.rangeAnchorId = before.id
+        state.pendingIdentityTransition = .init(
+            recordID: UUID(),
+            beforePath: before.id,
+            afterPath: after.id,
+            rootPath: rootPath,
+            refreshGeneration: 7,
+            projectionOwner: .folder(id: destination.id, generation: 4),
+            preservationOwner: .root(generation: 7),
+        )
+        let store = TestStore(initialState: state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.entryOpenClient = .testValue
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+        }
+        store.exhaustivity = .off
+
+        await store.send(.entryViewLayout(.entryOperations(.loading(.streamEvent(.init(
+            generation: 7,
+            event: .coreBatch(items: [destination], batchIndex: 0),
+        ))))))
+        await store.receive { action in
+            guard case let .entryViewLayout(.view(.applyContentProjection(projection))) = action else {
+                return false
+            }
+            XCTAssertEqual(projection.entries, [before, destination])
+            return true
+        }
+        XCTAssertEqual(store.state.entryViewLayout.selectedIds, [before.id])
+
+        await store.send(.entryViewLayout(.entryOperations(.loading(.streamEvent(.init(
+            generation: 7,
+            event: .coreFinished(batchCount: 1),
+        ))))))
+        await store.receive { action in
+            guard case let .entryViewLayout(.view(.applyContentProjection(projection))) = action else {
+                return false
+            }
+            XCTAssertEqual(projection.entries, [before, destination])
+            return true
+        }
+        XCTAssertEqual(store.state.entryViewLayout.selectedIds, [before.id])
+        XCTAssertEqual(
+            store.state.pendingIdentityTransition?.projectionOwner,
+            .folder(id: destination.id, generation: 4),
+        )
+    }
+
     /// EVM-002-command_external_refresh_correlation: nested source의 중간 batch가 root owner보다 먼저 와도
     /// nested-to-root move의 before 선택을 유지한다.
     /// - 검증 내용: nested source 교체 batch 뒤 before 선택 보존, root owner batch에서 after로 migration

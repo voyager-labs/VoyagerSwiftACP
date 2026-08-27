@@ -160,7 +160,8 @@ public struct FileManagerContentFeature {
                                        isFolderRoute,
                                        isRetainedProjectionTrigger,
                                        loadedProjectionEntries.isEmpty || transitionHoldsProjection,
-                                       !state.entryViewLayout.entryOperations.loadingContext.coreFinished,
+                                       !state.entryViewLayout.entryOperations.loadingContext.coreFinished
+                                       || transitionHoldsProjection,
                                        !state.entryViewLayout.entries.isEmpty
             {
                 state.entryViewLayout.entries

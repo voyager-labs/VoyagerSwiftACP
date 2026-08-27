@@ -41,6 +41,9 @@ extension FileManagerContentIdentityTransitionCoordinator {
         state: FileManagerContentState,
     ) -> Bool {
         guard let transition = state.pendingIdentityTransition else { return false }
+        if case .root = transition.preservationOwner {
+            return true
+        }
         // after 행이 오기 전 스트림 실패에서도 마지막 root projection을 유지한다:
         // 실패는 partial loading으로의 강등이 아니라 retained snapshot 보존 사유다.
         if case .entryViewLayout(.entryOperations(.loading(.streamFailed))) = action {
