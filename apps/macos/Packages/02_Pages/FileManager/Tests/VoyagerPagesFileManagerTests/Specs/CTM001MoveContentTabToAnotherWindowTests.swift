@@ -2148,7 +2148,8 @@ final class CTM001MoveContentTabToAnotherWindowTests: XCTestCase {
     /// CTM-001-move_content_tab_to_another_file_manager_window: 매칭 in-flight 성공 터미널은 이동 메트릭을 정확히 한 번
     /// 기록한다.
     /// stale 터미널과 duplicate 성공 재생이 이벤트를 만들지 않고 singleton source는 contextMenu임을 검증한다.
-    /// - 검증 내용: success/.move/.contextMenu/request.operationID 1건, stale·duplicate 무이벤트
+    /// - 검증 내용: success/.moveContentTabToAnotherWindow/.contextMenu/request.operationID 1건, stale·duplicate
+    /// 무이벤트
     /// - 사전 조건: prepared singleton pending이 source window에 있고 메트릭 레코더 client가 주입됨
     /// - 기대 결과: stale 무이벤트 후 성공 1건 기록, 재생 후에도 1건 유지
     func testMatchingInFlightSuccessRecordsSingleContextMenuMoveMetric() async {
@@ -2183,7 +2184,7 @@ final class CTM001MoveContentTabToAnotherWindowTests: XCTestCase {
         XCTAssertEqual(recorder.metrics(), [
             .contentTabAction(
                 result: .success,
-                action: .move,
+                identity: .moveContentTabToAnotherWindow,
                 source: .contextMenu,
                 operationID: request.operationID,
             ),
@@ -2244,7 +2245,7 @@ final class CTM001MoveContentTabToAnotherWindowTests: XCTestCase {
         XCTAssertEqual(recorder.metrics(), [
             .contentTabAction(
                 result: expectedResult,
-                action: .move,
+                identity: .moveContentTabToAnotherWindow,
                 source: .contextMenu,
                 operationID: request.operationID,
             ),
@@ -2253,7 +2254,8 @@ final class CTM001MoveContentTabToAnotherWindowTests: XCTestCase {
 
     /// CTM-001-move_content_tab_to_another_file_manager_window: menu batch 이동은 contextMenu source로 기록한다.
     /// moveSelectedContentTabs 경로의 batch pending이 기본 contextMenu 표면을 유지하는지 검증한다.
-    /// - 검증 내용: menu batch 수락→성공 후 .move/.contextMenu/request.operationID 1건
+    /// - 검증 내용: menu batch 수락→성공 후 .moveSelectedContentTabsToAnotherWindow/.contextMenu/request.operationID
+    /// 1건
     /// - 사전 조건: tab 2개 source와 가용 target, 고정 uuid와 메트릭 레코더 주입
     /// - 기대 결과: 성공 터미널에서 contextMenu source 메트릭 정확히 1건
     func testMenuBatchMoveRecordsContextMenuSourceMetric() async {
@@ -2303,16 +2305,21 @@ final class CTM001MoveContentTabToAnotherWindowTests: XCTestCase {
         }
 
         XCTAssertEqual(recorder.metrics(), [
-            .contentTabAction(result: .success, action: .move, source: .contextMenu, operationID: requestID),
+            .contentTabAction(
+                result: .success,
+                identity: .moveSelectedContentTabsToAnotherWindow,
+                source: .contextMenu,
+                operationID: requestID,
+            ),
         ])
     }
 
-    /// CTM-001-move_content_tab_to_another_file_manager_window: drag batch 이동은 dragAndDrop source로 기록한다.
-    /// moveContentTabs payload 경로만 dragAndDrop 표면으로 준비되는지 검증한다.
-    /// - 검증 내용: drag pending 준비 시 metricSource dragAndDrop과 성공 메트릭 1건
+    /// CTM-001-move_content_tab_to_another_file_manager_window: drag 이동은 dragAndDrop source로 기록한다.
+    /// moveContentTabs payload 경로만 dragAndDrop 표면으로 준비되고 단일 tab은 singleton identity를 유지한다.
+    /// - 검증 내용: drag pending 준비 시 metricSource dragAndDrop과 singleton identity 성공 메트릭 1건
     /// - 사전 조건: in-flight drag snapshot과 일치 payload, 가용 target, 고정 uuid·레코더 주입
     /// - 기대 결과: 성공 터미널에서 dragAndDrop source 메트릭 정확히 1건
-    func testDragBatchMoveRecordsDragAndDropSourceMetric() async {
+    func testDragMoveRecordsDragAndDropSourceAndSingletonIdentityMetric() async {
         let fixture = makeDragBatchMetricFixture()
         let recorder = FileManagerProductMetricRecorder()
         let store = TestStore(initialState: fixture.state) {
@@ -2347,7 +2354,7 @@ final class CTM001MoveContentTabToAnotherWindowTests: XCTestCase {
         XCTAssertEqual(recorder.metrics(), [
             .contentTabAction(
                 result: .success,
-                action: .move,
+                identity: .moveContentTabToAnotherWindow,
                 source: .dragAndDrop,
                 operationID: fixture.request.operationID,
             ),

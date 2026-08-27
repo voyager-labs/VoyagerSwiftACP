@@ -197,7 +197,9 @@ struct FileManagerWindowContentTabMoveReducer {
         guard let metricSource = state.pendingContentTabMove?.metricSource else { return }
         fileManagerProductMetricsClient.record(FileManagerProductMetricsProducer.contentTabTerminal(
             operationID: request.operationID,
-            action: .move,
+            identity: request.orderedTabIDs.count > 1
+                ? .moveSelectedContentTabsToAnotherWindow
+                : .moveContentTabToAnotherWindow,
             source: metricSource,
             result: result,
         ))
