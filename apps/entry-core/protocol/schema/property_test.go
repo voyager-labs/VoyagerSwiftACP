@@ -663,3 +663,17 @@ func TestEncodedSuccessBytesExactness(t *testing.T) {
 		t.Fatalf("oversized success did not fall back to internal_error: %s", got)
 	}
 }
+
+// expected_assignment_revision 0은 implicit unset@0 첫 쓰기의 CAS 토큰으로
+// 유효하고, 음수는 거절된다. read-back revision을 그대로 재사용하는 계약의
+// 일부다.
+func TestDecodeChangeTargetAcceptsZeroAssignmentRevision(t *testing.T) {
+	pid := fixturePropertyID(t, 900)
+	base := `{"target":{"kind":"local_path","local_path":"/a/b"},"property_id":"` + pid + `","expected_definition_revision":1,"expected_assignment_revision":%d,"desired":{"state":"null"}}`
+	if _, protocolError := decodePropertyParams(t, propertyRequest(MethodPropertyChangeExecute, `{"changes":[`+fmt.Sprintf(base, 0)+`]}`)); protocolError != nil {
+		t.Fatalf("assignment revision 0 decode = %v, want accepted", protocolError)
+	}
+	if _, protocolError := decodePropertyParams(t, propertyRequest(MethodPropertyChangeExecute, `{"changes":[`+fmt.Sprintf(base, -1)+`]}`)); protocolError == nil {
+		t.Fatal("negative assignment revision must be rejected")
+	}
+}

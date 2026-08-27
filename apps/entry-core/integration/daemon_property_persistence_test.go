@@ -502,7 +502,7 @@ func runPropertyAtomicPersistence(t *testing.T, env propertyPersistenceEnv) {
 
 	setChanges := make([]schema.PropertyChangeTarget, len(lifecyclePaths))
 	for index, path := range lifecyclePaths {
-		setChanges[index] = textChangeTarget(t, path, textDef.PropertyID, renamedText.Revision, 1, "v1")
+		setChanges[index] = textChangeTarget(t, path, textDef.PropertyID, renamedText.Revision, 0, "v1")
 	}
 	prepared := prepareChanges(t, env.socketPath, "prep-set", setChanges)
 	if !prepared.RequiresConfirmation || len(prepared.Changes) != len(lifecyclePaths) {
@@ -527,7 +527,7 @@ func runPropertyAtomicPersistence(t *testing.T, env propertyPersistenceEnv) {
 
 	replaceChanges := make([]schema.PropertyChangeTarget, len(lifecyclePaths))
 	for index, path := range lifecyclePaths {
-		replaceChanges[index] = textChangeTarget(t, path, textDef.PropertyID, renamedText.Revision, 2, "v2")
+		replaceChanges[index] = textChangeTarget(t, path, textDef.PropertyID, renamedText.Revision, 1, "v2")
 	}
 	replacePrepared := prepareChanges(t, env.socketPath, "prep-replace", replaceChanges)
 	for index, change := range replacePrepared.Changes {
@@ -542,7 +542,7 @@ func runPropertyAtomicPersistence(t *testing.T, env propertyPersistenceEnv) {
 
 	clearChanges := make([]schema.PropertyChangeTarget, len(lifecyclePaths))
 	for index, path := range lifecyclePaths {
-		clearChanges[index] = stateChangeTarget(path, textDef.PropertyID, renamedText.Revision, 3, "unknown")
+		clearChanges[index] = stateChangeTarget(path, textDef.PropertyID, renamedText.Revision, 2, "unknown")
 	}
 	clearRows := executeChanges(t, env.socketPath, "exec-clear", clearChanges)
 	for index, row := range clearRows {
@@ -654,7 +654,7 @@ func runPropertyResponseBudgetPreflight(t *testing.T, env propertyPersistenceEnv
 	value := strings.Repeat("x", 4096)
 	changes := make([]schema.PropertyChangeTarget, len(targetPaths))
 	for index, path := range targetPaths {
-		changes[index] = textChangeTarget(t, path, textDef.PropertyID, textDef.Revision, 1, value)
+		changes[index] = textChangeTarget(t, path, textDef.PropertyID, textDef.Revision, 0, value)
 	}
 	request := encodePropertyRequest("budget-preflight", schema.MethodPropertyChangeExecute, map[string]any{"changes": changes})
 
@@ -712,9 +712,9 @@ func runPropertyStaleMiddleTarget(t *testing.T, env propertyPersistenceEnv) {
 
 	textDef := createDefinition(t, env.socketPath, "smoke_stale", "Smoke Stale", "text", "one", nil)
 	changes := []schema.PropertyChangeTarget{
-		textChangeTarget(t, paths[0], textDef.PropertyID, textDef.Revision, 1, "v1"),
-		textChangeTarget(t, paths[1], textDef.PropertyID, textDef.Revision, 2, "v1"),
-		textChangeTarget(t, paths[2], textDef.PropertyID, textDef.Revision, 1, "v1"),
+		textChangeTarget(t, paths[0], textDef.PropertyID, textDef.Revision, 0, "v1"),
+		textChangeTarget(t, paths[1], textDef.PropertyID, textDef.Revision, 1, "v1"),
+		textChangeTarget(t, paths[2], textDef.PropertyID, textDef.Revision, 0, "v1"),
 	}
 	response := propertyCall(t, env.socketPath, "exec-stale-middle", schema.MethodPropertyChangeExecute, map[string]any{"changes": changes})
 	if response.Error == nil || response.Error.Code != schema.ErrorConflict {
@@ -738,8 +738,8 @@ func runPropertyInvalidFinalTarget(t *testing.T, env propertyPersistenceEnv) {
 
 	textDef := createDefinition(t, env.socketPath, "smoke_invalid", "Smoke Invalid", "text", "one", nil)
 	changes := []schema.PropertyChangeTarget{
-		textChangeTarget(t, firstPath, textDef.PropertyID, textDef.Revision, 1, "v1"),
-		textChangeTarget(t, missingPath, textDef.PropertyID, textDef.Revision, 1, "v1"),
+		textChangeTarget(t, firstPath, textDef.PropertyID, textDef.Revision, 0, "v1"),
+		textChangeTarget(t, missingPath, textDef.PropertyID, textDef.Revision, 0, "v1"),
 	}
 	response := propertyCall(t, env.socketPath, "exec-invalid-final", schema.MethodPropertyChangeExecute, map[string]any{"changes": changes})
 	if response.Error == nil || response.Error.Code != schema.ErrorEntryNotFound {
@@ -769,7 +769,7 @@ func runPropertyInaccessiblePath(t *testing.T, env propertyPersistenceEnv) {
 
 	textDef := createDefinition(t, env.socketPath, "smoke_denied", "Smoke Denied", "text", "one", nil)
 	changes := []schema.PropertyChangeTarget{
-		textChangeTarget(t, guardedPath, textDef.PropertyID, textDef.Revision, 1, "v1"),
+		textChangeTarget(t, guardedPath, textDef.PropertyID, textDef.Revision, 0, "v1"),
 	}
 	response := propertyCall(t, env.socketPath, "exec-denied", schema.MethodPropertyChangeExecute, map[string]any{"changes": changes})
 	if response.Error == nil || response.Error.Code != schema.ErrorPermissionDenied {

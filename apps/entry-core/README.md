@@ -134,7 +134,7 @@ mise run entry-core-property-catalog-validate   # verify committed artifacts are
 ### Atomicity and read-back
 
 - 모든 mutation은 정확히 하나의 top-level `TransactionRunner.WithinTx` 안에서 수행된다. 물리 삭제 경로는 없고, 성공 시 소유 정의의 `definition_revision`은 정확히 1 올라간다.
-- `property.change.execute`는 하나의 트랜잭션 안에서 **CAS 재검증 → 응답 예산 사전 검사 → 일괄 적용 → 정준 read-back → 예산 재검사** 순서를 강제한다. CAS는 definition revision과 assignment revision 모두를 검사하고, expected assignment revision 0은 implicit unset@0(set→clear ABA 포함)을 의미한다. Stale revision은 protocol `conflict`로 매핑된다.
+- `property.change.execute`는 하나의 트랜잭션 안에서 **CAS 재검증 → 응답 예산 사전 검사 → 일괄 적용 → 정준 read-back → 예산 재검사** 순서를 강제한다. CAS는 definition revision과 assignment revision 모두를 검사하고, expected assignment revision 0은 implicit unset@0(set→clear ABA 포함)을 의미한다. Stale revision은 protocol `conflict`로 매핑된다. wire `expected_assignment_revision`은 도메인 revision과 1:1이다 — 0은 implicit unset@0 첫 쓰기(set→clear ABA 포함), 이후 변경은 read-back 응답의 revision을 그대로 CAS 토큰으로 전달한다(definition CAS와 대칭).
 - commit 전에 staged fact로 예상 read-back 성공 응답 바이트를 계산해 봉투 초과 시 `scope_too_large`로 실패 닫기한다(쓰기 0). 커밋 직전 persisted fact를 재조회해 정준 read-back 행을 만들고 요청 순서대로 반환한다.
 - `internal/application/property/change_readback.go`의 반영 인코더는 protocol `EncodedSuccessBytes`와 바이트 parity 테스트(`TestEncodedExecuteResponseBytesMatchProtocolEnvelope`)로 잠겨 있다.
 - 알려진 스펙 편차: 계획의 `property_response_budget_preflight` fixture(32×4096바이트 스칼라 요청이 봉투 안에 들어가는 시나리오)는 요청 자체가 봉투를 초과해 구조적으로 불가능하다. 구현된 subtest는 도달 가능한 절반을 증명한다 — oversized 요청이 dispatch 전 `request_too_large`로 실패 닫기됨, production `EncodedSuccessBytes(projected)`가 65,536 초과임, mutation 0임. "요청 ≤65,536 AND 예상 응답 >65,536" 단정은 존재하지 않으며 통과할 수 없는 단정으로 문서화하지 않는다.

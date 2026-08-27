@@ -237,7 +237,7 @@ func TestPropertyDispatchHappyPathsPerMethod(t *testing.T) {
 		if !response.OK {
 			t.Fatalf("prepare response=%#v", response)
 		}
-		if len(service.lastChanges) != 1 || service.lastChanges[0].ExpectedAssignmentRevision != 1 {
+		if len(service.lastChanges) != 1 || service.lastChanges[0].ExpectedAssignmentRevision != 2 {
 			t.Fatalf("prepare capture=%+v", service.lastChanges)
 		}
 		decoded, err := schema.DecodeResponse(schema.EncodeResponse(response), schema.MethodPropertyChangePrepare)

@@ -7,8 +7,9 @@ import (
 )
 
 // changeTargetsFromWire는 wire 변경 대상을 application 명령으로 번역한다.
-// wire expected_assignment_revision R(≥1)은 도메인 revision R-1에 대응하고
-// wire 1은 implicit unset@0 첫 쓰기다. not_applicable 목표 상태는 이 슬라이스에서
+// wire expected_assignment_revision은 도메인 revision과 1:1이다 — 0은 implicit
+// unset@0 첫 쓰기, 이후 변경은 read-back revision을 그대로 CAS 토큰으로
+// 전달한다(definition CAS와 대칭). not_applicable 목표 상태는 이 슬라이스에서
 // 쓰기 불가이며 unsupported로 명시 거절한다(unknown/not_applicable은 resolved
 // projection 전용 상태이나 unknown은 값 지움(clear) 의미로 unset에 대응한다).
 func changeTargetsFromWire(wire []schema.PropertyChangeTarget) ([]applicationproperty.ChangeTarget, schema.ErrorCode) {
@@ -26,7 +27,7 @@ func changeTargetsFromWire(wire []schema.PropertyChangeTarget) ([]applicationpro
 			LocalPath:                  target.Target.LocalPath,
 			PropertyID:                 propertyID,
 			ExpectedDefinitionRevision: int(target.ExpectedDefinitionRevision),
-			ExpectedAssignmentRevision: uint64(target.ExpectedAssignmentRevision - 1),
+			ExpectedAssignmentRevision: uint64(target.ExpectedAssignmentRevision),
 			Desired:                    desired,
 		}
 	}

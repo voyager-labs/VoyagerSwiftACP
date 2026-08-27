@@ -160,8 +160,8 @@ func TestPropertyDesiredStateMappingVariants(t *testing.T) {
 		if change.Desired.State != test.wantState {
 			t.Fatalf("%s: state=%v want %v", test.name, change.Desired.State, test.wantState)
 		}
-		if change.ExpectedAssignmentRevision != 6 {
-			t.Fatalf("%s: expected revision=%d want 6 (wire 7 - offset 1)", test.name, change.ExpectedAssignmentRevision)
+		if change.ExpectedAssignmentRevision != 7 {
+			t.Fatalf("%s: expected revision=%d want 7 (wire과 1:1)", test.name, change.ExpectedAssignmentRevision)
 		}
 		if test.wantScalar != nil && !sameScalar(*change.Desired.Scalar, *test.wantScalar) {
 			t.Fatalf("%s: scalar=%+v want %+v", test.name, *change.Desired.Scalar, *test.wantScalar)
@@ -178,11 +178,11 @@ func TestPropertyDesiredStateMappingVariants(t *testing.T) {
 		State: domainentry.AssignmentStateValue, RecordRevision: 1, ValueContractRevision: 1,
 		Scalar: &domainentry.AssignmentValue{Text: strPtr("x")},
 	}}
-	if response := newPropertyRuntime(firstTouch).Dispatch(context.Background(), executeRequest(changeTarget("/a", 1, schema.PropertyDesiredState{State: "null"}))); !response.OK {
+	if response := newPropertyRuntime(firstTouch).Dispatch(context.Background(), executeRequest(changeTarget("/a", 0, schema.PropertyDesiredState{State: "null"}))); !response.OK {
 		t.Fatalf("first touch response=%#v", response)
 	}
 	if firstTouch.lastChanges[0].ExpectedAssignmentRevision != 0 {
-		t.Fatalf("wire revision 1 must mean implicit unset@0, got %d", firstTouch.lastChanges[0].ExpectedAssignmentRevision)
+		t.Fatalf("wire revision 0 must mean implicit unset@0, got %d", firstTouch.lastChanges[0].ExpectedAssignmentRevision)
 	}
 
 	notApplicable := newRecordingPropertyService()

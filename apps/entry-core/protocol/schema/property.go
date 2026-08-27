@@ -397,7 +397,7 @@ func (target PropertyTargetSelector) Validate() error {
 
 func (change PropertyChangeTarget) Validate() error {
 	if change.Target.Validate() != nil || !validPropertyIDText(change.PropertyID) ||
-		change.ExpectedDefinitionRevision < 1 || change.ExpectedAssignmentRevision < 1 ||
+		change.ExpectedDefinitionRevision < 1 || change.ExpectedAssignmentRevision < 0 ||
 		change.Desired.Validate() != nil {
 		return ErrInvalidResponse
 	}
@@ -543,6 +543,14 @@ func decodeExpectedRevision(value jsonValue) (int64, bool) {
 	return revision, ok && revision >= 1
 }
 
+// decodeExpectedAssignmentRevision은 expected_assignment_revision 전용 decoder다.
+// 0은 implicit unset@0 첫 쓰기(set→clear ABA 포함)의 CAS 토큰으로 계약상
+// 유효하고, 이후 변경은 read-back revision을 그대로 전달한다.
+func decodeExpectedAssignmentRevision(value jsonValue) (int64, bool) {
+	revision, ok := lexicalInteger(value)
+	return revision, ok && revision >= 0
+}
+
 func decodePropertyIDField(value jsonValue) (string, bool) {
 	return value.text, value.kind == jsonString && validPropertyIDText(value.text)
 }
@@ -659,7 +667,7 @@ func decodePropertyChangeTarget(value jsonValue) (PropertyChangeTarget, bool) {
 	target, targetCode := decodePropertyTargetSelector(fields["target"])
 	propertyID, b := decodePropertyIDField(fields["property_id"])
 	definitionRevision, c := decodeExpectedRevision(fields["expected_definition_revision"])
-	assignmentRevision, d := decodeExpectedRevision(fields["expected_assignment_revision"])
+	assignmentRevision, d := decodeExpectedAssignmentRevision(fields["expected_assignment_revision"])
 	desired, e := decodePropertyDesiredState(fields["desired"])
 	change := PropertyChangeTarget{Target: target, PropertyID: propertyID, ExpectedDefinitionRevision: definitionRevision, ExpectedAssignmentRevision: assignmentRevision, Desired: desired}
 	return change, targetCode == "" && b && c && d && e && change.Validate() == nil
