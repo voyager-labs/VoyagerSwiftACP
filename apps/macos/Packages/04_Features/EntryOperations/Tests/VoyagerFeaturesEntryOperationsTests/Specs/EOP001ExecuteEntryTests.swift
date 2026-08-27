@@ -417,6 +417,87 @@ final class EOP001ExecuteEntryTests: XCTestCase {
         XCTAssertEqual(openCalls.recorded[0].1, .bundleID(bundleID))
     }
 
+    /// EOP-001-open_entry_with_selected_app: 다중 선택 앱 열기는 완료 순서와 무관한 단일 aggregate terminal을 낸다.
+    /// 두 파일의 성공·실패가 선택 순서와 반대로 완료되어도 accepted command 단위 결과가 하나로 수렴하는지 검증한다.
+    /// - 검증 내용: 파일별 lifecycle은 유지하고 command metadata와 성공·실패 수를 담은 terminal을 정확히 한 번 기록한다.
+    /// - 사전 조건: `fixtures/fixtures/texts/plain/11.txt`의 sandbox 파일과 원본 fixture를 선택하고 두 번째 실패를 먼저 완료한다.
+    /// - 기대 결과: attempted 2, succeeded 1, failed 1, cancelled 0이며 targets가 비어 있는 terminal 한 건이 accepted metadata를 보존한다.
+    func testOpenWithSelectedAppAggregatesMixedResultsWhenSecondFileFinishesFirst() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+        let files = [sandbox.fileURL, sandbox.originalFixture].map {
+            EntryModelFixtures.makeFileEntry(id: $0.path, name: $0.lastPathComponent)
+        }
+        let bundleID = "com.apple.Preview"
+        let commandID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000691"))
+        let metadata = EntryCommandMetadata(
+            id: commandID,
+            interaction: .openEntryWithSelectedApp,
+            source: .contextMenu,
+        )
+        let evidence = await EntryOperationsTestSupport.runOpenWithCommand(
+            files: files,
+            currentPath: sandbox.root.path,
+            bundleID: bundleID,
+            metadata: metadata,
+            failingPath: files[1].fullPath,
+            completionOrder: [files[1].fullPath, files[0].fullPath],
+        )
+
+        XCTAssertEqual(Set(evidence.openStartedPaths), Set(files.map(\.fullPath)))
+        XCTAssertEqual(Set(evidence.openFinishedPaths), Set(files.map(\.fullPath)))
+        XCTAssertEqual(evidence.terminals.count, 1, "다중 Open With command는 terminal을 정확히 한 번 기록해야 한다.")
+        let terminal = try XCTUnwrap(evidence.terminals.first)
+        XCTAssertEqual(terminal.command, metadata)
+        XCTAssertEqual(terminal.id, commandID)
+        XCTAssertEqual(terminal.operationKind, .openWithApp(bundleID))
+        XCTAssertTrue(terminal.targets.isEmpty)
+        XCTAssertEqual(terminal.attemptedCount, 2)
+        XCTAssertEqual(terminal.succeededCount, 1)
+        XCTAssertEqual(terminal.failedCount, 1)
+        XCTAssertEqual(terminal.cancelledCount, 0)
+    }
+
+    /// EOP-001-open_entry_with_selected_app: 기본 앱 지정 다중 열기도 파일별 completion과 reload를 보존한다.
+    /// selected app command를 기본 앱으로 지정할 때 기존 set-default lifecycle과 앱 목록 reload가 사라지지 않는지 검증한다.
+    /// - 검증 내용: 두 파일의 setDefaultApp 호출·operationFinished·applicationsForType reload와 단일 open terminal을 함께 기록한다.
+    /// - 사전 조건: `fixtures/fixtures/texts/plain/11.txt`의 sandbox 파일과 원본 fixture, 성공하는 default/open client가 있다.
+    /// - 기대 결과: 파일별 default completion과 reload가 각각 두 번 유지되고 open aggregate는 attempted 2, succeeded 2인 한 건이다.
+    func testOpenWithSelectedAppSetAsDefaultPreservesCompletionAndReload() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+        let files = [sandbox.fileURL, sandbox.originalFixture].map {
+            EntryModelFixtures.makeFileEntry(id: $0.path, name: $0.lastPathComponent)
+        }
+        let bundleID = "com.apple.Preview"
+        let metadata = try EntryCommandMetadata(
+            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000692")),
+            interaction: .openEntryWithSelectedApp,
+            source: .contextMenu,
+        )
+        let evidence = await EntryOperationsTestSupport.runOpenWithCommand(
+            files: files,
+            currentPath: sandbox.root.path,
+            bundleID: bundleID,
+            metadata: metadata,
+            shouldSetAsDefault: true,
+        )
+
+        XCTAssertEqual(evidence.setDefaultCallCount, 2)
+        XCTAssertEqual(Set(evidence.defaultFinishedPaths), Set(files.map(\.fullPath)))
+        XCTAssertEqual(evidence.reloadCallCount, 2)
+        XCTAssertEqual(evidence.openCallCount, 2)
+        XCTAssertEqual(evidence.terminals.count, 1)
+        let terminal = try XCTUnwrap(evidence.terminals.first)
+        XCTAssertEqual(terminal.command, metadata)
+        XCTAssertEqual(terminal.operationKind, .openWithApp(bundleID))
+        XCTAssertTrue(terminal.targets.isEmpty)
+        XCTAssertEqual(terminal.attemptedCount, 2)
+        XCTAssertEqual(terminal.succeededCount, 2)
+        XCTAssertEqual(terminal.failedCount, 0)
+        XCTAssertEqual(terminal.cancelledCount, 0)
+    }
+
     /// EOP-001-open_entry_with_selected_app: 휴지통 파일은 열지 않고 경고 표시
     /// - 검증 내용: 휴지통 파일을 선택 앱으로 열려 할 때 open 호출이 차단되는지 확인합니다.
     /// - 사전 조건: trashDirectoryPath가 휴지통 경로 반환

@@ -107,6 +107,7 @@ public enum EntryOperationsAction: CasePathable, Sendable {
     public enum OpenWith: CasePathable, Sendable {
         case openFileWithApp(file: EntryModel)
         case openFileWithAppBundleID(filePath: String, bundleID: String, url: URL)
+        case openFilesWithAppBundleID(files: [EntryModel], bundleID: String, shouldSetAsDefault: Bool)
         case setDefaultAppForFile(type: UTType?, bundleID: String, file: EntryModel)
         case setDefaultAppWithOther(file: EntryModel)
         case openFilesWithAppFromOther(files: [EntryModel], shouldSetAsDefault: Bool)

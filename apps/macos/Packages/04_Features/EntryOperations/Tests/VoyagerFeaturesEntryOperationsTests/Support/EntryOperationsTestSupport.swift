@@ -138,6 +138,34 @@ actor EntryOperationsLoadSuspensionGate {
     }
 }
 
+private actor OpenWithCommandCompletionGate {
+    private var waiters: [String: CheckedContinuation<Void, Never>] = [:]
+    private var started: Set<String> = []
+
+    func wait(_ path: String) async {
+        started.insert(path)
+        await withCheckedContinuation { waiters[path] = $0 }
+    }
+
+    func resume(_ path: String) {
+        waiters.removeValue(forKey: path)?.resume()
+    }
+
+    func isStarted(_ path: String) -> Bool {
+        started.contains(path)
+    }
+}
+
+struct OpenWithCommandEvidence {
+    let openStartedPaths: [String]
+    let openFinishedPaths: [String]
+    let defaultFinishedPaths: [String]
+    let terminals: [EntryActionRecord]
+    let setDefaultCallCount: Int
+    let reloadCallCount: Int
+    let openCallCount: Int
+}
+
 @MainActor
 enum EntryOperationsTestSupport {
     enum CancelledLoadScenario {
@@ -205,6 +233,68 @@ enum EntryOperationsTestSupport {
             $0.trashMetadataStoreClient = .testValue
             configure(&$0)
         }
+    }
+
+    static func runOpenWithCommand(
+        files: [EntryModel],
+        currentPath: String,
+        bundleID: String,
+        metadata: EntryCommandMetadata,
+        shouldSetAsDefault: Bool = false,
+        failingPath: String? = nil,
+        completionOrder: [String] = [],
+    ) async -> OpenWithCommandEvidence {
+        let gate = OpenWithCommandCompletionGate()
+        let actions = LockIsolated<[EntryOperationsAction]>([])
+        let setDefaultCalls = LockIsolated(0)
+        let reloadCalls = LockIsolated(0)
+        let openCalls = LockIsolated(0)
+        let store = makeObservedStore(
+            observeAction: { action in actions.withValue { $0.append(action) } },
+            configure: {
+                $0.entryOpenClient.trashDirectoryPath = { nil }
+                $0.entryOpenClient.setDefaultApp = { _, _ in setDefaultCalls.withValue { $0 += 1 } }
+                $0.entryOpenClient.invalidateApplicationsForType = { _ in }
+                $0.entryOpenClient.applicationsForType = { _, _ in
+                    reloadCalls.withValue { $0 += 1 }
+                    return []
+                }
+                $0.entryOpenClient.defaultApplication = { _ in nil }
+                $0.entryOpenClient.open = { url, _ in
+                    openCalls.withValue { $0 += 1 }
+                    if !completionOrder.isEmpty {
+                        await gate.wait(url.path)
+                    }
+                    if url.path == failingPath {
+                        throw FileOpError.system(message: "open denied")
+                    }
+                }
+            },
+        )
+        // store.exhaustivity = .off: observer와 dependency recorder가 전체 command lifecycle을 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.routing(.executeCommand(
+            command: .navigation(.openWithSelectedItem(
+                bundleID: bundleID,
+                shouldSetAsDefault: shouldSetAsDefault,
+            )),
+            context: .init(
+                selectedIds: Set(files.map(\.id)),
+                displayItems: files,
+                currentPath: currentPath,
+            ),
+            metadata: metadata,
+        )))
+        await completeOpenWithCommand(store, gate: gate, completionOrder: completionOrder)
+
+        return makeOpenWithEvidence(
+            actions: actions.value,
+            bundleID: bundleID,
+            setDefaultCallCount: setDefaultCalls.value,
+            reloadCallCount: reloadCalls.value,
+            openCallCount: openCalls.value,
+        )
     }
 
     static func completeReplacementAfterCancellation(
@@ -328,6 +418,64 @@ enum EntryOperationsTestSupport {
             }
         }
         return items == [latestEntry]
+    }
+
+    private static func completeOpenWithCommand(
+        _ store: TestStore<EntryOperationsFeature.State, EntryOperationsFeature.Action>,
+        gate: OpenWithCommandCompletionGate,
+        completionOrder: [String],
+    ) async {
+        for path in completionOrder {
+            while await !gate.isStarted(path) {
+                await Task.yield()
+            }
+        }
+        for path in completionOrder {
+            await gate.resume(path)
+            await Task.yield()
+        }
+        await store.finish()
+        await store.skipReceivedActions()
+    }
+
+    private static func makeOpenWithEvidence(
+        actions: [EntryOperationsAction],
+        bundleID: String,
+        setDefaultCallCount: Int,
+        reloadCallCount: Int,
+        openCallCount: Int,
+    ) -> OpenWithCommandEvidence {
+        let openStartedPaths = actions.compactMap { action -> String? in
+            guard case let .lifecycle(.operationStarted(path, .openWithApp(id))) = action,
+                  id == bundleID
+            else { return nil }
+            return path
+        }
+        let openFinishedPaths = actions.compactMap { action -> String? in
+            guard case let .lifecycle(.operationFinished(path, .openWithApp(id), _)) = action,
+                  id == bundleID
+            else { return nil }
+            return path
+        }
+        let defaultFinishedPaths = actions.compactMap { action -> String? in
+            guard case let .lifecycle(.operationFinished(path, .setDefaultApp(id), .success)) = action,
+                  id == bundleID
+            else { return nil }
+            return path
+        }
+        let terminals = actions.compactMap { action -> EntryActionRecord? in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return nil }
+            return record
+        }
+        return OpenWithCommandEvidence(
+            openStartedPaths: openStartedPaths,
+            openFinishedPaths: openFinishedPaths,
+            defaultFinishedPaths: defaultFinishedPaths,
+            terminals: terminals,
+            setDefaultCallCount: setDefaultCallCount,
+            reloadCallCount: reloadCallCount,
+            openCallCount: openCallCount,
+        )
     }
 
     private static func makeStaleEntry(_ suffix: String) -> EntryModel {

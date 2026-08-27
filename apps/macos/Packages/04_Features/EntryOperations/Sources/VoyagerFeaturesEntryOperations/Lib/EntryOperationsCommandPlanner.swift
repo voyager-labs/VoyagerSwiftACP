@@ -413,7 +413,8 @@ enum EntryOperationsCommandPlanner {
         guard !selectedFiles.isEmpty else { return [] }
 
         if let bundleID {
-            return selectedFiles.flatMap { file -> [EntryOperationsCommandOutput] in
+            guard selectedFiles.count > 1 else {
+                let file = selectedFiles[0]
                 var outputs: [EntryOperationsCommandOutput] = []
                 if shouldSetAsDefault {
                     outputs.append(.entryOperations(.openWith(.setDefaultAppForFile(
@@ -429,6 +430,13 @@ enum EntryOperationsCommandPlanner {
                 ))))
                 return outputs
             }
+            return [
+                .entryOperations(.openWith(.openFilesWithAppBundleID(
+                    files: selectedFiles,
+                    bundleID: bundleID,
+                    shouldSetAsDefault: shouldSetAsDefault,
+                ))),
+            ]
         }
 
         if selectedFiles.count == 1, let file = selectedFiles.first {
