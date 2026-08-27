@@ -26,6 +26,9 @@ public struct FileManagerContentFeature {
     public var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
+            case let .internal(.setPendingEntrySelection(entryID, destinationPath)):
+                state.setPendingEntrySelection(entryID: entryID, destinationPath: destinationPath)
+                return .none
             case let .collection(.saveCompleted(result)):
                 return handleCollectionSaveCompleted(result: result, state: &state)
             case let .entryViewLayout(.entryOperations(.lifecycle(.windowIDChanged(windowID)))):
@@ -68,9 +71,7 @@ public struct FileManagerContentFeature {
             CollectionFeature()
         }
 
-        Reduce { state, action in
-            handlePendingSelectionBeforeEntryLayoutLoaded(action, state: &state)
-        }
+        FileManagerContentPendingSelectionReducer(phase: .beforeEntryViewLayout)
 
         Scope(state: \.entryViewLayout, action: \.entryViewLayout) {
             EntryViewLayoutFeature()
@@ -80,9 +81,7 @@ public struct FileManagerContentFeature {
             AiChatFeature()
         }
 
-        Reduce { state, action in
-            handlePendingSelectionAfterEntryLayoutLoaded(action, state: &state)
-        }
+        FileManagerContentPendingSelectionReducer(phase: .afterEntryViewLayout)
 
         FileManagerContentComposerReducer()
 
@@ -287,49 +286,6 @@ public struct FileManagerContentFeature {
             rootReloadEffect,
             .send(.entryViewLayout(.hierarchy(.arrangementMetadataPriorityChanged))),
         )
-    }
-
-    private func handlePendingSelectionBeforeEntryLayoutLoaded(
-        _ action: Action,
-        state: inout State,
-    ) -> Effect<Action> {
-        guard case let .entryViewLayout(.entryOperations(.loading(.streamEvent(streamEvent)))) = action,
-              case let .coreBatch(items: entries, batchIndex: batchIndex) = streamEvent.event,
-              streamEvent.generation == state.entryViewLayout.entryOperations.loadingContext.generation,
-              batchIndex == state.entryViewLayout.entryOperations.loadingContext.expectedCoreBatchIndex
-        else {
-            return .none
-        }
-        guard FileManagerContentEntryOpsCoordinator.applyPendingSelectionForLoadedEntries(
-            entries: entries,
-            state: &state,
-        ) else {
-            return .none
-        }
-        return .send(.entryViewLayout(.delegate(.selectionChanged)))
-    }
-
-    private func handlePendingSelectionAfterEntryLayoutLoaded(
-        _ action: Action,
-        state: inout State,
-    ) -> Effect<Action> {
-        let entries: [EntryModel]
-        switch action {
-        case let .entryViewLayout(.entryOperations(.loading(.itemsLoaded(loadedEntries)))):
-            entries = loadedEntries
-        case let .entryViewLayout(.entryOperations(.loading(.streamEvent(streamEvent)))):
-            guard case .coreBatch = streamEvent.event else { return .none }
-            entries = Array(state.entryViewLayout.entryOperations.loadingContext.items)
-        default:
-            return .none
-        }
-        guard FileManagerContentEntryOpsCoordinator.applyPendingSelectionForLoadedEntries(
-            entries: entries,
-            state: &state,
-        ) else {
-            return .none
-        }
-        return .send(.entryViewLayout(.delegate(.selectionChanged)))
     }
 
     // MARK: - Projection Bridge

@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import Foundation
 
 @Reducer
 struct ContentPageNavigationHistoryReducer {
@@ -49,6 +50,7 @@ struct ContentPageNavigationHistoryReducer {
         return historyNavigationEffects(
             previousNavigationState: previousNavigationState,
             nextNavigationState: state.navigationState,
+            shouldRevealEntry: true,
         )
     }
 
@@ -62,6 +64,7 @@ struct ContentPageNavigationHistoryReducer {
         return historyNavigationEffects(
             previousNavigationState: previousNavigationState,
             nextNavigationState: state.navigationState,
+            shouldRevealEntry: false,
         )
     }
 
@@ -87,6 +90,7 @@ struct ContentPageNavigationHistoryReducer {
             return historyNavigationEffects(
                 previousNavigationState: previousNavigationState,
                 nextNavigationState: state.navigationState,
+                shouldRevealEntry: false,
             )
         }
 
@@ -105,6 +109,7 @@ struct ContentPageNavigationHistoryReducer {
         return historyNavigationEffects(
             previousNavigationState: previousNavigationState,
             nextNavigationState: state.navigationState,
+            shouldRevealEntry: false,
         )
     }
 
@@ -120,12 +125,14 @@ struct ContentPageNavigationHistoryReducer {
         return historyNavigationEffects(
             previousNavigationState: previousNavigationState,
             nextNavigationState: state.navigationState,
+            shouldRevealEntry: true,
         )
     }
 
     private func historyNavigationEffects(
         previousNavigationState: ContentPageNavigationRoute,
         nextNavigationState: ContentPageNavigationRoute,
+        shouldRevealEntry: Bool,
     ) -> Effect<Action> {
         var effects: [Effect<Action>] = []
 
@@ -137,9 +144,43 @@ struct ContentPageNavigationHistoryReducer {
         effects.append(
             .send(.delegate(.logDAUNavigation(previous: previousNavigationState, next: nextNavigationState))),
         )
+        if shouldRevealEntry,
+           let revealEffect = revealEffect(
+               previousNavigationState: previousNavigationState,
+               nextNavigationState: nextNavigationState,
+           )
+        {
+            effects.append(revealEffect)
+        }
         effects.append(.send(.delegate(.navigateToState(nextNavigationState))))
 
         return .concatenate(effects)
+    }
+
+    private func revealEffect(
+        previousNavigationState: ContentPageNavigationRoute,
+        nextNavigationState: ContentPageNavigationRoute,
+    ) -> Effect<Action>? {
+        guard
+            case let .folder(previousPath) = previousNavigationState,
+            case let .folder(nextPath) = nextNavigationState
+        else { return nil }
+
+        let previousURL = URL(fileURLWithPath: previousPath).standardizedFileURL
+        let nextURL = URL(fileURLWithPath: nextPath).standardizedFileURL
+        guard
+            previousURL.path != nextURL.path,
+            nextURL.path == previousURL.deletingLastPathComponent().path
+        else { return nil }
+
+        return .send(
+            .delegate(
+                .revealEntryAfterNavigation(
+                    destinationPath: nextPath,
+                    entryPath: previousPath,
+                ),
+            ),
+        )
     }
 
     private func applyContentPageNavigationHistorySnapshot(

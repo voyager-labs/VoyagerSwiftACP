@@ -97,7 +97,7 @@ public extension FileManagerWindowState {
                 for: reservation.anchor,
                 inheritingWindowContextFrom: windowContext,
             )
-            content.pendingSelectEntryID = reservation.pendingSelectEntryID
+            content.setPendingEntrySelection(entryID: reservation.pendingSelectEntryID, destinationPath: nil)
             contentSnapshots[reservation.id] = content
             inspectorSnapshots[reservation.id] = FileManagerInspectorFeature.State().tabSnapshot()
         }
