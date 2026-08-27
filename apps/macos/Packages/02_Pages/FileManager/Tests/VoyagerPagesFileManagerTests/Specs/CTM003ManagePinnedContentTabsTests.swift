@@ -30,14 +30,14 @@ extension CTM003ManagePinnedContentTabsTests {
         let operationID = UUID()
         let metric = FileManagerProductMetricsProducer.contentTabTerminal(
             operationID: operationID,
-            action: .pin,
+            identity: .pinContentTabs,
             source: .contentTabBar,
             result: .success,
         )
 
         XCTAssertEqual(metric, .contentTabAction(
             result: .success,
-            action: .pin,
+            identity: .pinContentTabs,
             source: .contentTabBar,
             operationID: operationID,
         ))
@@ -120,7 +120,7 @@ extension CTM003ManagePinnedContentTabsTests {
         XCTAssertEqual(recorder.metrics(), [
             .contentTabAction(
                 result: .success,
-                action: .unpin,
+                identity: .unpinContentTabs,
                 source: .contentTabBar,
                 operationID: operationIDUnpin,
             ),
@@ -206,13 +206,13 @@ extension CTM003ManagePinnedContentTabsTests {
         XCTAssertEqual(recorder.metrics(), [
             .contentTabAction(
                 result: .success,
-                action: .pin,
+                identity: .pinContentTabs,
                 source: .contentTabBar,
                 operationID: operationIDB,
             ),
             .contentTabAction(
                 result: .failure,
-                action: .pin,
+                identity: .pinContentTabs,
                 source: .contentTabBar,
                 operationID: operationIDA,
             ),
@@ -290,7 +290,7 @@ extension CTM003ManagePinnedContentTabsTests {
         XCTAssertEqual(recorder.metrics(), [
             .contentTabAction(
                 result: .success,
-                action: .pin,
+                identity: .pinContentTabs,
                 source: .contentTabBar,
                 operationID: operationIDA,
             ),
@@ -332,8 +332,45 @@ extension CTM003ManagePinnedContentTabsTests {
         XCTAssertEqual(recorder.metrics(), [
             .contentTabAction(
                 result: .success,
-                action: .pin,
+                identity: .pinContentTabs,
                 source: .contentTabBar,
+                operationID: operationID,
+            ),
+        ])
+    }
+
+    /// CTM-003-product_action_metrics: drag으로 시작한 선택 배치는 drag_and_drop source를 보존한다.
+    /// pending origin이 result로 전달되지 않아 menu 표면으로 둔갑하지 않는지 검증한다.
+    /// - 검증 내용: origin .drag 배치의 `.success/.pin/.dragAndDrop` 메트릭 1건
+    /// - 사전 조건: origin .drag인 completed result와 recorder 주입
+    /// - 기대 결과: 레코더에 dragAndDrop source aggregate 메트릭 1건만 기록됨
+    func testSelectedDragPinBatchCompletionPreservesDragAndDropSource() async {
+        let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 25))
+        let recorder = FileManagerProductMetricRecorder()
+        let store = TestStore(initialState: FileManagerFeature.State()) {
+            CTM003FileManagerPersistenceHarness()
+        } withDependencies: {
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: batch completion의 집계 메트릭 계약에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.selectedPinMutationBatchCompleted(.init(
+            operationID: operationID,
+            target: .pinned,
+            totalCount: 2,
+            successCount: 2,
+            failureCount: 0,
+            remainingCount: 0,
+            origin: .drag,
+        )))
+        await store.finish()
+
+        XCTAssertEqual(recorder.metrics(), [
+            .contentTabAction(
+                result: .success,
+                identity: .pinContentTabs,
+                source: .dragAndDrop,
                 operationID: operationID,
             ),
         ])
@@ -368,7 +405,7 @@ extension CTM003ManagePinnedContentTabsTests {
         XCTAssertEqual(recorder.metrics(), [
             .contentTabAction(
                 result: .failure,
-                action: .unpin,
+                identity: .unpinContentTabs,
                 source: .contentTabBar,
                 operationID: operationID,
             ),
@@ -402,7 +439,7 @@ extension CTM003ManagePinnedContentTabsTests {
         XCTAssertEqual(recorder.metrics(), [
             .contentTabAction(
                 result: .cancelled,
-                action: .pin,
+                identity: .pinContentTabs,
                 source: .contentTabBar,
                 operationID: operationID,
             ),
@@ -448,7 +485,7 @@ extension CTM003ManagePinnedContentTabsTests {
         XCTAssertEqual(recorder.metrics(), [
             .contentTabAction(
                 result: .failure,
-                action: .pin,
+                identity: .pinContentTabs,
                 source: .contentTabBar,
                 operationID: operationID,
             ),
@@ -5607,7 +5644,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             $0.productContentTabPinMutationMetrics = [
                 tabID: ProductContentTabPinMutationMetric(
                     operationID: metricOperationID,
-                    action: .pin,
+                    identity: .pinContentTabs,
                 ),
             ]
         }
@@ -12664,6 +12701,7 @@ extension CTM003ManagePinnedContentTabsTests {
             successCount: 0,
             failureCount: 0,
             remainingCount: 1,
+            origin: .drag,
         )
         XCTAssertEqual(completedResults.value, [expectedResult, expectedResult])
         XCTAssertEqual(persistenceRequests.value, 0)
@@ -12798,6 +12836,7 @@ extension CTM003ManagePinnedContentTabsTests {
             successCount: 0,
             failureCount: 0,
             remainingCount: 1,
+            origin: .drag,
         )
     }
 

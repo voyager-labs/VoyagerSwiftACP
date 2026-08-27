@@ -163,6 +163,7 @@ extension FileManagerWindowRoutingReducer {
             successCount: pending.successCount,
             failureCount: pending.failureCount,
             remainingCount: pending.remainingCount,
+            origin: pending.origin,
         )
         guard result.totalCount == result.successCount + result.failureCount + result.remainingCount else {
             return .none
@@ -176,6 +177,7 @@ extension FileManagerWindowRoutingReducer {
 
     /// 배치 pin/unpin 완료를 집계 terminal 한 건으로 기록한다. 항목별 이벤트는 만들지 않는다.
     /// 수용 항목 중 실패가 있으면 failure가 우선하고, 전부 적용 성공일 때만 success, 그 외는 cancelled다.
+    /// source_surface는 배치 origin을 보존한다. menu는 content_tab_bar, drag는 drag_and_drop다.
     func recordSelectedPinMutationBatchMetric(_ result: SelectedContentTabPinMutationResult) {
         guard result.totalCount > 0 else { return }
         let outcome: ContentTabActionResult = if result.failureCount > 0 {
@@ -187,8 +189,8 @@ extension FileManagerWindowRoutingReducer {
         }
         productMetricsClient.record(FileManagerProductMetricsProducer.contentTabTerminal(
             operationID: result.operationID,
-            action: result.target == .pinned ? .pin : .unpin,
-            source: .contentTabBar,
+            identity: result.target == .pinned ? .pinContentTabs : .unpinContentTabs,
+            source: result.origin == .drag ? .dragAndDrop : .contentTabBar,
             result: outcome,
         ))
     }

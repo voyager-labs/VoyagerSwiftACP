@@ -28,6 +28,8 @@ public struct SelectedContentTabPinMutationResult: Equatable, Sendable {
     public let successCount: Int
     public let failureCount: Int
     public let remainingCount: Int
+    /// 배치를 시작한 입력 표면. 터미널 메트릭 source_surface의 원천이다.
+    public let origin: SelectedContentTabPinMutationOrigin
 
     public init(
         operationID: UUID,
@@ -36,6 +38,7 @@ public struct SelectedContentTabPinMutationResult: Equatable, Sendable {
         successCount: Int,
         failureCount: Int,
         remainingCount: Int,
+        origin: SelectedContentTabPinMutationOrigin = .menu,
     ) {
         self.operationID = operationID
         self.target = target
@@ -43,6 +46,7 @@ public struct SelectedContentTabPinMutationResult: Equatable, Sendable {
         self.successCount = successCount
         self.failureCount = failureCount
         self.remainingCount = remainingCount
+        self.origin = origin
     }
 }
 
