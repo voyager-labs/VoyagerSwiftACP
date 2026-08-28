@@ -11,6 +11,7 @@ extension FileManagerContentIdentityTransitionCoordinator {
         guard let transition = state.pendingIdentityTransition else { return }
         var shouldDefer: Bool?
         var holdsUntilMigration = false
+        var untilEntryID: EntryModel.ID?
         if case let .folder(ownerID, _) = transition.projectionOwner,
            canonicalizedPath(ownerID) == canonicalizedPath(folderID)
         {
@@ -29,6 +30,21 @@ extension FileManagerContentIdentityTransitionCoordinator {
             holdsUntilMigration = true
         }
         if shouldDefer == nil {
+            print("DBG dest branch scan:", folderID)
+            // 다중 이동: additional destination 폴더도 after 행 도착까지 retained children을 유지한다.
+            for move in transition.additionalMoves {
+                guard case let .folder(ownerID, _) = move.destinationOwner,
+                      canonicalizedPath(ownerID) == canonicalizedPath(folderID)
+                else { continue }
+                let pairAfter = move.afterLexicalPath.isEmpty ? move.afterPath : move.afterLexicalPath
+                shouldDefer = !items.contains {
+                    standardizedPath($0.id) == standardizedPath(pairAfter)
+                }
+                untilEntryID = pairAfter
+                break
+            }
+        }
+        if shouldDefer == nil {
             // 다중 이동: additional 이동의 source 폴더도 primary 보존과 동일하게 보류한다.
             for move in transition.additionalMoves {
                 guard case let .folder(ownerID, _) = move.sourceOwner,
@@ -42,7 +58,7 @@ extension FileManagerContentIdentityTransitionCoordinator {
         guard shouldDefer == true else { return }
         state.entryViewLayout.hierarchy.beginDeferredFolderReplacement(
             folderID: folderID,
-            untilEntryID: afterLexicalPath(transition),
+            untilEntryID: untilEntryID ?? afterLexicalPath(transition),
             holdsUntilMigration: holdsUntilMigration,
         )
     }
@@ -134,6 +150,14 @@ extension FileManagerContentIdentityTransitionCoordinator {
         }
         if selectedPaths.contains(afterPath) {
             // 다중 이동: 다른 destination의 pending pair가 남아 있으면 전이를 유지한다.
+            print(
+                "DBG rRS after-selected: alive:",
+                state.pendingIdentityTransition != nil,
+                "pairs:",
+                state.pendingIdentityTransition?.additionalMoves.map { ($0.destinationOwner, $0.migrated) } as Any,
+                "hasPending:",
+                hasPendingDestinationPairs(state),
+            )
             if !hasPendingDestinationPairs(state) {
                 discard(state: &state)
             }
@@ -181,6 +205,7 @@ extension FileManagerContentIdentityTransitionCoordinator {
             _, additionalFolderID, _, .event(.coreFinished),
         ))) = action,
             let transition = state.pendingIdentityTransition,
+            transition.primaryMigrated,
             transition.additionalMoves.allSatisfy(\.migrated),
             transition.additionalMoves.contains(where: { pair in
                 guard case let .folder(id, _) = pair.destinationOwner else { return false }

@@ -79,6 +79,8 @@ public struct FileManagerContentState: Equatable {
         var preservedLexicalBeforeID: String?
         /// canonical 비교가 symlink와 target을 묶지 않도록 보존하는 raw lexical before 경로.
         var beforeLexicalPath: String = ""
+        /// primary destination batch에서 primary 선택 이동이 완료됐는지 여부.
+        var primaryMigrated = false
         /// 같은 record로 함께 이동한 나머지 선택 항목의 before→after 쌍.
         var additionalMoves: [EntryMovePair] = []
 

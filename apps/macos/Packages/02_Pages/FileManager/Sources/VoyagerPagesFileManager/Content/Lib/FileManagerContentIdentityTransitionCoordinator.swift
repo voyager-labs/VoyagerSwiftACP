@@ -165,6 +165,10 @@ enum FileManagerContentIdentityTransitionCoordinator {
         state.entryViewLayout.selectedIds.insert(matchedAfterID)
         state.entryViewLayout.lastSelectedId = matchedAfterID
         state.entryViewLayout.rangeAnchorId = matchedAfterID
+        // primary destination이 폴더일 때는 전이가 추가 terminal까지 생존하므로
+        // primary migration 완료를 명시적으로 기록해 소비 판정에 사용한다.
+        transition.primaryMigrated = true
+        state.pendingIdentityTransition = transition
         commitMigratedSourceStagings(transition: transition, state: &state)
         if case .root = projectionOwner, !hasPendingDestinationPairs(state) {
             discard(state: &state)
@@ -261,6 +265,7 @@ enum FileManagerContentIdentityTransitionCoordinator {
     }
 
     static func discard(state: inout FileManagerContentState) {
+        print("DBG discard from:", Thread.callStackSymbols[1 ... 2].joined(separator: " | "))
         state.pendingIdentityTransition = nil
         // 취소된 전이의 folder staging은 버리지 않는다: staging 누적 동안 이미 증가한
         // batch cursor와 children 불일치가 남아 같은 세대 후속 batch가 어긋난다.
