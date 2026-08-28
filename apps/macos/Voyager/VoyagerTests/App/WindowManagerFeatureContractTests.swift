@@ -12666,18 +12666,24 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await store.finish()
     }
 
-    /// FMW-003: 마지막 신규 창이 먼저 제거되어도 기존 창 예약 tab rollback ownership은 registration terminal까지 유지된다.
-    /// registration 실패가 batch 소유 mutation만 보상하고 동시 사용자 상태를 덮어쓰지 않는 경계를 검증한다.
-    /// - 검증 내용: 신규 창 선행 제거 뒤 ownership 유지, 사용자 tab 보존, external 예약 tab 제거, typed failure 단일 방출
-    /// - 사전 조건: 기존 창과 신규 창이 섞인 placement가 commit된 뒤 native registration 조회가 대기하고 신규 창이 닫힘
-    /// - 기대 결과: 사용자 tab은 유지되고 batch 예약 tab만 제거되며 failure가 한 번 방출됨
+    /// FMW-003: 등록 대기 중 사용자가 변경한 예약 tab은 실패 보상에서 제외한다.
+    /// registration 실패가 untouched 예약 tab만 정리하고 사용자가 채택한 상태를 덮어쓰지 않는 경계를 검증한다.
+    /// - 검증 내용: route 변경·Pin·dirty Collection 보존, untouched 예약 tab 제거, typed failure 단일 방출
+    /// - 사전 조건: mixed placement commit 뒤 native registration 조회가 대기하며 예약 tab 상태와 신규 창 lifecycle이 변경됨
+    /// - 기대 결과: 변경된 예약 tab과 사용자 tab은 유지되고 untouched 예약 tab만 제거되며 failure가 한 번 방출됨
     func testPlacementRegistrationFailureAfterLastNewWindowClosesRollsBackExistingReservations() async {
         let batchID = UUID()
         let existingWindowID = UUID()
         let windowID = UUID()
         let existingItemID = UUID()
+        let routeChangedItemID = UUID()
+        let pinnedItemID = UUID()
+        let dirtyCollectionItemID = UUID()
         let itemID = UUID()
         let existingTabID = ContentTabID(rawValue: "registration-existing-reservation")
+        let routeChangedTabID = ContentTabID(rawValue: "registration-route-changed-reservation")
+        let pinnedTabID = ContentTabID(rawValue: "registration-pinned-reservation")
+        let dirtyCollectionTabID = ContentTabID(rawValue: "registration-dirty-collection-reservation")
         let tabID = ContentTabID(rawValue: "unregistered-external-window")
         let existingWindow = Self.makeWindow(id: existingWindowID, tabCount: 1)
         let plan = ExternalOpenPlacementPlan(
@@ -12686,11 +12692,28 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                 .init(
                     windowID: existingWindowID,
                     isNewWindow: false,
-                    items: [.init(
-                        itemID: existingItemID,
-                        tabID: existingTabID,
-                        anchor: .directory(path: "/tmp/registration-existing"),
-                    )],
+                    items: [
+                        .init(
+                            itemID: existingItemID,
+                            tabID: existingTabID,
+                            anchor: .directory(path: "/tmp/registration-existing"),
+                        ),
+                        .init(
+                            itemID: routeChangedItemID,
+                            tabID: routeChangedTabID,
+                            anchor: .directory(path: "/tmp/registration-route"),
+                        ),
+                        .init(
+                            itemID: pinnedItemID,
+                            tabID: pinnedTabID,
+                            anchor: .directory(path: "/tmp/registration-pinned"),
+                        ),
+                        .init(
+                            itemID: dirtyCollectionItemID,
+                            tabID: dirtyCollectionTabID,
+                            anchor: .collectionFile(url: URL(fileURLWithPath: "/tmp/registration-dirty.voycoll")),
+                        ),
+                    ],
                 ),
                 .init(
                     windowID: windowID,
@@ -12710,25 +12733,50 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         let closedWindowIDs = LockIsolated<[UUID]>([])
         let finalizedWindowIDs = LockIsolated<[UUID]>([])
         let completions = LockIsolated<[ExternalOpenPlacementApplicationCompletion]>([])
+        let compensatedTabIDs = LockIsolated<[ContentTabID]>([])
         let registrationStarted = expectation(description: "native registration lookup started")
         let registrationGate = AsyncStream<Void>.makeStream()
         let terminalReceived = expectation(description: "external open apply terminal received")
+        let dirtyContext = CollectionContext(
+            query: "registration-dirty",
+            scopes: ["/tmp"],
+            conditions: [],
+        )
         var initialState = WindowManagerFeature.State()
         initialState.windows = [existingWindow]
         initialState.authorizedExternalOpenBatchID = batchID
         let store = TestStore(initialState: initialState) {
             CombineReducers {
                 WindowManagerFeature()
-                Reduce { _, action in
+                Reduce { state, action in
                     if case let .delegate(.externalOpenApplyCompleted(completion)) = action {
                         completions.withValue { $0.append(completion) }
                         terminalReceived.fulfill()
+                    }
+                    if case let .windows(.element(
+                        id: id,
+                        action: .window(.contentTabs(.commitClose(tabID))),
+                    )) = action, id == existingWindowID {
+                        compensatedTabIDs.withValue { $0.append(tabID) }
+                    }
+                    if case .windows(.element(
+                        id: existingWindowID,
+                        action: .window(.tabContent(
+                            tabID: dirtyCollectionTabID,
+                            action: .composer(.view(.setText("registration-dirty"))),
+                        )),
+                    )) = action {
+                        state.windows[id: existingWindowID]?.window
+                            .tabContentStates[dirtyCollectionTabID]?.entryViewLayout.isCollectionMode = true
+                        state.windows[id: existingWindowID]?.window
+                            .tabContentStates[dirtyCollectionTabID]?.collection.collectionContext = dirtyContext
                     }
                     return .none
                 }
             }
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.uuid = .incrementing
             $0.fileManagerWindowClient.open = { id in
                 openedWindowIDs.withValue { $0.append(id) }
             }
@@ -12762,18 +12810,62 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                     id: existingTabID,
                     anchor: .directory(path: "/tmp/registration-existing"),
                 ),
+                routeChangedItemID: .init(
+                    id: routeChangedTabID,
+                    anchor: .directory(path: "/tmp/registration-route"),
+                ),
+                pinnedItemID: .init(
+                    id: pinnedTabID,
+                    anchor: .directory(path: "/tmp/registration-pinned"),
+                ),
+                dirtyCollectionItemID: .init(
+                    id: dirtyCollectionTabID,
+                    anchor: .collectionFile(url: URL(fileURLWithPath: "/tmp/registration-dirty.voycoll")),
+                ),
                 itemID: .init(id: tabID, anchor: .directory(path: "/tmp/unregistered-external")),
             ],
         )))
         await fulfillment(of: [registrationStarted], timeout: 1)
         await store.send(.windows(.element(
             id: existingWindowID,
+            action: .window(.contentTabs(.updateActivePageAnchor(
+                routeChangedTabID,
+                .directory(path: "/tmp/registration-route-changed"),
+            ))),
+        )))
+        await store.send(.windows(.element(
+            id: existingWindowID,
+            action: .window(.contentTabs(.pin(pinnedTabID))),
+        )))
+        await store.send(.windows(.element(
+            id: existingWindowID,
             action: .window(.contentTabs(.open(.homeDefault))),
+        )))
+        await store.send(.windows(.element(
+            id: existingWindowID,
+            action: .window(.tabContent(
+                tabID: dirtyCollectionTabID,
+                action: .composer(.view(.setText("registration-dirty"))),
+            )),
         )))
         await store.skipReceivedActions()
         let userMutatedWindow = store.state.windows[id: existingWindowID]?.window
         let userCreatedTabID = userMutatedWindow?.contentTabs.activeTabID
         let userCreatedContent = userMutatedWindow?.content
+        XCTAssertEqual(
+            userMutatedWindow?.contentTabs.tabs[id: routeChangedTabID]?.anchor,
+            .directory(path: "/tmp/registration-route-changed"),
+        )
+        XCTAssertTrue(
+            userMutatedWindow?.contentTabs.tabs[id: pinnedTabID]?.isPinned == true
+                || userMutatedWindow?.pendingSelectedContentTabPinMutation?.orderedTargetIDs
+                .contains(pinnedTabID) == true,
+        )
+        XCTAssertEqual(
+            userMutatedWindow?.tabContentStates[dirtyCollectionTabID]?.collection
+                .canSave(isCollectionMode: true),
+            true,
+        )
 
         await store.send(.event(.windowClosed(windowID)))
         await store.receive(\.windowInvalidationFinished)
@@ -12782,9 +12874,33 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             .init(
                 batchID: batchID,
                 newWindowIDs: [],
-                existingWindowReservedTabIDs: [existingWindowID: [existingTabID]],
+                existingWindowReservedTabFingerprints: [existingWindowID: [
+                    .init(
+                        tabID: existingTabID,
+                        page: .directory,
+                        anchor: .directory(path: "/tmp/registration-existing"),
+                    ),
+                    .init(
+                        tabID: routeChangedTabID,
+                        page: .directory,
+                        anchor: .directory(path: "/tmp/registration-route"),
+                    ),
+                    .init(
+                        tabID: pinnedTabID,
+                        page: .directory,
+                        anchor: .directory(path: "/tmp/registration-pinned"),
+                    ),
+                    .init(
+                        tabID: dirtyCollectionTabID,
+                        page: .collection,
+                        anchor: .collectionFile(url: URL(fileURLWithPath: "/tmp/registration-dirty.voycoll")),
+                    ),
+                ]],
             ),
         )
+        let dirtyCollection = store.state.windows[id: existingWindowID]?.window
+            .tabContentStates[dirtyCollectionTabID]?.collection
+        XCTAssertEqual(dirtyCollection?.canSave(isCollectionMode: true), true)
 
         registrationGate.continuation.yield(())
         registrationGate.continuation.finish()
@@ -12799,6 +12915,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertEqual(completions.value, [
             .init(batchID: batchID, result: .failure(.validationFailed)),
         ])
+        XCTAssertEqual(compensatedTabIDs.value, [existingTabID])
         XCTAssertNil(store.state.windows[id: windowID])
         let rolledBackExistingWindow = store.state.windows[id: existingWindowID]?.window
         XCTAssertEqual(rolledBackExistingWindow?.contentTabs.activeTabID, userCreatedTabID)
@@ -12808,6 +12925,9 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             rolledBackExistingWindow?.contentTabs.tabs[id: originalTab.id] != nil
         })
         XCTAssertNil(rolledBackExistingWindow?.contentTabs.tabs[id: existingTabID])
+        XCTAssertNotNil(rolledBackExistingWindow?.contentTabs.tabs[id: routeChangedTabID])
+        XCTAssertNotNil(rolledBackExistingWindow?.contentTabs.tabs[id: pinnedTabID])
+        XCTAssertNotNil(rolledBackExistingWindow?.contentTabs.tabs[id: dirtyCollectionTabID])
         XCTAssertNil(store.state.authorizedExternalOpenBatchID)
         XCTAssertNil(store.state.retainedExternalOpenPlacementOwnership)
         XCTAssertNil(store.state.externalWindowBatchIDs[windowID])
@@ -13141,7 +13261,13 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             .init(
                 batchID: batchID,
                 newWindowIDs: [newWindowID],
-                existingWindowReservedTabIDs: [existingWindowID: [existingTabID]],
+                existingWindowReservedTabFingerprints: [existingWindowID: [
+                    .init(
+                        tabID: existingTabID,
+                        page: .directory,
+                        anchor: .directory(path: "/existing/reserved"),
+                    ),
+                ]],
             ),
         )
         await store.send(.event(.windowBecameKey(newWindowID)))

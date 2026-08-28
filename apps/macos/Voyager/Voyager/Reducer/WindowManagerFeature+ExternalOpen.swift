@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerEntitiesCollection
 import VoyagerPagesFileManager
 import VoyagerShared
 import VoyagerWidgetsEntryViewLayout
@@ -86,10 +87,20 @@ extension WindowManagerFeature {
                 state.retainedExternalOpenPlacementOwnership = nil
             }
         } else {
+            let fingerprints = existingWindowReservedTabIDs.reduce(
+                into: [State.WindowID: [WindowManagerExternalOpenReservationFingerprint]](),
+            ) { result, entry in
+                let (windowID, tabIDs) = entry
+                result[windowID] = tabIDs.compactMap { tabID in
+                    guard let tab = state.windows[id: windowID]?.window.contentTabs.tabs[id: tabID]
+                    else { return nil }
+                    return .init(tabID: tab.id, page: tab.page, anchor: tab.anchor)
+                }
+            }
             state.retainedExternalOpenPlacementOwnership = .init(
                 batchID: batchID,
                 newWindowIDs: newWindowIDs,
-                existingWindowReservedTabIDs: existingWindowReservedTabIDs,
+                existingWindowReservedTabFingerprints: fingerprints,
             )
         }
     }
@@ -108,12 +119,24 @@ extension WindowManagerFeature {
               ownership.batchID == batchID
         else { return .concatenate(effects) }
         state.retainedExternalOpenPlacementOwnership = nil
-        for (windowID, tabIDs) in ownership.existingWindowReservedTabIDs {
-            guard state.windows[id: windowID] != nil else { continue }
-            for tabID in tabIDs.reversed() {
+        for (windowID, fingerprints) in ownership.existingWindowReservedTabFingerprints {
+            guard let window = state.windows[id: windowID]?.window else { continue }
+            for fingerprint in fingerprints.reversed() {
+                guard !externalOpenReservationLifecycleOwnsTab(fingerprint.tabID, in: window),
+                      let tab = window.contentTabs.tabs[id: fingerprint.tabID],
+                      tab.page == fingerprint.page,
+                      tab.anchor == fingerprint.anchor,
+                      !tab.isPinned,
+                      window.contentTabs.pinnedRecords[fingerprint.tabID] == nil,
+                      !window.contentTabs.pendingPinnedRecordIDs.contains(fingerprint.tabID),
+                      let content = fingerprint.tabID == window.contentTabs.activeTabID
+                      ? window.content
+                      : window.tabContentStates[fingerprint.tabID],
+                      !content.collection.canSave(isCollectionMode: content.entryViewLayout.isCollectionMode)
+                else { continue }
                 effects.append(.send(.windows(.element(
                     id: windowID,
-                    action: .window(.contentTabs(.commitClose(tabID))),
+                    action: .window(.contentTabs(.commitClose(fingerprint.tabID))),
                 ))))
             }
         }
@@ -307,4 +330,18 @@ extension WindowManagerFeature {
         }
         return effects
     }
+}
+
+private func externalOpenReservationLifecycleOwnsTab(
+    _ tabID: ContentTabID,
+    in window: FileManagerWindowState,
+) -> Bool {
+    window.isClosing
+        || window.pendingContentTabClose?.tabID == tabID
+        || window.pendingSelectedContentTabClose?.orderedTargetIDs.contains(tabID) == true
+        || window.pendingSelectedContentTabPinMutation?.orderedTargetIDs.contains(tabID) == true
+        || window.pendingContentTabTeardown?.tabID == tabID
+        || window.pendingContentTabMove?.request.orderedTabIDs.contains(tabID) == true
+        || !window.pendingTopNavigationIntents.isEmpty
+        || window.contentTabMoveParticipantRequestID != nil
 }

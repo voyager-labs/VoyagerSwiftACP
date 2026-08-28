@@ -274,7 +274,7 @@ extension WindowManagerFeature {
         state.externalWindowBatchIDs[id] = nil
         if var ownership = state.retainedExternalOpenPlacementOwnership {
             ownership.newWindowIDs.removeAll { $0 == id }
-            let isEmpty = ownership.newWindowIDs.isEmpty && ownership.existingWindowReservedTabIDs.isEmpty
+            let isEmpty = ownership.newWindowIDs.isEmpty && ownership.existingWindowReservedTabFingerprints.isEmpty
             state.retainedExternalOpenPlacementOwnership = isEmpty ? nil : ownership
         }
         if state.focusedWindowID == id {
@@ -353,7 +353,7 @@ extension WindowManagerFeature {
         state.externalWindowBatchIDs[id] = nil
         if var ownership = state.retainedExternalOpenPlacementOwnership {
             ownership.newWindowIDs.removeAll { $0 == id }
-            let isEmpty = ownership.newWindowIDs.isEmpty && ownership.existingWindowReservedTabIDs.isEmpty
+            let isEmpty = ownership.newWindowIDs.isEmpty && ownership.existingWindowReservedTabFingerprints.isEmpty
             state.retainedExternalOpenPlacementOwnership = isEmpty ? nil : ownership
         }
         if wasFocused {

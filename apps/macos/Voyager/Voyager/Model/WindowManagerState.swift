@@ -44,10 +44,16 @@ struct WindowManagerTrackedSingletonWindow: Equatable {
     var terminalOutcomeEmitted = false
 }
 
+struct WindowManagerExternalOpenReservationFingerprint: Equatable {
+    let tabID: ContentTabID
+    let page: ContentTabPage
+    let anchor: ContentTabPageAnchor
+}
+
 struct WindowManagerRetainedExternalOpenPlacementOwnership: Equatable {
     var batchID: UUID
     var newWindowIDs: [UUID]
-    var existingWindowReservedTabIDs: [UUID: [ContentTabID]] = [:]
+    var existingWindowReservedTabFingerprints: [UUID: [WindowManagerExternalOpenReservationFingerprint]] = [:]
 }
 
 struct ContentTabMoveTerminalRecord: Equatable {
