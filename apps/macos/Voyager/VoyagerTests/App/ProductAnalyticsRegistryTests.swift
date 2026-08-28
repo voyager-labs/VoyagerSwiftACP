@@ -14,9 +14,9 @@ final class ProductAnalyticsRegistryTests: XCTestCase {
         }
         XCTAssertEqual(registry.metadataOnlyMetricCountForTesting, 2)
 
-        XCTAssertEqual(registry.records.count(where: { $0.implementationStatus == .implemented }), 50)
+        XCTAssertEqual(registry.records.count(where: { $0.implementationStatus == .implemented }), 45)
         XCTAssertEqual(registry.records.count(where: { $0.implementationStatus == .noEventRequired }), 29)
-        XCTAssertEqual(registry.records.count(where: { $0.implementationStatus == .tbd }), 299)
+        XCTAssertEqual(registry.records.count(where: { $0.implementationStatus == .tbd }), 304)
         XCTAssertTrue(registry.records.filter { $0.implementationStatus == .implemented }
             .allSatisfy { $0.relatedIssues == ["VOY-691"] })
         XCTAssertTrue(registry.records.filter { $0.implementationStatus != .implemented }
@@ -47,6 +47,24 @@ final class ProductAnalyticsRegistryTests: XCTestCase {
             XCTAssertNil(record?.posthogEventName)
             XCTAssertEqual(record?.identityPolicy, ProductAnalyticsRegistryIdentityPolicy.none)
             XCTAssertEqual(record?.propertyAllowlist, [])
+        }
+
+        for interactionID in [
+            "CBW-003-show_request_resolution_failure",
+            "CTM-001-close_other_content_tabs",
+            "CTM-001-move_content_tab_to_new_file_manager_window",
+            "EOP-004-batch_rename_entries",
+            "EOP-006-copy_relative_paths_of_entries",
+        ] {
+            let record = registry.records.first { $0.interactionID == interactionID }
+            XCTAssertEqual(record?.implementationStatus, .tbd)
+            XCTAssertNil(record?.eventVersion)
+            XCTAssertNil(record?.eventClass)
+            XCTAssertEqual(record?.sentryMetricKeys, [])
+            XCTAssertNil(record?.posthogEventName)
+            XCTAssertEqual(record?.identityPolicy, ProductAnalyticsRegistryIdentityPolicy.none)
+            XCTAssertEqual(record?.propertyAllowlist, [])
+            XCTAssertEqual(record?.propertyValueAllowlist, [:])
         }
     }
 
