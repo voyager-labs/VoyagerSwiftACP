@@ -58,7 +58,10 @@ func (s propertyOverlayStore) LoadOverlay(
 	if len(entryIDs) == 0 || len(propertyIDs) == 0 {
 		return rows, nil
 	}
-	definitions, err := s.catalog.Definitions(ctx, workspace)
+	// 정의 조회는 overlay 대상 property(요청 ID ≤256)로 한정한다. 전체
+	// 카탈로그를 읽으면 요청당 두 번째 무제한 스캔이 된다. 비활성 정의도
+	// read-back 투영에 필요하다.
+	definitions, _, _, err := s.catalog.DefinitionsPage(ctx, workspace, false, propertyIDs, nil, len(propertyIDs))
 	if err != nil {
 		return nil, err
 	}
