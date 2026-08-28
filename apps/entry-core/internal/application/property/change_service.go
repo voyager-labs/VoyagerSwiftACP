@@ -201,7 +201,11 @@ func (service *ChangeService) Execute(
 		if err != nil {
 			return err
 		}
-		if _, ok := encodedExecuteResponseBytes(requestID, projectedReadBack(staged, snapshot.definitions)); !ok {
+		rows := projectedReadBack(staged, snapshot.definitions)
+		if _, ok := encodedExecuteResponseBytes(requestID, rows); !ok {
+			return ErrScopeTooLarge
+		}
+		if _, ok := encodedAssignmentListResponseFits(rows); !ok {
 			return ErrScopeTooLarge
 		}
 		if err := service.facts.SaveAssignments(txCtx, workspace, stagedFacts(staged)); err != nil {

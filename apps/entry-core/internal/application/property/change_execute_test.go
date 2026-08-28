@@ -147,6 +147,59 @@ func TestExecuteRejectsResponseBudgetBeforeAnyWrite(t *testing.T) {
 	mustEqualFactSnapshot(t, before, harness.facts.snapshot())
 }
 
+// TestExecuteRejectsMinimalListEnvelopeOverflow는 짧은 request ID의 execute 응답이
+// 봉투에 들어도, 이후 최대 길이 ID로 조회하는 property.assignment.list 최소
+// 페이지(ID 필터 page_size 1, has_more false)가 봉투를 넘으면 커밋 전에 거절됨을
+// 증명한다. 저장된 assignment는 생성 요청의 ID 길이와 무관하게 단일 페이지로
+// 조회 가능해야 한다.
+func TestExecuteRejectsMinimalListEnvelopeOverflow(t *testing.T) {
+	harness := mustChangeHarness(t)
+	catalogService := mustCatalogService(t, harness.catalog)
+	textMany, err := catalogService.CreateDefinition(context.Background(), harness.workspace, CreateDefinitionInput{
+		Key:         "list_budget",
+		DisplayName: "List budget",
+		ValueType:   domainentry.PropertyTypeText,
+		Cardinality: domainentry.PropertyCardinalityMany,
+		RequestID:   "req",
+	})
+	if err != nil {
+		t.Fatalf("create text+many definition: %v", err)
+	}
+
+	members := make([]domainentry.AssignmentValue, 256)
+	for index := range members {
+		size := 251
+		if index == 0 {
+			size += 150
+		}
+		members[index] = *textValue(strings.Repeat("x", size))
+	}
+	target := mustResolvedTargetFor(t, "list-budget.txt")
+	service, runner := mustChangeService(t, harness.catalog, harness.facts, stubPathResolver{paths: map[string]ResolvedTarget{
+		"/fixture/list-budget.txt": target,
+	}})
+	before := harness.facts.snapshot()
+	_, err = service.Execute(context.Background(), harness.workspace, "r", []ChangeTarget{
+		{
+			LocalPath:                  "/fixture/list-budget.txt",
+			PropertyID:                 textMany.Definition.PropertyID,
+			ExpectedDefinitionRevision: 1,
+			ExpectedAssignmentRevision: 0,
+			Desired:                    DesiredAssignment{State: domainentry.AssignmentStateValue, Many: members},
+		},
+	})
+	if !errors.Is(err, ErrScopeTooLarge) {
+		t.Fatalf("error = %v, want %v", err, ErrScopeTooLarge)
+	}
+	if runner.calls != 1 {
+		t.Fatalf("budget rejection ran %d WithinTx calls, want exactly 1", runner.calls)
+	}
+	if harness.facts.saveCalls != 0 {
+		t.Fatalf("budget rejection issued %d save calls, want 0", harness.facts.saveCalls)
+	}
+	mustEqualFactSnapshot(t, before, harness.facts.snapshot())
+}
+
 // TestExecuteRejectsStaleMiddleTargetWithoutWriting은 중간 대상의 CAS 불일치가
 // 전체 배치를 거절하는 증거다.
 func TestExecuteRejectsStaleMiddleTargetWithoutWriting(t *testing.T) {
@@ -230,6 +283,14 @@ func TestEncodedExecuteResponseBytesMatchProtocolEnvelope(t *testing.T) {
 	wantBytes, wantOK := schema.EncodedSuccessBytes("req-parity", wantResult)
 	if gotOK != wantOK || gotBytes != wantBytes {
 		t.Fatalf("parity mismatch: got (%d,%v), want (%d,%v)", gotBytes, gotOK, wantBytes, wantOK)
+	}
+	// 최소 assignment.list 페이지 봉투도 같은 방식으로 protocol과 바이트 parity를
+	// 잠는다(단일 행, next_page_token 생략, has_more false).
+	gotListBytes, gotListOK := encodedAssignmentListResponseFits(rows)
+	wantListResult := schema.PropertyAssignmentListResult{Assignments: wantResult.Assignments, HasMore: false}
+	wantListBytes, wantListOK := schema.EncodedSuccessBytes(listableProbeRequestID, wantListResult)
+	if gotListOK != wantListOK || gotListBytes != wantListBytes {
+		t.Fatalf("list parity mismatch: got (%d,%v), want (%d,%v)", gotListBytes, gotListOK, wantListBytes, wantListOK)
 	}
 	huge := executeAssignmentWire{PropertyID: propertyID.String(), EntryID: entryID, ValueType: "text", Cardinality: "one", State: "value", Revision: 1, Value: strings.Repeat("x", 70000)}
 	if _, ok := encodedExecuteResponseBytes("req-parity", []executeAssignmentWire{huge}); ok {

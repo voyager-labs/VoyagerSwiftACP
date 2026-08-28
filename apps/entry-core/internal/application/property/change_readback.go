@@ -51,6 +51,37 @@ func encodedExecuteResponseBytes(requestID string, rows []executeAssignmentWire)
 	return len(encoded), len(encoded) <= schema.MaxWireBytes
 }
 
+// assignmentListSuccessEnvelope와 assignmentListResultEnvelope는 protocol
+// successWire와 PropertyAssignmentListResult의 JSON 모양을 그대로 반영한다.
+// 최소 assignment.list 페이지(단일 행, next_page_token 생략, has_more false)의
+// 커밋 전 예산 검사에 쓰인다.
+type assignmentListSuccessEnvelope struct {
+	RequestID string                       `json:"request_id"`
+	OK        bool                         `json:"ok"`
+	Result    assignmentListResultEnvelope `json:"result"`
+}
+
+type assignmentListResultEnvelope struct {
+	Assignments   []executeAssignmentWire `json:"assignments"`
+	NextPageToken *string                 `json:"next_page_token,omitempty"`
+	HasMore       bool                    `json:"has_more"`
+}
+
+// encodedAssignmentListResponseFits는 같은 read-back 행의 최소 assignment.list
+// 페이지가 최대 길이 sentinel ID(listableProbeRequestID) 기준으로 봉투에 들어가는지
+// 검사한다. 이후 조회는 임의의 유효한 요청 ID로 올 수 있고, 목록 봉투는 execute
+// 응답보다 has_more 필드만큼 크므로 execute 응답 검사만으로는 불충분하다.
+func encodedAssignmentListResponseFits(rows []executeAssignmentWire) (int, bool) {
+	if rows == nil {
+		rows = []executeAssignmentWire{}
+	}
+	encoded, err := json.Marshal(assignmentListSuccessEnvelope{RequestID: listableProbeRequestID, OK: true, Result: assignmentListResultEnvelope{Assignments: rows, HasMore: false}})
+	if err != nil {
+		return 0, false
+	}
+	return len(encoded), len(encoded) <= schema.MaxWireBytes
+}
+
 // projectedReadBack은 아직 쓰지 않은 staged fact로 커밋 후 read-back 행을
 // 예측한다. 예산 위반은 이 시점에서 쓰기 전에 거절된다.
 func projectedReadBack(staged []resolvedChange, definitions map[domainentry.PropertyID]domainentry.WorkspacePropertyDefinition) []executeAssignmentWire {
