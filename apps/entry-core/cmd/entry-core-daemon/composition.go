@@ -3,12 +3,9 @@ package main
 import (
 	"context"
 	"crypto/rand"
-	"time"
 
-	applicationentry "github.com/voyager-labs/voyager-app/apps/entry-core/internal/application/entry"
 	applicationproperty "github.com/voyager-labs/voyager-app/apps/entry-core/internal/application/property"
 	domainentry "github.com/voyager-labs/voyager-app/apps/entry-core/internal/domain/entry"
-	"github.com/voyager-labs/voyager-app/apps/entry-core/internal/mount"
 	sqlite "github.com/voyager-labs/voyager-app/apps/entry-core/internal/persistence/sqlite"
 	entryruntime "github.com/voyager-labs/voyager-app/apps/entry-core/internal/runtime"
 	"github.com/voyager-labs/voyager-app/apps/entry-core/internal/source/localfs"
@@ -81,37 +78,10 @@ func composeWorkspaceServices(
 	if err != nil {
 		return nil, err
 	}
-	available, err := domainentry.NewAvailability(domainentry.AvailabilityStateAvailable)
-	if err != nil {
-		return nil, err
-	}
-	sourceRef, err := domainentry.NewSourceRef(
-		resolver.SourceIdentity().SourceID, "localfs", "local",
-		available, resolver.SourceIdentity().IdentityStrength,
-	)
-	if err != nil {
-		return nil, err
-	}
-	entryService, err := applicationentry.NewUnifiedServiceWithCatalog(
-		mount.NewMountRegistry(),
-		[]applicationentry.ResourceAdapterBinding{
-			{SourceRef: sourceRef, Adapter: localfs.NewResourceAdapter(resolver)},
-		},
-		snapshot,
-		cursorKey,
-		time.Now,
-		applicationentry.WithPropertyOverlayLoader(propertyOverlayStore{catalog: catalogStore, facts: facts}),
-		// requested property 검증은 시작 시점 snapshot이 아니라 저장소의 현재
-		// 정의(비활성 포함)로 한다. 그러지 않으면 실행 중 생성한 정의가
-		// unregistered_property_selector로 거절되고, 재시작 시 active-only
-		// snapshot이 tombstoned 정의를 빠뜨려 read-back이 깨진다.
-		applicationentry.WithLiveDefinitions(func(ctx context.Context) ([]domainentry.WorkspacePropertyDefinition, error) {
-			return catalogStore.Definitions(ctx, wsctx)
-		}),
-	)
-	if err != nil {
-		return nil, err
-	}
+	// production 조합은 Property 서비스만 주입한다. Entry production route는
+	// method gate 뒤에 유지된다(README 계약) — 빈 mount registry 경로가 외부
+	// UDS에 노출되면 안 된다. entry.list/resolve의 production wiring과 overlay
+	// 결합은 mount/source를 소유한 후속 변경이 소유한다.
 	service := &propertyService{CatalogService: catalogService, ChangeService: changeService}
-	return entryruntime.NewWithServices(wsctx.ID.String(), entryService, service), nil
+	return entryruntime.NewWithPropertyService(wsctx.ID.String(), service), nil
 }

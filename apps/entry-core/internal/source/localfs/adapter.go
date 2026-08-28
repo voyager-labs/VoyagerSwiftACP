@@ -642,7 +642,10 @@ func verifyLocalPathAccessible(rootPath, relativePath string) error {
 		return source.ErrAdapterFailure
 	}
 	defer root.Close()
-	probe, err := root.Open(relativePath)
+	// FIFO 등 특수 파일은 읽기 전용 Open이 writer 연결을 무한 대기한다.
+	// O_NONBLOCK probe로 접근 가능성만 검사해 요청 deadline이나 context 취소를
+	// 막지 않게 한다. O_NOFOLLOW로 symlink 경유도 차단한다.
+	probe, err := root.OpenFile(relativePath, os.O_RDONLY|syscall.O_NONBLOCK|syscall.O_NOFOLLOW, 0)
 	if err != nil {
 		if errors.Is(err, fs.ErrPermission) {
 			return source.ErrPermissionDenied

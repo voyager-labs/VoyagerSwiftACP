@@ -238,15 +238,15 @@ func TestComposeWorkspaceServicesExposesPropertyMethodsAndLifecycle(t *testing.T
 		t.Fatalf("preset status definition missing from %d definitions", len(list.Definitions))
 	}
 
-	// UnifiedList 계약상 VirtualPath와 ParentRef 중 정확히 하나가 필요하다. 이
-	// 슬라이스에는 mount 구성이 없으므로 게이트를 통과한 entry.list가 typed
-	// mount_not_found로 실패 닫기되는 것이 정확한 관찰이다.
+	// production 조합은 Entry 서비스를 주입하지 않는다(README 계약: DB 모드에서도
+	// Entry 메서드는 method gate 거절, mount/source production wiring은 후속 변경
+	// 소유). 게이트 통과가 아니라 unknown_method 거절이 정확한 관찰이다.
 	entryResponse := runtime.Dispatch(ctx, schema.Request{
 		RequestID:       "e",
 		Method:          schema.MethodEntryList,
 		EntryListParams: &schema.EntryListParams{PageSize: 10, VirtualPath: "/"},
 	})
-	if entryResponse.OK || entryResponse.Error == nil || entryResponse.Error.Code != schema.ErrorMountNotFound {
-		t.Fatalf("entry.list dispatch = %+v, want typed mount_not_found fail-closed", entryResponse)
+	if entryResponse.OK || entryResponse.Error == nil || entryResponse.Error.Code != schema.ErrorUnknownMethod {
+		t.Fatalf("entry.list dispatch = %+v, want unknown_method gate rejection", entryResponse)
 	}
 }
