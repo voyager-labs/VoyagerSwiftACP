@@ -29,7 +29,6 @@ extension WindowManagerFeature {
         reservationsByItemID: [UUID: ExternalContentTabReservation],
         state: inout State,
     ) -> Effect<Action> {
-        let existingWindowSnapshots = externalOpenExistingWindowSnapshots(for: plan, state: state)
         guard let application = ExternalOpenPlacementApplication.apply(
             plan,
             reservationsByItemID: reservationsByItemID,
@@ -57,7 +56,6 @@ extension WindowManagerFeature {
         commitExternalOpenApplication(
             application,
             plan: plan,
-            existingWindowSnapshots: existingWindowSnapshots,
             state: &state,
         )
 
@@ -85,7 +83,6 @@ extension WindowManagerFeature {
     private func commitExternalOpenApplication(
         _ application: ExternalOpenPlacementApplication.Result,
         plan: ExternalOpenPlacementPlan,
-        existingWindowSnapshots: [State.WindowID: WindowSessionFeature.State],
         state: inout State,
     ) {
         state.windows = application.windows
@@ -94,7 +91,7 @@ extension WindowManagerFeature {
             plan.batchID,
             application.newWindowIDs,
             state: &state,
-            existingWindowSnapshots: existingWindowSnapshots,
+            existingWindowReservedTabIDs: externalOpenExistingWindowReservedTabIDs(application),
         )
         for windowID in application.newWindowIDs {
             state.externalWindowBatchIDs[windowID] = plan.batchID
@@ -104,13 +101,12 @@ extension WindowManagerFeature {
         }
     }
 
-    private func externalOpenExistingWindowSnapshots(
-        for plan: ExternalOpenPlacementPlan,
-        state: State,
-    ) -> [State.WindowID: WindowSessionFeature.State] {
-        Dictionary(uniqueKeysWithValues: plan.windows.compactMap { window in
-            guard !window.isNewWindow, let snapshot = state.windows[id: window.windowID] else { return nil }
-            return (window.windowID, snapshot)
+    private func externalOpenExistingWindowReservedTabIDs(
+        _ application: ExternalOpenPlacementApplication.Result,
+    ) -> [State.WindowID: [ContentTabID]] {
+        Dictionary(uniqueKeysWithValues: application.existingWindowActivations.compactMap { activation in
+            guard !activation.tabIDs.isEmpty else { return nil }
+            return (activation.windowID, activation.tabIDs)
         })
     }
 

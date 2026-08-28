@@ -79,7 +79,7 @@ extension WindowManagerFeature {
         _ batchID: UUID,
         _ newWindowIDs: [State.WindowID],
         state: inout State,
-        existingWindowSnapshots: [State.WindowID: WindowSessionFeature.State] = [:],
+        existingWindowReservedTabIDs: [State.WindowID: [ContentTabID]] = [:],
     ) {
         if newWindowIDs.isEmpty {
             if state.retainedExternalOpenPlacementOwnership?.batchID == batchID {
@@ -89,7 +89,7 @@ extension WindowManagerFeature {
             state.retainedExternalOpenPlacementOwnership = .init(
                 batchID: batchID,
                 newWindowIDs: newWindowIDs,
-                existingWindowSnapshots: existingWindowSnapshots,
+                existingWindowReservedTabIDs: existingWindowReservedTabIDs,
             )
         }
     }
@@ -108,10 +108,16 @@ extension WindowManagerFeature {
               ownership.batchID == batchID
         else { return .concatenate(effects) }
         state.retainedExternalOpenPlacementOwnership = nil
-        for (windowID, snapshot) in ownership.existingWindowSnapshots {
+        for (windowID, tabIDs) in ownership.existingWindowReservedTabIDs {
             guard state.windows[id: windowID] != nil else { continue }
-            state.windows[id: windowID] = snapshot
+            for tabID in tabIDs.reversed() {
+                effects.append(.send(.windows(.element(
+                    id: windowID,
+                    action: .window(.contentTabs(.commitClose(tabID))),
+                ))))
+            }
         }
+        effects.append(.send(.refreshContentTabMoveTargets))
         let ownedWindowIDs = ownership.newWindowIDs.filter { state.externalWindowBatchIDs[$0] == batchID }
         for windowID in ownedWindowIDs {
             state.closingWindowIDs.insert(windowID)
@@ -121,7 +127,6 @@ extension WindowManagerFeature {
             })
             effects.append(finalizeWindowRemoval(windowID, state: &state))
         }
-        state.refreshContentTabMoveTargets()
         return .concatenate(effects)
     }
 

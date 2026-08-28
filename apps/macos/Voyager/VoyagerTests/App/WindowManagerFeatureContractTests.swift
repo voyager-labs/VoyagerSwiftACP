@@ -12478,11 +12478,11 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await store.finish()
     }
 
-    /// FMW-003: mixed external placement의 새 window가 등록되지 않으면 전체 application을 롤백한다.
-    /// 기존 window reservation과 신규 batch-owned window를 함께 원자적으로 정리하는 경계를 검증한다.
-    /// - 검증 내용: registration 조회, typed failure terminal, existing snapshot 복원, logical/native window cleanup
-    /// - 사전 조건: 기존 window에 tab을 예약하고 overflow 새 window를 만들지만 registry는 빈 set을 반환함
-    /// - 기대 결과: 기존 window가 pre-apply 상태로 복원되고 신규 window는 제거되며 failure가 한 번 방출됨
+    /// FMW-003: native 등록 대기 중 기존 창의 사용자 변경은 실패 rollback 이후에도 유지된다.
+    /// registration 실패가 batch 소유 mutation만 보상하고 동시 사용자 상태를 덮어쓰지 않는 경계를 검증한다.
+    /// - 검증 내용: 사용자 생성 tab 보존, external 예약 tab 제거, logical/native window cleanup, typed failure 단일 방출
+    /// - 사전 조건: 기존 창과 신규 창이 섞인 placement가 commit된 뒤 native registration 조회가 대기함
+    /// - 기대 결과: 사용자 tab은 유지되고 batch 예약 tab과 신규 창만 제거되며 failure가 한 번 방출됨
     func testPlacementApplicationNativeRegistrationFailureRollsBackOwnedNewWindowsAndEmitsFailure() async {
         let batchID = UUID()
         let existingWindowID = UUID()
@@ -12522,6 +12522,8 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         let closedWindowIDs = LockIsolated<[UUID]>([])
         let finalizedWindowIDs = LockIsolated<[UUID]>([])
         let completions = LockIsolated<[ExternalOpenPlacementApplicationCompletion]>([])
+        let registrationStarted = expectation(description: "native registration lookup started")
+        let registrationGate = AsyncStream<Void>.makeStream()
         let terminalReceived = expectation(description: "external open apply terminal received")
         var initialState = WindowManagerFeature.State()
         initialState.windows = [existingWindow]
@@ -12544,6 +12546,10 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             }
             $0.fileManagerWindowClient.registeredWindowIDs = {
                 registrationCheckCount.withValue { $0 += 1 }
+                registrationStarted.fulfill()
+                for await _ in registrationGate.stream {
+                    break
+                }
                 return []
             }
             $0.fileManagerWindowClient.close = { id in
@@ -12555,7 +12561,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             $0.entryLoadingClient.loadItems = { _, _ in [] }
             $0.fileChangeGatewayClient.observeEvents = { AsyncStream { $0.finish() } }
         }
-        // store.exhaustivity = .off: child 준비 action보다 native registration failure와 batch cleanup 경계를 검증한다.
+        // store.exhaustivity = .off: child tab lifecycle보다 동시 사용자 변경 보존과 batch 소유 rollback 경계를 검증한다.
         store.exhaustivity = .off
 
         await store.send(.placement(.apply(
@@ -12568,6 +12574,18 @@ final class WindowManagerFeatureContractTests: XCTestCase {
                 itemID: .init(id: tabID, anchor: .directory(path: "/tmp/unregistered-external")),
             ],
         )))
+        await fulfillment(of: [registrationStarted], timeout: 1)
+        await store.send(.windows(.element(
+            id: existingWindowID,
+            action: .window(.contentTabs(.open(.homeDefault))),
+        )))
+        await store.skipReceivedActions()
+        let userMutatedWindow = store.state.windows[id: existingWindowID]?.window
+        let userCreatedTabID = userMutatedWindow?.contentTabs.activeTabID
+        let userCreatedContent = userMutatedWindow?.content
+
+        registrationGate.continuation.yield(())
+        registrationGate.continuation.finish()
         await fulfillment(of: [terminalReceived], timeout: 1)
         await store.skipReceivedActions()
         await store.finish()
@@ -12580,11 +12598,14 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             .init(batchID: batchID, result: .failure(.validationFailed)),
         ])
         XCTAssertNil(store.state.windows[id: windowID])
-        let restoredExistingWindow = store.state.windows[id: existingWindowID]?.window
-        XCTAssertEqual(restoredExistingWindow?.contentTabs, existingWindow.window.contentTabs)
-        XCTAssertEqual(restoredExistingWindow?.content, existingWindow.window.content)
-        XCTAssertEqual(restoredExistingWindow?.tabContentStates, existingWindow.window.tabContentStates)
-        XCTAssertNil(restoredExistingWindow?.contentTabs.tabs[id: existingTabID])
+        let rolledBackExistingWindow = store.state.windows[id: existingWindowID]?.window
+        XCTAssertEqual(rolledBackExistingWindow?.contentTabs.activeTabID, userCreatedTabID)
+        XCTAssertNotNil(userCreatedTabID.flatMap { rolledBackExistingWindow?.contentTabs.tabs[id: $0] })
+        XCTAssertEqual(rolledBackExistingWindow?.content, userCreatedContent)
+        XCTAssertTrue(existingWindow.window.contentTabs.tabs.allSatisfy { originalTab in
+            rolledBackExistingWindow?.contentTabs.tabs[id: originalTab.id] != nil
+        })
+        XCTAssertNil(rolledBackExistingWindow?.contentTabs.tabs[id: existingTabID])
         XCTAssertNil(store.state.authorizedExternalOpenBatchID)
         XCTAssertNil(store.state.retainedExternalOpenPlacementOwnership)
         XCTAssertNil(store.state.externalWindowBatchIDs[windowID])
@@ -12918,16 +12939,14 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             .init(
                 batchID: batchID,
                 newWindowIDs: [newWindowID],
-                existingWindowSnapshots: [existingWindowID: .init(
-                    id: existingWindowID,
-                    window: existingWindow,
-                )],
+                existingWindowReservedTabIDs: [existingWindowID: [existingTabID]],
             ),
         )
         await store.send(.event(.windowBecameKey(newWindowID)))
 
         await store.send(.placement(.cancel(batchID: batchID)))
         await fulfillment(of: [openCancelled, nativeCloseCalled], timeout: 1)
+        await store.skipReceivedActions()
 
         XCTAssertEqual(store.state.windows.map(\.id), [existingWindowID, unrelatedWindowID])
         XCTAssertEqual(
