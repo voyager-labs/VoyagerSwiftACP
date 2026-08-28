@@ -1,8 +1,14 @@
 package property
 
 import (
+	"strings"
+
 	schema "github.com/voyager-labs/voyager-app/apps/entry-core/protocol/schema"
 )
+
+// listableProbeRequestID는 최소 목록 페이지 봉투 검사에 쓰는 최대 길이(maximumEchoIDBytes)
+// sentinel 요청 ID다. 이후 조회는 임의의 유효한 길이로 올 수 있으므로 상한 기준으로 검사한다.
+var listableProbeRequestID = strings.Repeat("0", maximumEchoIDBytes)
 
 // DefinitionViewToWire는 정의 뷰를 wire DTO로 사상한다. tombstoned는 wire의
 // disabled 상태에 대응한다. runtime dispatch와 카탈로그 mutation의 커밋 전
@@ -45,8 +51,8 @@ func DefinitionViewToWire(view DefinitionView) (schema.PropertyDefinition, schem
 // 65,536바이트 기준이다. 요청이 봉투에 들어도 발급 UUID와 상태 필드가 추가된
 // 성공 응답은 초과할 수 있으므로 모든 카탈로그 mutation이 커밋 전에 이를 확인한다.
 // 단일 정의 결과가 들어가도 최소 목록 페이지(ID 필터 page_size 1)는 definitions
-// 배열과 has_more 필드로 더 크므로, 커밋된 정의의 최소 페이지 조회 가능성까지
-// 함께 검사한다.
+// 배열과 has_more 필드로 더 크다. 목록 조회는 이후 임의의 유효한 요청 ID로 올 수
+// 있으므로 이 검사는 mutation의 실제 ID가 아니라 최대 길이 sentinel 기준이다.
 func encodedDefinitionResponseFits(requestID string, view DefinitionView) bool {
 	wire, code := DefinitionViewToWire(view)
 	if code != "" {
@@ -56,6 +62,6 @@ func encodedDefinitionResponseFits(requestID string, view DefinitionView) bool {
 	if !fits {
 		return false
 	}
-	_, fits = schema.EncodedSuccessBytes(requestID, schema.PropertyDefinitionListResult{Definitions: []schema.PropertyDefinition{wire}, HasMore: false})
+	_, fits = schema.EncodedSuccessBytes(listableProbeRequestID, schema.PropertyDefinitionListResult{Definitions: []schema.PropertyDefinition{wire}, HasMore: false})
 	return fits
 }

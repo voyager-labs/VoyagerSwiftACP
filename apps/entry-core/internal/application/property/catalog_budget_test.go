@@ -107,9 +107,10 @@ func TestCreateDefinitionWithinBudgetStillSucceeds(t *testing.T) {
 }
 
 // 단일 정의 결과 봉투가 들어가도 최소 목록 페이지(ID 필터 page_size 1)는
-// definitions 배열과 has_more 필드 때문에 더 크다. 커밋된 정의는 커밋 이후에도
-// 최소 페이지로 조회 가능해야 하므로, 결과 봉투는 들어가지만 최소 목록 페이지가
-// 초과하는 생성은 커밋 전에 scope_too_large로 거절되고 쓰기는 0이다.
+// definitions 배열과 has_more 필드 때문에 더 크고, 요청 ID도 클라이언트가 최대
+// 128바이트까지 쓸 수 있다. 짧은 요청 ID로 커밋된 정의라도 이후 긴 ID 조회에서
+// 봉투를 넘으면 안 되므로, 최소 페이지가 초과하는 생성은 커밋 전에
+// scope_too_large로 거절되고 쓰기는 0이다.
 func TestCreateDefinitionRejectsMinimalListEnvelopeOverflow(t *testing.T) {
 	store := newMemCatalogStore()
 	service, err := NewCatalogService(store, directTransactionRunner{})
@@ -128,7 +129,7 @@ func TestCreateDefinitionRejectsMinimalListEnvelopeOverflow(t *testing.T) {
 		ValueType:    domainentry.PropertyTypeSelect,
 		Cardinality:  domainentry.PropertyCardinalityOne,
 		OptionLabels: labels,
-		RequestID:    strings.Repeat("r", 128),
+		RequestID:    "r",
 	})
 	if !errors.Is(err, ErrScopeTooLarge) {
 		t.Fatalf("err = %v, want ErrScopeTooLarge", err)
