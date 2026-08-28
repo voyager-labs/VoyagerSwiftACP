@@ -179,9 +179,7 @@ private extension FileManagerFeature {
                 )
 
             case let .closeContentTabRequested(tabID):
-                guard state.contentTabMoveParticipantRequestID == nil,
-                      state.pendingSelectedContentTabClose == nil
-                else { return .none }
+                guard state.canStartSelectedContentTabClose else { return .none }
                 return requestTopNavigationClose(tabID: tabID, state: &state)
 
             case let .contentTabs(.delegate(.persistPinnedRecord(request))):
@@ -488,6 +486,7 @@ private extension FileManagerFeature {
             }
         }
 
+        FileManagerProductContentTabActionReducer()
         FileManagerWindowAiChatSelectionReducer()
 
         FileManagerWindowNavigationReducer()

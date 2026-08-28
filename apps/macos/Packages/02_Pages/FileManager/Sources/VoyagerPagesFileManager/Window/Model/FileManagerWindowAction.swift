@@ -198,6 +198,7 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
     case selectedPinMutationBatchCompleted(SelectedContentTabPinMutationResult)
 
     case requestCloseSelectedContentTabs
+    case requestCloseSelectedTabs(ContentTabActionSource)
     case performSelectedContentTabCloseMutation(
         operationID: UUID,
         tabID: ContentTabID,
@@ -220,6 +221,8 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
         outcome: SelectedContentTabCloseOutcome,
     )
     case closeContentTabRequested(ContentTabID)
+    case closeContentTabRequestedWithSource(ContentTabID, ContentTabActionSource)
+    case contentTabActionRequested(ContentTabAction, source: ContentTabActionSource)
     case contentTabCloseAlertResponse(CollectionNavigationChoice)
     case selectedContentTabCloseAlertResponse(
         operationID: UUID,
@@ -359,6 +362,7 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
         case duplicateContentTab(ContentTabID)
         case duplicateActiveContentTab
         case duplicateSelectedContentTabs
+        case contentTabAction(ContentTabProductActionRequest, source: ContentTabActionSource)
     }
 
     @CasePathable
@@ -399,4 +403,13 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
             navigationState: ContentPageNavigationRoute,
         )
     }
+}
+
+public enum ContentTabProductActionRequest: Equatable, Sendable {
+    case closeActive
+    case closeSelected
+    case restoreLastClosed
+    case duplicate(ContentTabID)
+    case duplicateActive
+    case duplicateSelected
 }

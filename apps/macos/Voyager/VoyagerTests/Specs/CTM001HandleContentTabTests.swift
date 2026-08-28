@@ -2,6 +2,7 @@ import ComposableArchitecture
 import Foundation
 @testable import Voyager
 @testable import VoyagerPagesFileManager
+import VoyagerShared
 import XCTest
 
 @MainActor
@@ -68,6 +69,108 @@ final class CTM001HandleContentTabTests: XCTestCase {
                 expectedRoute: .active,
             )
         }
+    }
+
+    /// CTM-001-content_tab_action_metrics: File menu와 Cmd-W close는 menuCommand source terminal을 기록한다.
+    /// SwiftUI의 단일 action 경계를 공유하는 메뉴 click과 shortcut을 동일한 유한 source로 취급하는지 검증한다.
+    /// - 검증 내용: active tab 제거와 `.success/.close/.menuCommand` 메트릭 1건
+    /// - 사전 조건: focused Window의 unpinned active tab과 sibling tab
+    /// - 기대 결과: 레코더에 menuCommand source의 close success 메트릭 1건만 기록됨
+    func testFileMenuClosePreservesMenuCommandMetricSource() async {
+        let fixture = makeFocusedAppState(selectedCount: 0)
+        var appState = fixture.appState
+        let siblingID = ContentTabID(rawValue: "app-menu-close-sibling")
+        appState.windowManager.windows[id: fixture.focusedID]?.window.contentTabs.tabs.append(
+            ContentTabItem(
+                id: siblingID,
+                page: .home,
+                anchor: .homeDefault,
+                isPinned: false,
+                title: "Sibling",
+                iconName: "house",
+            ),
+        )
+        let operationID = makeUUID("00000000-0000-0000-0000-000000000506")
+        let metrics = LockIsolated<[FileManagerProductMetric]>([])
+        let store = makeMetricStore(
+            fixture: FocusedAppFixture(
+                appState: appState,
+                focusedID: fixture.focusedID,
+                activeTabID: fixture.activeTabID,
+            ),
+            operationID: operationID,
+            metrics: metrics,
+        )
+
+        await store.send(.file(.closeTab))
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(metrics.value, [.contentTabAction(
+            result: .success,
+            identity: .closeContentTab,
+            source: .menuCommand,
+            operationID: operationID,
+        )])
+    }
+
+    /// CTM-001-content_tab_action_metrics: File menu duplicate는 menuCommand source terminal을 기록한다.
+    /// app command에서 package synchronous wrapper까지 accepted source가 유지되는지 검증한다.
+    /// - 검증 내용: duplicate tab 생성과 `.success/.duplicate/.menuCommand` 메트릭 1건
+    /// - 사전 조건: focused Window의 단일 active tab
+    /// - 기대 결과: 레코더에 menuCommand source의 duplicate success 메트릭 1건만 기록됨
+    func testFileMenuDuplicatePreservesMenuCommandMetricSource() async {
+        let fixture = makeFocusedAppState(selectedCount: 1)
+        let operationID = makeUUID("00000000-0000-0000-0000-000000000507")
+        let metrics = LockIsolated<[FileManagerProductMetric]>([])
+        let store = makeMetricStore(fixture: fixture, operationID: operationID, metrics: metrics)
+
+        await store.send(.file(.duplicateTab))
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(metrics.value, [.contentTabAction(
+            result: .success,
+            identity: .duplicateContentTab,
+            source: .menuCommand,
+            operationID: operationID,
+        )])
+    }
+
+    /// CTM-001-content_tab_action_metrics: File menu restore는 menuCommand source terminal을 기록한다.
+    /// restore candidate 수용부터 synchronous restore terminal까지 source가 유지되는지 검증한다.
+    /// - 검증 내용: recentlyClosed 소비와 `.success/.restore/.menuCommand` 메트릭 1건
+    /// - 사전 조건: focused Window와 Home recently-closed snapshot
+    /// - 기대 결과: 레코더에 menuCommand source의 restore success 메트릭 1건만 기록됨
+    func testFileMenuRestorePreservesMenuCommandMetricSource() async {
+        let fixture = makeFocusedAppState(selectedCount: 1)
+        var appState = fixture.appState
+        appState.windowManager.windows[id: fixture.focusedID]?.window.contentTabs.recentlyClosed =
+            ClosedContentTabSnapshot(
+                page: .home,
+                anchor: .homeDefault,
+                wasPinned: false,
+                closedAt: Date(timeIntervalSince1970: 505),
+            )
+        let operationID = makeUUID("00000000-0000-0000-0000-000000000508")
+        let metrics = LockIsolated<[FileManagerProductMetric]>([])
+        let store = makeMetricStore(
+            fixture: FocusedAppFixture(
+                appState: appState,
+                focusedID: fixture.focusedID,
+                activeTabID: fixture.activeTabID,
+            ),
+            operationID: operationID,
+            metrics: metrics,
+        )
+
+        await store.send(.file(.restoreLastClosedTab))
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(metrics.value, [.contentTabAction(
+            result: .success,
+            identity: .restoreLastClosedTab,
+            source: .menuCommand,
+            operationID: operationID,
+        )])
     }
 
     /// CTM-001-close_selected_content_tabs: focus 또는 close lifecycle이 유효하지 않으면 메뉴와 direct action을 차단한다.
@@ -242,6 +345,30 @@ final class CTM001HandleContentTabTests: XCTestCase {
         return value
     }
 
+    private func makeMetricStore(
+        fixture: FocusedAppFixture,
+        operationID: UUID,
+        metrics: LockIsolated<[FileManagerProductMetric]>,
+    ) -> TestStoreOf<WindowManagerFeature> {
+        let store = TestStore(initialState: fixture.appState.windowManager) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.uuid = .constant(makeUUID("00000000-0000-0000-0000-000000000509"))
+            $0.date = .constant(Date(timeIntervalSince1970: 505))
+            $0.fileManagerProductMetricsClient = FileManagerProductMetricsClient(
+                record: { metric in metrics.withValue { $0.append(metric) } },
+                makeOperationID: { operationID },
+            )
+            $0.fileManagerClient.fileExistsWithIsDirectory = { _, isDirectory in
+                isDirectory?.pointee = true
+                return true
+            }
+        }
+        // store.exhaustivity = .off: app-to-package route의 terminal metric만 검증함
+        store.exhaustivity = .off
+        return store
+    }
+
     private func assertCloseRoute(
         appState: AppRootState,
         focusedID: UUID,
@@ -262,7 +389,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
             await store.receive { action in
                 guard case let .windows(.element(
                     id: id,
-                    action: .window(.request(.closeActiveContentTab)),
+                    action: .window(.request(.contentTabAction(.closeActive, source: .menuCommand))),
                 )) = action else {
                     return false
                 }
@@ -273,7 +400,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
             await store.receive { action in
                 guard case let .windows(.element(
                     id: id,
-                    action: .window(.request(.closeSelectedContentTabs)),
+                    action: .window(.request(.contentTabAction(.closeSelected, source: .menuCommand))),
                 )) = action else {
                     return false
                 }

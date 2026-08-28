@@ -192,6 +192,8 @@ extension FileManagerWindowCommandRoutingReducer {
              .saveCollection,
              .saveCollectionAs:
             true
+        case .contentTabAction:
+            true
         default:
             false
         }
@@ -207,42 +209,18 @@ extension FileManagerWindowCommandRoutingReducer {
         return .none
     }
 
-    private func handleDuplicateActiveContentTab(state: inout State) -> Effect<Action> {
-        guard let activeTabID = state.contentTabs.activeTabID else { return .none }
-        return handleDuplicateContentTabRequested(sourceID: activeTabID, state: &state)
-    }
-
     func routeContentTabCommand(
         _ command: Action.WindowCommand,
         state: inout State,
     ) -> Effect<Action>? {
-        switch command {
+        if let effect = routeContentTabProductCommand(command, state: &state) { return effect }
+        return switch command {
         case .openNewContentTab,
              .selectContentTab:
             handleContentTabCommand(command, state: state)
 
-        case .closeActiveContentTab:
-            state.contentTabs.activeTabID
-                .map { Effect<Action>.send(.closeContentTabRequested($0)) }
-                ?? Effect<Action>.none
-
-        case .closeSelectedContentTabs:
-            .send(.requestCloseSelectedContentTabs)
-
         case .toggleActiveContentTabPin:
             toggleActiveContentTabPin(state: state)
-
-        case .restoreLastClosedContentTab:
-            handleRestoreLastClosedContentTab(state: &state)
-
-        case let .duplicateContentTab(sourceID):
-            handleDuplicateContentTabRequested(sourceID: sourceID, state: &state)
-
-        case .duplicateActiveContentTab:
-            handleDuplicateActiveContentTab(state: &state)
-
-        case .duplicateSelectedContentTabs:
-            handleDuplicateSelectedContentTabsRequested(state: &state)
 
         case .selectMostRecentlyUsedContentTab:
             handleSelectMostRecentlyUsedContentTab(state: &state)

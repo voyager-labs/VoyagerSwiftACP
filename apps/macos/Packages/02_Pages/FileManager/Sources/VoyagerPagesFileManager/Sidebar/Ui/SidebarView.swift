@@ -493,7 +493,12 @@ private extension SidebarView {
                 _ = sidebarStore.send(.view(.closeContentTab(item.id)))
             },
             onTrailingAction: {
-                _ = sidebarStore.send(.view(presentations.trailingAction.viewAction(tabID: item.id)))
+                switch presentations.trailingAction {
+                case .close:
+                    _ = sidebarStore.send(.view(.closeContentTabFromTrailingControl(item.id)))
+                case .unpin:
+                    _ = sidebarStore.send(.view(presentations.trailingAction.viewAction(tabID: item.id)))
+                }
             },
             onContextMenuClose: {
                 _ = sidebarStore.send(.view(presentations.close.viewAction))

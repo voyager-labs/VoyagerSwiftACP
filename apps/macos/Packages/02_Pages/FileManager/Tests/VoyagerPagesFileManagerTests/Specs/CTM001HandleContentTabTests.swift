@@ -404,6 +404,18 @@ private struct SelectedClosePersistenceError: Error {}
 
 @MainActor
 final class CTM001HandleContentTabTests: XCTestCase {
+    private struct BlockedSourceAwareCloseFixture {
+        let state: FileManagerFeature.State
+        let pinnedID: ContentTabID
+        let otherID: ContentTabID
+    }
+
+    private struct DirtyMetricCloseFixture {
+        let state: FileManagerFeature.State
+        let dirtyID: ContentTabID
+        let otherID: ContentTabID
+    }
+
     private func verifyStaleAndCompetingSelectedCloseActions(
         fixture: SelectedContentTabCloseFixture,
         operationID: UUID,
@@ -1563,7 +1575,9 @@ final class CTM001HandleContentTabTests: XCTestCase {
 
         await store.send(.sidebar(.delegate(.duplicateSelectedContentTabs)))
         await store.receive { action in
-            guard case .request(.duplicateSelectedContentTabs) = action else { return false }
+            guard case .request(.contentTabAction(.duplicateSelected, source: .contextMenu)) = action else {
+                return false
+            }
             return true
         }
 
@@ -3142,7 +3156,9 @@ final class CTM001HandleContentTabTests: XCTestCase {
 
         await bridgeStore.send(.sidebar(.delegate(.closeSelectedContentTabs)))
         await bridgeStore.receive { action in
-            guard case .request(.closeSelectedContentTabs) = action else { return false }
+            guard case .request(.contentTabAction(.closeSelected, source: .contextMenu)) = action else {
+                return false
+            }
             return true
         }
         XCTAssertEqual(bridgeStore.state, bridgeState)
@@ -5482,8 +5498,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
         XCTAssertTrue(recorder.metrics().isEmpty)
     }
 
-    /// CTM-001-content_tab_action_metrics: 실제 제거로 완료된 close는 success 메트릭 한 건을 기록한다.
-    /// finalize 시점 탭 부재가 close 적용의 증거임을 검증한다.
+    /// CTM-001-content_tab_action_metrics: Sidebar trailing control close는 contentTabBar source를 기록한다.
+    /// trailing control 수락부터 실제 제거 terminal까지 source가 유지되는지 검증한다.
     /// - 검증 내용: 닫힌 active tab 부재와 `.success/.close/.contentTabBar` 메트릭 1건
     /// - 사전 조건: unpinned Home(active)+Directory 두 탭
     /// - 기대 결과: 레코더에 close success 메트릭 1건만 기록됨
@@ -5524,7 +5540,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
         // store.exhaustivity = .off: close handoff/cleanup 효과보다 메트릭 계약에 집중함
         store.exhaustivity = .off
 
-        await store.send(.contentTabs(.close(homeID)))
+        await store.send(.sidebar(.delegate(.closeContentTabFromTrailingControl(homeID))))
+        await store.skipReceivedActions()
 
         XCTAssertNil(store.state.contentTabs.tabs[id: homeID])
         XCTAssertEqual(recorder.metrics(), [
@@ -5577,8 +5594,12 @@ final class CTM001HandleContentTabTests: XCTestCase {
         // store.exhaustivity = .off: missing ID no-op 경로만 검증함
         store.exhaustivity = .off
 
-        await store.send(.contentTabs(.close(ContentTabID(rawValue: "missing-tab"))))
+        await store.send(.closeContentTabRequestedWithSource(
+            ContentTabID(rawValue: "missing-tab"),
+            .contextMenu,
+        ))
 
+        XCTAssertNil(store.state.productContentTabCloseMetric)
         XCTAssertTrue(recorder.metrics().isEmpty)
     }
 
@@ -5814,6 +5835,293 @@ final class CTM001HandleContentTabTests: XCTestCase {
                 operationID: operationID,
             ),
         ])
+    }
+
+    /// CTM-001-content_tab_action_metrics: Sidebar context menu duplicate는 수용된 contextMenu source를 보존한다.
+    /// Window request와 synchronous duplicate terminal 사이에서 source가 기본값으로 치환되지 않는지 검증한다.
+    /// - 검증 내용: duplicate row 생성과 `.success/.duplicate/.contextMenu` 메트릭 1건
+    /// - 사전 조건: unpinned Directory source tab과 Sidebar single duplicate delegate
+    /// - 기대 결과: 레코더에 contextMenu source의 duplicate success 메트릭 1건만 기록됨
+    func testSidebarContextMenuDuplicatePreservesAcceptedMetricSource() async {
+        let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 6))
+        let sourceID = ContentTabID(rawValue: "metric-context-duplicate-source")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: sourceID,
+                page: .home,
+                anchor: .homeDefault,
+                isPinned: false,
+                title: nil,
+                iconName: nil,
+            )],
+            activeTabID: sourceID,
+            recentlyClosed: nil,
+        )
+        let recorder = FileManagerProductMetricRecorder(makeOperationID: { operationID })
+        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
+            $0.uuid = .constant(UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 7)))
+            $0.date = .constant(Date(timeIntervalSince1970: 443))
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: duplicate owner handoff보다 terminal source 계약에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.sidebar(.delegate(.duplicateContentTab(sourceID))))
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(recorder.metrics(), [
+            .contentTabAction(
+                result: .success,
+                identity: .duplicateContentTab,
+                source: .contextMenu,
+                operationID: operationID,
+            ),
+        ])
+    }
+
+    /// CTM-001-content_tab_action_metrics: Sidebar context menu close는 수용된 contextMenu source를 보존한다.
+    /// close request와 실제 제거 terminal 사이에서 source와 operation ID가 유지되는지 검증한다.
+    /// - 검증 내용: target tab 제거와 `.success/.close/.contextMenu` 메트릭 1건
+    /// - 사전 조건: unpinned Home active와 Directory sibling, Sidebar single close delegate
+    /// - 기대 결과: 레코더에 contextMenu source의 close success 메트릭 1건만 기록됨
+    func testSidebarContextMenuClosePreservesAcceptedMetricSource() async {
+        let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 8))
+        let homeID = ContentTabID(rawValue: "metric-context-close-home")
+        let directoryID = ContentTabID(rawValue: "metric-context-close-directory")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: homeID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: nil,
+                    iconName: nil,
+                ),
+                ContentTabItem(
+                    id: directoryID,
+                    page: .directory,
+                    anchor: .directory(path: "/metric-context-close"),
+                    isPinned: false,
+                    title: nil,
+                    iconName: nil,
+                ),
+            ],
+            activeTabID: homeID,
+            recentlyClosed: nil,
+        )
+        let recorder = FileManagerProductMetricRecorder(makeOperationID: { operationID })
+        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 443))
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: close cleanup effect보다 terminal source 계약에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.sidebar(.delegate(.closeContentTab(homeID))))
+        await store.skipReceivedActions()
+
+        XCTAssertNil(store.state.contentTabs.tabs[id: homeID])
+        XCTAssertEqual(recorder.metrics(), [
+            .contentTabAction(
+                result: .success,
+                identity: .closeContentTab,
+                source: .contextMenu,
+                operationID: operationID,
+            ),
+        ])
+    }
+
+    /// CTM-001-content_tab_action_metrics: selected pin mutation 중 source-aware pinned close는 whole-state no-op이다.
+    /// Canonical close guard가 metric과 top-navigation mutation보다 먼저 적용되는지 검증한다.
+    /// - 검증 내용: metric context, pending intent, optimistic order, dormant slot, pinned persistence state 불변
+    /// - 사전 조건: pinned tab과 pendingSelectedContentTabPinMutation
+    /// - 기대 결과: source-aware close가 어떤 acceptance state도 만들지 않음
+    func testSourceAwarePinnedCloseRejectedBySelectedPinDoesNotMutateAcceptanceState() async {
+        let fixture = makeBlockedSourceAwareCloseFixture()
+        var state = fixture.state
+        state.pendingSelectedContentTabPinMutation = PendingSelectedContentTabPinMutation(
+            operationID: UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 3)),
+            target: .unpinned,
+            orderedTargetIDs: [fixture.pinnedID],
+        )
+        let pendingIntents = state.pendingTopNavigationIntents
+        let optimisticOrder = state.optimisticTopNavigationOrder
+        let dormantSlots = state.dormantContentTabSlots
+        let pendingPinnedRecordIDs = state.contentTabs.pendingPinnedRecordIDs
+        let recorder = FileManagerProductMetricRecorder()
+        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: rejected request의 acceptance-owned state 불변만 검증함
+        store.exhaustivity = .off
+
+        await store.send(.closeContentTabRequestedWithSource(fixture.pinnedID, .contextMenu))
+
+        XCTAssertNil(store.state.productContentTabCloseMetric)
+        XCTAssertEqual(store.state.pendingTopNavigationIntents, pendingIntents)
+        XCTAssertEqual(store.state.optimisticTopNavigationOrder, optimisticOrder)
+        XCTAssertEqual(store.state.dormantContentTabSlots, dormantSlots)
+        XCTAssertEqual(store.state.contentTabs.pendingPinnedRecordIDs, pendingPinnedRecordIDs)
+        XCTAssertTrue(recorder.metrics().isEmpty)
+    }
+
+    /// CTM-001-content_tab_action_metrics: competing close가 거절한 source는 다음 accepted close를 오염시키지 않는다.
+    /// Rejected pinned close가 intent/source를 남기지 않고 blocker 해제 후 다른 close가 자신의 source로 완료되는지 검증한다.
+    /// - 검증 내용: 첫 요청 metric/intent/order 무변경, 다음 close `.menuCommand` terminal 1건
+    /// - 사전 조건: Home active tab의 pending close와 별도 pinned tab context-menu close 요청
+    /// - 기대 결과: pending close cancel 후 Home close만 최초 operation ID와 menuCommand source로 기록됨
+    func testCompetingCloseRejectionDoesNotLeakIntoNextAcceptedClose() async {
+        let fixture = makeBlockedSourceAwareCloseFixture()
+        var state = fixture.state
+        state.pendingContentTabClose = PendingContentTabClose(tabID: fixture.otherID)
+        let initialPendingIntents = state.pendingTopNavigationIntents
+        let initialOptimisticOrder = state.optimisticTopNavigationOrder
+        let acceptedOperationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 4))
+        let recorder = FileManagerProductMetricRecorder(makeOperationID: { acceptedOperationID })
+        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 443))
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: competing rejection과 다음 terminal의 상관 격리에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.closeContentTabRequestedWithSource(fixture.pinnedID, .contextMenu))
+
+        XCTAssertNil(store.state.productContentTabCloseMetric)
+        XCTAssertEqual(store.state.pendingTopNavigationIntents, initialPendingIntents)
+        XCTAssertEqual(store.state.optimisticTopNavigationOrder, initialOptimisticOrder)
+
+        await store.send(.contentTabCloseAlertResponse(.cancel))
+        await store.send(.closeContentTabRequestedWithSource(fixture.otherID, .menuCommand))
+        await store.skipReceivedActions(strict: false)
+
+        XCTAssertNil(store.state.contentTabs.tabs[id: fixture.otherID])
+        XCTAssertEqual(recorder.metrics(), [
+            .contentTabAction(
+                result: .success,
+                identity: .closeContentTab,
+                source: .menuCommand,
+                operationID: acceptedOperationID,
+            ),
+        ])
+    }
+
+    /// CTM-001-content_tab_action_metrics: dirty close discard는 alert 이후에도 accepted source를 보존한다.
+    /// Pending close가 context와 operation ID를 소유하고 실제 제거 terminal에서 정확히 한 번 소비하는지 검증한다.
+    /// - 검증 내용: pending source/operation ID와 `.success/.close/.contextMenu` 메트릭 1건
+    /// - 사전 조건: dirty Collection active tab, Home sibling, discard alert response
+    /// - 기대 결과: Collection tab 제거와 contextMenu source terminal 후 pending metric context 해제
+    func testDirtyCloseDiscardPreservesAcceptedMetricContextThroughTerminal() async {
+        let fixture = makeDirtyMetricCloseState()
+        let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 9))
+        let recorder = FileManagerProductMetricRecorder(makeOperationID: { operationID })
+        let store = TestStore(initialState: fixture.state) { FileManagerFeature() } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 443))
+            $0.collectionAlertClient = .init(
+                showUnsavedNavigationAlert: { .discard },
+                showCollectionOpenErrorAlert: { _, _ in },
+            )
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: dirty close 내부 cleanup보다 source context 수명에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.sidebar(.delegate(.closeContentTab(fixture.dirtyID))))
+        await store.skipReceivedActions()
+
+        XCTAssertNil(store.state.contentTabs.tabs[id: fixture.dirtyID])
+        XCTAssertNil(store.state.pendingContentTabClose)
+        XCTAssertNil(store.state.productContentTabCloseMetric)
+        XCTAssertEqual(recorder.metrics(), [
+            .contentTabAction(
+                result: .success,
+                identity: .closeContentTab,
+                source: .contextMenu,
+                operationID: operationID,
+            ),
+        ])
+    }
+
+    /// CTM-001-content_tab_action_metrics: dirty close cancel은 메트릭 없이 context를 지우고 다음 close를 오염시키지 않는다.
+    /// 취소된 contextMenu 요청 뒤 direct reducer close가 독립 contentTabBar operation으로 기록되는지 검증한다.
+    /// - 검증 내용: cancel 후 metric 0건/context nil, 다음 direct close의 contentTabBar terminal 1건
+    /// - 사전 조건: dirty Collection active tab, Home sibling, cancel alert response
+    /// - 기대 결과: dirty tab 유지, sibling 제거, 다음 operation만 contentTabBar source로 기록됨
+    func testDirtyCloseCancelClearsContextBeforeNextDirectClose() async {
+        let fixture = makeDirtyMetricCloseState()
+        let cancelledID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0))
+        let nextID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 1))
+        let operationIDs = LockIsolated([cancelledID, nextID])
+        let recorder = FileManagerProductMetricRecorder(makeOperationID: {
+            operationIDs.withValue { $0.removeFirst() }
+        })
+        let store = TestStore(initialState: fixture.state) { FileManagerFeature() } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 443))
+            $0.collectionAlertClient = .init(
+                showUnsavedNavigationAlert: { .cancel },
+                showCollectionOpenErrorAlert: { _, _ in },
+            )
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: cancel cleanup과 다음 terminal 상관 분리에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.sidebar(.delegate(.closeContentTab(fixture.dirtyID))))
+        await store.skipReceivedActions()
+
+        XCTAssertNotNil(store.state.contentTabs.tabs[id: fixture.dirtyID])
+        XCTAssertNil(store.state.pendingContentTabClose)
+        XCTAssertNil(store.state.productContentTabCloseMetric)
+        XCTAssertTrue(recorder.metrics().isEmpty)
+
+        await store.send(.contentTabs(.close(fixture.otherID)))
+
+        XCTAssertEqual(recorder.metrics(), [
+            .contentTabAction(
+                result: .success,
+                identity: .closeContentTab,
+                source: .contentTabBar,
+                operationID: nextID,
+            ),
+        ])
+    }
+
+    /// CTM-001-content_tab_action_metrics: dirty close save 선택은 pending context를 terminal 전까지 보존한다.
+    /// Alert response와 save action 경계를 지나도 accepted source와 operation ID가 유지되는지 검증한다.
+    /// - 검증 내용: pending actionSource/metricOperationID와 save action routing
+    /// - 사전 조건: dirty Collection active tab과 contextMenu close, save alert response
+    /// - 기대 결과: save 시작 뒤에도 pending context가 contextMenu/accepted operation ID로 유지됨
+    func testDirtyCloseSavePreservesAcceptedMetricContextAcrossSaveBoundary() async {
+        let fixture = makeDirtyMetricCloseState()
+        let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 2))
+        let recorder = FileManagerProductMetricRecorder(makeOperationID: { operationID })
+        let store = TestStore(initialState: fixture.state) {
+            FileManagerWindowRoutingReducer()
+        } withDependencies: {
+            $0.collectionAlertClient = .init(
+                showUnsavedNavigationAlert: { .save },
+                showCollectionOpenErrorAlert: { _, _ in },
+            )
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: pending context 필드만 검증하고 save staging 세부 상태는 소유 테스트에 맡김
+        store.exhaustivity = .off
+
+        await store.send(.closeContentTabRequestedWithSource(fixture.dirtyID, .contextMenu))
+        XCTAssertEqual(store.state.pendingContentTabClose?.actionSource, .contextMenu)
+        XCTAssertEqual(store.state.pendingContentTabClose?.metricOperationID, operationID)
+        await store.receive(\.contentTabCloseAlertResponse, .save)
+        await store.receive {
+            guard case .content(.composer(.view(.saveCollection))) = $0 else { return false }
+            return true
+        }
+
+        XCTAssertEqual(store.state.pendingContentTabClose?.actionSource, .contextMenu)
+        XCTAssertEqual(store.state.pendingContentTabClose?.metricOperationID, operationID)
+        XCTAssertTrue(recorder.metrics().isEmpty)
     }
 
     /// CTM-001-content_tab_action_metrics: 이미 존재하는 duplicate ID 요청은 메트릭을 만들지 않는다.
@@ -6101,7 +6409,14 @@ final class CTM001HandleContentTabTests: XCTestCase {
         // store.exhaustivity = .off: batch lifecycle action보다 close 메트릭 억제 계약에 집중함
         store.exhaustivity = .off
 
-        await store.send(.requestCloseSelectedContentTabs)
+        await store.send(.sidebar(.delegate(.closeSelectedContentTabs)))
+        await store.receive {
+            guard case .request(.contentTabAction(.closeSelected, source: .contextMenu)) = $0 else {
+                return false
+            }
+            return true
+        }
+        await store.receive(\.requestCloseSelectedTabs, .contextMenu)
         await store.receive(\.processNextSelectedContentTabClose, operationID)
         await receiveRemovedSelectedCloseLifecycle(
             store,
@@ -6123,7 +6438,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
             .contentTabAction(
                 result: .success,
                 identity: .closeSelectedContentTabs,
-                source: .contentTabBar,
+                source: .contextMenu,
                 operationID: operationID,
             ),
         ])
@@ -8592,6 +8907,83 @@ extension CTM001HandleContentTabTests {
 
         XCTAssertEqual(store.state.contentTabs.tabs.count, ContentTabConstants.maxTabs)
         XCTAssertEqual(store.state.contentTabs.activeTabID, activeID)
+    }
+
+    private func makeDirtyMetricCloseState() -> DirtyMetricCloseFixture {
+        let dirtyID = ContentTabID(rawValue: "metric-dirty-close")
+        let otherID = ContentTabID(rawValue: "metric-dirty-close-other")
+        var dirtyContent = FileManagerContentFeature.State()
+        dirtyContent.entryViewLayout.isCollectionMode = true
+        dirtyContent.collection.collectionContext = CollectionContext(
+            query: "current",
+            scopes: ["/tmp"],
+            conditions: [],
+        )
+        dirtyContent.collection.collectionSession.metadata.baseline = .init(
+            context: CollectionContext(query: "baseline", scopes: ["/tmp"], conditions: []),
+        )
+        let otherContent = FileManagerContentFeature.State()
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: dirtyID,
+                    page: .collection,
+                    anchor: .collectionFile(url: URL(fileURLWithPath: "/tmp/metric.voycoll")),
+                    isPinned: false,
+                    title: "Collection",
+                    iconName: "rectangle.stack",
+                ),
+                ContentTabItem(
+                    id: otherID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+            ],
+            activeTabID: dirtyID,
+            recentlyClosed: nil,
+        )
+        state.content = dirtyContent
+        state.tabContentStates = [dirtyID: dirtyContent, otherID: otherContent]
+        state.syncContentTabSidebarItems()
+        return DirtyMetricCloseFixture(state: state, dirtyID: dirtyID, otherID: otherID)
+    }
+
+    private func makeBlockedSourceAwareCloseFixture() -> BlockedSourceAwareCloseFixture {
+        let pinnedID = ContentTabID(rawValue: "blocked-source-pinned")
+        let otherID = ContentTabID(rawValue: "blocked-source-other")
+        let record = ContentTabPinnedRecord(
+            id: pinnedID.rawValue,
+            page: .directory,
+            anchor: .directory(path: "/blocked-source"),
+            title: "Pinned",
+            iconName: "folder",
+            pinnedAt: Date(timeIntervalSince1970: 443),
+        )
+        var state = ContentTabTestStateBuilder.pinnedDirectoryWindowState(
+            tabID: pinnedID,
+            path: "/blocked-source",
+            record: record,
+        )
+        state.tabContentStates[pinnedID] = state.content
+        state.contentTabs.tabs.append(ContentTabItem(
+            id: otherID,
+            page: .home,
+            anchor: .homeDefault,
+            isPinned: false,
+            title: "Home",
+            iconName: "house",
+        ))
+        state.contentTabs.activeTabID = otherID
+        state.content = .init()
+        state.tabContentStates[otherID] = state.content
+        state.lastConfirmedTopNavigationOrder = .init(items: [.contentTab(pinnedID)])
+        state.optimisticTopNavigationOrder = state.lastConfirmedTopNavigationOrder
+        state.syncContentTabSidebarItems()
+        return BlockedSourceAwareCloseFixture(state: state, pinnedID: pinnedID, otherID: otherID)
     }
 }
 

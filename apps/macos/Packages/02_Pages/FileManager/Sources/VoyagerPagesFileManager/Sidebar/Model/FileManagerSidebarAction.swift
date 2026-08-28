@@ -21,6 +21,7 @@ public enum FileManagerSidebarAction: CasePathable, Sendable {
         case duplicateContentTab(ContentTabID)
         case duplicateSelectedContentTabs
         case closeContentTab(ContentTabID)
+        case closeContentTabFromTrailingControl(ContentTabID)
         case closeSelectedContentTabs
         case pinContentTab(ContentTabID)
         case unpinContentTab(ContentTabID)
@@ -68,6 +69,7 @@ public enum FileManagerSidebarAction: CasePathable, Sendable {
         case collapseContentTabSelectionToActive
         case dismissTopNavigationPresentation
         case closeContentTab(ContentTabID)
+        case closeContentTabFromTrailingControl(ContentTabID)
         case closeSelectedContentTabs
         case pinContentTab(ContentTabID)
         case unpinContentTab(ContentTabID)

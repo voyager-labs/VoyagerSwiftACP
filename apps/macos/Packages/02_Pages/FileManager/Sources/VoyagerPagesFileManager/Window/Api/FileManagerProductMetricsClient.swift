@@ -133,6 +133,26 @@ public enum ContentTabActionSource: String, Equatable, Sendable {
     case dragAndDrop = "drag_and_drop"
 }
 
+public struct ProductContentTabActionMetricContext: Equatable, Sendable {
+    public let operationID: UUID
+    public let source: ContentTabActionSource
+
+    public init(operationID: UUID, source: ContentTabActionSource) {
+        self.operationID = operationID
+        self.source = source
+    }
+}
+
+public struct ProductContentTabCloseMetric: Equatable, Sendable {
+    public let tabID: ContentTabID
+    public let context: ProductContentTabActionMetricContext
+
+    public init(tabID: ContentTabID, context: ProductContentTabActionMetricContext) {
+        self.tabID = tabID
+        self.context = context
+    }
+}
+
 public enum EntryActionResult: String, Equatable, Sendable {
     case success
     case failure

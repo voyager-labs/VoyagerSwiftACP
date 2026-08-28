@@ -31,6 +31,7 @@ extension FileManagerWindowRoutingReducer {
         state.pendingSelectedContentTabClose = nil
         state.pendingSelectedContentTabPinMutation = nil
         state.pendingContentTabClose = nil
+        state.productContentTabCloseMetric = nil
         state.deferredPinnedContentTabs = nil
         state.deferredPinnedContentTabsMode = nil
         state.pendingRuntimePreservationRecords.removeAll()

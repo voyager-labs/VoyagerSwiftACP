@@ -49,6 +49,8 @@ extension FileManagerWindowRoutingReducer {
             tabID: tabID,
             originalPreviousActiveTabID: originalPreviousActiveTabID,
             batchOperationID: operationID,
+            actionSource: pending.actionSource,
+            metricOperationID: operationID,
         )
         return handleCloseContentTabRequested(
             tabID: tabID,
@@ -67,7 +69,7 @@ extension FileManagerWindowRoutingReducer {
             productMetricsClient.record(FileManagerProductMetricsProducer.contentTabTerminal(
                 operationID: pending.operationID,
                 identity: .closeSelectedContentTabs,
-                source: .contentTabBar,
+                source: pending.actionSource,
                 result: result,
             ))
         }

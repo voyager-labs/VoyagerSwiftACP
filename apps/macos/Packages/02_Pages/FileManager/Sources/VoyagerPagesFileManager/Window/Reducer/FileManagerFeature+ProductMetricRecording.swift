@@ -3,6 +3,42 @@ import Foundation
 
 /// direct pin/unpin 터미널 메트릭 기록을 담당하는 FileManagerFeature 확장.
 extension FileManagerFeature {
+    func clearProductContentTabCloseMetricIfFailed(
+        intent: FileManagerTopNavigationIntent,
+        terminal: FileManagerTopNavigationIntentTerminal,
+        state: inout State,
+    ) {
+        guard case let .close(tabID) = intent,
+              case .failed = terminal,
+              state.productContentTabCloseMetric?.tabID == tabID
+        else { return }
+        state.productContentTabCloseMetric = nil
+    }
+
+    func captureDirectContentTabCloseMetric(
+        _ action: ContentTabAction,
+        source: ContentTabActionSource,
+        state: inout State,
+    ) {
+        let tabID: ContentTabID? = switch action {
+        case let .close(tabID), let .commitClose(tabID):
+            tabID
+        default:
+            nil
+        }
+        guard let tabID,
+              state.contentTabs.tabs[id: tabID] == nil,
+              state.productContentTabCloseMetric == nil
+        else { return }
+        state.productContentTabCloseMetric = ProductContentTabCloseMetric(
+            tabID: tabID,
+            context: ProductContentTabActionMetricContext(
+                operationID: productMetricsClient.makeOperationID(),
+                source: source,
+            ),
+        )
+    }
+
     /// pinned-record persistence terminal의 tabID를 추출해 탭별 상관 일치에 사용한다.
     func pinnedRecordPersistenceTerminalTabID(_ action: ContentTabAction) -> ContentTabID? {
         switch action {

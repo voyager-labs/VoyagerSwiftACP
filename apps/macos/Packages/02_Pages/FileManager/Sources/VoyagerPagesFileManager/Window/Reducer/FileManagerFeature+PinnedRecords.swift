@@ -135,6 +135,11 @@ extension FileManagerFeature {
         }
         _ = completeTopNavigationIntent(token: pending.token, terminal: resolvedTerminal, state: &state)
         state.replayTopNavigationOverlays()
+        clearProductContentTabCloseMetricIfFailed(
+            intent: intent,
+            terminal: resolvedTerminal,
+            state: &state,
+        )
         return closeTopNavigationLifecycleEffect(
             intent: intent,
             terminal: resolvedTerminal,
@@ -291,6 +296,11 @@ extension FileManagerFeature {
             tabID: request.tabID,
             context: request.context,
             state: state,
+        )
+        clearProductContentTabCloseMetricIfFailed(
+            intent: pending.intent,
+            terminal: terminal,
+            state: &state,
         )
         return .concatenate(childEffect, closeEffect)
     }
@@ -609,6 +619,7 @@ extension FileManagerFeature {
     func reduceContentTabAction(
         _ action: ContentTabAction,
         state: inout State,
+        source: ContentTabActionSource = .contentTabBar,
     ) -> Effect<Action> {
         let syncMetricObservation = contentTabSyncMetricObservation(for: action, state: state)
         let reducedAction: ContentTabAction = if case let .pin(tabID, placement) = action, placement == nil {
@@ -645,8 +656,9 @@ extension FileManagerFeature {
             )
         }
         .map { Action.contentTabs($0) }
+        captureDirectContentTabCloseMetric(action, source: source, state: &state)
         let closeCancellationEffect = contentTabCloseCancellationEffect(for: action, state: &state)
-        recordContentTabSyncMetricIfAccepted(syncMetricObservation, state: &state)
+        recordContentTabSyncMetricIfAccepted(syncMetricObservation, source: source, state: &state)
         return .merge(preReductionEffect, closeCancellationEffect, childEffect)
     }
 
@@ -702,6 +714,7 @@ extension FileManagerFeature {
     /// 상태가 적용을 증명할 때만 success terminal을 한 건 기록한다. no-op/rejected 경로는 이벤트가 없다.
     private func recordContentTabSyncMetricIfAccepted(
         _ observation: ContentTabSyncMetricObservation?,
+        source: ContentTabActionSource,
         state: inout State,
     ) {
         guard let observation else { return }
@@ -718,10 +731,18 @@ extension FileManagerFeature {
             }
         }
         guard accepted else { return }
+        if state.pendingContentTabClose != nil {
+            switch observation {
+            case .duplicate, .duplicateSelected, .restore:
+                return
+            default:
+                break
+            }
+        }
         productMetricsClient.record(FileManagerProductMetricsProducer.contentTabTerminal(
             operationID: productMetricsClient.makeOperationID(),
             identity: observation.identity,
-            source: .contentTabBar,
+            source: source,
             result: .success,
         ))
     }

@@ -35,6 +35,9 @@ struct FileManagerSidebarContentTabDuplicateCloseRoutingReducer {
             case let .view(.closeContentTab(id)):
                 .send(.delegate(.closeContentTab(id)))
 
+            case let .view(.closeContentTabFromTrailingControl(id)):
+                .send(.delegate(.closeContentTabFromTrailingControl(id)))
+
             case .view(.closeSelectedContentTabs):
                 .send(.delegate(.closeSelectedContentTabs))
 

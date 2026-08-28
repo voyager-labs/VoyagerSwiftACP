@@ -99,7 +99,7 @@ struct WindowManagerFeature {
             case .file(.restoreLastClosedTab):
                 return sendContentTabCommandToFocusedWindow(
                     state,
-                    .restoreLastClosedContentTab,
+                    .contentTabAction(.restoreLastClosed, source: .menuCommand),
                     capability: \.canRestoreLastClosedTab,
                 )
 

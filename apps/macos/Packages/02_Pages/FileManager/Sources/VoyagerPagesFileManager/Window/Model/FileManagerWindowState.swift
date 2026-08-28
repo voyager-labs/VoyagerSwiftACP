@@ -213,6 +213,7 @@ public struct FileManagerWindowState: Equatable {
     public var pendingSelectedContentTabPinMutation: PendingSelectedContentTabPinMutation?
     var productContentTabMoveOperationIDs: [FileManagerTopNavigationOperationToken: UUID] = [:]
     var productContentTabPinMutationMetrics: [ContentTabID: ProductContentTabPinMutationMetric] = [:]
+    var productContentTabCloseMetric: ProductContentTabCloseMetric?
     public var deferredPinnedContentTabs: ContentTabState?
     public var deferredPinnedContentTabsMode: PinnedContentTabsApplicationMode?
     var pendingRuntimePreservationRecords: [ContentTabID: ContentTabPinnedRecord] = [:]
@@ -523,6 +524,7 @@ public struct PendingSelectedContentTabPinMutation: Equatable {
 
 public struct PendingSelectedContentTabClose: Equatable, Sendable {
     public let operationID: UUID
+    public let actionSource: ContentTabActionSource
     public let orderedTargetIDs: [ContentTabID]
     public var cursor: Int
     public var currentTabID: ContentTabID?
@@ -537,8 +539,10 @@ public struct PendingSelectedContentTabClose: Equatable, Sendable {
         currentTabID: ContentTabID?,
         originalActiveTabID: ContentTabID?,
         preferredFallbackIDs: [ContentTabID],
+        actionSource: ContentTabActionSource = .contentTabBar,
     ) {
         self.operationID = operationID
+        self.actionSource = actionSource
         self.orderedTargetIDs = orderedTargetIDs
         self.cursor = cursor
         self.currentTabID = currentTabID
@@ -560,6 +564,7 @@ public struct PendingSelectedContentTabClose: Equatable, Sendable {
             currentTabID: nil,
             originalActiveTabID: originalActiveTabID,
             preferredFallbackIDs: preferredFallbackIDs,
+            actionSource: .contentTabBar,
         )
     }
 
@@ -577,6 +582,7 @@ public struct PendingSelectedContentTabClose: Equatable, Sendable {
             currentTabID: nil,
             originalActiveTabID: originalActiveTabID,
             preferredFallbackIDs: preferredFallbackIDs,
+            actionSource: .contentTabBar,
         )
     }
 
@@ -594,6 +600,7 @@ public struct PendingSelectedContentTabClose: Equatable, Sendable {
             currentTabID: currentTabID,
             originalActiveTabID: originalActiveTabID,
             preferredFallbackIDs: preferredFallbackIDs,
+            actionSource: .contentTabBar,
         )
     }
 }
@@ -607,6 +614,8 @@ public struct PendingContentTabClose: Equatable {
     public let previousActiveInspector: FileManagerInspectorFeature.State?
     public let targetInspector: FileManagerInspectorFeature.State?
     public let batchOperationID: UUID?
+    public let actionSource: ContentTabActionSource
+    public let metricOperationID: UUID?
     public var didReceiveWriteBackNavigationState: Bool
     public var didReceiveWriteBackComposerSync: Bool
     public var requiresWriteBackFailureTerminal: Bool
@@ -624,6 +633,8 @@ public struct PendingContentTabClose: Equatable {
         previousActiveInspector: FileManagerInspectorFeature.State? = nil,
         targetInspector: FileManagerInspectorFeature.State? = nil,
         batchOperationID: UUID? = nil,
+        actionSource: ContentTabActionSource = .contentTabBar,
+        metricOperationID: UUID? = nil,
         didReceiveWriteBackNavigationState: Bool = false,
         didReceiveWriteBackComposerSync: Bool = false,
         requiresWriteBackFailureTerminal: Bool = true,
@@ -640,6 +651,8 @@ public struct PendingContentTabClose: Equatable {
         self.previousActiveInspector = previousActiveInspector
         self.targetInspector = targetInspector
         self.batchOperationID = batchOperationID
+        self.actionSource = actionSource
+        self.metricOperationID = metricOperationID
         self.didReceiveWriteBackNavigationState = didReceiveWriteBackNavigationState
         self.didReceiveWriteBackComposerSync = didReceiveWriteBackComposerSync
         self.requiresWriteBackFailureTerminal = requiresWriteBackFailureTerminal
