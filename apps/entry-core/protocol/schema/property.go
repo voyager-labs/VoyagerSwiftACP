@@ -305,8 +305,11 @@ func validLocalPath(path string) bool {
 	if !validUTF8Bytes(path, 1, maximumPropertyScalarBytes) || path[0] != '/' {
 		return false
 	}
+	// 소스 루트 자체는 assignment 대상 entry가 아니다 — production resolver가
+	// 거절하므로 wire 경계에서 invalid_path로 실패 닫기해야 internal_error가
+	// 노출되지 않는다.
 	if path == "/" {
-		return true
+		return false
 	}
 	if path[len(path)-1] == '/' || strings.Contains(path, "//") {
 		return false

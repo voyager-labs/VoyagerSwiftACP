@@ -248,7 +248,7 @@ func TestPropertyAssignmentListTargetMatrix(t *testing.T) {
 		want   ErrorCode
 	}{
 		{name: "happy local path", target: `{"kind":"local_path","local_path":"/Users/me/file.txt"}`},
-		{name: "root path", target: `{"kind":"local_path","local_path":"/"}`},
+		{name: "root path", target: `{"kind":"local_path","local_path":"/"}`, want: ErrorInvalidPath},
 		{name: "relative path", target: `{"kind":"local_path","local_path":"Users/me"}`, want: ErrorInvalidPath},
 		{name: "non-clean path", target: `{"kind":"local_path","local_path":"/a//b"}`, want: ErrorInvalidPath},
 		{name: "dot segment", target: `{"kind":"local_path","local_path":"/a/./b"}`, want: ErrorInvalidPath},
