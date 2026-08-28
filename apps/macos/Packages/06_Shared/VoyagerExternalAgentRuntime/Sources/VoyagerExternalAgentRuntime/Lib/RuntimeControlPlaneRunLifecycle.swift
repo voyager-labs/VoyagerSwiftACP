@@ -1,0 +1,428 @@
+import Foundation
+
+enum RuntimeTerminalEventPersistenceError: Error {
+    case persistenceFailure
+}
+
+enum RuntimeProviderTerminalAdmissionError: Error {
+    case rejected
+}
+
+extension RuntimeControlPlane {
+    private enum ProviderEventDisposition {
+        case nonterminal
+        case rejectedTerminal
+        case providerTerminal(RuntimeResult)
+        case storedTerminal(RuntimeResult)
+    }
+
+    func consume(
+        _ receipt: RuntimeLaunchReceipt,
+        from adapter: any ExternalAgentRuntimeAdapter,
+        host: ExternalAgentSessionReference,
+        restoredContext: RuntimeRestoredResumeContext? = nil,
+    ) async throws -> RuntimeResult {
+        if adapter.descriptor.capabilities.eventStream == .supported {
+            return try await consumeEventStream(
+                receipt,
+                from: adapter,
+                host: host,
+                restoredContext: restoredContext,
+            )
+        }
+        return try await consumeTerminalResult(
+            receipt,
+            from: adapter,
+            host: host,
+            restoredContext: restoredContext,
+        )
+    }
+
+    private func consumeEventStream(
+        _ receipt: RuntimeLaunchReceipt,
+        from adapter: any ExternalAgentRuntimeAdapter,
+        host: ExternalAgentSessionReference,
+        restoredContext: RuntimeRestoredResumeContext?,
+    ) async throws -> RuntimeResult {
+        try requireRestoredContextIfPresent(
+            restoredContext,
+            host: host,
+            runReference: receipt.runReference,
+        )
+        let stream = try await providerEventStream(
+            receipt,
+            from: adapter,
+            host: host,
+            restoredContext: restoredContext,
+        )
+        var iterator = stream.makeAsyncIterator()
+        var rejectedTerminalEvidence = false
+        while let event = try await iterator.next() {
+            switch try await acceptRestoredEventIfCurrent(
+                event,
+                receipt: receipt,
+                host: host,
+                restoredContext: restoredContext,
+            ) {
+            case .nonterminal:
+                continue
+            case .rejectedTerminal:
+                rejectedTerminalEvidence = true
+                continue
+            case let .storedTerminal(terminal):
+                return terminal
+            case let .providerTerminal(terminal):
+                return try await providerTerminalResult(
+                    terminal,
+                    receipt: receipt,
+                    from: adapter,
+                    host: host,
+                    restoredContext: restoredContext,
+                )
+            }
+        }
+        if rejectedTerminalEvidence {
+            throw RuntimeProviderTerminalAdmissionError.rejected
+        }
+        return try await consumeEventStreamFallback(
+            receipt,
+            from: adapter,
+            host: host,
+            restoredContext: restoredContext,
+        )
+    }
+
+    private func consumeEventStreamFallback(
+        _ receipt: RuntimeLaunchReceipt,
+        from adapter: any ExternalAgentRuntimeAdapter,
+        host: ExternalAgentSessionReference,
+        restoredContext: RuntimeRestoredResumeContext?,
+    ) async throws -> RuntimeResult {
+        try requireRestoredContextIfPresent(
+            restoredContext,
+            host: host,
+            runReference: receipt.runReference,
+        )
+        return try await consumeTerminalResult(
+            receipt,
+            from: adapter,
+            host: host,
+            restoredContext: restoredContext,
+        )
+    }
+
+    private func requireRestoredContextIfPresent(
+        _ restoredContext: RuntimeRestoredResumeContext?,
+        host: ExternalAgentSessionReference,
+        runReference: RuntimeRunReference,
+    ) throws {
+        if let restoredContext {
+            try requireRestoredResumeContext(
+                restoredContext,
+                host: host,
+                runReference: runReference,
+            )
+        }
+    }
+
+    private func acceptRestoredEventIfCurrent(
+        _ event: RuntimeEventEnvelope,
+        receipt: RuntimeLaunchReceipt,
+        host: ExternalAgentSessionReference,
+        restoredContext: RuntimeRestoredResumeContext?,
+    ) async throws -> ProviderEventDisposition {
+        if let restoredContext {
+            try requireRestoredResumeContext(
+                restoredContext,
+                host: host,
+                runReference: receipt.runReference,
+            )
+        }
+        return try await acceptProviderEvent(
+            event,
+            receipt: receipt,
+            host: host,
+            restoredContext: restoredContext,
+        )
+    }
+
+    private func providerEventStream(
+        _ receipt: RuntimeLaunchReceipt,
+        from adapter: any ExternalAgentRuntimeAdapter,
+        host: ExternalAgentSessionReference,
+        restoredContext: RuntimeRestoredResumeContext?,
+    ) async throws -> AsyncThrowingStream<RuntimeEventEnvelope, any Error> {
+        let stream = try await adapter.eventStream(for: receipt.runReference)
+        if let restoredContext {
+            try requireRestoredResumeContext(
+                restoredContext,
+                host: host,
+                runReference: receipt.runReference,
+            )
+        }
+        return stream
+    }
+
+    private func providerTerminalResult(
+        _ terminal: RuntimeResult,
+        receipt: RuntimeLaunchReceipt,
+        from adapter: any ExternalAgentRuntimeAdapter,
+        host: ExternalAgentSessionReference,
+        restoredContext: RuntimeRestoredResumeContext?,
+    ) async throws -> RuntimeResult {
+        guard adapter.descriptor.capabilities.terminalResult == .supported else {
+            try validateBoundary(
+                terminal,
+                runReference: receipt.runReference,
+                outcome: terminal.outcome,
+            )
+            return terminal
+        }
+        if let restoredContext {
+            try requireRestoredResumeContext(
+                restoredContext,
+                host: host,
+                runReference: receipt.runReference,
+            )
+        }
+        let result = try await adapter.terminalResult(for: receipt.runReference)
+        if let restoredContext {
+            try requireRestoredResumeContext(
+                restoredContext,
+                host: host,
+                runReference: receipt.runReference,
+            )
+        }
+        try validateBoundary(
+            result,
+            runReference: receipt.runReference,
+            outcome: terminal.outcome,
+        )
+        return result
+    }
+
+    private func acceptProviderEvent(
+        _ event: RuntimeEventEnvelope,
+        receipt: RuntimeLaunchReceipt,
+        host: ExternalAgentSessionReference,
+        restoredContext: RuntimeRestoredResumeContext?,
+    ) async throws -> ProviderEventDisposition {
+        do {
+            let disposition = try await acceptProviderEvent(
+                event,
+                host: host,
+                restoredContext: restoredContext,
+            )
+            switch disposition {
+            case .nonterminal where providerTerminalOutcome(for: event) != nil:
+                return .rejectedTerminal
+            case .nonterminal:
+                return .nonterminal
+            default:
+                return disposition
+            }
+        } catch let error as RuntimeHostError {
+            guard error == .malformedAdapterResponse,
+                  let repaired = try await readRepairProviderTerminalConflict(
+                      event,
+                      receipt: receipt,
+                      host: host,
+                      restoredContext: restoredContext,
+                  )
+            else { throw error }
+            return repaired
+        }
+    }
+
+    private func readRepairProviderTerminalConflict(
+        _ event: RuntimeEventEnvelope,
+        receipt: RuntimeLaunchReceipt,
+        host: ExternalAgentSessionReference,
+        restoredContext: RuntimeRestoredResumeContext?,
+    ) async throws -> ProviderEventDisposition? {
+        if let restoredContext {
+            try requireRestoredResumeContext(
+                restoredContext,
+                host: host,
+                runReference: receipt.runReference,
+            )
+        }
+        guard isSameRunProviderEvent(event, receipt: receipt, host: host),
+              let terminal = try await readRepairPersistedTerminal(
+                  host: host,
+                  runReference: receipt.runReference,
+                  restoredContext: restoredContext,
+              )
+        else { return nil }
+        return .storedTerminal(terminal)
+    }
+
+    func readRepairPersistedTerminal(
+        host: ExternalAgentSessionReference,
+        runReference: RuntimeRunReference,
+        restoredContext: RuntimeRestoredResumeContext? = nil,
+    ) async throws -> RuntimeResult? {
+        // read-repair: adopt a committed persisted terminal only through the explicit conflict path.
+        try await withPersistedState { plane, loaded in
+            if let restoredContext {
+                try plane.requireRestoredResumeContext(
+                    restoredContext,
+                    host: host,
+                    runReference: runReference,
+                )
+            }
+            let current = plane.sessions[host]?.freshRunSnapshot()
+            guard let adopted = plane.adoptingPersistedTerminal(
+                host: host,
+                runReference: runReference,
+                expectedSession: plane.sessions[host],
+                loaded: loaded,
+            ) else {
+                try Task.checkCancellation()
+                return nil
+            }
+            let persisted = adopted.freshRunSnapshot()
+            guard case .adoptPersisted = RuntimeFreshRunDecisionTable.decide(
+                .persistConflict(persisted: persisted),
+                on: current ?? persisted,
+            ) else {
+                try Task.checkCancellation()
+                return nil
+            }
+            if let restoredContext {
+                try plane.requireRestoredResumeContext(
+                    restoredContext,
+                    host: host,
+                    runReference: runReference,
+                )
+            }
+            plane.sessions[host] = adopted
+            try Task.checkCancellation()
+            return plane.terminalResult(for: adopted.stored)
+        }
+    }
+
+    private func acceptProviderEvent(
+        _ event: RuntimeEventEnvelope,
+        host: ExternalAgentSessionReference,
+        restoredContext: RuntimeRestoredResumeContext?,
+    ) async throws -> ProviderEventDisposition {
+        guard let terminal = try await accept(
+            event,
+            host: host,
+            expectedSource: .provider,
+            restoredContext: restoredContext,
+        ) else {
+            return .nonterminal
+        }
+        return .providerTerminal(terminal)
+    }
+
+    private func providerTerminalOutcome(for event: RuntimeEventEnvelope) -> RuntimeOutcome? {
+        switch event.kind {
+        case .completed: .completed
+        case .failed: .failed
+        case .interrupted: .interrupted
+        default: nil
+        }
+    }
+
+    private func isSameRunProviderEvent(
+        _ event: RuntimeEventEnvelope,
+        receipt: RuntimeLaunchReceipt,
+        host: ExternalAgentSessionReference,
+    ) -> Bool {
+        event.source == .provider
+            && event.externalAgentSessionReference == host
+            && event.runReference == receipt.runReference
+            && event.providerEventID.rawValue.isRuntimeBounded
+            && event.idempotencyKey.rawValue.isRuntimeBounded
+    }
+
+    private func consumeTerminalResult(
+        _ receipt: RuntimeLaunchReceipt,
+        from adapter: any ExternalAgentRuntimeAdapter,
+        host: ExternalAgentSessionReference,
+        restoredContext: RuntimeRestoredResumeContext?,
+    ) async throws -> RuntimeResult {
+        try require(.terminalResult, in: adapter.descriptor.capabilities)
+        if let restoredContext {
+            try requireRestoredResumeContext(
+                restoredContext,
+                host: host,
+                runReference: receipt.runReference,
+            )
+        }
+        let result = try await adapter.terminalResult(for: receipt.runReference)
+        if let restoredContext {
+            try requireRestoredResumeContext(
+                restoredContext,
+                host: host,
+                runReference: receipt.runReference,
+            )
+        }
+        try validateBoundary(result, runReference: receipt.runReference)
+        return result
+    }
+
+    func persistedTerminalResult(
+        host: ExternalAgentSessionReference,
+        runReference: RuntimeRunReference,
+        restoredContext: RuntimeRestoredResumeContext? = nil,
+    ) async throws -> RuntimeResult? {
+        try await withPersistedState { plane, loaded in
+            if let restoredContext {
+                try plane.requireRestoredResumeContext(
+                    restoredContext,
+                    host: host,
+                    runReference: runReference,
+                )
+            }
+            guard let adopted = plane.adoptingPersistedTerminal(
+                host: host,
+                runReference: runReference,
+                expectedSession: plane.sessions[host],
+                loaded: loaded,
+            ) else {
+                try Task.checkCancellation()
+                return nil
+            }
+            if let restoredContext {
+                try plane.requireRestoredResumeContext(
+                    restoredContext,
+                    host: host,
+                    runReference: runReference,
+                    in: plane.sessions,
+                )
+            }
+            plane.sessions[host] = adopted
+            try Task.checkCancellation()
+            return plane.terminalResult(for: adopted.stored)
+        }
+    }
+
+    func storedTerminalResult(
+        host: ExternalAgentSessionReference,
+        runReference: RuntimeRunReference,
+    ) -> RuntimeResult? {
+        guard let stored = sessions[host]?.stored,
+              stored.runReference == runReference
+        else { return nil }
+        return terminalResult(for: stored)
+    }
+}
+
+extension RuntimeStoredSession {
+    func matchesLaunchSnapshot(
+        _ request: RuntimeLaunchRequest,
+        descriptor: RuntimeAdapterDescriptor,
+    ) -> Bool {
+        runReference == request.runReference
+            && adapterID == descriptor.id
+            && providerNamespace == descriptor.providerNamespace
+            && adapterVersion == descriptor.adapterVersion
+            && providerBranch == descriptor.providerBranch
+            && capabilitySnapshot == descriptor.capabilities
+            && storedContext == RuntimeStoredContext(contextPolicy: request.contextPolicy)
+    }
+}
