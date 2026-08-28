@@ -102,6 +102,10 @@ public struct FileManagerContentFeature {
         FileManagerContentPendingSelectionReducer(phase: .afterEntryViewLayout)
 
         Reduce { state, action in
+            let identityMigrated = resolveRootIdentityTransitionAfterEntryLayoutLoaded(
+                action,
+                state: &state,
+            )
             FileManagerContentIdentityTransitionCoordinator.rebaseFolderOwnersAfterRootSnapshot(
                 on: action,
                 state: &state,
@@ -114,7 +118,8 @@ public struct FileManagerContentFeature {
                 on: action,
                 state: &state,
             )
-            return .none
+            guard identityMigrated else { return .none }
+            return .send(.entryViewLayout(.delegate(.selectionChanged)))
         }
 
         FileManagerContentComposerReducer()
@@ -404,6 +409,39 @@ public struct FileManagerContentFeature {
         )
         guard identityMigrated else { return .none }
         return .send(.entryViewLayout(.delegate(.selectionChanged)))
+    }
+
+    private func resolveRootIdentityTransitionAfterEntryLayoutLoaded(
+        _ action: Action,
+        state: inout State,
+    ) -> Bool {
+        guard let transition = state.pendingIdentityTransition,
+              case let .root(generation) = transition.projectionOwner
+        else { return false }
+
+        switch action {
+        case let .entryViewLayout(.entryOperations(.loading(.streamFinished(streamGeneration)))):
+            guard streamGeneration == generation,
+                  state.entryViewLayout.entryOperations.loadingContext.streamTerminal,
+                  state.entryViewLayout.entryOperations.loadingContext.coreFinished
+            else { return false }
+            return FileManagerContentIdentityTransitionCoordinator.migrateSelection(
+                entries: Array(state.entryViewLayout.entryOperations.items),
+                projectionOwner: .root(generation: streamGeneration),
+                state: &state,
+            )
+
+        case let .entryViewLayout(.entryOperations(.loading(.streamFailed(streamGeneration)))):
+            guard streamGeneration == generation,
+                  state.entryViewLayout.entryOperations.loadingContext.streamTerminal,
+                  state.entryViewLayout.entryOperations.loadingContext.isIncomplete
+            else { return false }
+            FileManagerContentIdentityTransitionCoordinator.discard(state: &state)
+            return false
+
+        default:
+            return false
+        }
     }
 
     /// loadItems 시작이 현재 표시 중인 완전 projection과 같은 root의 재로드인지 판정한다.
