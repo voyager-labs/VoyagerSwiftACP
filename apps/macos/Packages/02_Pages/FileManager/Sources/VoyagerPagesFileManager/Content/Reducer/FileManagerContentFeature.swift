@@ -57,6 +57,11 @@ public struct FileManagerContentFeature {
                 )
             case .internal(.reloadDirectoryListing):
                 guard case .folder = state.navigation.navigationState else { return .none }
+                // entryActionCompleted가 예약한 identity reload가 같은 root의 현재 또는 다음
+                // 세대를 소유 중이면 aggregate outcome의 중복 reload를 생략한다. 두 번째
+                // loadItems는 cancelInFlight로 identity stream을 취소해 세대를 다시 올리고
+                // 재기준화된 전이 소유자를 어기게 된다.
+                if FileManagerContentFeature.identityReloadOwnsActiveDirectory(state: state) { return .none }
                 return FileManagerContentEntryOpsCoordinator.reloadEntryItemsEffect(state: state)
             case let .internal(.applyNavigationState(navigationState)):
                 // 실제 네비게이션·root 변경 시 대기 중인 identity 전이를 즉시 만료한다.
@@ -147,7 +152,11 @@ public struct FileManagerContentFeature {
             let isFolderRoute = if case .folder = state.navigation.navigationState { true } else { false }
             let isRetainedProjectionTrigger = switch action {
             case .entryViewLayout(.entryOperations(.loading(.streamEvent))),
-                 .entryViewLayout(.entryOperations(.loading(.streamFailed))):
+                 .entryViewLayout(.entryOperations(.loading(.streamFailed))),
+                 // streamFinished는 buffered candidate를 items로 커밋하는 경계다. preservation
+                 // owner가 root인 동안에는 커밋 목록으로 projection을 교체하면 destination
+                 // migration 전에 before 행이 사라지므로 hold 트리거에 포함한다.
+                 .entryViewLayout(.entryOperations(.loading(.streamFinished))):
                 true
             case let .entryViewLayout(.entryOperations(.loading(.loadItems(path, _, _)))):
                 // operationFinished가 예약한 같은 폴더 재로드의 실제 loadItems 시작 시점에도
@@ -374,6 +383,10 @@ public struct FileManagerContentFeature {
                   streamEvent.generation == state.entryViewLayout.entryOperations.loadingContext.generation,
                   batchIndex == state.entryViewLayout.entryOperations.loadingContext.expectedCoreBatchIndex
             else { return .none }
+            // 보존 reload buffering 중 배치는 candidate에만 누적되고 streamFinished에서 커밋된다.
+            // 커밋 전 selection migration은 화면의 before snapshot과 어긋나므로 terminal 커밋으로 미룬다.
+            guard !state.entryViewLayout.entryOperations.loadingContext.isBufferingPreservedDirectoryReload
+            else { return .none }
             entries = items
             projectionOwner = .root(generation: streamEvent.generation)
 
@@ -446,6 +459,16 @@ public struct FileManagerContentFeature {
 
     /// loadItems 시작이 현재 표시 중인 완전 projection과 같은 root의 재로드인지 판정한다.
     /// 표시 항목이 모두 대상 경로의 직속 하위일 때만 유지한다(다른 폴더 이동과 구분).
+    private static func identityReloadOwnsActiveDirectory(state: State) -> Bool {
+        guard let transition = state.pendingIdentityTransition,
+              case let .root(generation) = transition.projectionOwner,
+              case let .folder(currentPath) = state.navigation.navigationState
+        else { return false }
+        let currentGeneration = state.entryViewLayout.entryOperations.loadingContext.generation
+        guard generation == currentGeneration || generation == currentGeneration &+ 1 else { return false }
+        return FileManagerContentIdentityTransitionCoordinator.canonicalizedPath(currentPath) == transition.rootPath
+    }
+
     private func isSameRootFolderReload(path: String, state: State) -> Bool {
         guard case let .folder(currentPath) = state.navigation.navigationState else { return false }
         let normalizedRoot = canonicalizedPath(currentPath)
