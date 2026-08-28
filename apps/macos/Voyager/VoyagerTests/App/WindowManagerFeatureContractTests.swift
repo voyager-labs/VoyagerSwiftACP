@@ -12666,12 +12666,12 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await store.finish()
     }
 
-    /// FMW-003: native 등록 대기 중 기존 창의 사용자 변경은 실패 rollback 이후에도 유지된다.
+    /// FMW-003: 마지막 신규 창이 먼저 제거되어도 기존 창 예약 tab rollback ownership은 registration terminal까지 유지된다.
     /// registration 실패가 batch 소유 mutation만 보상하고 동시 사용자 상태를 덮어쓰지 않는 경계를 검증한다.
-    /// - 검증 내용: 사용자 생성 tab 보존, external 예약 tab 제거, logical/native window cleanup, typed failure 단일 방출
-    /// - 사전 조건: 기존 창과 신규 창이 섞인 placement가 commit된 뒤 native registration 조회가 대기함
-    /// - 기대 결과: 사용자 tab은 유지되고 batch 예약 tab과 신규 창만 제거되며 failure가 한 번 방출됨
-    func testPlacementApplicationNativeRegistrationFailureRollsBackOwnedNewWindowsAndEmitsFailure() async {
+    /// - 검증 내용: 신규 창 선행 제거 뒤 ownership 유지, 사용자 tab 보존, external 예약 tab 제거, typed failure 단일 방출
+    /// - 사전 조건: 기존 창과 신규 창이 섞인 placement가 commit된 뒤 native registration 조회가 대기하고 신규 창이 닫힘
+    /// - 기대 결과: 사용자 tab은 유지되고 batch 예약 tab만 제거되며 failure가 한 번 방출됨
+    func testPlacementRegistrationFailureAfterLastNewWindowClosesRollsBackExistingReservations() async {
         let batchID = UUID()
         let existingWindowID = UUID()
         let windowID = UUID()
@@ -12746,6 +12746,9 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             $0.fileManagerWindowClient.finalizeClose = { id in
                 finalizedWindowIDs.withValue { $0.append(id) }
             }
+            $0.undoManagerClient.invalidateWindow = { _ in
+                .init(succeeded: true, availability: .init())
+            }
             $0.entryLoadingClient.loadItems = { _, _ in [] }
             $0.fileChangeGatewayClient.observeEvents = { AsyncStream { $0.finish() } }
         }
@@ -12772,6 +12775,17 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         let userCreatedTabID = userMutatedWindow?.contentTabs.activeTabID
         let userCreatedContent = userMutatedWindow?.content
 
+        await store.send(.event(.windowClosed(windowID)))
+        await store.receive(\.windowInvalidationFinished)
+        XCTAssertEqual(
+            store.state.retainedExternalOpenPlacementOwnership,
+            .init(
+                batchID: batchID,
+                newWindowIDs: [],
+                existingWindowReservedTabIDs: [existingWindowID: [existingTabID]],
+            ),
+        )
+
         registrationGate.continuation.yield(())
         registrationGate.continuation.finish()
         await fulfillment(of: [terminalReceived], timeout: 1)
@@ -12780,7 +12794,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
 
         XCTAssertEqual(openedWindowIDs.value, [windowID])
         XCTAssertEqual(registrationCheckCount.value, 1)
-        XCTAssertEqual(closedWindowIDs.value, [windowID])
+        XCTAssertTrue(closedWindowIDs.value.isEmpty)
         XCTAssertEqual(finalizedWindowIDs.value, [windowID])
         XCTAssertEqual(completions.value, [
             .init(batchID: batchID, result: .failure(.validationFailed)),
