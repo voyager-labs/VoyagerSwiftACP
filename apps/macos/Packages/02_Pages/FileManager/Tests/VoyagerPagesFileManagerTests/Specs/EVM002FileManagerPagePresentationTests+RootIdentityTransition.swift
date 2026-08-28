@@ -1274,6 +1274,84 @@ extension EVM002FileManagerPagePresentationTests {
         XCTAssertNil(store.state.pendingIdentityTransition, "primary가 root여도 additional terminal에서 소비한다")
     }
 
+    /// EVM-002-command_external_refresh_correlation: primary dest가 폴더면 root 스트림 실패로 전이를 폐기하지 않는다.
+    /// - 검증 내용: additional root destination owner로 root 실패 세대가 일치해도 primary folder 전이는 유지된다.
+    /// - 사전 조건: primary dest A(폴더), additional dest root인 혼합 undo 전이와 buffered root reload 실패.
+    /// - 기대 결과: streamFailed 뒤에도 전이와 선택, source retained children이 유지된다.
+    func testMixedDestinationRootFailureKeepsPrimaryFolderTransition() async {
+        let rootPath = "/root"
+        let sourceD = EntryModel.temporaryFolder(id: "/root/D", name: "D")
+        let destinationA = EntryModel.temporaryFolder(id: "/root/A", name: "A")
+        let beforeX = EntryModel.temporaryFolder(id: "/root/D/x", name: "x")
+        let beforeY = EntryModel.temporaryFolder(id: "/root/D/y", name: "y")
+        let r1 = EntryModel.temporaryFolder(id: "/root/A/r1", name: "r1")
+        let rootY = EntryModel.temporaryFolder(id: "/root/y", name: "y")
+        var state = FileManagerContentState()
+        state.navigation.seedInitialFolderPath(rootPath)
+        state.entryViewLayout.mode = .list
+        state.entryViewLayout.entries = [sourceD, destinationA]
+        state.entryViewLayout.entryOperations.items = [sourceD, destinationA]
+        state.entryViewLayout.entryOperations.loadingContext.generation = 1
+        state.entryViewLayout.entryOperations.loadingContext.preservedDirectoryReloadItems = []
+        state.entryViewLayout.entryOperations.isReloading = true
+        state.entryViewLayout.hierarchy = .init(rootPath: rootPath)
+        state.entryViewLayout.hierarchy.nodesByID[sourceD.id] = .init(
+            children: [beforeX, beforeY],
+            loadPhase: .loadingCore,
+            generation: 3,
+            expectedBatchIndex: 0,
+            coreFinished: false,
+        )
+        state.entryViewLayout.hierarchy.nodesByID[destinationA.id] = .init(
+            children: [],
+            loadPhase: .loadingCore,
+            generation: 3,
+            expectedBatchIndex: 0,
+            coreFinished: false,
+        )
+        state.entryViewLayout.hierarchy.setExpandedIDs([sourceD.id, destinationA.id])
+        state.entryViewLayout.selectedIds = [beforeX.id, beforeY.id]
+        state.entryViewLayout.lastSelectedId = beforeX.id
+        state.entryViewLayout.rangeAnchorId = beforeX.id
+        state.pendingIdentityTransition = .init(
+            recordID: UUID(),
+            beforePath: beforeX.id,
+            afterPath: r1.id,
+            rootPath: rootPath,
+            refreshGeneration: 1,
+            projectionOwner: .folder(id: destinationA.id, generation: 3),
+            preservationOwner: .folder(id: sourceD.id, generation: 3),
+            additionalMoves: [
+                .init(
+                    beforePath: beforeY.id,
+                    afterPath: rootY.id,
+                    sourceOwner: .folder(id: sourceD.id, generation: 3),
+                    destinationOwner: .root(generation: 1),
+                ),
+            ],
+        )
+        let store = TestStore(initialState: state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.entryOpenClient = .testValue
+            $0.entryQuickLookClient = .previewValue
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+        }
+        store.exhaustivity = .off
+
+        await store.send(.entryViewLayout(.entryOperations(.loading(.streamFailed(generation: 1)))))
+        XCTAssertNotNil(
+            store.state.pendingIdentityTransition,
+            "primary 폴더 destination의 migration 기회를 위해 전이가 유지된다",
+        )
+        XCTAssertEqual(store.state.entryViewLayout.selectedIds, [beforeX.id, beforeY.id])
+        XCTAssertEqual(
+            store.state.entryViewLayout.hierarchy.nodesByID[sourceD.id]?.folder.children.map(\.id),
+            [beforeX.id, beforeY.id],
+            "root 실패는 source retained snapshot을 강등하지 않는다",
+        )
+    }
+
     private func receiveFolderRestart(
         _ store: TestStore<FileManagerContentState, FileManagerContentAction>,
         folderID: String,

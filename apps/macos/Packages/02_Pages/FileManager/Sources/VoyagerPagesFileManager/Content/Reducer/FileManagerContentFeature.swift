@@ -476,7 +476,9 @@ public struct FileManagerContentFeature {
                   state.entryViewLayout.entryOperations.loadingContext.streamTerminal,
                   state.entryViewLayout.entryOperations.loadingContext.isIncomplete
             else { return false }
-            // 폴더 destination pair가 아직 pending이면 폴더 stream의 migration 기회를 남겨둔다.
+            // primary destination이 폴더면 폴더 batch의 migration 기회가 남아 있으므로
+            // root 스트림 실패만으로 전이를 폐기하지 않는다(폴더 pair뿐 아니라 primary도 보호).
+            guard case .root = transition.projectionOwner else { return false }
             let hasFolderPairs = transition.additionalMoves.contains { move in
                 guard case .folder = move.destinationOwner else { return false }
                 return !move.migrated
