@@ -244,6 +244,14 @@ struct EntryListHierarchyReducer {
                     state.hierarchy.nodesByID[folderID] = nodeState
                     return .none
                 }
+                if case let .event(.metadataPatches(patches)) = response,
+                   var replacement = state.hierarchy.deferredFolderReplacements[folderID]
+                {
+                    // migration까지 보류 중인 staging에도 같은 patch를 적용해
+                    // 커밋 시 metadata가 core 값으로 되돌아가지 않게 한다.
+                    replacement.stagedChildren = applyMetadataPatches(patches, to: replacement.stagedChildren)
+                    state.hierarchy.deferredFolderReplacements[folderID] = replacement
+                }
                 guard apply(response: response, to: &nodeState.folder) else { return .none }
                 // Update load phase based on response type
                 switch response {

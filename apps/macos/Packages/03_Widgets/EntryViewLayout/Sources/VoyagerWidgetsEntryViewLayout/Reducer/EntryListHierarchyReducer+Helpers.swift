@@ -333,12 +333,19 @@ extension EntryListHierarchyReducer {
         to snapshot: inout FolderSnapshot,
     ) -> Bool {
         guard snapshot.coreFinished else { return false }
+        snapshot.children = applyMetadataPatches(patches, to: snapshot.children)
+        return true
+    }
+
+    func applyMetadataPatches(
+        _ patches: [EntryMetadataPatch],
+        to children: [EntryModel],
+    ) -> [EntryModel] {
         let patchesByEntryID = Dictionary(grouping: patches, by: metadataPatchEntryID)
-        snapshot.children = snapshot.children.map { child in
+        return children.map { child in
             guard let childPatches = patchesByEntryID[child.id] else { return child }
             return childPatches.reduce(child) { $0.applying($1) }
         }
-        return true
     }
 
     func metadataPatchEntryID(_ patch: EntryMetadataPatch) -> EntryModel.ID {
