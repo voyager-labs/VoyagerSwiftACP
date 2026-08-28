@@ -3,6 +3,7 @@ package property
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	domainentry "github.com/voyager-labs/voyager-app/apps/entry-core/internal/domain/entry"
@@ -208,4 +209,41 @@ func TestCreateDefinitionDuplicateKeyIncludesTombstoned(t *testing.T) {
 		t.Fatalf("duplicate key over tombstoned = %v, want ErrDuplicateDefinitionKey", err)
 	}
 	mustEqualSnapshot(t, before, snapshotStore(store))
+}
+
+// wire 계약은 definition key를 256바이트까지 허용한다. 도메인 Validate가
+// 128바이트로 좁히면 129~256바이트 key의 유효한 create가 internal_error로
+// 거절되는 경계 불일치가 된다.
+func TestCreateDefinitionAcceptsFullLengthKey(t *testing.T) {
+	store := newMemCatalogStore()
+	service := mustCatalogService(t, store)
+	workspace := mustWorkspaceContext(t)
+	ctx := context.Background()
+
+	longKey := strings.Repeat("k", 256)
+	view, err := service.CreateDefinition(ctx, workspace, CreateDefinitionInput{
+		Key: longKey, DisplayName: "Long key", ValueType: domainentry.PropertyTypeText,
+		Cardinality: domainentry.PropertyCardinalityOne, RequestID: "req-long-key",
+	})
+	if err != nil {
+		t.Fatalf("256-byte key create = %v, want accepted", err)
+	}
+	if view.Definition.CanonicalKey != longKey {
+		t.Fatalf("canonical key mismatch: %d bytes", len(view.Definition.CanonicalKey))
+	}
+	wire, code := DefinitionViewToWire(view)
+	if code != "" {
+		t.Fatalf("wire mapping = %s, want success", code)
+	}
+	if len(wire.Key) != 256 {
+		t.Fatalf("wire key = %d bytes, want 256", len(wire.Key))
+	}
+
+	reread, err := service.Definition(ctx, workspace, view.Definition.PropertyID)
+	if err != nil {
+		t.Fatalf("read-back: %v", err)
+	}
+	if reread.Definition.CanonicalKey != longKey {
+		t.Fatal("read-back lost the long key")
+	}
 }

@@ -239,7 +239,7 @@ type WorkspacePropertyDefinition struct {
 func (definition WorkspacePropertyDefinition) Validate() error {
 	if !definition.PropertyID.valid() || !definition.Origin.valid() || !definition.IdentityScheme.valid() ||
 		!definition.IdentityScheme.acceptsVersion(definition.PropertyID.version()) ||
-		!validUTF8Bytes(definition.Namespace, 1, 128) || !validUTF8Bytes(definition.CanonicalKey, 1, 128) ||
+		!validUTF8Bytes(definition.Namespace, 1, 128) || !validUTF8Bytes(definition.CanonicalKey, 1, 256) ||
 		!validUTF8Bytes(definition.DisplayName, 1, 256) || !validUTF8Bytes(definition.Description, 0, 4096) ||
 		!canonicalPropertyType(definition.ValueType) || definition.DefinitionRev < 0 ||
 		!validUTF8Bytes(definition.MappingProvenance, 0, 128) ||
