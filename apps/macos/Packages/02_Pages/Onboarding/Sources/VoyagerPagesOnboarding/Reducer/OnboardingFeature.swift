@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import Foundation
 
 @Reducer
 struct OnboardingFeature {
@@ -7,6 +8,9 @@ struct OnboardingFeature {
 
     @Dependency(\.onboardingProgressClient)
     var onboardingProgressClient
+
+    @Dependency(\.onboardingProductMetricsClient)
+    var onboardingProductMetricsClient
 
     @Dependency(\.onboardingWindowClient)
     var onboardingWindowClient
@@ -35,6 +39,7 @@ struct OnboardingFeature {
         action: Action,
     ) -> Effect<Action> {
         let progressClient = onboardingProgressClient
+        let metricsClient = onboardingProductMetricsClient
 
         switch action {
         case .onAppear:
@@ -54,7 +59,11 @@ struct OnboardingFeature {
             )
 
         case .aiProviderSetup(.setUpLaterTapped):
-            return handleSetUpLaterTapped(state: &state, progressClient: progressClient)
+            return handleSetUpLaterTapped(
+                state: &state,
+                progressClient: progressClient,
+                metricsClient: metricsClient,
+            )
 
         case .welcome, .permissions, .aiProviderSetup:
             let snapshot = state.progressSnapshot
@@ -156,6 +165,7 @@ struct OnboardingFeature {
     private func handleSetUpLaterTapped(
         state: inout State,
         progressClient: OnboardingProgressClient,
+        metricsClient: OnboardingProductMetricsClient,
     ) -> Effect<Action> {
         var skippedSetup = state.aiProviderSetup
         skippedSetup.choice = .setUpLater
@@ -169,6 +179,10 @@ struct OnboardingFeature {
         switch progressClient.save(snapshot) {
         case .success:
             state.aiProviderSetup = skippedSetup
+            metricsClient.record(.aiProvider(
+                operationID: UUID(),
+                result: .skipped,
+            ))
         case .failure:
             state.aiProviderSetup.choice = .none
             state.aiProviderSetup.loadError = "Failed to save onboarding progress."

@@ -6,53 +6,6 @@ import XCTest
 
 @MainActor
 final class ONB004ConfigureAIProviderDuringOnboardingTests: XCTestCase {
-    func testRetryKeepsOneOperationUUIDWhileAttemptIsInFlight() async throws {
-        var initialState = AiProviderSetupState()
-        initialState.rows[id: .openai]?.connectionState = .connectionFailed
-        let store = TestStore(initialState: initialState) {
-            AiProviderSetupFeature()
-        }
-
-        await store.send(.row(.element(id: .openai, action: .retryButtonTapped)))
-        let operationID = try XCTUnwrap(store.state.pendingConnectionOperationID)
-        await store.send(.row(.element(id: .openai, action: .retryButtonTapped)))
-
-        XCTAssertEqual(store.state.pendingConnectionOperationID, operationID)
-    }
-
-    func testEachAcceptedSkipAttemptEmitsOneTypedTerminalMetric() async {
-        let metrics = LockIsolated<[OnboardingProductMetric]>([])
-        let store = TestStore(initialState: AiProviderSetupState()) {
-            AiProviderSetupFeature()
-        } withDependencies: {
-            $0.onboardingProductMetricsClient = OnboardingProductMetricsClient(record: { metric in
-                metrics.withValue { $0.append(metric) }
-            })
-        }
-
-        await store.send(.setUpLaterTapped)
-
-        XCTAssertEqual(metrics.value.count, 1)
-        guard case let .aiProvider(firstOperationID, .skipped) = metrics.value[0] else {
-            return XCTFail("Expected one skipped AI provider metric")
-        }
-
-        let secondMetrics = LockIsolated<[OnboardingProductMetric]>([])
-        let secondStore = TestStore(initialState: AiProviderSetupState()) {
-            AiProviderSetupFeature()
-        } withDependencies: {
-            $0.onboardingProductMetricsClient = OnboardingProductMetricsClient(record: { metric in
-                secondMetrics.withValue { $0.append(metric) }
-            })
-        }
-        await secondStore.send(.setUpLaterTapped)
-
-        guard case let .aiProvider(secondOperationID, .skipped) = secondMetrics.value[0] else {
-            return XCTFail("Expected one skipped AI provider metric for second attempt")
-        }
-        XCTAssertNotEqual(firstOperationID, secondOperationID)
-    }
-
     // MARK: - ONB-004-show_onboarding_ai_provider_setup
 
     /// ONB-004-show_onboarding_ai_provider_setup: provider catalog bootstrap이 row 순서와 연결 상태를 표시한다.
@@ -221,7 +174,80 @@ final class ONB004ConfigureAIProviderDuringOnboardingTests: XCTestCase {
         await store.finish()
     }
 
+    /// ONB-004-show_onboarding_ai_provider_setup: Set up later는 진행 중 bootstrap을 취소한다.
+    /// 사용자가 catalog/status loading 중 skip을 선택하면 bootstrap 결과가 뒤늦게 적용되지 않는지 검증한다.
+    /// - 검증 내용: bootstrap cancellation 관측, skipped 상태 유지, persisted skip metric 1회.
+    /// - 사전 조건: AI connection file load가 취소 전까지 suspend되고 progress save는 성공한다.
+    /// - 기대 결과: bootstrap effect가 종료되고 setup은 `setUpLater/skipped`로 남는다.
+    func testSetUpLaterCancelsInFlightBootstrap() async {
+        let bootstrapStarted = LockIsolated(false)
+        let bootstrapCancelled = LockIsolated(false)
+        let metrics = LockIsolated<[OnboardingProductMetric]>([])
+        var initialState = OnboardingFeature.State()
+        initialState.currentStep = .aiProviderSetup
+
+        let store = TestStore(initialState: initialState) {
+            OnboardingFeature()
+        } withDependencies: {
+            $0.aiConnectionsFileClient.load = {
+                bootstrapStarted.setValue(true)
+                try await withTaskCancellationHandler {
+                    while true {
+                        try Task.checkCancellation()
+                        try await Task.sleep(nanoseconds: 1_000_000_000)
+                    }
+                } onCancel: {
+                    bootstrapCancelled.setValue(true)
+                }
+                return .empty()
+            }
+            $0.onboardingProgressClient = ProgressClient.noOp
+            $0.onboardingProductMetricsClient = OnboardingProductMetricsClient(record: { metric in
+                metrics.withValue { $0.append(metric) }
+            })
+        }
+
+        await store.send(.aiProviderSetup(.onAppear)) { state in
+            state.aiProviderSetup.didBootstrap = true
+            state.aiProviderSetup.bootstrapPhase = .loading
+        }
+        await Self.waitUntil { bootstrapStarted.value }
+
+        await store.send(.aiProviderSetup(.setUpLaterTapped)) { state in
+            state.aiProviderSetup.choice = .setUpLater
+            state.aiProviderSetup.status = .skipped
+        }
+        await Self.waitUntil { bootstrapCancelled.value }
+        await store.finish()
+
+        XCTAssertEqual(store.state.aiProviderSetup.choice, .setUpLater)
+        XCTAssertEqual(store.state.aiProviderSetup.status, .skipped)
+        XCTAssertEqual(metrics.value.count, 1)
+        guard case .aiProvider(_, .skipped) = metrics.value[0] else {
+            return XCTFail("Expected one persisted skip metric")
+        }
+    }
+
     // MARK: - ONB-004-start_ai_provider_connection_from_onboarding
+
+    /// ONB-004-start_ai_provider_connection_from_onboarding: retry 중 provider operation ID를 재사용한다.
+    /// 같은 provider의 중복 retry가 진행 중인 metric operation을 교체하지 않는지 검증한다.
+    /// - 검증 내용: 첫 retry와 중복 retry 후 OpenAI pending operation ID 동일성.
+    /// - 사전 조건: OpenAI row가 retry 가능한 connection failure 상태다.
+    /// - 기대 결과: OpenAI provider key에 하나의 operation ID만 유지된다.
+    func testRetryKeepsOneOperationUUIDWhileAttemptIsInFlight() async throws {
+        var initialState = AiProviderSetupState()
+        initialState.rows[id: .openai]?.connectionState = .connectionFailed
+        let store = TestStore(initialState: initialState) {
+            AiProviderSetupFeature()
+        }
+
+        await store.send(.row(.element(id: .openai, action: .retryButtonTapped)))
+        let operationID = try XCTUnwrap(store.state.pendingConnectionOperationIDs[.openai])
+        await store.send(.row(.element(id: .openai, action: .retryButtonTapped)))
+
+        XCTAssertEqual(store.state.pendingConnectionOperationIDs[.openai], operationID)
+    }
 
     /// ONB-004-start_ai_provider_connection_from_onboarding: OAuth provider Connect가 SET-007 shared row flow로 라우팅된다.
     /// 사용자가 ChatGPT Codex row의 Connect를 누를 때 onboarding이 자체 연결 로직을 갖지 않고 shared row reducer를 실행하는지 검증한다.
@@ -292,18 +318,21 @@ final class ONB004ConfigureAIProviderDuringOnboardingTests: XCTestCase {
         await store.finish()
     }
 
-    /// ONB-004-start_ai_provider_connection_from_onboarding: 연결 취소 후 AI Provider Setup 단계가 blocked로 복귀한다.
-    /// 사용자가 진행 중인 연결 flow를 취소했을 때 onboarding surface가 Connect와 Set up later 선택 상태로 되돌아오는지 검증한다.
-    /// - 검증 내용: shared row `.cancelButtonTapped`가 row transient state를 초기화하고 bootstrap reload 없이 parent setup status를
-    /// 재계산한다.
-    /// - 사전 조건: ChatGPT Codex row는 browser login 진행 중이며 setup status는 pending이다.
-    /// - 기대 결과: row는 `notVerified/idle`, setup은 `choice=.none`, `status=.blocked`, `isComplete=false` 상태다.
-    func testStartConnectionCancelReturnsToBlockedSetupState() async {
+    /// ONB-004-start_ai_provider_connection_from_onboarding: cancel 후 retry는 새 provider operation을 시작한다.
+    /// 사용자가 진행 중인 연결을 취소하면 이전 metric correlation이 재사용되지 않는지 검증한다.
+    /// - 검증 내용: cancel의 provider별 pending ID 제거, metric 미기록, retry의 새 ID 생성.
+    /// - 사전 조건: OpenAI row가 연결 중이고 pending operation ID를 가진다.
+    /// - 기대 결과: cancel 후 blocked 상태로 복귀하고 retry operation ID는 취소된 ID와 다르다.
+    func testCancelClearsProviderOperationBeforeRetryStartsFreshCorrelation() async throws {
+        let provider = AiProvider.openai
+        let operationID = UUID()
+        let metrics = LockIsolated<[OnboardingProductMetric]>([])
         var initialState = AiProviderSetupState()
         initialState.bootstrapPhase = .loaded
         initialState.status = .pending
-        initialState.rows[id: .chatgptCodex]?.connectionState = .connectInProgress
-        initialState.rows[id: .chatgptCodex]?.flowState = .browserLoginInProgress
+        initialState.rows[id: provider]?.connectionState = .connectInProgress
+        initialState.rows[id: provider]?.flowState = .connecting
+        initialState.pendingConnectionOperationIDs[provider] = operationID
 
         let cancelRecorder = LockIsolated(false)
         let store = TestStore(initialState: initialState) {
@@ -312,17 +341,27 @@ final class ONB004ConfigureAIProviderDuringOnboardingTests: XCTestCase {
             $0.codexNativeAuthClient.cancelCurrentFlow = {
                 cancelRecorder.setValue(true)
             }
+            $0.onboardingProductMetricsClient = OnboardingProductMetricsClient(record: { metric in
+                metrics.withValue { $0.append(metric) }
+            })
         }
 
-        await store.send(.row(.element(id: .chatgptCodex, action: .cancelButtonTapped))) { state in
-            state.rows[id: .chatgptCodex]?.connectionState = .notVerified
-            state.rows[id: .chatgptCodex]?.flowState = .idle
+        await store.send(.row(.element(id: provider, action: .cancelButtonTapped))) { state in
+            state.rows[id: provider]?.connectionState = .notVerified
+            state.rows[id: provider]?.flowState = .idle
             state.status = .blocked
         }
 
         XCTAssertTrue(cancelRecorder.value)
         XCTAssertEqual(store.state.choice, .none)
         XCTAssertFalse(store.state.isComplete)
+        XCTAssertNil(store.state.pendingConnectionOperationIDs[provider])
+        XCTAssertTrue(metrics.value.isEmpty)
+
+        await store.send(.row(.element(id: provider, action: .retryButtonTapped)))
+
+        let retryOperationID = try XCTUnwrap(store.state.pendingConnectionOperationIDs[provider])
+        XCTAssertNotEqual(retryOperationID, operationID)
         await store.finish()
     }
 
@@ -379,7 +418,186 @@ final class ONB004ConfigureAIProviderDuringOnboardingTests: XCTestCase {
         await store.finish()
     }
 
+    /// ONB-004-start_ai_provider_connection_from_onboarding: interleaved provider terminals correlate to their starts.
+    /// 두 provider 연결 시도가 교차 완료되어도 terminal metric이 다른 provider의 operation을 소비하지 않는지 검증한다.
+    /// - 검증 내용: provider별 operation ID 유지, matching terminal 소비, duplicate terminal 무시, 다른 provider terminal 보존.
+    /// - 사전 조건: OpenAI와 Anthropic 순으로 연결을 시작한 뒤 Anthropic terminal이 먼저 도착한다.
+    /// - 기대 결과: 각 provider가 자신의 operation ID와 provider kind로 정확히 한 번 기록된다.
+    func testInterleavedProviderTerminalsCorrelateToMatchingProviderOperation() async {
+        let metrics = LockIsolated<[OnboardingProductMetric]>([])
+        let store = TestStore(initialState: AiProviderSetupState()) {
+            AiProviderSetupFeature()
+        } withDependencies: {
+            $0.onboardingProductMetricsClient = OnboardingProductMetricsClient(record: { metric in
+                metrics.withValue { $0.append(metric) }
+            })
+        }
+        // store.exhaustivity = .off: 이 테스트는 child row의 표시 상태가 아니라 parent metric 상관관계만 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.row(.element(id: .openai, action: .connectButtonTapped)))
+        await store.send(.row(.element(id: .anthropic, action: .retryButtonTapped)))
+        let openAIOperationID = store.state.pendingConnectionOperationIDs[.openai]
+        let anthropicOperationID = store.state.pendingConnectionOperationIDs[.anthropic]
+
+        await store.send(.row(.element(id: .anthropic, action: .verificationFailed(.networkUnavailable))))
+        await store.send(.row(.element(id: .anthropic, action: .verificationFailed(.networkUnavailable))))
+        await store.send(.row(.element(id: .chatgptCodex, action: .browserLoginFailed(.timeout))))
+
+        XCTAssertEqual(metrics.value.count, 1)
+        XCTAssertEqual(store.state.pendingConnectionOperationIDs[.openai], openAIOperationID)
+        XCTAssertNil(store.state.pendingConnectionOperationIDs[.anthropic])
+
+        await store.send(.row(.element(id: .openai, action: .browserLoginFailed(.timeout))))
+
+        XCTAssertEqual(metrics.value.count, 2)
+        guard case let .aiProviderWithKind(firstID, firstProvider, .failure) = metrics.value[0],
+              case let .aiProviderWithKind(secondID, secondProvider, .failure) = metrics.value[1]
+        else {
+            return XCTFail("Expected matching provider terminal metrics")
+        }
+        XCTAssertEqual(firstID, anthropicOperationID)
+        XCTAssertEqual(firstProvider, .init(provider: .anthropic))
+        XCTAssertEqual(secondID, openAIOperationID)
+        XCTAssertEqual(secondProvider, .init(provider: .openai))
+        XCTAssertNotEqual(firstID, secondID)
+    }
+
     // MARK: - ONB-004-skip_ai_provider_setup_during_onboarding
+
+    /// ONB-004-skip_ai_provider_setup_during_onboarding: child action은 skip metric을 선기록하지 않는다.
+    /// progress persistence 결과를 모르는 child reducer가 terminal metric을 기록하지 않는지 검증한다.
+    /// - 검증 내용: child `.setUpLaterTapped` 처리 직후 metric 배열이 비어 있다.
+    /// - 사전 조건: metric recorder가 주입된 AI Provider Setup child store다.
+    /// - 기대 결과: persistence를 소유한 parent만 metric 기록 여부를 결정한다.
+    func testSetUpLaterDefersMetricToPersistingParent() async {
+        let metrics = LockIsolated<[OnboardingProductMetric]>([])
+        let store = TestStore(initialState: AiProviderSetupState()) {
+            AiProviderSetupFeature()
+        } withDependencies: {
+            $0.onboardingProductMetricsClient = OnboardingProductMetricsClient(record: { metric in
+                metrics.withValue { $0.append(metric) }
+            })
+        }
+
+        await store.send(.setUpLaterTapped)
+
+        XCTAssertTrue(metrics.value.isEmpty)
+    }
+
+    /// ONB-004-skip_ai_provider_setup_during_onboarding: Set up later는 진행 중 provider flow를 취소한다.
+    /// skip 저장 성공과 동시에 child 연결 effect를 끝내고 늦은 terminal이 상태나 metric을 바꾸지 않는지 검증한다.
+    /// - 검증 내용: pending ID 제거, row cancel action, stream cancellation, skip metric 1회, late terminal 무시.
+    /// - 사전 조건: ChatGPT Codex browser login stream이 완료되지 않은 채 progress save가 성공한다.
+    /// - 기대 결과: row는 idle, setup은 skipped이며 metric은 persisted skip 하나만 남는다.
+    func testSetUpLaterCancelsInFlightConnectionAndIgnoresLateTerminal() async {
+        let provider = AiProvider.chatgptCodex
+        let continuation = LockIsolated<AsyncThrowingStream<BrowserLoginState, Error>.Continuation?>(nil)
+        let connectionCancelled = LockIsolated(false)
+        let metrics = LockIsolated<[OnboardingProductMetric]>([])
+        var initialState = OnboardingFeature.State()
+        initialState.currentStep = .aiProviderSetup
+
+        let store = TestStore(initialState: initialState) {
+            OnboardingFeature()
+        } withDependencies: {
+            $0.codexNativeAuthClient.startBrowserLogin = {
+                AsyncThrowingStream { streamContinuation in
+                    continuation.setValue(streamContinuation)
+                    streamContinuation.onTermination = { termination in
+                        if case .cancelled = termination {
+                            connectionCancelled.setValue(true)
+                        }
+                    }
+                    streamContinuation.yield(.inProgress)
+                }
+            }
+            $0.onboardingProgressClient = ProgressClient.noOp
+            $0.onboardingProductMetricsClient = OnboardingProductMetricsClient(record: { metric in
+                metrics.withValue { $0.append(metric) }
+            })
+        }
+
+        await store.send(.aiProviderSetup(.row(.element(id: provider, action: .connectButtonTapped))))
+        await store.receive(\.aiProviderSetup.row[id: provider].startBrowserLogin) { state in
+            state.aiProviderSetup.rows[id: provider]?.connectionState = .connectInProgress
+            state.aiProviderSetup.rows[id: provider]?.flowState = .browserLoginInProgress
+            state.aiProviderSetup.status = .pending
+        }
+        await Self.waitUntil { continuation.value != nil }
+
+        await store.send(.aiProviderSetup(.setUpLaterTapped)) { state in
+            state.aiProviderSetup.choice = .setUpLater
+            state.aiProviderSetup.status = .skipped
+        }
+        await store.receive(\.aiProviderSetup.row[id: provider].cancelButtonTapped) { state in
+            state.aiProviderSetup.rows[id: provider]?.connectionState = .notVerified
+            state.aiProviderSetup.rows[id: provider]?.flowState = .idle
+        }
+        await Self.waitUntil { connectionCancelled.value }
+
+        continuation.value?.yield(.failed(.timeout))
+        continuation.value?.finish()
+        await store.finish()
+
+        XCTAssertTrue(store.state.aiProviderSetup.pendingConnectionOperationIDs.isEmpty)
+        XCTAssertEqual(store.state.aiProviderSetup.choice, .setUpLater)
+        XCTAssertEqual(store.state.aiProviderSetup.status, .skipped)
+        XCTAssertEqual(metrics.value.count, 1)
+        guard case .aiProvider(_, .skipped) = metrics.value[0] else {
+            return XCTFail("Expected one persisted skip metric")
+        }
+    }
+
+    /// ONB-004-skip_ai_provider_setup_during_onboarding: stale bootstrap과 terminal은 skip을 덮지 않는다.
+    /// skip 확정 뒤 도착한 connected 상태가 onboarding choice와 metric ownership을 바꾸지 않는지 검증한다.
+    /// - 검증 내용: late bootstrap, unmatched connection response 이후 `setUpLater/skipped`와 빈 metrics.
+    /// - 사전 조건: setup은 이미 skipped이고 provider correlation은 없다.
+    /// - 기대 결과: row 결과와 무관하게 skipped 상태가 유지되고 provider terminal metric이 없다.
+    func testLateBootstrapAndConnectionTerminalCannotOverrideSetUpLater() async {
+        let provider = AiProvider.openai
+        let emptyFile = AIConnectionsFile.empty(updatedAtMs: 1)
+        let metrics = LockIsolated<[OnboardingProductMetric]>([])
+        var initialState = AiProviderSetupState()
+        initialState.bootstrapPhase = .loading
+        initialState.choice = .setUpLater
+        initialState.status = .skipped
+
+        let store = TestStore(initialState: initialState) {
+            AiProviderSetupFeature()
+        } withDependencies: {
+            $0.aiConnectionsFileClient.load = { emptyFile }
+            $0.onboardingProductMetricsClient = OnboardingProductMetricsClient(record: { metric in
+                metrics.withValue { $0.append(metric) }
+            })
+        }
+
+        await store.send(.bootstrapCompleted([
+            AIProviderBootstrapResult(provider: provider, connectionState: .connected),
+        ])) { state in
+            state.bootstrapPhase = .loaded
+            state.rows[id: provider]?.connectionState = .connected
+        }
+
+        await store.send(.row(.element(
+            id: provider,
+            action: .connectionResponse(AiProviderConnectionResult(
+                provider: provider,
+                state: .connected,
+                reason: .none,
+                updatedFile: emptyFile,
+            )),
+        )))
+
+        await store.receive(\.bootstrapCompleted) { state in
+            state.rows[id: provider]?.connectionState = .notVerified
+        }
+
+        XCTAssertEqual(store.state.choice, .setUpLater)
+        XCTAssertEqual(store.state.status, .skipped)
+        XCTAssertTrue(metrics.value.isEmpty)
+        await store.finish()
+    }
 
     /// ONB-004-skip_ai_provider_setup_during_onboarding: Set up later 저장 성공 후 skipped를 확정한다.
     /// 사용자가 provider 연결 없이 나중에 설정하기를 선택할 때 progress snapshot 저장 성공 이후에만 step을 완료 처리하는지 검증한다.
@@ -388,6 +606,7 @@ final class ONB004ConfigureAIProviderDuringOnboardingTests: XCTestCase {
     /// - 기대 결과: `choice=.setUpLater`, `status=.skipped`, `canGoNext=true`이고 저장 snapshot도 skipped 상태다.
     func testSetUpLaterConfirmsSkippedAfterProgressSaveSucceeds() async {
         let saveRecorder = LockIsolated<OnboardingProgressSnapshot?>(nil)
+        let metrics = LockIsolated<[OnboardingProductMetric]>([])
         var initialState = OnboardingFeature.State()
         initialState.currentStep = .aiProviderSetup
 
@@ -395,6 +614,9 @@ final class ONB004ConfigureAIProviderDuringOnboardingTests: XCTestCase {
             OnboardingFeature()
         } withDependencies: {
             $0.onboardingProgressClient = ProgressClient.recording(saveRecorder: saveRecorder)
+            $0.onboardingProductMetricsClient = OnboardingProductMetricsClient(record: { metric in
+                metrics.withValue { $0.append(metric) }
+            })
         }
 
         await store.send(.aiProviderSetup(.setUpLaterTapped)) { state in
@@ -409,6 +631,10 @@ final class ONB004ConfigureAIProviderDuringOnboardingTests: XCTestCase {
         XCTAssertEqual(saved?.stepState.aiProviderSetupChoice, .setUpLater)
         XCTAssertEqual(saved?.stepState.aiProviderSetupStatus, .skipped)
         XCTAssertTrue(store.state.canGoNext)
+        XCTAssertEqual(metrics.value.count, 1)
+        guard case .aiProvider(_, .skipped) = metrics.value[0] else {
+            return XCTFail("Expected one persisted skip metric")
+        }
 
         await store.finish()
     }
@@ -419,6 +645,7 @@ final class ONB004ConfigureAIProviderDuringOnboardingTests: XCTestCase {
     /// - 사전 조건: 현재 step은 AI Provider Setup이고 progress save dependency는 `.failure`를 반환한다.
     /// - 기대 결과: skipped가 저장/확정되지 않고 Next disabled message가 유지된다.
     func testSetUpLaterSaveFailureDoesNotConfirmSkipped() async {
+        let metrics = LockIsolated<[OnboardingProductMetric]>([])
         var initialState = OnboardingFeature.State()
         initialState.currentStep = .aiProviderSetup
 
@@ -430,6 +657,9 @@ final class ONB004ConfigureAIProviderDuringOnboardingTests: XCTestCase {
                 save: { _ in .failure },
                 reset: {},
             )
+            $0.onboardingProductMetricsClient = OnboardingProductMetricsClient(record: { metric in
+                metrics.withValue { $0.append(metric) }
+            })
         }
 
         await store.send(.aiProviderSetup(.setUpLaterTapped)) { state in
@@ -443,6 +673,7 @@ final class ONB004ConfigureAIProviderDuringOnboardingTests: XCTestCase {
             store.state.aiProviderSetup.nextDisabledMessage,
             "Connect a provider or choose Set up later to continue.",
         )
+        XCTAssertTrue(metrics.value.isEmpty)
 
         await store.finish()
     }
@@ -453,20 +684,20 @@ final class ONB004ConfigureAIProviderDuringOnboardingTests: XCTestCase {
     // - 사전 조건: prior required steps는 완료됐고 progress snapshot은 AI Provider Setup skipped 상태를 저장하고 있다.
     // - 기대 결과: current step은 AI Provider Setup이며 `choice=.setUpLater`, `status=.skipped`, `canGoNext=true` 상태다.
 
-    /// ONB-004-skip_ai_provider_setup_during_onboarding: connected provider가 Set up later보다 우선한다.
-    /// 사용자가 이전에 Set up later를 선택했더라도 SET-007 연결 결과가 도착하면 onboarding step이 연결 완료를 우선하는지 검증한다.
-    /// - 검증 내용: shared row `connectionResponse`와 bootstrap/reverification 결과가 `providerConnected/complete` 상태를 유지한다.
-    /// - 사전 조건: setup choice는 `setUpLater`이고 OpenAI row는 API key 연결 진행 중이다.
-    /// - 기대 결과: 연결 성공 직후부터 `choice=.providerConnected`, `status=.complete`가 되고 skipped 상태로 되돌아가지 않는다.
-    func testConnectedProviderTakesPriorityOverSetUpLaterChoice() async {
+    /// ONB-004-skip_ai_provider_setup_during_onboarding: 명시적 connect는 이전 Set up later 선택을 해제한다.
+    /// 사용자가 skip 이후 다시 연결을 시작하면 새 correlation으로 정상 completion 경로에 진입하는지 검증한다.
+    /// - 검증 내용: connect start의 choice reset과 fresh ID, terminal metric, providerConnected completion.
+    /// - 사전 조건: setup choice는 `setUpLater`이고 OpenAI row는 retry 가능한 상태다.
+    /// - 기대 결과: start 직후 `choice=.none`, 성공 후 `providerConnected/complete`가 된다.
+    func testExplicitConnectAfterSetUpLaterResetsChoiceAndCanComplete() async throws {
         let provider = AiProvider.openai
         let updatedFile = AIConnectionsFile.connectedAPIKeyFixture(provider: provider)
+        let metrics = LockIsolated<[OnboardingProductMetric]>([])
         var initialState = AiProviderSetupState()
         initialState.choice = .setUpLater
         initialState.status = .skipped
         initialState.bootstrapPhase = .loaded
-        initialState.rows[id: provider]?.connectionState = .connectInProgress
-        initialState.rows[id: provider]?.flowState = .connecting
+        initialState.rows[id: provider]?.connectionState = .connectionFailed
 
         let store = TestStore(initialState: initialState) {
             AiProviderSetupFeature()
@@ -474,7 +705,16 @@ final class ONB004ConfigureAIProviderDuringOnboardingTests: XCTestCase {
             $0.aiConnectionsFileClient.load = { updatedFile }
             $0.aiConnectionsFileClient.save = { .success($0) }
             $0.aiProviderVerificationClient.verify = { _, _ in .valid }
+            $0.onboardingProductMetricsClient = OnboardingProductMetricsClient(record: { metric in
+                metrics.withValue { $0.append(metric) }
+            })
         }
+
+        await store.send(.row(.element(id: provider, action: .connectButtonTapped))) { state in
+            state.choice = .none
+            state.status = .blocked
+        }
+        let operationID = try XCTUnwrap(store.state.pendingConnectionOperationIDs[provider])
 
         await store.send(.row(.element(
             id: provider,
@@ -503,6 +743,13 @@ final class ONB004ConfigureAIProviderDuringOnboardingTests: XCTestCase {
             state.choice = .providerConnected
             state.status = .complete
         }
+
+        XCTAssertEqual(metrics.value.count, 1)
+        guard case let .aiProviderWithKind(metricID, metricProvider, .success) = metrics.value[0] else {
+            return XCTFail("Expected one successful provider metric")
+        }
+        XCTAssertEqual(metricID, operationID)
+        XCTAssertEqual(metricProvider, .init(provider: provider))
 
         await store.finish()
     }

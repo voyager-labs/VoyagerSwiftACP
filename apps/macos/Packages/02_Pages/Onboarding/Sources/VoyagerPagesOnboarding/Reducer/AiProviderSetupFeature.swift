@@ -47,13 +47,13 @@ struct AiProviderSetupFeature {
                     )
 
                 case .setUpLaterTapped:
-                    let operationID = UUID()
-                    state.pendingConnectionOperationID = nil
-                    metricsClient.record(.aiProvider(
-                        operationID: operationID,
-                        result: .skipped,
-                    ))
-                    return .none
+                    let providers = Array(state.pendingConnectionOperationIDs.keys)
+                    state.pendingConnectionOperationIDs.removeAll()
+                    var effects: [Effect<Action>] = providers.map { provider in
+                        .send(.row(.element(id: provider, action: .cancelButtonTapped)))
+                    }
+                    effects.append(.cancel(id: CancelID.bootstrap))
+                    return .merge(effects)
 
                 case let .bootstrapCompleted(results):
                     Self.applyBootstrapResults(results, to: &state)
@@ -154,24 +154,25 @@ struct AiProviderSetupFeature {
         case let .connectionResponse(response):
             result = response.state == .connected ? .success : .failure
         case .browserLoginFailed(.cancelled), .deviceAuthFailed(.cancelled), .cancelButtonTapped:
-            result = nil
+            state.pendingConnectionOperationIDs.removeValue(forKey: provider)
+            return
         case .browserLoginFailed, .deviceAuthFailed, .verificationFailed:
             result = .failure
         default:
-            if case .connectButtonTapped = action, state.pendingConnectionOperationID == nil {
-                state.pendingConnectionOperationID = UUID()
-            } else if case .submitAPIKey = action, state.pendingConnectionOperationID == nil {
-                state.pendingConnectionOperationID = UUID()
-            } else if case .retryButtonTapped = action, state.pendingConnectionOperationID == nil {
-                state.pendingConnectionOperationID = UUID()
+            guard state.pendingConnectionOperationIDs[provider] == nil else { return }
+            switch action {
+            case .connectButtonTapped, .submitAPIKey, .retryButtonTapped:
+                state.choice = .none
+                state.pendingConnectionOperationIDs[provider] = UUID()
+            default:
+                break
             }
             return
         }
 
-        guard let operationID = state.pendingConnectionOperationID,
-              let result
+        guard let result,
+              let operationID = state.pendingConnectionOperationIDs.removeValue(forKey: provider)
         else { return }
-        state.pendingConnectionOperationID = nil
         metricsClient.record(.aiProviderWithKind(
             operationID: operationID,
             provider: .init(provider: provider),
