@@ -79,8 +79,8 @@ func propertyTypeValueKinds(valueType PropertyType) ([]PropertyValueKind, error)
 }
 
 // validateScalarContent는 스칼라 값 내용이 종류별 형식을 만족하는지 검사한다.
-// 빈 문자열은 ErrAssignmentEmptyScalar, 형식 위반은 ErrInvalidAssignmentScalar로
-// 구분해 실패 닫기한다.
+// text는 빈 문자열도 wire 계약상 유효하다. 형식 위반은
+// ErrInvalidAssignmentScalar로 실패 닫기한다.
 func validateScalarContent(kind PropertyValueKind, value AssignmentValue) error {
 	switch kind {
 	case PropertyValueKindBoolean:
@@ -112,10 +112,9 @@ func validateScalarContent(kind PropertyValueKind, value AssignmentValue) error 
 		}
 		return nil
 	case PropertyValueKindText:
-		if len(*value.Text) == 0 {
-			return ErrAssignmentEmptyScalar
-		}
-		if !validUTF8Bytes(*value.Text, 1, maximumPropertyTextBytes) {
+		// 빈 text는 wire 계약(validUTF8Bytes 0..4096)이 허용하는 유효 값이다 —
+		// 빈 멤버를 포함한 text+many execute가 런타임 매핑에서 보존된다.
+		if !validUTF8Bytes(*value.Text, 0, maximumPropertyTextBytes) {
 			return ErrInvalidAssignmentScalar
 		}
 		return nil

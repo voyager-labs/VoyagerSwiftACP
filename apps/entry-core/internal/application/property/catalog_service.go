@@ -209,21 +209,9 @@ func (service *CatalogService) ListDefinitionsPage(
 	if err := ValidateWorkspaceContext(workspace); err != nil {
 		return nil, nil, false, err
 	}
-	definitions, next, hasMore, err := service.store.DefinitionsPage(ctx, workspace, activeOnly, idFilter, after, limit)
+	views, next, hasMore, err := service.store.DefinitionsPageSnapshot(ctx, activeOnly, idFilter, after, limit)
 	if err != nil {
 		return nil, nil, false, err
-	}
-	propertyIDs := make([]domainentry.PropertyID, 0, len(definitions))
-	for _, definition := range definitions {
-		propertyIDs = append(propertyIDs, definition.PropertyID)
-	}
-	optionsByProperty, err := service.store.OptionsForDefinitions(ctx, workspace, propertyIDs)
-	if err != nil {
-		return nil, nil, false, err
-	}
-	views := make([]DefinitionView, 0, len(definitions))
-	for _, definition := range definitions {
-		views = append(views, DefinitionView{Definition: definition, Options: optionsByProperty[definition.PropertyID]})
 	}
 	return views, next, hasMore, nil
 }

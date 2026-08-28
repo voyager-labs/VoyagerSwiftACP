@@ -284,6 +284,36 @@ func (store *memCatalogStore) DefinitionsPage(
 	return filtered, next, hasMore, nil
 }
 
+func (store *memCatalogStore) DefinitionsPageSnapshot(
+	ctx context.Context,
+	activeOnly bool,
+	idFilter []domainentry.PropertyID,
+	after *domainentry.PropertyID,
+	limit int,
+) ([]DefinitionView, *domainentry.PropertyID, bool, error) {
+	definitions, next, hasMore, err := store.DefinitionsPage(ctx, domainentry.WorkspaceContext{}, activeOnly, idFilter, after, limit)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	optionsByProperty, err := store.OptionsForDefinitions(ctx, domainentry.WorkspaceContext{}, propertyIDsOf(definitions))
+	if err != nil {
+		return nil, nil, false, err
+	}
+	views := make([]DefinitionView, 0, len(definitions))
+	for _, definition := range definitions {
+		views = append(views, DefinitionView{Definition: definition, Options: optionsByProperty[definition.PropertyID]})
+	}
+	return views, next, hasMore, nil
+}
+
+func propertyIDsOf(definitions []domainentry.WorkspacePropertyDefinition) []domainentry.PropertyID {
+	ids := make([]domainentry.PropertyID, 0, len(definitions))
+	for _, definition := range definitions {
+		ids = append(ids, definition.PropertyID)
+	}
+	return ids
+}
+
 func (store *memCatalogStore) OptionsForDefinitions(
 	ctx context.Context,
 	workspace domainentry.WorkspaceContext,

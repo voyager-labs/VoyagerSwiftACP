@@ -325,3 +325,47 @@ func (s *PropertyCatalogStore) OptionsForDefinitions(
 	}
 	return result, nil
 }
+
+
+// DefinitionsPageSnapshot은 definition.list의 단일 읽기 스냅샷 결합 조회다.
+// 정의 페이지와 해당 옵션을 하나의 read 트랜잭션 안에서 읽어 조립한다 — 분리
+// 조회 사이에 option mutation이 커밋되면 새 label/order/state가 이전 definition
+// revision과 함께 응답에 실려 클라이언트 CAS가 즉시 conflict가 된다.
+// tx 스코프 ctx로 호출되면 기존 트랜잭션에 참여한다.
+func (s *PropertyCatalogStore) DefinitionsPageSnapshot(
+	ctx context.Context,
+	activeOnly bool,
+	idFilter []domainentry.PropertyID,
+	after *domainentry.PropertyID,
+	limit int,
+) ([]applicationproperty.DefinitionView, *domainentry.PropertyID, bool, error) {
+	var views []applicationproperty.DefinitionView
+	var next *domainentry.PropertyID
+	var hasMore bool
+	wrapErr := s.store.WithinTx(ctx, func(tx *gorm.DB) error {
+		// tx 스코프 ctx로 기존 조회 메서드들이 같은 트랜잭션에서 읽게 한다.
+		txScopeCtx := s.store.WithTxScope(ctx, tx)
+		definitions, pageNext, pageHasMore, err := s.DefinitionsPage(txScopeCtx, s.workspace, activeOnly, idFilter, after, limit)
+		if err != nil {
+			return err
+		}
+		propertyIDs := make([]domainentry.PropertyID, 0, len(definitions))
+		for _, definition := range definitions {
+			propertyIDs = append(propertyIDs, definition.PropertyID)
+		}
+		optionsByProperty, err := s.OptionsForDefinitions(txScopeCtx, s.workspace, propertyIDs)
+		if err != nil {
+			return err
+		}
+		views = make([]applicationproperty.DefinitionView, 0, len(definitions))
+		for _, definition := range definitions {
+			views = append(views, applicationproperty.DefinitionView{Definition: definition, Options: optionsByProperty[definition.PropertyID]})
+		}
+		next, hasMore = pageNext, pageHasMore
+		return nil
+	})
+	if wrapErr != nil {
+		return nil, nil, false, wrapErr
+	}
+	return views, next, hasMore, nil
+}

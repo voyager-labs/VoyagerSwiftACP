@@ -74,6 +74,10 @@ type CatalogRepository interface {
 	DefinitionsPage(ctx context.Context, workspace domainentry.WorkspaceContext, activeOnly bool, idFilter []domainentry.PropertyID, after *domainentry.PropertyID, limit int) ([]domainentry.WorkspacePropertyDefinition, *domainentry.PropertyID, bool, error)
 	// OptionsForDefinitions은 페이지 정의들의 선택지를 단일 IN 쿼리로 읽는다.
 	OptionsForDefinitions(ctx context.Context, workspace domainentry.WorkspaceContext, propertyIDs []domainentry.PropertyID) (map[domainentry.PropertyID][]domainentry.PropertyOption, error)
+	// DefinitionsPageSnapshot은 정의 페이지와 해당 옵션을 단일 read 스냅샷으로
+	// 읽어 조립한다. 분리 조회 사이의 option mutation 커밋이 이전 definition
+	// revision과 새 options를 섞는 race를 차단한다.
+	DefinitionsPageSnapshot(ctx context.Context, activeOnly bool, idFilter []domainentry.PropertyID, after *domainentry.PropertyID, limit int) ([]DefinitionView, *domainentry.PropertyID, bool, error)
 	Option(ctx context.Context, workspace domainentry.WorkspaceContext, optionID domainentry.PropertyOptionID) (domainentry.PropertyOption, error)
 	Options(ctx context.Context, workspace domainentry.WorkspaceContext, propertyID domainentry.PropertyID) ([]domainentry.PropertyOption, error)
 	PutDefinition(ctx context.Context, definition domainentry.WorkspacePropertyDefinition) error

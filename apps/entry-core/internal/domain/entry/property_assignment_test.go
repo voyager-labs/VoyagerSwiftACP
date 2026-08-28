@@ -224,14 +224,15 @@ func TestEntryPropertyAssignmentRejectsFailClosed(t *testing.T) {
 			wantErr:  ErrAssignmentValueTypeMismatch,
 		},
 		{
-			name: "empty_scalar_text",
+			// 빈 text는 wire 계약상 유효한 값이다(빈 멤버 보존 계약).
+			name: "empty_scalar_text_is_valid",
 			fact: func() EntryPropertyAssignment {
 				fact := base()
 				fact.Scalar = &AssignmentValue{Text: &emptyText}
 				return fact
 			}(),
 			contract: textContract(),
-			wantErr:  ErrAssignmentEmptyScalar,
+			wantErr:  nil,
 		},
 		{
 			name: "inactive_selected_option",
@@ -446,12 +447,13 @@ func TestManySupportsScalarTypes(t *testing.T) {
 		t.Fatalf("kind mismatch = %v, want ErrAssignmentValueTypeMismatch", err)
 	}
 
-	badFormat := fact
-	badFormat.Many = []OrderedAssignmentValue{
+	// 빈 멤버도 text many에서는 유효하다(wire 빈 멤버 보존 계약).
+	emptyMemberFact := fact
+	emptyMemberFact.Many = []OrderedAssignmentValue{
 		{Ordinal: 0, Value: AssignmentValue{Text: &emptyMemberText}},
 	}
-	if _, err := NewEntryPropertyAssignment(badFormat, contract); !errors.Is(err, ErrAssignmentEmptyScalar) {
-		t.Fatalf("empty member = %v, want ErrAssignmentEmptyScalar", err)
+	if _, err := NewEntryPropertyAssignment(emptyMemberFact, contract); err != nil {
+		t.Fatalf("empty text member = %v, want accepted", err)
 	}
 
 	// ordinal 연속 규칙은 유형과 무관하게 유지된다.
