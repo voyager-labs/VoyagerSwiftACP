@@ -326,7 +326,6 @@ func (s *PropertyCatalogStore) OptionsForDefinitions(
 	return result, nil
 }
 
-
 // DefinitionsPageSnapshot은 definition.list의 단일 읽기 스냅샷 결합 조회다.
 // 정의 페이지와 해당 옵션을 하나의 read 트랜잭션 안에서 읽어 조립한다 — 분리
 // 조회 사이에 option mutation이 커밋되면 새 label/order/state가 이전 definition
