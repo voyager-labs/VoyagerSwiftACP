@@ -200,6 +200,25 @@ func TestExecuteRejectsMinimalListEnvelopeOverflow(t *testing.T) {
 	mustEqualFactSnapshot(t, before, harness.facts.snapshot())
 }
 
+// TestEachAssignmentMinimalPageFitsIgnoresCrossEntryAggregation은 assignment 목록
+// API가 단일 local-path 대상과 requested_property_ids로 한 행만 조회할 수 있으므로,
+// 서로 다른 entry를 바꾸는 execute의 rows를 하나의 가상 목록 응답으로 합성해
+// 거절하지 않음을 잠근다. 각 행의 최소 페이지(ID 필터 page_size 1, has_more false)가
+// 봉투에 들어가면 통과하고, 한 행이라도 넘으면 거절한다.
+func TestEachAssignmentMinimalPageFitsIgnoresCrossEntryAggregation(t *testing.T) {
+	propertyID := mustUnknownPropertyID(t)
+	entryID := mustResolvedTargetFor(t, "parity.txt").EntryRef.EntryID
+	row := func(size int) executeAssignmentWire {
+		return executeAssignmentWire{PropertyID: propertyID.String(), EntryID: entryID, ValueType: "text", Cardinality: "many", State: "value", Revision: 1, Value: []any{strings.Repeat("x", size)}}
+	}
+	if _, ok := encodedAssignmentMinimalPagesFit([]executeAssignmentWire{row(40000), row(40000)}); !ok {
+		t.Fatal("each row's minimal page fits; cross-entry aggregation must not reject")
+	}
+	if _, ok := encodedAssignmentMinimalPagesFit([]executeAssignmentWire{row(70000)}); ok {
+		t.Fatal("a row whose minimal page exceeds the envelope must not fit")
+	}
+}
+
 // TestExecuteRejectsStaleMiddleTargetWithoutWriting은 중간 대상의 CAS 불일치가
 // 전체 배치를 거절하는 증거다.
 func TestExecuteRejectsStaleMiddleTargetWithoutWriting(t *testing.T) {
@@ -285,8 +304,8 @@ func TestEncodedExecuteResponseBytesMatchProtocolEnvelope(t *testing.T) {
 		t.Fatalf("parity mismatch: got (%d,%v), want (%d,%v)", gotBytes, gotOK, wantBytes, wantOK)
 	}
 	// 최소 assignment.list 페이지 봉투도 같은 방식으로 protocol과 바이트 parity를
-	// 잠는다(단일 행, next_page_token 생략, has_more false).
-	gotListBytes, gotListOK := encodedAssignmentListResponseFits(rows)
+	// 잠근다(단일 행, next_page_token 생략, has_more false).
+	gotListBytes, gotListOK := encodedAssignmentMinimalPagesFit(rows)
 	wantListResult := schema.PropertyAssignmentListResult{Assignments: wantResult.Assignments, HasMore: false}
 	wantListBytes, wantListOK := schema.EncodedSuccessBytes(listableProbeRequestID, wantListResult)
 	if gotListOK != wantListOK || gotListBytes != wantListBytes {

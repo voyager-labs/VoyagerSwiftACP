@@ -205,7 +205,7 @@ func (service *ChangeService) Execute(
 		if _, ok := encodedExecuteResponseBytes(requestID, rows); !ok {
 			return ErrScopeTooLarge
 		}
-		if _, ok := encodedAssignmentListResponseFits(rows); !ok {
+		if _, ok := encodedAssignmentMinimalPagesFit(rows); !ok {
 			return ErrScopeTooLarge
 		}
 		if err := service.facts.SaveAssignments(txCtx, workspace, stagedFacts(staged)); err != nil {

@@ -67,19 +67,32 @@ type assignmentListResultEnvelope struct {
 	HasMore       bool                    `json:"has_more"`
 }
 
-// encodedAssignmentListResponseFits는 같은 read-back 행의 최소 assignment.list
-// 페이지가 최대 길이 sentinel ID(listableProbeRequestID) 기준으로 봉투에 들어가는지
-// 검사한다. 이후 조회는 임의의 유효한 요청 ID로 올 수 있고, 목록 봉투는 execute
-// 응답보다 has_more 필드만큼 크므로 execute 응답 검사만으로는 불충분하다.
-func encodedAssignmentListResponseFits(rows []executeAssignmentWire) (int, bool) {
-	if rows == nil {
-		rows = []executeAssignmentWire{}
+// encodedAssignmentMinimalPagesFit는 각 read-back 행의 최소 assignment.list
+// 페이지(단일 행, next_page_token 생략, has_more false)가 최대 길이 sentinel
+// ID(listableProbeRequestID) 기준으로 봉투에 들어가는지 검사한다. 이후 조회는
+// 임의의 유효한 요청 ID로 올 수 있고, 목록 봉투는 execute 응답보다 has_more
+// 필드만큼 크므로 execute 응답 검사만으로는 불충분하다. 목록 API는 단일
+// local-path 대상과 requested_property_ids로 한 행만 조회하므로 행별 최소
+// 페이지가 기준이고, rows 전체를 하나의 응답으로 합성해 측정하지 않는다.
+func encodedAssignmentMinimalPagesFit(rows []executeAssignmentWire) (int, bool) {
+	rows = append([]executeAssignmentWire(nil), rows...)
+	if len(rows) == 0 {
+		return 0, true
 	}
-	encoded, err := json.Marshal(assignmentListSuccessEnvelope{RequestID: listableProbeRequestID, OK: true, Result: assignmentListResultEnvelope{Assignments: rows, HasMore: false}})
-	if err != nil {
-		return 0, false
+	largest := 0
+	for _, row := range rows {
+		encoded, err := json.Marshal(assignmentListSuccessEnvelope{RequestID: listableProbeRequestID, OK: true, Result: assignmentListResultEnvelope{Assignments: []executeAssignmentWire{row}, HasMore: false}})
+		if err != nil {
+			return 0, false
+		}
+		if len(encoded) > schema.MaxWireBytes {
+			return len(encoded), false
+		}
+		if len(encoded) > largest {
+			largest = len(encoded)
+		}
 	}
-	return len(encoded), len(encoded) <= schema.MaxWireBytes
+	return largest, true
 }
 
 // projectedReadBack은 아직 쓰지 않은 staged fact로 커밋 후 read-back 행을
