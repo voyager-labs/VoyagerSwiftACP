@@ -2,129 +2,219 @@ import AppKit
 import ComposableArchitecture
 import HotSwiftUI
 import SwiftUI
+import UniformTypeIdentifiers
 import VoyagerEntitiesTag
 import VoyagerShared
 
 struct SidebarView: View {
-    let store: StoreOf<FileManagerSidebarFeature>
+    let sidebarStore: StoreOf<FileManagerSidebarFeature>
+    let contentTabStore: StoreOf<ContentTabFeature>
+    let interactionStore: Store<ContentTabRowInteractionSurface, FileManagerSidebarAction>
     let workspaceClient: WorkspaceClient
 
     @Environment(\.colorScheme)
     private var colorScheme
 
-    @State
-    private var contentTabHoveredItemID: ContentTabID?
+    @State private var contentTabHoveredItemID: ContentTabID?
 
-    @State
-    private var fixedLocationHoveredItemID: FileManagerFixedLocationItem.ID?
+    @State private var fixedLocationHoveredItemID: FileManagerFixedLocationItem.ID?
 
-    @State
-    private var isNewTabHovered = false
+    @State private var isNewTabHovered = false
+
+    @State private var sidebarEntryDropTarget: FileManagerSidebarEntryDropTarget?
+
+    @State private var topNavigationReorderDragScopeID = FileManagerTopNavigationReorderDragScopeID(
+        boundaryOwner: .topNavigation,
+    )
+    @State private var unpinnedContentTabReorderDragScopeID = FileManagerTopNavigationReorderDragScopeID(
+        boundaryOwner: .unpinnedContentTabs,
+    )
+    @State private var reorderSessionStore = FileManagerTopNavigationReorderLocalSessionStore.shared
+    @State private var activeTopNavigationReorderBoundaryID: Int?
+    @State private var activeUnpinnedReorderBoundaryID: Int?
+
+    @State private var isContentTabsDropTargeted = false
 
     var body: some View {
         VStack(spacing: 0) {
             Spacer()
                 .frame(height: windowControlsTopInset)
 
-            if store.shouldShowFixedLocationSection {
+            if sidebarStore.shouldShowFixedLocationSection {
                 fixedLocationsGrid
             }
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    if !store.contentTabSidebarItems.isEmpty {
-                        contentTabRows(pinnedContentTabSidebarItems)
-
-                        if !pinnedContentTabSidebarItems.isEmpty,
-                           !unpinnedContentTabSidebarItems.isEmpty
-                        {
-                            contentTabSectionDivider
-                        }
-
-                        contentTabRows(unpinnedContentTabSidebarItems)
-
-                        Spacer()
-                            .frame(height: 4)
-
-                        newContentTabRow
-
-                        Spacer()
-                            .frame(height: 8)
+            contentTabsViewport
+                .contextMenu {
+                    if !sidebarStore.shouldShowFixedLocationSection,
+                       !sidebarStore.allFixedLocationItems.isEmpty
+                    {
+                        fixedLocationsVisibilityMenu
                     }
-
-                    Spacer()
                 }
-            }
-            .clipped()
-            .contextMenu {
-                if !store.shouldShowFixedLocationSection,
-                   !store.allFixedLocationItems.isEmpty
-                {
-                    fixedLocationsVisibilityMenu
-                }
-            }
         }
         .background(Color.clear)
-        .navigationSplitViewColumnWidth(ideal: store.sidebarWidth)
+        .navigationSplitViewColumnWidth(ideal: sidebarStore.sidebarWidth)
+        .alert(
+            "Sidebar Arrangement",
+            isPresented: Binding(
+                get: { sidebarStore.topNavigationArrangementPresentation != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        sidebarStore.send(.view(.dismissTopNavigationPresentation))
+                    }
+                },
+            ),
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(sidebarStore.topNavigationArrangementPresentation?.message ?? "")
+        }
+        .onDisappear {
+            activeTopNavigationReorderBoundaryID = nil
+            activeUnpinnedReorderBoundaryID = nil
+            // shared session store의 broad clear는 다른 창/최신 drag token을 덮어쓰므로 하지 않는다.
+            // session entry는 drag source의 terminal(cleanupOwnedToken) 또는 consume/TTL이 정리한다.
+            sidebarStore.send(.view(.teardownContentTabDragSource))
+        }
     }
 
-    private var pinnedContentTabSidebarItems: [ContentTabProjection.ContentTabSidebarItem] {
-        store.contentTabSidebarItems.filter(\.isPinned)
-    }
-
-    private var unpinnedContentTabSidebarItems: [ContentTabProjection.ContentTabSidebarItem] {
-        store.contentTabSidebarItems.filter { !$0.isPinned }
-    }
-
-    private var fixedLocationsGrid: some View {
+    private var contentTabsViewport: some View {
         GeometryReader { proxy in
-            let metrics = fixedLocationGridMetrics(for: proxy.size.width)
+            ZStack {
+                Color.clear
 
-            LazyVGrid(columns: metrics.columns, alignment: .leading, spacing: fixedLocationGridGap) {
-                ForEach(store.fixedLocationItems) { item in
-                    FixedLocationButton(
-                        item: item,
-                        workspaceClient: workspaceClient,
-                        width: metrics.cellWidth,
-                        height: fixedLocationCellHeight,
-                        isHovered: fixedLocationHoveredItemID == item.id,
-                        onSelect: {
-                            store.send(.delegate(.selectFixedLocation(item.id)))
-                        },
-                        onHover: { isHovered in
-                            fixedLocationHoveredItemID = isHovered ? item.id : nil
-                        },
+                ScrollView {
+                    VStack(spacing: 0) {
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            if pinnedTopNavigationItems.isEmpty {
+                                fileManagerTopNavigationReorderDropSlot(.empty(
+                                    id: Int.min,
+                                    owner: .topNavigation,
+                                    domain: .pinned,
+                                ))
+                            }
+                            reorderablePinnedContentTabRows(pinnedTopNavigationItems)
+
+                            if !pinnedTopNavigationItems.isEmpty,
+                               !sidebarStore.unpinnedContentTabItems.isEmpty
+                            {
+                                contentTabSectionDivider
+                            }
+
+                            reorderableContentTabRows(sidebarStore.unpinnedContentTabItems)
+                            if sidebarStore.unpinnedContentTabItems.isEmpty {
+                                fileManagerTopNavigationReorderDropSlot(.empty(
+                                    id: Int.min + 1,
+                                    owner: .unpinnedContentTabs,
+                                    domain: .unpinned,
+                                ))
+                            }
+
+                            Spacer()
+                                .frame(height: 4)
+
+                            newContentTabRow
+
+                            Spacer()
+                                .frame(height: 8)
+                        }
+
+                        Spacer(minLength: 0)
+                            .frame(maxWidth: .infinity)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                sidebarStore.send(.view(.collapseContentTabSelectionToActive))
+                            }
+                    }
+                    .frame(
+                        maxWidth: .infinity,
+                        minHeight: proxy.size.height,
+                        alignment: .top,
                     )
                 }
             }
-            .padding(.horizontal, fixedLocationGridHorizontalPadding)
-            .padding(.vertical, fixedLocationGridVerticalPadding)
+            .contentShape(Rectangle())
+            .background(
+                RoundedRectangle(cornerRadius: VoyagerDS.Radius.chipContainer)
+                    .fill(
+                        isContentTabsDropTargeted
+                            ? VoyagerDS.Interaction.hoverFill(for: colorScheme)
+                            : Color.clear,
+                    ),
+            )
+            .accessibilityIdentifier(ContentTabMoveProjection.dropZoneIdentifier)
+            .onDrop(
+                of: [ContentTabDragPayload.contentType],
+                delegate: ContentTabDropDelegate(
+                    isTargeted: $isContentTabsDropTargeted,
+                    onPayload: receiveContentTabDrag,
+                ),
+            )
+            .clipped()
         }
-        .frame(height: fixedLocationGridHeight(for: store.fixedLocationItems.count))
-        .padding(.bottom, fixedLocationGridBottomSpacing)
-        .contentShape(Rectangle())
-        .contextMenu { fixedLocationsVisibilityMenu }
     }
 
-    @ViewBuilder
-    private var fixedLocationsVisibilityMenu: some View {
-        if !store.allFixedLocationItems.isEmpty {
+    private var contentTabSelectionPresentation: ContentTabSelectionPresentation {
+        ContentTabSelectionPresentation(selectedTabIDs: contentTabStore.selectedTabIDs)
+    }
+
+    private var fixedLocationTopNavigationItems: [FileManagerFixedLocationItem] {
+        sidebarStore.topNavigationItems.compactMap { item in
+            guard case let .location(location) = item else { return nil }
+            return location
+        }
+    }
+
+    private var pinnedTopNavigationItems: [ContentTabProjection.ContentTabSidebarItem] {
+        sidebarStore.topNavigationItems.compactMap { item in
+            guard case let .contentTab(contentTab) = item else { return nil }
+            return contentTab
+        }
+    }
+
+    private var fixedLocationsGrid: some View {
+        SidebarFixedLocationsSection(
+            items: fixedLocationTopNavigationItems,
+            workspaceClient: workspaceClient,
+            hoveredItemID: fixedLocationHoveredItemID,
+            sidebarEntryDropTarget: sidebarEntryDropTarget,
+            menuContent: { fixedLocationsVisibilityMenu },
+            reorderDragSource: { itemID in
+                reorderDragSource(for: itemID, owner: .topNavigation)
+            },
+            reorderDropDestination: fileManagerTopNavigationReorderDropDestination,
+            entryDropDelegate: { target, allowsCopy in
+                entryDropDelegate(for: target, allowsCopy: allowsCopy)
+            },
+            onMove: sendTopNavigationMoveRequest,
+            onSelect: { itemID in
+                sidebarStore.send(.delegate(.selectFixedLocation(itemID)))
+            },
+            onHover: { itemID in
+                fixedLocationHoveredItemID = itemID
+            },
+        )
+    }
+
+    @ViewBuilder private var fixedLocationsVisibilityMenu: some View {
+        if !sidebarStore.allFixedLocationItems.isEmpty {
             Section("Locations") {
                 Button("Show All") {
-                    store.send(.view(.setAllFixedLocationVisibility(true)))
+                    sidebarStore.send(.view(.setAllFixedLocationVisibility(true)))
                 }
                 Button("Hide All") {
-                    store.send(.view(.setAllFixedLocationVisibility(false)))
+                    sidebarStore.send(.view(.setAllFixedLocationVisibility(false)))
                 }
 
                 Divider()
 
-                ForEach(store.allFixedLocationItems) { item in
+                ForEach(sidebarStore.fixedLocationVisibilityMenuItems) { item in
                     Toggle(
                         isOn: Binding(
-                            get: { !store.hiddenFixedLocationItemIDs.contains(item.id) },
+                            get: { !sidebarStore.hiddenFixedLocationItemIDs.contains(item.id) },
                             set: { isVisible in
-                                store.send(.view(.setFixedLocationVisibility(item.id, isVisible)))
+                                sidebarStore.send(.view(.setFixedLocationVisibility(item.id, isVisible)))
                             },
                         ),
                     ) {
@@ -139,359 +229,470 @@ struct SidebarView: View {
         50
     }
 
-    private var fixedLocationGridGap: CGFloat {
-        8
-    }
-
-    private var fixedLocationGridHorizontalPadding: CGFloat {
-        12
-    }
-
-    private var fixedLocationGridVerticalPadding: CGFloat {
-        6
-    }
-
-    private var fixedLocationGridBottomSpacing: CGFloat {
-        8
-    }
-
-    private var fixedLocationCellHeight: CGFloat {
-        42
-    }
-
-    private var fixedLocationMinimumCellWidth: CGFloat {
-        42
-    }
-
-    private func fixedLocationGridMetrics(for width: CGFloat) -> FixedLocationGridMetrics {
-        let availableWidth = max(0, width - fixedLocationGridHorizontalPadding * 2)
-        let columnCount = max(
-            1,
-            Int((availableWidth + fixedLocationGridGap) / (fixedLocationMinimumCellWidth + fixedLocationGridGap)),
-        )
-        let totalGapWidth = fixedLocationGridGap * CGFloat(max(0, columnCount - 1))
-        let cellWidth = max(
-            fixedLocationMinimumCellWidth,
-            floor((availableWidth - totalGapWidth) / CGFloat(columnCount)),
-        )
-
-        return FixedLocationGridMetrics(
-            columns: Array(
-                repeating: GridItem(.fixed(cellWidth), spacing: fixedLocationGridGap, alignment: .center),
-                count: columnCount,
-            ),
-            cellWidth: cellWidth,
-        )
-    }
-
-    private func fixedLocationGridHeight(for itemCount: Int) -> CGFloat {
-        let width = max(0, store.sidebarWidth - fixedLocationGridHorizontalPadding * 2)
-        let columnCount = max(
-            1,
-            Int((width + fixedLocationGridGap) / (fixedLocationMinimumCellWidth + fixedLocationGridGap)),
-        )
-        let rowCount = max(1, Int(ceil(Double(itemCount) / Double(columnCount))))
-        return fixedLocationGridVerticalPadding * 2
-            + CGFloat(rowCount) * fixedLocationCellHeight
-            + CGFloat(max(0, rowCount - 1)) * fixedLocationGridGap
-    }
-
     private var contentTabSectionDivider: some View {
-        Rectangle()
-            .fill(Color.primary.opacity(0.12))
-            .frame(height: 1)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
+        SidebarContentTabSectionDivider()
     }
 
-    private func contentTabRows(_ items: [ContentTabProjection.ContentTabSidebarItem]) -> some View {
-        ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-            contentTabRow(item)
+    @ViewBuilder
+    private func reorderableContentTabRows(
+        _ items: [ContentTabProjection.ContentTabSidebarItem],
+    ) -> some View {
+        if !items.isEmpty {
+            let boundaries = FileManagerTopNavigationReorderDropBoundary.make(
+                for: items.map { .contentTab($0.id) },
+                owner: .unpinnedContentTabs,
+                contentTabDomain: .unpinned,
+            )
 
-            if index < items.count - 1 {
-                Spacer()
-                    .frame(height: 4)
+            VStack(alignment: .leading, spacing: 0) {
+                fileManagerTopNavigationReorderDropSlot(boundaries[0])
+                    .transaction { $0.animation = nil }
+
+                ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                    reorderableContentTabRow(item)
+                    fileManagerTopNavigationReorderDropSlot(boundaries[index + 1])
+                        .transaction { $0.animation = nil }
+                }
             }
+            .animation(.easeInOut(duration: 0.15), value: items.map(\.id))
         }
     }
 
     private var newContentTabRow: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "plus")
-                .symbolRenderingMode(.hierarchical)
-                .foregroundColor(.accentColor)
-                .frame(width: 16)
-                .accessibilityHidden(true)
-            Text("New Tab")
-                .foregroundColor(.primary)
-                .lineLimit(1)
-            Spacer()
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 4)
-        .background(
-            RoundedRectangle(cornerRadius: VoyagerDS.Radius.chipContainer)
-                .fill(isNewTabHovered ? VoyagerDS.Interaction.hoverFill(for: colorScheme) : Color.clear),
+        SidebarNewContentTabRow(
+            isHovered: isNewTabHovered,
+            onHover: { isNewTabHovered = $0 },
+            onOpen: {
+                sidebarStore.send(.delegate(.openContentTab))
+            },
         )
-        .padding(.horizontal, 8)
-        .contentShape(Rectangle())
-        .onHover { isNewTabHovered = $0 }
-        .onTapGesture {
-            store.send(.delegate(.openContentTab))
+    }
+
+    private func fileManagerTopNavigationReorderDropSlot(
+        _ boundary: FileManagerTopNavigationReorderDropBoundary,
+    ) -> some View {
+        Rectangle()
+            .fill(Color.clear)
+            .frame(height: 4)
+            .frame(maxWidth: .infinity)
+            .overlay {
+                if activeReorderBoundaryID(for: boundary.owner) == boundary.id {
+                    Rectangle()
+                        .fill(Color.accentColor)
+                        .frame(height: 2)
+                        .allowsHitTesting(false)
+                }
+            }
+            .padding(.horizontal, 8)
+            .background {
+                fileManagerTopNavigationReorderDropDestination(for: boundary)
+            }
+            .contentShape(Rectangle())
+    }
+}
+
+private extension SidebarView {
+    private func receiveContentTabDrag(_ payload: ContentTabDragPayload) {
+        guard ContentTabDragPayload.isSupported(schemaVersion: payload.schemaVersion),
+              let currentWindowID = sidebarStore.currentWindowID,
+              currentWindowID != payload.sourceWindowID,
+              sidebarStore.pendingContentTabMoveRequest == nil
+        else { return }
+        // 외부 창 Content Tab drop은 production adapter로 typed route를 구한 뒤 preserve-domain transfer만 dispatch한다.
+        // 같은 창 명시 전환/배치 전송 의도는 later task가, Entry/File URL/Location은 기존 owner가 담당한다.
+        let route = ContentTabDropRouteProjection.route(
+            payload: payload,
+            targetWindowID: currentWindowID,
+            targetDomain: nil,
+            placement: nil,
+            targetSurface: .contentTabDomain,
+        )
+        guard route == .foreignPreserveDomainTransfer else { return }
+        sidebarStore.send(.view(.receiveContentTabDrag(payload)))
+    }
+
+    private func contentTabDragSource(
+        for item: ContentTabProjection.ContentTabSidebarItem,
+        owner: FileManagerTopNavigationReorderBoundaryOwner,
+    ) -> FileManagerTopNavigationReorderDragSourceConfiguration? {
+        guard sidebarStore.currentWindowID != nil,
+              sidebarStore.pendingContentTabMoveRequest == nil,
+              sidebarStore.contentTabDragSnapshot?.lifecycle != .inFlight
+        else { return nil }
+        return FileManagerTopNavigationReorderDragSourceConfiguration(
+            payload: FileManagerTopNavigationReorderDragPayload(
+                sourceID: .contentTab(item.id),
+                dragScopeID: reorderDragScopeID(for: owner),
+            ),
+            sessionStore: reorderSessionStore,
+            prepareMovePayload: {
+                sidebarStore.send(.view(.prepareContentTabDrag(
+                    initiatingTabID: item.id,
+                    selectedTabIDs: contentTabStore.selectedTabIDs,
+                )))
+                guard let snapshot = sidebarStore.contentTabDragSnapshot,
+                      snapshot.initiatingTabID == item.id,
+                      snapshot.lifecycle == .prepared
+                else { return nil }
+                return snapshot.payload
+            },
+            onMovePayloadDidBegin: { payload in
+                sidebarStore.send(.view(.beginContentTabDrag(payload)))
+            },
+            onMovePayloadDidEnd: { operationID in
+                sidebarStore.send(.view(.contentTabDragTerminal(operationID: operationID)))
+            },
+        )
+    }
+
+    private func reorderableContentTabRow(
+        _ item: ContentTabProjection.ContentTabSidebarItem,
+    ) -> some View {
+        entryDroppableContentTabRow(
+            item,
+            reorderDragSource: contentTabDragSource(
+                for: item,
+                owner: .unpinnedContentTabs,
+            ),
+        )
+    }
+
+    @ViewBuilder
+    private func entryDroppableContentTabRow(
+        _ item: ContentTabProjection.ContentTabSidebarItem,
+        reorderDragSource: FileManagerTopNavigationReorderDragSourceConfiguration?,
+    ) -> some View {
+        if let dropTarget = FileManagerSidebarEntryDropDelegate.target(for: item) {
+            contentTabSidebarRow(item, reorderDragSource: reorderDragSource)
+                .onDrop(of: [.fileURL], delegate: entryDropDelegate(for: dropTarget))
+        } else {
+            contentTabSidebarRow(item, reorderDragSource: reorderDragSource)
         }
     }
 
-    private func contentTabRow(_ item: ContentTabProjection.ContentTabSidebarItem) -> some View {
-        ContentTabSidebarRow(
+    private func contentTabSidebarRow(
+        _ item: ContentTabProjection.ContentTabSidebarItem,
+        reorderDragSource: FileManagerTopNavigationReorderDragSourceConfiguration?,
+    ) -> some View {
+        let presentations = contentTabSidebarRowPresentations(for: item)
+        let actions = contentTabSidebarRowActions(for: item, presentations: presentations)
+        let movePresentation = presentations.move
+        return ContentTabSidebarRow(
             item: item,
+            reorderDragSource: reorderDragSource,
+            moveTargets: ContentTabMoveProjection.availableTargets(
+                sidebarStore.contentTabMoveTargets,
+                currentWindowID: sidebarStore.currentWindowID,
+                orderedTabIDs: movePresentation.orderedTabIDs,
+            ),
+            moveTitle: movePresentation.title,
+            isMovePending: ContentTabMovePendingProjection.isPending(
+                tabID: item.id,
+                request: sidebarStore.pendingContentTabMoveRequest,
+            ),
             isHovered: contentTabHoveredItemID == item.id,
-            onSelect: {
-                store.send(.delegate(.selectContentTab(item.id)))
+            isDropTarget: sidebarEntryDropTarget == .contentTab(item.id),
+            isSelected: contentTabSelectionPresentation.isSelected(item.id),
+            duplicatePresentation: presentations.duplicate,
+            pinPresentation: presentations.pin,
+            closePresentation: presentations.close,
+            onActivate: actions.onActivate,
+            onReturnToPinnedLocation: actions.onReturnToPinnedLocation,
+            onToggleSelection: actions.onToggleSelection,
+            onSelectRange: actions.onSelectRange,
+            onDuplicate: actions.onDuplicate,
+            onPin: actions.onPin,
+            onUnpin: actions.onUnpin,
+            onClose: actions.onClose,
+            onTrailingAction: actions.onTrailingAction,
+            onContextMenuClose: actions.onContextMenuClose,
+            onMove: actions.onMove,
+            onHover: actions.onHover,
+        )
+    }
+
+    private struct ContentTabSidebarRowPresentations {
+        let duplicate: ContentTabDuplicatePresentation
+        let pin: ContentTabPinPresentation
+        let close: ContentTabClosePresentation
+        let move: ContentTabMoveMenuPresentation
+        let trailingAction: ContentTabSidebarTrailingCommand
+    }
+
+    private func contentTabSidebarRowPresentations(
+        for item: ContentTabProjection.ContentTabSidebarItem,
+    ) -> ContentTabSidebarRowPresentations {
+        ContentTabSidebarRowPresentations(
+            duplicate: ContentTabDuplicatePresentation(
+                clickedTabID: item.id,
+                selectedTabIDs: contentTabStore.selectedTabIDs,
+                currentTabIDs: Array(contentTabStore.tabs.ids),
+                tabCount: contentTabStore.tabs.count,
+            ),
+            pin: contentTabPinPresentation(for: item),
+            close: ContentTabClosePresentation(
+                clickedTabID: item.id,
+                isPinned: item.isPinned,
+                validSelectedTabIDs: interactionStore.validSelectedTabIDs,
+                isEnabled: interactionStore.isCloseEnabled,
+            ),
+            move: ContentTabMoveMenuPresentation(
+                clickedTabID: item.id,
+                validSelectedTabIDs: interactionStore.validSelectedTabIDs,
+                displayedOrderedTabIDs: sidebarStore.contentTabSelectionOrderedIDs,
+            ),
+            trailingAction: ContentTabSidebarTrailingCommand(isPinned: item.isPinned),
+        )
+    }
+
+    private struct ContentTabSidebarRowActions {
+        let onActivate: () -> Void
+        let onReturnToPinnedLocation: () -> Void
+        let onToggleSelection: () -> Void
+        let onSelectRange: () -> Void
+        let onDuplicate: (() -> Void)?
+        let onPin: (() -> Void)?
+        let onUnpin: (() -> Void)?
+        let onClose: () -> Void
+        let onTrailingAction: () -> Void
+        let onContextMenuClose: () -> Void
+        let onMove: (UUID) -> Void
+        let onHover: (Bool) -> Void
+    }
+
+    private func contentTabSidebarRowActions(
+        for item: ContentTabProjection.ContentTabSidebarItem,
+        presentations: ContentTabSidebarRowPresentations,
+    ) -> ContentTabSidebarRowActions {
+        let onDuplicate: (() -> Void)? = presentations.duplicate.isEnabled
+            ? { _ = sidebarStore.send(.view(presentations.duplicate.viewAction)) }
+            : nil
+        let onPin: (() -> Void)? = presentations.pin.isEnabled
+            ? { _ = sidebarStore.send(.view(presentations.pin.viewAction)) }
+            : nil
+        let onUnpin: (() -> Void)? = presentations.pin.isEnabled
+            ? { _ = sidebarStore.send(.view(presentations.pin.viewAction)) }
+            : nil
+        return ContentTabSidebarRowActions(
+            onActivate: {
+                _ = sidebarStore.send(.delegate(.selectContentTab(item.id)))
             },
-            onPin: {
-                store.send(.delegate(.pinContentTab(item.id)))
+            onReturnToPinnedLocation: {
+                sidebarStore.send(.delegate(.returnContentTabToPinnedLocation(item.id)))
             },
-            onUnpin: {
-                store.send(.delegate(.unpinContentTab(item.id)))
+            onToggleSelection: {
+                _ = sidebarStore.send(.view(.toggleContentTabSelection(item.id)))
             },
+            onSelectRange: {
+                _ = sidebarStore.send(.view(.selectContentTabRange(to: item.id)))
+            },
+            onDuplicate: onDuplicate,
+            onPin: onPin,
+            onUnpin: onUnpin,
             onClose: {
-                store.send(.delegate(.closeContentTab(item.id)))
+                _ = sidebarStore.send(.view(.closeContentTab(item.id)))
+            },
+            onTrailingAction: {
+                _ = sidebarStore.send(.view(presentations.trailingAction.viewAction(tabID: item.id)))
+            },
+            onContextMenuClose: {
+                _ = sidebarStore.send(.view(presentations.close.viewAction))
+            },
+            onMove: { targetWindowID in
+                _ = sidebarStore.send(.view(presentations.move.viewAction(targetWindowID: targetWindowID)))
             },
             onHover: { isHovered in
                 contentTabHoveredItemID = isHovered ? item.id : nil
             },
         )
     }
-}
 
-private struct ContentTabSidebarRow: View {
-    let item: ContentTabProjection.ContentTabSidebarItem
-    let isHovered: Bool
-    let onSelect: () -> Void
-    let onPin: () -> Void
-    let onUnpin: () -> Void
-    let onClose: () -> Void
-    let onHover: (Bool) -> Void
-
-    @Environment(\.colorScheme)
-    private var colorScheme
-
-    @Environment(\.fileManagerKeyCommandFocusCoordinator)
-    private var keyCommandFocusCoordinator
-
-    @ObserveInjection private var injection
-
-    var body: some View {
-        HStack(spacing: 8) {
-            leadingIcon
-            Text(item.title ?? "Untitled")
-                .foregroundColor(item.isActive ? .primary : VoyagerDS.SystemColor.secondaryLabel)
-                .lineLimit(1)
-                .truncationMode(.tail)
-            Spacer()
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 4)
-        .background(
-            RoundedRectangle(cornerRadius: VoyagerDS.Radius.chipContainer)
-                .fill(backgroundColor),
+    private func contentTabPinPresentation(
+        for item: ContentTabProjection.ContentTabSidebarItem,
+    ) -> ContentTabPinPresentation {
+        ContentTabPinPresentation(
+            clickedTabID: item.id,
+            isPinned: item.isPinned,
+            validSelectedTabIDs: interactionStore.validSelectedTabIDs,
+            isPinMutationEnabled: interactionStore.isPinMutationEnabled,
+            isSingleUnpinEnabled: interactionStore.isCloseEnabled,
         )
-        .padding(.horizontal, 8)
-        .contentShape(Rectangle())
-        .contextMenu {
-            if item.isPinned {
-                Button("Unpin", action: onUnpin)
-            } else {
-                Button("Pin", action: onPin)
-                Button("Close", action: onClose)
-            }
-        }
-        .overlay(alignment: .trailing) {
-            if isHovered {
-                SidebarCloseButton(systemName: item.isPinned ? "minus" : "xmark", action: onClose)
-                    .padding(.trailing, 14)
-            }
-        }
-        .onTapGesture {
-            onSelect()
-            keyCommandFocusCoordinator?.requestFocus()
-        }
-        .onHover(perform: onHover)
-        .enableInjection()
+    }
+
+    private func fileManagerTopNavigationReorderDropDestination(
+        for boundary: FileManagerTopNavigationReorderDropBoundary,
+    ) -> FileManagerTopNavigationReorderDropDestination {
+        FileManagerTopNavigationReorderDropDestination(
+            activeBoundaryID: activeReorderBoundaryIDBinding(for: boundary.owner),
+            boundary: boundary,
+            dragScopeID: reorderDragScopeID(for: boundary.owner),
+            sessionStore: reorderSessionStore,
+            boundaryOwnerForItem: { id in
+                if sidebarStore.topNavigationItems.contains(where: { $0.id == id }) {
+                    return .topNavigation
+                }
+                if sidebarStore.unpinnedContentTabItems.contains(where: { .contentTab($0.id) == id }) {
+                    return .unpinnedContentTabs
+                }
+                return nil
+            },
+            onReorder: { result in
+                sidebarStore.send(.view(.fileManagerTopNavigationReorderRequested(
+                    sourceID: result.sourceID,
+                    anchorID: result.anchorID,
+                    placement: result.placement,
+                )))
+            },
+            targetWindowID: sidebarStore.currentWindowID,
+            contentTabIDsInDomain: { domain in
+                switch domain {
+                case .pinned: pinnedTopNavigationItems.map(\.id)
+                case .unpinned: sidebarStore.unpinnedContentTabItems.map(\.id)
+                }
+            },
+            onDomainTransition: { request in
+                sidebarStore.send(.view(.contentTabDomainTransitionRequested(request)))
+            },
+            onForeignExplicitTransfer: { payload, targetDomain, placement in
+                sidebarStore.send(.view(.receiveContentTabExplicitDomainDrag(
+                    payload: payload,
+                    targetDomain: targetDomain,
+                    placement: placement,
+                )))
+            },
+        )
+    }
+
+    private func entryDropDelegate(
+        for target: FileManagerSidebarEntryDropTarget,
+        allowsCopy: Bool = true,
+    ) -> FileManagerSidebarEntryDropDelegate {
+        FileManagerSidebarEntryDropDelegate(
+            dropTarget: $sidebarEntryDropTarget,
+            target: target,
+            allowsCopy: allowsCopy,
+            onDrop: { request in
+                sidebarStore.send(.view(.entryDropRequested(request)))
+            },
+        )
     }
 
     @ViewBuilder
-    private var leadingIcon: some View {
-        if let tagColorCode = item.tagColorCode {
-            ColorDotView(nsColor: TagColor(colorCode: tagColorCode).nsColor, size: 8)
-                .frame(width: 16)
-                .accessibilityHidden(true)
-        } else {
-            SidebarSymbolIcon(
-                systemName: item.iconName ?? "doc",
-                size: 16,
-                iconSize: 12,
-                foregroundColor: item.isActive ? .accentColor : VoyagerDS.SystemColor.tertiaryLabel,
+    private func reorderablePinnedContentTabRows(
+        _ items: [ContentTabProjection.ContentTabSidebarItem],
+    ) -> some View {
+        if !items.isEmpty {
+            let boundaries = FileManagerTopNavigationReorderDropBoundary.make(
+                for: items.map { .contentTab($0.id) },
+                owner: .topNavigation,
+                contentTabDomain: .pinned,
             )
-            .symbolVariant(.fill)
-        }
-    }
 
-    private var backgroundColor: Color {
-        if item.isActive {
-            VoyagerDS.Surface.sidebarSelectionBackground(for: colorScheme)
-        } else if isHovered {
-            VoyagerDS.Interaction.hoverFill(for: colorScheme)
-        } else {
-            Color.clear
-        }
-    }
-}
+            VStack(alignment: .leading, spacing: 0) {
+                fileManagerTopNavigationReorderDropSlot(boundaries[0])
+                    .transaction { $0.animation = nil }
 
-private func applicationsSidebarIcon() -> NSImage? {
-    let appIcon = NSImage(
-        contentsOfFile:
-        "/System/Library/CoreServices/CoreTypes.bundle"
-            + "/Contents/Resources/SidebarApplicationsFolder.icns",
-    )
-    appIcon?.isTemplate = true
-    return appIcon
-}
-
-private struct FixedLocationGridMetrics {
-    let columns: [GridItem]
-    let cellWidth: CGFloat
-}
-
-private func normalizedSidebarIconName(_ iconName: String) -> String {
-    iconName == "appstore" ? "folder.badge.gearshape" : iconName
-}
-
-private struct SidebarSymbolIcon: View {
-    let systemName: String
-    let size: CGFloat
-    let iconSize: CGFloat
-    var foregroundColor: Color = .accentColor
-
-    var body: some View {
-        Group {
-            if isApplicationsIcon, let appIcon = applicationsSidebarIcon() {
-                Image(nsImage: appIcon)
-                    .renderingMode(.template)
-                    .resizable()
-                    .interpolation(.high)
-                    .antialiased(true)
-                    .scaledToFit()
-                    .frame(width: applicationsIconSize, height: applicationsIconSize)
-                    .accessibilityHidden(true)
-            } else {
-                Image(systemName: normalizedSidebarIconName(systemName))
-                    .font(.system(size: iconSize, weight: .semibold))
-                    .symbolRenderingMode(.hierarchical)
-                    .accessibilityHidden(true)
+                ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                    entryDroppableContentTabRow(
+                        item,
+                        reorderDragSource: contentTabDragSource(
+                            for: item,
+                            owner: .topNavigation,
+                        ),
+                    )
+                    .topNavigationMoveCommands(
+                        sourceID: .contentTab(item.id),
+                        onMove: sendTopNavigationMoveRequest,
+                    )
+                    fileManagerTopNavigationReorderDropSlot(boundaries[index + 1])
+                        .transaction { $0.animation = nil }
+                }
             }
+            .animation(.easeInOut(duration: 0.15), value: items.map(\.id))
         }
-        .foregroundColor(foregroundColor)
-        .frame(width: size, height: size)
-        .accessibilityHidden(true)
     }
 
-    private var applicationsIconSize: CGFloat {
-        max(12, iconSize - 2)
+    private func activeReorderBoundaryID(
+        for owner: FileManagerTopNavigationReorderBoundaryOwner,
+    ) -> Int? {
+        switch owner {
+        case .topNavigation:
+            activeTopNavigationReorderBoundaryID
+        case .unpinnedContentTabs:
+            activeUnpinnedReorderBoundaryID
+        }
     }
 
-    private var isApplicationsIcon: Bool {
-        systemName == "appstore" || systemName == "folder.badge.gearshape"
+    private func activeReorderBoundaryIDBinding(
+        for owner: FileManagerTopNavigationReorderBoundaryOwner,
+    ) -> Binding<Int?> {
+        switch owner {
+        case .topNavigation:
+            $activeTopNavigationReorderBoundaryID
+        case .unpinnedContentTabs:
+            $activeUnpinnedReorderBoundaryID
+        }
+    }
+
+    private func reorderDragSource(
+        for sourceID: FileManagerTopNavigationItemID,
+        owner: FileManagerTopNavigationReorderBoundaryOwner,
+    ) -> FileManagerTopNavigationReorderDragSourceConfiguration {
+        FileManagerTopNavigationReorderDragSourceConfiguration(
+            payload: FileManagerTopNavigationReorderDragPayload(
+                sourceID: sourceID,
+                dragScopeID: reorderDragScopeID(for: owner),
+            ),
+            sessionStore: reorderSessionStore,
+        )
+    }
+
+    private func reorderDragScopeID(
+        for owner: FileManagerTopNavigationReorderBoundaryOwner,
+    ) -> FileManagerTopNavigationReorderDragScopeID {
+        switch owner {
+        case .topNavigation:
+            topNavigationReorderDragScopeID
+        case .unpinnedContentTabs:
+            unpinnedContentTabReorderDragScopeID
+        }
+    }
+
+    private func sendTopNavigationMoveRequest(
+        sourceID: FileManagerTopNavigationItemID,
+        direction: FileManagerSidebarTopNavigationMoveDirection,
+    ) {
+        let visibleItemIDs: [FileManagerTopNavigationItemID] = switch sourceID {
+        case .location:
+            fixedLocationTopNavigationItems.map { .location($0.id) }
+        case .contentTab:
+            pinnedTopNavigationItems.map { .contentTab($0.id) }
+        }
+        guard let request = FileManagerSidebarTopNavigationMoveAdapter.request(
+            sourceID: sourceID,
+            direction: direction,
+            visibleItemIDs: visibleItemIDs,
+        ) else { return }
+
+        sidebarStore.send(.view(.fileManagerTopNavigationReorderRequested(
+            sourceID: request.sourceID,
+            anchorID: request.anchorID,
+            placement: request.placement,
+        )))
     }
 }
 
-private struct FixedLocationButton: View {
-    let item: FileManagerFixedLocationItem
-    let workspaceClient: WorkspaceClient
-    let width: CGFloat
-    let height: CGFloat
-    let isHovered: Bool
-    let onSelect: () -> Void
-    let onHover: (Bool) -> Void
-
-    @Environment(\.colorScheme)
-    private var colorScheme
-
-    @State private var resolvedIcon: NSImage?
-
-    var body: some View {
-        Button(action: onSelect) {
-            icon
-                .frame(width: width, height: height)
-                .background(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(backgroundColor),
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(Color.primary.opacity(isHovered ? 0.12 : 0.06), lineWidth: 1),
-                )
-        }
-        .buttonStyle(.plain)
-        .help("\(item.title)\n\(item.path)")
-        .accessibilityLabel(item.accessibilityLabel)
-        .onHover(perform: onHover)
-        .task(id: item.path) {
-            resolvedIcon = nil
-            let icon = await workspaceClient.iconForFileAsync(item.path)
-            guard !Task.isCancelled else { return }
-            resolvedIcon = icon
-        }
-    }
-
-    @ViewBuilder private var icon: some View {
-        if let resolvedIcon {
-            Image(nsImage: resolvedIcon)
-                .renderingMode(.original)
-                .resizable()
-                .interpolation(.high)
-                .antialiased(true)
-                .scaledToFit()
-                .frame(width: 20, height: 20)
-                .accessibilityHidden(true)
-        } else {
-            Image(systemName: "folder")
-                .font(.system(size: 16, weight: .medium))
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(.secondary)
-                .frame(width: 20, height: 20)
-                .accessibilityHidden(true)
-        }
-    }
-
-    private var backgroundColor: Color {
-        isHovered ? VoyagerDS.Interaction.hoverFill(for: colorScheme) : Color.primary.opacity(0.06)
-    }
-}
-
-private struct SidebarCloseButton: View {
-    let systemName: String
-    let action: () -> Void
-
-    @Environment(\.colorScheme)
-    private var colorScheme
-
-    @State
-    private var isHovered = false
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: systemName)
-                .font(.system(size: 10, weight: .medium))
-                .accessibilityHidden(true)
-                .foregroundColor(.secondary)
-                .frame(width: 18, height: 18)
-                .background(
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(isHovered ? VoyagerDS.Interaction.hoverFill(for: colorScheme) : Color.clear),
-                )
-        }
-        .buttonStyle(.plain)
-        .onHover { isHovered = $0 }
+extension View {
+    func topNavigationMoveCommands(
+        sourceID: FileManagerTopNavigationItemID,
+        onMove: @escaping (
+            FileManagerTopNavigationItemID,
+            FileManagerSidebarTopNavigationMoveDirection,
+        ) -> Void,
+    ) -> some View {
+        modifier(FileManagerSidebarTopNavigationMoveCommandsModifier(
+            sourceID: sourceID,
+            onMove: onMove,
+        ))
     }
 }

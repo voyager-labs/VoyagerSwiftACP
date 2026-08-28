@@ -75,6 +75,8 @@ macOS 앱은 로컬 Python API 서버를 번들하거나 실행하지 않습니�
                 - `OnboardingHost Dev: Launch (Dev-Release)` - 온보딩 호스트 Dev-Release 모드로 빌드 및 실행
                 - `SettingsHost Dev: Launch (Dev-Debug)` - 설정 호스트 Dev-Debug 모드로 빌드 및 실행
                 - `SettingsHost Dev: Launch (Dev-Release)` - 설정 호스트 Dev-Release 모드로 빌드 및 실행
+                - `ComposerHost Dev: Launch (Dev-Debug)` - Composer 전용 deterministic 호스트를 Dev-Debug 모드로 실행
+                - `ComposerHost Dev: Launch (Dev-Release)` - Composer 전용 deterministic 호스트를 Dev-Release 모드로 실행
             - `Voyager Dev: Launch (Dev-Debug)` task의 `VOYAGER_SCHEME_FORCE_ONBOARDING` 값을 `0` 또는 제거하면 저장된 진행 상태를 사용하고, 정확히 `1`로 바꾸면 진행 상태를 유지한 채 온보딩을 강제로 표시합니다. 이 값은 launch 환경이며 `.env` 설정이 아니고 Release/Prod에서는 지원하지 않습니다.
             - 참고: Sweetpad는 `.vscode/settings.json`의 shared xcodebuild wrapper를 사용합니다. 버튼을 통한 직접 실행은 xcscheme의 환경변수가 제대로 주입되지 않을 수 있어 태스크 실행을 권장합니다.
     - Zed 에디터에서 실행 (`.zed/tasks.json`):
@@ -88,6 +90,7 @@ macOS 앱은 로컬 Python API 서버를 번들하거나 실행하지 않습니�
             - `SettingsHost Dev: Launch (Dev-Debug)` / `SettingsHost Dev: Launch (Dev-Release)`
             - `FileManagerHost Dev: Launch (Dev-Debug)` / `FileManagerHost Dev: Launch (Dev-Release)`
             - `FileManagerHost Dev: Launch with Injection (Dev-Debug)` - InjectionNext 앱 실행과 감시 환경을 포함한 전용 task
+            - `ComposerHost Dev: Launch (Dev-Debug)` / `ComposerHost Dev: Launch (Dev-Release)`
             - `Voyager Dev: Build Only (Dev-Debug)` - 빌드만 (런치 없음)
             - `Voyager Dev: Test` - Voyager-Dev 스킴 테스트
         - `Voyager Dev: Launch (Dev-Debug)` task의 `VOYAGER_SCHEME_FORCE_ONBOARDING` 값을 `0` 또는 제거하면 저장된 진행 상태를 사용하고, 정확히 `1`로 바꾸면 진행 상태를 유지한 채 온보딩을 강제로 표시합니다. 이 값은 launch 환경이며 `.env` 설정이 아니고 Release/Prod에서는 지원하지 않습니다.
@@ -99,8 +102,10 @@ macOS 앱은 로컬 Python API 서버를 번들하거나 실행하지 않습니�
     - Helper focused test: `mise run macos-helper-test -- -only-testing:VoyagerHelperTests/XPCSearchServiceRecentTagDispatchTests`
     - Helper full test: `mise run macos-helper-test`
     - FilterSearchXPC build: `mise run macos-filter-search-xpc-build`
-- OnboardingHost Build (CLI): `mise run macos-launch -- --scheme OnboardingHost-Dev --configuration Dev-Debug --no-launch`
-- SettingsHost Build (CLI): `mise run macos-launch -- --scheme SettingsHost-Dev --configuration Dev-Debug --no-launch`
+    - OnboardingHost Build (CLI): `mise run macos-launch -- --scheme OnboardingHost-Dev --configuration Dev-Debug --no-launch`
+    - SettingsHost Build (CLI): `mise run macos-launch -- --scheme SettingsHost-Dev --configuration Dev-Debug --no-launch`
+    - ComposerHost Launch (CLI): `mise run macos-launch -- --scheme ComposerHost-Dev --configuration Dev-Debug`
+    - ComposerHost Smoke (CLI): `mise run macos-launch -- --scheme ComposerHost-Dev --configuration Dev-Debug --env COMPOSER_HOST_SMOKE=1`
 
 ### Xcode 버전 관리
 

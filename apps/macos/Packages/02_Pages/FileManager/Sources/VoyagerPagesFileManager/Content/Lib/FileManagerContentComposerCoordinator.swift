@@ -14,8 +14,6 @@ enum FileManagerContentComposerCoordinator {
         let searchClient: SearchClient
     }
 
-    private static let composerOpenMetricName = "voyager_composer_open"
-
     static func reduce(
         _ action: ComposerFeature.Action,
         state: inout FileManagerContentState,
@@ -46,7 +44,7 @@ enum FileManagerContentComposerCoordinator {
             return handleSetPresented(isPresented, state: &state, dependencies: dependencies)
 
         case .view(.applyFilters):
-            guard state.composer.conditions.contains(where: \.isSearchReady) else {
+            guard state.composer.conditions.contains(where: \.isExecutionReady) else {
                 return .none
             }
             return .send(.composer(.setLoadingFilters(true)))
@@ -119,12 +117,6 @@ enum FileManagerContentComposerCoordinator {
             state.composer.pendingSearchQuery = nil
             return collectionOpenSearchCancellationEffect(state: state)
         }
-
-        dependencies.metricsClient.logMetric(
-            composerOpenMetricName,
-            1,
-            nil,
-        )
 
         let warmupEffect = warmUpAIModelCatalogEffect(searchClient: dependencies.searchClient)
 

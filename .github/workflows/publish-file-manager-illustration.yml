@@ -1,0 +1,49 @@
+name: publish-file-manager-illustration
+
+on:
+  push:
+    tags:
+      - "file-manager-illustration/v*" # ONLY. No release:, no branch push, no workflow_dispatch.
+
+permissions:
+  contents: read
+  packages: write # nothing else
+
+concurrency:
+  group: publish-file-manager-illustration-${{ github.ref }}
+  cancel-in-progress: false # publishes must never cancel mid-flight
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/storybook
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0 # annotated tag 검증을 위해 전체 히스토리 fetch
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.16.0
+          run_install: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: apps/storybook/pnpm-lock.yaml
+          registry-url: https://npm.pkg.github.com
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - run: pnpm build-storybook
+      - run: pnpm --filter @voyager-labs/file-manager-illustration verify:contract
+      - name: Verify annotated tag and package version
+        run: |
+          [ "$(git cat-file -t "$GITHUB_REF")" = "tag" ] || { echo "$GITHUB_REF_NAME must be an annotated tag"; exit 1; }
+          PKG_VERSION=$(node -p "require('./packages/file-manager-illustration/package.json').version")
+          TAG_VERSION="${GITHUB_REF_NAME#file-manager-illustration/v}"
+          [ "$PKG_VERSION" = "$TAG_VERSION" ] || { echo "tag $TAG_VERSION != package.json $PKG_VERSION"; exit 1; }
+      - name: Publish
+        run: pnpm --filter @voyager-labs/file-manager-illustration publish --access restricted --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

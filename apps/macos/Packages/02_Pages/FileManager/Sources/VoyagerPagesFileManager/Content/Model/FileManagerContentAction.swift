@@ -7,6 +7,7 @@ import VoyagerEntitiesCollection
 import VoyagerFeaturesAiChat
 import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
+import VoyagerFeaturesEntryOperations
 import VoyagerShared
 import VoyagerWidgetsEntryViewLayout
 
@@ -20,11 +21,15 @@ public enum FileManagerContentAction: ViewAction, CasePathable, Sendable {
     case composer(ComposerFeature.Action)
     case collection(CollectionFeature.Action)
     case aiChat(AiChatFeature.Action)
-    case externalFileSystemChanged([String])
+    case externalFileSystemChanged(
+        [FileChangeGatewayEvent],
+        deliveryChainToken: String? = nil,
+    )
 
     @CasePathable
     public enum View: Sendable {
         case handleKeyCommand(KeyCommand)
+        case handleTextInput(String)
         case changeLayout(EntryViewLayoutState.Mode)
         case selectAllEntries
         case newChatTapped
@@ -40,6 +45,7 @@ public enum FileManagerContentAction: ViewAction, CasePathable, Sendable {
     @CasePathable
     public enum Internal: Sendable {
         case applyNavigationState(ContentPageNavigationRoute)
+        case setPendingEntrySelection(entryID: String?, destinationPath: String?)
         case performPendingNavigation(ContentPageNavigationPending)
         case requestNavigation(ContentPageNavigationAction)
         case saveScrollOffset(CGPoint, forPath: String)
@@ -51,6 +57,7 @@ public enum FileManagerContentAction: ViewAction, CasePathable, Sendable {
         case resetComposer
         case resetComposerAfterDirectoryNavigation
         case setAutomaticRefreshFeedbackSuppressed(Bool)
+        case reloadDirectoryListing
         case homeDirectoryPickerFinished(FileManagerHomePickerResult<String>)
         case homeCollectionPickerFinished(FileManagerHomePickerResult<URL>)
         case homeAiChatSessionCreated(FileManagerHomePickerResult<String>)
@@ -65,11 +72,14 @@ public enum FileManagerContentAction: ViewAction, CasePathable, Sendable {
         case composerCollectionSearchSucceeded
         case composerCollectionSearchFailed
         case openPathInNewWindow(String)
+        case openInNewTab([String])
         case closeWindow
         case newChatRequested
         case durableNewChatRequested
         case showChatHistoryRequested
         case openAISettings
+        case requestDuplicate
+        case requestUndoRedo(EntryActionDirection)
         case currentContextChanged(AiChatCurrentContextSnapshot)
         case homePageAnchorSelected(ContentTabPageAnchor)
         case homeChatHistorySessionSelected(AiChatSessionID)

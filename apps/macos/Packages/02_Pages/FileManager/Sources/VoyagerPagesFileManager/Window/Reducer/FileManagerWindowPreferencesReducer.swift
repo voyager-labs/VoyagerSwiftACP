@@ -12,13 +12,16 @@ struct FileManagerWindowPreferencesReducer {
         Reduce { state, action in
             switch action {
             case let .applyAppPreferences(preferences):
+                state.defaultStartPage = preferences.defaultStartPage
                 state.sidebar.sidebarVisible = preferences.sidebarVisible
                 state.sidebar.sidebarWidth = preferences.sidebarWidth
                 state.inspector.inspectorWidth = preferences.inspectorWidth
 
                 applyContentPreferences(preferences, to: &state.content)
                 for tabID in state.tabContentStates.keys {
-                    applyContentPreferences(preferences, to: &state.tabContentStates[tabID]!)
+                    guard var content = state.tabContentStates[tabID] else { continue }
+                    applyContentPreferences(preferences, to: &content)
+                    state.tabContentStates[tabID] = content
                 }
 
                 return .merge(

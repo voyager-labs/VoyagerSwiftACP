@@ -5,7 +5,7 @@ enum CollectionFilterResolution {
     static func resolve(
         file: VoyagerCollectionFile,
         registryClient: RegistryClient,
-    ) -> AppliedFiltersUtils.ResolutionResult {
+    ) -> AppliedFilterResolver.ResolutionResult {
         file.resolveCollectionFilters(registryClient: registryClient)
     }
 }

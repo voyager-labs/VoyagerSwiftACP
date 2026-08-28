@@ -14,18 +14,24 @@ public enum AiConnectionMutationResult: Equatable, Sendable {
 }
 
 public struct AIConnectionsFileClient: Sendable {
+    public typealias AtomicUpdateTransform = @Sendable (AIConnectionsFile) throws -> AIConnectionsFile
     public var load: @Sendable () async throws -> AIConnectionsFile
     public var save: @Sendable (AIConnectionsFile) async throws -> AiConnectionMutationResult
     public var deleteCredential: @Sendable (AiProvider) async throws -> AiConnectionMutationResult
+    public var atomicUpdate: (@Sendable (AtomicUpdateTransform) async throws
+        -> AiConnectionMutationResult)?
 
     nonisolated public init(
         load: @escaping @Sendable () async throws -> AIConnectionsFile,
         save: @escaping @Sendable (AIConnectionsFile) async throws -> AiConnectionMutationResult,
         deleteCredential: @escaping @Sendable (AiProvider) async throws -> AiConnectionMutationResult,
+        atomicUpdate: (@Sendable (AtomicUpdateTransform) async throws
+            -> AiConnectionMutationResult)? = nil,
     ) {
         self.load = load
         self.save = save
         self.deleteCredential = deleteCredential
+        self.atomicUpdate = atomicUpdate
     }
 }
 
@@ -61,6 +67,16 @@ extension AIConnectionsFileClient: DependencyKey {
                     return .fileSystemError(.fileSystemError(error.localizedDescription))
                 }
             },
+            atomicUpdate: { @Sendable (transform: @Sendable (AIConnectionsFile) throws -> AIConnectionsFile) in
+                do {
+                    try await store.migrateFromHomeIfNeeded()
+                    return try await .success(store.update(transform))
+                } catch _ as POSIXLockError {
+                    return .fileSystemError(.lockContention)
+                } catch {
+                    return .fileSystemError(.fileSystemError(error.localizedDescription))
+                }
+            },
         )
     }
 
@@ -90,6 +106,15 @@ extension AIConnectionsFileClient: DependencyKey {
                     try await store.deleteCredential(for: provider)
                     let updated = try await store.load()
                     return .success(updated)
+                } catch _ as POSIXLockError {
+                    return .fileSystemError(.lockContention)
+                } catch {
+                    return .fileSystemError(.fileSystemError(error.localizedDescription))
+                }
+            },
+            atomicUpdate: { @Sendable (transform: @Sendable (AIConnectionsFile) throws -> AIConnectionsFile) in
+                do {
+                    return try await .success(store.update(transform))
                 } catch _ as POSIXLockError {
                     return .fileSystemError(.lockContention)
                 } catch {

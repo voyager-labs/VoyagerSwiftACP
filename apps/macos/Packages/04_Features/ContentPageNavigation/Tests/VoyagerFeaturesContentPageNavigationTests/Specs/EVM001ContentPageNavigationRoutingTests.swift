@@ -45,6 +45,25 @@ final class EVM001ContentPageNavigationRoutingTests: XCTestCase {
         await store.receive(.delegate(.navigateToState(.folder("/next"))))
     }
 
+    /// EVM-001-navigate_pages: direct parent 경로 이동은 공개 intent 제외
+    /// 직접 이동이 lexical direct parent에 도착해도 공개 intent를 발생시키지 않는다.
+    /// - 검증 내용: direct navigation은 resetComposer → logDAUNavigation → navigateToState만 발생
+    /// - 사전 조건: seedPath="/a/b"로 초기화된 TestStore
+    /// - 기대 결과: /a 이동에서 revealEntryAfterNavigation 미발생
+    func testDirectNavigateToParentDoesNotRevealPreviousFolder() async {
+        let store = makeNavigationStore(seedPath: "/a/b")
+
+        await store.send(.internal(.performNavigateToPath("/a"))) {
+            $0.navigationState = .folder("/a")
+            $0.backHistory = [ContentPageNavigationHistorySnapshot(navigationState: .folder("/a/b"))]
+            $0.forwardHistory = []
+        }
+
+        await store.receive(.delegate(.resetComposer))
+        await store.receive(.delegate(.logDAUNavigation(previous: .folder("/a/b"), next: .folder("/a"))))
+        await store.receive(.delegate(.navigateToState(.folder("/a"))))
+    }
+
     /// EVM-001-navigate_pages: 최근 항목 네비게이션 시 history 기록 및 델리게이트 순차 발생 검증
     /// 최근 항목으로 직접 네비게이션하면 backHistory에 이전 상태가 기록되고 델리게이트가 순차 발생한다.
     /// - 검증 내용: performShowRecents 액션이 navigationState를 .recents로 변경하고 backHistory/forwardHistory를 재조정하는지 확인
@@ -201,6 +220,59 @@ final class EVM001ContentPageNavigationRoutingTests: XCTestCase {
         await store.receive(.delegate(.navigateToState(.folder("/seed"))))
     }
 
+    /// EVM-001-go_page_history_back: direct-parent Back 공개 intent와 effect 순서
+    /// Back이 이전 폴더의 standardized lexical direct parent에 도착할 때 떠난 폴더 공개 intent를 한 번 발생시킨다.
+    /// - 검증 내용: resetComposer → logDAUNavigation → revealEntryAfterNavigation → navigateToState 순서
+    /// - 사전 조건: /a/b로 직접 이동해 backHistory에 /a가 있는 TestStore
+    /// - 기대 결과: /a 도착 직전에 /a/b 공개 intent가 정확히 한 번 발생
+    func testBackToDirectParentRevealsPreviousFolderBeforeNavigation() async {
+        let store = makeNavigationStore(seedPath: "/a")
+
+        await store.send(.internal(.performNavigateToPath("/a/b"))) {
+            $0.navigationState = .folder("/a/b")
+            $0.backHistory = [ContentPageNavigationHistorySnapshot(navigationState: .folder("/a"))]
+            $0.forwardHistory = []
+        }
+        await store.receive(.delegate(.resetComposer))
+        await store.receive(.delegate(.logDAUNavigation(previous: .folder("/a"), next: .folder("/a/b"))))
+        await store.receive(.delegate(.navigateToState(.folder("/a/b"))))
+
+        await store.send(.internal(.performNavigation(.back))) {
+            $0.navigationState = .folder("/a")
+            $0.backHistory = []
+            $0.forwardHistory = [ContentPageNavigationHistorySnapshot(navigationState: .folder("/a/b"))]
+        }
+        await store.receive(.delegate(.resetComposer))
+        await store.receive(.delegate(.logDAUNavigation(previous: .folder("/a/b"), next: .folder("/a"))))
+        await store.receive(.delegate(.revealEntryAfterNavigation(destinationPath: "/a", entryPath: "/a/b")))
+        await store.receive(.delegate(.navigateToState(.folder("/a"))))
+    }
+
+    /// EVM-001-go_page_history_back: trailing slash direct-parent Back 공개 intent
+    /// trailing slash가 있는 이전 폴더도 standardized lexical 비교로 직접 부모를 판정한다.
+    /// - 검증 내용: raw entry path를 보존하면서 destination path와 부모 비교를 표준화
+    /// - 사전 조건: 현재 /a/b/ 폴더, backHistory의 이전 경로 /a
+    /// - 기대 결과: /a/b/를 /a에서 공개하는 intent 발생
+    func testBackToDirectParentNormalizesTrailingSlashForComparison() async {
+        var initial = ContentPageNavigationFeature.State()
+        initial.navigationState = .folder("/a/b/")
+        initial.backHistory = [ContentPageNavigationHistorySnapshot(navigationState: .folder("/a"))]
+
+        let store = TestStore(initialState: initial) {
+            ContentPageNavigationFeature()
+        }
+
+        await store.send(.internal(.performNavigation(.back))) {
+            $0.navigationState = .folder("/a")
+            $0.backHistory = []
+            $0.forwardHistory = [ContentPageNavigationHistorySnapshot(navigationState: .folder("/a/b/"))]
+        }
+        await store.receive(.delegate(.resetComposer))
+        await store.receive(.delegate(.logDAUNavigation(previous: .folder("/a/b/"), next: .folder("/a"))))
+        await store.receive(.delegate(.revealEntryAfterNavigation(destinationPath: "/a", entryPath: "/a/b/")))
+        await store.receive(.delegate(.navigateToState(.folder("/a"))))
+    }
+
     // MARK: - EVM-001-forward_page_history
 
     /// EVM-001-forward_page_history: 빈 forwardHistory에서 forward 네비게이션 no-op
@@ -251,6 +323,54 @@ final class EVM001ContentPageNavigationRoutingTests: XCTestCase {
         await store.receive(.delegate(.resetComposer))
         await store.receive(.delegate(.logDAUNavigation(previous: .folder("/seed"), next: .folder("/next"))))
         await store.receive(.delegate(.navigateToState(.folder("/next"))))
+    }
+
+    /// EVM-001-forward_page_history: Forward는 direct-parent 공개 intent 제외
+    /// Forward가 lexical direct parent에 도착해도 Back 전용 공개 intent를 발생시키지 않는다.
+    /// - 검증 내용: Forward effect 순서가 resetComposer → logDAUNavigation → navigateToState로 유지됨
+    /// - 사전 조건: 현재 /a/b, forwardHistory에 /a가 있는 TestStore
+    /// - 기대 결과: revealEntryAfterNavigation 미발생
+    func testForwardToDirectParentDoesNotRevealPreviousFolder() async {
+        var initial = ContentPageNavigationFeature.State()
+        initial.navigationState = .folder("/a/b")
+        initial.forwardHistory = [ContentPageNavigationHistorySnapshot(navigationState: .folder("/a"))]
+
+        let store = TestStore(initialState: initial) {
+            ContentPageNavigationFeature()
+        }
+
+        await store.send(.internal(.performNavigation(.forward))) {
+            $0.navigationState = .folder("/a")
+            $0.backHistory = [ContentPageNavigationHistorySnapshot(navigationState: .folder("/a/b"))]
+            $0.forwardHistory = []
+        }
+        await store.receive(.delegate(.resetComposer))
+        await store.receive(.delegate(.logDAUNavigation(previous: .folder("/a/b"), next: .folder("/a"))))
+        await store.receive(.delegate(.navigateToState(.folder("/a"))))
+    }
+
+    /// EVM-001-show_page_history: history index는 direct-parent 공개 intent 제외
+    /// 임의 history index 이동이 lexical direct parent에 도착해도 공개 intent를 발생시키지 않는다.
+    /// - 검증 내용: history index effect 순서가 resetComposer → logDAUNavigation → navigateToState로 유지됨
+    /// - 사전 조건: 현재 /a/b, backHistory index 0에 /a가 있는 TestStore
+    /// - 기대 결과: revealEntryAfterNavigation 미발생
+    func testHistoryIndexToDirectParentDoesNotRevealPreviousFolder() async {
+        var initial = ContentPageNavigationFeature.State()
+        initial.navigationState = .folder("/a/b")
+        initial.backHistory = [ContentPageNavigationHistorySnapshot(navigationState: .folder("/a"))]
+
+        let store = TestStore(initialState: initial) {
+            ContentPageNavigationFeature()
+        }
+
+        await store.send(.internal(.performNavigation(.history(index: 0, isBackHistory: true)))) {
+            $0.navigationState = .folder("/a")
+            $0.backHistory = []
+            $0.forwardHistory = [ContentPageNavigationHistorySnapshot(navigationState: .folder("/a/b"))]
+        }
+        await store.receive(.delegate(.resetComposer))
+        await store.receive(.delegate(.logDAUNavigation(previous: .folder("/a/b"), next: .folder("/a"))))
+        await store.receive(.delegate(.navigateToState(.folder("/a"))))
     }
 
     // MARK: - EVM-001-show_page_history
@@ -357,6 +477,7 @@ final class EVM001ContentPageNavigationRoutingTests: XCTestCase {
 
         await store.receive(.delegate(.resetComposer))
         await store.receive(.delegate(.logDAUNavigation(previous: .folder("/a/b"), next: .folder("/a"))))
+        await store.receive(.delegate(.revealEntryAfterNavigation(destinationPath: "/a", entryPath: "/a/b")))
         await store.receive(.delegate(.navigateToState(.folder("/a"))))
     }
 
@@ -388,5 +509,32 @@ final class EVM001ContentPageNavigationRoutingTests: XCTestCase {
         // titlePath가 여전히 seed 값을 유지 — view 레이어 책임
         XCTAssertEqual(store.state.titlePath, "/seed")
         XCTAssertEqual(store.state.navigationState, .folder("/next"))
+    }
+
+    /// EVM-001-view_current_page_title: 초기 route(.home)에 대응하는 titlePath로 초기화
+    /// legacy defaultTabPath 페이로드가 유지되더라도 기본 생성 상태의 제목은 Home route를 반영해야 한다.
+    /// - 검증 내용: 기본 init 직후 navigationState == .home, titlePath == "Home", currentPath == "Home"
+    /// - 사전 조건: 기본 init으로 생성한 ContentPageNavigationState
+    /// - 기대 결과: 초기 제목이 legacy 홈 디렉터리 경로가 아닌 "Home"
+    func testInitialStateSeedsTitlePathToHomeRoute() {
+        let state = ContentPageNavigationState()
+
+        XCTAssertEqual(state.navigationState, .home)
+        XCTAssertEqual(state.titlePath, "Home")
+        XCTAssertEqual(state.currentPath, "Home")
+    }
+
+    /// EVM-001-view_current_page_title: Directory seed는 경로 제목을 유지
+    /// seedInitialFolderPath는 navigationState와 titlePath를 모두 해당 경로로 설정한다.
+    /// - 검증 내용: seedInitialFolderPath("/tmp/voyager-seed") 후 titlePath와 currentPath가 시드 경로와 일치
+    /// - 사전 조건: 기본 init으로 생성한 ContentPageNavigationState
+    /// - 기대 결과: Directory route의 제목은 경로 그대로 유지
+    func testSeedInitialFolderPathKeepsDirectoryTitleAsPath() {
+        var state = ContentPageNavigationState()
+        state.seedInitialFolderPath("/tmp/voyager-seed")
+
+        XCTAssertEqual(state.navigationState, .folder("/tmp/voyager-seed"))
+        XCTAssertEqual(state.titlePath, "/tmp/voyager-seed")
+        XCTAssertEqual(state.currentPath, "/tmp/voyager-seed")
     }
 }

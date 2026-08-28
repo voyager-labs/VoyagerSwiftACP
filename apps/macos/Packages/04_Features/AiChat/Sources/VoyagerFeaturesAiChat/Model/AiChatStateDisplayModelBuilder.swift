@@ -21,7 +21,6 @@ struct AiChatStateDisplayModelBuilder {
         aiChatRequestContextDisplayModel(
             currentContext: state.currentContext,
             addedAttachments: state.addedAttachments,
-            lockedRequestContext: lockedRequestContextSnapshot,
         )
     }
 
@@ -215,10 +214,6 @@ struct AiChatStateDisplayModelBuilder {
 
     private var modelCatalogBuilder: AiChatModelCatalogStateBuilder {
         AiChatModelCatalogStateBuilder(state: state, availableModels: availableModels)
-    }
-
-    private var lockedRequestContextSnapshot: AiChatLockedRequestContextSnapshot? {
-        visibleProcessingLock?.context.requestContext
     }
 
     var canSubmit: Bool {

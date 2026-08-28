@@ -18,6 +18,11 @@ public struct EntryLoadingClient: Sendable {
         [URLResourceKey],
         FileManager.DirectoryEnumerationOptions,
     ) throws -> [URL]
+    public var directoryURLBatches: (@Sendable (
+        URL,
+        FileManager.DirectoryEnumerationOptions,
+        Int,
+    ) -> AsyncThrowingStream<[URL], Error>)?
     public var mountedVolumeURLs: @Sendable (
         [URLResourceKey],
         FileManager.VolumeEnumerationOptions,
@@ -33,6 +38,24 @@ public struct EntryLoadingClient: Sendable {
     public var getFolderItemCount: @Sendable (URL) -> Int?
     public var isPackageDirectory: @Sendable (URL) -> Bool
     public var displayName: @Sendable (String) -> String
+    public var stagedLoadItems: (@Sendable (URL, Bool, EntryMetadataPriority) -> AsyncThrowingStream<
+        EntryLoadEvent,
+        Error,
+    >)?
+    var resolveDirectoryURL: @Sendable (URL) -> URL
+    var resolvedDirectoryLoadItems: (@Sendable (URL, URL, Bool, EntryMetadataPriority)
+        -> AsyncThrowingStream<
+            EntryLoadEvent,
+            Error,
+        >)?
+    public var stagedLoadRecentItems: (@Sendable (Bool, EntryMetadataPriority) -> AsyncThrowingStream<
+        EntryLoadEvent,
+        Error,
+    >)?
+    public var stagedLoadFilesWithTag: (@Sendable (String, Bool, EntryMetadataPriority) -> AsyncThrowingStream<
+        EntryLoadEvent,
+        Error,
+    >)?
 
     nonisolated public init(
         loadItems: @escaping @Sendable (URL, Bool) async throws -> [EntryModel],
@@ -46,6 +69,11 @@ public struct EntryLoadingClient: Sendable {
         ) -> Bool,
         contentsOfDirectory: @escaping @Sendable (URL, [URLResourceKey], FileManager.DirectoryEnumerationOptions) throws
             -> [URL],
+        directoryURLBatches: (@Sendable (
+            URL,
+            FileManager.DirectoryEnumerationOptions,
+            Int,
+        ) -> AsyncThrowingStream<[URL], Error>)? = nil,
         mountedVolumeURLs: @escaping @Sendable ([URLResourceKey], FileManager.VolumeEnumerationOptions) -> [URL]?,
         urlsForDirectory: @escaping @Sendable (FileManager.SearchPathDirectory, FileManager.SearchPathDomainMask)
             -> [URL],
@@ -56,6 +84,26 @@ public struct EntryLoadingClient: Sendable {
         getFolderItemCount: @escaping @Sendable (URL) -> Int?,
         isPackageDirectory: @escaping @Sendable (URL) -> Bool,
         displayName: @escaping @Sendable (String) -> String,
+        stagedLoadItems: (@Sendable (URL, Bool, EntryMetadataPriority) -> AsyncThrowingStream<
+            EntryLoadEvent,
+            Error,
+        >)? = nil,
+        resolveDirectoryURL: @escaping @Sendable (URL) -> URL = {
+            $0.standardizedFileURL.resolvingSymlinksInPath()
+        },
+        resolvedDirectoryLoadItems: (@Sendable (URL, URL, Bool, EntryMetadataPriority)
+            -> AsyncThrowingStream<
+                EntryLoadEvent,
+                Error,
+            >)? = nil,
+        stagedLoadRecentItems: (@Sendable (Bool, EntryMetadataPriority) -> AsyncThrowingStream<
+            EntryLoadEvent,
+            Error,
+        >)? = nil,
+        stagedLoadFilesWithTag: (@Sendable (String, Bool, EntryMetadataPriority) -> AsyncThrowingStream<
+            EntryLoadEvent,
+            Error,
+        >)? = nil,
     ) {
         self.loadItems = loadItems
         self.loadComputerItems = loadComputerItems
@@ -64,6 +112,7 @@ public struct EntryLoadingClient: Sendable {
         self.fileExists = fileExists
         self.fileExistsAtPath = fileExistsAtPath
         self.contentsOfDirectory = contentsOfDirectory
+        self.directoryURLBatches = directoryURLBatches
         self.mountedVolumeURLs = mountedVolumeURLs
         self.urlsForDirectory = urlsForDirectory
         self.homeDirectory = homeDirectory
@@ -73,6 +122,11 @@ public struct EntryLoadingClient: Sendable {
         self.getFolderItemCount = getFolderItemCount
         self.isPackageDirectory = isPackageDirectory
         self.displayName = displayName
+        self.stagedLoadItems = stagedLoadItems
+        self.resolveDirectoryURL = resolveDirectoryURL
+        self.resolvedDirectoryLoadItems = resolvedDirectoryLoadItems
+        self.stagedLoadRecentItems = stagedLoadRecentItems
+        self.stagedLoadFilesWithTag = stagedLoadFilesWithTag
     }
 }
 
@@ -90,6 +144,7 @@ extension EntryLoadingClient: DependencyKey {
             fileExists: EntryLoadingLive.fileExists,
             fileExistsAtPath: EntryLoadingLive.fileExistsAtPath,
             contentsOfDirectory: EntryLoadingLive.contentsOfDirectory,
+            directoryURLBatches: EntryLoadingLive.directoryURLBatches,
             mountedVolumeURLs: EntryLoadingLive.mountedVolumeURLs,
             urlsForDirectory: EntryLoadingLive.urlsForDirectory,
             homeDirectory: EntryLoadingLive.homeDirectory,
@@ -99,6 +154,8 @@ extension EntryLoadingClient: DependencyKey {
             getFolderItemCount: EntryLoadingLive.getFolderItemCount,
             isPackageDirectory: EntryLoadingLive.isPackageDirectory,
             displayName: EntryLoadingLive.displayName,
+            resolveDirectoryURL: EntryLoadingLive.resolveDirectoryURL,
+            resolvedDirectoryLoadItems: EntryLoadingLive.resolvedDirectoryLoadItems,
         )
     }
 
@@ -152,12 +209,182 @@ public extension DependencyValues {
     }
 }
 
+public extension EntryLoadingClient {
+    /// 소스 획득 오류는 stream 오류로 끝나고, 개별 잘못된 경로는 materializer가 건너뛴다.
+    func loadItems(
+        _ directoryURL: URL,
+        _ showHidden: Bool,
+        _ priority: EntryMetadataPriority,
+        _ ancestorURLs: [URL] = [],
+    ) -> AsyncThrowingStream<EntryLoadEvent, Error> {
+        let client = self
+        let sequence = DeferredEntryLoadSequence {
+            let resolvedURL = try EntryDirectorySymlinkTraversal.resolveRoot(
+                directoryURL,
+                ancestors: ancestorURLs,
+                resolver: client.resolveDirectoryURL,
+            )
+            if let stagedLoadItems = client.stagedLoadItems {
+                return stagedLoadItems(directoryURL, showHidden, priority)
+            }
+            if let resolvedDirectoryLoadItems = client.resolvedDirectoryLoadItems {
+                return withDependencies {
+                    $0.entryLoadingClient = client
+                } operation: {
+                    resolvedDirectoryLoadItems(directoryURL, resolvedURL, showHidden, priority)
+                }
+            }
+            return client.payloadStream(showHidden: showHidden, sourceKind: .directory) {
+                try await client.loadItems(directoryURL, showHidden)
+            }
+        }
+        return AsyncThrowingStream(unfolding: { try await sequence.next() })
+    }
+
+    func materializePaths(
+        _ paths: [String],
+        _ showHidden: Bool,
+        _ priority: EntryMetadataPriority,
+    ) -> AsyncThrowingStream<EntryLoadEvent, Error> {
+        @Dependency(\.workspaceClient)
+        var workspaceClient
+        @Dependency(\.finderFavoritesTagClient)
+        var finderFavoritesTagClient
+        return EntryStagedMaterializerLive.materializeURLs(
+            paths.map(URL.init(fileURLWithPath:)),
+            showHidden: showHidden,
+            configuration: .init(
+                priority: priority,
+                entryLoadingClient: self,
+                workspaceClient: workspaceClient,
+                sourceKind: .paths,
+                instrumentation: .live(),
+                favoriteTags: finderFavoritesTagClient.favoriteTags(),
+            ),
+        )
+    }
+
+    func loadRecentItems(
+        _ showHidden: Bool,
+        _ priority: EntryMetadataPriority,
+    ) -> AsyncThrowingStream<EntryLoadEvent, Error> {
+        if let stagedLoadRecentItems {
+            return stagedLoadRecentItems(showHidden, priority)
+        }
+        @Dependency(\.workspaceClient)
+        var workspaceClient
+        let client = self
+        return payloadStream(showHidden: showHidden, sourceKind: .recent) {
+            await client.loadRecentItems(showHidden, workspaceClient)
+        }
+    }
+
+    func loadFilesWithTag(
+        _ tag: String,
+        _ showHidden: Bool,
+        _ priority: EntryMetadataPriority,
+    ) -> AsyncThrowingStream<EntryLoadEvent, Error> {
+        if let stagedLoadFilesWithTag {
+            return stagedLoadFilesWithTag(tag, showHidden, priority)
+        }
+        @Dependency(\.workspaceClient)
+        var workspaceClient
+        let client = self
+        return payloadStream(showHidden: showHidden, sourceKind: .tag) {
+            await client.loadFilesWithTag(tag, showHidden, workspaceClient)
+        }
+    }
+
+    private func payloadStream(
+        showHidden: Bool,
+        sourceKind: EntryLoadingSourceKind,
+        load: @escaping @Sendable () async throws -> [EntryModel],
+    ) -> AsyncThrowingStream<EntryLoadEvent, Error> {
+        AsyncThrowingStream { continuation in
+            let producer = Task {
+                do {
+                    let entries = try await load()
+                    guard !Task.isCancelled else { return }
+                    for try await event in EntryStagedMaterializerLive.materializePayloadEntries(
+                        entries,
+                        showHidden: showHidden,
+                        sourceKind: sourceKind,
+                        instrumentation: .live(),
+                    ) {
+                        guard !Task.isCancelled else { return }
+                        continuation.yield(event)
+                    }
+                    continuation.finish()
+                } catch is CancellationError {
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in producer.cancel() }
+        }
+    }
+}
+
 enum EntryLoadingLive {
+    nonisolated static var resolveDirectoryURL: @Sendable (URL) -> URL {
+        EntryDirectorySymlinkTraversal.resolve
+    }
+
+    nonisolated static var resolvedDirectoryLoadItems: @Sendable (
+        URL,
+        URL,
+        Bool,
+        EntryMetadataPriority,
+    )
+        -> AsyncThrowingStream<
+            EntryLoadEvent,
+            Error,
+        >
+    {
+        { lexicalURL, resolvedURL, showHidden, priority in
+            @Dependency(\.workspaceClient)
+            var workspaceClient
+            @Dependency(\.finderFavoritesTagClient)
+            var finderFavoritesTagClient
+            @Dependency(\.entryLoadingClient)
+            var entryLoadingClient
+            let options: FileManager.DirectoryEnumerationOptions = showHidden ? [] : [.skipsHiddenFiles]
+            let configuration = EntryStagedMaterializerLive.URLMaterializationConfiguration(
+                priority: priority,
+                entryLoadingClient: entryLoadingClient,
+                workspaceClient: workspaceClient,
+                sourceKind: .directory,
+                instrumentation: .live(),
+                favoriteTags: finderFavoritesTagClient.favoriteTags(),
+            )
+            if let directoryURLBatches = entryLoadingClient.directoryURLBatches {
+                return EntryStagedMaterializerLive.materializeURLBatches(
+                    directoryURLBatches(resolvedURL, options, EntryStagedMaterializerLive.batchSize),
+                    lexicalRoot: lexicalURL,
+                    showHidden: showHidden,
+                    configuration: configuration,
+                )
+            }
+            let sequence = DeferredEntryLoadSequence {
+                let urls = try entryLoadingClient.contentsOfDirectory(resolvedURL, [], options)
+                return EntryStagedMaterializerLive.materializeCandidates(
+                    EntryDirectorySymlinkTraversal.candidates(urls, lexicalRoot: lexicalURL),
+                    showHidden: showHidden,
+                    configuration: configuration,
+                )
+            }
+            return AsyncThrowingStream(unfolding: { try await sequence.next() })
+        }
+    }
+
     nonisolated static var loadItems: @Sendable (URL, Bool) async throws -> [EntryModel] {
         { directoryURL, showHidden in
-            try await Task.detached {
+            @Dependency(\.finderFavoritesTagClient)
+            var finderFavoritesTagClient
+            let favoriteTags = finderFavoritesTagClient.favoriteTags()
+            return try await Task.detached {
                 let entryLoadingClient = EntryLoadingClient.liveValue
-                let favoriteTags = FinderFavoritesTagClient.liveValue.favoriteTags()
                 let workspaceClient = WorkspaceClient.liveValue
                 let fileManagerClient = FileManagerClient.liveValue
                 let options: FileManager.DirectoryEnumerationOptions = showHidden ? [] : [.skipsHiddenFiles]
@@ -278,6 +505,24 @@ enum EntryLoadingLive {
         }
     }
 
+    nonisolated static var directoryURLBatches: @Sendable (
+        URL,
+        FileManager.DirectoryEnumerationOptions,
+        Int,
+    ) -> AsyncThrowingStream<[URL], Error> {
+        { directoryURL, options, batchSize in
+            let source = DirectoryURLBatchSource(
+                directoryURL: directoryURL,
+                options: options.union(.skipsSubdirectoryDescendants),
+                batchSize: batchSize,
+            )
+            return AsyncThrowingStream(unfolding: {
+                try Task.checkCancellation()
+                return try source.nextBatch()
+            })
+        }
+    }
+
     nonisolated static var getItemMetadata: @Sendable (URL, Bool, WorkspaceClient) -> EntryItemMetadata {
         { url, isDirectory, workspaceClient in
             var kind: String
@@ -357,26 +602,7 @@ enum EntryLoadingLive {
     }
 
     nonisolated static var isPackageDirectory: @Sendable (URL) -> Bool {
-        { url in
-            if let values = try? url.resourceValues(forKeys: [.isPackageKey]),
-               values.isPackage == true
-            {
-                return true
-            }
-
-            let ext = url.pathExtension.lowercased()
-            if ["app", "icon"].contains(ext) {
-                return true
-            }
-
-            if let type = UTType(filenameExtension: url.pathExtension),
-               type.conforms(to: .package)
-            {
-                return true
-            }
-
-            return false
-        }
+        { url in PackageDirectoryClassification.isPackageDirectory(url) }
     }
 
     nonisolated static func loadRecentItemsViaSearch(
@@ -386,7 +612,9 @@ enum EntryLoadingLive {
         },
     ) async -> [EntryModel] {
         do {
-            let favoriteTags = FinderFavoritesTagClient.liveValue.favoriteTags()
+            @Dependency(\.finderFavoritesTagClient)
+            var finderFavoritesTagClient
+            let favoriteTags = finderFavoritesTagClient.favoriteTags()
             let response = try await search(
                 .init(
                     scopeMode: .allIndexed,
@@ -413,7 +641,9 @@ enum EntryLoadingLive {
         },
     ) async -> [EntryModel] {
         do {
-            let favoriteTags = FinderFavoritesTagClient.liveValue.favoriteTags()
+            @Dependency(\.finderFavoritesTagClient)
+            var finderFavoritesTagClient
+            let favoriteTags = finderFavoritesTagClient.favoriteTags()
             let response = try await search(
                 .init(
                     requestedTag: tag,
@@ -432,5 +662,73 @@ enum EntryLoadingLive {
         } catch {
             return []
         }
+    }
+}
+
+private actor DeferredEntryLoadSequence {
+    private let makeStream: @Sendable () async throws -> AsyncThrowingStream<EntryLoadEvent, Error>
+    private var iterator: EntryLoadIteratorBox?
+
+    init(makeStream: @escaping @Sendable () async throws -> AsyncThrowingStream<EntryLoadEvent, Error>) {
+        self.makeStream = makeStream
+    }
+
+    func next() async throws -> EntryLoadEvent? {
+        if iterator == nil {
+            let stream = try await makeStream()
+            iterator = EntryLoadIteratorBox(stream.makeAsyncIterator())
+        }
+        return try await iterator?.next()
+    }
+}
+
+private final class EntryLoadIteratorBox: @unchecked Sendable {
+    private var iterator: AsyncThrowingStream<EntryLoadEvent, Error>.Iterator
+
+    init(_ iterator: AsyncThrowingStream<EntryLoadEvent, Error>.Iterator) {
+        self.iterator = iterator
+    }
+
+    func next() async throws -> EntryLoadEvent? {
+        try await iterator.next()
+    }
+}
+
+private final class DirectoryURLBatchSource: @unchecked Sendable {
+    private let directoryURL: URL
+    private let options: FileManager.DirectoryEnumerationOptions
+    private let batchSize: Int
+    private var enumerator: FileManager.DirectoryEnumerator?
+    private var enumerationError: Error?
+
+    init(directoryURL: URL, options: FileManager.DirectoryEnumerationOptions, batchSize: Int) {
+        self.directoryURL = directoryURL
+        self.options = options
+        self.batchSize = batchSize
+    }
+
+    func nextBatch() throws -> [URL]? {
+        if enumerator == nil {
+            enumerator = FileManager.default.enumerator(
+                at: directoryURL,
+                includingPropertiesForKeys: [],
+                options: options,
+                errorHandler: { [weak self] _, error in
+                    self?.enumerationError = error
+                    return false
+                },
+            )
+            guard enumerator != nil else { throw CocoaError(.fileReadNoSuchFile) }
+        }
+
+        var urls: [URL] = []
+        while urls.count < batchSize, let value = enumerator?.nextObject() {
+            if let error = enumerationError { throw error }
+            if let url = value as? URL {
+                urls.append(url)
+            }
+        }
+        if let error = enumerationError { throw error }
+        return urls.isEmpty ? nil : urls
     }
 }

@@ -1,15 +1,25 @@
 import React from "react"
-import "../packages/file-manager-illustration/src/styles/macos-tokens.css"
+import "../packages/design-foundation/src/styles/macos-tokens.css"
+import "../packages/design-foundation/src/styles/fonts.css"
+import "../packages/design-foundation/src/styles/ui-kit.css"
+import "../packages/design-foundation/src/styles/atoms.css"
+import "../packages/design-foundation/src/styles/controls.css"
+import "../packages/design-foundation/src/styles/form-controls.css"
+import "../packages/design-foundation/src/styles/menu-controls.css"
+import "../packages/design-foundation/src/styles/feedback.css"
+import "../packages/design-foundation/src/styles/overlays.css"
 import "../packages/file-manager-illustration/src/styles/file-manager.css"
-import "../packages/file-manager-illustration/src/styles/atoms.css"
-import "../packages/file-manager-illustration/src/styles/form-controls.css"
-import "../packages/file-manager-illustration/src/styles/menu-controls.css"
-import "../packages/file-manager-illustration/src/styles/feedback.css"
-import "../packages/file-manager-illustration/src/styles/overlays.css"
+import "../packages/file-manager-illustration/src/styles/composer.css"
+import "../packages/file-manager-illustration/src/styles/composer-overlays.css"
 import "../packages/file-manager-illustration/src/styles/inspector.css"
 import "../packages/file-manager-illustration/src/styles/sidebar.css"
 import "../packages/file-manager-illustration/src/styles/window-shell.css"
 import type { Preview, ReactRenderer } from "@storybook/react-vite"
+import {
+  DesignVersionProvider,
+  designVersionIDs,
+  designVersionToolbarItems,
+} from "../packages/file-manager-illustration/src/Foundations/DesignVersion"
 
 const colorSchemeAttribute = "data-voyager-color-scheme"
 const visualBaselineAttribute = "data-voyager-visual-baseline"
@@ -49,13 +59,25 @@ const preview: Preview = {
         dynamicTitle: true,
       },
     },
+    designVersion: {
+      description: "Voyager design version",
+      toolbar: {
+        title: "Design version",
+        icon: "paintbrush",
+        items: designVersionToolbarItems,
+        dynamicTitle: true,
+      },
+    },
   },
   initialGlobals: {
     visualBaseline: "tahoe",
     colorScheme: "system",
+    designVersion: designVersionIDs.current,
   },
   decorators: [
     (Story, context) => {
+      const designVersion = designVersionIDs.current
+
       if (typeof document !== "undefined") {
         const visualBaseline = context.globals.visualBaseline
         const colorScheme = context.globals.colorScheme
@@ -73,10 +95,27 @@ const preview: Preview = {
         }
       }
 
+      // file-manager 스코프는 File Manager 스토리에만 적용해 셸 CSS 새는 것을 막는다.
+      const isFileManagerStory = context.title?.startsWith("File Manager") ?? false
+      // Design Foundation 카탈로그도 data-design-foundation 스코프가 필요해 vc-* 컴포넌트 스타일이 적용된다.
+      const isDesignFoundationStory = context.title?.startsWith("Design Foundation") ?? false
+
+      const scopedDataAttr = isFileManagerStory
+        ? "data-file-manager-illustration"
+        : isDesignFoundationStory
+          ? "data-design-foundation"
+          : null
+
       return (
-        <div data-file-manager-illustration>
-          <Story />
-        </div>
+        <DesignVersionProvider value={designVersion}>
+          {scopedDataAttr ? (
+            <div {...{ [scopedDataAttr]: true }} data-design-version={designVersion}>
+              <Story />
+            </div>
+          ) : (
+            <Story />
+          )}
+        </DesignVersionProvider>
       )
     },
   ] satisfies Preview["decorators"],

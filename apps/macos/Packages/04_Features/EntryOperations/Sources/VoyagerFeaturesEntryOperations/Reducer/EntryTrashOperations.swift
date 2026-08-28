@@ -66,6 +66,9 @@ struct EntryTrashOperationsReducer {
                 )
 
             case let .trash(.emptyTrash(paths)):
+                guard state.loadingContext.coreFinished else {
+                    return .none
+                }
                 let itemCount = paths.count
                 state.pendingEmptyTrashItemCount = itemCount
                 state.emptyTrashCompletedCount = 0

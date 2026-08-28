@@ -302,6 +302,7 @@ public struct AiChatState: Equatable, Sendable {
         sessionList.errorMessage = nil
         if let restoreSessionID, restoreSessionID != sessionID {
             self.restoreSessionID = nil
+            settleCancelledSessionRestoreIfNeeded()
             if sessionList.selectedSessionID == restoreSessionID {
                 sessionList.selectedSessionID = nil
             }
@@ -335,7 +336,7 @@ public struct AiChatState: Equatable, Sendable {
               deferredChatSessionRestoreID == sessionID
         else { return false }
         deferredChatSessionRestoreID = nil
-        restoreSessionID = sessionID
+        beginSessionRestore(for: sessionID)
         sessionList.selectedSessionID = sessionID
         restoreOutcome = nil
         restoreFailure = nil
@@ -392,6 +393,7 @@ public struct AiChatState: Equatable, Sendable {
         sessionList.selectedSessionID = sessionID
         guard let restoreSessionID, restoreSessionID != sessionID else { return false }
         self.restoreSessionID = nil
+        settleCancelledSessionRestoreIfNeeded()
         return true
     }
 
@@ -607,113 +609,19 @@ public struct AiChatState: Equatable, Sendable {
     public var cancelAffordance: AiChatCancelAffordance? {
         displayModelBuilder.cancelAffordance
     }
-
-    public var surfaceState: AiChatSurfaceState {
-        displayModelBuilder.surfaceState
-    }
-
-    public var modelFieldLabel: String {
-        displayModelBuilder.modelFieldLabel
-    }
-
-    public var isProcessing: Bool {
-        displayModelBuilder.isProcessing
-    }
-
-    public var resolvedSelectedModelHandle: AiModelHandle? {
-        displayModelBuilder.resolvedSelectedModelHandle
-    }
-
-    public var resolvedSelectedModel: AiProviderModel? {
-        displayModelBuilder.resolvedSelectedModel
-    }
-
-    private var displayModelBuilder: AiChatStateDisplayModelBuilder {
-        AiChatStateDisplayModelBuilder(state: self)
-    }
-
-    func normalizedSelectionHandle(
-        _ preferredHandle: AiModelHandle?,
-        in models: [AiProviderModel]? = nil,
-    ) -> AiModelHandle? {
-        resolvedModel(for: preferredHandle, in: models)?.id
-    }
-
-    func normalizedSelectionHandlePreservingCurrentSelection(
-        in models: [AiProviderModel],
-        preferredHandle: AiModelHandle?,
-    ) -> AiModelHandle? {
-        if let currentHandle = resolvedSelectedModelHandle,
-           Self.containsModelHandle(currentHandle, in: models)
-        {
-            return currentHandle
-        }
-        return normalizedSelectionHandle(preferredHandle, in: models)
-    }
-
-    func resolvedModel(for handle: AiModelHandle?, in models: [AiProviderModel]? = nil) -> AiProviderModel? {
-        Self.resolvedModel(for: handle, in: models ?? availableModels)
-    }
-
-    func resolvedModelRow(for handle: AiModelHandle?, in rows: [AiModelCatalogRow]? = nil) -> AiModelCatalogRow? {
-        Self.resolvedModelRow(for: handle, in: rows ?? catalogRows)
-    }
-
-    static func normalizedSelectionHandle(
-        _ preferredHandle: AiModelHandle?,
-        in models: [AiProviderModel],
-    ) -> AiModelHandle? {
-        AiChatStateSelection.normalizedSelectionHandle(preferredHandle, in: models)
-    }
-
-    static func resolvedModel(for handle: AiModelHandle?, in models: [AiProviderModel]) -> AiProviderModel? {
-        AiChatStateSelection.resolvedModel(for: handle, in: models)
-    }
-
-    static func resolvedModelRow(for handle: AiModelHandle?, in rows: [AiModelCatalogRow]) -> AiModelCatalogRow? {
-        AiChatStateSelection.resolvedModelRow(for: handle, in: rows)
-    }
-
-    static func containsModelHandle(_ handle: AiModelHandle, in models: [AiProviderModel]) -> Bool {
-        AiChatStateSelection.containsModelHandle(handle, in: models)
-    }
-
-    static func containsModelHandle(_ handle: AiModelHandle, in rows: [AiModelCatalogRow]) -> Bool {
-        AiChatStateSelection.containsModelHandle(handle, in: rows)
-    }
-
-    static func normalizeSelectedThinking(
-        _ selectedThinking: AiThinkingSelection?,
-        for model: AiProviderModel?,
-    ) -> AiThinkingSelection? {
-        AiChatStateSelection.normalizeSelectedThinking(selectedThinking, for: model)
-    }
-
-    static func modelListState(from catalogRows: [AiModelCatalogRow]) -> AiChatModelListState {
-        AiChatStateSelection.modelListState(from: catalogRows)
-    }
-
-    static func makeCatalogRows(
-        for models: [AiProviderModel],
-        preserving existingRows: [AiModelCatalogRow] = [],
-    ) -> [AiModelCatalogRow] {
-        AiChatStateSelection.makeCatalogRows(for: models, preserving: existingRows)
-    }
-
-    static func makeCatalogRows(for modelListState: AiChatModelListState) -> [AiModelCatalogRow] {
-        AiChatStateSelection.makeCatalogRows(for: modelListState)
-    }
-
-    static func defaultThinkingLabel(for capability: AiModelThinkingCapability) -> String {
-        AiChatStateSelection.defaultThinkingLabel(for: capability)
-    }
-
-    static func thinkingLabel(for selection: AiThinkingSelection) -> String {
-        AiChatStateSelection.thinkingLabel(for: selection)
-    }
 }
 
 public extension AiChatState {
+    mutating func beginSessionRestore(for sessionID: AiChatSessionID) {
+        restoreSessionID = sessionID
+        sessionStatus = .restoring
+    }
+
+    mutating func settleCancelledSessionRestoreIfNeeded() {
+        guard sessionStatus == .restoring else { return }
+        sessionStatus = sessionID == nil || emptyDraftSessionID == sessionID ? .idle : .active
+    }
+
     /// 동일 session에서 마지막 persisted 기준 이후 사용자 또는 navigation 변경이 발생했는지 반환한다.
     func hasInspectorReopenUserMutation(for sessionID: AiChatSessionID) -> Bool {
         self.sessionID == sessionID

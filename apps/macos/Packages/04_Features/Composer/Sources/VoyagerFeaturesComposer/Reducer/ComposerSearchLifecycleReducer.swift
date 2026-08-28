@@ -16,6 +16,8 @@ struct ComposerSearchLifecycleReducer {
     var searchClient
     @Dependency(\.registryClient)
     var registryClient
+    @Dependency(\.uuid)
+    var uuid
     @Dependency(\.continuousClock)
     var clock
     @Dependency(\.composerMetricClient)
@@ -80,12 +82,6 @@ struct ComposerSearchLifecycleReducer {
                             ),
                             level: .warn,
                         )
-                        composerMetricClient.logMetric(
-                            ComposerCollectionFilterMetrics.legacySearchResult,
-                            value: 1,
-                            tags: ComposerCollectionFilterMetrics.legacySearchFailureTags(),
-                            level: .warn,
-                        )
                         state.searchStartedAt = nil
                         kComposerSearchLifecycleLogger.warning(
                             "Composer query search returned error payload: \(feedback?.message ?? failureMessage)",
@@ -107,7 +103,12 @@ struct ComposerSearchLifecycleReducer {
                     state.lastSearchResponse = response
                     state.lastFiltersResponse = nil
                     applyQueryPhaseTransition(.searchSucceeded, state: &state)
-                    applyAppliedFilters(normalizedAppliedFilters, state: &state, registryClient: registryClient)
+                    applyAppliedFilters(
+                        normalizedAppliedFilters,
+                        state: &state,
+                        registryClient: registryClient,
+                        uuid: { uuid() },
+                    )
                     logSearchDurationIfNeeded(state.searchStartedAt, composerMetricClient: composerMetricClient)
                     logCollectionFilterQueryResult(
                         response: response,
@@ -115,14 +116,6 @@ struct ComposerSearchLifecycleReducer {
                         filters: feedbackFilters(from: normalizedAppliedFilters),
                         openedCollectionURL: state.openedCollectionURL,
                         composerMetricClient: composerMetricClient,
-                    )
-                    composerMetricClient.logMetric(
-                        ComposerCollectionFilterMetrics.legacySearchResult,
-                        value: 1,
-                        tags: ComposerCollectionFilterMetrics.legacySearchResultTags(
-                            itemCount: response.itemCount,
-                            queryConversion: response.queryConversion,
-                        ),
                     )
                     state.searchStartedAt = nil
                     if shouldSkipApplyFilters {
@@ -210,12 +203,6 @@ struct ComposerSearchLifecycleReducer {
                         ),
                         level: .warn,
                     )
-                    composerMetricClient.logMetric(
-                        ComposerCollectionFilterMetrics.legacySearchResult,
-                        value: 1,
-                        tags: ComposerCollectionFilterMetrics.legacySearchFailureTags(),
-                        level: .warn,
-                    )
                     state.searchStartedAt = nil
                     kComposerSearchLifecycleLogger.warning(
                         "Composer query search failed: \(feedbackFailureMessage(for: error))",
@@ -237,7 +224,12 @@ struct ComposerSearchLifecycleReducer {
                     let metricSource = state.activeFiltersMetricSource ?? ComposerCollectionFilterMetrics
                         .sourceManualApply
                     state.activeFiltersMetricSource = nil
-                    applyAppliedFilters(response.appliedFilters, state: &state, registryClient: registryClient)
+                    applyAppliedFilters(
+                        response.appliedFilters,
+                        state: &state,
+                        registryClient: registryClient,
+                        uuid: { uuid() },
+                    )
                     state.scopeEditor.committedSelection = state.scopeEditor.selection
                     state.scopeEditor.committedIncludeSubfolders = state.scopeEditor.includeSubfolders
                     state.resolveScopeChangeFeedback(.filters(requestID), phase: .visible)
@@ -362,19 +354,10 @@ private func logSubmitMetrics(
     composerMetricClient: ComposerMetricClient,
 ) {
     composerMetricClient.logMetric(
-        ComposerCollectionFilterMetrics.legacyComposerSubmit,
+        ComposerCollectionFilterMetrics.querySubmit,
         value: 1,
+        tags: ["source": hasSubmittedInSession ? "resubmit" : "submit"],
     )
-    composerMetricClient.logMetric(
-        ComposerCollectionFilterMetrics.legacySearchSubmit,
-        value: 1,
-    )
-    if hasSubmittedInSession {
-        composerMetricClient.logMetric(
-            ComposerCollectionFilterMetrics.legacySearchResubmit,
-            value: 1,
-        )
-    }
 }
 
 private func makeSearchRequest(
@@ -401,9 +384,9 @@ private func handleCancelSearch(
     }
     applyQueryPhaseTransition(.reset, state: &state)
     composerMetricClient.logMetric(
-        ComposerCollectionFilterMetrics.legacySearchCancel,
+        ComposerCollectionFilterMetrics.queryResult,
         value: 1,
-        tags: ComposerCollectionFilterMetrics.legacyCancelTags(type: "search"),
+        tags: ["result": "cancelled", "type": "search"],
     )
     return .cancel(id: ComposerFeature.CancelID.search(ownerID: state.cancellationOwnerID))
 }
@@ -435,18 +418,13 @@ private func handleCancelFilters(
             itemCount: nil,
         ),
     )
-    composerMetricClient.logMetric(
-        ComposerCollectionFilterMetrics.legacySearchCancel,
-        value: 1,
-        tags: ComposerCollectionFilterMetrics.legacyCancelTags(type: "filters"),
-    )
     return .cancel(id: ComposerFeature.CancelID.filters(ownerID: state.cancellationOwnerID))
 }
 
 private func handleApplyFilters(
     state: inout ComposerFeature.State,
     searchClient: SearchClient,
-    composerMetricClient: ComposerMetricClient,
+    composerMetricClient _: ComposerMetricClient,
 ) -> Effect<ComposerFeature.Action> {
     state.isLoadingSearch = false
     let filtersRequestID = UUID()
@@ -457,10 +435,6 @@ private func handleApplyFilters(
     state.activeFiltersRequestID = filtersRequestID
     state.lastAcceptedFiltersRequestID = nil
     applyQueryPhaseTransition(.reset, state: &state)
-    composerMetricClient.logMetric(
-        ComposerCollectionFilterMetrics.legacyFiltersApply,
-        value: 1,
-    )
     state.filtersStartedAt = Date()
     return .concatenate(
         .cancel(id: ComposerFeature.CancelID.search(ownerID: state.cancellationOwnerID)),

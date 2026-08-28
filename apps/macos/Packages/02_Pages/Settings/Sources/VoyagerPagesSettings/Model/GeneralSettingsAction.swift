@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import VoyagerEntitiesAppPreferences
 import VoyagerEntitiesEntry
 
 public enum DefaultFileViewerDiagnosisSource: Equatable, Sendable {
@@ -22,6 +23,7 @@ public enum DefaultFileViewerDiagnosisSource: Equatable, Sendable {
 @CasePathable
 public enum GeneralSettingsAction: CasePathable, Equatable, Sendable {
     case loadSettings
+    case selectStartPageOption(StartPageOption)
     case setStartingDirectory(String)
     case selectDirectoryOption(DirectoryOption)
     case openOtherDirectoryPanel

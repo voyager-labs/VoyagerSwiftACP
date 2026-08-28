@@ -8,7 +8,7 @@ final class EntryListHeaderView: NSTableHeaderView {
     }
 
     var menuModelProvider: (() -> EntryViewLayoutColumnsMenuModel)?
-    var send: ((EntryViewLayoutAction) -> Void)?
+    var send: ((EntryViewLayoutAction.View) -> Void)?
 
     override func menu(for event: NSEvent) -> NSMenu? {
         guard let model = menuModelProvider?() else {
@@ -57,11 +57,11 @@ final class EntryListHeaderView: NSTableHeaderView {
         if !payload.nextIsVisible, EntryListColumn.requiredColumns.contains(payload.column) {
             return
         }
-        send?(.internal(.setListColumnVisibility(column: payload.column, isVisible: payload.nextIsVisible)))
+        send?(.updateListColumnVisibility(column: payload.column, isVisible: payload.nextIsVisible))
     }
 
     @objc
     private func handleResetColumns(_: NSMenuItem) {
-        send?(.internal(.resetListVisibleColumns))
+        send?(.resetListVisibleColumns)
     }
 }

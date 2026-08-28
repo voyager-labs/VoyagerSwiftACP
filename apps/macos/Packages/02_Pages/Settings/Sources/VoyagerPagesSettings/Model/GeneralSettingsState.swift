@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import VoyagerEntitiesAppPreferences
 
 public enum DefaultFileViewerPhase: Equatable, Sendable {
     case idle
@@ -9,8 +10,11 @@ public enum DefaultFileViewerPhase: Equatable, Sendable {
 
 @ObservableState
 public struct GeneralSettingsState: Equatable {
+    var defaultStartPage: StartPage = .home
+    var selectedStartPageOption: StartPageOption = .home
     var startingDirectory: String = ""
     var selectedDirectoryOption: DirectoryOption = .home
+    var standardDirectories: StandardDirectories = .defaultValue
     var isSelectingDirectory: Bool = false
     var startingDirectoryError: String?
     var launchAtStartup: Bool = false

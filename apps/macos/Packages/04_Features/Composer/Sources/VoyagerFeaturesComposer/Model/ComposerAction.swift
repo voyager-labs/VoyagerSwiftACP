@@ -10,8 +10,8 @@ public enum ComposerAction: ViewAction, CasePathable, Sendable {
     case `internal`(Internal)
 
     case propertyPicker(ConditionPropertyPickerFeature.Action)
-    case operatorPicker(OperatorPickerFeature.Action)
     case valuePicker(ValuePickerFeature.Action)
+    case conditionEditor(IdentifiedActionOf<ConditionEditorFeature>)
 
     @CasePathable
     public enum View: Sendable {
@@ -26,11 +26,7 @@ public enum ComposerAction: ViewAction, CasePathable, Sendable {
         case currentScope(CurrentScope)
         case exceptionScope(ExceptionScope)
         case addCondition(propertyKey: String)
-        case removeCondition(propertyKey: String)
-        case replaceConditionProperty(originalKey: String, propertyKey: String)
-        case setOperator(propertyKey: String, operatorCode: String)
-        case setValue(propertyKey: String, values: [String])
-        case setDisplayUnit(propertyKey: String, unitCode: String)
+        case removeCondition(id: UUID)
         case clearAll
         case submit
         case applyFilters
@@ -69,6 +65,8 @@ public enum ComposerAction: ViewAction, CasePathable, Sendable {
         case scopeEditorSearchResponse(String, Result<[ComposerScopeUtils.DirectoryItem], Error>)
         case dismissTransientFeedback(UUID)
         case presentTransientFeedback(ComposerTransientFeedback)
+        case clearTransientFeedback
+        case cleanupCollectionWork
         case searchListApplied
         case applyCollectionDraftRestore(CollectionDraftRestorePayload)
         case applyCollectionNavigationComposer(CollectionNavigationStatePayload)
@@ -96,181 +94,165 @@ public enum ComposerAction: ViewAction, CasePathable, Sendable {
         case saveRequested(SaveRequestPayload)
         case saveToExisting(SaveRequestPayload, URL)
     }
-}
 
-public extension ComposerAction {
-    static func setPresented(_ isPresented: Bool) -> Self {
-        .view(.setPresented(isPresented))
-    }
-
-    static func setText(_ text: String) -> Self {
-        .view(.setText(text))
-    }
-
-    static var focusQueryField: Self {
+    public static var focusQueryField: Self {
         .view(.focusQueryField)
     }
 
-    static func scopeEditorOpen(editingPath: String?, favorites: [ScopeFavoriteItem], backHistory: [String]) -> Self {
-        .view(.scopeEditorOpen(editingPath: editingPath, favorites: favorites, backHistory: backHistory))
-    }
-
-    static func scopeEditorSetPresented(_ isPresented: Bool) -> Self {
-        .view(.scopeEditorSetPresented(isPresented))
-    }
-
-    static func scopeEditorSetQueryText(_ text: String) -> Self {
-        .view(.scopeEditorSetQueryText(text))
-    }
-
-    static func scopeEditorSetIncludeSubfolders(_ includeSubfolders: Bool)
-        -> Self
-    {
-        .view(.scopeEditorSetIncludeSubfolders(includeSubfolders))
-    }
-
-    static func candidateScope(_ action: CandidateScope) -> Self {
-        .view(.candidateScope(action))
-    }
-
-    static func currentScope(_ action: CurrentScope) -> Self {
-        .view(.currentScope(action))
-    }
-
-    static func exceptionScope(_ action: ExceptionScope) -> Self {
-        .view(.exceptionScope(action))
-    }
-
-    static func addScope(path: String) -> Self {
-        .view(.candidateScope(.add(path: path)))
-    }
-
-    static func removeScope(path: String) -> Self {
-        .view(.currentScope(.remove(path: path)))
-    }
-
-    static func updateScope(oldPath: String, newPath: String) -> Self {
-        .view(.currentScope(.replace(oldPath: oldPath, newPath: newPath)))
-    }
-
-    static func excludeScope(path: String) -> Self {
-        .view(.exceptionScope(.exclude(path: path)))
-    }
-
-    static func restoreScope(path: String) -> Self {
-        .view(.exceptionScope(.restore(path: path)))
-    }
-
-    static func addCondition(propertyKey: String) -> Self {
-        .view(.addCondition(propertyKey: propertyKey))
-    }
-
-    static func removeCondition(propertyKey: String) -> Self {
-        .view(.removeCondition(propertyKey: propertyKey))
-    }
-
-    static func replaceConditionProperty(originalKey: String, propertyKey: String) -> Self {
-        .view(.replaceConditionProperty(originalKey: originalKey, propertyKey: propertyKey))
-    }
-
-    static func setOperator(propertyKey: String, operatorCode: String) -> Self {
-        .view(.setOperator(propertyKey: propertyKey, operatorCode: operatorCode))
-    }
-
-    static func setValue(propertyKey: String, values: [String]) -> Self {
-        .view(.setValue(propertyKey: propertyKey, values: values))
-    }
-
-    static func setDisplayUnit(propertyKey: String, unitCode: String) -> Self {
-        .view(.setDisplayUnit(propertyKey: propertyKey, unitCode: unitCode))
-    }
-
-    static var clearAll: Self {
+    public static var clearAll: Self {
         .view(.clearAll)
     }
 
-    static var submit: Self {
+    public static var submit: Self {
         .view(.submit)
     }
 
-    static var applyFilters: Self {
+    public static var applyFilters: Self {
         .view(.applyFilters)
     }
 
-    static var cancelSearch: Self {
+    public static var cancelSearch: Self {
         .view(.cancelSearch)
     }
 
-    static var cancelFilters: Self {
+    public static var cancelFilters: Self {
         .view(.cancelFilters)
     }
 
-    static var saveCollection: Self {
+    public static var saveCollection: Self {
         .view(.saveCollection)
     }
 
-    static var saveCollectionAs: Self {
+    public static var saveCollectionAs: Self {
         .view(.saveCollectionAs)
     }
 
-    static var undo: Self {
+    public static var undo: Self {
         .view(.undo)
     }
 
-    static var redo: Self {
+    public static var redo: Self {
         .view(.redo)
     }
 
-    static var scopeFeedbackUndoTapped: Self {
+    public static var scopeFeedbackUndoTapped: Self {
         .view(.scopeFeedbackUndoTapped)
     }
 
-    static var scopeFeedbackRedoTapped: Self {
+    public static var scopeFeedbackRedoTapped: Self {
         .view(.scopeFeedbackRedoTapped)
     }
 
-    static func searchResponse(
+    public static var searchListApplied: Self {
+        .internal(.searchListApplied)
+    }
+
+    public static var clearPendingSearchQuery: Self {
+        .internal(.clearPendingSearchQuery)
+    }
+
+    public static func setPresented(_ isPresented: Bool) -> Self {
+        .view(.setPresented(isPresented))
+    }
+
+    public static func setText(_ text: String) -> Self {
+        .view(.setText(text))
+    }
+
+    public static func scopeEditorOpen(
+        editingPath: String?,
+        favorites: [ScopeFavoriteItem],
+        backHistory: [String],
+    ) -> Self {
+        .view(.scopeEditorOpen(editingPath: editingPath, favorites: favorites, backHistory: backHistory))
+    }
+
+    public static func scopeEditorSetPresented(_ isPresented: Bool) -> Self {
+        .view(.scopeEditorSetPresented(isPresented))
+    }
+
+    public static func scopeEditorSetQueryText(_ text: String) -> Self {
+        .view(.scopeEditorSetQueryText(text))
+    }
+
+    public static func scopeEditorSetIncludeSubfolders(_ includeSubfolders: Bool) -> Self {
+        .view(.scopeEditorSetIncludeSubfolders(includeSubfolders))
+    }
+
+    public static func candidateScope(_ action: CandidateScope) -> Self {
+        .view(.candidateScope(action))
+    }
+
+    public static func currentScope(_ action: CurrentScope) -> Self {
+        .view(.currentScope(action))
+    }
+
+    public static func exceptionScope(_ action: ExceptionScope) -> Self {
+        .view(.exceptionScope(action))
+    }
+
+    public static func addScope(path: String) -> Self {
+        .view(.candidateScope(.add(path: path)))
+    }
+
+    public static func removeScope(path: String) -> Self {
+        .view(.currentScope(.remove(path: path)))
+    }
+
+    public static func updateScope(oldPath: String, newPath: String) -> Self {
+        .view(.currentScope(.replace(oldPath: oldPath, newPath: newPath)))
+    }
+
+    public static func excludeScope(path: String) -> Self {
+        .view(.exceptionScope(.exclude(path: path)))
+    }
+
+    public static func restoreScope(path: String) -> Self {
+        .view(.exceptionScope(.restore(path: path)))
+    }
+
+    public static func addCondition(propertyKey: String) -> Self {
+        .view(.addCondition(propertyKey: propertyKey))
+    }
+
+    public static func searchResponse(
         _ requestID: UUID,
         _ result: Result<VoyagerShared.SearchResponsePayload, Error>,
     ) -> Self {
         .internal(.searchResponse(requestID, result))
     }
 
-    static func scopeEditorSeedCurrentPath(_ currentPath: String) -> Self {
+    public static func scopeEditorSeedCurrentPath(_ currentPath: String) -> Self {
         .internal(.scopeEditorSeedCurrentPath(currentPath))
     }
 
-    static func scopeEditorSearchResponse(
+    public static func scopeEditorSearchResponse(
         _ query: String,
         _ result: Result<[ComposerScopeUtils.DirectoryItem], Error>,
     ) -> Self {
         .internal(.scopeEditorSearchResponse(query, result))
     }
 
-    static func filtersResponse(
+    public static func filtersResponse(
         _ requestID: UUID,
         _ result: Result<VoyagerShared.SearchResponsePayload, Error>,
     ) -> Self {
         .internal(.filtersResponse(requestID, result))
     }
 
-    static func dismissTransientFeedback(id: UUID) -> Self {
+    public static func dismissTransientFeedback(id: UUID) -> Self {
         .internal(.dismissTransientFeedback(id))
     }
 
-    static var searchListApplied: Self {
-        .internal(.searchListApplied)
-    }
-
-    static func applyCollectionDraftRestore(_ payload: CollectionDraftRestorePayload) -> Self {
+    public static func applyCollectionDraftRestore(_ payload: CollectionDraftRestorePayload) -> Self {
         .internal(.applyCollectionDraftRestore(payload))
     }
 
-    static func applyCollectionNavigationComposer(_ payload: CollectionNavigationStatePayload) -> Self {
+    public static func applyCollectionNavigationComposer(_ payload: CollectionNavigationStatePayload) -> Self {
         .internal(.applyCollectionNavigationComposer(payload))
     }
 
-    static func syncCollectionState(
+    public static func syncCollectionState(
         context: CollectionContext?,
         url: URL?,
         compatibility: CollectionFileCompatibilityMetadata?,
@@ -284,27 +266,23 @@ public extension ComposerAction {
         ))
     }
 
-    static func updateLastFiltersResponse(_ response: VoyagerShared.SearchResponsePayload) -> Self {
+    public static func updateLastFiltersResponse(_ response: VoyagerShared.SearchResponsePayload) -> Self {
         .internal(.updateLastFiltersResponse(response))
     }
 
-    static var clearPendingSearchQuery: Self {
-        .internal(.clearPendingSearchQuery)
-    }
-
-    static func setPendingSearchQuery(_ query: String?) -> Self {
+    public static func setPendingSearchQuery(_ query: String?) -> Self {
         .internal(.setPendingSearchQuery(query))
     }
 
-    static func setLoadingFilters(_ isLoading: Bool) -> Self {
+    public static func setLoadingFilters(_ isLoading: Bool) -> Self {
         .internal(.setLoadingFilters(isLoading))
     }
 
-    static func setInitialScope(_ path: String) -> Self {
+    public static func setInitialScope(_ path: String) -> Self {
         .internal(.setInitialScope(path))
     }
 
-    static func resetComposerAndSync(
+    public static func resetComposerAndSync(
         context: CollectionContext?,
         url: URL?,
         compatibility: CollectionFileCompatibilityMetadata?,
@@ -316,5 +294,9 @@ public extension ComposerAction {
             compatibility: compatibility,
             isCollectionMode: isCollectionMode,
         ))
+    }
+
+    static func removeCondition(id: UUID) -> Self {
+        .view(.removeCondition(id: id))
     }
 }

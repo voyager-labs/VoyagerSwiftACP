@@ -1,0 +1,503 @@
+[data-file-manager-illustration] .collection-composer {
+  position: relative;
+  width: 100%;
+  border: 1px solid var(--fm-composer-border);
+  border-radius: var(--fm-composer-radius);
+  background: var(--fm-composer-background);
+  backdrop-filter: var(--fm-backdrop-blur);
+  box-shadow: var(--fm-composer-shadow);
+  color: var(--fm-text-primary);
+  font-family: var(--fm-font-ui);
+  -webkit-backdrop-filter: var(--fm-backdrop-blur);
+}
+
+[data-file-manager-illustration] .collection-composer-compact-story-frame {
+  width: min(386px, 100%);
+}
+
+[data-file-manager-illustration] .collection-composer-story-frame {
+  min-height: 100dvh;
+  background: var(--fm-content);
+  box-sizing: border-box;
+  padding: 5px 7px;
+}
+
+[data-file-manager-illustration] .collection-composer-input-row {
+  display: flex;
+  height: 40px;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  box-sizing: border-box;
+}
+
+[data-file-manager-illustration] .collection-composer-input-row > * {
+  box-sizing: border-box;
+}
+
+[data-file-manager-illustration] .collection-composer-symbol-button {
+  display: inline-flex;
+  border: 0;
+  align-items: center;
+  justify-content: center;
+  color: var(--fm-text-primary);
+}
+
+[data-file-manager-illustration] .collection-composer-symbol-button {
+  width: 25px;
+  height: 21px;
+  border-radius: 4px;
+  background: transparent;
+  padding: 4px;
+}
+
+[data-file-manager-illustration] .collection-composer-symbol-button:hover:not(:disabled) {
+  background: var(--fm-composer-control-hover);
+}
+
+[data-file-manager-illustration] .collection-composer-symbol-button:disabled {
+  color: var(--fm-text-tertiary);
+}
+
+[data-file-manager-illustration] .collection-composer-symbol-button.accent {
+  position: relative;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--fm-composer-accent);
+  color: var(--fm-composer-accent-label);
+}
+
+[data-file-manager-illustration] .collection-composer-symbol-button.accent::before {
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+  background: var(--fm-composer-control-hover);
+  content: "";
+  opacity: 0;
+  pointer-events: none;
+}
+
+[data-file-manager-illustration]
+  .collection-composer-symbol-button.accent:hover:not(:disabled)::before {
+  opacity: 1;
+}
+
+[data-file-manager-illustration] .collection-composer-symbol-button.accent:disabled {
+  opacity: 0.5;
+}
+
+[data-file-manager-illustration] .collection-composer-symbol-button.compact {
+  width: 28px;
+  height: 28px;
+  padding: 4px;
+}
+
+[data-file-manager-illustration] .collection-composer-query {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 30px;
+  border: 0;
+  border-radius: 8px;
+  align-items: center;
+  background: transparent;
+  box-sizing: border-box;
+  padding-right: 8px;
+}
+
+[data-file-manager-illustration] .collection-composer-query input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  padding: 4px 10px;
+  color: var(--fm-text-primary);
+  font: inherit;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-file-manager-illustration] .collection-composer-query input::placeholder {
+  color: var(--fm-text-secondary);
+}
+
+[data-file-manager-illustration] .collection-composer-overflow {
+  position: relative;
+}
+
+[data-file-manager-illustration] .collection-composer-overflow > summary {
+  display: inline-flex;
+  width: 25px;
+  height: 21px;
+  border-radius: 4px;
+  align-items: center;
+  justify-content: center;
+  cursor: default;
+  list-style: none;
+}
+
+[data-file-manager-illustration] .collection-composer-overflow > summary::-webkit-details-marker {
+  display: none;
+}
+
+[data-file-manager-illustration] .collection-composer-overflow > summary:hover,
+[data-file-manager-illustration] .collection-composer-overflow[open] > summary {
+  background: var(--fm-composer-control-hover);
+}
+
+[data-file-manager-illustration] .collection-composer-overflow-menu {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 148px;
+}
+
+[data-file-manager-illustration] .collection-composer-separator {
+  height: 1px;
+  margin-inline: 16px;
+  background: var(--fm-separator);
+}
+
+[data-file-manager-illustration] .collection-composer-chip-area {
+  display: grid;
+  gap: 8px;
+  padding: 8px 16px;
+}
+
+/* 네이티브 ComposerBottomRowView.allowsHitTesting(!isLocked): 처리 중 하단 편집 전체 잠금 */
+[data-file-manager-illustration] .collection-composer-chip-area.locked {
+  pointer-events: none;
+  opacity: 0.7;
+}
+
+[data-file-manager-illustration] .collection-composer-scope-row {
+  display: flex;
+  min-height: 28px;
+  border-radius: 6px;
+  align-items: center;
+  gap: 8px;
+  background: var(--fm-composer-chip-container-background);
+  padding-inline: 8px;
+}
+
+[data-file-manager-illustration] .collection-composer-scope-tokens,
+[data-file-manager-illustration] .collection-composer-condition-row {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  align-content: center;
+  gap: 8px;
+}
+
+[data-file-manager-illustration] .collection-composer-scope-token {
+  display: inline-flex;
+  height: 22px;
+  min-width: 0;
+  max-width: 100%;
+  border-radius: 4px;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--fm-composer-chip-item-border);
+  background: var(--fm-composer-chip-item-background);
+  box-sizing: border-box;
+  padding: 0 5px 0 4px;
+  font-size: var(--fm-font-size-caption-2);
+  font-weight: 500;
+  line-height: var(--fm-line-tight);
+}
+
+[data-file-manager-illustration] .collection-composer-scope-token-title,
+[data-file-manager-illustration] .collection-composer-condition-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-file-manager-illustration] .collection-composer-scope-glyph {
+  display: inline-flex;
+  width: 12px;
+  height: 12px;
+  align-items: center;
+  justify-content: center;
+  color: var(--fm-text-secondary);
+  font-family: var(--fm-font-symbols);
+  font-size: 10px;
+  font-weight: 500;
+}
+
+[data-file-manager-illustration] .collection-composer-scope-token button {
+  display: inline-flex;
+  width: 12px;
+  height: 12px;
+  border: 0;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: var(--fm-text-secondary);
+  padding: 0;
+}
+
+[data-file-manager-illustration] .collection-composer-scope-token.show-remove button {
+  color: var(--fm-text-primary);
+}
+
+[data-file-manager-illustration] .collection-composer-condition-row {
+  min-height: 28px;
+}
+
+[data-file-manager-illustration] .collection-composer-condition-chip {
+  position: relative;
+  display: inline-flex;
+  height: 28px;
+  min-width: 0;
+  max-width: calc(100% - 6px);
+  flex: 0 1 auto;
+  border: 1px solid var(--fm-composer-chip-item-border);
+  border-radius: 6px;
+  align-items: center;
+  gap: 2px;
+  background: var(--fm-composer-chip-item-background);
+  box-sizing: border-box;
+  padding-inline: 8px;
+  font-size: var(--fm-font-size-caption-2);
+  font-weight: 500;
+  line-height: var(--fm-line-tight);
+}
+
+[data-file-manager-illustration] .collection-composer-condition-chip.inactive {
+  opacity: 1;
+}
+
+[data-file-manager-illustration]
+  .collection-composer-condition-chip.inactive
+  .collection-composer-condition-property,
+[data-file-manager-illustration]
+  .collection-composer-condition-chip.inactive
+  .collection-composer-condition-segment,
+[data-file-manager-illustration]
+  .collection-composer-condition-chip.inactive
+  .collection-composer-condition-value {
+  opacity: 0.55;
+}
+
+[data-file-manager-illustration]
+  .collection-composer-condition-chip.inactive
+  .collection-composer-condition-property,
+[data-file-manager-illustration]
+  .collection-composer-condition-chip.inactive
+  .collection-composer-condition-segment {
+  pointer-events: none;
+}
+
+[data-file-manager-illustration] .collection-composer-condition-property,
+[data-file-manager-illustration] .collection-composer-condition-segment {
+  display: inline-flex;
+  height: 22px;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border-radius: 4px;
+  padding: 0 4px;
+  box-sizing: border-box;
+}
+
+[data-file-manager-illustration] .collection-composer-condition-property > .sf-symbol {
+  flex: 0 0 auto;
+  transform: translateY(-1px);
+}
+
+[data-file-manager-illustration] .collection-composer-condition-property {
+  gap: 3px;
+}
+
+/* 네이티브 규약: 칩 폭이 부족하면 property·연산자는 온전히 유지하고 값 세그먼트만 줄인다 */
+[data-file-manager-illustration] .collection-composer-condition-property,
+[data-file-manager-illustration]
+  .collection-composer-condition-segment:not(.collection-composer-condition-value) {
+  flex-shrink: 0;
+}
+
+[data-file-manager-illustration] .collection-composer-condition-value {
+  min-width: 0;
+}
+
+[data-file-manager-illustration] .collection-composer-condition-label {
+  min-width: 0;
+  overflow: hidden;
+  line-height: var(--fm-line-tight);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-file-manager-illustration] button.collection-composer-condition-property,
+[data-file-manager-illustration] button.collection-composer-condition-segment {
+  border: 0;
+  background: transparent;
+  color: var(--fm-text-primary);
+  font: inherit;
+}
+
+[data-file-manager-illustration] button.collection-composer-condition-property:hover,
+[data-file-manager-illustration] button.collection-composer-condition-segment:hover,
+[data-file-manager-illustration]
+  button.collection-composer-condition-segment[aria-expanded="true"] {
+  background: var(--fm-composer-control-hover);
+}
+
+[data-file-manager-illustration] .collection-composer-condition-value {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 2px;
+}
+
+[data-file-manager-illustration] .collection-composer-condition-range-sep {
+  color: var(--fm-text-secondary);
+}
+
+[data-file-manager-illustration]
+  .collection-composer-condition-row
+  > .collection-composer-symbol-button.compact {
+  flex: 0 0 28px;
+}
+
+[data-file-manager-illustration] .collection-composer-condition-remove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 50%;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: var(--fm-text-secondary);
+  opacity: 0;
+  padding: 2px;
+  pointer-events: none;
+}
+
+[data-file-manager-illustration] .collection-composer-condition-remove::before {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  content: "";
+}
+
+[data-file-manager-illustration] .collection-composer-condition-remove:hover::before {
+  background: var(--fm-composer-control-hover);
+}
+
+[data-file-manager-illustration] .collection-composer-condition-remove > .sf-symbol {
+  position: relative;
+}
+
+[data-file-manager-illustration]
+  .collection-composer-condition-chip:hover
+  .collection-composer-condition-remove,
+[data-file-manager-illustration]
+  .collection-composer-condition-chip:focus-within
+  .collection-composer-condition-remove,
+[data-file-manager-illustration]
+  .collection-composer-condition-chip.show-remove
+  .collection-composer-condition-remove,
+[data-file-manager-illustration] .collection-composer-condition-remove:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+[data-file-manager-illustration] .collection-composer-scope-summary-chip {
+  display: flex;
+  width: 100%;
+  min-height: 28px;
+  border-radius: 6px;
+  align-items: center;
+  gap: 4px;
+  background: var(--fm-composer-chip-container-background);
+  padding: 0 8px;
+  box-sizing: border-box;
+  color: var(--fm-text-primary);
+}
+
+[data-file-manager-illustration] .collection-composer-scope-summary-copy {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 1px;
+}
+
+[data-file-manager-illustration] .collection-composer-scope-summary-copy strong {
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-file-manager-illustration] .collection-composer-scope-summary-copy small,
+[data-file-manager-illustration] .collection-composer-scope-summary-badge {
+  color: var(--fm-text-secondary);
+  font-size: 9px;
+}
+
+[data-file-manager-illustration] .collection-composer-scope-summary-badge {
+  border-radius: 999px;
+  background: var(--fm-composer-hover-background);
+  padding: 3px 6px;
+  font-weight: 500;
+}
+
+[data-file-manager-illustration] .collection-composer-scope-summary-chip > button {
+  display: inline-flex;
+  height: 19px;
+  border: 0;
+  border-radius: 4px;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: var(--fm-text-secondary);
+  padding: 2px 6px;
+}
+
+[data-file-manager-illustration] .collection-composer-scope-summary-chip > button.compact {
+  padding-inline: 3px;
+}
+
+[data-file-manager-illustration] .collection-composer-specimen {
+  display: inline-flex;
+  min-width: 180px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: var(--fm-composer-background);
+  padding: 24px;
+}
+
+[data-file-manager-illustration] .collection-composer-specimen.wide {
+  width: 320px;
+}
+
+[data-file-manager-illustration] .collection-composer-specimen.picker {
+  background: none;
+  padding: 8px;
+}
+
+[data-file-manager-illustration] .collection-composer-specimen.picker > dialog,
+[data-file-manager-illustration]
+  .collection-composer-specimen.picker
+  > .collection-composer-operator-picker {
+  position: relative;
+  top: auto;
+  left: auto;
+}

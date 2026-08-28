@@ -1,6 +1,7 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
+import os
 import VoyagerEntitiesAi
 import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
@@ -13,9 +14,9 @@ struct FileManagerContentNavigationBridgeReducer {
     typealias State = FileManagerContentState
     typealias Action = FileManagerContentAction
 
-    private enum CancelID {
-        static let folderWatcher = "FileManagerContent.folderWatcher"
-        static let systemNotifications = "FileManagerContent.systemNotifications"
+    private enum CancelID: Hashable {
+        case folderWatcher(windowID: UUID?)
+        case systemNotifications(windowID: UUID?)
     }
 
     @Dependency(\.collectionStalenessClient)
@@ -29,14 +30,32 @@ struct FileManagerContentNavigationBridgeReducer {
         Reduce { state, action in
             switch action {
             case let .internal(.applyNavigationState(navigationState)):
+                if let destinationPath = state.pendingSelectEntryDestinationPath {
+                    let matchesDestination: Bool = switch navigationState {
+                    case let .folder(path):
+                        URL(fileURLWithPath: path).standardizedFileURL.path
+                            == URL(fileURLWithPath: destinationPath).standardizedFileURL.path
+                    default:
+                        false
+                    }
+                    if !matchesDestination {
+                        state.setPendingEntrySelection(entryID: nil, destinationPath: nil)
+                    }
+                }
                 let scrollPositionKey = scrollPositionKey(for: navigationState)
                 state.entryViewLayout.currentPath = scrollPositionKey
                 state.entryViewLayout.savedScrollOffset = state.navigation.scrollPositions[scrollPositionKey]
+                if case .folder = navigationState {
+                    state.entryViewLayout.entryOperations.isReloading = !state.entryViewLayout.entryOperations.items
+                        .isEmpty
+                }
                 return applyNavigationStateEffect(navigationState, state: state)
 
             case .view(.selectAllEntries):
                 return .send(.entryViewLayout(.internal(.applySelectAll(
-                    orderedItemIds: state.entryViewLayout.entries.map(\.id),
+                    orderedItemIds: state.entryViewLayout.visibleSelectableEntryIDs(
+                        isNormalDirectoryPage: isNormalDirectoryPage(state.navigation.navigationState),
+                    ),
                 ))))
 
             case .view(.toggleShowHiddenFilesAndReload):
@@ -46,6 +65,9 @@ struct FileManagerContentNavigationBridgeReducer {
                     FileManagerContentEntryOpsCoordinator.reloadEntryItemsEffect(
                         navigationState: state.navigation.navigationState,
                         showHidden: showHidden,
+                        priority: FileManagerContentEntryOpsCoordinator.rootMetadataPriority(
+                            for: state.entryViewLayout.entryArrangements,
+                        ),
                     ),
                 )
 
@@ -61,6 +83,7 @@ struct FileManagerContentNavigationBridgeReducer {
                 return .none
 
             case .internal(.startObservingSystemNotifications):
+                let cancelID = CancelID.systemNotifications(windowID: cancellationWindowID(state))
                 return .run { send in
                     for await _ in await notificationCenterClient.notifications(
                         NSApplication.didBecomeActiveNotification,
@@ -69,12 +92,13 @@ struct FileManagerContentNavigationBridgeReducer {
                         await send(.internal(.systemAppDidBecomeActive))
                     }
                 }
-                .cancellable(id: CancelID.systemNotifications, cancelInFlight: true)
+                .cancellable(id: cancelID, cancelInFlight: true)
 
             case .internal(.stopObservingSystemNotifications):
+                let windowID = cancellationWindowID(state)
                 return .merge(
-                    .cancel(id: CancelID.systemNotifications),
-                    .cancel(id: CancelID.folderWatcher),
+                    .cancel(id: CancelID.systemNotifications(windowID: windowID)),
+                    .cancel(id: CancelID.folderWatcher(windowID: windowID)),
                 )
 
             case .internal(.systemAppDidBecomeActive):
@@ -85,6 +109,10 @@ struct FileManagerContentNavigationBridgeReducer {
                 return .none
             }
         }
+    }
+
+    private func cancellationWindowID(_ state: State) -> UUID? {
+        state.entryViewLayout.entryOperations.windowID
     }
 
     private func scrollPositionKey(for navigationState: ContentPageNavigationRoute) -> String {
@@ -120,95 +148,228 @@ struct FileManagerContentNavigationBridgeReducer {
         }
     }
 
+    private func isNormalDirectoryPage(_ navigationState: ContentPageNavigationRoute) -> Bool {
+        if case .folder = navigationState {
+            return true
+        }
+        return false
+    }
+
     private func applyNavigationStateEffect(
         _ navigationState: ContentPageNavigationRoute,
         state: State,
     ) -> Effect<Action> {
-        switch navigationState {
-        case .home:
-            .concatenate(
-                .cancel(id: CancelID.folderWatcher),
-                .send(.entryViewLayout(.internal(.clearCollectionPresentation))),
-                .send(.entryViewLayout(.internal(.applyClearSelection))),
-                sendEntryOperations(.loading(.itemsLoaded([]))),
+        let rootContextChange = Effect<Action>.send(.entryViewLayout(.hierarchy(.rootContextChanged(
+            path: hierarchyRootPath(for: navigationState),
+        ))))
+        let cancelRootLoad: Effect<Action> = .cancel(
+            id: EntryOperationsLoadingCancelID
+                .loadItems(
+                    windowID: state.entryViewLayout.entryOperations.windowID,
+                    ownerID: state.entryViewLayout.entryOperations.loadingCancellationOwnerID,
+                ),
+        )
+        return switch navigationState {
+        case .home: homeRouteEffect(
+                rootContextChange: rootContextChange,
+                windowID: state.entryViewLayout.entryOperations.windowID,
             )
-
-        case let .folder(path):
-            .concatenate(
-                .send(.entryViewLayout(.internal(.clearCollectionPresentation))),
-                sendEntryOperations(.loading(.loadItems(
-                    path: path,
-                    showHidden: state.entryViewLayout.showHiddenFiles,
-                ))),
-                observeFolderChangesEffect(path: path),
+        case let .folder(path): folderRouteEffect(path: path, state: state, rootContextChange: rootContextChange)
+        case .recents: recentsRouteEffect(
+                state: state,
+                rootContextChange: rootContextChange,
+                cancelRootLoad: cancelRootLoad,
             )
-
-        case .recents:
-            .concatenate(
-                .cancel(id: CancelID.folderWatcher),
-                .send(.entryViewLayout(.internal(.clearCollectionPresentation))),
-                sendEntryOperations(.loading(.loadRecentItems(
-                    showHidden: state.entryViewLayout.showHiddenFiles,
-                ))),
+        case let .tags(tagName): tagsRouteEffect(
+                tagName: tagName,
+                state: state,
+                rootContextChange: rootContextChange,
+                cancelRootLoad: cancelRootLoad,
             )
-
-        case let .tags(tagName):
-            .concatenate(
-                .cancel(id: CancelID.folderWatcher),
-                .send(.entryViewLayout(.internal(.clearCollectionPresentation))),
-                sendEntryOperations(.loading(.loadTagItems(
-                    tagName: tagName,
-                    showHidden: state.entryViewLayout.showHiddenFiles,
-                ))),
+        case .computer: computerRouteEffect(
+                rootContextChange: rootContextChange,
+                cancelRootLoad: cancelRootLoad,
+                windowID: state.entryViewLayout.entryOperations.windowID,
             )
-
-        case .computer:
-            .concatenate(
-                .cancel(id: CancelID.folderWatcher),
-                .send(.entryViewLayout(.internal(.clearCollectionPresentation))),
-                sendEntryOperations(.loading(.loadComputerItems)),
+        case .collection: collectionRouteEffect(state: state, rootContextChange: rootContextChange)
+        case let .aiChat(sessionID): aiChatRouteEffect(
+                sessionID: sessionID,
+                rootContextChange: rootContextChange,
+                windowID: state.entryViewLayout.entryOperations.windowID,
             )
-
-        case .collection:
-            observeCollectionScopeChangesEffect(
-                context: state.collection.collectionContext,
-                openedURL: state.collection.collectionSession.document?.url,
+        case let .aiChatSessions(sessionID): aiChatSessionsRouteEffect(
+                sessionID: sessionID,
+                rootContextChange: rootContextChange,
+                windowID: state.entryViewLayout.entryOperations.windowID,
             )
-
-        case let .aiChat(sessionID):
-            aiChatEntryRouteEffect(aiChatRouteEffect(sessionID: sessionID))
-
-        case let .aiChatSessions(sessionID):
-            aiChatEntryRouteEffect(aiChatSessionsRouteEffect(sessionID: sessionID))
         }
     }
 
-    private func aiChatEntryRouteEffect(_ routeEffect: Effect<Action>) -> Effect<Action> {
+    private func homeRouteEffect(
+        rootContextChange: Effect<Action>,
+        windowID: UUID?,
+    ) -> Effect<Action> {
         .concatenate(
+            rootContextChange,
+            .cancel(id: CancelID.folderWatcher(windowID: windowID)),
+            sendEntryOperations(.loading(.cancelAndClearItems)),
             .send(.entryViewLayout(.internal(.clearCollectionPresentation))),
             .send(.entryViewLayout(.internal(.applyClearSelection))),
-            sendEntryOperations(.loading(.itemsLoaded([]))),
+        )
+    }
+
+    private func folderRouteEffect(
+        path: String,
+        state: State,
+        rootContextChange: Effect<Action>,
+    ) -> Effect<Action> {
+        .concatenate(
+            rootContextChange,
+            .send(.entryViewLayout(.internal(.clearCollectionPresentation))),
+            .merge(
+                sendEntryOperations(.loading(.loadItems(
+                    path: path,
+                    showHidden: state.entryViewLayout.showHiddenFiles,
+                    priority: FileManagerContentEntryOpsCoordinator.rootMetadataPriority(
+                        for: state.entryViewLayout.entryArrangements,
+                    ),
+                ))),
+                observeFolderChangesEffect(path: path, windowID: state.entryViewLayout.entryOperations.windowID),
+            ),
+        )
+    }
+
+    private func recentsRouteEffect(
+        state: State,
+        rootContextChange: Effect<Action>,
+        cancelRootLoad: Effect<Action>,
+    ) -> Effect<Action> {
+        .concatenate(
+            rootContextChange,
+            .cancel(id: CancelID.folderWatcher(windowID: state.entryViewLayout.entryOperations.windowID)),
+            cancelRootLoad,
+            .send(.entryViewLayout(.internal(.clearCollectionPresentation))),
+            sendEntryOperations(.loading(.loadRecentItems(
+                showHidden: state.entryViewLayout.showHiddenFiles,
+                priority: FileManagerContentEntryOpsCoordinator.rootMetadataPriority(
+                    for: state.entryViewLayout.entryArrangements,
+                ),
+            ))),
+        )
+    }
+
+    private func tagsRouteEffect(
+        tagName: String,
+        state: State,
+        rootContextChange: Effect<Action>,
+        cancelRootLoad: Effect<Action>,
+    ) -> Effect<Action> {
+        .concatenate(
+            rootContextChange,
+            .cancel(id: CancelID.folderWatcher(windowID: state.entryViewLayout.entryOperations.windowID)),
+            cancelRootLoad,
+            .send(.entryViewLayout(.internal(.clearCollectionPresentation))),
+            sendEntryOperations(.loading(.loadTagItems(
+                tagName: tagName,
+                showHidden: state.entryViewLayout.showHiddenFiles,
+                priority: FileManagerContentEntryOpsCoordinator.rootMetadataPriority(
+                    for: state.entryViewLayout.entryArrangements,
+                ),
+            ))),
+        )
+    }
+
+    private func computerRouteEffect(
+        rootContextChange: Effect<Action>,
+        cancelRootLoad: Effect<Action>,
+        windowID: UUID?,
+    ) -> Effect<Action> {
+        .concatenate(
+            rootContextChange,
+            .cancel(id: CancelID.folderWatcher(windowID: windowID)),
+            cancelRootLoad,
+            .send(.entryViewLayout(.internal(.clearCollectionPresentation))),
+            sendEntryOperations(.loading(.loadComputerItems)),
+        )
+    }
+
+    private func collectionRouteEffect(
+        state: State,
+        rootContextChange: Effect<Action>,
+    ) -> Effect<Action> {
+        .concatenate(
+            rootContextChange,
+            observeCollectionScopeChangesEffect(
+                state: state,
+                windowID: state.entryViewLayout.entryOperations.windowID,
+            ),
+        )
+    }
+
+    private func aiChatRouteEffect(
+        sessionID: String,
+        rootContextChange: Effect<Action>,
+        windowID: UUID?,
+    ) -> Effect<Action> {
+        .concatenate(
+            rootContextChange,
+            aiChatEntryRouteEffect(aiChatRouteEffect(sessionID: sessionID, windowID: windowID)),
+        )
+    }
+
+    private func aiChatSessionsRouteEffect(
+        sessionID: String,
+        rootContextChange: Effect<Action>,
+        windowID: UUID?,
+    ) -> Effect<Action> {
+        .concatenate(
+            rootContextChange,
+            aiChatEntryRouteEffect(aiChatSessionsRouteEffect(sessionID: sessionID, windowID: windowID)),
+        )
+    }
+
+    private func hierarchyRootPath(for navigationState: ContentPageNavigationRoute) -> String {
+        guard case let .folder(path) = navigationState else { return "" }
+        return path
+    }
+
+    private func aiChatEntryRouteEffect(
+        _ routeEffect: Effect<Action>,
+    ) -> Effect<Action> {
+        .concatenate(
+            sendEntryOperations(.loading(.cancelAndClearItems)),
+            .send(.entryViewLayout(.internal(.clearCollectionPresentation))),
+            .send(.entryViewLayout(.internal(.applyClearSelection))),
             routeEffect,
         )
     }
 
-    private func aiChatRouteEffect(sessionID: String) -> Effect<Action> {
+    private func aiChatRouteEffect(
+        sessionID: String,
+        windowID: UUID?,
+    ) -> Effect<Action> {
         let aiChatSessionID = AiChatSessionID(rawValue: UUID(uuidString: sessionID) ?? UUID())
         return .merge(
-            .cancel(id: CancelID.folderWatcher),
+            .cancel(id: CancelID.folderWatcher(windowID: windowID)),
             .send(.aiChat(.routeToChatSession(aiChatSessionID))),
         )
     }
 
-    private func aiChatSessionsRouteEffect(sessionID: String) -> Effect<Action> {
+    private func aiChatSessionsRouteEffect(
+        sessionID: String,
+        windowID: UUID?,
+    ) -> Effect<Action> {
         let aiChatSessionID = AiChatSessionID(rawValue: UUID(uuidString: sessionID) ?? UUID())
         return .merge(
-            .cancel(id: CancelID.folderWatcher),
+            .cancel(id: CancelID.folderWatcher(windowID: windowID)),
             .send(.aiChat(.showSessionsForChat(aiChatSessionID))),
         )
     }
 
-    private func observeFolderChangesEffect(path: String) -> Effect<Action> {
+    private func observeFolderChangesEffect(
+        path: String,
+        windowID: UUID?,
+    ) -> Effect<Action> {
         let interest = FileChangeWatchInterest(
             id: "visible-folder:\(UUID().uuidString)",
             owner: .fileManager,
@@ -216,19 +377,31 @@ struct FileManagerContentNavigationBridgeReducer {
             roots: [path],
             includeSubfolders: true,
         )
-        return observeGatewayChangesEffect(interest: interest)
+        return observeGatewayChangesEffect(interest: interest, windowID: windowID)
+    }
+
+    private func observeCollectionScopeChangesEffect(
+        state: State,
+        windowID: UUID?,
+    ) -> Effect<Action> {
+        observeCollectionScopeChangesEffect(
+            context: state.collection.collectionContext,
+            openedURL: state.collection.collectionSession.document?.url,
+            windowID: windowID,
+        )
     }
 
     private func observeCollectionScopeChangesEffect(
         context: CollectionContext?,
         openedURL: URL?,
+        windowID: UUID?,
     ) -> Effect<Action> {
         guard let context else {
-            return .cancel(id: CancelID.folderWatcher)
+            return .cancel(id: CancelID.folderWatcher(windowID: windowID))
         }
         let roots = collectionScopeWatchRoots(from: context)
         guard !roots.isEmpty else {
-            return .cancel(id: CancelID.folderWatcher)
+            return .cancel(id: CancelID.folderWatcher(windowID: windowID))
         }
 
         let interest = FileChangeWatchInterest(
@@ -239,37 +412,97 @@ struct FileManagerContentNavigationBridgeReducer {
             includeSubfolders: context.includeSubfolders,
             excludedRoots: context.excludedScopes,
         )
-        return observeGatewayChangesEffect(interest: interest, openedURL: openedURL)
+        return observeGatewayChangesEffect(
+            interest: interest,
+            windowID: windowID,
+            openedURL: openedURL,
+        )
     }
 
-    private func observeGatewayChangesEffect(
+    private func sendEntryOperations(_ action: EntryOperationsAction) -> Effect<Action> {
+        .send(.entryViewLayout(.entryOperations(action)))
+    }
+}
+
+private extension FileManagerContentNavigationBridgeReducer {
+    func observeGatewayChangesEffect(
         interest: FileChangeWatchInterest,
+        windowID: UUID?,
         openedURL: URL? = nil,
     ) -> Effect<Action> {
         let collectionStalenessClient = collectionStalenessClient
         return .run { [fileChangeGatewayClient] send in
             fileChangeGatewayClient.updateInterests([interest])
+            var previousBatchFingerprint: GatewayBatchFingerprint?
             await withTaskCancellationHandler {
-                for await events in fileChangeGatewayClient.observeEvents() {
-                    let changedPaths = gatewayRelevantChangedPaths(events, interest: interest, openedURL: openedURL)
-                    guard !changedPaths.isEmpty else { continue }
+                for await batch in fileChangeGatewayClient.observeEvents() {
+                    let changedEvents = gatewayRelevantChangedEvents(
+                        batch.events,
+                        interest: interest,
+                        openedURL: openedURL,
+                    )
+                    guard !changedEvents.isEmpty else { continue }
+                    let batchFingerprint = GatewayBatchFingerprint(events: changedEvents)
+                    guard batchFingerprint != previousBatchFingerprint else { continue }
+                    previousBatchFingerprint = batchFingerprint
 
                     if interest.purpose == .collectionStale {
-                        collectionStalenessClient.invalidateRecords(changedPaths)
+                        collectionStalenessClient.invalidateRecords(changedEvents.map(\.path))
                     }
-                    await send(.externalFileSystemChanged(changedPaths))
+                    if let chainToken = batch.deliveryChainToken {
+                        logFileManagerDeliveryMarker(
+                            "fs_bridge_sent",
+                            events: changedEvents,
+                            chainToken: chainToken,
+                            latencyFrom: changedEvents.map(\.emittedAt).min(),
+                        )
+                    }
+                    await send(.externalFileSystemChanged(
+                        changedEvents,
+                        deliveryChainToken: batch.deliveryChainToken,
+                    ))
                 }
                 fileChangeGatewayClient.removeInterests([interest.id])
             } onCancel: {
                 fileChangeGatewayClient.removeInterests([interest.id])
             }
         }
-        .cancellable(id: CancelID.folderWatcher, cancelInFlight: true)
+        .cancellable(id: CancelID.folderWatcher(windowID: windowID), cancelInFlight: true)
     }
+}
 
-    private func sendEntryOperations(_ action: EntryOperationsAction) -> Effect<Action> {
-        .send(.entryViewLayout(.entryOperations(action)))
+private struct GatewayBatchFingerprint: Equatable {
+    let normalizedPaths: [String]
+    let flags: UInt32
+    let emittedAt: [Date]
+    let eventCount: Int
+
+    init(events: [FileChangeGatewayEvent]) {
+        normalizedPaths = Array(Set(events.map { FileChangeScopePolicy.normalizedPath($0.path) })).sorted()
+        flags = events.reduce(0) { $0 | $1.flags }
+        emittedAt = Array(Set(events.map(\.emittedAt))).sorted()
+        eventCount = events.count
     }
+}
+
+private let fileManagerDeliveryLogger = os.Logger(
+    subsystem: Bundle.main.bundleIdentifier ?? "fm.voyager.Voyager",
+    category: "FileChangeGateway",
+)
+
+private func logFileManagerDeliveryMarker(
+    _ marker: String,
+    events: [FileChangeGatewayEvent],
+    chainToken: String,
+    latencyFrom: Date?,
+    timestamp: Date = Date(),
+) {
+    let flags = events.reduce(UInt32(0)) { $0 | $1.flags }
+    var message = "voyager.fs.delivery marker=\(marker) ts=\(timestamp.timeIntervalSince1970)"
+    message += " eventCount=\(events.count) flagsSummary=\(String(format: "0x%llx", UInt64(flags)))"
+    let latencyMs = max(0, timestamp.timeIntervalSince(latencyFrom ?? timestamp) * 1000)
+    message += " latencyMs=\(latencyMs) chainToken=\(chainToken)"
+    fileManagerDeliveryLogger.info("\(message, privacy: .public)")
 }
 
 nonisolated func collectionScopeWatchRoots(from context: CollectionContext?) -> [String] {
@@ -282,17 +515,37 @@ nonisolated func gatewayRelevantChangedPaths(
     interest: FileChangeWatchInterest,
     openedURL: URL?,
 ) -> [String] {
-    collectionRelevantChangedPaths(
-        FileChangeScopePolicy.interestAffectedPaths(events: events, interest: interest),
+    let relevantPaths = events.compactMap { event -> String? in
+        guard event.isStaleWorthyPathChange else { return nil }
+        let path = FileChangeScopePolicy.canonicalPath(event.path)
+        guard interest.roots.contains(where: {
+            FileChangeScopePolicy.affects(root: $0, path: path, includeSubfolders: interest.includeSubfolders)
+        }) else { return nil }
+        guard !interest.excludedRoots.contains(where: {
+            FileChangeScopePolicy.affects(root: $0, path: path, includeSubfolders: true)
+        }) else { return nil }
+        return path
+    }
+    return collectionRelevantChangedPaths(
+        relevantPaths,
         openedURL: openedURL,
     )
 }
 
+nonisolated func gatewayRelevantChangedEvents(
+    _ events: [FileChangeGatewayEvent],
+    interest: FileChangeWatchInterest,
+    openedURL: URL?,
+) -> [FileChangeGatewayEvent] {
+    let relevantPaths = Set(gatewayRelevantChangedPaths(events, interest: interest, openedURL: openedURL))
+    return events.filter { relevantPaths.contains(FileChangeScopePolicy.canonicalPath($0.path)) }
+}
+
 nonisolated func collectionRelevantChangedPaths(_ paths: [String], openedURL: URL?) -> [String] {
     guard let openedURL else { return paths }
-    let normalizedOpenedPath = openedURL.standardizedFileURL.path
+    let normalizedOpenedPath = FileChangeScopePolicy.canonicalPath(openedURL.path)
     return paths.filter { path in
-        let normalizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
+        let normalizedPath = FileChangeScopePolicy.canonicalPath(path)
         if normalizedPath == normalizedOpenedPath {
             return false
         }

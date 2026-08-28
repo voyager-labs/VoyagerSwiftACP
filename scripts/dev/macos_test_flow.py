@@ -16,7 +16,7 @@ from typing import NamedTuple, cast
 CATEGORY_RE = re.compile(r"^[a-z][a-z0-9]*$")
 SLUG_RE = re.compile(r"^[a-z0-9]+(?:_[a-z0-9]+)*$")
 CLASS_RE = re.compile(r"\b(?:final\s+)?class\s+(\w+)")
-FLOW_CATEGORIES = frozenset({"acc", "onb", "set"})
+FLOW_CATEGORIES = frozenset({"acc", "ctm", "eop", "evm", "fmw", "onb", "rcl", "set"})
 ROOT_DIR = Path(__file__).resolve().parents[2]
 DEFAULT_SHELL = ROOT_DIR / "scripts/dev/macos-test.sh"
 GAPS_PATH = ROOT_DIR / "scripts/dev/macos_test_flow_gaps.json"
@@ -81,6 +81,16 @@ def resolve_docs_root(cli_root: str | None, repo_root: Path) -> Path:
     return repo_root / "docs" / "canonical"
 
 
+def feature_specs_root(docs_root: Path) -> Path | None:
+    # canonical 문서 리포가 스펙 루트를 05_FEATURE_SPECS에서 04_FEATURE_SPECS로
+    # 재편했다. submodule pointer 버전에 상관없이 두 레이아웃을 모두 지원한다.
+    for name in ("05_FEATURE_SPECS", "04_FEATURE_SPECS"):
+        root = docs_root / "PRODUCT" / name
+        if root.is_dir():
+            return root
+    return None
+
+
 def discover_suites(tests_root: Path) -> list[tuple[Path, str]]:
     """Find FlowTests suites and their declared class names."""
     suites: list[tuple[Path, str]] = []
@@ -95,9 +105,9 @@ def discover_suites(tests_root: Path) -> list[tuple[Path, str]]:
 
 def discover_flow_docs(docs_root: Path) -> list[tuple[str, str, Path]]:
     """Find canonical flow documents under feature-spec categories."""
-    specs_root = docs_root / "PRODUCT" / "05_FEATURE_SPECS"
+    specs_root = feature_specs_root(docs_root)
     docs: list[tuple[str, str, Path]] = []
-    if not specs_root.exists():
+    if specs_root is None:
         return docs
     for path in sorted(specs_root.glob("*/flows/*_flow.md")):
         category = path.parent.parent.name
@@ -301,9 +311,11 @@ def main(argv: list[str] | None = None) -> int:
             for flow_id in category_mappings(args.category, tests_root):
                 category, slug = parse_flow_id(flow_id)
                 mapping = resolve_mapping(category, slug)
-                if not (
-                    docs_root / "PRODUCT/05_FEATURE_SPECS" / mapping.document_path
-                ).is_file():
+                specs_root = feature_specs_root(docs_root)
+                if (
+                    specs_root is None
+                    or not (specs_root / mapping.document_path).is_file()
+                ):
                     print(
                         f"Missing canonical flow document: {flow_id}", file=sys.stderr
                     )
@@ -315,9 +327,10 @@ def main(argv: list[str] | None = None) -> int:
 
         category, slug = parse_flow_id(args.flow)
         mapping = resolve_mapping(category, slug)
-        document = docs_root / "PRODUCT/05_FEATURE_SPECS" / mapping.document_path
+        specs_root = feature_specs_root(docs_root)
+        document = specs_root / mapping.document_path if specs_root else None
         suite = repo_root / mapping.swift_path
-        if not document.is_file():
+        if document is None or not document.is_file():
             print(f"Missing canonical flow document: {document}", file=sys.stderr)
             return 2
         if not suite.is_file() and not args.dry_run:

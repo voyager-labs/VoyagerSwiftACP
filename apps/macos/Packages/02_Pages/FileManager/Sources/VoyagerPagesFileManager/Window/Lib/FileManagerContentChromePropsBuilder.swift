@@ -9,6 +9,13 @@ import VoyagerShared
 /// Extracts the data-transformation concern from MainContainerSplitCoordinator
 /// so the coordinator only handles view lifecycle and split-view geometry.
 enum FileManagerContentChromePropsBuilder {
+    private struct ScopeFavoriteMapping {
+        let name: String
+        let directory: FileManager.SearchPathDirectory
+        let domain: FileManager.SearchPathDomainMask
+        let iconName: String
+    }
+
     static func makeContentChromeProps(
         from state: FileManagerWindowState,
         contentTabState: ContentTabState,
@@ -56,22 +63,38 @@ enum FileManagerContentChromePropsBuilder {
             isDiscardEnabled: state.content.isCollectionMode
                 && state.content.collection.collectionSession.metadata.baseline != nil
                 && state.content.isOpenedCollectionDirty,
-            canSaveCollection: state.content.canSaveCollection,
+            canSaveCollection: state.content.canSaveCollection
+                && state.pendingSelectedContentTabClose == nil,
             isTemporaryCollection: !state.content.openedCollectionURLExists,
         )
     }
 
     private static func makeScopeFavorites(fileManagerClient: FileManagerClient) -> [ScopeFavoriteItem] {
-        let favoriteMappings: [(
-            name: String,
-            directory: FileManager.SearchPathDirectory,
-            domain: FileManager.SearchPathDomainMask,
-            iconName: String,
-        )] = [
-            ("Applications", .applicationDirectory, .localDomainMask, "folder.badge.gearshape"),
-            ("Desktop", .desktopDirectory, .userDomainMask, "menubar.dock.rectangle"),
-            ("Documents", .documentDirectory, .userDomainMask, "doc"),
-            ("Downloads", .downloadsDirectory, .userDomainMask, "arrow.down.circle"),
+        let favoriteMappings: [ScopeFavoriteMapping] = [
+            ScopeFavoriteMapping(
+                name: "Applications",
+                directory: .applicationDirectory,
+                domain: .localDomainMask,
+                iconName: "folder.badge.gearshape",
+            ),
+            ScopeFavoriteMapping(
+                name: "Desktop",
+                directory: .desktopDirectory,
+                domain: .userDomainMask,
+                iconName: "menubar.dock.rectangle",
+            ),
+            ScopeFavoriteMapping(
+                name: "Documents",
+                directory: .documentDirectory,
+                domain: .userDomainMask,
+                iconName: "doc",
+            ),
+            ScopeFavoriteMapping(
+                name: "Downloads",
+                directory: .downloadsDirectory,
+                domain: .userDomainMask,
+                iconName: "arrow.down.circle",
+            ),
         ]
 
         return favoriteMappings.compactMap { mapping in

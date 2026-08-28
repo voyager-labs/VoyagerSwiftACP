@@ -7,6 +7,39 @@ import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
 import VoyagerShared
+import VoyagerWidgetsEntryViewLayout
+
+struct FileManagerWindowMainContainerObservationInput: Equatable {
+    let activeTabID: ContentTabID?
+    let activePageAnchor: ContentTabPageAnchor
+    let navigationState: ContentPageNavigationRoute
+    let navigationTitlePath: String
+    let backHistory: [ContentPageNavigationHistorySnapshot]
+    let forwardHistory: [ContentPageNavigationHistorySnapshot]
+    let isComposerPresented: Bool
+    let isDiscardEnabled: Bool
+    let canSaveCollection: Bool
+    let isTemporaryCollection: Bool
+    let inspectorMount: InspectorMountViewState
+    let inspectorWidth: CGFloat
+
+    init(state: FileManagerWindowState) {
+        activeTabID = state.contentTabs.activeTabID
+        activePageAnchor = ContentTabProjection.activePageAnchor(from: state.contentTabs) ?? .homeDefault
+        navigationState = state.content.navigation.navigationState
+        navigationTitlePath = state.content.navigation.titlePath
+        backHistory = state.content.navigation.backHistory
+        forwardHistory = state.content.navigation.forwardHistory
+        isComposerPresented = state.content.composer.isPresented
+        isDiscardEnabled = state.content.isCollectionMode
+            && state.content.collection.collectionSession.metadata.baseline != nil
+            && state.content.isOpenedCollectionDirty
+        canSaveCollection = state.content.canSaveCollection
+        isTemporaryCollection = !state.content.openedCollectionURLExists
+        inspectorMount = InspectorMountViewState(state: state)
+        inspectorWidth = state.inspector.inspectorWidth
+    }
+}
 
 @MainActor
 final class MainContainerSplitCoordinator: NSViewController, NSSplitViewDelegate {
@@ -95,10 +128,12 @@ final class MainContainerSplitCoordinator: NSViewController, NSSplitViewDelegate
     override func viewDidLoad() {
         super.viewDidLoad()
         startIfNeeded()
+        scheduleEntryListAccessibilityExposure()
     }
 
     override func viewDidLayout() {
         super.viewDidLayout()
+        exposeEntryListAccessibilityChildren()
         retryPendingInspectorMountIfNeeded()
     }
 
@@ -146,19 +181,14 @@ final class MainContainerSplitCoordinator: NSViewController, NSSplitViewDelegate
     }
 
     private func observeStore() {
-        Publishers.CombineLatest(
-            Publishers.CombineLatest3(
-                store.publisher.map(\.sidebar).removeDuplicates(),
-                store.publisher.map(\.content),
-                store.publisher.map(InspectorMountViewState.init).removeDuplicates(),
-            ),
-            store.publisher.map(\.contentTabs).removeDuplicates(),
-        )
-        .sink { [weak self] _ in
-            guard let self else { return }
-            render(state: store.state)
-        }
-        .store(in: &cancellables)
+        store.publisher
+            .map(FileManagerWindowMainContainerObservationInput.init)
+            .removeDuplicates()
+            .sink { [weak self] _ in
+                guard let self else { return }
+                render(state: store.state)
+            }
+            .store(in: &cancellables)
     }
 
     private func render(state: FileManagerWindowState) {
@@ -188,6 +218,39 @@ final class MainContainerSplitCoordinator: NSViewController, NSSplitViewDelegate
             overlayProps: overlayProps,
             activePageAnchor: chromeProps.activePageAnchor,
         )
+        scheduleEntryListAccessibilityExposure()
+    }
+
+    private func scheduleEntryListAccessibilityExposure() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(100)) { [weak self] in
+            self?.exposeEntryListAccessibilityChildren()
+        }
+    }
+
+    private func exposeEntryListAccessibilityChildren() {
+        guard let hostingView = contentHosting?.view else { return }
+
+        let entryListViews = descendantViews(of: hostingView).compactMap { $0 as? EntryListView }
+        let existingChildren = hostingView.accessibilityChildren() ?? []
+        let updatedChildren = Self.entryListAccessibilityChildren(
+            existingChildren: existingChildren,
+            currentEntryListViews: entryListViews,
+        )
+        hostingView.setAccessibilityChildren(updatedChildren)
+        NSAccessibility.post(element: hostingView, notification: .layoutChanged)
+    }
+
+    static func entryListAccessibilityChildren(
+        existingChildren: [Any],
+        currentEntryListViews: [EntryListView],
+    ) -> [Any] {
+        existingChildren.filter { !($0 is EntryListView) } + currentEntryListViews
+    }
+
+    private func descendantViews(of view: NSView) -> [NSView] {
+        view.subviews.flatMap { subview in
+            [subview] + descendantViews(of: subview)
+        }
     }
 
     private func makeContentRootView(

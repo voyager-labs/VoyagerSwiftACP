@@ -6,7 +6,6 @@ struct OnboardingState: Equatable {
     var didBootstrapProgress = false
 
     var welcome: WelcomeFeature.State = .init()
-    var access: OnboardingAccessProjection = .init()
     var permissions: PermissionsFeature.State = .init()
     var aiProviderSetup: AiProviderSetupFeature.State = .init()
     var complete: CompleteFeature.State = .init()
@@ -36,7 +35,6 @@ struct OnboardingState: Equatable {
             currentStep: currentStep,
             stepState: OnboardingStepState(
                 welcomeComplete: welcome.isComplete,
-                accessUnlockComplete: access.isComplete && access.hasAccountSession,
                 permissionsComplete: permissions.isComplete,
                 aiProviderSetupComplete: aiProviderSetup.isComplete,
                 aiProviderSetupSkipped: aiProviderSetup.status == .skipped,
@@ -44,7 +42,6 @@ struct OnboardingState: Equatable {
                 aiProviderSetupStatus: aiProviderSetup.status,
                 completeComplete: complete.isComplete,
             ),
-            accessSnapshot: access.snapshot,
         )
     }
 
@@ -52,8 +49,6 @@ struct OnboardingState: Equatable {
         switch step {
         case .welcome:
             welcome.isComplete
-        case .accessUnlock:
-            access.isComplete && access.hasAccountSession
         case .permissions:
             permissions.isComplete
         case .aiProviderSetup:

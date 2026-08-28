@@ -29,5 +29,14 @@ let kPackage = Package(
                 .product(name: "PerceptionCore", package: "swift-perception"),
             ],
         ),
+        .testTarget(
+            name: "VoyagerFeaturesEntryThumbnailTests",
+            dependencies: [
+                .product(name: "VoyagerEntitiesEntry", package: "VoyagerEntitiesEntry"),
+                .product(name: "VoyagerShared", package: "VoyagerShared"),
+                "VoyagerFeaturesEntryThumbnail",
+                .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
+            ],
+        ),
     ],
 )

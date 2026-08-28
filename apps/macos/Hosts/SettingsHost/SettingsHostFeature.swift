@@ -26,7 +26,6 @@ public struct SettingsHostState: Equatable {
         accountAccess.hasAccountSession = presentation.hasAccountSession
         accountAccess.isSignInInProgress = presentation.isSignInInProgress
         accountAccess.didSignInFail = presentation.didSignInFail
-        accountAccess.status = presentation.accessStatus
         return accountAccess
     }
 }
@@ -60,13 +59,16 @@ public struct SettingsHostFeature {
             case .settings(.delegate(.account(.signOutRequested))):
                 return .send(.accountAccess(.signOut))
 
-            case .settings(.delegate(.account(.retryRequested))):
-                return .send(.accountAccess(.retryTapped))
-
             case .settings(.onAppear):
-                guard state.isAccountAccessBootstrapPending else { return .none }
+                let bootstrapLocalPreferences = Effect<Action>.send(
+                    .settings(.bootstrapLocalPreferences),
+                )
+                guard state.isAccountAccessBootstrapPending else { return bootstrapLocalPreferences }
                 state.isAccountAccessBootstrapPending = false
-                return .send(.accountAccess(.onAppear))
+                return .merge(
+                    bootstrapLocalPreferences,
+                    .send(.accountAccess(.onAppear)),
+                )
 
             case .accountAccess:
                 return .send(.settings(.accountAccessPresentationUpdated(
@@ -86,7 +88,6 @@ public struct SettingsHostFeature {
             hasAccountSession: accountAccess.hasAccountSession,
             isSignInInProgress: accountAccess.isSignInInProgress,
             didSignInFail: accountAccess.didSignInFail,
-            accessStatus: accountAccess.status,
         )
     }
 }

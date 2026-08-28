@@ -34,11 +34,17 @@ struct GeneralSettingsFeature {
         Reduce { state, action in
             switch action {
             case .loadSettings:
-                // 시작 디렉토리 로드
-                let startingDir = userDefaultsClient.string(SettingsKeys.defaultTabPath)
-                    ?? directorySelectionClient.defaultHomePath()
-                state.startingDirectory = startingDir
-                state.selectedDirectoryOption = DirectoryOption.from(path: startingDir)
+                let standardDirectories = directorySelectionClient.standardDirectories()
+                state.standardDirectories = standardDirectories
+                let startPage = SettingsDefaults.defaultStartPage(userDefaultsClient: userDefaultsClient)
+                state.defaultStartPage = startPage
+                state.selectedStartPageOption = .from(startPage, using: standardDirectories)
+                state.startingDirectory = userDefaultsClient.string(SettingsKeys.defaultTabPath)
+                    ?? standardDirectories.homePath
+                state.selectedDirectoryOption = DirectoryOption.from(
+                    path: state.startingDirectory,
+                    using: standardDirectories,
+                )
 
                 // 로그인 시 실행 상태 확인
                 let isActuallyRegistered = launchAtLoginClient.isEnabled()
@@ -58,17 +64,40 @@ struct GeneralSettingsFeature {
 
                 return .none
 
-            case let .setStartingDirectory(path):
-                state.startingDirectory = path
-                state.selectedDirectoryOption = DirectoryOption.from(path: path)
+            case let .selectStartPageOption(option):
+                guard let startPage = option.startPage(using: state.standardDirectories) else {
+                    return .send(.openOtherDirectoryPanel)
+                }
+                state.defaultStartPage = startPage
+                state.selectedStartPageOption = option
+                state.startingDirectory = switch startPage {
+                case .home:
+                    state.startingDirectory
+                case let .directory(path):
+                    path
+                }
+                state.selectedDirectoryOption = DirectoryOption.from(
+                    path: state.startingDirectory,
+                    using: state.standardDirectories,
+                )
                 state.startingDirectoryError = nil
-                userDefaultsClient.setString(path, SettingsKeys.defaultTabPath)
+                SettingsDefaults.persistStartPage(startPage, userDefaultsClient: userDefaultsClient)
+                return .none
+
+            case let .setStartingDirectory(path):
+                let startPage = StartPage.directory(path)
+                state.defaultStartPage = startPage
+                state.selectedStartPageOption = .from(startPage, using: state.standardDirectories)
+                state.startingDirectory = path
+                state.selectedDirectoryOption = DirectoryOption.from(path: path, using: state.standardDirectories)
+                state.startingDirectoryError = nil
+                SettingsDefaults.persistStartPage(startPage, userDefaultsClient: userDefaultsClient)
                 return .none
 
             case let .selectDirectoryOption(option):
                 if case .other = option {
                     return .send(.openOtherDirectoryPanel)
-                } else if let path = option.path {
+                } else if let path = option.path(using: state.standardDirectories) {
                     return .send(.setStartingDirectory(path))
                 } else {
                     return .none

@@ -1,6 +1,6 @@
 import ComposableArchitecture
 import Foundation
-import VoyagerEntitiesAi
+@testable import VoyagerEntitiesAi
 @testable import VoyagerFeaturesAiProviderConnection
 import XCTest
 
@@ -81,6 +81,61 @@ private actor SuspensionGate {
 
 @MainActor
 final class SET007ProviderConnectionRowTests: XCTestCase {
+    // MARK: - SET-007-codex_oauth_runtime
+
+    /// SET-007-codex_oauth_runtime: refresh failure keeps authentication and transport causes distinct.
+    /// Refresh failures must distinguish expired credentials from transient service failures.
+    /// - 검증 내용: missing/auth failures map to expired; transport/server failures map to network.
+    /// - 사전 조건: typed refresh failures are supplied to the runtime mapper.
+    /// - 기대 결과: only credential rejection returns expired.
+    func testCodexRefreshErrors_mapCredentialAndTransientCauses() throws {
+        XCTAssertEqual(
+            try AiConnectionRuntimeClient.mapRefreshError(.missingRefreshToken),
+            .invalid(.expired),
+        )
+        XCTAssertEqual(
+            try AiConnectionRuntimeClient.mapRefreshError(.unauthorized(statusCode: 401)),
+            .invalid(.expired),
+        )
+        XCTAssertEqual(
+            try AiConnectionRuntimeClient.mapRefreshError(.unauthorized(statusCode: 403)),
+            .invalid(.expired),
+        )
+        XCTAssertEqual(
+            try AiConnectionRuntimeClient.mapRefreshError(.transport),
+            .networkError,
+        )
+        XCTAssertEqual(
+            try AiConnectionRuntimeClient.mapRefreshError(.server(statusCode: 500)),
+            .networkError,
+        )
+        XCTAssertEqual(
+            try AiConnectionRuntimeClient.mapRefreshError(.invalidResponse),
+            .networkError,
+        )
+        XCTAssertThrowsError(try AiConnectionRuntimeClient.mapRefreshError(.cancelled)) { error in
+            XCTAssertTrue(error is CancellationError)
+        }
+        XCTAssertEqual(
+            try AiConnectionRuntimeClient.mapRefreshError(
+                CodexNativeAuthClient.classifyRefreshHTTPFailure(
+                    statusCode: 400,
+                    body: Data(#"{"error":"invalid_grant"}"#.utf8),
+                ),
+            ),
+            .invalid(.expired),
+        )
+        XCTAssertEqual(
+            try AiConnectionRuntimeClient.mapRefreshError(
+                CodexNativeAuthClient.classifyRefreshHTTPFailure(
+                    statusCode: 400,
+                    body: Data(#"{"error":"invalid_request"}"#.utf8),
+                ),
+            ),
+            .networkError,
+        )
+    }
+
     // MARK: - SET-007-connect_ai_provider
 
     /// SET-007-connect_ai_provider: open AIAPIKey Connect Success Moves Row To Connected

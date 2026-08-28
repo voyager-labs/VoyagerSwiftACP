@@ -577,22 +577,20 @@ private final class BuiltInCollectionTestFixture: @unchecked Sendable {
             includeSubfolders: true,
             includeDirectories: false,
             conditions: [
-                Condition(
+                ConditionFixture.make(
                     propertyKey: "last_used_date",
                     propertyLabel: "last_used_date",
                     propertyType: "date",
                     operatorCode: "gt",
-                    operatorValueArity: 1,
-                    valueType: "unknown",
+                    contract: .init(shape: .single, count: .fixed(1), input: .singleDate),
                     values: ["$time.today(-1000000)"],
                 ),
-                Condition(
+                ConditionFixture.make(
                     propertyKey: "content_type_tree",
                     propertyLabel: "content_type_tree",
                     propertyType: "string",
                     operatorCode: "neq",
-                    operatorValueArity: 1,
-                    valueType: "string",
+                    contract: .init(shape: .single, count: .fixed(1), input: .singleText),
                     values: ["public.folder"],
                 ),
             ],
@@ -604,14 +602,12 @@ private final class BuiltInCollectionTestFixture: @unchecked Sendable {
             includeSubfolders: true,
             includeDirectories: true,
             conditions: [
-                Condition(
+                ConditionFixture.make(
                     propertyKey: "tag_names",
                     propertyLabel: "tag_names",
                     propertyType: "categorical",
                     operatorCode: "any",
-                    operatorValueArity: 1,
-                    operatorValueUIKind: "listText",
-                    valueType: "categorical",
+                    contract: .init(shape: .list, count: .multiple, input: .listText),
                     values: tags,
                 ),
             ],

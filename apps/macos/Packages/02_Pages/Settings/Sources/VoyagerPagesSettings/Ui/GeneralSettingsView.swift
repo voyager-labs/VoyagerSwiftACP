@@ -56,57 +56,30 @@ struct GeneralSettingsView: View {
 
             Section("Workspace") {
                 HStack {
-                    Text("Starting directory")
+                    Text("Initial page")
                     Spacer()
                     Menu {
-                        let selected = store.selectedDirectoryOption
-                        let standardOptions = DirectoryOption.standardOptions
-
-                        if selected != .other {
+                        ForEach(StartPageOption.allCases, id: \.id) { option in
                             Button(
                                 action: {
-                                    store.send(.selectDirectoryOption(selected))
-                                },
-                                label: {
-                                    HStack {
-                                        Image(systemName: selected.iconName)
-                                            .frame(width: 14, height: 14)
-                                            .accessibilityHidden(true)
-                                        Text("\(selected.displayName) (default)")
-                                    }
-                                },
-                            )
-
-                            Divider()
-                        }
-
-                        ForEach(standardOptions.filter { $0 != selected }, id: \.id) { option in
-                            Button(
-                                action: {
-                                    store.send(.selectDirectoryOption(option))
+                                    store.send(.selectStartPageOption(option))
                                 },
                                 label: {
                                     HStack {
                                         Image(systemName: option.iconName)
                                             .frame(width: 14, height: 14)
                                             .accessibilityHidden(true)
-                                        Text(option.displayName)
+                                        Text(option.displayName(using: store.standardDirectories))
                                     }
                                 },
                             )
                         }
-
-                        Divider()
-
-                        Button("Other…") {
-                            store.send(.selectDirectoryOption(.other))
-                        }
                     } label: {
                         HStack(spacing: 4) {
-                            Image(systemName: store.selectedDirectoryOption.iconName)
+                            Image(systemName: store.selectedStartPageOption.iconName)
                                 .frame(width: 14, height: 14)
                                 .accessibilityHidden(true)
-                            Text(store.selectedDirectoryOption.displayName)
+                            Text(store.selectedStartPageOption.displayName(using: store.standardDirectories))
                             Image(systemName: "chevron.up.chevron.down")
                                 .font(.caption2)
                                 .foregroundColor(.secondary)

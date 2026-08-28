@@ -4,14 +4,22 @@ import VoyagerEntitiesCollection
 import VoyagerFeaturesAccountAccess
 import VoyagerFeaturesExternalFileRouter
 import VoyagerFeaturesUpdateVersion
+import VoyagerPagesFileManager
 
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var appRootStore: StoreOf<AppRootFeature>?
+    private lazy var keyboardShortcutMonitor = AppKeyboardShortcutMonitor()
 
     /// 현재 앱 신원에 맞는 callback scheme. 테스트에서 override하여 Dev/Prod 동작 검증.
     /// AppHandoffTarget으로 런타임 bundle ID 기반 결정.
     var callbackScheme: String = AppHandoffTarget.liveValue.callbackScheme
+    /// Application-hosted XCTest boots the real app delegate before test cases run.
+    /// Keep automatic app lifecycle dispatch at this boundary so reducer tests can
+    /// still exercise lifecycle actions explicitly.
+    var shouldSuppressAutomaticLifecycle: () -> Bool = {
+        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+    }
 
     override init() {
         super.init()
@@ -22,6 +30,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillFinishLaunching(_: Notification) {
+        guard !shouldSuppressAutomaticLifecycle() else { return }
+
         // 현재 앱 신원에 맞는 scheme으로 ExternalFileRouter 초기화
         let scheme = AppHandoffTarget.liveValue.callbackScheme
         withAppRootStore {
@@ -41,10 +51,32 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_: Notification) {
+        guard !shouldSuppressAutomaticLifecycle() else { return }
+
         NSApp.servicesProvider = self
         withAppRootStore {
             $0.send(.lifecycle(.launch(.didFinishLaunching)))
+            keyboardShortcutMonitor.start(
+                context: { [weak self] in
+                    self?.contentTabShortcutContext() ?? .unavailable
+                },
+                onCommand: { [weak self] command in
+                    self?.routeContentTabShortcutCommand(command)
+                },
+                onTargetedCommand: { [weak self] windowID, command in
+                    self?.routeContentTabShortcutCommand(command, to: windowID)
+                },
+                onSelectContentTab: { [weak self] position in
+                    self?.withAppRootStore {
+                        $0.send(.menuCommands(.view(.app(.selectContentTab(position: position)))))
+                    }
+                },
+            )
         }
+    }
+
+    func applicationWillTerminate(_: Notification) {
+        keyboardShortcutMonitor.stop()
     }
 
     func application(_: NSApplication, open urls: [URL]) {
@@ -143,7 +175,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldHandleReopen(_: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        withAppRootStore {
+        guard !shouldSuppressAutomaticLifecycle() else { return true }
+
+        return withAppRootStore {
             $0.send(.lifecycle(.launch(.appReopen(hasVisibleWindows: flag))))
             return true
         } onMissing: {
@@ -162,11 +196,85 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_: NSApplication) -> NSApplication.TerminateReply {
-        withAppRootStore {
+        guard !shouldSuppressAutomaticLifecycle() else { return .terminateNow }
+
+        return withAppRootStore {
             $0.send(.lifecycle(.termination(.requestTermination)))
             return .terminateLater
         } onMissing: {
             .terminateNow
+        }
+    }
+
+    private func contentTabShortcutContext() -> AppKeyboardShortcutMonitor.ContentTabShortcutContext {
+        withAppRootStore({ store in
+            store.withState { state in
+                let menuCommands = MenuCommandsState(state: state)
+                let focusedWindowID = state.windowManager.focusedWindowID
+                let presentation = focusedWindowID
+                    .flatMap { state.windowManager.windows[id: $0]?.window.contentTabSwitcherPresentation }
+                return .init(
+                    hasFocusedWindow: menuCommands.hasFocusedWindow,
+                    isComposerPresented: menuCommands.isComposerPresented,
+                    isContentTabSwitcherPresented: presentation != nil,
+                    focusedWindowID: focusedWindowID,
+                    contentTabSwitcherSource: presentation?.source,
+                )
+            }
+        }, onMissing: {
+            .unavailable
+        })
+    }
+
+    private func routeContentTabShortcutCommand(
+        _ command: AppKeyboardShortcutMonitor.ControlTabGestureCommand,
+        to windowID: WindowManagerState.WindowID? = nil,
+    ) {
+        withAppRootStore {
+            if let windowID {
+                $0.send(.windowManager(.file(Self.targetedFileCommand(for: command, windowID: windowID))))
+            } else if let menuCommand = Self.menuCommand(for: command) {
+                $0.send(.menuCommands(.view(.app(menuCommand))))
+            }
+        }
+    }
+
+    private static func targetedFileCommand(
+        for command: AppKeyboardShortcutMonitor.ControlTabGestureCommand,
+        windowID: WindowManagerState.WindowID,
+    ) -> WindowManagerAction.FileCommand {
+        switch command {
+        case .immediateMostRecentlyUsed:
+            .selectMostRecentlyUsedContentTab
+        case .presentSwitcher:
+            .presentContentTabSwitcherInWindow(windowID: windowID, source: .keyboardShortcut)
+        case .moveNext:
+            .moveNextContentTabSwitcherInWindow(windowID: windowID, source: .keyboardShortcut)
+        case .movePrevious:
+            .movePreviousContentTabSwitcherInWindow(windowID: windowID, source: .keyboardShortcut)
+        case .activateSwitcherSelection:
+            .activateContentTabSwitcherInWindow(windowID: windowID, source: .keyboardShortcut)
+        case .dismissSwitcher:
+            .dismissContentTabSwitcherInWindow(windowID: windowID, source: .keyboardShortcut)
+        }
+    }
+
+    static func menuCommand(
+        for command: AppKeyboardShortcutMonitor.ControlTabGestureCommand,
+    ) -> MenuCommandItem.AppCommand? {
+        switch command {
+        case .immediateMostRecentlyUsed:
+            .selectMostRecentlyUsedContentTab
+        case .presentSwitcher:
+            .presentContentTabSwitcher
+        case .moveNext:
+            .moveNextContentTabSwitcher
+        case .movePrevious:
+            .movePreviousContentTabSwitcher
+        case .activateSwitcherSelection:
+            nil
+        case .dismissSwitcher:
+            .dismissContentTabSwitcher
         }
     }
 

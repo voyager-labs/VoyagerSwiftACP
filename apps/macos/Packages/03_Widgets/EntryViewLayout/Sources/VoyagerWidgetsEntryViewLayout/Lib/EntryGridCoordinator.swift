@@ -1,26 +1,17 @@
 @preconcurrency import AppKit
-import Combine
 import ComposableArchitecture
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
-import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
 import VoyagerShared
 
+@MainActor
 public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
     typealias Section = EntryGridSection
     typealias RenderSnapshot = EntryGridRenderSnapshot
     let store: StoreOf<EntryViewLayoutFeature>
     var state: EntryViewLayoutState {
         store.state
-    }
-
-    func sendEntryOperations(_ action: EntryOperationsFeature.Action) {
-        store.send(.entryOperations(action))
-    }
-
-    func sendEntryArrangements(_ action: EntryArrangementsFeature.Action) {
-        store.send(.entryArrangements(action))
     }
 
     weak var view: EntryGridView?
@@ -46,29 +37,37 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
     var isLassoSelecting = false
     var lastRenamingItemId: EntryModel.ID?
     var hasRestoredScrollPosition = false
+    var hasCompletedFirstPhysicalLayout = false
     var dropTargetEntryId: EntryModel.ID?
     var validatedDropDestinationPath: String?
+    /// 외부 drop 획득 세션의 local 수명을 소유하는 controller. Grid마다 정확히 하나 보유한다.
+    /// cross-Grid/List 직렬화는 controller가 읽는 shared TCA `activeExternalDrop`이 담당한다.
+    lazy var externalDropSessionController: ExternalDropSessionController = .init(
+        store: store,
+        clientProvider: { [weak self] in self?.externalDropAcquisitionClient ?? .testValue },
+        clearDropState: { [weak self] in self?.clearExternalDropDropState() },
+    )
     var contextMenuAnchor: CGPoint?
     var lastLassoSelectedIds: Set<EntryModel.ID> = []
     var contextMenuCoordinator: EntryContextMenuCoordinator?
     var lassoAutoscrollController: EntryGridLassoAutoscrollController?
     var boundsDidChangeObserver: NSObjectProtocol?
     var lastRenderSnapshot: RenderSnapshot?
-    var renderObservationCancellable: AnyCancellable?
+    var isRenderObservationEnabled = true
     let thumbnailPrefetchThrottler = MainThreadThrottler(intervalMs: 150, latest: true)
     var thumbnailImagesByPath: [String: NSImage] = [:]
-    @Dependency(\.entryOpenClient)
-    var entryOpenClient
-    @Dependency(\.entryLoadingClient)
-    var entryLoadingClient
-    @Dependency(\.entryFileOpsClient)
-    var entryFileOpsClient
     @Dependency(\.workspaceClient)
     var workspaceClient
     @Dependency(\.entryThumbnailCacheClient)
     var entryThumbnailCacheClient
+    @Dependency(\.externalDropAcquisitionClient)
+    var externalDropAcquisitionClient
     @Dependency(\.finderFavoritesTagClient)
     var finderFavoritesTagClient
+    @Dependency(\.entryOpenClient)
+    var entryOpenClient
+    @Dependency(\.entryFileOpsClient)
+    var entryFileOpsClient
     @Dependency(\.notificationCenterClient)
     var notificationCenterClient
     let horizontalPadding: CGFloat = 12
@@ -94,6 +93,7 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
             guard let self else { return }
             updateLayout(for: width)
             updateGridColumnCountIfNeeded(for: width)
+            completePhysicalLayoutAndConsumePendingTypeScrollTarget()
         }
         ensureDoubleClickGesture()
         guard !didBind else {
@@ -102,13 +102,15 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
         }
         didBind = true
         observeStore()
-        rebuildSectionsAndReload()
+        // 초기 bind에서는 selection scroll과 saved offset 복원의 기존 순서를 그대로 둔다.
+        _ = rebuildSectionsAndReload()
         updateDropTargetBorder(isTargeted: state.isDropTargeted)
     }
 
     func updateView(_ view: EntryGridView) {
         guard self.view !== view else { return }
         self.view = view
+        hasCompletedFirstPhysicalLayout = false
         collectionView.dataSource = self
         collectionView.delegate = self
         collectionView.contextMenuProvider = self
@@ -122,6 +124,7 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
             guard let self else { return }
             updateLayout(for: width)
             updateGridColumnCountIfNeeded(for: width)
+            completePhysicalLayoutAndConsumePendingTypeScrollTarget()
         }
         ensureDoubleClickGesture()
     }
@@ -140,9 +143,10 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
         collectionView.addGestureRecognizer(doubleClick)
     }
 
-    func rebuildSectionsAndReload() {
-        sections = makeSections(state: state)
-        indexPathByEntryId = [:]
+    /// snapshot rebuild 뒤 section을 재구성하고 reload한다.
+    /// selection scroll이 성공하면 saved offset 복원보다 우선하므로 복원을 건너뛴다.
+    func rebuildSectionsAndReload() -> Bool {
+        updateSectionsFromState()
         let hadDropTarget = dropTargetEntryId != nil || validatedDropDestinationPath != nil || state.isDropTargeted
         clearDropTargetState()
         if hadDropTarget {
@@ -151,44 +155,43 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
                 store.send(.view(.setDropTargeted(false)))
             }
         }
-        for (sectionIndex, section) in sections.enumerated() {
-            for (itemIndex, entry) in section.items.enumerated() {
-                indexPathByEntryId[entry.id] = IndexPath(item: itemIndex, section: sectionIndex)
-            }
-        }
         collectionView.reloadData()
         syncSelectionFromStore()
-        scrollToSelectionIfNeeded()
-        restoreScrollPositionIfNeeded()
+        let scrolledToSelection = scrollToSelectionIfNeeded()
+        if scrolledToSelection {
+            // List 계약과 동일하게 selection scroll 성공 시 복원 기회를 소비한다.
+            // 소비하지 않으면 이후 선택 의도 없는 entry 수 변화에서 stale saved offset으로 점프한다.
+            hasRestoredScrollPosition = true
+        } else {
+            restoreScrollPositionIfNeeded()
+        }
         if let width = view?.bounds.width { updateGridColumnCountIfNeeded(for: width) }
         DispatchQueue.main.async { [weak self] in
             self?.syncSelectionFromStore()
             self?.syncRenamingFromStore()
             self?.requestThumbnailsForVisibleArea()
         }
+        return scrolledToSelection
+    }
+
+    func updateSectionsFromState() {
+        sections = makeSections(state: state)
+        indexPathByEntryId = [:]
+        for (sectionIndex, section) in sections.enumerated() {
+            for (itemIndex, entry) in section.items.enumerated() {
+                indexPathByEntryId[entry.id] = IndexPath(item: itemIndex, section: sectionIndex)
+            }
+        }
     }
 
     func makeSections(state: EntryViewLayoutState) -> [Section] {
-        if state.entryArrangements.groupKey == .none {
-            return [
-                Section(
-                    title: nil,
-                    colorCode: nil,
-                    count: state.entries.count,
-                    items: Array(state.entries),
-                    isCollapsed: false,
-                ),
-            ]
-        }
-        return state.entryArrangements.groupedItems.map { group in
-            let showHeader = !group.groupName.isEmpty && state.entryArrangements.groupKey != .name
-            let isCollapsed = state.entryArrangements.collapsedGroups.contains(group.groupName)
-            return Section(
-                title: showHeader ? group.groupName : nil,
-                colorCode: group.colorCode,
-                count: group.count,
-                items: isCollapsed ? [] : group.items,
-                isCollapsed: isCollapsed,
+        state.presentation.sections.map { section in
+            Section(
+                title: section.title,
+                colorCode: section.colorCode,
+                count: section.count,
+                items: section.visibleItems,
+                isCollapsed: section.isCollapsed,
             )
         }
     }
@@ -221,7 +224,7 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
         let itemWidth = makeItemSize().width
         let columns = max(1, Int((availableWidth + minSpacing) / (itemWidth + minSpacing)))
         if state.gridColumnCount != columns {
-            store.send(.internal(.updateGridColumnCount(columns)))
+            store.send(.view(.updateGridColumnCount(columns)))
         }
     }
 
@@ -260,7 +263,7 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
 extension EntryGridCoordinator {
     func saveScrollPosition() {
         let offset = scrollView.contentView.bounds.origin
-        store.send(.delegate(.saveScrollOffset(offset, forPath: state.currentPath)))
+        store.send(.view(.saveScrollOffset(offset, forPath: state.currentPath)))
     }
 
     func restoreScrollPositionIfNeeded() {
@@ -275,15 +278,26 @@ extension EntryGridCoordinator {
         hasRestoredScrollPosition = true
     }
 
-    func scrollToSelectionIfNeeded() {
-        guard state.shouldScrollToSelection else { return }
+    /// selection scroll을 시도하고 실제 스크롤 성공 여부를 반환한다.
+    /// flag가 없거나 대상이 매핑되지 않으면 false를 반환하며, 매핑 실패 시에도 reset은 유지한다.
+    func scrollToSelectionIfNeeded() -> Bool {
+        guard state.shouldScrollToSelection else { return false }
         let targetId = state.lastSelectedId ?? state.selectedIds.first
         guard let targetId, let indexPath = indexPathByEntryId[targetId] else {
-            store.send(.internal(.resetScrollFlag))
-            return
+            store.send(.view(.resetScrollFlag))
+            return false
         }
         collectionView.scrollToItems(at: [indexPath], scrollPosition: .centeredVertically)
-        store.send(.internal(.resetScrollFlag))
+        store.send(.view(.resetScrollFlag))
+        return true
+    }
+
+    /// 타자 검색으로 설정된 pending target을 centered 스크롤하고 reset한다.
+    /// 성공 여부와 관계없이 resetTypeScrollTarget을 발행해 일회성 소비를 보장한다.
+    func scrollToTypeScrollTarget(_ targetId: EntryModel.ID) {
+        defer { store.send(.view(.resetTypeScrollTarget)) }
+        guard let indexPath = indexPathByEntryId[targetId] else { return }
+        collectionView.scrollToItems(at: [indexPath], scrollPosition: .centeredVertically)
     }
 
     func reloadVisibleItems() {
@@ -374,7 +388,7 @@ extension EntryGridCoordinator {
     }
 
     var isTrashFolder: Bool {
-        guard let trashPath = entryOpenClient.trashDirectoryPath()
+        guard let trashPath = state.trashDirectoryPath
         else {
             return false
         }
@@ -397,7 +411,7 @@ extension EntryGridCoordinator {
             action: { [weak self] in
                 guard let self else { return }
                 saveScrollPosition()
-                store.send(.delegate(.executeCommand(.navigation(.openSelectedItem))))
+                store.send(.view(.openEntry(entry)))
             },
         )
     }
@@ -464,7 +478,7 @@ extension EntryGridCoordinator {
         if !isFinal {
             guard ids != lastLassoSelectedIds else { return }
             lastLassoSelectedIds = ids
-            store.send(.internal(.setSelectionState(
+            store.send(.view(.updateSelection(
                 ids: ids,
                 lastSelectedId: lastSelectedId,
                 rangeAnchorId: lastSelectedId,
@@ -475,7 +489,7 @@ extension EntryGridCoordinator {
         lastLassoSelectedIds = []
         let selectedEntries = indexPaths.compactMap { entry(at: $0) }
         preloadOpenWithApplications(selectedEntries: selectedEntries)
-        store.send(.internal(.setSelectionState(
+        store.send(.view(.updateSelection(
             ids: ids,
             lastSelectedId: lastSelectedId,
             rangeAnchorId: lastSelectedId,

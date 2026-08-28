@@ -1,4 +1,5 @@
-@_spi(Internals) import ComposableArchitecture
+@_spi(Internals)
+import ComposableArchitecture
 import Foundation
 @testable import VoyagerEntitiesCollection
 import VoyagerShared
@@ -20,7 +21,8 @@ final class RCL002OpenSavedCollectionTests: XCTestCase {
     /// - 기대 결과: delete AC는 app/file-client spec-owner suite에서 검증 필요
     func testDeleteCollection_requiresFileClientFocusedSuite() throws {
         throw XCTSkip(
-            "Collection package has no delete command; migrate delete AC to app/file-client spec-owner suite with sandboxed .voycoll fixture.",
+            "Collection package has no delete command; migrate delete AC to app/file-client "
+                + "spec-owner suite with sandboxed .voycoll fixture.",
         )
     }
 
@@ -45,11 +47,8 @@ final class RCL002OpenSavedCollectionTests: XCTestCase {
     /// - 사전 조건: `fixtures/fixtures/collections/basic_collection.voycoll`을 sandbox로 복사해 사용
     /// - 기대 결과: 원본 fixture를 변경하지 않고 package payload가 definition-only collection으로 복원됨
     func testOpenSavedCollection_withBasicPackageFixture_restoresDefinition() async throws {
-        let sandbox = try CollectionFixtureSandbox.copyingDirectory(
-            from: "fixtures/fixtures/collections/basic_collection.voycoll",
-        )
+        let sandbox = try CollectionFixtureSandbox.copyingBasicCollection()
         defer { try? sandbox.cleanup() }
-
         let result = try await CollectionFileClient.liveValue.load(sandbox.fileURL)
 
         XCTAssertEqual(result.containerFormat, .package)
@@ -153,18 +152,22 @@ final class RCL002OpenSavedCollectionTests: XCTestCase {
     /// - 사전 조건: query, scope, snapshot item을 가진 새 collection save payload
     /// - 기대 결과: 선택 경로는 `.voycoll`로 저장되고 completion은 동일한 context를 반환함
     func testSaveCurrentFilterAsNewCollection_withSelectedURL_savesVoycollPackage() async throws {
+        let sandbox = try CollectionFixtureSandbox.copyingBasicCollection()
+        defer { try? sandbox.cleanup() }
         let payload = makeSavePayload(
             query: "new report",
             snapshotItems: [.string("/VoyagerFixtures/Documents/report.md")],
         )
-        let selectedURL = URL(fileURLWithPath: "/tmp/RCL Saved Collection")
+        let selectedURL = sandbox.root.appendingPathComponent("RCL Saved Collection")
         let recorder = CollectionFileSaveRecorder()
+        let metricRecorder = CollectionMetricRecorder()
         let store = TestStore(initialState: CollectionState()) {
             CollectionFeature()
         } withDependencies: {
-            $0.collectionSavePanelClient.defaultSaveDirectory = { _ in URL(fileURLWithPath: "/tmp") }
+            $0.collectionSavePanelClient.defaultSaveDirectory = { _ in sandbox.root }
             $0.collectionSavePanelClient.presentSavePanel = { _ in selectedURL }
             $0.collectionFileClient.save = recorder.save
+            $0.collectionMetricClient = metricRecorder.client
         }
 
         await store.send(.saveRequested(payload)) {
@@ -183,9 +186,50 @@ final class RCL002OpenSavedCollectionTests: XCTestCase {
         }
 
         let saved = try XCTUnwrap(recorder.lastSave)
-        XCTAssertEqual(saved.url.path, "/tmp/RCL Saved Collection.voycoll")
+        XCTAssertEqual(saved.url.path, sandbox.root.appendingPathComponent("RCL Saved Collection.voycoll").path)
         XCTAssertEqual(saved.file.query, "new report")
         XCTAssertEqual(saved.file.snapshot?.items, [.string("/VoyagerFixtures/Documents/report.md")])
+        XCTAssertTrue(metricRecorder.entries.isEmpty)
+    }
+
+    /// RCL-002-save_current_filter_as_new_collection: 저장소 오류는 save failure feedback으로 전달되고
+    /// obsolete metric은 기록하지 않는다.
+    /// 파일 저장 실패 시 기존 오류 전파와 pending state 정리를 유지하면서 폐기된 save-result metric이 발생하지 않는지 검증한다.
+    /// - 검증 내용: saveCompleted failure, save feedback, 저장 결과 metric 미기록
+    /// - 사전 조건: 유효한 collection payload와 throwing file client
+    /// - 기대 결과: 저장 오류가 전달되고 save-result metric 호출은 0회임
+    func testSaveCurrentFilterAsNewCollection_whenFileSaveFails_propagatesFailureWithoutMetric() async {
+        let payload = makeSavePayload(query: "failed report", snapshotItems: nil)
+        let existingURL = URL(fileURLWithPath: "/tmp/failed_collection.voycoll")
+        let metricRecorder = CollectionMetricRecorder()
+        let store = TestStore(initialState: CollectionState()) {
+            CollectionFeature()
+        } withDependencies: {
+            $0.collectionFileClient.save = { _, _ in throw CollectionSaveTestError() }
+            $0.collectionMetricClient = metricRecorder.client
+        }
+
+        await store.send(.saveToExisting(payload, existingURL)) {
+            $0.isSaving = true
+        }
+        await store.receive(\.saveCompleted) {
+            $0.isSaving = false
+            $0.pendingSave = nil
+            $0.pendingSaveContext = nil
+        }
+        await store.receive(
+            \.delegate.saveFeedback,
+            CollectionSaveFeedback(
+                stage: .saveFailed,
+                category: .saveFailed,
+                title: "Unable to Save Collection",
+                message: "Collection save failed.",
+                recoveryHint: "Check the file location or try again.",
+                isRetryable: true,
+            ),
+        )
+
+        XCTAssertTrue(metricRecorder.entries.isEmpty)
     }
 
     // MARK: - RCL-002-ensure_built_in_collections
@@ -422,8 +466,10 @@ final class RCL002OpenSavedCollectionTests: XCTestCase {
     /// - 사전 조건: dirty context를 가진 opened collection payload와 기존 `.voycoll` URL
     /// - 기대 결과: 기존 URL에 저장되고 completion 후 저장 진행 상태가 해제됨
     func testSaveCollectionFilterChanges_withExistingURL_writesCurrentDefinition() async throws {
+        let sandbox = try CollectionFixtureSandbox.copyingBasicCollection()
+        defer { try? sandbox.cleanup() }
         let payload = makeSavePayload(query: "updated report", snapshotItems: nil)
-        let existingURL = URL(fileURLWithPath: "/tmp/existing_collection.voycoll")
+        let existingURL = sandbox.root.appendingPathComponent("existing_collection.voycoll")
         let recorder = CollectionFileSaveRecorder()
         let store = TestStore(initialState: CollectionState()) {
             CollectionFeature()
@@ -717,6 +763,33 @@ private final class CollectionFileSaveRecorder: @unchecked Sendable {
     }
 }
 
+private final class CollectionMetricRecorder: @unchecked Sendable {
+    struct Entry {
+        let name: String
+        let level: CollectionMetricLevel
+    }
+
+    private let recordedEntries = LockIsolated<[Entry]>([])
+
+    var entries: [Entry] {
+        recordedEntries.value
+    }
+
+    var client: CollectionMetricClient {
+        CollectionMetricClient { [weak self] name, _, _, level in
+            self?.recordedEntries.withValue {
+                $0.append(.init(name: name, level: level))
+            }
+        }
+    }
+}
+
+private struct CollectionSaveTestError: LocalizedError {
+    var errorDescription: String? {
+        "Collection save failed."
+    }
+}
+
 private func reduce(
     _ state: inout CollectionState,
     action: CollectionAction,
@@ -743,17 +816,14 @@ private func makeSemanticCondition(
     propertyLabel: String,
     values: [String],
 ) -> Condition {
-    Condition(
+    ConditionFixture.make(
         propertyKey: propertyKey,
         propertyLabel: propertyLabel,
         propertyType: "string",
         operatorCode: "eq",
         operatorLabel: "Equals",
-        operatorValueArity: 1,
-        operatorValueUIKind: "singleText",
-        valueType: "string",
+        contract: .init(shape: .single, count: .fixed(1), input: .singleText),
         values: values,
-        isActive: true,
     )
 }
 

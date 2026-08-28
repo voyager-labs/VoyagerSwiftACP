@@ -9,8 +9,9 @@
 
 ## Module and protocol boundaries
 
-- Keep the dependency-free module on the standard library while the implementation has no external dependency requirement. Adding a dependency, workspace, toolchain override, or code generation requires an explicitly owned task and corresponding verification-policy update.
-- Preserve protocol version `1`, default app version `0.1.0-dev`, one request and one response per Unix socket connection, and the required absolute `--socket` contract unless an active task explicitly versions or replaces that contract.
+- Runtime dependencies are the pure-Go set `gorm.io/gorm`, `github.com/glebarez/sqlite` (modernc.org/sqlite, CGO-free), and `github.com/golang-migrate/migrate/v4`. Atlas CLI and the `ariga.io/atlas-provider-gorm` provider are dev/CI-only tools (loaded by `tools/atlas-schema`), never imported by daemon code. `go.sum` is required and committed; `go.work` remains forbidden (single module, no workspace). Adding a dependency, workspace, toolchain override, or code generation requires an explicitly owned task and corresponding verification-policy update.
+- Preserve the unversioned initial canonical wire contract, default app version `0.1.0-dev`, one request and one response per Unix socket connection, the required absolute `--socket` contract, and the optional absolute `--database` contract (absent flag keeps DB-less behavior). Add a future version discriminator only when an observed compatibility break requires parallel decoding or migration.
+- Migrations are append-only in `internal/persistence/sqlite/migrations` (currently `0001_*` + `atlas.sum`); extend the GORM model, run `atlas migrate diff <name> --env gorm` then `atlas migrate hash --env gorm`, normalize the golang-migrate filename to canonical `000N_` form, and validate with `mise run entry-core-migration-validate`. Never run `.down.sql` at runtime.
 - Keep logs metadata-only. Never log raw request or response payloads, params, request IDs, secrets, or credentials.
 
 ## Package ownership
@@ -20,7 +21,11 @@
 - `internal/transport/unixsocket` owns client/server deadlines, framing, socket identity, and bounded shutdown.
 - `cmd/entry-core` owns CLI argv, request ID, stdout/stderr, and exit mapping.
 - `cmd/entry-core-daemon` owns foreground composition, signals, and process exit mapping.
-- `integration/daemon_smoke_test.go` is the only real-process smoke owner and uses `TestDaemonProcessSmoke`.
+- `internal/persistence/sqlite` owns the SQLite store lifecycle, the versioned embedded migrations and their checksummed directory, the workspace bootstrap/restore, and the `WithinTx` transaction runner (store/migration/checksum/workspace/tx tests live in `internal/persistence/sqlite/`).
+- `internal/domain/entry` owns the typed UUIDv7 `WorkspaceID` and `WorkspaceContext` value semantics.
+- `integration/daemon_smoke_test.go` is the only real-process smoke owner and uses `TestDaemonProcessSmoke`, including the persistence restart and corrupt-database fail-closed phases.
+
+The Atlas GORM Provider loader (`internal/persistence/sqlite/tools/atlas-schema`) and Atlas CLI are dev/CI-only tools; they are never imported or linked into the daemon binary.
 
 Do not duplicate detailed assertions across these owners. Pair behavior changes with tests in the canonical owner and follow the repository's plan-scoped RED-to-GREEN evidence policy for executable behavior changes.
 
@@ -28,7 +33,7 @@ Do not duplicate detailed assertions across these owners. Pair behavior changes 
 
 From the repository root, use `mise run entry-core-check` as the complete verification entry point. Focused commands are available as `entry-core-build`, `entry-core-test`, `entry-core-test-race`, and `entry-core-smoke`.
 
-When root harness or guidance changes, also run `python3 -m scripts.validate_harness` and `git diff --check`. Keep `go vet`, gofmt cleanliness, single-module output, and absent `go.sum`/`go.work` as required invariants.
+When root harness or guidance changes, also run `python3 -m scripts.validate_harness` and `git diff --check`. Keep `go vet`, gofmt cleanliness, single-module output, `go.sum` presence, `go mod verify`, `go.work` absence, and the `AutoMigrate(` ban as required invariants.
 
 ## Cross-boundary changes
 

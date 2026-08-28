@@ -20,12 +20,25 @@
   padding: 0 var(--fm-space-5) 0 var(--fm-space-8);
 }
 
+/* Native InspectorPaneView header 계약: chat 모드 spacing 4/leading 8,
+   sessions 모드 spacing 8/leading 16, trailing 16은 양 모드 공통.
+   토큰 대신 literal을 쓰는 건 네이티브 수치 일치가 목적이다. */
+[data-file-manager-illustration] .inspector-header[data-chat-header="chat"] {
+  gap: 4px;
+  padding: 0 16px 0 8px;
+}
+
+[data-file-manager-illustration] .inspector-header[data-chat-header="sessions"] {
+  gap: 8px;
+  padding: 0 16px 0 16px;
+}
+
 [data-file-manager-illustration] .inspector-header-title {
   flex: 1;
   min-width: 0;
   overflow: hidden;
   color: var(--fm-text-primary);
-  font-size: var(--fm-font-size-body);
+  font-size: 14px;
   font-weight: var(--fm-weight-semibold);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -65,6 +78,33 @@
 [data-file-manager-illustration] .inspector-header-btn:focus-visible {
   outline: none;
   box-shadow: 0 0 0 2px var(--fm-focus-ring);
+}
+
+/* New Chat pill — 네이티브 ToolbarHoverPillButtonLabel 계약 (ToolbarButton.swift).
+   text 12px medium primary, padding h10, frame h24, radius 6, fill primary@0.06,
+   stroke primary@0.10 lineWidth 1. hover: controlHoverFill + stroke primary@0.14.
+   color-mix(--fm-text-primary)로 dark/light 양쪽 적응. literal 수치는 네이티브 일치 목적. */
+[data-file-manager-illustration] .inspector-new-chat-pill {
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid color-mix(in srgb, var(--fm-text-primary) 10%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--fm-text-primary) 6%, transparent);
+  color: var(--fm-text-primary);
+  font-size: 12px;
+  font-weight: var(--fm-weight-medium);
+}
+
+[data-file-manager-illustration] .inspector-new-chat-pill:hover {
+  background: var(--fm-control-hover);
+  border-color: color-mix(in srgb, var(--fm-text-primary) 14%, transparent);
+}
+
+/* Native back/close 버튼은 28×28 고정 프레임. 아이콘 전용 버튼에만 적용. */
+[data-file-manager-illustration] .inspector-header-icon-btn {
+  width: 28px;
+  padding: 0;
+  justify-content: center;
 }
 
 [data-file-manager-illustration] .pane-actions {
@@ -253,39 +293,6 @@
 
 [data-file-manager-illustration] .fm-context-menu {
   width: var(--fm-context-menu-width);
-  border: 1px solid var(--fm-window-border);
-  border-radius: var(--fm-radius-lg);
-  background: var(--fm-elevated);
-  padding: var(--fm-space-2);
-  box-shadow: var(--fm-shadow-card);
-  backdrop-filter: var(--fm-backdrop-blur);
-}
-
-[data-file-manager-illustration] .fm-context-menu button {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  width: 100%;
-  border: 0;
-  border-radius: var(--fm-radius-sm);
-  background: transparent;
-  padding: var(--fm-space-3) var(--fm-space-4);
-  color: var(--fm-text-primary);
-  font: inherit;
-  text-align: left;
-}
-
-[data-file-manager-illustration] .fm-context-menu button:hover {
-  background: var(--fm-selection);
-}
-
-[data-file-manager-illustration] .fm-context-menu button.destructive {
-  color: var(--fm-red);
-}
-
-[data-file-manager-illustration] .fm-context-menu kbd {
-  color: var(--fm-text-tertiary);
-  font: inherit;
 }
 
 [data-file-manager-illustration] .fm-quick-look {
@@ -324,4 +331,1383 @@
 
 [data-file-manager-illustration] .fm-quick-look-preview .thumb {
   transform: scale(1.55);
+}
+
+/* ── Chat domain: AiChatView 번역. 원본 VoyagerDS.Surface/Radius/Typography 리터럴 매핑. ── */
+/* 네이티브 출처: VoyagerDS.swift — Surface.inputBackground/inputBorder/chipContainerBackground,
+   Interaction.hoverFill/controlHoverFill, Radius.userMessageBubble=20/control=8, Typography. */
+
+[data-file-manager-illustration] {
+  --fm-chat-input-bg: rgba(0, 0, 0, 0.05);
+  --fm-chat-input-border: rgba(0, 0, 0, 0.12);
+  --fm-chat-chip-bg: rgba(0, 0, 0, 0.08);
+  --fm-chat-chip-item-bg: rgba(0, 0, 0, 0.08);
+  --fm-chat-chip-item-border: rgba(0, 0, 0, 0.15);
+  --fm-chat-hover-fill: rgba(0, 0, 0, 0.06);
+  --fm-chat-control-hover-fill: rgba(0, 0, 0, 0.08);
+  --fm-chat-popover-bg: var(--fm-window);
+  --fm-chat-bubble-radius: 20px;
+  --fm-chat-composer-bg: var(--macos-chat-input-background-color);
+  --fm-chat-composer-radius: 16px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-voyager-color-scheme="light"]) [data-file-manager-illustration] {
+    --fm-chat-input-bg: rgba(255, 255, 255, 0.08);
+    --fm-chat-input-border: rgba(255, 255, 255, 0.15);
+    --fm-chat-chip-bg: rgba(255, 255, 255, 0.1);
+    --fm-chat-chip-item-bg: rgba(255, 255, 255, 0.15);
+    --fm-chat-chip-item-border: rgba(255, 255, 255, 0.2);
+    --fm-chat-hover-fill: rgba(255, 255, 255, 0.08);
+    --fm-chat-control-hover-fill: rgba(255, 255, 255, 0.1);
+    --fm-chat-popover-bg: var(--fm-canvas);
+  }
+}
+
+:root[data-voyager-color-scheme="dark"] [data-file-manager-illustration] {
+  --fm-chat-input-bg: rgba(255, 255, 255, 0.08);
+  --fm-chat-input-border: rgba(255, 255, 255, 0.15);
+  --fm-chat-chip-bg: rgba(255, 255, 255, 0.1);
+  --fm-chat-chip-item-bg: rgba(255, 255, 255, 0.15);
+  --fm-chat-chip-item-border: rgba(255, 255, 255, 0.2);
+  --fm-chat-hover-fill: rgba(255, 255, 255, 0.08);
+  --fm-chat-control-hover-fill: rgba(255, 255, 255, 0.1);
+  --fm-chat-popover-bg: var(--fm-canvas);
+}
+
+:root[data-voyager-visual-baseline="sequoia"] [data-file-manager-illustration] {
+  --fm-chat-composer-radius: 10px;
+}
+
+[data-file-manager-illustration] .fm-ai-chat-input {
+  box-sizing: border-box;
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--fm-chat-input-border);
+  border-radius: var(--fm-chat-composer-radius);
+  background: var(--fm-chat-composer-bg);
+  color: var(--fm-text-primary);
+  font-family: var(--fm-font-ui);
+}
+
+[data-file-manager-illustration] .fm-ai-chat-input textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 46px;
+  max-height: 160px;
+  field-sizing: content;
+  overflow-y: auto;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  padding: 5px 14px 5px 0;
+  color: var(--fm-text-primary);
+  font: inherit;
+  font-size: var(--fm-font-size-body);
+  line-height: var(--fm-line-body);
+  resize: none;
+}
+
+[data-file-manager-illustration] .fm-ai-chat-input textarea::placeholder {
+  color: var(--fm-text-tertiary);
+}
+
+[data-file-manager-illustration] .fm-ai-chat-input textarea:disabled {
+  color: var(--macos-disabled-control-text-color);
+}
+
+[data-file-manager-illustration] .fm-ai-chat-input-hint {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+[data-file-manager-illustration] .fm-ai-chat-input-context {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+[data-file-manager-illustration] .fm-ai-chat-context-section {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+[data-file-manager-illustration] .fm-ai-chat-context-section-label,
+[data-file-manager-illustration] .fm-ai-chat-context-group-label {
+  flex: none;
+  color: var(--fm-text-secondary);
+  font-size: 11px;
+  font-weight: var(--fm-weight-medium);
+  white-space: nowrap;
+}
+
+[data-file-manager-illustration] .fm-ai-chat-context-groups {
+  display: flex;
+  flex: 1 1 0;
+  min-width: 0;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  align-items: center;
+  gap: 8px;
+  scrollbar-width: none;
+}
+
+[data-file-manager-illustration] .fm-ai-chat-context-groups::-webkit-scrollbar {
+  display: none;
+}
+
+[data-file-manager-illustration] .fm-ai-chat-context-group {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+}
+
+[data-file-manager-illustration] .fm-ai-chat-context-chip {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--fm-chat-chip-item-border);
+  border-radius: var(--fm-radius-round);
+  background: var(--fm-chat-chip-item-bg);
+  padding: 4px 8px;
+  color: var(--fm-text-primary);
+  font-size: 11px;
+  font-weight: var(--fm-weight-medium);
+}
+
+[data-file-manager-illustration] .fm-ai-chat-context-chip-title {
+  max-width: 132px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-file-manager-illustration] .fm-ai-chat-context-remove {
+  display: grid;
+  width: 12px;
+  height: 12px;
+  place-items: center;
+  border: 0;
+  border-radius: var(--fm-radius-round);
+  background: transparent;
+  padding: 0;
+  color: var(--fm-text-secondary);
+}
+
+[data-file-manager-illustration] .fm-ai-chat-context-remove:hover {
+  background: var(--fm-chat-control-hover-fill);
+  color: var(--fm-text-primary);
+}
+
+[data-file-manager-illustration] .fm-ai-chat-input-footer {
+  display: flex;
+  min-width: 0;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+[data-file-manager-illustration] .fm-ai-chat-input-selectors {
+  display: flex;
+  min-width: 0;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+[data-file-manager-illustration] .fm-ai-chat-native-attachment {
+  height: 24px;
+  flex: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--fm-text-secondary);
+  font-family: var(--fm-font-ui);
+  font-size: 14px;
+  font-weight: var(--fm-weight-semibold);
+  line-height: 1;
+}
+
+[data-file-manager-illustration] .fm-ai-chat-native-attachment:hover:not(:disabled) {
+  color: var(--fm-text-primary);
+}
+
+[data-file-manager-illustration] .fm-ai-chat-native-attachment:focus-visible {
+  border-radius: var(--fm-radius-xs);
+  outline: none;
+  box-shadow: 0 0 0 2px var(--fm-focus-ring);
+}
+
+[data-file-manager-illustration] .fm-ai-chat-native-attachment:disabled {
+  color: var(--macos-disabled-control-text-color);
+}
+
+[data-file-manager-illustration] .fm-ai-chat-model-selector {
+  max-width: 112px;
+}
+
+[data-file-manager-illustration] .fm-ai-chat-thinking-selector {
+  max-width: 88px;
+}
+
+[data-file-manager-illustration] .fm-ai-chat-native-menu-selector {
+  display: inline-grid;
+  position: relative;
+  min-width: 0;
+  align-items: center;
+}
+
+[data-file-manager-illustration] .fm-ai-chat-native-menu-selector::after {
+  position: absolute;
+  right: 1px;
+  top: 50%;
+  width: 5px;
+  height: 5px;
+  border-right: 1.5px solid var(--fm-text-tertiary);
+  border-bottom: 1.5px solid var(--fm-text-tertiary);
+  content: "";
+  transform: translateY(-65%) rotate(45deg);
+  pointer-events: none;
+}
+
+[data-file-manager-illustration] .fm-ai-chat-native-menu-selector select {
+  width: 100%;
+  min-width: 0;
+  height: 24px;
+  overflow: hidden;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0 13px 0 0;
+  color: var(--fm-text-secondary);
+  font-family: var(--fm-font-ui);
+  font-size: 12px;
+  font-weight: var(--fm-weight-medium);
+  text-overflow: ellipsis;
+}
+
+[data-file-manager-illustration] .fm-ai-chat-native-menu-selector select:hover:not(:disabled) {
+  color: var(--fm-text-primary);
+}
+
+[data-file-manager-illustration] .fm-ai-chat-native-menu-selector select:focus-visible {
+  border-radius: var(--fm-radius-xs);
+  outline: none;
+  box-shadow: 0 0 0 2px var(--fm-focus-ring);
+}
+
+[data-file-manager-illustration] .fm-ai-chat-native-menu-selector select:disabled {
+  color: var(--macos-disabled-control-text-color);
+}
+
+[data-file-manager-illustration] .fm-ai-chat-input-action {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  place-items: center;
+  margin-left: auto;
+  border: 0;
+  border-radius: var(--fm-radius-md);
+  background: var(--fm-text-primary);
+  padding: 0;
+  color: var(--fm-canvas);
+  box-shadow: none;
+}
+
+[data-file-manager-illustration] .fm-ai-chat-input-action.vc-icon-button:hover:not(:disabled) {
+  background: var(--fm-text-primary);
+  color: var(--fm-canvas);
+}
+
+[data-file-manager-illustration] .fm-ai-chat-input-action:disabled {
+  opacity: 0.45;
+}
+
+[data-file-manager-illustration] .fm-ai-chat-input-story-canvas {
+  box-sizing: border-box;
+  display: grid;
+  min-height: 100%;
+  padding: var(--fm-space-6);
+  place-items: start;
+  width: 100%;
+}
+
+[data-file-manager-illustration] .fm-ai-chat-input-story-frame {
+  width: 300px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+[data-file-manager-illustration] .fm-ai-chat-input-story-frame.is-narrow {
+  width: 230px;
+}
+
+[data-file-manager-illustration] .fm-chat-message-story-frame {
+  width: var(--fm-window-inspector-width);
+  max-width: 100%;
+}
+
+[data-file-manager-illustration] .chat-sessions,
+[data-file-manager-illustration] .chat-transcript,
+[data-file-manager-illustration] .chat-empty {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+/* AiChatSessionsView: VStack spacing 12, padding h10/t10/b8 */
+[data-file-manager-illustration] .chat-sessions {
+  gap: var(--fm-space-6);
+  padding: var(--fm-space-5) var(--fm-space-5) var(--fm-space-4);
+}
+
+[data-file-manager-illustration] .chat-sessions-search {
+  display: flex;
+  align-items: center;
+  gap: var(--fm-space-4);
+  height: 30px;
+  border: 1px solid var(--fm-chat-input-border);
+  border-radius: var(--fm-radius-md);
+  background: var(--fm-chat-input-bg);
+  padding: 0 var(--fm-space-5);
+  color: var(--fm-text-tertiary);
+}
+
+[data-file-manager-illustration] .chat-sessions-search input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  background: transparent;
+  color: var(--fm-text-primary);
+  font: inherit;
+  outline: none;
+}
+
+[data-file-manager-illustration] .chat-sessions-error {
+  margin: 0;
+  color: var(--fm-red);
+  font-size: var(--fm-font-size-caption);
+}
+
+[data-file-manager-illustration] .chat-sessions-loading,
+[data-file-manager-illustration] .chat-sessions-empty {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: var(--fm-space-2);
+  color: var(--fm-text-secondary);
+  text-align: center;
+}
+
+/* native loadingPlaceholder는 spacing 8, empty 상태는 spacing 4로 상이 */
+[data-file-manager-illustration] .chat-sessions-loading {
+  gap: var(--fm-space-4);
+}
+
+[data-file-manager-illustration] .chat-sessions-empty {
+  flex-direction: column;
+}
+
+[data-file-manager-illustration] .chat-sessions-empty strong {
+  color: var(--fm-text-primary);
+  font-size: 15px;
+  font-weight: var(--fm-weight-semibold);
+}
+
+[data-file-manager-illustration] .chat-sessions-empty p {
+  margin: 0;
+  max-width: 240px;
+  color: var(--fm-text-secondary);
+  font-size: var(--fm-font-size-body);
+}
+
+[data-file-manager-illustration] .chat-sessions-scroll {
+  display: flex;
+  overflow-y: auto;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--fm-space-6);
+}
+
+[data-file-manager-illustration] .chat-sessions-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fm-space-4);
+}
+
+[data-file-manager-illustration] .chat-sessions-section-title {
+  color: var(--fm-text-secondary);
+  font-size: var(--fm-font-size-caption-2);
+  font-weight: var(--fm-weight-semibold);
+}
+
+/* AiChatSessionsView row: vertical 8 / leading 10, 텍스트 간격 2 (native displayRow) */
+[data-file-manager-illustration] .chat-sessions-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  border: 0;
+  border-radius: var(--fm-radius-md);
+  background: transparent;
+  padding: var(--fm-space-4) var(--fm-space-5);
+  text-align: left;
+  cursor: default;
+  transition: background-color var(--fm-motion-fast) ease;
+}
+
+[data-file-manager-illustration] .chat-sessions-row:hover {
+  background: var(--fm-chat-hover-fill);
+}
+
+[data-file-manager-illustration] .chat-sessions-row:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--fm-focus-ring);
+}
+
+[data-file-manager-illustration] .chat-sessions-row-title {
+  color: var(--fm-text-primary);
+  font-size: var(--fm-font-size-body);
+  font-weight: var(--fm-weight-semibold);
+}
+
+[data-file-manager-illustration] .chat-sessions-row-detail {
+  color: var(--fm-text-tertiary);
+  font-size: var(--fm-font-size-caption);
+}
+
+/* AiChatConversationSurface transcript: ScrollView VStack spacing 12, padding h10/t10/b8 */
+[data-file-manager-illustration] .chat-transcript-scroll {
+  display: flex;
+  overflow-y: auto;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--fm-space-6);
+  padding: var(--fm-space-5) var(--fm-space-5) var(--fm-space-4);
+}
+
+[data-file-manager-illustration] .chat-input-bar-frame {
+  flex: none;
+  padding: 8px 10px 10px;
+}
+
+[data-file-manager-illustration] .chat-input-bar-frame.is-centered-empty {
+  padding: 0;
+}
+
+/* AiChatMessageRow — user: HStack(spacing 8){ Spacer min16; bubble h14/v10 radius20 inputBackground } */
+[data-file-manager-illustration] .chat-message-user {
+  display: flex;
+  position: relative;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+[data-file-manager-illustration] .chat-user-bubble-frame {
+  box-sizing: border-box;
+  position: relative;
+  min-width: 0;
+  max-width: calc(100% - var(--fm-chat-user-leading-gutter));
+}
+
+[data-file-manager-illustration] .chat-bubble {
+  box-sizing: border-box;
+  width: fit-content;
+  max-width: 100%;
+  padding: var(--fm-space-5) var(--fm-space-7);
+  border-radius: var(--fm-chat-bubble-radius);
+  background: var(--fm-chat-input-bg);
+  color: var(--fm-text-primary);
+  font-size: var(--fm-font-size-body);
+  line-height: var(--fm-chat-line-body);
+  white-space: pre-wrap;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+/* AiChatMessageRow — assistant: VStack(spacing 8){ card; regenerate } padding trailing 28 */
+[data-file-manager-illustration] .chat-message-assistant {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--fm-space-4);
+  width: 100%;
+  min-width: 0;
+}
+
+[data-file-manager-illustration] .chat-assistant-card-frame {
+  box-sizing: border-box;
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  padding-right: var(--fm-chat-timestamp-offset);
+}
+
+/* AiChatAssistantCard: VStack(spacing 12){ header?; body; failure? } padding v4 */
+[data-file-manager-illustration] .chat-assistant-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fm-space-6);
+  width: 100%;
+  min-width: 0;
+  padding: var(--fm-space-2) 0;
+}
+
+[data-file-manager-illustration] .chat-assistant-header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+[data-file-manager-illustration] .chat-assistant-title {
+  color: var(--fm-text-primary);
+  font-size: var(--fm-font-size-body);
+  font-weight: var(--fm-weight-semibold);
+  line-height: var(--fm-chat-line-body);
+}
+
+[data-file-manager-illustration] .chat-thinking,
+[data-file-manager-illustration] .chat-activity {
+  color: var(--fm-text-secondary);
+  font-size: var(--fm-font-size-caption-2);
+  font-weight: var(--fm-weight-medium);
+  line-height: var(--fm-chat-line-chip);
+}
+
+[data-file-manager-illustration] .chat-assistant-markdown {
+  display: flex;
+  position: relative;
+  flex-direction: column;
+  gap: var(--fm-space-4);
+  padding: 4px;
+  width: 100%;
+  min-width: 0;
+}
+
+[data-file-manager-illustration] .chat-markdown-heading,
+[data-file-manager-illustration] .chat-markdown-paragraph,
+[data-file-manager-illustration] .chat-markdown-list-row,
+[data-file-manager-illustration] .chat-markdown-blockquote,
+[data-file-manager-illustration] .chat-markdown-code {
+  margin: 0;
+  color: var(--fm-text-primary);
+  overflow-wrap: anywhere;
+}
+
+[data-file-manager-illustration] .chat-markdown-heading {
+  font-weight: var(--fm-weight-semibold);
+}
+
+[data-file-manager-illustration] .chat-markdown-heading[data-level="1"] {
+  font-size: var(--fm-chat-heading-1-size);
+  line-height: var(--fm-chat-line-heading-1);
+}
+
+[data-file-manager-illustration] .chat-markdown-heading[data-level="2"] {
+  font-size: var(--fm-chat-heading-2-size);
+  line-height: var(--fm-chat-line-heading-2);
+  font-weight: var(--fm-weight-bold);
+}
+
+[data-file-manager-illustration] .chat-markdown-heading[data-level="3"] {
+  font-size: var(--fm-chat-heading-3-size);
+  line-height: var(--fm-chat-line-heading-3);
+  font-weight: var(--fm-weight-bold);
+}
+
+[data-file-manager-illustration] .chat-markdown-paragraph,
+[data-file-manager-illustration] .chat-markdown-list-row {
+  font-size: var(--fm-font-size-body);
+  line-height: var(--fm-chat-line-body);
+  white-space: pre-wrap;
+}
+
+[data-file-manager-illustration] .chat-markdown-list-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 7px;
+}
+
+[data-file-manager-illustration] .chat-markdown-bullet {
+  font-weight: var(--fm-weight-semibold);
+}
+
+[data-file-manager-illustration] .chat-markdown-number {
+  color: var(--fm-text-secondary);
+  font-weight: var(--fm-weight-semibold);
+}
+
+[data-file-manager-illustration] .chat-markdown-blockquote {
+  border-left: 2px solid var(--fm-separator);
+  padding-left: var(--fm-space-4);
+  font-size: var(--fm-font-size-body);
+  line-height: var(--fm-chat-line-body);
+  white-space: pre-wrap;
+}
+
+[data-file-manager-illustration] .chat-markdown-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+[data-file-manager-illustration] .chat-markdown-table {
+  width: max-content;
+  min-width: 100%;
+  border: 1px solid var(--fm-separator);
+  border-collapse: separate;
+  border-spacing: 0;
+  border-radius: var(--fm-radius-md);
+  color: var(--fm-text-primary);
+  font-size: var(--fm-font-size-body);
+  line-height: var(--fm-chat-line-body);
+}
+
+[data-file-manager-illustration] .chat-markdown-table th,
+[data-file-manager-illustration] .chat-markdown-table td {
+  min-width: 72px;
+  padding: 6px var(--fm-space-4);
+  border-right: 1px solid var(--fm-separator);
+  text-align: left;
+  white-space: nowrap;
+}
+
+[data-file-manager-illustration] .chat-markdown-table th {
+  background: var(--fm-control);
+  font-weight: var(--fm-weight-semibold);
+}
+
+[data-file-manager-illustration] .chat-markdown-table tr > :last-child {
+  border-right: 0;
+}
+
+[data-file-manager-illustration] .chat-markdown-table [data-alignment="center"] {
+  text-align: center;
+}
+
+[data-file-manager-illustration] .chat-markdown-table [data-alignment="right"] {
+  text-align: right;
+}
+
+[data-file-manager-illustration] .chat-markdown-code {
+  overflow-x: auto;
+  border: 1px solid var(--fm-chat-input-border);
+  border-radius: var(--fm-radius-md);
+  background: var(--fm-chat-input-bg);
+  font-family: var(--fm-font-mono);
+  font-size: var(--fm-font-size-caption);
+  line-height: var(--fm-chat-line-caption);
+}
+
+[data-file-manager-illustration] .chat-markdown-code-header {
+  padding: var(--fm-space-3) var(--fm-space-4);
+  border-bottom: 1px solid var(--fm-chat-input-border);
+  color: var(--fm-text-secondary);
+  font-family: var(--fm-font-ui);
+  font-size: var(--fm-font-size-caption-2);
+  font-weight: var(--fm-weight-medium);
+  line-height: var(--fm-chat-line-chip);
+}
+
+[data-file-manager-illustration] .chat-markdown-code pre {
+  margin: 0;
+  padding: var(--fm-space-4);
+  white-space: pre;
+}
+
+/* highlight.js github 팔레트 토큰 (네이티브 Highlighter default-light 계약 근사, runtime capture 시 조정) */
+[data-file-manager-illustration] .chat-markdown-code .hljs {
+  color: var(--fm-text-primary);
+  background: transparent;
+}
+[data-file-manager-illustration] .chat-markdown-code .hljs-comment,
+[data-file-manager-illustration] .chat-markdown-code .hljs-code,
+[data-file-manager-illustration] .chat-markdown-code .hljs-formula {
+  color: #6a737d;
+}
+[data-file-manager-illustration] .chat-markdown-code .hljs-keyword,
+[data-file-manager-illustration] .chat-markdown-code .hljs-doctag,
+[data-file-manager-illustration] .chat-markdown-code .hljs-template-tag,
+[data-file-manager-illustration] .chat-markdown-code .hljs-template-variable,
+[data-file-manager-illustration] .chat-markdown-code .hljs-type,
+[data-file-manager-illustration] .chat-markdown-code .hljs-variable.language_ {
+  color: #d73a49;
+}
+[data-file-manager-illustration] .chat-markdown-code .hljs-title,
+[data-file-manager-illustration] .chat-markdown-code .hljs-title.class_,
+[data-file-manager-illustration] .chat-markdown-code .hljs-title.function_ {
+  color: #6f42c1;
+}
+[data-file-manager-illustration] .chat-markdown-code .hljs-attr,
+[data-file-manager-illustration] .chat-markdown-code .hljs-attribute,
+[data-file-manager-illustration] .chat-markdown-code .hljs-literal,
+[data-file-manager-illustration] .chat-markdown-code .hljs-meta,
+[data-file-manager-illustration] .chat-markdown-code .hljs-number,
+[data-file-manager-illustration] .chat-markdown-code .hljs-operator,
+[data-file-manager-illustration] .chat-markdown-code .hljs-variable,
+[data-file-manager-illustration] .chat-markdown-code .hljs-selector-attr,
+[data-file-manager-illustration] .chat-markdown-code .hljs-selector-class,
+[data-file-manager-illustration] .chat-markdown-code .hljs-selector-id {
+  color: #005cc5;
+}
+[data-file-manager-illustration] .chat-markdown-code .hljs-regexp,
+[data-file-manager-illustration] .chat-markdown-code .hljs-string,
+[data-file-manager-illustration] .chat-markdown-code .hljs-meta .hljs-string {
+  color: #032f62;
+}
+[data-file-manager-illustration] .chat-markdown-code .hljs-built_in,
+[data-file-manager-illustration] .chat-markdown-code .hljs-symbol {
+  color: #e36209;
+}
+[data-file-manager-illustration] .chat-markdown-code .hljs-name,
+[data-file-manager-illustration] .chat-markdown-code .hljs-quote,
+[data-file-manager-illustration] .chat-markdown-code .hljs-selector-tag,
+[data-file-manager-illustration] .chat-markdown-code .hljs-selector-pseudo {
+  color: #22863a;
+}
+[data-file-manager-illustration] .chat-markdown-code .hljs-section {
+  color: #005cc5;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-voyager-color-scheme="light"])
+    [data-file-manager-illustration]
+    .chat-markdown-code
+    .hljs-comment,
+  :root:not([data-voyager-color-scheme="light"])
+    [data-file-manager-illustration]
+    .chat-markdown-code
+    .hljs-code,
+  :root:not([data-voyager-color-scheme="light"])
+    [data-file-manager-illustration]
+    .chat-markdown-code
+    .hljs-formula {
+    color: #8b949e;
+  }
+  :root:not([data-voyager-color-scheme="light"])
+    [data-file-manager-illustration]
+    .chat-markdown-code
+    .hljs-keyword,
+  :root:not([data-voyager-color-scheme="light"])
+    [data-file-manager-illustration]
+    .chat-markdown-code
+    .hljs-doctag,
+  :root:not([data-voyager-color-scheme="light"])
+    [data-file-manager-illustration]
+    .chat-markdown-code
+    .hljs-template-tag,
+  :root:not([data-voyager-color-scheme="light"])
+    [data-file-manager-illustration]
+    .chat-markdown-code
+    .hljs-template-variable,
+  :root:not([data-voyager-color-scheme="light"])
+    [data-file-manager-illustration]
+    .chat-markdown-code
+    .hljs-type,
+  :root:not([data-voyager-color-scheme="light"])
+    [data-file-manager-illustration]
+    .chat-markdown-code
+    .hljs-variable.language_ {
+    color: #ff7b72;
+  }
+  :root:not([data-voyager-color-scheme="light"])
+    [data-file-manager-illustration]
+    .chat-markdown-code
+    .hljs-title,
+  :root:not([data-voyager-color-scheme="light"])
+    [data-file-manager-illustration]
+    .chat-markdown-code
+    .hljs-title.class_,
+  :root:not([data-voyager-color-scheme="light"])
+    [data-file-manager-illustration]
+    .chat-markdown-code
+    .hljs-title.function_ {
+    color: #d2a8ff;
+  }
+  :root:not([data-voyager-color-scheme="light"])
+    [data-file-manager-illustration]
+    .chat-markdown-code
+    .hljs-attr,
+  :root:not([data-voyager-color-scheme="light"])
+    [data-file-manager-illustration]
+    .chat-markdown-code
+    .hljs-attribute,
+  :root:not([data-voyager-color-scheme="light"])
+    [data-file-manager-illustration]
+    .chat-markdown-code
+    .hljs-literal,
+  :root:not([data-voyager-color-scheme="light"])
+    [data-file-manager-illustration]
+    .chat-markdown-code
+    .hljs-meta,
+  :root:not([data-voyager-color-scheme="light"])
+    [data-file-manager-illustration]
+    .chat-markdown-code
+    .hljs-number,
+  :root:not([data-voyager-color-scheme="light"])
+    [data-file-manager-illustration]
+    .chat-markdown-code
+    .hljs-operator,
+  :root:not([data-voyager-color-scheme="light"])
+    [data-file-manager-illustration]
+    .chat-markdown-code
+    .hljs-variable,
+  :root:not([data-voyager-color-scheme="light"])
+    [data-file-manager-illustration]
+    .chat-markdown-code
+    .hljs-selector-attr,
+  :root:not([data-voyager-color-scheme="light"])
+    [data-file-manager-illustration]
+    .chat-markdown-code
+    .hljs-selector-class,
+  :root:not([data-voyager-color-scheme="light"])
+    [data-file-manager-illustration]
+    .chat-markdown-code
+    .hljs-section,
+  :root:not([data-voyager-color-scheme="light"])
+    [data-file-manager-illustration]
+    .chat-markdown-code
+    .hljs-selector-id {
+    color: #79c0ff;
+  }
+  :root:not([data-voyager-color-scheme="light"])
+    [data-file-manager-illustration]
+    .chat-markdown-code
+    .hljs-regexp,
+  :root:not([data-voyager-color-scheme="light"])
+    [data-file-manager-illustration]
+    .chat-markdown-code
+    .hljs-string,
+  :root:not([data-voyager-color-scheme="light"])
+    [data-file-manager-illustration]
+    .chat-markdown-code
+    .hljs-meta
+    .hljs-string {
+    color: #a5d6ff;
+  }
+  :root:not([data-voyager-color-scheme="light"])
+    [data-file-manager-illustration]
+    .chat-markdown-code
+    .hljs-built_in,
+  :root:not([data-voyager-color-scheme="light"])
+    [data-file-manager-illustration]
+    .chat-markdown-code
+    .hljs-symbol {
+    color: #ffa657;
+  }
+  :root:not([data-voyager-color-scheme="light"])
+    [data-file-manager-illustration]
+    .chat-markdown-code
+    .hljs-name,
+  :root:not([data-voyager-color-scheme="light"])
+    [data-file-manager-illustration]
+    .chat-markdown-code
+    .hljs-quote,
+  :root:not([data-voyager-color-scheme="light"])
+    [data-file-manager-illustration]
+    .chat-markdown-code
+    .hljs-selector-tag,
+  :root:not([data-voyager-color-scheme="light"])
+    [data-file-manager-illustration]
+    .chat-markdown-code
+    .hljs-selector-pseudo {
+    color: #7ee787;
+  }
+}
+
+/* 명시적 다크 모드(data-voyager-color-scheme="dark")에서도 다크 구문 팔레트 적용
+   — OS 라이트 + 툴바 Dark 선택 시 prefers-color-scheme 미디어쿼리는 비활성화되므로 별도 블록 필요 */
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-comment,
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-code,
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-formula {
+  color: #8b949e;
+}
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-keyword,
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-doctag,
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-template-tag,
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-template-variable,
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-type,
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-variable.language_ {
+  color: #ff7b72;
+}
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-title,
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-title.class_,
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-title.function_ {
+  color: #d2a8ff;
+}
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-attr,
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-attribute,
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-literal,
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-meta,
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-number,
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-operator,
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-variable,
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-selector-attr,
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-selector-class,
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-section,
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-selector-id {
+  color: #79c0ff;
+}
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-regexp,
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-string,
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-meta
+  .hljs-string {
+  color: #a5d6ff;
+}
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-built_in,
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-symbol {
+  color: #ffa657;
+}
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-name,
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-quote,
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-selector-tag,
+:root[data-voyager-color-scheme="dark"]
+  [data-file-manager-illustration]
+  .chat-markdown-code
+  .hljs-selector-pseudo {
+  color: #7ee787;
+}
+
+[data-file-manager-illustration] .chat-inline-code {
+  border-radius: var(--fm-radius-sm);
+  background: var(--fm-chat-input-bg);
+  padding: 1px var(--fm-space-2);
+  font-family: var(--fm-font-mono);
+  font-size: var(--fm-font-size-caption);
+}
+
+[data-file-manager-illustration] .chat-inline-link {
+  color: var(--macos-link-color);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+[data-file-manager-illustration] .chat-selectable-output {
+  user-select: text;
+}
+
+[data-file-manager-illustration] .chat-copy-feedback {
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  right: 0;
+  border-radius: var(--fm-radius-round);
+  background: var(--fm-control);
+  padding: var(--fm-space-2) var(--fm-space-4);
+  color: var(--fm-text-secondary);
+  font-size: var(--fm-font-size-caption);
+  line-height: var(--fm-chat-line-caption);
+  white-space: nowrap;
+}
+
+[data-file-manager-illustration] .chat-copy-feedback[data-copy-feedback="failed"] {
+  color: var(--fm-red);
+}
+
+/* AiChatWaitingIndicator: 13pt semibold secondary, dots cycle 0.4s */
+[data-file-manager-illustration] .chat-waiting {
+  color: var(--fm-text-secondary);
+  font-size: var(--fm-font-size-body);
+  font-weight: var(--fm-weight-semibold);
+  line-height: var(--fm-chat-line-body);
+}
+
+/* requestStatusRow: 12pt medium secondary, padding v4 */
+[data-file-manager-illustration] .chat-status-row {
+  margin: 0;
+  padding: var(--fm-space-2) 0;
+  color: var(--fm-text-secondary);
+  font-size: var(--fm-font-size-caption);
+  font-weight: var(--fm-weight-medium);
+  line-height: var(--fm-chat-line-caption);
+}
+
+/* failureView: HStack(spacing 8){ triangle.fill 10pt bold red w12; text 12pt medium red } */
+[data-file-manager-illustration] .chat-failure {
+  display: flex;
+  align-items: center;
+  gap: var(--fm-space-4);
+}
+
+[data-file-manager-illustration] .chat-failure-icon {
+  flex: 0 0 12px;
+  width: 12px;
+  color: var(--fm-red);
+}
+
+[data-file-manager-illustration] .chat-failure-message {
+  min-width: 0;
+  color: var(--fm-red);
+  font-size: var(--fm-font-size-caption);
+  font-weight: var(--fm-weight-medium);
+  line-height: var(--fm-chat-line-caption);
+  overflow-wrap: anywhere;
+}
+
+/* regenerateAction: 28x28 circle, arrow.clockwise 12pt semibold secondary; controlHoverFill+inputBorder on hover */
+[data-file-manager-illustration] .chat-regenerate {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--fm-space-10);
+  height: var(--fm-space-10);
+  border: 1px solid transparent;
+  border-radius: 50%;
+  background: transparent;
+  padding: 0;
+  color: var(--fm-text-secondary);
+  cursor: default;
+}
+
+[data-file-manager-illustration] .chat-regenerate-action {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+[data-file-manager-illustration] .chat-regenerate-label {
+  display: none;
+  height: 24px;
+  align-items: center;
+  padding: 0 var(--fm-space-4);
+  border: 1px solid var(--fm-separator);
+  border-radius: var(--fm-radius-round);
+  background: var(--fm-chat-popover-bg);
+  color: var(--fm-text-secondary);
+  font-size: var(--fm-font-size-caption-2);
+  font-weight: var(--fm-weight-medium);
+  line-height: var(--fm-chat-line-chip);
+  white-space: nowrap;
+}
+
+[data-file-manager-illustration] .chat-regenerate-action:hover .chat-regenerate-label,
+[data-file-manager-illustration] .chat-regenerate-action:focus-within .chat-regenerate-label {
+  display: inline-flex;
+}
+
+[data-file-manager-illustration] .chat-regenerate:hover {
+  background: var(--fm-chat-control-hover-fill);
+  border-color: var(--fm-chat-input-border);
+}
+
+[data-file-manager-illustration] .chat-regenerate:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--fm-focus-ring);
+}
+
+[data-file-manager-illustration] .chat-timestamp {
+  display: inline-flex;
+  position: absolute;
+  top: var(--fm-space-2);
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  color: var(--fm-text-secondary);
+  font-size: var(--fm-font-size-caption-2);
+  font-weight: var(--fm-weight-semibold);
+  opacity: 0;
+}
+
+[data-file-manager-illustration] .chat-timestamp-user {
+  left: calc(-1 * var(--fm-chat-timestamp-offset));
+}
+
+[data-file-manager-illustration] .chat-timestamp-assistant {
+  right: 0;
+}
+
+[data-file-manager-illustration] .chat-message-user:hover .chat-timestamp,
+[data-file-manager-illustration] .chat-message-user:focus-within .chat-timestamp,
+[data-file-manager-illustration] .chat-assistant-card-frame:hover .chat-timestamp,
+[data-file-manager-illustration] .chat-assistant-card-frame:focus-within .chat-timestamp {
+  opacity: 1;
+}
+
+/* centeredEmpty: native FileManagerAiChatPageView AiChatEmptyStateContent
+   (icon 56/radius12, title 22 semibold, detail 13 + lineSpacing 4, spacing 16, maxWidth 300).
+   chatView 수준 간격 20 / vertical padding 40은 .chat-empty가 담당. */
+[data-file-manager-illustration] .chat-empty {
+  align-items: stretch;
+  justify-content: center;
+  gap: 20px;
+  padding: 40px 0;
+}
+
+[data-file-manager-illustration] .chat-empty-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  padding: 0 var(--fm-space-8);
+}
+
+[data-file-manager-illustration] .chat-empty-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  max-width: 300px;
+  text-align: center;
+}
+
+[data-file-manager-illustration] .chat-empty-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  color: var(--fm-text-secondary);
+  background: var(--fm-chat-input-bg);
+}
+
+[data-file-manager-illustration] .chat-empty-content strong {
+  color: var(--fm-text-primary);
+  font-size: 22px;
+  font-weight: var(--fm-weight-semibold);
+}
+
+[data-file-manager-illustration] .chat-empty-content p {
+  margin: 0;
+  max-width: 300px;
+  color: var(--fm-text-secondary);
+  font-size: var(--fm-font-size-body);
+  line-height: 17px;
+}
+
+/* compactConnectionCTA: native AiChatView.swift — HStack(spacing 12) padding h14/v12 */
+[data-file-manager-illustration] .chat-connection-cta {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  border: 1px solid var(--fm-separator);
+  border-radius: var(--fm-radius-lg);
+  background: var(--fm-chat-popover-bg);
+  padding: 12px 14px;
+  color: var(--fm-text-secondary);
+}
+
+[data-file-manager-illustration] .chat-connection-cta-copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  text-align: left;
+}
+
+[data-file-manager-illustration] .chat-connection-cta-copy strong {
+  color: var(--fm-text-primary);
+  font-size: 13px;
+  font-weight: var(--fm-weight-semibold);
+}
+
+[data-file-manager-illustration] .chat-connection-cta-copy p {
+  display: -webkit-box;
+  overflow: hidden;
+  margin: 0;
+  color: var(--fm-text-secondary);
+  font-size: 12px;
+  line-height: var(--fm-chat-line-caption);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+[data-file-manager-illustration] .chat-connection-cta-action {
+  flex: none;
+  border: 1px solid var(--fm-chat-input-border);
+  border-radius: var(--fm-radius-md);
+  background: var(--fm-chat-input-bg);
+  padding: 0 var(--fm-space-5);
+  height: 24px;
+  color: var(--fm-text-primary);
+  font-size: 12px;
+  font-weight: var(--fm-weight-semibold);
+  cursor: pointer;
+}
+
+[data-file-manager-illustration] .chat-connection-cta-action:hover {
+  background: var(--fm-chat-control-hover-fill);
+}
+
+[data-file-manager-illustration] .chat-connection-cta-action:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--fm-focus-ring);
+}
+
+/* AiChatStatusBanner/AiChatRebindRecoveryBanner 공통 카드 */
+[data-file-manager-illustration] .chat-status-banner {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--fm-space-6);
+  width: 100%;
+  border: 1px solid var(--fm-separator);
+  border-radius: var(--fm-radius-lg);
+  background: var(--fm-chat-popover-bg);
+  padding: 14px;
+}
+
+[data-file-manager-illustration] .chat-status-banner-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+[data-file-manager-illustration] .chat-status-banner-copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+[data-file-manager-illustration] .chat-status-banner-copy strong {
+  color: var(--fm-text-primary);
+  font-size: 14px;
+  font-weight: var(--fm-weight-semibold);
+}
+
+[data-file-manager-illustration] .chat-status-banner-copy p {
+  margin: 0;
+  color: var(--fm-text-secondary);
+  font-size: 12px;
+  line-height: var(--fm-chat-line-caption);
+}
+
+[data-file-manager-illustration] .chat-status-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--fm-space-4);
+}
+
+[data-file-manager-illustration] .chat-status-banner-action {
+  border: 1px solid var(--fm-chat-input-border);
+  border-radius: var(--fm-radius-round);
+  background: var(--fm-chat-input-bg);
+  padding: 8px 12px;
+  color: var(--fm-text-primary);
+  font-size: 12px;
+  font-weight: var(--fm-weight-semibold);
+  cursor: pointer;
+}
+
+[data-file-manager-illustration] .chat-status-banner-action:hover {
+  background: var(--fm-chat-control-hover-fill);
+}
+
+[data-file-manager-illustration] .chat-status-banner-action:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--fm-focus-ring);
 }

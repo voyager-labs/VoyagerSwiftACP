@@ -30,9 +30,23 @@ public struct EntryListViewRepresentable: NSViewRepresentable {
         context.coordinator.updateRootView(view)
         view.tableView.blankSpaceContextMenuProvider = blankSpaceMenuProvider
     }
+
+    public static func dismantleNSView(_: EntryListView, coordinator: EntryListCoordinator) {
+        coordinator.externalDropSessionController.cancel()
+    }
 }
 
 final class EntryListSelectionRowView: NSTableRowView {
+    override func accessibilityChildren() -> [Any]? {
+        let nativeChildren = super.accessibilityChildren() ?? []
+        let unrepresentedSubviews = subviews.filter { subview in
+            !nativeChildren.contains { child in
+                (child as? NSView) === subview
+            }
+        }
+        return nativeChildren + unrepresentedSubviews
+    }
+
     private var tableView: NSTableView? {
         var view: NSView? = self
         while let currentView = view {
@@ -84,6 +98,42 @@ public final class EntryListView: NSView {
                 deselectAll(nil)
             }
             super.mouseDown(with: event)
+        }
+
+        override func keyDown(with event: NSEvent) {
+            let row = selectedRow
+            guard row >= 0, let specialKey = event.specialKey else {
+                super.keyDown(with: event)
+                return
+            }
+
+            switch specialKey {
+            case .rightArrow:
+                let item = item(atRow: row)
+                if !isItemExpanded(item), isExpandable(item) {
+                    expandItem(item)
+                    return
+                }
+            case .leftArrow:
+                let item = item(atRow: row)
+                if isItemExpanded(item) {
+                    collapseItem(item)
+                    return
+                }
+            case .upArrow where row > 0:
+                let extending = event.modifierFlags.contains(.shift)
+                selectRowIndexes(IndexSet(integer: row - 1), byExtendingSelection: extending)
+                scrollRowToVisible(row - 1)
+                return
+            case .downArrow where row < numberOfRows - 1:
+                let extending = event.modifierFlags.contains(.shift)
+                selectRowIndexes(IndexSet(integer: row + 1), byExtendingSelection: extending)
+                scrollRowToVisible(row + 1)
+                return
+            default:
+                break
+            }
+            super.keyDown(with: event)
         }
 
         override func rightMouseDown(with event: NSEvent) {
@@ -145,7 +195,17 @@ public final class EntryListView: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
+    override public func accessibilityChildren() -> [Any]? {
+        [tableView]
+    }
+
+    override public func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        NSAccessibility.post(element: self, notification: .layoutChanged)
+    }
+
     private func setupViewTree() {
+        setAccessibilityElement(false)
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
 
@@ -165,6 +225,10 @@ public final class EntryListView: NSView {
 
         tableView.wantsLayer = true
         tableView.layer?.backgroundColor = NSColor.clear.cgColor
+        tableView.setAccessibilityElement(true)
+        tableView.setAccessibilityIdentifier("entry-list-outline")
+        tableView.setAccessibilityLabel("File entries")
+        tableView.setAccessibilityRole(.outline)
         tableView.backgroundColor = NSColor.clear
         tableView.headerView = NSTableHeaderView()
         tableView.allowsColumnReordering = true
@@ -173,7 +237,7 @@ public final class EntryListView: NSView {
         tableView.allowsEmptySelection = true
         tableView.usesAlternatingRowBackgroundColors = false
         tableView.intercellSpacing = NSSize(width: 4, height: 0)
-        tableView.registerForDraggedTypes([.fileURL])
+        tableView.registerForDraggedTypes(EntryViewLayoutDropValidationAdapter.registeredDraggedTypes)
         tableView.setDraggingSourceOperationMask([.copy, .move], forLocal: true)
         tableView.setDraggingSourceOperationMask([.copy], forLocal: false)
         tableView.autoresizesOutlineColumn = false
@@ -185,12 +249,14 @@ public final class EntryListView: NSView {
         scrollView.documentView = tableView
 
         addSubview(scrollView)
+        setAccessibilityChildren([tableView])
         NSLayoutConstraint.activate([
             scrollView.leadingAnchor.constraint(equalTo: leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: trailingAnchor),
             scrollView.topAnchor.constraint(equalTo: topAnchor),
             scrollView.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
+        NSAccessibility.post(element: self, notification: .layoutChanged)
     }
 
     func applyColumns(_ visibleColumns: [EntryListColumn]) {

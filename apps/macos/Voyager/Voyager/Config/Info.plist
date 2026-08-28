@@ -78,9 +78,19 @@
 		</dict>
 	</array>
 	<key>NSAppleEventsUsageDescription</key>
-	<string>Voyager uses Finder automation to reveal selected items in Finder.</string>
+	<string>Voyager uses Finder automation to reveal selected items and Mail automation to import dragged messages.</string>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.json</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Voyager Content Tab Drag Payload</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.voyager.app.content-tab-drag-payload</string>
+		</dict>
 		<dict>
 			<key>UTTypeConformsTo</key>
 			<array>
@@ -103,6 +113,26 @@
 				<key>public.mime-type</key>
 				<string>application/x-voycoll-collection</string>
 			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Voyager Content Tab Reorder Payload</string>
+			<key>UTTypeIdentifier</key>
+			<string>fm.voyager.content-tab-reorder</string>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Voyager Content Tab Reorder Local Marker</string>
+			<key>UTTypeIdentifier</key>
+			<string>fm.voyager.content-tab-reorder.local</string>
 		</dict>
 	</array>
 	<key>SUScheduledCheckInterval</key>

@@ -9,10 +9,6 @@ func logSearchDurationIfNeeded(
     guard let startedAt else { return }
     let duration = round((Date().timeIntervalSince(startedAt)) * 1000)
     composerMetricClient.logMetric(
-        ComposerCollectionFilterMetrics.legacySearchDuration,
-        value: duration,
-    )
-    composerMetricClient.logMetric(
         ComposerCollectionFilterMetrics.queryDuration,
         value: duration,
     )
@@ -24,10 +20,6 @@ func logFiltersDurationIfNeeded(
 ) {
     guard let startedAt else { return }
     let duration = round((Date().timeIntervalSince(startedAt)) * 1000)
-    composerMetricClient.logMetric(
-        ComposerCollectionFilterMetrics.legacyApplyDuration,
-        value: duration,
-    )
     composerMetricClient.logMetric(
         ComposerCollectionFilterMetrics.applyDuration,
         value: duration,
@@ -110,13 +102,14 @@ func presentTransientFeedback(
         message: message,
     )
     state.transientFeedback = feedback
+    let feedbackDismissID = ComposerFeature.CancelID.feedbackDismiss(ownerID: state.cancellationOwnerID)
 
     return .concatenate(
-        .cancel(id: ComposerFeature.CancelID.feedbackDismiss),
+        .cancel(id: feedbackDismissID),
         .run { send in
             try await clock.sleep(for: .seconds(4))
             await send(.dismissTransientFeedback(id: feedback.id))
         }
-        .cancellable(id: ComposerFeature.CancelID.feedbackDismiss, cancelInFlight: true),
+        .cancellable(id: feedbackDismissID, cancelInFlight: true),
     )
 }

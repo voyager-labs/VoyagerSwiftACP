@@ -24,7 +24,7 @@ func TestClientRoundTrip(t *testing.T) {
 	}{
 		{method: schema.MethodPing, result: schema.PingResult{Message: "pong"}},
 		{method: schema.MethodHealth, result: schema.HealthResult{Status: "healthy", State: "running"}},
-		{method: schema.MethodVersion, result: schema.VersionResult{AppVersion: "0.1.0-dev", ProtocolVersion: schema.ProtocolVersion}},
+		{method: schema.MethodVersion, result: schema.VersionResult{AppVersion: "0.1.0-dev"}},
 	}
 
 	for _, test := range methods {
@@ -45,7 +45,7 @@ func TestClientRoundTrip(t *testing.T) {
 					peerDone <- err
 					return
 				}
-				want := fmt.Sprintf(`{"request_id":"request-1","protocol_version":1,"method":"%s","params":{}}`, test.method)
+				want := fmt.Sprintf(`{"request_id":"request-1","method":"%s","params":{}}`, test.method)
 				if string(wire) != want {
 					peerDone <- fmt.Errorf("request = %q, want %q", wire, want)
 					return
@@ -63,7 +63,7 @@ func TestClientRoundTrip(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Call() error = %v", err)
 			}
-			if !response.OK || response.RequestID != request.RequestID || response.ProtocolVersion != schema.ProtocolVersion {
+			if !response.OK || response.RequestID != request.RequestID {
 				t.Fatalf("response = %#v", response)
 			}
 			if err := <-peerDone; err != nil {
@@ -146,16 +146,16 @@ func TestClientResponseValidation(t *testing.T) {
 		{name: "ping valid", method: schema.MethodPing, wire: validResponse("request-1", schema.MethodPing)},
 		{name: "health valid", method: schema.MethodHealth, wire: validResponse("request-1", schema.MethodHealth)},
 		{name: "version valid", method: schema.MethodVersion, wire: validResponse("request-1", schema.MethodVersion)},
-		{name: "server error", method: schema.MethodPing, wire: []byte(`{"request_id":"request-1","protocol_version":1,"ok":false,"error":{"code":"internal_error","message":"internal error"}}`), server: true},
-		{name: "empty error ID", method: schema.MethodPing, wire: []byte(`{"request_id":"","protocol_version":1,"ok":false,"error":{"code":"invalid_request","message":"request is invalid"}}`)},
+		{name: "server error", method: schema.MethodPing, wire: []byte(`{"request_id":"request-1","ok":false,"error":{"code":"internal_error","message":"internal error"}}`), server: true},
+		{name: "empty error ID", method: schema.MethodPing, wire: []byte(`{"request_id":"","ok":false,"error":{"code":"invalid_request","message":"request is invalid"}}`)},
 		{name: "mismatched ID", method: schema.MethodPing, wire: validResponse("other", schema.MethodPing)},
-		{name: "protocol mismatch", method: schema.MethodPing, wire: []byte(`{"request_id":"request-1","protocol_version":2,"ok":true,"result":{"message":"pong"}}`)},
+		{name: "legacy protocol field", method: schema.MethodPing, wire: []byte(`{"request_id":"request-1","protocol_version":2,"ok":true,"result":{"message":"pong"}}`)},
 		{name: "wrong method result", method: schema.MethodPing, wire: validResponse("request-1", schema.MethodHealth)},
-		{name: "invalid error code", method: schema.MethodPing, wire: []byte(`{"request_id":"request-1","protocol_version":1,"ok":false,"error":{"code":"future","message":"future"}}`)},
-		{name: "both result and error", method: schema.MethodPing, wire: []byte(`{"request_id":"request-1","protocol_version":1,"ok":true,"result":{"message":"pong"},"error":{"code":"internal_error","message":"internal error"}}`)},
-		{name: "neither result nor error", method: schema.MethodPing, wire: []byte(`{"request_id":"request-1","protocol_version":1,"ok":true}`)},
-		{name: "unknown field", method: schema.MethodPing, wire: []byte(`{"request_id":"request-1","protocol_version":1,"ok":true,"result":{"message":"pong"},"extra":true}`)},
-		{name: "duplicate field", method: schema.MethodPing, wire: []byte(`{"request_id":"request-1","request_id":"request-1","protocol_version":1,"ok":true,"result":{"message":"pong"}}`)},
+		{name: "invalid error code", method: schema.MethodPing, wire: []byte(`{"request_id":"request-1","ok":false,"error":{"code":"future","message":"future"}}`)},
+		{name: "both result and error", method: schema.MethodPing, wire: []byte(`{"request_id":"request-1","ok":true,"result":{"message":"pong"},"error":{"code":"internal_error","message":"internal error"}}`)},
+		{name: "neither result nor error", method: schema.MethodPing, wire: []byte(`{"request_id":"request-1","ok":true}`)},
+		{name: "unknown field", method: schema.MethodPing, wire: []byte(`{"request_id":"request-1","ok":true,"result":{"message":"pong"},"extra":true}`)},
+		{name: "duplicate field", method: schema.MethodPing, wire: []byte(`{"request_id":"request-1","request_id":"request-1","ok":true,"result":{"message":"pong"}}`)},
 		{name: "malformed", method: schema.MethodPing, wire: []byte(`{"request_id":`)},
 		{name: "multiple JSON values", method: schema.MethodPing, wire: append(validResponse("request-1", schema.MethodPing), []byte(` {}`)...)},
 	}
@@ -355,7 +355,7 @@ func TestClientRequiresAbsoluteSocketPath(t *testing.T) {
 }
 
 func validClientRequest(method schema.Method) schema.Request {
-	return schema.Request{RequestID: "request-1", ProtocolVersion: schema.ProtocolVersion, Method: method, Params: schema.EmptyParams{}}
+	return schema.Request{RequestID: "request-1", Method: method, Params: schema.EmptyParams{}}
 }
 
 func validResponse(requestID string, method schema.Method) []byte {
@@ -366,7 +366,7 @@ func validResponse(requestID string, method schema.Method) []byte {
 	case schema.MethodHealth:
 		result = schema.HealthResult{Status: "healthy", State: "running"}
 	case schema.MethodVersion:
-		result = schema.VersionResult{AppVersion: "0.1.0-dev", ProtocolVersion: schema.ProtocolVersion}
+		result = schema.VersionResult{AppVersion: "0.1.0-dev"}
 	default:
 		panic("unsupported test method")
 	}

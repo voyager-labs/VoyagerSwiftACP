@@ -1,9 +1,9 @@
-import externalDriveIcon from "../assets/entry-thumbnails/external-drive-system.png?no-inline"
-import homeIcon from "../assets/entry-thumbnails/folder-system.png?no-inline"
-import googleDriveIcon from "../assets/entry-thumbnails/google-drive-system.png?no-inline"
-import iCloudDriveIcon from "../assets/entry-thumbnails/icloud-drive-system.png?no-inline"
-import internalDriveIcon from "../assets/entry-thumbnails/internal-drive-system.png?no-inline"
-import trashIcon from "../assets/entry-thumbnails/trash-system.png?no-inline"
+import externalDriveIcon from "../assets/entry-thumbnails/external-drive-system.png"
+import homeIcon from "../assets/entry-thumbnails/folder-system.png"
+import googleDriveIcon from "../assets/entry-thumbnails/google-drive-system.png"
+import iCloudDriveIcon from "../assets/entry-thumbnails/icloud-drive-system.png"
+import internalDriveIcon from "../assets/entry-thumbnails/internal-drive-system.png"
+import trashIcon from "../assets/entry-thumbnails/trash-system.png"
 
 export const locationIconFixtures = {
   externalDrive: externalDriveIcon,

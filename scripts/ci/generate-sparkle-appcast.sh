@@ -34,6 +34,35 @@ SPARKLE_WORK_DIR="${BUILD_DIR}/.sparkle"
 BASELINE_ROOT="${BUILD_DIR}/baseline"
 CURRENT_ZIP="${BUILD_DIR}/Voyager-${VERSION}.zip"
 DOWNLOAD_PREFIX="${DOWNLOADS_BASE_URL}/releases/versions"
+RELEASE_NOTES_URL="https://voyager.fm/api/changelog/${VERSION}/sparkle"
+
+preflight_release_notes() {
+  local body_path metadata http_status content_type
+  local html_content_type_pattern='^[[:space:]]*[Tt][Ee][Xx][Tt]/[Hh][Tt][Mm][Ll]([[:space:]]*;.*)?[[:space:]]*$'
+  local status=0
+
+  body_path="$(mktemp "${TMPDIR:-/tmp}/sparkle-release-notes.XXXXXX")"
+  if ! metadata="$(curl -fsSL --connect-timeout 10 --max-time 30 -o "${body_path}" -w '%{http_code}\n%{content_type}' "${RELEASE_NOTES_URL}")"; then
+    echo "Failed to fetch Sparkle release notes: ${RELEASE_NOTES_URL}" >&2
+    status=1
+  else
+    http_status="${metadata%%$'\n'*}"
+    content_type="${metadata#*$'\n'}"
+    if [[ "${http_status}" != "200" ]]; then
+      echo "Sparkle release notes must return HTTP 200: ${RELEASE_NOTES_URL}" >&2
+      status=1
+    elif ! [[ "${content_type}" =~ ${html_content_type_pattern} ]]; then
+      echo "Sparkle release notes must return text/html: ${RELEASE_NOTES_URL}" >&2
+      status=1
+    elif [[ ! -s "${body_path}" ]]; then
+      echo "Sparkle release notes response must not be empty: ${RELEASE_NOTES_URL}" >&2
+      status=1
+    fi
+  fi
+
+  rm -f "${body_path}"
+  return "${status}"
+}
 
 download_baseline_zip() {
   local version="$1"
@@ -59,6 +88,10 @@ fi
 
 if [[ ! -x "${SPARKLE_BIN}/generate_appcast" ]]; then
   echo "generate_appcast not found." >&2
+  exit 1
+fi
+
+if ! preflight_release_notes; then
   exit 1
 fi
 
@@ -109,6 +142,9 @@ printf "%s" "${SPARKLE_PRIVATE_KEY}" | "${SPARKLE_BIN}/generate_appcast" \
 
 python3 "${SCRIPT_DIR}/rewrite-sparkle-appcast-urls.py" \
   "${SPARKLE_WORK_DIR}/appcast.xml" "${DOWNLOAD_PREFIX}"
+
+python3 "${SCRIPT_DIR}/set-sparkle-release-notes-link.py" \
+  "${SPARKLE_WORK_DIR}/appcast.xml" "${VERSION}" "${RELEASE_NOTES_URL}"
 
 if [[ -f "${SPARKLE_WORK_DIR}/appcast.xml" && "${APPCAST_PATH}" != "${SPARKLE_WORK_DIR}/appcast.xml" ]]; then
   mkdir -p "$(dirname "${APPCAST_PATH}")"

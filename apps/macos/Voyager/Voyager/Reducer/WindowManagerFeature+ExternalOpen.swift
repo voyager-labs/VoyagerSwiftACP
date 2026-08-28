@@ -67,51 +67,45 @@ extension WindowManagerFeature {
         batchID: UUID,
         state: inout State,
     ) -> Effect<Action> {
-        if state.authorizedExternalOpenBatchID == batchID {
-            state.authorizedExternalOpenBatchID = nil
-        }
-        if state.externalOpenActivationAttempt?.batchID == batchID {
-            state.externalOpenActivationAttempt = nil
-        }
-
-        var effects: [Effect<Action>] = [
-            .cancel(id: CancelID.externalOpenBatch(batchID)),
-        ]
+        if state.authorizedExternalOpenBatchID == batchID { state.authorizedExternalOpenBatchID = nil }
+        if state.externalOpenActivationAttempt?.batchID == batchID { state.externalOpenActivationAttempt = nil }
+        var effects: [Effect<Action>] = [.cancel(id: CancelID.externalOpenBatch(batchID))]
         guard let ownership = state.retainedExternalOpenPlacementOwnership,
               ownership.batchID == batchID
-        else {
-            return .concatenate(effects)
-        }
+        else { return .concatenate(effects) }
         state.retainedExternalOpenPlacementOwnership = nil
-
-        let ownedWindowIDs = ownership.newWindowIDs.filter {
-            state.externalWindowBatchIDs[$0] == batchID
-        }
-        let removedFocusedWindow = state.focusedWindowID.map(ownedWindowIDs.contains) ?? false
-        let removedBootstrapWindow = ownedWindowIDs.contains {
-            state.defaultWindowBootstrapWindowIDs.contains($0)
-        }
+        let ownedWindowIDs = ownership.newWindowIDs.filter { state.externalWindowBatchIDs[$0] == batchID }
         for windowID in ownedWindowIDs {
-            state.windows.remove(id: windowID)
-            state.lastUsedWindowIDs.removeAll { $0 == windowID }
-            state.defaultWindowBootstrapWindowIDs.remove(windowID)
-            state.externalWindowBatchIDs[windowID] = nil
-        }
-        if removedFocusedWindow {
-            state.focusedWindowID = state.lastUsedWindowIDs.first { state.windows[id: $0] != nil }
-        }
-        if removedBootstrapWindow,
-           state.defaultWindowBootstrapWindowIDs.isEmpty,
-           state.defaultWindowBootstrapRequestID != nil
-        {
-            state.defaultWindowBootstrapRequestID = nil
-            effects.append(.cancel(id: CancelID.defaultWindowBootstrap))
-        }
-        effects.append(contentsOf: ownedWindowIDs.map { windowID in
-            .run { [fileManagerWindowClient] _ in
+            state.closingWindowIDs.insert(windowID)
+            clearWindowFocus(windowID, state: &state)
+            effects.append(.run { [fileManagerWindowClient] _ in
                 await fileManagerWindowClient.close(windowID)
-            }
-        })
+                await fileManagerWindowClient.finalizeClose(windowID)
+            })
+            effects.append(finalizeWindowRemoval(windowID, state: &state))
+        }
+        state.refreshContentTabMoveTargets()
         return .concatenate(effects)
+    }
+
+    func externalOpenActivationEffects(
+        _ activations: [ExternalOpenPlacementApplication.ExistingWindowActivation],
+    ) -> [Effect<Action>] {
+        activations.flatMap { activation in
+            [
+                .send(.windows(.element(
+                    id: activation.windowID,
+                    action: .window(.activateExternalContentTabUndoScopes(activation.tabIDs)),
+                ))),
+                .send(.windows(.element(
+                    id: activation.windowID,
+                    action: .window(.contentTabs(.setCurrent(activation.activeTabID))),
+                ))),
+                .send(.windows(.element(
+                    id: activation.windowID,
+                    action: .window(.contentTabs(.collapseSelectionToActive)),
+                ))),
+            ]
+        }
     }
 }

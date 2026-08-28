@@ -3,15 +3,45 @@ import ComposableArchitecture
 import Dependencies
 @testable import Voyager
 import VoyagerFeaturesAccountAccess
+import VoyagerPagesFileManager
 @testable import VoyagerPagesSettings
 import VoyagerShared
 import XCTest
 
 @MainActor
 final class AuthSessionFlowTests: XCTestCase {
+    func testLateSessionRestoreAfterShellReadinessDoesNotManipulateWindows() async {
+        let windowID = UUID(900)
+        var initialState = AppRootFeature.State()
+        initialState.lifecycle.didFinishLaunching = true
+        initialState.lifecycle.didStartHelper = true
+        initialState.lifecycle.didCompleteEntryCoreHealthProbe = true
+        initialState.lifecycle.didCreateInitialWindow = true
+        initialState.windowManager.windows = [
+            .init(id: windowID, window: .makeInitial(path: "/existing")),
+        ]
+        initialState.windowManager.focusedWindowID = windowID
+        initialState.windowManager.lastUsedWindowIDs = [windowID]
+
+        let store = AccountAccessFlowTestSupport.makeRootStore(
+            initialState: initialState,
+            session: AccountAccessFlowTestSupport.validSession,
+        )
+        store.exhaustivity = .off
+
+        await store.send(.lifecycle(.accountAccess(.onAppear)))
+        await store.receive(\.lifecycle.accountAccess._onAppearSessionRestored)
+
+        XCTAssertTrue(store.state.lifecycle.accountAccess.hasAccountSession)
+        XCTAssertEqual(store.state.windowManager.windows.map(\.id), [windowID])
+        XCTAssertEqual(store.state.windowManager.focusedWindowID, windowID)
+        XCTAssertEqual(store.state.windowManager.lastUsedWindowIDs, [windowID])
+        await store.skipInFlightEffects()
+    }
+
     // FLOW-PATH: happy_path
 
-    func testRootExchangeCompletionDismissesSessionLapseGuard() async {
+    func testRootExchangeCompletionKeepsOptionalAuthChainAvailable() async {
         let state = "guard-recovery-state"
         let session = AccountAccessFlowTestSupport.validSession
         let syncResult = SessionSyncResult(
@@ -29,7 +59,7 @@ final class AuthSessionFlowTests: XCTestCase {
             sessionExpiresAt: session.expiresAt,
         )
         var initialState = AppRootFeature.State()
-        initialState.lifecycle.accessGatePhase = .recoveryRequired
+        initialState.lifecycle.didFinishLaunching = true
         initialState.lifecycle.accountAccess.isSignInInProgress = true
         initialState.lifecycle.accountAccess.handoffExchangeState = state
         initialState.lifecycle.accountAccess.handoffTransaction = AccountAccessHandoffTransaction(
@@ -55,10 +85,7 @@ final class AuthSessionFlowTests: XCTestCase {
         await store.receive(\.lifecycle.accountAccess.sessionSyncRequested)
         await store.receive(\.lifecycle.accountAccess._sessionSyncActivationCompleted)
         await store.receive(\.lifecycle.accountAccess._sessionSyncCompleted)
-        await store.receive(\.lifecycle.accountAccess.delegate)
-
-        XCTAssertEqual(store.state.lifecycle.accessGatePhase, .granted)
-        XCTAssertNil(store.state.lifecycle.presentedAccountAccess)
+        XCTAssertTrue(store.state.lifecycle.accountAccess.hasAccountSession)
         await store.skipInFlightEffects()
     }
 
@@ -94,25 +121,6 @@ final class AuthSessionFlowTests: XCTestCase {
         await store.skipInFlightEffects()
     }
 
-    // FLOW-PATH: session_restore_cold_start
-
-    func testColdStartRestoresValidSessionAndKeepsCanonicalLifecycleLoggedIn() async {
-        let snapshot = AccessStatusSnapshot(
-            status: .coreLicenseActive,
-            fetchedAt: AccountAccessFlowTestSupport.referenceDate,
-            sessionExpiresAt: AccountAccessFlowTestSupport.validSession.expiresAt,
-        )
-        let store = AccountAccessFlowTestSupport.makeRootStore()
-        store.exhaustivity = .off
-
-        await store.send(.lifecycle(.accountAccess(.hydrateLaunchSnapshot(snapshot))))
-
-        XCTAssertTrue(store.state.lifecycle.accountAccess.hasAccountSession)
-        XCTAssertFalse(store.state.lifecycle.accountAccess.isSessionExpired)
-        XCTAssertEqual(store.state.lifecycle.accountAccess.accountAccessAuthAxis, .signedIn)
-        await store.skipInFlightEffects()
-    }
-
     // FLOW-PATH: session_restore_background_return
 
     func testForegroundReturnRevalidatesPersistedSession() async {
@@ -137,73 +145,6 @@ final class AuthSessionFlowTests: XCTestCase {
             AccountAccessFlowTestSupport.validSession.expiresAt,
         )
         await store.skipInFlightEffects()
-    }
-
-    // FLOW-PATH: session_expiry_during_use
-
-    func testRefreshTokenExpiryTransitionsToSessionLapseGuardAndReauthenticationRecovers() async {
-        var expiredState = AppRootFeature.State()
-        expiredState.lifecycle.accountAccess.hasAccountSession = true
-        expiredState.lifecycle.accountAccess.status = .coreLicenseActive
-        let expiryStore = AccountAccessFlowTestSupport.makeRootStore(initialState: expiredState)
-        expiryStore.exhaustivity = .off
-
-        await expiryStore.send(.lifecycle(.sessionExpiredDetected(reason: .sessionExpired)))
-        await expiryStore.receive(\.lifecycle.accountAccess._sessionExpiredDetected)
-        await expiryStore.receive(\.lifecycle.accountAccess.delegate)
-
-        XCTAssertFalse(expiryStore.state.lifecycle.accountAccess.hasAccountSession)
-        XCTAssertTrue(expiryStore.state.lifecycle.accountAccess.isSessionExpired)
-        XCTAssertEqual(expiryStore.state.lifecycle.accessGatePhase, .recoveryRequired)
-        XCTAssertNotNil(expiryStore.state.lifecycle.presentedAccountAccess)
-        await expiryStore.finish()
-
-        var reauthenticationState = AppRootFeature.State()
-        reauthenticationState.lifecycle.accessGatePhase = .recoveryRequired
-        reauthenticationState.lifecycle.accountAccess.isSessionExpired = true
-        reauthenticationState.lifecycle.accountAccess.isSignInInProgress = true
-        reauthenticationState.lifecycle.accountAccess.handoffExchangeState = "reauthentication-state"
-        reauthenticationState.lifecycle.accountAccess.handoffTransaction = AccountAccessHandoffTransaction(
-            context: .paywall,
-            scope: .lifecycle,
-        )
-        let reauthenticationStore = AccountAccessFlowTestSupport.makeRootStore(initialState: reauthenticationState)
-        reauthenticationStore.exhaustivity = .off
-
-        await reauthenticationStore.send(.lifecycle(.accountAccess(._handoffExchangeCompleted(
-            state: "reauthentication-state",
-            generation: 0,
-            result: .success(AccountAccessHandoffCompletion(
-                expiresAt: AccountAccessFlowTestSupport.validSession.expiresAt,
-                sessionBindingID: AccountAccessFlowTestSupport.validSession.sessionBindingID,
-            )),
-        ))))
-        await reauthenticationStore.receive(\.lifecycle.accountAccess.sessionSyncRequested)
-
-        XCTAssertTrue(reauthenticationStore.state.lifecycle.accountAccess.hasAccountSession)
-        XCTAssertFalse(reauthenticationStore.state.lifecycle.accountAccess.isSessionExpired)
-        await reauthenticationStore.finish()
-    }
-
-    // FLOW-PATH: sign_out
-
-    func testSettingsSignOutClearsCanonicalSessionAndShowsSessionLapseGuard() async {
-        var initialState = AppRootFeature.State()
-        initialState.lifecycle.accessGatePhase = .granted
-        initialState.lifecycle.accountAccess.hasAccountSession = true
-        initialState.lifecycle.accountAccess.status = .coreLicenseActive
-        let store = AccountAccessFlowTestSupport.makeRootStore(initialState: initialState)
-        store.exhaustivity = .off
-
-        await store.send(.settings(.delegate(.account(.signOutRequested))))
-        await store.receive(\.lifecycle.accountAccess.signOut)
-
-        XCTAssertFalse(store.state.lifecycle.accountAccess.hasAccountSession)
-        XCTAssertTrue(store.state.lifecycle.accountAccess.isSessionExpired)
-        await store.receive(\.lifecycle.accountAccess.delegate)
-        XCTAssertEqual(store.state.lifecycle.accessGatePhase, .signedOut)
-        XCTAssertNotNil(store.state.lifecycle.presentedAccountAccess)
-        await store.finish()
     }
 
     // FLOW-PATH: handoff_token_exchange_failure

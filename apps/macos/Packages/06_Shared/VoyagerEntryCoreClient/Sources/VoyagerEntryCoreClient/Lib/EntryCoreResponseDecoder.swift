@@ -22,11 +22,9 @@ nonisolated enum EntryCoreResponseDecoder {
         }
         guard
             let requestIDValue = root.field(named: "request_id"),
-            let protocolVersionValue = root.field(named: "protocol_version"),
             let okValue = root.field(named: "ok"),
             case let .string(requestID) = requestIDValue,
             requestID.utf8.count <= 128,
-            lexicalInteger(protocolVersionValue) == EntryCoreProtocolVersion.v1.rawValue,
             case let .bool(ok) = okValue
         else {
             throw EntryCoreClientError.protocolMismatch
@@ -34,13 +32,13 @@ nonisolated enum EntryCoreResponseDecoder {
 
         let fields: [String: StrictJSONValue]
         if ok {
-            let expectedFields = ["request_id", "protocol_version", "ok", "result"]
+            let expectedFields = ["request_id", "ok", "result"]
             guard let successFields = root.objectFields(exactly: Set(expectedFields)) else {
                 throw EntryCoreClientError.protocolMismatch
             }
             fields = successFields
         } else {
-            let expectedFields = ["request_id", "protocol_version", "ok", "error"]
+            let expectedFields = ["request_id", "ok", "error"]
             guard let errorFields = root.objectFields(exactly: Set(expectedFields)) else {
                 throw EntryCoreClientError.protocolMismatch
             }
@@ -62,21 +60,6 @@ nonisolated enum EntryCoreResponseDecoder {
 }
 
 private extension EntryCoreResponseDecoder {
-    static func lexicalInteger(_ value: StrictJSONValue) -> Int? {
-        guard case let .number(text) = value, !text.isEmpty else {
-            return nil
-        }
-        for (index, byte) in text.utf8.enumerated() {
-            if index == 0, byte == CharacterByte.minus {
-                continue
-            }
-            guard (CharacterByte.zero ... CharacterByte.nine).contains(byte) else {
-                return nil
-            }
-        }
-        return Int(text)
-    }
-
     static func decodeResult(
         _ value: StrictJSONValue?,
         method: EntryCoreMethod,
@@ -105,10 +88,9 @@ private extension EntryCoreResponseDecoder {
             return .health(EntryCoreHealthResult())
         case .version:
             guard
-                let fields = value.objectFields(exactly: ["app_version", "protocol_version"]),
+                let fields = value.objectFields(exactly: ["app_version"]),
                 case let .string(appVersion)? = fields["app_version"],
-                !appVersion.isEmpty,
-                lexicalInteger(fields["protocol_version"] ?? .null) == EntryCoreProtocolVersion.v1.rawValue
+                !appVersion.isEmpty
             else {
                 throw EntryCoreClientError.protocolMismatch
             }
@@ -122,17 +104,11 @@ private extension EntryCoreResponseDecoder {
             let fields = value.objectFields(exactly: ["code", "message"]),
             case let .string(codeValue)? = fields["code"],
             case let .string(message)? = fields["message"],
-            !message.isEmpty,
-            let code = EntryCoreServerErrorCode(rawValue: codeValue)
+            let code = EntryCoreServerErrorCode(rawValue: codeValue),
+            message == code.canonicalMessage
         else {
             throw EntryCoreClientError.protocolMismatch
         }
         throw EntryCoreClientError.server(code)
-    }
-
-    enum CharacterByte {
-        static let minus: UInt8 = 0x2D
-        static let zero: UInt8 = 0x30
-        static let nine: UInt8 = 0x39
     }
 }

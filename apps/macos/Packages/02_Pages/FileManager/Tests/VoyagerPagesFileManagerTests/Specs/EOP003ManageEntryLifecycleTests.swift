@@ -525,6 +525,11 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
             XCTAssertEqual(operations?.selectedEntryIDs.isEmpty, true)
             XCTAssertEqual(operations?.clipboardItems.isEmpty, true)
             XCTAssertEqual(operations?.windowID, duplicateWindowID)
+            XCTAssertEqual(content?.entryViewLayout.collectionWindowID, duplicateWindowID)
+            XCTAssertEqual(
+                content?.entryViewLayout.collectionLoadingCancellationOwnerID,
+                operations?.loadingCancellationOwnerID,
+            )
         }
         let activeTabID = try XCTUnwrap(duplicate.contentTabs.activeTabID)
         XCTAssertEqual(duplicate.content, duplicate.tabContentStates[activeTabID])
@@ -594,12 +599,14 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         let scopeA = UndoManagerScope(windowID: windowID, contentTabID: tabA.rawValue)
         let scopeB = UndoManagerScope(windowID: windowID, contentTabID: tabB.rawValue)
         let replayCompleted = expectation(description: "captured A replay completed")
-        var fileOpsClient = EntryFileOpsClient.previewValue
-        fileOpsClient.renameFile = { _, _ in replayCompleted.fulfill() }
+        let fixture = try makeNativeUndoReplayFixture()
+        defer { fixture.sandbox.cleanup() }
+        fixture.assertCompletedRenameState()
+        let fileOpsClient = makeNativeUndoReplayClient(fixture: fixture, replayCompleted: replayCompleted)
         _ = client.activate(scopeA)
         _ = client.activate(scopeB)
         let generationA = try XCTUnwrap(client.generation(scopeA))
-        let record = makeRecord("native-A")
+        let record = fixture.record
         let store = makeStore(
             state: makeTwoTabState(windowID: windowID, activeTabID: tabA),
             client: client,
@@ -632,6 +639,7 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         XCTAssertEqual(store.state.tabContentStates[tabB]?.entryViewLayout.entryOperations.undoRecords.isEmpty, true)
         XCTAssertFalse(managerA.canUndo)
         XCTAssertTrue(managerA.canRedo)
+        fixture.assertUndoneRenameState()
         await store.skipInFlightEffects()
     }
 
@@ -641,39 +649,57 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
     /// - 사전 조건: W1/A·W1/B가 있고 B가 active이며 recorder client가 requested scope를 수집한다.
     /// - 기대 결과: recorder에는 W1/B scope 한 건만 있고 W1/A 요청은 없다.
     func testRequestUndoCapturesOnlyCurrentActiveTabScopeAndFailsClosedWhenEmpty() async {
-        let registry = FileOperationUndoManagerRegistry()
-        var client = makeClient(registry: registry)
-        let requestedScopes = LockIsolated<[UndoManagerScope]>([])
-        client.performUndoRedo = { scope, _, _, _ in
-            requestedScopes.withValue { $0.append(scope) }
-            return .rejected(.unavailable)
-        }
         let windowID = UUID()
         let tabB = ContentTabID(rawValue: "B")
+        let record = makeRecord("B")
         var state = makeTwoTabState(windowID: windowID, activeTabID: tabB)
-        state.content.entryViewLayout.entryOperations.undoRecords = [makeRecord("B")]
+        state.content.entryViewLayout.entryOperations.undoRecords = [record]
         state.tabContentStates[tabB] = state.content
-        _ = client.activate(UndoManagerScope(windowID: windowID, contentTabID: tabB.rawValue))
-        let store = makeStore(state: state, client: client)
-        // store.exhaustivity = .off: targeted transaction의 scope 기록만 검증한다.
+        let expectedTarget = UndoManagerRecordIdentity(
+            ownerID: state.content.entryViewLayout.entryOperations.undoOwnerID,
+            recordID: record.id,
+        )
+        state.undoManagerAvailability = .init(
+            canUndo: true,
+            canRedo: false,
+            undoTarget: expectedTarget,
+        )
+        let requestedTargets = LockIsolated<[UndoManagerRecordIdentity?]>([])
+        let client = UndoManagerClient(
+            registerUndo: { _, _, _ in },
+            undo: { receivedWindowID, receivedTarget in
+                XCTAssertEqual(receivedWindowID, windowID)
+                requestedTargets.withValue { $0.append(receivedTarget) }
+                return .init(didInvoke: false, availability: .init())
+            },
+            redo: { _, _ in .init(didInvoke: false, availability: .init()) },
+        )
+        let requestID = UUID()
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.undoManagerClient = client
+            $0.uuid = .constant(requestID)
+        }
+        // store.exhaustivity = .off: canonical manager의 owner/record target과 fail-closed 경계만 검증한다.
         store.exhaustivity = .off
 
         await store.send(.request(.requestUndo))
+        await store.receive(\.internal.undoManagerInvocationFinished)
         await store.finish()
 
-        let emptyStore = makeStore(
-            state: makeTwoTabState(windowID: windowID, activeTabID: tabB),
-            client: client,
-        )
+        let emptyStore = TestStore(
+            initialState: makeTwoTabState(windowID: windowID, activeTabID: tabB),
+        ) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.undoManagerClient = client
+            $0.uuid = .constant(requestID)
+        }
         await emptyStore.send(.request(.requestUndo))
         await emptyStore.finish()
 
-        XCTAssertEqual(requestedScopes.value, [
-            UndoManagerScope(
-                windowID: windowID,
-                contentTabID: tabB.rawValue,
-            ),
-        ])
+        XCTAssertEqual(requestedTargets.value, [expectedTarget])
     }
 
     /// EOP-003-undo_entry_action: window delegate는 호출 시점 active tab의 manager를 동적으로 반환한다.
@@ -876,8 +902,15 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         let windowID = UUID()
         let tabA = ContentTabID(rawValue: "A")
         let scope = UndoManagerScope(windowID: windowID, contentTabID: tabA.rawValue)
-        let oldPath = "/tmp/A/old-name"
-        let newPath = "/tmp/A/new-name"
+        let sandbox = try FileManagerFixtureSandbox.copyingFileWithDirectorySymlink(
+            from: "fixtures/fixtures/texts/plain/11.txt",
+        )
+        defer { sandbox.cleanup() }
+        let oldPath = sandbox.fileURL.path
+        let newPath = sandbox.fileURL
+            .deletingLastPathComponent()
+            .appendingPathComponent("renamed-\(sandbox.fileURL.lastPathComponent)")
+            .path
         let state = makeSingleTabState(windowID: windowID, tabID: tabA, isPinned: true)
         _ = client.activate(scope)
         let oldGenerationValue = client.generation(scope)
@@ -893,14 +926,6 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         ))))
 
         await store.send(.content(renameAction))
-        await store.receive { action in
-            guard case let .tabContent(receivedTabID, receivedAction) = action else { return false }
-            return receivedTabID == tabA && Self.isRenameAction(
-                receivedAction,
-                oldPath: oldPath,
-                newPath: newPath,
-            )
-        }
         await store.receive { action in
             guard case let .tabContent(
                 receivedTabID,
@@ -1172,7 +1197,7 @@ private extension EOP003ManageEntryLifecycleTests {
         TestStore(initialState: state) {
             CombineReducers {
                 Reduce<FileManagerWindowState, FileManagerWindowAction> { _, action in
-                    if case .closeWindow = action {
+                    if case .delegate(.closeWindow) = action {
                         closeWindowActionCount?.withValue { $0 += 1 }
                     }
                     return .none
@@ -1181,12 +1206,9 @@ private extension EOP003ManageEntryLifecycleTests {
             }
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.uuid = .incrementing
             $0.entryFileOpsClient = entryFileOpsClient
-            $0.undoManagerClient = .init(
-                registerUndo: { _, _, _, _ in },
-                undo: { _ in },
-                redo: { _ in },
-            )
+            $0.undoManagerClient = .previewValue
             if let client {
                 $0.fileOperationUndoManagerClient = client
             }
@@ -1198,6 +1220,59 @@ private extension EOP003ManageEntryLifecycleTests {
             operationKind: .rename,
             targets: [.init(beforePath: "/tmp/\(name)-old", afterPath: "/tmp/\(name)-new")],
         )
+    }
+
+    private struct NativeUndoReplayFixture {
+        let sandbox: FileManagerFixtureSandbox
+        let record: EntryActionRecord
+        let beforePath: String
+        let afterPath: String
+
+        func assertCompletedRenameState() {
+            XCTAssertFalse(FileManager.default.fileExists(atPath: beforePath))
+            XCTAssertTrue(FileManager.default.fileExists(atPath: afterPath))
+        }
+
+        func assertUndoneRenameState() {
+            XCTAssertTrue(FileManager.default.fileExists(atPath: beforePath))
+            XCTAssertFalse(FileManager.default.fileExists(atPath: afterPath))
+        }
+    }
+
+    private func makeNativeUndoReplayFixture() throws -> NativeUndoReplayFixture {
+        let sandbox = try FileManagerFixtureSandbox.copyingFileWithDirectorySymlink(
+            from: "fixtures/fixtures/texts/plain/11.txt",
+        )
+        let beforeURL = sandbox.fileURL
+            .deletingLastPathComponent()
+            .appendingPathComponent("restored-\(sandbox.fileURL.lastPathComponent)")
+        let beforePath = beforeURL.path
+        let afterPath = sandbox.fileURL.path
+        return NativeUndoReplayFixture(
+            sandbox: sandbox,
+            record: EntryActionRecord(
+                operationKind: .rename,
+                targets: [.init(beforePath: beforePath, afterPath: afterPath)],
+            ),
+            beforePath: beforePath,
+            afterPath: afterPath,
+        )
+    }
+
+    private func makeNativeUndoReplayClient(
+        fixture: NativeUndoReplayFixture,
+        replayCompleted: XCTestExpectation,
+    ) -> EntryFileOpsClient {
+        let beforePath = fixture.beforePath
+        let afterPath = fixture.afterPath
+        var client = EntryFileOpsClient.previewValue
+        client.renameFile = { sourcePath, destinationPath in
+            XCTAssertEqual(sourcePath.path, afterPath)
+            XCTAssertEqual(destinationPath.path, beforePath)
+            try FileManager.default.moveItem(at: sourcePath, to: destinationPath)
+            replayCompleted.fulfill()
+        }
+        return client
     }
 
     func makeSingleTabState(

@@ -248,6 +248,38 @@
 				"cwd": "${workspaceFolder}"
 			},
 			"problemMatcher": []
+		},
+		{
+			"type": "shell",
+			"command": "./scripts/dev/macos-launch.sh",
+			"args": [
+				"--scheme",
+				"ComposerHost-Dev",
+				"--configuration",
+				"Dev-Debug",
+				"--env",
+				"VOYAGER_PROJECT_ROOT=${workspaceFolder}"
+			],
+			"label": "ComposerHost Dev: Launch (Dev-Debug)",
+			"options": {
+				"cwd": "${workspaceFolder}"
+			}
+		},
+		{
+			"type": "shell",
+			"command": "./scripts/dev/macos-launch.sh",
+			"args": [
+				"--scheme",
+				"ComposerHost-Dev",
+				"--configuration",
+				"Dev-Release",
+				"--env",
+				"VOYAGER_PROJECT_ROOT=${workspaceFolder}"
+			],
+			"label": "ComposerHost Dev: Launch (Dev-Release)",
+			"options": {
+				"cwd": "${workspaceFolder}"
+			}
 		}
 	]
 }

@@ -104,7 +104,9 @@ public extension AiProviderModelListClient {
     }
 }
 
-private extension AiProviderModelListClient {
+extension AiProviderModelListClient {
+    static let codexCompatibilityVersion = "0.146.0"
+
     static func secret(
         for provider: AiProvider,
         credential: StoredCredentialPayload?,
@@ -196,7 +198,7 @@ private extension AiProviderModelListClient {
         credential: OAuthCredentialFile,
         session: URLSession,
     ) async throws -> CodexModelsResponse {
-        let clientVersion = codexClientVersion()
+        let clientVersion = codexCompatibilityVersion
         let request = try makeRequest(
             url: "https://chatgpt.com/backend-api/codex/models?client_version=\(clientVersion)",
             provider: .chatgptCodex,
@@ -217,10 +219,6 @@ private extension AiProviderModelListClient {
         } catch {
             throw AiProviderModelListError.invalidResponse(.chatgptCodex)
         }
-    }
-
-    static func codexClientVersion() -> String {
-        "0.0.0"
     }
 
     static func codexUserAgent(clientVersion: String) -> String {
@@ -328,6 +326,10 @@ private extension AiProviderModelListClient {
             return data
         } catch let error as AiProviderModelListError {
             throw error
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as URLError where error.code == .cancelled {
+            throw CancellationError()
         } catch let error as URLError {
             throw AiProviderModelListError.networkError(
                 provider: provider,

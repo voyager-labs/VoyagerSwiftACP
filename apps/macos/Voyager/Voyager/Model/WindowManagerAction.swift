@@ -1,8 +1,10 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAi
+import VoyagerEntitiesAppPreferences
 import VoyagerEntitiesCollection
 import VoyagerFeaturesEntryArrangements
+import VoyagerFeaturesEntryOperations
 import VoyagerPagesFileManager
 import VoyagerShared
 import VoyagerWidgetsEntryViewLayout
@@ -128,8 +130,12 @@ enum ExternalOpenPlacementPlanner {
             let liveMRU = Set(state.lastUsedWindowIDs)
             candidateWindowIDs = request.preferredWindowIDs.filter(liveMRU.contains)
         }
-        guard let windowID = candidateWindowIDs.first(where: { state.windows[id: $0] != nil }),
-              let window = state.windows[id: windowID]
+        guard let windowID = candidateWindowIDs.first(where: {
+            state.windows[id: $0] != nil
+                && !state.closingWindowIDs.contains($0)
+                && !state.pendingWindowOpenIDs.contains($0)
+        }),
+            let window = state.windows[id: windowID]
         else {
             return .success(nil)
         }
@@ -260,6 +266,7 @@ enum ExternalOpenPlacementApplication {
                 newWindowIDs.append(placementWindow.windowID)
             } else {
                 guard var window = updatedWindows[id: placementWindow.windowID]?.window,
+                      window.pendingSelectedContentTabClose == nil,
                       window.reserveExternalContentTabs(reservations)
                 else { return nil }
                 updatedWindows[id: placementWindow.windowID]?.window = window
@@ -285,6 +292,8 @@ enum ExternalOpenPlacementApplication {
     ) -> WindowManagerState.WindowID? {
         for placementWindow in plan.windows.reversed() {
             guard !excludedWindowIDs.contains(placementWindow.windowID),
+                  !state.closingWindowIDs.contains(placementWindow.windowID),
+                  !state.pendingWindowOpenIDs.contains(placementWindow.windowID),
                   let window = state.windows[id: placementWindow.windowID]?.window
             else { continue }
             if placementWindow.isNewWindow,
@@ -302,6 +311,13 @@ enum ExternalOpenPlacementApplication {
     }
 }
 
+struct DefaultWindowBootstrapResult: Equatable {
+    let contentTabs: ContentTabState
+    let fixedLocationItems: [FileManagerFixedLocationItem]
+    let topNavigationOrder: FileManagerTopNavigationOrder
+    let arrangementAvailability: FileManagerTopNavigationArrangementAvailability
+}
+
 @CasePathable
 enum WindowManagerAction: CasePathable {
     case delegate(Delegate)
@@ -315,12 +331,48 @@ enum WindowManagerAction: CasePathable {
     case trackedSingleton(TrackedSingletonCommand)
     case trackedSingletonNativeOpenCompleted(requestID: UUID)
     case pinnedContentTabsStoreChanged
-    case defaultWindowBootstrapCompleted(requestID: UUID, contentTabs: ContentTabState)
+    case topNavigationMovePersistenceCompleted(
+        sourceWindowID: WindowManagerState.WindowID,
+        token: FileManagerTopNavigationOperationToken,
+        terminal: FileManagerTopNavigationIntentTerminal,
+    )
+    case topNavigationPersistenceRequested(WindowManagerTopNavigationPersistenceRequest)
+    case topNavigationPersistenceCompleted(WindowManagerTopNavigationPersistenceResult)
+    case defaultWindowBootstrapCompleted(requestID: UUID, result: DefaultWindowBootstrapResult)
     case defaultWindowBootstrapFailed(requestID: UUID)
+    case defaultStartPageResolved(
+        resolutionID: UUID,
+        requestID: UUID?,
+        selectEntryID: String?,
+        startPage: StartPage,
+    )
+    case defaultWindowBootstrapRequested(id: WindowManagerState.WindowID)
+    case windowReadyToOpen(id: WindowManagerState.WindowID)
+    case windowOpenCompleted(
+        id: WindowManagerState.WindowID,
+        shouldBootstrapDefaultWindow: Bool,
+        isRegistered: Bool,
+    )
+    case pendingWindowCloseFinalized(id: WindowManagerState.WindowID)
+    case windowInvalidationFinished(id: WindowManagerState.WindowID, result: UndoManagerInvalidationResult)
+    case finalizeDeferredWindowClosures
     case externalOpenActivationResult(
         attempt: ExternalOpenActivationAttempt,
         result: FileManagerWindowActivationResult,
     )
+    case contentTabMoveRequest(ContentTabMoveRequest)
+    case contentTabMoveLifecycleCompleted(request: ContentTabMoveRequest)
+    case contentTabMoveWindowActionRequested(
+        request: ContentTabMoveRequest,
+        windowID: WindowManagerState.WindowID,
+        action: FileManagerWindowAction,
+    )
+    case contentTabMoveNativeEffectsRequested(request: ContentTabMoveRequest)
+    case contentTabMoveActivationResult(
+        attempt: ContentTabMoveActivationAttempt,
+        result: FileManagerWindowActivationResult,
+    )
+    case refreshContentTabMoveTargets
     case windows(IdentifiedActionOf<WindowSessionFeature>)
 
     @CasePathable
@@ -355,6 +407,33 @@ enum WindowManagerAction: CasePathable {
         case closeTab
         case togglePinTab
         case restoreLastClosedTab
+        case duplicateTab
+        case selectContentTab(position: Int)
+        case presentContentTabSwitcher
+        case presentContentTabSwitcherInWindow(
+            windowID: WindowManagerState.WindowID,
+            source: FileManagerContentTabSwitcherPresentation.Source,
+        )
+        case selectMostRecentlyUsedContentTab
+        case activateContentTabSwitcherInWindow(
+            windowID: WindowManagerState.WindowID,
+            source: FileManagerContentTabSwitcherPresentation.Source,
+        )
+        case moveNextContentTabSwitcher
+        case moveNextContentTabSwitcherInWindow(
+            windowID: WindowManagerState.WindowID,
+            source: FileManagerContentTabSwitcherPresentation.Source,
+        )
+        case movePreviousContentTabSwitcher
+        case movePreviousContentTabSwitcherInWindow(
+            windowID: WindowManagerState.WindowID,
+            source: FileManagerContentTabSwitcherPresentation.Source,
+        )
+        case dismissContentTabSwitcher
+        case dismissContentTabSwitcherInWindow(
+            windowID: WindowManagerState.WindowID,
+            source: FileManagerContentTabSwitcherPresentation.Source,
+        )
         case newFolder
         case open
         case quickLook

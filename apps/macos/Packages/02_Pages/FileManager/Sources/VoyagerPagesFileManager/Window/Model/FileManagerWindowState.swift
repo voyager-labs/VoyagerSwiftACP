@@ -1,12 +1,53 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAi
+import VoyagerEntitiesAppPreferences
 import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
 import VoyagerFeaturesAiChat
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
 import VoyagerShared
+
+@ObservableState
+struct ContentTabRowInteractionSurface: Equatable {
+    let currentTabIDs: [ContentTabID]
+    let validSelectedTabIDs: Set<ContentTabID>
+    let isCloseEnabled: Bool
+    let isPinMutationEnabled: Bool
+
+    init(state: FileManagerWindowState) {
+        let currentTabIDs = Array(state.contentTabs.tabs.ids)
+        self.init(
+            currentTabIDs: currentTabIDs,
+            validSelectedTabIDs: Set(currentTabIDs).intersection(state.contentTabs.selectedTabIDs),
+            isCloseEnabled: state.canStartSelectedContentTabClose,
+            isPinMutationEnabled: state.canStartSelectedContentTabPinMutation,
+        )
+    }
+
+    init(
+        currentTabIDs: [ContentTabID],
+        validSelectedTabIDs: Set<ContentTabID>,
+        isCloseEnabled: Bool,
+        isPinMutationEnabled: Bool,
+    ) {
+        self.currentTabIDs = currentTabIDs
+        self.validSelectedTabIDs = validSelectedTabIDs
+        self.isCloseEnabled = isCloseEnabled
+        self.isPinMutationEnabled = isPinMutationEnabled
+    }
+}
+
+public enum FileManagerUndoRedoPhase: Equatable, Sendable {
+    case idle
+    case invoking(requestID: UUID, direction: EntryActionDirection)
+    case replaying(requestID: UUID, direction: EntryActionDirection)
+    case refreshing(requestID: UUID)
+    case recovering(requestID: UUID, direction: EntryActionDirection, ownerID: UUID)
+    case tearingDownTab(requestID: UUID, ownerID: UUID)
+    case desynchronized
+}
 
 enum FileManagerFixedLocationsLoadPhase: Equatable {
     case idle
@@ -46,8 +87,85 @@ struct FileManagerAiChatSelection: Equatable {
     var thinking: AiThinkingSelection?
 }
 
+public struct FileManagerTopNavigationOperationToken: Equatable, Hashable, Sendable {
+    public let value: UUID
+
+    public init(value: UUID) {
+        self.value = value
+    }
+}
+
+public enum FileManagerTopNavigationIntent: Equatable, Sendable {
+    case move(
+        source: FileManagerTopNavigationItemID,
+        destination: FileManagerTopNavigationMoveDestination,
+    )
+    case movePinnedGroup(
+        orderedIDs: [ContentTabID],
+        destination: FileManagerTopNavigationMoveDestination,
+    )
+    case pin(ContentTabID, placement: ContentTabPlacement? = nil)
+    case unpin(ContentTabID)
+    case close(ContentTabID)
+    case update(ContentTabID)
+}
+
+public struct FileManagerPendingTopNavigationIntent: Equatable, Sendable {
+    public let token: FileManagerTopNavigationOperationToken
+    public let intent: FileManagerTopNavigationIntent
+    public var persistenceContext: ContentTabPinnedRecordTerminalContext?
+
+    public init(
+        token: FileManagerTopNavigationOperationToken,
+        intent: FileManagerTopNavigationIntent,
+        persistenceContext: ContentTabPinnedRecordTerminalContext? = nil,
+    ) {
+        self.token = token
+        self.intent = intent
+        self.persistenceContext = persistenceContext
+    }
+}
+
+public enum FileManagerTopNavigationArrangementLoadFailure: Equatable, Sendable {
+    case corrupt
+    case unsupportedSchema(Int)
+}
+
+public enum FileManagerTopNavigationArrangementAvailability: Equatable, Sendable {
+    case available
+    case unavailable(FileManagerTopNavigationArrangementLoadFailure)
+}
+
+public enum FileManagerTopNavigationArrangementPresentation: Equatable, Sendable {
+    case saveRollback
+    case loadUnavailable
+}
+
+public extension FileManagerTopNavigationArrangementPresentation {
+    init?(failure: FileManagerTopNavigationIntentFailure) {
+        switch failure {
+        case .save:
+            self = .saveRollback
+        case .storeUnavailable:
+            self = .loadUnavailable
+        case .cancelled, .superseded:
+            return nil
+        }
+    }
+
+    var message: String {
+        switch self {
+        case .saveRollback:
+            "Couldn’t save the sidebar order. Your previous order was restored."
+        case .loadUnavailable:
+            "Couldn’t load the saved sidebar arrangement. A default order is shown; the saved data was not changed."
+        }
+    }
+}
+
 @ObservableState
 public struct FileManagerWindowState: Equatable {
+    public var defaultStartPage: StartPage
     public var content: FileManagerContentFeature.State
     public var tabContentStates: [ContentTabID: FileManagerContentFeature.State]
     public var tabInspectorStates: [ContentTabID: FileManagerInspectorFeature.State]
@@ -56,9 +174,41 @@ public struct FileManagerWindowState: Equatable {
     public var sidebar: FileManagerSidebarFeature.State
     public var inspector: FileManagerInspectorFeature.State
     public var contentTabs: ContentTabState
+    public var lastConfirmedTopNavigationOrder: FileManagerTopNavigationOrder
+    public var lastConfirmedTopNavigationCommitRevision: UInt64?
+    public var optimisticTopNavigationOrder: FileManagerTopNavigationOrder
+    public var dormantContentTabSlots: [FileManagerTopNavigationOrderPolicy.DormantContentTabSlot]
+    public var pendingTopNavigationIntents: [FileManagerPendingTopNavigationIntent]
+    public var topNavigationArrangementAvailability: FileManagerTopNavigationArrangementAvailability
+    public var topNavigationArrangementPresentation: FileManagerTopNavigationArrangementPresentation? {
+        get { sidebar.topNavigationArrangementPresentation }
+        set { sidebar.topNavigationArrangementPresentation = newValue }
+    }
+
+    public var suppressedPinnedTabIDs: Set<ContentTabID> = []
+
     public var recentlyClosedNavigationRoute: ContentPageNavigationRoute?
     public var pendingContentTabClose: PendingContentTabClose?
+    public var pendingSelectedContentTabClose: PendingSelectedContentTabClose?
+    public var pendingSelectedContentTabPinMutation: PendingSelectedContentTabPinMutation?
+    public var deferredPinnedContentTabs: ContentTabState?
+    public var deferredPinnedContentTabsMode: PinnedContentTabsApplicationMode?
+    var pendingRuntimePreservationRecords: [ContentTabID: ContentTabPinnedRecord] = [:]
+    public var pendingContentTabTeardown: PendingContentTabTeardown?
+    public var isClosing: Bool
+    /// 윈도우가 현재 key(포커스) 상태인지 여부.
+    /// 앱 레벨 `WindowManagerFeature`가 windowBecameKey/ResignedKey 이벤트로 설정한다.
+    /// 프로세스 전역 Quick Look 패널을 동기화할 수 있는 소유자(포커스된 윈도우의 활성 탭)를 판별하는 데 사용한다.
+    public var isFocused: Bool
+    public var pendingDirectoryReloadTabIDs: Set<ContentTabID>
+    public var undoManagerAvailability: UndoManagerAvailability
+    public var undoRedoPhase: FileManagerUndoRedoPhase
+    public var sidebarEntryDropOperations: EntryOperationsState
     public var pendingCollectionOpenRequest: ContentPageCollectionOpenRequest?
+    public var pendingContentTabMove: FileManagerWindowContentTabMovePending?
+    public var contentTabMoveParticipantRequestID: UUID?
+    public var contentTabMoveFailurePresentation: ContentTabMoveFailurePresentation?
+    public var contentTabSwitcherPresentation: FileManagerContentTabSwitcherPresentation?
     var lastExplicitAiChatSelection: FileManagerAiChatSelection?
     var pendingAiChatInspectorOpen: FileManagerPendingAiChatInspectorOpen?
     var pendingAiChatNewChat: FileManagerPendingAiChatNewChat?
@@ -66,17 +216,39 @@ public struct FileManagerWindowState: Equatable {
     var homeFavoriteItems: [FileManagerHomeFavoriteItem] = []
 
     public init() {
+        defaultStartPage = .home
         content = .init()
         sidebar = .init()
         inspector = .init()
         contentTabs = .withHomeTab()
+        lastConfirmedTopNavigationOrder = .init()
+        lastConfirmedTopNavigationCommitRevision = nil
+        optimisticTopNavigationOrder = .init()
+        dormantContentTabSlots = []
+        pendingTopNavigationIntents = []
+        topNavigationArrangementAvailability = .available
         tabContentStates = [:]
         tabInspectorStates = [:]
         backgroundAiChatStates = [:]
         backgroundInspectorAiChatStates = [:]
         recentlyClosedNavigationRoute = nil
         pendingContentTabClose = nil
+        pendingSelectedContentTabClose = nil
+        pendingSelectedContentTabPinMutation = nil
+        deferredPinnedContentTabs = nil
+        deferredPinnedContentTabsMode = nil
+        pendingContentTabTeardown = nil
+        isClosing = false
+        isFocused = false
+        pendingDirectoryReloadTabIDs = []
+        undoManagerAvailability = .init()
+        undoRedoPhase = .idle
+        sidebarEntryDropOperations = .init()
         pendingCollectionOpenRequest = nil
+        pendingContentTabMove = nil
+        contentTabMoveParticipantRequestID = nil
+        contentTabMoveFailurePresentation = nil
+        contentTabSwitcherPresentation = nil
         lastExplicitAiChatSelection = nil
         pendingAiChatInspectorOpen = nil
         pendingAiChatNewChat = nil
@@ -86,8 +258,15 @@ public struct FileManagerWindowState: Equatable {
         syncContentTabSidebarItems()
     }
 
-    public static func makeInitial(path: String?, selectEntryID: String? = nil) -> Self {
+    public static func makeInitial(
+        path: String?,
+        selectEntryID: String? = nil,
+        windowID: UUID? = nil,
+    ) -> Self {
         var state = Self()
+        if let windowID {
+            state.content.applyWindowContext(windowID: windowID)
+        }
         if let path {
             state.content.navigation.seedInitialFolderPath(path)
             state.syncActiveTabAnchorForInitialPath(path)
@@ -99,7 +278,7 @@ public struct FileManagerWindowState: Equatable {
                 inheritingWindowContextFrom: state.content,
             )
         }
-        state.content.pendingSelectEntryID = selectEntryID
+        state.content.setPendingEntrySelection(entryID: selectEntryID, destinationPath: nil)
 
         state.syncActiveTabContentState()
         state.restoreInspectorStateForActiveTab()
@@ -111,8 +290,12 @@ public struct FileManagerWindowState: Equatable {
         path: String?,
         contentTabs: ContentTabState?,
         selectEntryID: String? = nil,
+        windowID: UUID? = nil,
     ) -> Self {
         var state = Self()
+        if let windowID {
+            state.content.applyWindowContext(windowID: windowID)
+        }
         state.contentTabs = contentTabs.map { ContentTabState.bootstrapping(
             restoredTabs: $0.tabs,
             activeTabID: $0.activeTabID,
@@ -132,7 +315,7 @@ public struct FileManagerWindowState: Equatable {
             )
         }
 
-        state.content.pendingSelectEntryID = selectEntryID
+        state.content.setPendingEntrySelection(entryID: selectEntryID, destinationPath: nil)
 
         state.syncActiveTabContentState()
         state.restoreInspectorStateForActiveTab()
@@ -178,8 +361,10 @@ public struct FileManagerWindowState: Equatable {
                 tabs: tabs,
                 activeTabID: activeReservation.id,
                 previousActiveTabID: previousActiveTabID,
+                recentlyUsedTabIDs: reservations.reversed().map(\.id),
             ),
             externalInspector: snapshots.inspector[activeReservation.id] ?? .init(),
+            windowID: windowID,
         )
         state.syncContentTabSidebarItems()
         return state
@@ -191,7 +376,9 @@ public struct FileManagerWindowState: Equatable {
         externalInspectorStates: [ContentTabID: FileManagerInspectorFeature.State],
         externalContentTabs: ContentTabState,
         externalInspector: FileManagerInspectorFeature.State,
+        windowID initialWindowID: UUID?,
     ) {
+        defaultStartPage = .home
         content = externalContent
         tabContentStates = externalContentStates
         tabInspectorStates = externalInspectorStates
@@ -200,9 +387,31 @@ public struct FileManagerWindowState: Equatable {
         sidebar = .init()
         inspector = externalInspector
         contentTabs = externalContentTabs
+        lastConfirmedTopNavigationOrder = .init()
+        lastConfirmedTopNavigationCommitRevision = nil
+        optimisticTopNavigationOrder = .init()
+        dormantContentTabSlots = []
+        pendingTopNavigationIntents = []
+        topNavigationArrangementAvailability = .available
         recentlyClosedNavigationRoute = nil
         pendingContentTabClose = nil
+        pendingSelectedContentTabClose = nil
+        pendingSelectedContentTabPinMutation = nil
+        deferredPinnedContentTabs = nil
+        deferredPinnedContentTabsMode = nil
+        pendingContentTabTeardown = nil
+        isClosing = false
+        isFocused = false
+        pendingDirectoryReloadTabIDs = []
+        undoManagerAvailability = .init()
+        undoRedoPhase = .idle
+        var sidebarEntryDropOperations = EntryOperationsState()
+        sidebarEntryDropOperations.windowID = initialWindowID
+        self.sidebarEntryDropOperations = sidebarEntryDropOperations
         pendingCollectionOpenRequest = nil
+        pendingContentTabMove = nil
+        contentTabMoveFailurePresentation = nil
+        contentTabSwitcherPresentation = nil
         lastExplicitAiChatSelection = nil
         pendingAiChatInspectorOpen = nil
         pendingAiChatNewChat = nil
@@ -211,581 +420,335 @@ public struct FileManagerWindowState: Equatable {
     }
 }
 
+public struct PendingContentTabTeardown: Equatable, Sendable {
+    public let requestID: UUID
+    public let tabID: ContentTabID
+    public let ownerID: UUID
+
+    public init(requestID: UUID, tabID: ContentTabID, ownerID: UUID) {
+        self.requestID = requestID
+        self.tabID = tabID
+        self.ownerID = ownerID
+    }
+}
+
+public enum SelectedContentTabPinMutationOrigin: Equatable, Sendable {
+    case menu
+    case drag
+}
+
+public struct PendingSelectedContentTabPinMutation: Equatable {
+    public let operationID: UUID
+    public let target: SelectedContentTabPinMutationTargetState
+    public let orderedTargetIDs: [ContentTabID]
+    public let origin: SelectedContentTabPinMutationOrigin
+    public let dragOperationID: UUID?
+    public let sourceWindowID: UUID?
+    public let sourceDomain: ContentTabDomain?
+    public let targetDomain: ContentTabDomain?
+    public let initialPlacement: ContentTabPlacement?
+    public var cursor: Int
+    public var currentTabID: ContentTabID?
+    public var currentItemRollbackSnapshot: ContentTabPinnedRecordRollbackSnapshot?
+    public var lastSuccessfullyPlacedID: ContentTabID?
+    public var currentPersistenceContext: ContentTabPinnedRecordTerminalContext?
+    public var currentTopNavigationToken: FileManagerTopNavigationOperationToken?
+    public var successCount: Int
+    public var failureCount: Int
+    public var remainingCount: Int
+
+    public var totalCount: Int {
+        orderedTargetIDs.count
+    }
+
+    public var currentPlacement: ContentTabPlacement? {
+        guard origin == .drag else { return nil }
+        return lastSuccessfullyPlacedID.map(ContentTabPlacement.after) ?? initialPlacement
+    }
+
+    public init(
+        operationID: UUID,
+        target: SelectedContentTabPinMutationTargetState,
+        orderedTargetIDs: [ContentTabID],
+        origin: SelectedContentTabPinMutationOrigin = .menu,
+        dragOperationID: UUID? = nil,
+        sourceWindowID: UUID? = nil,
+        sourceDomain: ContentTabDomain? = nil,
+        targetDomain: ContentTabDomain? = nil,
+        initialPlacement: ContentTabPlacement? = nil,
+        cursor: Int = 0,
+        currentTabID: ContentTabID? = nil,
+        currentItemRollbackSnapshot: ContentTabPinnedRecordRollbackSnapshot? = nil,
+        lastSuccessfullyPlacedID: ContentTabID? = nil,
+        currentPersistenceContext: ContentTabPinnedRecordTerminalContext? = nil,
+        currentTopNavigationToken: FileManagerTopNavigationOperationToken? = nil,
+        successCount: Int = 0,
+        failureCount: Int = 0,
+        remainingCount: Int = 0,
+    ) {
+        self.operationID = operationID
+        self.target = target
+        self.orderedTargetIDs = orderedTargetIDs
+        self.origin = origin
+        self.dragOperationID = dragOperationID
+        self.sourceWindowID = sourceWindowID
+        self.sourceDomain = sourceDomain
+        self.targetDomain = targetDomain
+        self.initialPlacement = initialPlacement
+        self.cursor = cursor
+        self.currentTabID = currentTabID
+        self.currentItemRollbackSnapshot = currentItemRollbackSnapshot
+        self.lastSuccessfullyPlacedID = lastSuccessfullyPlacedID
+        self.currentPersistenceContext = currentPersistenceContext
+        self.currentTopNavigationToken = currentTopNavigationToken
+        self.successCount = successCount
+        self.failureCount = failureCount
+        self.remainingCount = remainingCount
+    }
+}
+
+public struct PendingSelectedContentTabClose: Equatable, Sendable {
+    public let operationID: UUID
+    public let orderedTargetIDs: [ContentTabID]
+    public var cursor: Int
+    public var currentTabID: ContentTabID?
+    public let originalActiveTabID: ContentTabID?
+    public let preferredFallbackIDs: [ContentTabID]
+
+    public init(
+        operationID: UUID,
+        orderedTargetIDs: [ContentTabID],
+        cursor: Int,
+        currentTabID: ContentTabID?,
+        originalActiveTabID: ContentTabID?,
+        preferredFallbackIDs: [ContentTabID],
+    ) {
+        self.operationID = operationID
+        self.orderedTargetIDs = orderedTargetIDs
+        self.cursor = cursor
+        self.currentTabID = currentTabID
+        self.originalActiveTabID = originalActiveTabID
+        self.preferredFallbackIDs = preferredFallbackIDs
+    }
+
+    public init(
+        operationID: UUID,
+        orderedTargetIDs: [ContentTabID],
+        originalActiveTabID: ContentTabID?,
+        preferredFallbackIDs: [ContentTabID],
+    ) {
+        self.init(
+            operationID: operationID,
+            orderedTargetIDs: orderedTargetIDs,
+            cursor: 0,
+            currentTabID: nil,
+            originalActiveTabID: originalActiveTabID,
+            preferredFallbackIDs: preferredFallbackIDs,
+        )
+    }
+
+    public init(
+        operationID: UUID,
+        orderedTargetIDs: [ContentTabID],
+        cursor: Int,
+        originalActiveTabID: ContentTabID?,
+        preferredFallbackIDs: [ContentTabID],
+    ) {
+        self.init(
+            operationID: operationID,
+            orderedTargetIDs: orderedTargetIDs,
+            cursor: cursor,
+            currentTabID: nil,
+            originalActiveTabID: originalActiveTabID,
+            preferredFallbackIDs: preferredFallbackIDs,
+        )
+    }
+
+    public init(
+        operationID: UUID,
+        orderedTargetIDs: [ContentTabID],
+        currentTabID: ContentTabID?,
+        originalActiveTabID: ContentTabID?,
+        preferredFallbackIDs: [ContentTabID],
+    ) {
+        self.init(
+            operationID: operationID,
+            orderedTargetIDs: orderedTargetIDs,
+            cursor: 0,
+            currentTabID: currentTabID,
+            originalActiveTabID: originalActiveTabID,
+            preferredFallbackIDs: preferredFallbackIDs,
+        )
+    }
+}
+
 public struct PendingContentTabClose: Equatable {
     public let tabID: ContentTabID
     public let previousActiveTabID: ContentTabID?
+    public let originalPreviousActiveTabID: ContentTabID?
     public let previousActiveContent: FileManagerContentFeature.State?
     public let targetContent: FileManagerContentFeature.State?
     public let previousActiveInspector: FileManagerInspectorFeature.State?
     public let targetInspector: FileManagerInspectorFeature.State?
+    public let batchOperationID: UUID?
     public var didReceiveWriteBackNavigationState: Bool
     public var didReceiveWriteBackComposerSync: Bool
+    public var requiresWriteBackFailureTerminal: Bool
+    public var didReceiveSaveCompletedFailure: Bool
+    public var didReceiveWriteBackFailure: Bool
+    public var didReceiveSaveFeedbackFailure: Bool
+    public var didReceiveSaveBlockedFeedback: Bool
 
     public init(
         tabID: ContentTabID,
         previousActiveTabID: ContentTabID? = nil,
+        originalPreviousActiveTabID: ContentTabID? = nil,
         previousActiveContent: FileManagerContentFeature.State? = nil,
         targetContent: FileManagerContentFeature.State? = nil,
         previousActiveInspector: FileManagerInspectorFeature.State? = nil,
         targetInspector: FileManagerInspectorFeature.State? = nil,
+        batchOperationID: UUID? = nil,
         didReceiveWriteBackNavigationState: Bool = false,
         didReceiveWriteBackComposerSync: Bool = false,
+        requiresWriteBackFailureTerminal: Bool = true,
+        didReceiveSaveCompletedFailure: Bool = false,
+        didReceiveWriteBackFailure: Bool = false,
+        didReceiveSaveFeedbackFailure: Bool = false,
+        didReceiveSaveBlockedFeedback: Bool = false,
     ) {
         self.tabID = tabID
         self.previousActiveTabID = previousActiveTabID
+        self.originalPreviousActiveTabID = originalPreviousActiveTabID
         self.previousActiveContent = previousActiveContent
         self.targetContent = targetContent
         self.previousActiveInspector = previousActiveInspector
         self.targetInspector = targetInspector
+        self.batchOperationID = batchOperationID
         self.didReceiveWriteBackNavigationState = didReceiveWriteBackNavigationState
         self.didReceiveWriteBackComposerSync = didReceiveWriteBackComposerSync
+        self.requiresWriteBackFailureTerminal = requiresWriteBackFailureTerminal
+        self.didReceiveSaveCompletedFailure = didReceiveSaveCompletedFailure
+        self.didReceiveWriteBackFailure = didReceiveWriteBackFailure
+        self.didReceiveSaveFeedbackFailure = didReceiveSaveFeedbackFailure
+        self.didReceiveSaveBlockedFeedback = didReceiveSaveBlockedFeedback
     }
 }
 
+private func isSelectedContentTabCloseBusy(_ content: FileManagerContentFeature.State) -> Bool {
+    content.collection.isSaving
+        || content.collection.collectionSession.phase.isOpening
+        || content.collection.collectionSession.phase.isInflightRefresh
+        || content.collection.collectionSession.phase.isInflightWriteBack
+}
+
 public extension FileManagerWindowState {
+    internal var canStartSelectedContentTabClose: Bool {
+        let selectedInactiveContentIsBusy = contentTabs.orderedValidSelectedTabIDs.contains { tabID in
+            tabID != contentTabs.activeTabID
+                && tabContentStates[tabID].map(isSelectedContentTabCloseBusy) == true
+        }
+        guard !isClosing,
+              contentTabMoveParticipantRequestID == nil,
+              pendingSelectedContentTabClose == nil,
+              pendingSelectedContentTabPinMutation == nil,
+              pendingContentTabClose == nil,
+              pendingContentTabTeardown == nil,
+              !isSelectedContentTabCloseBusy(content),
+              !selectedInactiveContentIsBusy,
+              contentTabs.pendingPinnedRecordIDs.isEmpty
+        else { return false }
+
+        switch undoRedoPhase {
+        case .idle, .desynchronized:
+            return true
+        case .invoking, .replaying, .refreshing, .recovering, .tearingDownTab:
+            return false
+        }
+    }
+
+    internal var canStartSelectedContentTabPinMutation: Bool {
+        guard !isClosing,
+              contentTabMoveParticipantRequestID == nil,
+              pendingSelectedContentTabPinMutation == nil,
+              pendingSelectedContentTabClose == nil,
+              pendingContentTabClose == nil,
+              pendingContentTabTeardown == nil,
+              pendingContentTabMove == nil,
+              pendingTopNavigationIntents.isEmpty,
+              contentTabs.pendingPinnedRecordIDs.isEmpty,
+              !isSelectedContentTabCloseBusy(content),
+              !contentTabs.orderedValidSelectedTabIDs.contains(where: { tabID in
+                  tabID != contentTabs.activeTabID
+                      && tabContentStates[tabID].map(isSelectedContentTabCloseBusy) == true
+              })
+        else { return false }
+
+        switch undoRedoPhase {
+        case .idle, .desynchronized:
+            return true
+        case .invoking, .replaying, .refreshing, .recovering, .tearingDownTab:
+            return false
+        }
+    }
+
+    internal var contentTabRowInteractionSurface: ContentTabRowInteractionSurface {
+        ContentTabRowInteractionSurface(state: self)
+    }
+
+    mutating func replayTopNavigationOverlays() {
+        var order = lastConfirmedTopNavigationOrder
+        for pending in pendingTopNavigationIntents {
+            order = Self.applying(pending.intent, to: order, dormantSlots: dormantContentTabSlots)
+        }
+        optimisticTopNavigationOrder = order
+        syncSidebarTopNavigationItems()
+    }
+
+    private static func applying(
+        _ intent: FileManagerTopNavigationIntent,
+        to order: FileManagerTopNavigationOrder,
+        dormantSlots: [FileManagerTopNavigationOrderPolicy.DormantContentTabSlot],
+    ) -> FileManagerTopNavigationOrder {
+        switch intent {
+        case let .move(source, destination):
+            FileManagerTopNavigationOrderPolicy.moving(source, to: destination, in: order)
+
+        case let .movePinnedGroup(orderedIDs, destination):
+            FileManagerTopNavigationOrderPolicy.movingPinnedContentTabs(
+                orderedIDs,
+                to: destination,
+                in: order,
+            )
+
+        case let .pin(id, placement):
+            if let placement,
+               let placedOrder = FileManagerTopNavigationOrderPolicy.insertingContentTab(
+                   id,
+                   at: placement,
+                   in: order,
+               )
+            {
+                placedOrder
+            } else {
+                FileManagerTopNavigationOrderPolicy.insertingPinnedItem(
+                    id,
+                    into: order,
+                    dormantSlot: dormantSlots.first { $0.id == id },
+                )
+            }
+
+        case let .unpin(id), let .close(id):
+            FileManagerTopNavigationOrder(items: order.items.filter { $0 != .contentTab(id) })
+
+        case .update:
+            order
+        }
+    }
+
     func appPreferencesPreservingSidebarState(from preferences: AppPreferencesState) -> AppPreferencesState {
         var result = preferences
         result.sidebarVisible = sidebar.sidebarVisible
         result.sidebarWidth = sidebar.sidebarWidth
         return result
-    }
-}
-
-extension FileManagerWindowState {
-    var windowID: UUID? {
-        content.entryViewLayout.entryOperations.windowID
-    }
-
-    var activeTabInspectorStateMissing: Bool {
-        guard let activeTabID = contentTabs.activeTabID,
-              supportsInspector(tabID: activeTabID)
-        else { return false }
-        return tabInspectorStates[activeTabID] == nil
-    }
-
-    var activeTabContentStateMissing: Bool {
-        guard let activeTabID = contentTabs.activeTabID else { return false }
-        return tabContentStates[activeTabID] == nil
-    }
-
-    mutating func syncActiveTabAnchorForInitialPath(_ path: String) {
-        guard let activeTabID = contentTabs.activeTabID else { return }
-        contentTabs.tabs[id: activeTabID]?.anchor = .directory(path: path)
-        contentTabs.tabs[id: activeTabID]?.page = .directory
-        let title = URL(fileURLWithPath: path).lastPathComponent
-        contentTabs.tabs[id: activeTabID]?.title = title.isEmpty ? path : title
-        contentTabs.tabs[id: activeTabID]?.iconName = "folder"
-    }
-
-    mutating func syncActiveTabContentState() {
-        guard let activeTabID = contentTabs.activeTabID else { return }
-        tabContentStates[activeTabID] = content
-    }
-
-    mutating func syncActiveTabInspectorState() {
-        guard let activeTabID = contentTabs.activeTabID else { return }
-        guard supportsInspector(tabID: activeTabID) else {
-            tabInspectorStates[activeTabID] = nil
-            return
-        }
-        tabInspectorStates[activeTabID] = inspector.tabSnapshot()
-    }
-
-    mutating func saveCurrentInspectorStateForPreviousActiveTab() {
-        guard let previousActiveTabID = contentTabs.previousActiveTabID else { return }
-        guard supportsInspector(tabID: previousActiveTabID) else {
-            tabInspectorStates[previousActiveTabID] = nil
-            return
-        }
-        tabInspectorStates[previousActiveTabID] = inspector.tabSnapshot()
-    }
-
-    mutating func restoreInspectorStateForActiveTab() {
-        guard let activeTabID = contentTabs.activeTabID else {
-            inspector = .init()
-            return
-        }
-        guard supportsInspector(tabID: activeTabID) else {
-            inspector = .init()
-            tabInspectorStates[activeTabID] = nil
-            return
-        }
-        if let savedInspector = tabInspectorStates[activeTabID] {
-            inspector = savedInspector.tabSnapshot()
-        } else {
-            inspector = .init()
-            tabInspectorStates[activeTabID] = inspector.tabSnapshot()
-        }
-    }
-
-    mutating func removeInspectorState(for tabID: ContentTabID) {
-        tabInspectorStates[tabID] = nil
-    }
-
-    mutating func addBackgroundInspectorAiChatState(for tabID: ContentTabID) {
-        let inspectorState = if contentTabs.previousActiveTabID == tabID || contentTabs.activeTabID == tabID {
-            inspector
-        } else {
-            tabInspectorStates[tabID]
-        }
-
-        guard let inspectorState else { return }
-        addBackgroundInspectorAiChatState(state: inspectorState)
-    }
-
-    mutating func addBackgroundInspectorAiChatState(state inspectorState: FileManagerInspectorFeature.State) {
-        for sessionID in inspectorState.aiChat.lifecycleSessionIDsToPreserve {
-            var mergedInspectorState = inspectorState.tabSnapshot()
-            if let existingInspectorState = backgroundInspectorAiChatStates[sessionID] {
-                mergedInspectorState.aiChat.mergeBackgroundLifecycleOwners(from: existingInspectorState.aiChat)
-            }
-            backgroundInspectorAiChatStates[sessionID] = mergedInspectorState
-        }
-    }
-
-    @discardableResult
-    mutating func removeBackgroundInspectorAiChatState(
-        sessionID: AiChatSessionID,
-    ) -> FileManagerInspectorFeature.State? {
-        backgroundInspectorAiChatStates.removeValue(forKey: sessionID)
-    }
-
-    func backgroundInspectorAiChatState(for sessionID: AiChatSessionID) -> FileManagerInspectorFeature.State? {
-        backgroundInspectorAiChatStates[sessionID]
-    }
-
-    func inspectorState(for tabID: ContentTabID) -> FileManagerInspectorFeature.State? {
-        if contentTabs.activeTabID == tabID {
-            return inspector
-        }
-        return tabInspectorStates[tabID]
-    }
-
-    func supportsInspector(tabID: ContentTabID) -> Bool {
-        guard let anchor = contentTabs.tabs[id: tabID]?.anchor else { return false }
-        return anchor.supportsInspector
-    }
-
-    mutating func saveCurrentContentStateForPreviousActiveTab() {
-        guard let previousActiveTabID = contentTabs.previousActiveTabID else { return }
-        tabContentStates[previousActiveTabID] = content
-    }
-
-    mutating func restoreContentStateForActiveTab() {
-        guard let activeTabID = contentTabs.activeTabID else { return }
-        if let savedContent = tabContentStates[activeTabID] {
-            content = savedContent
-        } else {
-            let activeAnchor = contentTabs.tabs[id: activeTabID]?.anchor
-            content = FileManagerContentFeature.State.initialContent(
-                for: activeAnchor,
-                inheritingWindowContextFrom: content,
-            )
-            tabContentStates[activeTabID] = content
-        }
-    }
-
-    mutating func removeContentState(for tabID: ContentTabID) {
-        tabContentStates[tabID] = nil
-    }
-
-    mutating func addBackgroundAiChatState(for tabID: ContentTabID) {
-        let contentState = if contentTabs.previousActiveTabID == tabID || contentTabs.activeTabID == tabID {
-            content
-        } else {
-            tabContentStates[tabID]
-        }
-
-        guard let contentState else { return }
-        for sessionID in contentState.aiChat.lifecycleSessionIDsToPreserve {
-            addBackgroundAiChatState(sessionID: sessionID, state: contentState)
-        }
-    }
-
-    mutating func syncContentTabSidebarItems() {
-        sidebar.contentTabSidebarItems = ContentTabProjection.sidebarItems(from: contentTabs)
-    }
-
-    mutating func updateActiveAiChatTabTitle(_ title: String?) {
-        guard let activeTabID = contentTabs.activeTabID,
-              case .aiChat = contentTabs.tabs[id: activeTabID]?.anchor
-        else { return }
-        let resolvedTitle = aiChatTabTitle(title)
-        contentTabs.tabs[id: activeTabID]?.title = resolvedTitle
-        syncContentTabSidebarItems()
-    }
-
-    mutating func refreshActiveAiChatTabTitleFromSessionList(onlyIfUsingFallback: Bool = false) {
-        guard let activeTabID = contentTabs.activeTabID,
-              !onlyIfUsingFallback || contentTabs.tabs[id: activeTabID]?.title == "AI Chat",
-              case let .aiChat(sessionIDString) = contentTabs.tabs[id: activeTabID]?.anchor,
-              let sessionUUID = UUID(uuidString: sessionIDString),
-              let summary = content.aiChat.sessionList.allRows.first(where: {
-                  $0.sessionID.rawValue == sessionUUID
-              })
-        else { return }
-        let resolvedTitle = aiChatTabTitle(summary.title)
-        contentTabs.tabs[id: activeTabID]?.title = resolvedTitle
-    }
-
-    mutating func updateAiChatTabTitle(sessionID: AiChatSessionID, title: String?) {
-        let sessionIDString = sessionID.rawValue.uuidString
-        let resolvedTitle = aiChatTabTitle(title)
-        for tabID in contentTabs.tabs.ids {
-            guard contentTabs.tabs[id: tabID]?.anchor == .aiChat(sessionID: sessionIDString) else { continue }
-            contentTabs.tabs[id: tabID]?.title = resolvedTitle
-        }
-        syncContentTabSidebarItems()
-    }
-
-    mutating func refreshAiChatTabTitleFromCanonicalSummary(sessionID: AiChatSessionID) {
-        guard let summary = canonicalAiChatSessionSummary(sessionID: sessionID) else { return }
-        updateAiChatTabTitle(sessionID: sessionID, title: summary.title)
-    }
-
-    private func canonicalAiChatSessionSummary(sessionID: AiChatSessionID) -> AiChatSessionSummary? {
-        var canonicalSummary: AiChatSessionSummary?
-
-        func consider(_ aiChat: AiChatFeature.State) {
-            guard let candidate = aiChat.sessionList.allRows.first(where: { $0.sessionID == sessionID }) else { return }
-            guard let currentSummary = canonicalSummary else {
-                canonicalSummary = candidate
-                return
-            }
-            if candidate.isNewer(than: currentSummary) {
-                canonicalSummary = candidate
-            }
-        }
-
-        consider(content.aiChat)
-        for contentState in tabContentStates.values {
-            consider(contentState.aiChat)
-        }
-        consider(inspector.aiChat)
-        for inspectorState in tabInspectorStates.values {
-            consider(inspectorState.aiChat)
-        }
-        for contentState in backgroundAiChatStates.values {
-            consider(contentState.aiChat)
-        }
-        for inspectorState in backgroundInspectorAiChatStates.values {
-            consider(inspectorState.aiChat)
-        }
-        return canonicalSummary
-    }
-
-    private func aiChatTabTitle(_ title: String?) -> String {
-        guard let normalized = title?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !normalized.isEmpty
-        else { return "AI Chat" }
-        return normalized
-    }
-
-    mutating func syncFixedLocationItems(
-        with locationsClient: FileManagerLocationsClient,
-        entryLoadingClient: EntryLoadingClient,
-        hiddenLocationIDs: Set<FileManagerFixedLocationItem.ID> = [],
-    ) {
-        let items = FileManagerHomeDashboardProjection.makeFixedLocations(
-            from: locationsClient.loadLocations(entryLoadingClient),
-        )
-        applyFixedLocationItems(items, hiddenLocationIDs: hiddenLocationIDs)
-    }
-
-    mutating func applyFixedLocationItems(
-        _ items: [FileManagerFixedLocationItem],
-        hiddenLocationIDs: Set<FileManagerFixedLocationItem.ID> = [],
-    ) {
-        sidebar.setFixedLocationItems(items, hiddenIDs: hiddenLocationIDs)
-        content.homeLocationItems = items
-    }
-
-    // MARK: - Home Dashboard Projection
-
-    mutating func applyHomeFavoriteItems(_ items: [FileManagerHomeFavoriteItem]) {
-        homeFavoriteItems = items
-        syncHomeFavoriteItems()
-    }
-
-    mutating func syncHomeFavoriteItems() {
-        content.homeFavoriteItems = homeFavoriteItems
-    }
-
-    mutating func syncHomeLocationItems() {
-        content.homeLocationItems = sidebar.allFixedLocationItems
-    }
-
-    mutating func applyPinnedContentTabs(_ restoredPinnedState: ContentTabState) {
-        let recentlyClosed = contentTabs.recentlyClosed
-        let restoredPinnedTabs = restoredPinnedState.tabs.filter(\.isPinned)
-        let restoredTabIDs = Set(restoredPinnedTabs.map(\.id))
-        let currentPinnedTabs = contentTabs.tabs.filter(\.isPinned)
-        let currentPinnedTabsByID = Dictionary(uniqueKeysWithValues: currentPinnedTabs.map { ($0.id, $0) })
-        let pendingPinnedIDs = contentTabs.pendingPinnedRecordIDs
-        let synchronizedPinnedTabs = restoredPinnedTabs
-            .filter { !pendingPinnedIDs.contains($0.id) }
-            .map { currentPinnedTabsByID[$0.id] ?? $0 }
-        let pendingPinnedTabs = currentPinnedTabs.filter { pendingPinnedIDs.contains($0.id) }
-        let mergedPinnedTabs = synchronizedPinnedTabs + pendingPinnedTabs
-        let mergedPinnedIDs = Set(mergedPinnedTabs.map(\.id))
-        let currentUnpinnedTabs = contentTabs.tabs.filter { !$0.isPinned && !mergedPinnedIDs.contains($0.id) }
-        let currentPinnedIDs = Set(currentPinnedTabs.map(\.id))
-
-        let retainedPendingPinnedIDs = Set(pendingPinnedTabs.map(\.id))
-        let pendingPinnedRecords = contentTabs.pinnedRecords.filter { retainedPendingPinnedIDs.contains($0.key) }
-
-        contentTabs.tabs = IdentifiedArrayOf(uniqueElements: mergedPinnedTabs + currentUnpinnedTabs)
-        contentTabs.pinnedRecords = restoredPinnedState.pinnedRecords
-            .merging(pendingPinnedRecords) { _, pending in pending }
-        contentTabs.pendingPinnedRecordIDs = retainedPendingPinnedIDs
-        contentTabs.previousActiveTabID = nil
-
-        for removedID in currentPinnedIDs.subtracting(restoredTabIDs) where contentTabs.tabs[id: removedID] == nil {
-            tabContentStates[removedID] = nil
-            tabInspectorStates[removedID] = nil
-        }
-        if contentTabs.tabs.isEmpty {
-            contentTabs = .withHomeTab()
-            restoreContentStateForActiveTab()
-            restoreInspectorStateForActiveTab()
-        } else if contentTabs.activeTabID.flatMap({ contentTabs.tabs[id: $0] }) == nil {
-            contentTabs.activeTabID = mergedPinnedTabs.first?.id ?? currentUnpinnedTabs.first?.id
-            restoreContentStateForActiveTab()
-            restoreInspectorStateForActiveTab()
-        }
-
-        contentTabs.recentlyClosed = recentlyClosed
-        syncContentTabSidebarItems()
-    }
-
-    mutating func addBackgroundAiChatState(sessionID: AiChatSessionID, state: FileManagerContentFeature.State) {
-        let shouldPreserveOwner = switch state.aiChat.executionPhase {
-        case .completed,
-             .persistenceRecovery:
-            true
-        default:
-            false
-        }
-        let hasBackgroundExecutionPhase = state.aiChat.backgroundExecutionPhases.values.contains {
-            $0.lock?.context.sessionID == sessionID
-        }
-        let hasBackgroundPendingRequestStart = state.aiChat.backgroundPendingRequestStarts.values.contains {
-            $0.sessionID == sessionID
-        }
-        guard state.aiChat.executionPhase.isProcessing
-            || shouldPreserveOwner
-            || state.aiChat.pendingRequestStart != nil
-            || hasBackgroundPendingRequestStart
-            || hasBackgroundExecutionPhase
-        else { return }
-        var mergedState = state
-        if let existingState = backgroundAiChatStates[sessionID] {
-            mergedState.aiChat.mergeBackgroundLifecycleOwners(from: existingState.aiChat)
-        }
-        backgroundAiChatStates[sessionID] = mergedState
-    }
-
-    @discardableResult
-    mutating func removeBackgroundAiChatState(sessionID: AiChatSessionID) -> FileManagerContentFeature.State? {
-        backgroundAiChatStates.removeValue(forKey: sessionID)
-    }
-
-    func backgroundAiChatState(for sessionID: AiChatSessionID) -> FileManagerContentFeature.State? {
-        backgroundAiChatStates[sessionID]
-    }
-
-    func canPinContentTab(_ tabID: ContentTabID) -> Bool {
-        let tab = contentTabs.tabs[id: tabID]
-        if let tab {
-            let pinnedRecord = ContentTabPinnedRecord(
-                id: tab.id.rawValue,
-                page: tab.page,
-                anchor: tab.anchor,
-                title: tab.title,
-                iconName: tab.iconName,
-                pinnedAt: .distantPast,
-            )
-            guard pinnedRecord.isPageAnchorCompatible else { return false }
-        }
-
-        let tabPage = tab?.page
-        let contentState = contentTabs.activeTabID == tabID ? content : tabContentStates[tabID]
-
-        guard let contentState else { return tabPage != .collection }
-
-        let isShowingCollectionNavigation = if case .collection = contentState.navigation.navigationState {
-            true
-        } else {
-            false
-        }
-
-        guard tabPage == .collection || contentState.isCollectionMode || isShowingCollectionNavigation else {
-            return true
-        }
-
-        if case let .collection(navigation) = contentState.navigation.navigationState,
-           case .temporary = navigation.kind
-        {
-            return false
-        }
-        guard contentState.isCollectionMode else { return true }
-        guard contentState.collection.collectionSession.document?.url != nil,
-              contentState.collection.collectionSession.metadata.baseline != nil
-        else {
-            return false
-        }
-        return contentState.openedCollectionURLExists
-    }
-}
-
-extension FileManagerInspectorFeature.State {
-    var shouldPreserveAiChatInBackground: Bool {
-        !aiChat.lifecycleSessionIDsToPreserve.isEmpty
-    }
-
-    func tabSnapshot() -> Self {
-        var snapshot = self
-        snapshot.inspectorPaneExists = false
-        return snapshot
-    }
-}
-
-private extension AiChatFeature.State {
-    mutating func mergeBackgroundLifecycleOwners(from existingState: Self) {
-        mergeBackgroundPendingRequestStart(existingState.pendingRequestStart)
-        for pendingRequestStart in existingState.backgroundPendingRequestStarts.values {
-            mergeBackgroundPendingRequestStart(pendingRequestStart)
-        }
-        mergeBackgroundLifecycleOwner(existingState.executionPhase)
-        for phase in existingState.backgroundExecutionPhases.values {
-            mergeBackgroundLifecycleOwner(phase)
-        }
-    }
-
-    mutating func mergeBackgroundPendingRequestStart(_ pendingRequestStart: AiChatPendingRequestStart?) {
-        guard let pendingRequestStart else { return }
-        if self.pendingRequestStart?.resolutionID == pendingRequestStart.resolutionID { return }
-        backgroundPendingRequestStarts[pendingRequestStart.resolutionID] = pendingRequestStart
-    }
-
-    mutating func mergeBackgroundLifecycleOwner(_ phase: AiChatExecutionPhase) {
-        guard let lock = phase.lock else { return }
-        if executionPhase.lock?.requestID == lock.requestID { return }
-        backgroundExecutionPhases[lock.requestID] = phase
-    }
-}
-
-private extension AiChatExecutionPhase {
-    var shouldPreserveLifecycleOwner: Bool {
-        switch self {
-        case let .completed(lock):
-            lock.finalSnapshot != nil
-        case .persistenceRecovery:
-            true
-        default:
-            false
-        }
-    }
-}
-
-extension AiChatFeature.State {
-    var lifecycleSessionIDsToPreserve: [AiChatSessionID] {
-        var sessionIDs: [AiChatSessionID] = []
-        let shouldPreserveOwner = switch executionPhase {
-        case let .completed(lock):
-            lock.finalSnapshot != nil
-        case .persistenceRecovery:
-            true
-        default:
-            false
-        }
-        if executionPhase.isProcessing || shouldPreserveOwner,
-           let ownerSessionID = executionPhase.lock?.context.sessionID
-        {
-            sessionIDs.append(ownerSessionID)
-        }
-        if let pendingSessionID = pendingRequestStart?.sessionID {
-            sessionIDs.append(pendingSessionID)
-        }
-        for pendingRequestStart in backgroundPendingRequestStarts.values {
-            sessionIDs.append(pendingRequestStart.sessionID)
-        }
-        for phase in backgroundExecutionPhases.values where phase.isProcessing || phase.shouldPreserveLifecycleOwner {
-            if let sessionID = phase.lock?.context.sessionID {
-                sessionIDs.append(sessionID)
-            }
-        }
-        return Array(Set(sessionIDs))
-    }
-}
-
-private extension ContentTabPageAnchor {
-    var supportsInspector: Bool {
-        switch self {
-        case .directory,
-             .collectionFile,
-             .virtualCollection:
-            true
-        case .homeDefault,
-             .aiChat:
-            false
-        }
-    }
-}
-
-extension FileManagerContentFeature.State {
-    static func initialContent(
-        for anchor: ContentTabPageAnchor?,
-        inheritingWindowContextFrom source: Self? = nil,
-    ) -> Self {
-        var content = Self()
-
-        if let source {
-            content.applyWindowContext(from: source)
-        }
-
-        switch anchor {
-        case let .directory(path):
-            content.navigation.seedInitialFolderPath(path)
-        case let .collectionFile(url):
-            content.navigation.navigationState = .collection(.init(
-                kind: .file(url: url, name: url.deletingPathExtension().lastPathComponent),
-                context: CollectionContext(query: "", scopes: [], conditions: []),
-                sortKey: .name,
-                sortOrder: .ascending,
-                viewLayout: .list,
-            ))
-        case let .virtualCollection(id):
-            content.navigation.navigationState = .tags(id)
-        case let .aiChat(sessionID):
-            content.navigation.navigationState = .aiChat(sessionID)
-            content.aiChat.mode = .chat
-        case .homeDefault,
-             .none:
-            break
-        }
-
-        return content
-    }
-
-    mutating func applyWindowContext(windowID: UUID) {
-        entryViewLayout.entryOperations.windowID = windowID
-        composer.cancellationOwnerID = windowID
-    }
-
-    mutating func applyWindowContext(from source: Self) {
-        entryViewLayout.mode = source.entryViewLayout.mode
-        entryViewLayout.listIconSize = source.entryViewLayout.listIconSize
-        entryViewLayout.gridIconSize = source.entryViewLayout.gridIconSize
-        entryViewLayout.listTextSize = source.entryViewLayout.listTextSize
-        entryViewLayout.gridTextSize = source.entryViewLayout.gridTextSize
-        entryViewLayout.showHiddenFiles = source.entryViewLayout.showHiddenFiles
-        entryViewLayout.entryArrangements.sortKey = source.entryViewLayout.entryArrangements.sortKey
-        entryViewLayout.entryArrangements.sortOrder = source.entryViewLayout.entryArrangements.sortOrder
-        entryViewLayout.entryArrangements.hasUserSetSortOrder = source.entryViewLayout.entryArrangements
-            .hasUserSetSortOrder
-        entryViewLayout.entryArrangements.groupKey = source.entryViewLayout.entryArrangements.groupKey
-        entryViewLayout.entryOperations.windowID = source.entryViewLayout.entryOperations.windowID
-        composer.cancellationOwnerID = source.composer.cancellationOwnerID
     }
 }

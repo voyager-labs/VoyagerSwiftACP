@@ -11,7 +11,8 @@ schemaVersion: 2
 - Include TDD evidence, test ownership, and commit strategy sections in every implementation plan that involves code changes.
 - For Voyager macOS plans, use `.agents/skills/voyager-dev/orchestrator/references/09-tdd-evidence-policy.md`, `.agents/skills/voyager-dev/orchestrator/references/10-test-ownership-convention.md`, and `.agents/skills/voyager-dev/implementer/spec-test-authoring/references/flow-test-topology.md` as the canonical implementation details.
 - Reference the `commit-message` skill for all planned commits unless the plan explicitly justifies an alternative.
-- Write per-task acceptance criteria that include evidence requirements.
+- Treat plans as immutable implementation contracts. Do not encode mutable execution state with `- [ ]`/`- [x]` checkbox TODOs.
+- Write task acceptance criteria that include evidence requirements using the current heading/prose plan template.
 
 ## Default Actions
 
@@ -19,6 +20,7 @@ schemaVersion: 2
 2. For each implementation task, add QA scenarios showing the RED → GREEN flow.
 3. In the Commit Strategy section, reference the `commit-message` skill.
 4. Verify every acceptance criterion names its required evidence.
+5. Describe each implementation task under a numbered level-three heading (`### N. Task title`); keep completion state in runtime artifacts rather than plan Markdown.
 
 ## Decision Rules
 
@@ -31,6 +33,8 @@ schemaVersion: 2
 - Plan tests outside the owning platform's canonical test topology.
 - Duplicate behavior assertions across test owners.
 - Plan commits without referencing the `commit-message` skill.
+- Add checkbox TODOs to a plan.
+- Omit acceptance criteria or required evidence from a numbered implementation task.
 
 ## Verification
 
@@ -38,3 +42,5 @@ schemaVersion: 2
 - Plan file's Commit Strategy references the `commit-message` skill.
 - Every planned test has one canonical owner from the owning platform's test topology.
 - No behavior assertion is duplicated across test owners.
+- Plan Markdown contains no `- [ ]`/`- [x]` task-state markers.
+- Every numbered implementation task contains non-empty acceptance criteria and required evidence.

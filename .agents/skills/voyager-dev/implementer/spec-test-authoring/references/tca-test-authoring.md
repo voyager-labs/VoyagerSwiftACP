@@ -170,6 +170,43 @@ or refreshes, add at least one focused regression test for the race that matters
 - Finish the original effect and verify late diagnostics are accepted only when
   their source/phase still matches current state.
 
+## Swift 6 main-actor isolation for `store.state` access
+
+Swift 6 strict concurrency adds two sharp edges when reading `TestStore.state` inside `@MainActor` test classes.
+
+### 1. Per-method `@MainActor` annotation
+
+Even when the test class is `@MainActor`, `store.state` access after `await store.send`/`receive` can fail Swift 6 main-actor isolation checks. Add an explicit `@MainActor` annotation to the **individual test method**, not just the class.
+
+```swift
+@MainActor
+final class CTM001HandleContentTabTests: XCTestCase {
+    @MainActor  // ← 명시적 메서드 어노테이션 필요
+    func testOpenInNewTabCreatesDirectoryTab() async throws {
+        await store.send(.delegate(.openInNewTab(paths: ["/folder"])))
+        // store.state 접근은 메서드 단위 @MainActor 없이 isolation 실패
+        XCTAssertEqual(store.state.contentTabs.count, 1)
+    }
+}
+```
+
+### 2. Avoid `try XCTUnwrap(store.state...)`
+
+`try XCTUnwrap(store.state...)` places non-Sendable state into a nonisolated autoclosure, which Swift 6 rejects. Use direct `store.state` access + force-unwrap, or extract to a local `let` first.
+
+```swift
+// Bad: non-Sendable state in nonisolated autoclosure
+let tabs = try XCTUnwrap(store.state.contentTabs.first)
+
+// Good: direct access + force-unwrap
+let tabs = store.state.contentTabs
+XCTAssertEqual(tabs.count, 1)
+```
+
+### Evidence
+
+VOY-611 Task 2 CTM001 tests hit both traps. The class-level `@MainActor` alone was insufficient; per-method `@MainActor` plus avoiding `XCTUnwrap(store.state...)` resolved all isolation failures.
+
 ## Scope boundary
 
 This reference covers TestStore authoring mechanics and gotchas. For test execution commands, failure analysis, rerun loops, and dependency testing rules, load `testing-playbook.md`.

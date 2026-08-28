@@ -1,6 +1,7 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
+import os
 import VoyagerEntitiesCollection
 import VoyagerFeaturesAccountAccess
 import VoyagerFeaturesExternalFileRouter
@@ -90,41 +91,38 @@ struct AppRootFeature {
     ) -> Effect<Action> {
         switch action {
         case .lifecycle(.launch(.willFinishLaunching)):
-            return .merge(
+            .merge(
                 startLaunchObservers(),
                 .send(.settings(.bootstrapLocalPreferences)),
                 .send(.settings(.ai(.onAppear))),
             )
 
+        case .lifecycle(.launch(.didFinishLaunching)):
+            .send(.updater(.launchReady))
+
         case let .lifecycle(.delegate(delegateAction)):
-            return reduceLifecycleDelegate(into: &state, delegateAction)
+            reduceLifecycleDelegate(into: &state, delegateAction)
 
         case .lifecycle(.termination(.willTerminate)):
-            return .merge(
+            .merge(
                 .cancel(id: CancelID.appDidBecomeActiveObserver),
                 handleActivePendingExternalURLGateClosure(state: &state),
                 handleActiveExternalOpenBatchGateClosure(state: &state),
             )
 
         case .lifecycle(.sessionExpiredDetected):
-            return .none
+            .none
 
         case .lifecycle(.accountAccess):
-            let presentationEffect = Effect<Action>.send(.settings(.accountAccessPresentationUpdated(
+            Effect<Action>.send(.settings(.accountAccessPresentationUpdated(
                 makeAccountAccessPresentation(state.lifecycle.accountAccess),
             )))
-            guard !state.lifecycle.isExternalRouteFlushAllowed else { return presentationEffect }
-            return .merge(
-                presentationEffect,
-                handleActivePendingExternalURLGateClosure(state: &state),
-                handleActiveExternalOpenBatchGateClosure(state: &state),
-            )
 
         case .appDidBecomeActive:
-            return .none
+            appDidBecomeActiveEffect()
 
         default:
-            return .none
+            .none
         }
     }
 
@@ -137,8 +135,8 @@ struct AppRootFeature {
             if hasPendingExternalRoutes(state) {
                 state.isExternalURLFlushDelegateScheduled = false
                 guard !onboardingWindowClient.isRequired() else { return .none }
-                guard canFlushPendingExternalRoutes(state) else {
-                    guard state.lifecycle.accessGatePhase == .recoveryRequired else { return .none }
+                guard state.lifecycle.isShellRuntimeReady else { return .none }
+                guard !state.windowManager.windows.isEmpty else {
                     return .send(.windowManager(.lifecycle(.openInitialWindowIfNeeded)))
                 }
                 return flushPendingExternalRoutes(state: &state)
@@ -147,7 +145,9 @@ struct AppRootFeature {
                 state.isExternalURLFlushDelegateScheduled = false
                 return .none
             }
-            guard state.lifecycle.isExternalRouteFlushAllowed else { return .none }
+            guard state.lifecycle.isShellRuntimeReady,
+                  !onboardingWindowClient.isRequired()
+            else { return .none }
             return .send(.windowManager(.lifecycle(.openInitialWindowIfNeeded)))
 
         case let .reopenWindowIfNeeded(hasVisibleWindows):
@@ -173,13 +173,17 @@ struct AppRootFeature {
         )
     }
 
+    private func appDidBecomeActiveEffect() -> Effect<Action> {
+        appRootDeliveryLogger.info(
+            "voyager.fs.delivery marker=app_activation ts=\(Date().timeIntervalSince1970)",
+        )
+        return .none
+    }
+
     private func reducePreferencesAndCommands(
         into state: inout State,
         action: Action,
     ) -> Effect<Action> {
-        if let updaterEffect = reduceUpdaterAccessEligibility(action) {
-            return updaterEffect
-        }
         if let updaterEffect = reduceSettingsUpdaterAction(action) {
             return updaterEffect
         }
@@ -190,6 +194,12 @@ struct AppRootFeature {
             return .send(.windowManager(.lifecycle(.applyAppPreferences(preferences))))
 
         case let .menuCommands(.delegate(.windowManager(action))):
+            if case .file(.newWindow) = action,
+               state.windowManager.windows.isEmpty,
+               !state.lifecycle.isShellRuntimeReady || onboardingWindowClient.isRequired()
+            {
+                return .send(.lifecycle(.delegate(.openInitialWindowIfNeeded)))
+            }
             return .send(.windowManager(action))
 
         case let .menuCommands(.delegate(.updater(action))):
@@ -199,10 +209,7 @@ struct AppRootFeature {
             return .send(.openAISettings)
 
         case .openAISettings:
-            // 활성 상태일 때만 AI tab 딥링크 선택. native Settings scene은 항상 오픈.
-            let selectAI: Effect<Action> = state.settings.accessStatus.isActive
-                ? .send(.settings(.selectSection(.ai)))
-                : .none
+            let selectAI: Effect<Action> = .send(.settings(.selectSection(.ai)))
             let openSettings: Effect<Action> = isRunningXCTest()
                 ? .none
                 : .run { _ in
@@ -220,23 +227,6 @@ struct AppRootFeature {
 
         default:
             return .none
-        }
-    }
-
-    private func reduceUpdaterAccessEligibility(_ action: Action) -> Effect<Action>? {
-        switch action {
-        case let .lifecycle(.accountAccess(.delegate(.unlocked(snapshot)))):
-            .send(.updater(.accessGranted(
-                updateStatus: snapshot.updateStatus,
-                updatesThrough: snapshot.updatesThrough,
-            )))
-
-        case .lifecycle(.accountAccess(.delegate(.recoveryRequired))),
-             .lifecycle(.accountAccess(.delegate(.signedOut))):
-            .send(.updater(.accessRevoked))
-
-        default:
-            nil
         }
     }
 
@@ -267,9 +257,6 @@ struct AppRootFeature {
 
         case .account(.signOutRequested):
             return .send(.lifecycle(.accountAccess(.signOut)))
-
-        case .account(.retryRequested):
-            return .send(.lifecycle(.accountAccess(.retryTapped)))
         }
     }
 
@@ -386,11 +373,17 @@ struct AppRootFeature {
         if hasWindowsAfterAction {
             state.isExternalURLRouteInFlightWithoutWindow = false
         }
+        if didOpenFirstWindow {
+            state.lifecycle.didCreateInitialWindow = true
+        }
         guard didOpenFirstWindow,
               state.activeExternalOpenBatch == nil,
               canFlushPendingExternalRoutes(state)
         else { return .none }
-        return flushPendingExternalRoutes(state: &state)
+        return .merge(
+            .send(.lifecycle(.accountAccess(.onAppear))),
+            flushPendingExternalRoutes(state: &state),
+        )
     }
 
     private func makeAccountAccessPresentation(
@@ -400,7 +393,6 @@ struct AppRootFeature {
             hasAccountSession: accountAccess.hasAccountSession,
             isSignInInProgress: accountAccess.isSignInInProgress,
             didSignInFail: accountAccess.didSignInFail,
-            accessStatus: accountAccess.status,
         )
     }
 
@@ -414,6 +406,11 @@ struct AppRootFeature {
             }
     }
 }
+
+private let appRootDeliveryLogger = os.Logger(
+    subsystem: Bundle.main.bundleIdentifier ?? "fm.voyager.Voyager",
+    category: "FileChangeGateway",
+)
 
 @MainActor
 private func openNativeSettingsScene() {

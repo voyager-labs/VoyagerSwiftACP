@@ -66,7 +66,7 @@ struct SpotlightSearchService: SearchExecutionServicing {
             scopeURLs: scopeURLs,
             normalizedFilterScopes: normalizedFilterScopes,
         )
-        let filteredPaths = filterPaths(
+        let scopeFilteredPaths = filterPaths(
             paths,
             scopes: prepared.scopes,
             includeSubfolders: filters.includeSubfolders,
@@ -77,7 +77,7 @@ struct SpotlightSearchService: SearchExecutionServicing {
             logger.warning("MDQuery result truncated at maxCandidates=\(maxCandidates): id=\(requestId)")
         }
 
-        let items = makeJSONItems(from: filteredPaths)
+        let items = makeJSONItems(from: scopeFilteredPaths)
 
         logApplyFiltersCompleted(
             requestId: requestId,
@@ -105,7 +105,12 @@ struct SpotlightSearchService: SearchExecutionServicing {
         scopeURLs: [URL]?,
         normalizedFilterScopes: [String],
     ) throws -> [String] {
-        if filters.includeSubfolders || normalizedFilterScopes.isEmpty {
+        let pathConditions = compiledPlan.pathConditions
+        let requiresExactFolderFiltering = !filters.includeSubfolders && !normalizedFilterScopes.isEmpty
+        let normalizedExcludedScopes = filters.includeSubfolders
+            ? SearchScopeNormalizer.normalizeScopes(filters.excludedScopes)
+            : []
+        guard requiresExactFolderFiltering || !pathConditions.isEmpty || !normalizedExcludedScopes.isEmpty else {
             return try executionEngine.loadPaths(
                 queryString: compiledPlan.predicate,
                 scopes: scopeURLs,
@@ -113,12 +118,19 @@ struct SpotlightSearchService: SearchExecutionServicing {
             )
         }
 
+        let homeURL = defaultScopeURL()
         return try executionEngine.loadPaths(
             queryString: compiledPlan.predicate,
             scopes: scopeURLs,
             limit: maxCandidates,
             shouldIncludePath: { path in
-                pathMatchesExactFolderScope(path, normalizedScopes: normalizedFilterScopes)
+                shouldIncludeFilterCandidatePath(
+                    path,
+                    exactFolderScopes: filters.includeSubfolders ? [] : normalizedFilterScopes,
+                    normalizedExcludedScopes: normalizedExcludedScopes,
+                    pathConditions: pathConditions,
+                    homeURL: homeURL,
+                )
             },
         )
     }
@@ -164,6 +176,35 @@ struct SpotlightSearchService: SearchExecutionServicing {
 }
 
 extension SpotlightSearchService {
+    func shouldIncludeFilterCandidatePath(
+        _ path: String,
+        exactFolderScopes: [String],
+        normalizedExcludedScopes: [String],
+        pathConditions: [SearchConditionPayload],
+        homeURL: URL,
+    ) -> Bool {
+        let normalizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
+        if normalizedExcludedScopes.contains(where: { pathIsDescendantOrEqual(normalizedPath, scope: $0) }) {
+            return false
+        }
+
+        if !exactFolderScopes.isEmpty,
+           !pathMatchesExactFolderScope(normalizedPath, normalizedScopes: exactFolderScopes)
+        {
+            return false
+        }
+
+        guard !pathConditions.isEmpty else {
+            return true
+        }
+
+        return HistoricalPathConditionEvaluator.matches(
+            normalizedPath,
+            conditions: pathConditions,
+            homeURL: homeURL,
+        )
+    }
+
     func makeRecentResponse(
         from matches: [SpotlightQueryEngine.QueryMatch],
         request: RecentSearchRequestPayload,
@@ -327,6 +368,7 @@ extension SpotlightSearchService {
             creatorApplication: makeCreatorApplicationName(for: url, isDirectory: isDirectory.boolValue),
             tags: tags,
             supplementaryMetadata: makeSupplementaryMetadata(url: url, isDirectory: isDirectory.boolValue),
+            isPackage: isDirectory.boolValue && isPackageDirectory(url),
         )
     }
 
@@ -472,23 +514,6 @@ extension SpotlightSearchService {
     }
 
     func isPackageDirectory(_ url: URL) -> Bool {
-        if let values = try? url.resourceValues(forKeys: [.isPackageKey]),
-           values.isPackage == true
-        {
-            return true
-        }
-
-        let ext = url.pathExtension.lowercased()
-        if ["app", "icon"].contains(ext) {
-            return true
-        }
-
-        if let type = UTType(filenameExtension: url.pathExtension),
-           type.conforms(to: .package)
-        {
-            return true
-        }
-
-        return false
+        PackageDirectoryClassification.isPackageDirectory(url)
     }
 }

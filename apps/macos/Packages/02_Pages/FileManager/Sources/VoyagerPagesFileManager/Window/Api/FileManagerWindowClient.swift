@@ -1,9 +1,9 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
-import VoyagerFeaturesAccountAccess
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
+import VoyagerShared
 
 public enum FileManagerWindowActivationResult: Sendable, Equatable {
     case becameKey
@@ -16,6 +16,8 @@ public struct FileManagerWindowClient: Sendable {
     public var activate: @Sendable (_ id: UUID) async -> FileManagerWindowActivationResult
     public var close: @Sendable (_ id: UUID) async -> Void
     public var closeAll: @Sendable () async -> Void
+    public var registeredWindowIDs: @Sendable () async -> Set<UUID>
+    public var finalizeClose: @Sendable (_ id: UUID) async -> Void
     public var focusPath: @Sendable (_ path: String) async -> Void
 
     nonisolated public init(
@@ -24,6 +26,8 @@ public struct FileManagerWindowClient: Sendable {
         activate: @escaping @Sendable (_ id: UUID) async -> FileManagerWindowActivationResult,
         close: @escaping @Sendable (_ id: UUID) async -> Void,
         closeAll: @escaping @Sendable () async -> Void,
+        registeredWindowIDs: @escaping @Sendable () async -> Set<UUID> = { [] },
+        finalizeClose: @escaping @Sendable (_ id: UUID) async -> Void = { _ in },
         focusPath: @escaping @Sendable (_ path: String) async -> Void,
     ) {
         self.open = open
@@ -31,6 +35,8 @@ public struct FileManagerWindowClient: Sendable {
         self.activate = activate
         self.close = close
         self.closeAll = closeAll
+        self.registeredWindowIDs = registeredWindowIDs
+        self.finalizeClose = finalizeClose
         self.focusPath = focusPath
     }
 }
@@ -52,6 +58,9 @@ extension FileManagerWindowClient: DependencyKey {
             },
             closeAll: {
                 fatalError("fileManagerWindowClient.closeAll live dependency is not configured")
+            },
+            finalizeClose: { _ in
+                fatalError("fileManagerWindowClient.finalizeClose live dependency is not configured")
             },
             focusPath: { _ in
                 fatalError("fileManagerWindowClient.focusPath live dependency is not configured")
@@ -76,6 +85,7 @@ extension FileManagerWindowClient: DependencyKey {
             closeAll: {
                 fatalError("fileManagerWindowClient.closeAll test dependency is not configured")
             },
+            finalizeClose: { _ in },
             focusPath: { _ in
                 fatalError("fileManagerWindowClient.focusPath test dependency is not configured")
             },
@@ -97,7 +107,6 @@ public extension DependencyValues {
 @MainActor private var fileManagerWindowRequestNewWindow: ((String?) -> Void)?
 @MainActor private var fileManagerWindowRequestNewTab: ((String?) -> Void)?
 @MainActor private var fileManagerWindowResolveStore: ((UUID) -> StoreOf<FileManagerFeature>?)?
-@MainActor private var fileManagerSessionLapseProvider: FileManagerSessionLapseGuardProvider?
 @MainActor private var fileManagerWindowOnBecameKey: ((UUID) -> Void)?
 @MainActor private var fileManagerWindowOnResignedKey: ((UUID) -> Void)?
 @MainActor private var fileManagerWindowOnClosed: ((UUID) -> Void)?
@@ -219,6 +228,7 @@ final class FileManagerWindowActivationTracker {
 
 @MainActor private var fileManagerWindowControllersByID: [UUID: FileManagerWindowCoordinator] = [:]
 @MainActor private var fileManagerWindowControllers: [FileManagerWindowCoordinator] = []
+@MainActor private var fileManagerWindowClosingIDs: Set<UUID> = []
 @MainActor private var fileManagerWindowActivationTracker = FileManagerWindowActivationTracker()
 @MainActor private var didConfigureAutomaticWindowTabbing = false
 
@@ -232,13 +242,16 @@ private func configureFileManagerWindowTabbingPolicyIfNeeded() {
 @MainActor
 public func makeFileManagerWindowClientLive(
     fileOperationUndoManagerRegistry: FileOperationUndoManagerRegistry,
+    workspaceClient: WorkspaceClient,
 ) -> FileManagerWindowClient {
     .init(
         open: { id in
+            guard !Task.isCancelled else { return }
             await MainActor.run {
                 fileManagerWindowOpen(
                     windowID: id,
                     fileOperationUndoManagerRegistry: fileOperationUndoManagerRegistry,
+                    workspaceClient: workspaceClient,
                 )
             }
         },
@@ -247,6 +260,7 @@ public func makeFileManagerWindowClientLive(
                 fileManagerWindowOpenTab(
                     windowID: id,
                     fileOperationUndoManagerRegistry: fileOperationUndoManagerRegistry,
+                    workspaceClient: workspaceClient,
                 )
             }
         },
@@ -263,25 +277,22 @@ public func makeFileManagerWindowClientLive(
                 fileManagerWindowCloseAll()
             }
         },
+        registeredWindowIDs: {
+            await MainActor.run {
+                Set(fileManagerWindowControllersByID.keys)
+            }
+        },
+        finalizeClose: { id in
+            await MainActor.run {
+                finalizeFileManagerWindowClose(windowID: id)
+            }
+        },
         focusPath: { path in
             await MainActor.run {
                 fileManagerWindowFocus(path: path)
             }
         },
     )
-}
-
-public struct FileManagerSessionLapseGuardProvider: Sendable {
-    public let resolveStore: @MainActor @Sendable () -> Store<AccountAccessFeature.State?, AccountAccessAction>
-    public let resolveState: @MainActor @Sendable () -> AccountAccessFeature.State?
-
-    public init(
-        resolveStore: @escaping @MainActor @Sendable () -> Store<AccountAccessFeature.State?, AccountAccessAction>,
-        resolveState: @escaping @MainActor @Sendable () -> AccountAccessFeature.State?,
-    ) {
-        self.resolveStore = resolveStore
-        self.resolveState = resolveState
-    }
 }
 
 public struct FileManagerWindowKeyCallbacks {
@@ -306,12 +317,10 @@ public func configureFileManagerWindowClientLive(
     requestNewTab: @escaping (String?) -> Void,
     resolveFileManagerStore: @escaping (UUID) -> StoreOf<FileManagerFeature>?,
     windowKeyCallbacks: FileManagerWindowKeyCallbacks,
-    sessionLapseGuardProvider: FileManagerSessionLapseGuardProvider,
 ) {
     fileManagerWindowRequestNewWindow = requestNewWindow
     fileManagerWindowRequestNewTab = requestNewTab
     fileManagerWindowResolveStore = resolveFileManagerStore
-    fileManagerSessionLapseProvider = sessionLapseGuardProvider
     fileManagerWindowOnBecameKey = windowKeyCallbacks.onBecameKey
     fileManagerWindowOnResignedKey = windowKeyCallbacks.onResignedKey
     fileManagerWindowOnClosed = windowKeyCallbacks.onClosed
@@ -331,6 +340,7 @@ public func requestFileManagerNewTab(path: String?) {
 private func fileManagerWindowOpen(
     windowID: UUID,
     fileOperationUndoManagerRegistry: FileOperationUndoManagerRegistry,
+    workspaceClient: WorkspaceClient,
 ) {
     configureFileManagerWindowTabbingPolicyIfNeeded()
 
@@ -348,6 +358,7 @@ private func fileManagerWindowOpen(
         windowID: windowID,
         fileManagerStore: fileManagerStore,
         fileOperationUndoManagerRegistry: fileOperationUndoManagerRegistry,
+        workspaceClient: workspaceClient,
     )
     registerFileManagerWindowController(controller)
     controller.showWindow(nil as Any?)
@@ -357,6 +368,7 @@ private func fileManagerWindowOpen(
 private func fileManagerWindowOpenTab(
     windowID: UUID,
     fileOperationUndoManagerRegistry: FileOperationUndoManagerRegistry,
+    workspaceClient: WorkspaceClient,
 ) {
     configureFileManagerWindowTabbingPolicyIfNeeded()
 
@@ -371,6 +383,7 @@ private func fileManagerWindowOpenTab(
         fileManagerWindowOpen(
             windowID: windowID,
             fileOperationUndoManagerRegistry: fileOperationUndoManagerRegistry,
+            workspaceClient: workspaceClient,
         )
         return
     }
@@ -384,6 +397,7 @@ private func fileManagerWindowOpenTab(
         windowID: windowID,
         fileManagerStore: fileManagerStore,
         fileOperationUndoManagerRegistry: fileOperationUndoManagerRegistry,
+        workspaceClient: workspaceClient,
     )
     registerFileManagerWindowController(controller)
 
@@ -415,20 +429,26 @@ private func activateFileManagerWindowController(_ controller: FileManagerWindow
 @MainActor
 private func fileManagerWindowClose(windowID: UUID) {
     fileManagerWindowActivationTracker.discard(windowID)
-    fileManagerWindowControllersByID[windowID]?.window?.close()
+    guard let controller = fileManagerWindowControllersByID[windowID] else { return }
+    fileManagerWindowClosingIDs.insert(windowID)
+    controller.window?.close()
 }
 
 @MainActor
 private func fileManagerWindowCloseAll() {
-    let controllers = fileManagerWindowControllers
-    fileManagerWindowActivationTracker.discardAll(controllers.map(\.windowID))
+    fileManagerWindowActivationTracker.discardAll(fileManagerWindowControllers.map(\.windowID))
+    let controllers = fileManagerWindowControllers.filter {
+        !fileManagerWindowClosingIDs.contains($0.windowID)
+    }
+    fileManagerWindowClosingIDs.formUnion(controllers.map(\.windowID))
     controllers.forEach { $0.window?.close() }
 }
 
 @MainActor
 private func fileManagerWindowFocus(path: String) {
     let targetController = fileManagerWindowControllers.first { controller in
-        controller.store.state.content.navigation.currentPath == path
+        !fileManagerWindowClosingIDs.contains(controller.windowID)
+            && controller.store.state.content.navigation.currentPath == path
     }
     targetController?.window?.makeKeyAndOrderFront(nil)
 }
@@ -450,6 +470,12 @@ private func unregisterFileManagerWindowController(windowID: UUID) {
 }
 
 @MainActor
+private func finalizeFileManagerWindowClose(windowID: UUID) {
+    unregisterFileManagerWindowController(windowID: windowID)
+    fileManagerWindowClosingIDs.remove(windowID)
+}
+
+@MainActor
 private func currentFileManagerWindowSize() -> NSSize? {
     if let keyWindow = NSApp.keyWindow,
        let controller = fileManagerWindowControllers.first(where: { $0.window === keyWindow })
@@ -465,14 +491,14 @@ private func makeManagedWindowController(
     windowID: UUID,
     fileManagerStore: StoreOf<FileManagerFeature>,
     fileOperationUndoManagerRegistry: FileOperationUndoManagerRegistry,
+    workspaceClient: WorkspaceClient,
 ) -> FileManagerWindowCoordinator {
     FileManagerWindowCoordinator(
         windowID: windowID,
         store: fileManagerStore,
         fileOperationUndoManagerRegistry: fileOperationUndoManagerRegistry,
         path: nil,
-        sessionLapseGuardStore: fileManagerSessionLapseProvider?.resolveStore(),
-        sessionLapseGuardState: fileManagerSessionLapseProvider?.resolveState,
+        workspaceClient: workspaceClient,
         onBecameKey: { id in
             fileManagerWindowActivationTracker.complete(id, result: .becameKey)
             fileManagerWindowOnBecameKey?(id)
@@ -481,7 +507,8 @@ private func makeManagedWindowController(
             fileManagerWindowOnResignedKey?(id)
         },
         onWillClose: { id in
-            unregisterFileManagerWindowController(windowID: id)
+            fileManagerWindowActivationTracker.discard(id)
+            fileManagerWindowClosingIDs.insert(id)
             fileManagerWindowOnClosed?(id)
         },
         initialWindowSizeProvider: {

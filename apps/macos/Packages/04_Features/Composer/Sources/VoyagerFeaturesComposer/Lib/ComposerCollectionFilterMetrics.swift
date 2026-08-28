@@ -21,6 +21,7 @@ enum ComposerCollectionFilterMetrics {
     static let legacySearchDuration = "voyager_search_roundtrip_duration_ms"
     static let legacyApplyDuration = "voyager_filters_roundtrip_duration_ms"
 
+    static let querySubmit = "voyager_collection_filter_query_submit"
     static let queryResult = "voyager_collection_filter_query_result"
     static let applyResult = "voyager_collection_filter_apply_result"
     static let queryDuration = "voyager_collection_filter_query_duration_ms"
@@ -123,7 +124,17 @@ enum ComposerCollectionFilterMetrics {
     }
 
     private static func queryOutcomeTag(_ outcome: SearchQueryConversionOutcomePayload?) -> String {
-        outcome?.rawValue ?? "legacy_unknown"
+        switch outcome {
+        case .generatedChangeSet: "generated_change_set"
+        case .unchangedResult: "unchanged_result"
+        case .fallbackReuse: "fallback_reuse"
+        case .providerNotConfigured: "provider_not_configured"
+        case .invalidCredential: "invalid_credential"
+        case .providerUnavailable: "provider_unavailable"
+        case .networkFailure: "network_failure"
+        case .conversionFailure: "conversion_failure"
+        case nil: "legacy_unknown"
+        }
     }
 
     private static func resultSetBucket(_ itemCount: Int?) -> String {

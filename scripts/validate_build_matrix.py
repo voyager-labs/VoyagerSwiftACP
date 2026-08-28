@@ -112,16 +112,21 @@ PROD_RELEASE_SIZE_SETTINGS = {
 TEST_TARGETS = {"VoyagerTests", "VoyagerUITests", "VoyagerHelperTests"}
 
 # Host project names
-HOST_PROJECTS = {"OnboardingHost", "SettingsHost", "FileManagerHost"}
+HOST_PROJECTS = {"OnboardingHost", "SettingsHost", "FileManagerHost", "ComposerHost"}
 
 # Host project test targets
-HOST_TEST_TARGETS = {"SettingsHostTests"}
+HOST_TEST_TARGETS = {"SettingsHostTests", "ComposerHostTests"}
 
 # Scheme files directory
 SCHEMES_DIR = Path("apps/macos/Voyager/Voyager.xcodeproj/xcshareddata/xcschemes")
 WORKSPACE_SCHEMES_DIR = Path(
     "apps/macos/Voyager/Voyager.xcworkspace/xcshareddata/xcschemes"
 )
+HOST_SCHEMES_DIRS = [
+    Path(f"apps/macos/Hosts/{host}/{host}.xcodeproj/xcshareddata/xcschemes")
+    for host in sorted(HOST_PROJECTS)
+]
+ALL_SCHEMES_DIRS = [SCHEMES_DIR, WORKSPACE_SCHEMES_DIR, *HOST_SCHEMES_DIRS]
 
 # CI files to check for Prod-Release references
 CI_SCRIPT = Path("scripts/ci/release-macos-prod.sh")
@@ -135,6 +140,8 @@ EXPECTED_TRACKED_ENV_KEYS: set[str] = {
     "PUBLIC_GATEWAY_URL",
     "PUBLIC_HELPER_NAME",
     "PUBLIC_LOG_LEVEL",
+    "PUBLIC_POSTHOG_HOST",
+    "PUBLIC_POSTHOG_PROJECT_TOKEN",
     "PUBLIC_SENTRY_DSN",
     "PUBLIC_SENTRY_TRACES_SAMPLE_RATE",
     "PUBLIC_WEB_BASE_URL",
@@ -152,6 +159,9 @@ EXCLUDED_SWIFT_SOURCE_DIRS = {
 
 # Direct ProcessInfo environment access is closed by default.
 ALLOWED_PROCESS_INFO_LITERAL_KEYS: dict[str, set[str]] = {
+    "apps/macos/Voyager/Voyager/Lib/AppDelegate.swift": {
+        "XCTestConfigurationFilePath",
+    },
     "apps/macos/Voyager/Voyager/Reducer/AppRootFeature.swift": {
         "XCTestConfigurationFilePath",
     },
@@ -162,6 +172,7 @@ ALLOWED_PROCESS_INFO_LITERAL_KEYS: dict[str, set[str]] = {
         "RUNNING_VIA_INJECTION_NEXT",
     },
     "apps/macos/Packages/02_Pages/FileManager/Sources/VoyagerPagesFileManager/Window/Api/FileManagerHostScenario.swift": {
+        "FILE_MANAGER_HOST_APPEARANCE",
         "FILE_MANAGER_HOST_SCENARIO",
     },
     "apps/macos/Packages/02_Pages/Onboarding/Sources/VoyagerPagesOnboarding/Api/OnboardingWindowClient.swift": {
@@ -169,6 +180,9 @@ ALLOWED_PROCESS_INFO_LITERAL_KEYS: dict[str, set[str]] = {
         "VOYAGER_SCHEME_FORCE_ONBOARDING",
     },
     "apps/macos/Packages/03_Widgets/EntryViewLayout/Package.swift": {
+        "RUNNING_VIA_INJECTION_NEXT",
+    },
+    "apps/macos/Packages/04_Features/Composer/Package.swift": {
         "RUNNING_VIA_INJECTION_NEXT",
     },
     "apps/macos/Hosts/SettingsHost/SettingsHostApp.swift": {
@@ -179,6 +193,10 @@ ALLOWED_PROCESS_INFO_LITERAL_KEYS: dict[str, set[str]] = {
     "apps/macos/Hosts/FileManagerHost/FileManagerHostApp.swift": {
         "FILE_MANAGER_HOST_SMOKE",
     },
+    "apps/macos/Hosts/ComposerHost/ComposerHostApp.swift": {
+        "COMPOSER_HOST_PRESET",
+        "COMPOSER_HOST_SMOKE",
+    },
     "apps/macos/Hosts/OnboardingHost/OnboardingHostApp.swift": {
         "ONBOARDING_HOST_EXPECT_REQUIRED_AFTER_COMPLETED",
         "ONBOARDING_HOST_RESET_PROGRESS",
@@ -186,6 +204,7 @@ ALLOWED_PROCESS_INFO_LITERAL_KEYS: dict[str, set[str]] = {
     },
 }
 ALLOWED_PROCESS_INFO_SNAPSHOT_FILES: set[str] = {
+    "apps/macos/Hosts/ComposerHost/ComposerHostFixtureCore.swift",
     "apps/macos/Voyager/Voyager/Api/EntryCoreEndpointClient.swift",
     "apps/macos/Voyager/Voyager/Api/HelperAppClient.swift",
     "apps/macos/Packages/06_Shared/VoyagerShared/Sources/VoyagerShared/Lib/EnvironmentLoader.swift",
@@ -841,7 +860,7 @@ def check_host_project(
             )
 
         for config_name in expected:
-            if config_name in names:
+            if config_name in names and not is_test:
                 check_app_env(target_configs, target_name, config_name, errors, prefix)
 
 
@@ -906,6 +925,17 @@ def check_ci_references(errors: list[str]) -> None:
                     f"{CI_WORKFLOW}:{i}: CONFIGURATION is '{value}', "
                     f"expected '{PROD_RELEASE}'"
                 )
+    build_step = content.split("- name: Build, notarize, package release payload", 1)
+    if len(build_step) == 1:
+        errors.append(f"{CI_WORKFLOW}: build-notarize step is missing")
+        return
+    build_content = build_step[1].split("- name: Upload artifacts", 1)[0]
+    for key in ("PUBLIC_POSTHOG_PROJECT_TOKEN", "PUBLIC_POSTHOG_HOST"):
+        expected = f"{key}: ${{{{ vars.{key} }}}}"
+        if expected not in build_content:
+            errors.append(
+                f"{CI_WORKFLOW}: build-notarize step must source {key} from production vars"
+            )
 
 
 # ── VOY-432: tracked env key parsing, parity, launch-surface, and deprecated checks ──
@@ -1032,19 +1062,7 @@ def check_no_tracked_keys_in_xcschemes(
     Scans all repository xcscheme files under apps/macos/**/xcshareddata/xcschemes/.
     """
     if scheme_dirs is None:
-        scheme_dirs = [
-            SCHEMES_DIR,
-            WORKSPACE_SCHEMES_DIR,
-            Path(
-                "apps/macos/Hosts/OnboardingHost/OnboardingHost.xcodeproj/xcshareddata/xcschemes"
-            ),
-            Path(
-                "apps/macos/Hosts/SettingsHost/SettingsHost.xcodeproj/xcshareddata/xcschemes"
-            ),
-            Path(
-                "apps/macos/Hosts/FileManagerHost/FileManagerHost.xcodeproj/xcshareddata/xcschemes"
-            ),
-        ]
+        scheme_dirs = ALL_SCHEMES_DIRS
 
     for schemes_dir in scheme_dirs:
         if not schemes_dir.is_dir():
@@ -1159,19 +1177,7 @@ def check_no_deprecated_keys(
     Scans xcscheme EnvironmentVariables, VSCode launchEnv, and Zed --env args.
     """
     if scheme_dirs is None:
-        scheme_dirs = [
-            SCHEMES_DIR,
-            WORKSPACE_SCHEMES_DIR,
-            Path(
-                "apps/macos/Hosts/OnboardingHost/OnboardingHost.xcodeproj/xcshareddata/xcschemes"
-            ),
-            Path(
-                "apps/macos/Hosts/SettingsHost/SettingsHost.xcodeproj/xcshareddata/xcschemes"
-            ),
-            Path(
-                "apps/macos/Hosts/FileManagerHost/FileManagerHost.xcodeproj/xcshareddata/xcschemes"
-            ),
-        ]
+        scheme_dirs = ALL_SCHEMES_DIRS
     checked_env_paths = (
         env_paths if env_paths is not None else [ENV_EXAMPLE_PATH, ENV_PROD_PATH]
     )
@@ -1373,8 +1379,8 @@ def validate_host_projects(errors: list[str]) -> None:
 
 def validate_schemes(errors: list[str]) -> None:
     """Validate scheme files (project + workspace mirrors)."""
-    check_scheme_files(SCHEMES_DIR, errors)
-    check_scheme_files(WORKSPACE_SCHEMES_DIR, errors)
+    for schemes_dir in ALL_SCHEMES_DIRS:
+        check_scheme_files(schemes_dir, errors)
 
 
 def validate_ci(errors: list[str]) -> None:

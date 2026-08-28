@@ -10,6 +10,12 @@ func handleNavigationDelegate(
     metricsClient: MetricsClient,
 ) -> Effect<FileManagerWindowAction> {
     switch delegateAction {
+    case let .revealEntryAfterNavigation(destinationPath, entryPath):
+        return .send(.content(.internal(.setPendingEntrySelection(
+            entryID: entryPath,
+            destinationPath: destinationPath,
+        ))))
+
     case let .navigateToState(navigationState):
         return .concatenate(
             syncActiveContentTabEffect(navigationState, state: state, computerName: computerName),
@@ -90,8 +96,10 @@ func syncContentTabEffect(
           state.contentTabs.tabs[id: tabID]?.anchor != anchor
     else { return .none }
 
-    let updateTabAnchorEffect: Effect<FileManagerWindowAction> = .send(
-        .contentTabs(.updateActivePageAnchor(tabID, anchor)),
+    let updateTabAnchorEffect = updateContentTabPageAnchorEffect(
+        tabID: tabID,
+        anchor: anchor,
+        state: state,
     )
     guard tabID == state.contentTabs.activeTabID,
           case .aiChat = anchor,
@@ -104,6 +112,19 @@ func syncContentTabEffect(
         .send(.inspector(.closeChat)),
         updateTabAnchorEffect,
     )
+}
+
+func updateContentTabPageAnchorEffect(
+    tabID: ContentTabID,
+    anchor: ContentTabPageAnchor,
+    state: FileManagerWindowState,
+) -> Effect<FileManagerWindowAction> {
+    let action: ContentTabAction = if state.contentTabs.tabs[id: tabID]?.isPinned == true {
+        .updateRuntimePageAnchor(tabID, anchor)
+    } else {
+        .updateActivePageAnchor(tabID, anchor)
+    }
+    return .send(.contentTabs(action))
 }
 
 func contentTabAnchor(
