@@ -72,6 +72,19 @@ type PreparedChange struct {
 type Proposal struct {
 	Changes              []PreparedChange
 	RequiresConfirmation bool
+	// Definitions은 Prepare가 검증에 사용한 요청 정의다. dispatch가 커밋 없는
+	// prepare 응답을 매핑할 때 전체 카탈로그를 다시 읽지 않게 한다.
+	Definitions map[domainentry.PropertyID]domainentry.WorkspacePropertyDefinition
+}
+
+// DefinitionViews는 정의를 뷰(선택지 미포함 — prepare 응답 매핑은 유형·
+// 카디널리티만 사용)로 변환해 돌려준다.
+func (proposal Proposal) DefinitionViews() map[domainentry.PropertyID]DefinitionView {
+	views := make(map[domainentry.PropertyID]DefinitionView, len(proposal.Definitions))
+	for id, definition := range proposal.Definitions {
+		views[id] = DefinitionView{Definition: definition}
+	}
+	return views
 }
 
 // ChangeService는 bounded assignment list와 prepare/execute 원자적 변경을
@@ -129,6 +142,7 @@ func (service *ChangeService) Prepare(
 	return Proposal{
 		Changes:              preparedChanges(staged),
 		RequiresConfirmation: anyDurableBefore(staged),
+		Definitions:          snapshot.definitions,
 	}, nil
 }
 

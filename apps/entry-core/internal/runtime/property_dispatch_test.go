@@ -50,7 +50,7 @@ func TestPropertyDispatchMethodGate(t *testing.T) {
 				EntryID:    testEntryID(),
 				PropertyID: domainentry.MustPropertyID(testPropertyID),
 				After:      domainentry.EntryPropertyAssignment{State: domainentry.AssignmentStateNull, RecordRevision: 1, ValueContractRevision: 1},
-			}}}
+			}}, Definitions: proposalDefinitions(t, testPropertyID, view)}
 		}
 		if method == schema.MethodPropertyChangeExecute {
 			gateService.facts = []domainentry.EntryPropertyAssignment{{
@@ -230,7 +230,7 @@ func TestPropertyDispatchHappyPathsPerMethod(t *testing.T) {
 		after := before
 		after.RecordRevision = 2
 		after.Scalar = &domainentry.AssignmentValue{Text: strPtr("new")}
-		service.proposal = applicationproperty.Proposal{Changes: []applicationproperty.PreparedChange{{EntryID: testEntryID(), PropertyID: propertyID, Before: &before, After: after}}, RequiresConfirmation: false}
+		service.proposal = applicationproperty.Proposal{Changes: []applicationproperty.PreparedChange{{EntryID: testEntryID(), PropertyID: propertyID, Before: &before, After: after}}, RequiresConfirmation: false, Definitions: proposalDefinitions(t, testPropertyID, view)}
 		runtime := newPropertyRuntime(service)
 		desired := schema.PropertyDesiredState{State: "value", ValueType: "text", Cardinality: "one", Payload: textPayload(t, "new")}
 		response := runtime.Dispatch(context.Background(), prepareRequest(changeTarget("/a", 2, desired)))
@@ -249,4 +249,15 @@ func TestPropertyDispatchHappyPathsPerMethod(t *testing.T) {
 			t.Fatalf("prepared=%+v", result)
 		}
 	})
+}
+
+// proposalDefinitions은 prepare 응답 매핑이 사용할 요청 정의 뷰를 만든다.
+func proposalDefinitions(t *testing.T, idText string, view applicationproperty.DefinitionView) map[domainentry.PropertyID]domainentry.WorkspacePropertyDefinition {
+	t.Helper()
+	if view.Definition.PropertyID == (domainentry.PropertyID{}) {
+		view.Definition.PropertyID = domainentry.MustPropertyID(idText)
+	}
+	return map[domainentry.PropertyID]domainentry.WorkspacePropertyDefinition{
+		view.Definition.PropertyID: view.Definition,
+	}
 }

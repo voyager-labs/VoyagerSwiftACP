@@ -155,11 +155,9 @@ func dispatchPropertyChangePrepare(ctx context.Context, request schema.Request, 
 	if err != nil {
 		return dispatchError(request, protocolCodeForPropertyError(err))
 	}
-	definitions, err := loadDefinitionIndex(ctx, workspace, service)
-	if err != nil {
-		return dispatchError(request, protocolCodeForPropertyError(err))
-	}
-	result, code := prepareResultFromApplication(proposal, definitions, request.PropertyChangePrepareParams.Changes)
+	// 응답 매핑은 Prepare가 검증에 사용한 요청 정의로 완성한다 — 전체
+	// 카탈로그 재조회(N+1)는 응답에 기여하지 않는다.
+	result, code := prepareResultFromApplication(proposal, proposal.DefinitionViews(), request.PropertyChangePrepareParams.Changes)
 	if code != "" {
 		return dispatchError(request, code)
 	}

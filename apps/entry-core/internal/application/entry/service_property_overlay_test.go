@@ -91,7 +91,7 @@ func overlayFixture(t *testing.T, loader PropertyOverlayLoader) (*mount.Registry
 	if err != nil {
 		t.Fatal(err)
 	}
-	definitions, err := service.propertyDefinitions(context.Background(), []string{overlayTitleKey, overlayNoteName})
+	definitions, err := service.propertyDefinitions(overlayCatalogFixture().Definitions, definitionIndexFrom(overlayCatalogFixture().Definitions), []string{overlayTitleKey, overlayNoteName})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -471,7 +471,12 @@ func TestLiveDefinitionsServeRequestedPropertyResolution(t *testing.T) {
 	_, _, service, _ := overlayFixture(t, nil)
 	service.liveDefinitions = provider
 
-	resolved, err := service.propertyDefinitions(context.Background(), []string{"user.created"})
+	liveList, liveErr := provider(context.Background())
+	if liveErr != nil {
+		t.Fatal(liveErr)
+	}
+	liveIndex := definitionIndexFrom(liveList)
+	resolved, err := service.propertyDefinitions(liveList, liveIndex, []string{"user.created"})
 	if err != nil {
 		t.Fatalf("created definition rejected: %v", err)
 	}
@@ -479,7 +484,7 @@ func TestLiveDefinitionsServeRequestedPropertyResolution(t *testing.T) {
 		t.Fatal("created definition missing from resolution")
 	}
 
-	resolved, err = service.propertyDefinitions(context.Background(), []string{"user.removed"})
+	resolved, err = service.propertyDefinitions(liveList, liveIndex, []string{"user.removed"})
 	if err != nil {
 		t.Fatalf("tombstoned definition rejected: %v", err)
 	}
@@ -489,7 +494,7 @@ func TestLiveDefinitionsServeRequestedPropertyResolution(t *testing.T) {
 
 	unknown := overlayNoteID
 	unknown[15] ^= 0xff
-	if _, err := service.propertyDefinitions(context.Background(), []string{unknown.String()}); err == nil {
+	if _, err := service.propertyDefinitions(liveList, liveIndex, []string{unknown.String()}); err == nil {
 		t.Fatal("unknown property id must stay rejected")
 	}
 }
