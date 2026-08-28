@@ -32,6 +32,10 @@ var (
 	errOverlayPayloadKindMismatch = errors.New("property overlay fact value kind does not match definition type")
 )
 
+// maximumOverlayFactBudget은 overlay 한 번의 로드가 읽을 assignment fact 상한이다.
+// 응답 봉투(65,536B)에 실을 수 있는 범위를 벗어나는 교차 적재를 차단한다.
+const maximumOverlayFactBudget = 256
+
 // propertyOverlayStore는 batched overlay 로드의 SQLite backend 구현이다.
 type propertyOverlayStore struct {
 	catalog *sqlite.PropertyCatalogStore
@@ -69,7 +73,10 @@ func (s propertyOverlayStore) LoadOverlay(
 	for _, definition := range definitions {
 		index[definition.PropertyID] = definition
 	}
-	facts, err := s.facts.LoadAssignments(ctx, workspace, entryIDs, propertyIDs)
+	// overlay 행은 응답 예산(봉투 65,536B)으로 실을 수 있는 범위를 넘을 수
+	// 없다. 헤더·값 행 예산을 넘는 교차는 적재 전에 scope_too_large로 실패
+	// 닫기해 단일 연결의 무제한 적재를 차단한다.
+	facts, err := s.facts.LoadAssignmentsCapped(ctx, workspace, entryIDs, propertyIDs, maximumOverlayFactBudget)
 	if err != nil {
 		return nil, err
 	}

@@ -5,12 +5,14 @@ package sqlite
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	applicationproperty "github.com/voyager-labs/voyager-app/apps/entry-core/internal/application/property"
 	"gorm.io/gorm"
 
 	domainentry "github.com/voyager-labs/voyager-app/apps/entry-core/internal/domain/entry"
@@ -341,5 +343,65 @@ func TestPropertySaveAssignmentsHandlesLargeManyBatches(t *testing.T) {
 		if len(fact.Many) != 256 {
 			t.Fatalf("ref %v values = %d, want 256", ref, len(fact.Many))
 		}
+	}
+}
+
+// overlay 조회의 행 예산을 넘는 교차는 적재 전에 실패 닫기한다. 256 entry ×
+// many assignment가 수백만 value 행을 적재하는 것을 차단하는 계약이다.
+func TestPropertyLoadAssignmentsCappedRejectsBudgetExcess(t *testing.T) {
+	ctx := context.Background()
+	store := migratedStore(t)
+	defer store.Close()
+	fx := buildPropertyFixture(t, store)
+
+	textManyID := domainentry.MustPropertyID("0198c0de-f00d-7000-8000-3b9ac9e17777")
+	now := time.Now()
+	if err := store.db.Create(&WorkspacePropertyDefinitionRow{
+		WorkspaceID: fx.wsctx.ID.Bytes(), PropertyID: textManyID.Bytes(),
+		Origin: "built_in", IdentityScheme: string(domainentry.PropertyIdentitySchemeVoyagerIssued),
+		Namespace: "system", CanonicalKey: "test.text_many_cap", DisplayName: "Text many cap",
+		ValueType: "text", Cardinality: "many", Nullable: false, Editable: true,
+		DefinitionRev: 1, LifecycleState: "active", CreatedAt: now, UpdatedAt: now,
+	}).Error; err != nil {
+		t.Fatalf("create definition: %v", err)
+	}
+	contract := domainentry.AssignmentContract{Type: domainentry.PropertyTypeText, Cardinality: domainentry.PropertyCardinalityMany}
+	repo := NewEntryPropertyRepository(store)
+
+	entryIDs := make([]string, 0, 258)
+	for entryIndex := range 258 {
+		entryID := testEntryID(entryIndex + 200)
+		entryIDs = append(entryIDs, entryID)
+		members := make([]domainentry.OrderedAssignmentValue, 4)
+		for ordinal := range members {
+			text := fmt.Sprintf("v-%d-%d", entryIndex, ordinal)
+			members[ordinal] = domainentry.OrderedAssignmentValue{Ordinal: ordinal, Value: domainentry.AssignmentValue{Text: &text}}
+		}
+		fact := domainentry.ImplicitUnsetEntryPropertyAssignment(fx.wsctx.ID, entryID, textManyID)
+		fact.RecordRevision = 1
+		fact.ValueContractRevision = 1
+		fact.TargetKind = domainentry.AssignmentTargetLocatorDerived
+		fact.State = domainentry.AssignmentStateValue
+		fact.Many = members
+		validated, err := domainentry.NewEntryPropertyAssignment(fact, contract)
+		if err != nil {
+			t.Fatalf("stage fact %d: %v", entryIndex, err)
+		}
+		if err := repo.SaveAssignments(ctx, fx.wsctx, []domainentry.EntryPropertyAssignment{validated}); err != nil {
+			t.Fatalf("save fact %d: %v", entryIndex, err)
+		}
+	}
+
+	if _, err := repo.LoadAssignmentsCapped(ctx, fx.wsctx, entryIDs, []domainentry.PropertyID{textManyID}, 256); !errors.Is(err, applicationproperty.ErrScopeTooLarge) {
+		t.Fatalf("258 headers over budget 256 = %v, want ErrScopeTooLarge", err)
+	}
+
+	// 예산 내 요청은 정상 반환된다.
+	within, err := repo.LoadAssignmentsCapped(ctx, fx.wsctx, entryIDs[:256], []domainentry.PropertyID{textManyID}, 256)
+	if err != nil {
+		t.Fatalf("within budget = %v", err)
+	}
+	if len(within) != 256 {
+		t.Fatalf("within budget facts = %d, want 256", len(within))
 	}
 }

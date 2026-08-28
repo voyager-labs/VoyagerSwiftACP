@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"context"
+	applicationproperty "github.com/voyager-labs/voyager-app/apps/entry-core/internal/application/property"
 	"strings"
 
 	"gorm.io/gorm"
@@ -66,6 +67,22 @@ func (r *EntryPropertyRepository) LoadAssignmentsPage(
 		db = scope.tx.WithContext(ctx)
 	}
 	return LoadEntryPropertyAssignmentsPage(db, wsctx, entryID, requestedIDs, after, limit)
+}
+
+// LoadAssignmentsCapped는 overlay 조회의 행 예산 버전이다. 자세한 계약은
+// LoadEntryPropertyAssignmentsCapped다.
+func (r *EntryPropertyRepository) LoadAssignmentsCapped(
+	ctx context.Context,
+	wsctx domainentry.WorkspaceContext,
+	entryIDs []string,
+	propertyIDs []domainentry.PropertyID,
+	maxHeaders int,
+) ([]domainentry.EntryPropertyAssignment, error) {
+	db := r.store.db.WithContext(ctx)
+	if scope, ok := ctx.Value(txScopeKey{}).(*txScope); ok && scope != nil && scope.tx != nil {
+		db = scope.tx.WithContext(ctx)
+	}
+	return LoadEntryPropertyAssignmentsCapped(db, wsctx, entryIDs, propertyIDs, maxHeaders)
 }
 
 // LoadAssignmentsByRefs는 exact-pair change 경로 읽기다. 자세한 계약은
@@ -497,4 +514,75 @@ func LoadEntryPropertyAssignmentsPage(
 	}
 	next := pageIDs[len(pageIDs)-1]
 	return facts, &next, hasMore, nil
+}
+
+// maximumPropertyManyItems는 many 값의 멤버 상한이다(protocol maximumPropertyManyItems와 동일).
+const maximumPropertyManyItems = 256
+
+// LoadEntryPropertyAssignmentsCapped는 overlay 조회용 행 예산 버전이다. 헤더
+// 행과 값 행이 각각 상한을 넘으면 적재 전에 ErrScopeTooLarge로 실패 닫기한다 —
+// 256 entry × 256 property 교차가 65,536 header와 many value 수백만 행을
+// 적재하는 것을 차단한다. durable row가 없는 property는 결과에서 제외된다.
+func LoadEntryPropertyAssignmentsCapped(
+	db *gorm.DB,
+	wsctx domainentry.WorkspaceContext,
+	entryIDs []string,
+	propertyIDs []domainentry.PropertyID,
+	maxHeaders int,
+) ([]domainentry.EntryPropertyAssignment, error) {
+	if wsctx.ID == (domainentry.WorkspaceID{}) {
+		return nil, ErrInvalidPropertyRow
+	}
+	wsBytes := wsctx.ID.Bytes()
+	scope := func(db *gorm.DB) *gorm.DB {
+		query := db.Where("workspace_id = ?", wsBytes)
+		if len(entryIDs) > 0 {
+			query = query.Where("entry_id IN ?", entryIDs)
+		}
+		if filter := propertyIDFilter(propertyIDs); filter != "" {
+			query = query.Where(filter, idFilterArg(propertyIDs))
+		}
+		return query
+	}
+	var headerRows []EntryPropertyAssignmentRow
+	if err := scope(db.Model(&EntryPropertyAssignmentRow{})).Order("entry_id ASC, property_id ASC").
+		Limit(maxHeaders + 1).Find(&headerRows).Error; err != nil {
+		return nil, err
+	}
+	if len(headerRows) > maxHeaders {
+		return nil, applicationproperty.ErrScopeTooLarge
+	}
+	var valueRows []EntryPropertyAssignmentValueRow
+	if err := scope(db.Model(&EntryPropertyAssignmentValueRow{})).
+		Order("entry_id ASC, property_id ASC, ordinal ASC").
+		Limit(maxHeaders*maximumPropertyManyItems + 1).Find(&valueRows).Error; err != nil {
+		return nil, err
+	}
+	if len(valueRows) > maxHeaders*maximumPropertyManyItems {
+		return nil, applicationproperty.ErrScopeTooLarge
+	}
+
+	var defRows []WorkspacePropertyDefinitionRow
+	if err := db.Where("workspace_id = ?", wsBytes).Where(propertyIDFilter(propertyIDs), idFilterArg(propertyIDs)).
+		Find(&defRows).Error; err != nil {
+		return nil, err
+	}
+	var optionRows []WorkspacePropertyOptionRow
+	if err := db.Where("workspace_id = ?", wsBytes).Where(propertyIDFilter(propertyIDs), idFilterArg(propertyIDs)).
+		Find(&optionRows).Error; err != nil {
+		return nil, err
+	}
+
+	result, err := assembleEntryPropertyAssignments(headerRows, valueRows, defRows, optionRows)
+	if err != nil {
+		return nil, err
+	}
+	facts := make([]domainentry.EntryPropertyAssignment, 0, len(result))
+	for _, fact := range result {
+		if fact.RecordRevision == 0 {
+			continue
+		}
+		facts = append(facts, fact)
+	}
+	return facts, nil
 }

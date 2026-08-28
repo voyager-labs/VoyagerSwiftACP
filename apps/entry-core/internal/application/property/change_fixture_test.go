@@ -92,6 +92,17 @@ func (store *memFactStore) LoadAssignmentsPage(_ context.Context, workspace doma
 	return facts, next, hasMore, nil
 }
 
+func (store *memFactStore) LoadAssignmentsCapped(_ context.Context, workspace domainentry.WorkspaceContext, entryIDs []string, propertyIDs []domainentry.PropertyID, maxHeaders int) ([]domainentry.EntryPropertyAssignment, error) {
+	facts, err := store.LoadAssignments(context.Background(), workspace, entryIDs, propertyIDs)
+	if err != nil {
+		return nil, err
+	}
+	if len(facts) > maxHeaders {
+		return nil, ErrScopeTooLarge
+	}
+	return facts, nil
+}
+
 func (store *memFactStore) LoadAssignmentsByRefs(_ context.Context, workspace domainentry.WorkspaceContext, refs []AssignmentRef) ([]domainentry.EntryPropertyAssignment, error) {
 	if err := ValidateWorkspaceContext(workspace); err != nil {
 		return nil, err

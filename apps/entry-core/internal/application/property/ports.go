@@ -51,6 +51,9 @@ type AssignmentFactRepository interface {
 	// LoadAssignmentsPage는 assignment.list의 저장소 단계 페이징이다. page_size
 	// 적용 전 전체 header/value/정의 적재를 차단한다.
 	LoadAssignmentsPage(ctx context.Context, workspace domainentry.WorkspaceContext, entryID string, requestedIDs []domainentry.PropertyID, after *domainentry.PropertyID, limit int) ([]domainentry.EntryPropertyAssignment, *domainentry.PropertyID, bool, error)
+	// LoadAssignmentsCapped는 overlay 조회의 행 예산 버전이다. 헤더·값 행이
+	// 상한을 넘으면 ErrScopeTooLarge로 적재 전 실패 닫기한다.
+	LoadAssignmentsCapped(ctx context.Context, workspace domainentry.WorkspaceContext, entryIDs []string, propertyIDs []domainentry.PropertyID, maxHeaders int) ([]domainentry.EntryPropertyAssignment, error)
 	LoadAssignmentsByRefs(ctx context.Context, workspace domainentry.WorkspaceContext, refs []AssignmentRef) ([]domainentry.EntryPropertyAssignment, error)
 	SaveAssignments(ctx context.Context, workspace domainentry.WorkspaceContext, facts []domainentry.EntryPropertyAssignment) error
 }

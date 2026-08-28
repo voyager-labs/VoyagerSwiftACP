@@ -113,6 +113,29 @@ func (s *EntryPropertyFactStore) LoadAssignmentsPage(
 	return ordered, next, hasMore, nil
 }
 
+// LoadAssignmentsCapped는 overlay 조회의 행 예산 버전을 위임한다. 제외 규칙은
+// LoadAssignments와 동일하다.
+func (s *EntryPropertyFactStore) LoadAssignmentsCapped(
+	ctx context.Context,
+	workspace domainentry.WorkspaceContext,
+	entryIDs []string,
+	propertyIDs []domainentry.PropertyID,
+	maxHeaders int,
+) ([]domainentry.EntryPropertyAssignment, error) {
+	facts, err := s.repository.LoadAssignmentsCapped(ctx, workspace, entryIDs, propertyIDs, maxHeaders)
+	if err != nil {
+		return nil, err
+	}
+	ordered := make([]domainentry.EntryPropertyAssignment, 0, len(facts))
+	for _, fact := range facts {
+		if fact.RecordRevision == 0 {
+			continue
+		}
+		ordered = append(ordered, fact)
+	}
+	return ordered, nil
+}
+
 // SaveAssignments는 fact 배치를 하나의 원자적 트랜잭션으로 위임한다.
 func (s *EntryPropertyFactStore) SaveAssignments(
 	ctx context.Context,
