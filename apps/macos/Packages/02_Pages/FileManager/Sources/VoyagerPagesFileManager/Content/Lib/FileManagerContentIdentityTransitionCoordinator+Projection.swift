@@ -174,18 +174,13 @@ extension FileManagerContentIdentityTransitionCoordinator {
         on action: FileManagerContentAction,
         state: inout FileManagerContentState,
     ) {
-        guard let transition = state.pendingIdentityTransition,
-              case let .folder(expectedID, expectedGeneration) = transition.projectionOwner
-        else { return }
-        guard ownerIsCurrent(transition.projectionOwner, state: state) else {
-            discard(state: &state)
-            return
-        }
         // additional destination 폴더의 terminal도 소비 지점이다: 모든 pair가 해소됐고
-        // 해당 폴더가 실제로 coreFinished에 도달했으면 전이를 닫는다.
+        // 해당 폴더가 실제로 coreFinished에 도달했으면 전이를 닫는다. primary 종류와 무관하게
+        // 판정해야 root primary + folder additional 조합도 닫을 수 있다.
         if case let .entryViewLayout(.hierarchy(.folderChildrenResponse(
             _, additionalFolderID, _, .event(.coreFinished),
         ))) = action,
+            let transition = state.pendingIdentityTransition,
             transition.additionalMoves.allSatisfy(\.migrated),
             transition.additionalMoves.contains(where: { pair in
                 guard case let .folder(id, _) = pair.destinationOwner else { return false }
@@ -193,6 +188,13 @@ extension FileManagerContentIdentityTransitionCoordinator {
             }),
             state.entryViewLayout.hierarchy.nodesByID[additionalFolderID]?.folder.coreFinished == true
         {
+            discard(state: &state)
+            return
+        }
+        guard let transition = state.pendingIdentityTransition,
+              case let .folder(expectedID, expectedGeneration) = transition.projectionOwner
+        else { return }
+        guard ownerIsCurrent(transition.projectionOwner, state: state) else {
             discard(state: &state)
             return
         }

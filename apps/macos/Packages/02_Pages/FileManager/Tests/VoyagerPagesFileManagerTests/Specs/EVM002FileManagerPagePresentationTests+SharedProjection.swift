@@ -1015,9 +1015,23 @@ extension EVM002FileManagerPagePresentationTests {
             guard case let .entryViewLayout(.view(.applyContentProjection(projection))) = action else {
                 return false
             }
+            print(
+                "DBG proj:",
+                projection.entries.map(\.id),
+                "sel:",
+                store.state.entryViewLayout.selectedIds,
+                "alive:",
+                store.state.pendingIdentityTransition != nil,
+            )
             return projection.entries.map(\.id) == [lexicalBefore]
         }
 
+        print(
+            "DBG end sel:",
+            store.state.entryViewLayout.selectedIds,
+            "alive:",
+            store.state.pendingIdentityTransition != nil,
+        )
         XCTAssertEqual(
             store.state.entryViewLayout.selectedIds,
             [lexicalBefore],

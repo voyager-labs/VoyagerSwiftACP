@@ -109,54 +109,32 @@ enum FileManagerContentIdentityTransitionCoordinator {
         // 다중 이동 전이: 자체 destination owner를 가진 추가 이동은 해당 owner의 batch에서
         // 개별 migration한다. primary 검증에 앞서 폴더 경로로 정합성을 판정해 undo처럼
         // destination이 서로 다른 이동도 각자의 batch에서 선택을 옮길 수 있다.
-        var migratedPair = false
-        for index in transition.additionalMoves.indices {
-            guard let pairDestination = transition.additionalMoves[index].destinationOwner,
-                  !transition.additionalMoves[index].migrated,
-                  Self.pairOwner(pairDestination, projectsBatch: projectionOwner)
-            else { continue }
-            let move = transition.additionalMoves[index]
-            let pairBefore = move.beforeLexicalPath.isEmpty ? move.beforePath : move.beforeLexicalPath
-            guard let additionalBeforeID = state.entryViewLayout.selectedIds.first(where: {
-                standardizedPath($0) == standardizedPath(pairBefore)
-            }) else { continue }
-            let additionalAfter = move.afterLexicalPath.isEmpty ? move.afterPath : move.afterLexicalPath
-            guard let additionalAfterID = entries.first(where: {
-                standardizedPath($0.id) == standardizedPath(additionalAfter)
-            })?.id else { continue }
-            state.entryViewLayout.selectedIds.remove(additionalBeforeID)
-            state.entryViewLayout.selectedIds.insert(additionalAfterID)
-            transition.additionalMoves[index].migrated = true
-            migratedPair = true
-        }
+        let migratedPair = migrateOwnerScopedPairs(entries: entries, batchOwner: projectionOwner, state: &state)
         if migratedPair {
+            transition = state.pendingIdentityTransition ?? transition
             state.pendingIdentityTransition = transition
         }
-        guard validateProjectionOwner(
-            transition.projectionOwner,
-            actual: projectionOwner,
-            state: &state,
-        ) else {
+        guard var transition = state.pendingIdentityTransition,
+              validateProjectionOwner(
+                  transition.projectionOwner,
+                  actual: projectionOwner,
+                  state: &state,
+              )
+        else {
             // owner-scoped migration 후 primary 소유자 불일치여도 소비는
             // additional destination terminal(resolveFolderTransition)이 담당한다.
+            // 다만 이번 batch에서 migration된 pair의 source staging은 즉시 커밋한다.
+            if migratedPair {
+                commitMigratedSourceStagings(transition: transition, state: &state)
+            }
             return false
         }
         // 다중 이동 전이: primary 소유자를 따르는 추가 이동은 primary 검증 뒤 이번 배치에서 함께 옮겨
         // buffered reload terminal의 projection reconcile이 남은 before ID를 지우지 않게 한다.
         // after 매칭은 primary와 동일하게 lexical 행 identity 기준이다(symlink rename 대응).
-        print("DBG nil-owner loop count:", transition.additionalMoves.count)
-        for move in transition.additionalMoves where move.destinationOwner == nil {
-            let pairBefore = move.beforeLexicalPath.isEmpty ? move.beforePath : move.beforeLexicalPath
-            print("DBG pair:", move.beforePath, move.beforeLexicalPath, "selected:", state.entryViewLayout.selectedIds)
-            guard let additionalBeforeID = state.entryViewLayout.selectedIds.first(where: {
-                standardizedPath($0) == standardizedPath(pairBefore)
-            }) else { continue }
-            let additionalAfter = move.afterLexicalPath.isEmpty ? move.afterPath : move.afterLexicalPath
-            guard let additionalAfterID = entries.first(where: {
-                standardizedPath($0.id) == standardizedPath(additionalAfter)
-            })?.id else { continue }
-            state.entryViewLayout.selectedIds.remove(additionalBeforeID)
-            state.entryViewLayout.selectedIds.insert(additionalAfterID)
+        let primaryOwnedMigrated = migratePrimaryOwnedPairs(entries: entries, state: &state)
+        if let updated = state.pendingIdentityTransition {
+            transition = updated
         }
         // primary before는 raw lexical ID로만 매칭한다. canonical 비교는 rename된 symlink와
         // 그 target을 같은 identity로 묶어 target 선택을 잘못 교체할 수 있다.
@@ -187,39 +165,11 @@ enum FileManagerContentIdentityTransitionCoordinator {
         state.entryViewLayout.selectedIds.insert(matchedAfterID)
         state.entryViewLayout.lastSelectedId = matchedAfterID
         state.entryViewLayout.rangeAnchorId = matchedAfterID
-        /// takeDeferredFolderReplacement는 이미 staging을 제거하므로, 빈 snapshot도
-        /// authoritative 결과로 커밋해 retained before 행이 terminal 뒤에 남지 않게 한다.
-        /// 단 이번 세대에 generic 적용이 먼저 일어난 폴더(hasAppliedContentBatch=true)의
-        /// 실제 children을 빈 staging으로 덮어쓰지 않는다.
-        func commitPreservationStaging(_ preservationID: EntryModel.ID) {
-            guard var targetNode = state.entryViewLayout.hierarchy.nodesByID[preservationID],
-                  let staged = state.entryViewLayout.hierarchy.takeDeferredFolderReplacement(folderID: preservationID),
-                  !targetNode.folder.hasAppliedContentBatch
-            else { return }
-            // 비종료 empty staging은 authoritative하지 않다: 빈 첫 batch 뒤 non-empty batch나
-            // 실패가 올 수 있으므로 retained children을 유지하고 terminal 확정에 맡긴다
-            // (applyCoreFinished의 empty 결과 기준과 동일).
-            let isTerminalStaging = !staged.isEmpty || targetNode.folder.coreFinished
-            // 실패한 소스 스트림이 남긴 부분 staging은 불완전 목록이라 커밋하지 않고 폐기한다.
-            if case .failed = targetNode.loadPhase {} else if isTerminalStaging {
-                targetNode.folder.children = staged
-                targetNode.folder.hasAppliedContentBatch = true
-                state.entryViewLayout.hierarchy.nodesByID[preservationID] = targetNode
-                // 이동 전 경로의 stale 로드 하위 node를 정리해 재확장 시 과거 캐시 재사용을 막는다.
-                state.entryViewLayout.hierarchy.reconcileNodesAfterMigrationCommit(folderID: preservationID)
-            }
-        }
-        if case let .folder(preservationID, _) = transition.preservationOwner {
-            commitPreservationStaging(preservationID)
-        }
-        // 다중 이동: 각 additional 이동의 source 폴더 staging도 같은 계약으로 커밋한다.
-        for move in transition.additionalMoves {
-            guard case let .folder(sourceID, _) = move.sourceOwner else { continue }
-            commitPreservationStaging(sourceID)
-        }
+        commitMigratedSourceStagings(transition: transition, state: &state)
         if case .root = projectionOwner, !hasPendingDestinationPairs(state) {
             discard(state: &state)
         }
+        _ = primaryOwnedMigrated
         return true
     }
 
@@ -254,14 +204,21 @@ enum FileManagerContentIdentityTransitionCoordinator {
 
     static func rebaseForNextRootReload(state: inout FileManagerContentState) {
         guard var transition = state.pendingIdentityTransition else { return }
-        func rebased(_ owner: FileManagerContentState.EntryIdentityTransitionProjectionOwner)
-            -> FileManagerContentState.EntryIdentityTransitionProjectionOwner
+        func rebased(_ owner: FileManagerContentState.EntryIdentityTransitionProjectionOwner?)
+            -> FileManagerContentState.EntryIdentityTransitionProjectionOwner?
         {
             guard case let .root(generation) = owner else { return owner }
             return .root(generation: generation &+ 1)
         }
-        transition.projectionOwner = rebased(transition.projectionOwner)
-        transition.preservationOwner = transition.preservationOwner.map(rebased)
+        transition.projectionOwner = rebased(transition.projectionOwner) ?? transition.projectionOwner
+        transition.preservationOwner = rebased(transition.preservationOwner)
+        // additional 이동의 root 소유자(source/destination)도 같은 reload 경계에서 재기준화한다.
+        for index in transition.additionalMoves.indices {
+            transition.additionalMoves[index].sourceOwner = rebased(transition.additionalMoves[index].sourceOwner)
+            transition.additionalMoves[index].destinationOwner = rebased(
+                transition.additionalMoves[index].destinationOwner,
+            )
+        }
         state.pendingIdentityTransition = transition
     }
 
@@ -322,6 +279,113 @@ enum FileManagerContentIdentityTransitionCoordinator {
 
     static func canonicalizedPath(_ path: String) -> String {
         URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath().path
+    }
+
+    /// 자체 destination owner가 이번 batch 소유자와 일치하는 additional pair를 migration한다.
+    private static func migrateOwnerScopedPairs(
+        entries: [EntryModel],
+        batchOwner: FileManagerContentState.EntryIdentityTransitionProjectionOwner,
+        state: inout FileManagerContentState,
+    ) -> Bool {
+        guard var transition = state.pendingIdentityTransition else { return false }
+        var migratedPair = false
+        for index in transition.additionalMoves.indices {
+            guard let pairDestination = transition.additionalMoves[index].destinationOwner,
+                  !transition.additionalMoves[index].migrated,
+                  pairOwner(pairDestination, projectsBatch: batchOwner)
+            else { continue }
+            let move = transition.additionalMoves[index]
+            let pairBefore = move.beforeLexicalPath.isEmpty ? move.beforePath : move.beforeLexicalPath
+            guard let additionalBeforeID = state.entryViewLayout.selectedIds.first(where: {
+                standardizedPath($0) == standardizedPath(pairBefore)
+            }) else { continue }
+            let additionalAfter = move.afterLexicalPath.isEmpty ? move.afterPath : move.afterLexicalPath
+            guard let additionalAfterID = entries.first(where: {
+                standardizedPath($0.id) == standardizedPath(additionalAfter)
+            })?.id else { continue }
+            state.entryViewLayout.selectedIds.remove(additionalBeforeID)
+            state.entryViewLayout.selectedIds.insert(additionalAfterID)
+            transition.additionalMoves[index].migrated = true
+            migratedPair = true
+        }
+        if migratedPair {
+            state.pendingIdentityTransition = transition
+        }
+        return migratedPair
+    }
+
+    /// primary destination을 따르는 additional pair를 이번 batch에서 migration한다.
+    @discardableResult
+    private static func migratePrimaryOwnedPairs(
+        entries: [EntryModel],
+        state: inout FileManagerContentState,
+    ) -> Bool {
+        guard var transition = state.pendingIdentityTransition else { return false }
+        var migrated = false
+        for index in transition.additionalMoves.indices
+            where transition.additionalMoves[index].destinationOwner == nil
+        {
+            let move = transition.additionalMoves[index]
+            let pairBefore = move.beforeLexicalPath.isEmpty ? move.beforePath : move.beforeLexicalPath
+            guard let additionalBeforeID = state.entryViewLayout.selectedIds.first(where: {
+                standardizedPath($0) == standardizedPath(pairBefore)
+            }) else { continue }
+            let additionalAfter = move.afterLexicalPath.isEmpty ? move.afterPath : move.afterLexicalPath
+            guard let additionalAfterID = entries.first(where: {
+                standardizedPath($0.id) == standardizedPath(additionalAfter)
+            })?.id else { continue }
+            state.entryViewLayout.selectedIds.remove(additionalBeforeID)
+            state.entryViewLayout.selectedIds.insert(additionalAfterID)
+            transition.additionalMoves[index].migrated = true
+            migrated = true
+        }
+        if migrated {
+            state.pendingIdentityTransition = transition
+        }
+        return migrated
+    }
+
+    /// migration이 완료된 pair의 source 폴더 staging을 커밋한다.
+    /// 아직 migration하지 않은 pair의 source는 보류해 before 선택이 조기에 제거되지 않게 한다.
+    private static func commitMigratedSourceStagings(
+        transition: FileManagerContentState.EntryIdentityTransition,
+        state: inout FileManagerContentState,
+    ) {
+        let unmigratedSourceFolderIDs = Set(transition.additionalMoves.compactMap { move -> EntryModel.ID? in
+            guard !move.migrated, case let .folder(id, _) = move.sourceOwner else { return nil }
+            return id
+        })
+        if case let .folder(preservationID, _) = transition.preservationOwner,
+           !unmigratedSourceFolderIDs.contains(preservationID)
+        {
+            commitPreservationStaging(preservationID, state: &state)
+        }
+        for move in transition.additionalMoves where move.migrated {
+            guard case let .folder(sourceID, _) = move.sourceOwner else { continue }
+            commitPreservationStaging(sourceID, state: &state)
+        }
+    }
+
+    private static func commitPreservationStaging(
+        _ preservationID: EntryModel.ID,
+        state: inout FileManagerContentState,
+    ) {
+        guard var targetNode = state.entryViewLayout.hierarchy.nodesByID[preservationID],
+              let staged = state.entryViewLayout.hierarchy.takeDeferredFolderReplacement(folderID: preservationID),
+              !targetNode.folder.hasAppliedContentBatch
+        else { return }
+        // 비종료 empty staging은 authoritative하지 않다: 빈 첫 batch 뒤 non-empty batch나
+        // 실패가 올 수 있으므로 retained children을 유지하고 terminal 확정에 맡긴다
+        // (applyCoreFinished의 empty 결과 기준과 동일).
+        let isTerminalStaging = !staged.isEmpty || targetNode.folder.coreFinished
+        // 실패한 소스 스트림이 남긴 부분 staging은 불완전 목록이라 커밋하지 않고 폐기한다.
+        if case .failed = targetNode.loadPhase {} else if isTerminalStaging {
+            targetNode.folder.children = staged
+            targetNode.folder.hasAppliedContentBatch = true
+            state.entryViewLayout.hierarchy.nodesByID[preservationID] = targetNode
+            // 이동 전 경로의 stale 로드 하위 node를 정리해 재확장 시 과거 캐시 재사용을 막는다.
+            state.entryViewLayout.hierarchy.reconcileNodesAfterMigrationCommit(folderID: preservationID)
+        }
     }
 
     /// pair의 destination 소유자가 이번 batch 소유자와 같은 대상(종류+경로)인지 판정한다.
