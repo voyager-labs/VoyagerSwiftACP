@@ -28,6 +28,10 @@ func fixtureEntryID(seed int) string {
 	return "ent:" + base64.RawURLEncoding.EncodeToString(digest[:])
 }
 
+func fixtureOptionID(seed int) string {
+	return fmt.Sprintf("00000000-0000-7000-8000-%012x", seed)
+}
+
 // ascendingUUID는 오름차순 배열 픽스처용 canonical UUID 텍스트다.
 // 네 번째 그룹 "8000"은 RFC 9562 variant 비트(0b10)를 강제한다.
 func ascendingUUID(n int) string {
@@ -62,7 +66,7 @@ func TestPropertyMethodContractCompleteness(t *testing.T) {
 	t.Parallel()
 
 	pid := fixturePropertyID(t, 1)
-	pid2 := fixturePropertyID(t, 2)
+	pid2 := fixtureOptionID(2)
 	changeTarget := fixtureChangeTargetJSON(pid)
 
 	methods := []struct {
@@ -204,7 +208,8 @@ func TestPropertyDefinitionMutationParamsMatrix(t *testing.T) {
 func TestPropertyOptionMutationParamsMatrix(t *testing.T) {
 	t.Parallel()
 
-	pid, oid := fixturePropertyID(t, 5), fixturePropertyID(t, 6)
+	pid, oid := fixturePropertyID(t, 5), fixtureOptionID(6)
+	wrongVersionOptionID := fixturePropertyID(t, 6)
 	tests := []struct {
 		name   string
 		method Method
@@ -215,10 +220,13 @@ func TestPropertyOptionMutationParamsMatrix(t *testing.T) {
 		{name: "create empty label", method: MethodPropertyOptionCreate, params: `{"property_id":"` + pid + `","expected_definition_revision":1,"label":""}`, want: ErrorInvalidRequest},
 		{name: "update happy", method: MethodPropertyOptionUpdate, params: `{"property_id":"` + pid + `","option_id":"` + oid + `","expected_definition_revision":1,"label":"l2"}`},
 		{name: "update bad option id", method: MethodPropertyOptionUpdate, params: `{"property_id":"` + pid + `","option_id":"zz","expected_definition_revision":1,"label":"l2"}`, want: ErrorInvalidRequest},
+		{name: "update wrong option id version", method: MethodPropertyOptionUpdate, params: `{"property_id":"` + pid + `","option_id":"` + wrongVersionOptionID + `","expected_definition_revision":1,"label":"l2"}`, want: ErrorInvalidRequest},
 		{name: "reorder happy", method: MethodPropertyOptionReorder, params: `{"property_id":"` + pid + `","expected_definition_revision":1,"option_ids":["` + oid + `"]}`},
+		{name: "reorder wrong option id version", method: MethodPropertyOptionReorder, params: `{"property_id":"` + pid + `","expected_definition_revision":1,"option_ids":["` + wrongVersionOptionID + `"]}`, want: ErrorInvalidRequest},
 		{name: "reorder duplicate ids", method: MethodPropertyOptionReorder, params: `{"property_id":"` + pid + `","expected_definition_revision":1,"option_ids":["` + oid + `","` + oid + `"]}`, want: ErrorInvalidRequest},
 		{name: "reorder empty ids", method: MethodPropertyOptionReorder, params: `{"property_id":"` + pid + `","expected_definition_revision":1,"option_ids":[]}`, want: ErrorInvalidRequest},
 		{name: "disable happy", method: MethodPropertyOptionDisable, params: `{"property_id":"` + pid + `","option_id":"` + oid + `","expected_definition_revision":1}`},
+		{name: "disable wrong option id version", method: MethodPropertyOptionDisable, params: `{"property_id":"` + pid + `","option_id":"` + wrongVersionOptionID + `","expected_definition_revision":1}`, want: ErrorInvalidRequest},
 		{name: "disable missing option id", method: MethodPropertyOptionDisable, params: `{"property_id":"` + pid + `","expected_definition_revision":1}`, want: ErrorInvalidRequest},
 	}
 	for _, test := range tests {
@@ -284,7 +292,8 @@ func TestPropertyChangeDesiredStateMatrix(t *testing.T) {
 	t.Parallel()
 
 	pid := fixturePropertyID(t, 7)
-	selectID := fixturePropertyID(t, 8)
+	selectID := fixtureOptionID(8)
+	wrongVersionOptionID := fixturePropertyID(t, 8)
 	target := func(desired string) string {
 		return `{"changes":[{"target":{"kind":"local_path","local_path":"/a"},"property_id":"` + pid + `","expected_definition_revision":1,"expected_assignment_revision":1,"desired":` + desired + `}]}`
 	}
@@ -299,6 +308,7 @@ func TestPropertyChangeDesiredStateMatrix(t *testing.T) {
 		{name: "value text one", desired: `{"state":"value","value_type":"text","cardinality":"one","value":"hello"}`},
 		{name: "value boolean many", desired: `{"state":"value","value_type":"boolean","cardinality":"many","value":[true,false]}`},
 		{name: "value select option id", desired: `{"state":"value","value_type":"select","cardinality":"one","value":"` + selectID + `"}`},
+		{name: "select value wrong option id version", desired: `{"state":"value","value_type":"select","cardinality":"one","value":"` + wrongVersionOptionID + `"}`, want: ErrorInvalidRequest},
 		{name: "error state not writable", desired: `{"state":"error"}`, want: ErrorInvalidRequest},
 		{name: "null with payload", desired: `{"state":"null","value":1}`, want: ErrorInvalidRequest},
 		{name: "value missing payload", desired: `{"state":"value","value_type":"text","cardinality":"one"}`, want: ErrorInvalidRequest},
@@ -550,7 +560,7 @@ func TestPropertyResultRejectsInvalidUnions(t *testing.T) {
 		{PropertyID: pid, Key: "", Name: "n", ValueType: "text", Cardinality: "one", State: "active", Revision: 1, Options: []PropertyOption{}},
 		{PropertyID: pid, Key: "k", Name: "n", ValueType: "text", Cardinality: "one", State: "active", Revision: 0, Options: []PropertyOption{}},
 		{PropertyID: pid, Key: "k", Name: "n", ValueType: "text", Cardinality: "one", State: "active", Revision: 1, Options: []PropertyOption{{OptionID: oidBad(), Label: "l", Position: 0, State: "active"}}},
-		{PropertyID: pid, Key: "k", Name: "n", ValueType: "text", Cardinality: "one", State: "active", Revision: 1, Options: []PropertyOption{{OptionID: fixturePropertyID(t, 601), Label: "l", Position: 0, State: "active"}}},
+		{PropertyID: pid, Key: "k", Name: "n", ValueType: "select", Cardinality: "one", State: "active", Revision: 1, Options: []PropertyOption{{OptionID: fixturePropertyID(t, 601), Label: "l", Position: 0, State: "active"}}},
 	}
 	for index, definition := range badDefinitions {
 		if definition.Validate() == nil {
@@ -652,7 +662,7 @@ func TestEncodedSuccessBytesExactness(t *testing.T) {
 	// 메타데이터 확장으로 봉투 초과: 옵션 200개 × 라벨 256바이트.
 	options := make([]PropertyOption, 200)
 	for index := range options {
-		options[index] = PropertyOption{OptionID: fixturePropertyID(t, 1000+index), Label: strings.Repeat("l", 256), Position: int64(index), State: "active"}
+		options[index] = PropertyOption{OptionID: fixtureOptionID(1000 + index), Label: strings.Repeat("l", 256), Position: int64(index), State: "active"}
 	}
 	fat := PropertyDefinitionListResult{Definitions: []PropertyDefinition{{PropertyID: pid, Key: "k", Name: "n", ValueType: "select", Cardinality: "one", State: "active", Revision: 1, Options: options}}, HasMore: false}
 	fatSize, fatFits := EncodedSuccessBytes("id", fat)

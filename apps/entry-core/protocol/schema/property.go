@@ -288,6 +288,10 @@ func validPropertyIDText(value string) bool {
 	}
 }
 
+func validPropertyOptionIDText(value string) bool {
+	return validPropertyIDText(value) && value[14] == '7'
+}
+
 func validPropertyValueType(value string) bool {
 	return oneOf(value, "text", "number", "date", "datetime", "boolean", "select")
 }
@@ -339,7 +343,7 @@ func validPropertyChangePayload(payload PropertyPayload, valueType, cardinality 
 		case "datetime":
 			return canonicalTimestamp(value)
 		case "select":
-			return validPropertyIDText(value)
+			return validPropertyOptionIDText(value)
 		default:
 			return false
 		}
@@ -419,7 +423,7 @@ func (definition PropertyDefinition) Validate() error {
 	}
 	seen := make(map[string]struct{}, len(definition.Options))
 	for index, option := range definition.Options {
-		if !validPropertyIDText(option.OptionID) || !validUTF8Bytes(option.Label, 1, maximumPropertyNameBytes) ||
+		if !validPropertyOptionIDText(option.OptionID) || !validUTF8Bytes(option.Label, 1, maximumPropertyNameBytes) ||
 			!oneOf(option.State, "active", "disabled") || option.Position < 0 {
 			return ErrInvalidResponse
 		}
@@ -558,6 +562,10 @@ func decodePropertyIDField(value jsonValue) (string, bool) {
 	return value.text, value.kind == jsonString && validPropertyIDText(value.text)
 }
 
+func decodePropertyOptionIDField(value jsonValue) (string, bool) {
+	return value.text, value.kind == jsonString && validPropertyOptionIDText(value.text)
+}
+
 func decodePropertyIDFilter(value jsonValue) ([]string, bool) {
 	if value.kind != jsonArray || len(value.items) > maximumPropertyIDs {
 		return nil, false
@@ -622,7 +630,7 @@ func decodePropertyChangePayload(value jsonValue, valueType, cardinality string)
 		case "datetime":
 			return item.text, item.kind == jsonString && canonicalTimestamp(item.text)
 		case "select":
-			return item.text, item.kind == jsonString && validPropertyIDText(item.text)
+			return item.text, item.kind == jsonString && validPropertyOptionIDText(item.text)
 		default:
 			return nil, false
 		}
@@ -777,7 +785,7 @@ func decodePropertyOptionUpdateParams(value jsonValue) (PropertyOptionUpdatePara
 		return PropertyOptionUpdateParams{}, ErrorInvalidRequest
 	}
 	propertyID, a := decodePropertyIDField(fields["property_id"])
-	optionID, b := decodePropertyIDField(fields["option_id"])
+	optionID, b := decodePropertyOptionIDField(fields["option_id"])
 	revision, c := decodeExpectedRevision(fields["expected_definition_revision"])
 	if !a || !b || !c || !validUTF8Bytes(fields["label"].text, 1, maximumPropertyNameBytes) {
 		return PropertyOptionUpdateParams{}, ErrorInvalidRequest
@@ -799,7 +807,7 @@ func decodePropertyOptionReorderParams(value jsonValue) (PropertyOptionReorderPa
 	optionIDs := make([]string, len(items))
 	seen := make(map[string]struct{}, len(items))
 	for index, item := range items {
-		text, valid := decodePropertyIDField(item)
+		text, valid := decodePropertyOptionIDField(item)
 		if !valid {
 			return PropertyOptionReorderParams{}, ErrorInvalidRequest
 		}
@@ -818,7 +826,7 @@ func decodePropertyOptionDisableParams(value jsonValue) (PropertyOptionDisablePa
 		return PropertyOptionDisableParams{}, ErrorInvalidRequest
 	}
 	propertyID, a := decodePropertyIDField(fields["property_id"])
-	optionID, b := decodePropertyIDField(fields["option_id"])
+	optionID, b := decodePropertyOptionIDField(fields["option_id"])
 	revision, c := decodeExpectedRevision(fields["expected_definition_revision"])
 	if !a || !b || !c {
 		return PropertyOptionDisableParams{}, ErrorInvalidRequest
