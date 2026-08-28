@@ -420,7 +420,11 @@ public struct FileManagerContentFeature {
             projectionOwner: projectionOwner,
             state: &state,
         )
-        guard identityMigrated else { return .none }
+        // 자체 destination owner를 가진 additional 이동이 이번 batch에서 migration됐으면
+        // primary 검증 결과와 무관하게 selection 동기화를 발행한다.
+        let additionalMigrated = state.pendingIdentityTransition?.additionalMoves
+            .contains { $0.destinationOwner != nil && $0.migrated } == true
+        guard identityMigrated || additionalMigrated else { return .none }
         return .send(.entryViewLayout(.delegate(.selectionChanged)))
     }
 
@@ -428,9 +432,26 @@ public struct FileManagerContentFeature {
         _ action: Action,
         state: inout State,
     ) -> Bool {
-        guard let transition = state.pendingIdentityTransition,
-              case let .root(generation) = transition.projectionOwner
-        else { return false }
+        guard let transition = state.pendingIdentityTransition else { return false }
+        // primary가 folder여도 root를 destination으로 하는 additional pair가 있으면
+        // buffered root reload의 terminal 커밋에서 해당 pair를 migration해야 한다.
+        var rootGeneration: Int?
+        if case let .root(generation) = transition.projectionOwner {
+            rootGeneration = generation
+        }
+        if rootGeneration == nil {
+            for move in transition.additionalMoves {
+                if case let .root(generation) = move.destinationOwner {
+                    rootGeneration = generation
+                    break
+                }
+            }
+        }
+        guard let generation = rootGeneration else { return false }
+        let hadRootPair = transition.additionalMoves.contains { move in
+            if case .root = move.destinationOwner { return true }
+            return false
+        }
 
         switch action {
         case let .entryViewLayout(.entryOperations(.loading(.streamFinished(streamGeneration)))):
@@ -438,18 +459,31 @@ public struct FileManagerContentFeature {
                   state.entryViewLayout.entryOperations.loadingContext.streamTerminal,
                   state.entryViewLayout.entryOperations.loadingContext.coreFinished
             else { return false }
-            return FileManagerContentIdentityTransitionCoordinator.migrateSelection(
+            let migrated = FileManagerContentIdentityTransitionCoordinator.migrateSelection(
                 entries: Array(state.entryViewLayout.entryOperations.items),
                 projectionOwner: .root(generation: streamGeneration),
                 state: &state,
             )
+            // migration 성공 여부와 무관하게 root pair가 있으면 terminal 처리 후 동기화를 발행하고
+            // 대기 pair가 없으면 전이를 닫는다.
+            if !FileManagerContentIdentityTransitionCoordinator.hasPendingDestinationPairs(state) {
+                FileManagerContentIdentityTransitionCoordinator.discard(state: &state)
+            }
+            return migrated || hadRootPair
 
         case let .entryViewLayout(.entryOperations(.loading(.streamFailed(streamGeneration)))):
             guard streamGeneration == generation,
                   state.entryViewLayout.entryOperations.loadingContext.streamTerminal,
                   state.entryViewLayout.entryOperations.loadingContext.isIncomplete
             else { return false }
-            FileManagerContentIdentityTransitionCoordinator.discard(state: &state)
+            // 폴더 destination pair가 아직 pending이면 폴더 stream의 migration 기회를 남겨둔다.
+            let hasFolderPairs = transition.additionalMoves.contains { move in
+                guard case .folder = move.destinationOwner else { return false }
+                return !move.migrated
+            }
+            if !hasFolderPairs {
+                FileManagerContentIdentityTransitionCoordinator.discard(state: &state)
+            }
             return false
 
         default:

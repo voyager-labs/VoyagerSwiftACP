@@ -59,6 +59,7 @@ enum FileManagerContentIdentityTransitionCoordinator {
                 FileManagerContentState.EntryMovePair(
                     beforePath: target.before,
                     afterPath: target.after,
+                    beforeLexicalPath: target.rawBefore,
                     afterLexicalPath: target.rawAfter,
                     sourceOwner: Self.preservationOwner(
                         beforePath: target.rawBefore,
@@ -115,8 +116,9 @@ enum FileManagerContentIdentityTransitionCoordinator {
                   Self.pairOwner(pairDestination, projectsBatch: projectionOwner)
             else { continue }
             let move = transition.additionalMoves[index]
+            let pairBefore = move.beforeLexicalPath.isEmpty ? move.beforePath : move.beforeLexicalPath
             guard let additionalBeforeID = state.entryViewLayout.selectedIds.first(where: {
-                canonicalizedPath($0) == move.beforePath
+                standardizedPath($0) == standardizedPath(pairBefore)
             }) else { continue }
             let additionalAfter = move.afterLexicalPath.isEmpty ? move.afterPath : move.afterLexicalPath
             guard let additionalAfterID = entries.first(where: {
@@ -134,13 +136,20 @@ enum FileManagerContentIdentityTransitionCoordinator {
             transition.projectionOwner,
             actual: projectionOwner,
             state: &state,
-        ) else { return false }
+        ) else {
+            // owner-scoped migration 후 primary 소유자 불일치여도 소비는
+            // additional destination terminal(resolveFolderTransition)이 담당한다.
+            return false
+        }
         // 다중 이동 전이: primary 소유자를 따르는 추가 이동은 primary 검증 뒤 이번 배치에서 함께 옮겨
         // buffered reload terminal의 projection reconcile이 남은 before ID를 지우지 않게 한다.
         // after 매칭은 primary와 동일하게 lexical 행 identity 기준이다(symlink rename 대응).
+        print("DBG nil-owner loop count:", transition.additionalMoves.count)
         for move in transition.additionalMoves where move.destinationOwner == nil {
+            let pairBefore = move.beforeLexicalPath.isEmpty ? move.beforePath : move.beforeLexicalPath
+            print("DBG pair:", move.beforePath, move.beforeLexicalPath, "selected:", state.entryViewLayout.selectedIds)
             guard let additionalBeforeID = state.entryViewLayout.selectedIds.first(where: {
-                canonicalizedPath($0) == move.beforePath
+                standardizedPath($0) == standardizedPath(pairBefore)
             }) else { continue }
             let additionalAfter = move.afterLexicalPath.isEmpty ? move.afterPath : move.afterLexicalPath
             guard let additionalAfterID = entries.first(where: {
@@ -220,8 +229,9 @@ enum FileManagerContentIdentityTransitionCoordinator {
         guard let transition = state.pendingIdentityTransition else { return false }
         return transition.additionalMoves.contains { move in
             guard move.destinationOwner != nil, !move.migrated else { return false }
+            let beforeIdentity = move.beforeLexicalPath.isEmpty ? move.beforePath : move.beforeLexicalPath
             return state.entryViewLayout.selectedIds.contains { selectedID in
-                canonicalizedPath(selectedID) == move.beforePath
+                standardizedPath(selectedID) == standardizedPath(beforeIdentity)
             }
         }
     }
