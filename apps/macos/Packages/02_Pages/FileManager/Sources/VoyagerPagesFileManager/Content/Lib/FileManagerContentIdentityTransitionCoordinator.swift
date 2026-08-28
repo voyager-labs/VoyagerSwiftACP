@@ -33,9 +33,17 @@ enum FileManagerContentIdentityTransitionCoordinator {
             )
         }
         let selectedMoves = movedTargets.filter { selectedPaths.contains($0.before) }
-        guard selectedMoves.count == 1, let move = selectedMoves.first else { return .none }
-        guard movedTargets.count(where: { $0.before == move.before }) == 1 else { return .none }
+        guard !selectedMoves.isEmpty else { return .none }
+        // 동일 before가 record 안에서 중복되면 신뢰할 수 없다. 중복 없는 이동만 보관하고,
+        // 첫 이동을 primary로 나머지를 additionalMoves로 함께 추적해 다중 선택도 유지한다.
+        let trustedMoves = selectedMoves.filter { move in
+            movedTargets.count(where: { $0.before == move.before }) == 1
+        }
+        guard let move = trustedMoves.first else { return .none }
         guard isSameOrDescendant(path: move.before, of: normalizedRoot) else { return .none }
+        let additionalMoves = trustedMoves.dropFirst()
+            .filter { isSameOrDescendant(path: $0.before, of: normalizedRoot) }
+            .map { FileManagerContentState.EntryMovePair(beforePath: $0.before, afterPath: $0.after) }
 
         let projectionOwner = makeProjectionOwner(
             afterPath: move.rawAfter,
@@ -60,6 +68,7 @@ enum FileManagerContentIdentityTransitionCoordinator {
             projectionOwner: projectionOwner,
             preservationOwner: preservationOwner,
             afterLexicalPath: move.rawAfter,
+            additionalMoves: additionalMoves,
         )
         return .none
     }
@@ -82,6 +91,18 @@ enum FileManagerContentIdentityTransitionCoordinator {
             actual: projectionOwner,
             state: &state,
         ) else { return false }
+        // 다중 이동 전이: primary와 별개로 이번 배치에 도착한 추가 이동도 함께 옮겨
+        // buffered reload terminal의 projection reconcile이 남은 before ID를 지우지 않게 한다.
+        for move in transition.additionalMoves {
+            guard let additionalBeforeID = state.entryViewLayout.selectedIds.first(where: {
+                canonicalizedPath($0) == move.beforePath
+            }) else { continue }
+            guard let additionalAfterID = entries.first(where: {
+                standardizedPath($0.id) == standardizedPath(move.afterPath)
+            })?.id else { continue }
+            state.entryViewLayout.selectedIds.remove(additionalBeforeID)
+            state.entryViewLayout.selectedIds.insert(additionalAfterID)
+        }
         let matchedBeforeID = state.entryViewLayout.selectedIds.first {
             canonicalizedPath($0) == transition.beforePath
         }
@@ -107,8 +128,12 @@ enum FileManagerContentIdentityTransitionCoordinator {
            let staged = state.entryViewLayout.hierarchy.takeDeferredFolderReplacement(folderID: preservationID),
            !targetNode.folder.hasAppliedContentBatch
         {
+            // 비종료 empty staging은 authoritative하지 않다: 빈 첫 batch 뒤 non-empty batch나
+            // 실패가 올 수 있으므로 retained children을 유지하고 terminal 확정에 맡긴다
+            // (applyCoreFinished의 empty 결과 기준과 동일).
+            let isTerminalStaging = !staged.isEmpty || targetNode.folder.coreFinished
             // 실패한 소스 스트림이 남긴 부분 staging은 불완전 목록이라 커밋하지 않고 폐기한다.
-            if case .failed = targetNode.loadPhase {} else {
+            if case .failed = targetNode.loadPhase {} else if isTerminalStaging {
                 targetNode.folder.children = staged
                 targetNode.folder.hasAppliedContentBatch = true
                 state.entryViewLayout.hierarchy.nodesByID[preservationID] = targetNode

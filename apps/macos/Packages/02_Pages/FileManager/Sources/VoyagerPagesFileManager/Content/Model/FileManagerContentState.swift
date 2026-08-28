@@ -32,6 +32,12 @@ public struct FileManagerContentState: Equatable {
         case folder(id: String, generation: Int)
     }
 
+    /// 다중 선택 이동에서 primary 외의 before→after 쌍.
+    struct EntryMovePair: Equatable {
+        let beforePath: String
+        let afterPath: String
+    }
+
     struct EntryIdentityTransition: Equatable {
         /// 전이의 원인이 된 EntryActionRecord 식별자
         let recordID: UUID
@@ -60,6 +66,8 @@ public struct FileManagerContentState: Equatable {
         /// 경로 비교는 canonical 기준으로 하되 재선택 ID는 lexical 표기를 유지한다
         /// (symlink 등 lexical 표기가 canonical과 다른 경로의 선택 손실 방지).
         var preservedLexicalBeforeID: String?
+        /// 같은 record로 함께 이동한 나머지 선택 항목의 before→after 쌍.
+        var additionalMoves: [EntryMovePair] = []
 
         init(
             recordID: UUID,
@@ -70,6 +78,7 @@ public struct FileManagerContentState: Equatable {
             projectionOwner: EntryIdentityTransitionProjectionOwner? = nil,
             preservationOwner: EntryIdentityTransitionProjectionOwner? = nil,
             afterLexicalPath: String = "",
+            additionalMoves: [EntryMovePair] = [],
         ) {
             self.recordID = recordID
             self.beforePath = beforePath
@@ -79,6 +88,7 @@ public struct FileManagerContentState: Equatable {
             self.projectionOwner = projectionOwner ?? .root(generation: refreshGeneration)
             self.preservationOwner = preservationOwner
             self.afterLexicalPath = afterLexicalPath
+            self.additionalMoves = additionalMoves
         }
     }
 
