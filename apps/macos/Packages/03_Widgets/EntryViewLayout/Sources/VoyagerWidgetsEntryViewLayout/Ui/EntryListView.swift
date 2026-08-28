@@ -37,6 +37,12 @@ public struct EntryListViewRepresentable: NSViewRepresentable {
 }
 
 final class EntryListSelectionRowView: NSTableRowView {
+    private var isGroupRow = false
+
+    func configure(isGroupRow: Bool) {
+        self.isGroupRow = isGroupRow
+    }
+
     override func accessibilityChildren() -> [Any]? {
         let nativeChildren = super.accessibilityChildren() ?? []
         let unrepresentedSubviews = subviews.filter { subview in
@@ -70,6 +76,12 @@ final class EntryListSelectionRowView: NSTableRowView {
             return
         }
 
+        if isGroupRow {
+            NSColor.controlBackgroundColor.setFill()
+            dirtyRect.fill()
+            return
+        }
+
         guard let tableView,
               tableView.row(for: self) % 2 == 1 else { return }
 
@@ -82,26 +94,208 @@ final class EntryListSelectionRowView: NSTableRowView {
     }
 }
 
+struct EntryListNativeSelectionContext {
+    let destinationOccurrence: AnyObject
+    let modifierFlags: NSEvent.ModifierFlags
+}
+
 public final class EntryListView: NSView {
+    enum ContextMenuSelectionHandling {
+        case native
+        case prepared
+        case suppressed
+    }
+
     @MainActor
     protocol EntryListTableViewContextMenuProviding: AnyObject {
+        func handleSelectionMouseDown(forRow row: Int, event: NSEvent, isDisclosureHit: Bool) -> Bool
+        func handleSelectionKeyDown(forRow row: Int, event: NSEvent) -> Bool
+        func prepareContextMenuSelection(
+            forRow row: Int,
+            event: NSEvent,
+            isDisclosureHit: Bool,
+        ) -> ContextMenuSelectionHandling
         func contextMenu(forRow row: Int?, event: NSEvent) -> NSMenu
     }
 
     final class EntryListTableView: NSOutlineView {
         weak var contextMenuProvider: EntryListTableViewContextMenuProviding?
         var blankSpaceContextMenuProvider: (() -> NSMenu)?
+        private(set) var activeSelectionOccurrence: AnyObject?
+        private(set) var rangeAnchorOccurrence: AnyObject?
+        private(set) var selectionTransactionGeneration: UInt = 0
+        private(set) var expectedSelectionSignature: IndexSet?
+        private(set) var isApplyingDisclosureSelectionTransaction = false
+        private var hasPendingDisclosureSelectionCallbacks = false
+        private var didBeginNativeDrag = false
+        private var pendingNativeSelectionContext: EntryListNativeSelectionContext?
+        private var pendingNativeSelectionOwner: UInt?
+
+        @discardableResult
+        func applyCanonicalSelection(
+            _ indexes: IndexSet,
+            activeOccurrence: AnyObject?,
+            anchorOccurrence: AnyObject?,
+        ) -> Bool {
+            let cursorUnchanged = activeSelectionOccurrence === activeOccurrence
+                && rangeAnchorOccurrence === anchorOccurrence
+            guard selectedRowIndexes != indexes
+                || expectedSelectionSignature != indexes
+                || !cursorUnchanged
+            else { return false }
+
+            selectionTransactionGeneration &+= 1
+            expectedSelectionSignature = indexes
+            hasPendingDisclosureSelectionCallbacks = false
+            activeSelectionOccurrence = activeOccurrence
+            rangeAnchorOccurrence = anchorOccurrence
+            pendingNativeSelectionContext = nil
+            selectRowIndexes(indexes, byExtendingSelection: false)
+            return true
+        }
+
+        func invalidateSelectionProjection() {
+            selectionTransactionGeneration &+= 1
+            expectedSelectionSignature = nil
+            activeSelectionOccurrence = nil
+            rangeAnchorOccurrence = nil
+            pendingNativeSelectionContext = nil
+        }
+
+        func invalidateSelectionProjectionIfNeeded() {
+            let hasStaleActive = activeSelectionOccurrence != nil && liveRow(for: activeSelectionOccurrence) == nil
+            let hasStaleAnchor = rangeAnchorOccurrence != nil && liveRow(for: rangeAnchorOccurrence) == nil
+            if hasStaleActive || hasStaleAnchor {
+                invalidateSelectionProjection()
+            }
+        }
+
+        func liveRow(for occurrence: AnyObject?) -> Int? {
+            guard let occurrence else { return nil }
+            let row = row(forItem: occurrence)
+            guard row >= 0,
+                  let currentOccurrence = item(atRow: row) as AnyObject?,
+                  currentOccurrence === occurrence
+            else { return nil }
+            return row
+        }
+
+        func shouldIgnoreSelectionCallback(_ signature: IndexSet) -> Bool {
+            guard let expectedSelectionSignature else { return false }
+            return signature == expectedSelectionSignature
+        }
+
+        @discardableResult
+        func beginNativeSelection(atRow row: Int, modifierFlags: NSEvent.ModifierFlags = []) -> Bool {
+            guard let occurrence = item(atRow: row) as AnyObject? else { return false }
+            expectedSelectionSignature = nil
+            hasPendingDisclosureSelectionCallbacks = false
+            pendingNativeSelectionContext = EntryListNativeSelectionContext(
+                destinationOccurrence: occurrence,
+                modifierFlags: modifierFlags,
+            )
+            return true
+        }
+
+        func endNativeSelection() {
+            pendingNativeSelectionContext = nil
+        }
+
+        func performDisclosureSelectionTransaction(_ operation: () -> Void) {
+            isApplyingDisclosureSelectionTransaction = true
+            prepareDisclosureSelectionCallbacks()
+            defer {
+                expectedSelectionSignature = selectedRowIndexes
+                isApplyingDisclosureSelectionTransaction = false
+            }
+            operation()
+        }
+
+        func prepareDisclosureSelectionCallbacks() {
+            hasPendingDisclosureSelectionCallbacks = true
+        }
+
+        var suppressesDisclosureSelectionCallback: Bool {
+            isApplyingDisclosureSelectionTransaction || hasPendingDisclosureSelectionCallbacks
+        }
+
+        func finishDisclosureSelectionSynchronization() {
+            hasPendingDisclosureSelectionCallbacks = false
+        }
+
+        func takeNativeSelectionContext() -> EntryListNativeSelectionContext? {
+            defer { pendingNativeSelectionContext = nil }
+            return pendingNativeSelectionContext
+        }
 
         override func mouseDown(with event: NSEvent) {
-            let location = convert(event.locationInWindow, from: nil)
-            if row(at: location) == -1 {
-                deselectAll(nil)
+            cancelPendingNativeSelection()
+            guard let hit = pointerHit(for: event) else { return }
+            if handleCustomSelectionMouseDown(event).boolValue {
+                return
+            }
+            let isGroupRow = if let item = item(atRow: hit.row) as? EntryListOutlineItem,
+                                case .group = item.kind
+            {
+                true
+            } else {
+                false
+            }
+            if hit.isDisclosure || isGroupRow {
+                performDisclosureSelectionTransaction { super.mouseDown(with: event) }
+                return
+            }
+            guard beginNativeSelection(atRow: hit.row, modifierFlags: event.modifierFlags) else {
+                cancelPendingNativeSelection()
+                return
+            }
+            let selectedRowsBeforeEvent = selectedRowIndexes
+            let selectedGroupRepresentsDestination = if event.modifierFlags.contains(.command),
+                                                        selectedRowsBeforeEvent.contains(hit.row),
+                                                        let destination = item(atRow: hit.row) as? EntryListOutlineItem,
+                                                        case let .entry(destinationEntry) = destination.kind
+            {
+                selectedRowsBeforeEvent.contains { selectedRow in
+                    guard let group = item(atRow: selectedRow) as? EntryListOutlineItem,
+                          case .group = group.kind
+                    else { return false }
+                    return group.orderedDistinctEntries().contains(where: { $0.id == destinationEntry.id })
+                }
+            } else {
+                false
             }
             super.mouseDown(with: event)
+            guard selectedGroupRepresentsDestination, selectedRowIndexes == selectedRowsBeforeEvent else {
+                cancelPendingNativeSelection()
+                return
+            }
+            let generation = selectionTransactionGeneration
+            scheduleNativeCommandToggle(row: hit.row, selectedRows: selectedRowsBeforeEvent, generation: generation)
+        }
+
+        override func draggingSession(_ session: NSDraggingSession, willBeginAt screenPoint: NSPoint) {
+            didBeginNativeDrag = true
+            super.draggingSession(session, willBeginAt: screenPoint)
+        }
+
+        @objc
+        func handleCustomSelectionMouseDown(_ event: NSEvent) -> NSNumber {
+            guard let hit = pointerHit(for: event) else { return true }
+            guard event.clickCount == 1,
+                  let contextMenuProvider
+            else {
+                return false
+            }
+            return NSNumber(value: contextMenuProvider.handleSelectionMouseDown(
+                forRow: hit.row,
+                event: event,
+                isDisclosureHit: hit.isDisclosure,
+            ))
         }
 
         override func keyDown(with event: NSEvent) {
-            let row = selectedRow
+            cancelPendingNativeSelection()
+            let row = liveRow(for: activeSelectionOccurrence) ?? selectedRow
             guard row >= 0, let specialKey = event.specialKey else {
                 super.keyDown(with: event)
                 return
@@ -111,24 +305,21 @@ public final class EntryListView: NSView {
             case .rightArrow:
                 let item = item(atRow: row)
                 if !isItemExpanded(item), isExpandable(item) {
-                    expandItem(item)
+                    performDisclosureSelectionTransaction { expandItem(item) }
                     return
                 }
             case .leftArrow:
                 let item = item(atRow: row)
                 if isItemExpanded(item) {
-                    collapseItem(item)
+                    performDisclosureSelectionTransaction { collapseItem(item) }
                     return
                 }
-            case .upArrow where row > 0:
-                let extending = event.modifierFlags.contains(.shift)
-                selectRowIndexes(IndexSet(integer: row - 1), byExtendingSelection: extending)
-                scrollRowToVisible(row - 1)
-                return
-            case .downArrow where row < numberOfRows - 1:
-                let extending = event.modifierFlags.contains(.shift)
-                selectRowIndexes(IndexSet(integer: row + 1), byExtendingSelection: extending)
-                scrollRowToVisible(row + 1)
+            case .upArrow, .downArrow:
+                let destinationRow = row + (specialKey == .upArrow ? -1 : 1)
+                guard (0 ..< numberOfRows).contains(destinationRow) else { return }
+                guard contextMenuProvider?.handleSelectionKeyDown(forRow: destinationRow, event: event) == true
+                else { break }
+                scrollRowToVisible(destinationRow)
                 return
             default:
                 break
@@ -137,21 +328,26 @@ public final class EntryListView: NSView {
         }
 
         override func rightMouseDown(with event: NSEvent) {
+            cancelPendingNativeSelection()
             let location = convert(event.locationInWindow, from: nil)
             let row = row(at: location)
 
             if row == -1 {
-                deselectAll(nil)
                 if let menu = blankSpaceContextMenuProvider?() {
                     NSMenu.popUpContextMenu(menu, with: event, for: self)
-                    return
                 }
-                super.rightMouseDown(with: event)
                 return
             }
 
-            if !selectedRowIndexes.contains(row) {
+            switch contextMenuSelectionHandling(for: event) {
+            case .suppressed:
+                return
+            case .native where !selectedRowIndexes.contains(row):
+                guard beginNativeSelection(atRow: row, modifierFlags: event.modifierFlags) else { return }
                 selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+                endNativeSelection()
+            case .native, .prepared:
+                break
             }
 
             guard let contextMenuProvider else {
@@ -161,6 +357,31 @@ public final class EntryListView: NSView {
 
             let menu = contextMenuProvider.contextMenu(forRow: row, event: event)
             NSMenu.popUpContextMenu(menu, with: event, for: self)
+        }
+
+        @objc
+        func handleCustomSelectionRightMouseDown(_ event: NSEvent) -> NSNumber {
+            NSNumber(value: contextMenuSelectionHandling(for: event) == .suppressed)
+        }
+
+        private func contextMenuSelectionHandling(for event: NSEvent) -> ContextMenuSelectionHandling {
+            guard let contextMenuProvider,
+                  let hit = pointerHit(for: event)
+            else {
+                return .native
+            }
+            return contextMenuProvider.prepareContextMenuSelection(
+                forRow: hit.row,
+                event: event,
+                isDisclosureHit: hit.isDisclosure,
+            )
+        }
+
+        private func pointerHit(for event: NSEvent) -> (row: Int, isDisclosure: Bool)? {
+            let location = convert(event.locationInWindow, from: nil)
+            let row = row(at: location)
+            guard row >= 0 else { return nil }
+            return (row, frameOfOutlineCell(atRow: row).contains(location))
         }
     }
 
@@ -173,8 +394,8 @@ public final class EntryListView: NSView {
                 .first(where: { $0.documentView is NSTableHeaderView })
             else { return }
 
-            headerClipView.drawsBackground = false
-            headerClipView.backgroundColor = NSColor.clear
+            headerClipView.drawsBackground = true
+            headerClipView.backgroundColor = NSColor.controlBackgroundColor
             for subview in headerClipView.subviews where !(subview is NSTableHeaderView) {
                 subview.isHidden = true
             }
@@ -316,5 +537,34 @@ public final class EntryListView: NSView {
 
         availableColumns[column] = tableColumn
         return tableColumn
+    }
+}
+
+private extension EntryListView.EntryListTableView {
+    func cancelPendingNativeSelection(ownedBy owner: UInt? = nil) {
+        if let owner, pendingNativeSelectionOwner != owner { return }
+        didBeginNativeDrag = false
+        pendingNativeSelectionOwner = nil
+        guard pendingNativeSelectionContext != nil else { return }
+        selectionTransactionGeneration &+= 1
+        endNativeSelection()
+    }
+
+    func scheduleNativeCommandToggle(row: Int, selectedRows: IndexSet, generation: UInt) {
+        pendingNativeSelectionOwner = generation
+        RunLoop.main.perform(inModes: [.default]) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                guard self.pendingNativeSelectionOwner == generation else { return }
+                defer { self.cancelPendingNativeSelection(ownedBy: generation) }
+                guard !self.didBeginNativeDrag,
+                      self.selectionTransactionGeneration == generation,
+                      self.selectedRowIndexes == selectedRows
+                else { return }
+                var toggledRows = selectedRows
+                toggledRows.remove(row)
+                self.selectRowIndexes(toggledRows, byExtendingSelection: false)
+            }
+        }
     }
 }

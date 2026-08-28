@@ -4,6 +4,358 @@ import UniformTypeIdentifiers
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
 
+extension EntryListOutlineItem {
+    func orderedDistinctEntries() -> [EntryModel] {
+        var seen: Set<EntryModel.ID> = []
+        return flattenEntries().compactMap { id, item in
+            guard seen.insert(id).inserted,
+                  case let .entry(entry) = item.kind
+            else { return nil }
+            return entry
+        }
+    }
+}
+
+struct EntryListCanonicalSelection: Equatable {
+    let ids: Set<EntryModel.ID>
+    let focus: EntryModel.ID?
+    let anchor: EntryModel.ID?
+}
+
+struct EntryListSelectionPlan {
+    let canonical: EntryListCanonicalSelection
+    let physicalRows: IndexSet
+    let activeOccurrence: EntryListOutlineItem?
+    let anchorOccurrence: EntryListOutlineItem?
+}
+
+extension EntryListCoordinator {
+    public func outlineView(_: NSOutlineView, shouldCollapseItem _: Any) -> Bool {
+        tableView.prepareDisclosureSelectionCallbacks()
+        return true
+    }
+
+    public func outlineView(_: NSOutlineView, shouldExpandItem _: Any) -> Bool {
+        tableView.prepareDisclosureSelectionCallbacks()
+        return true
+    }
+
+    func handleSelectionMouseDown(forRow row: Int, event: NSEvent, isDisclosureHit: Bool) -> Bool {
+        guard let item = tableView.item(atRow: row) as? OutlineItem else { return false }
+        guard !isDisclosureHit else { return false }
+        if event.modifierFlags.contains(.shift) {
+            guard isSelectable(item) else { return true }
+            applyRangeSelection(destination: item, destinationRow: row)
+            return true
+        }
+        switch item.kind {
+        case .group:
+            applyGroupSelection(item, commandPressed: event.modifierFlags.contains(.command))
+            return true
+        case .entry, .empty, .error:
+            return false
+        }
+    }
+
+    func handleSelectionKeyDown(forRow row: Int, event: NSEvent) -> Bool {
+        guard let item = tableView.item(atRow: row) as? OutlineItem,
+              isSelectable(item)
+        else { return false }
+        if event.modifierFlags.contains(.shift) {
+            applyRangeSelection(destination: item, destinationRow: row)
+        } else {
+            applyReplacementSelection(destination: item, destinationRow: row)
+        }
+        return true
+    }
+
+    func prepareContextMenuSelection(
+        forRow row: Int,
+        event _: NSEvent,
+        isDisclosureHit: Bool,
+    ) -> EntryListView.ContextMenuSelectionHandling {
+        guard let item = tableView.item(atRow: row) as? OutlineItem else { return .suppressed }
+        switch item.kind {
+        case .group:
+            guard !isDisclosureHit else { return .suppressed }
+            return applyGroupSelection(item, commandPressed: false).isEmpty ? .suppressed : .prepared
+        case .entry:
+            return .native
+        case .empty, .error:
+            return .suppressed
+        }
+    }
+
+    @discardableResult
+    func applyGroupSelection(_ item: OutlineItem, commandPressed: Bool) -> [EntryModel] {
+        let groupEntries = item.orderedDistinctEntries()
+        guard !groupEntries.isEmpty else { return [] }
+
+        let presentationIDs = orderedPresentationEntries().map(\.id)
+        let validIDs = Set(presentationIDs)
+        let groupIDs = Set(groupEntries.map(\.id))
+        var selectedIDs = state.selectedIds.intersection(validIDs)
+        let focus: EntryModel.ID?
+        let activeOccurrence: OutlineItem?
+
+        if commandPressed, groupIDs.isSubset(of: selectedIDs) {
+            selectedIDs.subtract(groupIDs)
+            focus = presentationIDs.last(where: selectedIDs.contains)
+            activeOccurrence = selectionOccurrence(for: focus, preserving: nil)
+        } else if commandPressed {
+            selectedIDs.formUnion(groupIDs)
+            focus = groupEntries.last?.id
+            activeOccurrence = item
+        } else {
+            selectedIDs = groupIDs
+            focus = groupEntries.last?.id
+            activeOccurrence = item
+        }
+
+        applySelectionPlan(EntryListSelectionPlan(
+            canonical: EntryListCanonicalSelection(ids: selectedIDs, focus: focus, anchor: focus),
+            physicalRows: physicalSelectionRows(for: selectedIDs),
+            activeOccurrence: activeOccurrence,
+            anchorOccurrence: activeOccurrence,
+        ))
+        return groupEntries
+    }
+
+    func normalizeNativeSelection(
+        physicalRows: IndexSet,
+        context: EntryListNativeSelectionContext?,
+    ) {
+        if let context,
+           context.modifierFlags.contains(.command),
+           let destination = context.destinationOccurrence as? OutlineItem,
+           case let .entry(entry) = destination.kind
+        {
+            applyNativeCommandSelection(destination: destination, entry: entry)
+            return
+        }
+        let entries = orderedEntries(inPhysicalRows: physicalRows)
+        let selectedIDs = Set(entries.map(\.id))
+        let destination = context?.destinationOccurrence as? OutlineItem
+        let destinationRow = tableView.liveRow(for: destination)
+        let focus = if let destination,
+                       let destinationRow,
+                       physicalRows.contains(destinationRow)
+        {
+            focusIdentifier(for: destination)
+        } else {
+            orderedPresentationEntries().last(where: { selectedIDs.contains($0.id) })?.id
+        }
+        let activeOccurrence = if let destination,
+                                  let destinationRow,
+                                  physicalRows.contains(destinationRow)
+        {
+            destination
+        } else {
+            selectionOccurrence(for: focus, preserving: nil)
+        }
+
+        preloadOpenWithApplications(selectedEntries: entries)
+        applySelectionPlan(EntryListSelectionPlan(
+            canonical: EntryListCanonicalSelection(ids: selectedIDs, focus: focus, anchor: focus),
+            physicalRows: physicalRows,
+            activeOccurrence: activeOccurrence,
+            anchorOccurrence: activeOccurrence,
+        ))
+    }
+
+    private func applyNativeCommandSelection(destination: OutlineItem, entry: EntryModel) {
+        let presentationEntries = orderedPresentationEntries()
+        let validIDs = Set(presentationEntries.map(\.id))
+        var selectedIDs = state.selectedIds.intersection(validIDs)
+        if selectedIDs.contains(entry.id) {
+            selectedIDs.remove(entry.id)
+        } else {
+            selectedIDs.insert(entry.id)
+        }
+        let focus = selectedIDs.contains(entry.id)
+            ? entry.id
+            : presentationEntries.last(where: { selectedIDs.contains($0.id) })?.id
+        let activeOccurrence = selectionOccurrence(
+            for: focus,
+            preserving: selectedIDs.contains(entry.id) ? destination : nil,
+        )
+        preloadOpenWithApplications(selectedEntries: presentationEntries.filter { selectedIDs.contains($0.id) })
+        applySelectionPlan(EntryListSelectionPlan(
+            canonical: EntryListCanonicalSelection(ids: selectedIDs, focus: focus, anchor: focus),
+            physicalRows: physicalSelectionRows(for: selectedIDs),
+            activeOccurrence: activeOccurrence,
+            anchorOccurrence: activeOccurrence,
+        ))
+    }
+
+    func physicalSelectionRows(for selectedIDs: Set<EntryModel.ID>) -> IndexSet {
+        var indexes = IndexSet()
+        for row in 0 ..< tableView.numberOfRows {
+            guard let item = tableView.item(atRow: row) as? OutlineItem else { continue }
+            switch item.kind {
+            case .group:
+                let groupIDs = item.orderedDistinctEntries().map(\.id)
+                if !groupIDs.isEmpty, groupIDs.allSatisfy(selectedIDs.contains) {
+                    indexes.insert(row)
+                }
+            case let .entry(entry) where selectedIDs.contains(entry.id):
+                indexes.insert(row)
+            case .entry, .empty, .error:
+                break
+            }
+        }
+        return indexes
+    }
+
+    func selectionOccurrence(
+        for id: EntryModel.ID?,
+        preserving occurrence: AnyObject?,
+    ) -> OutlineItem? {
+        guard let id else { return nil }
+        if let occurrence = occurrence as? OutlineItem,
+           tableView.liveRow(for: occurrence) != nil,
+           occurrenceRepresents(occurrence, id: id)
+        {
+            return occurrence
+        }
+
+        for row in 0 ..< tableView.numberOfRows {
+            guard let item = tableView.item(atRow: row) as? OutlineItem,
+                  case let .entry(entry) = item.kind,
+                  entry.id == id
+            else { continue }
+            return item
+        }
+        for row in 0 ..< tableView.numberOfRows {
+            guard let item = tableView.item(atRow: row) as? OutlineItem,
+                  case .group = item.kind,
+                  occurrenceRepresents(item, id: id)
+            else { continue }
+            return item
+        }
+        return nil
+    }
+
+    private func applyRangeSelection(destination: OutlineItem, destinationRow: Int) {
+        let anchorOccurrence = [tableView.rangeAnchorOccurrence, tableView.activeSelectionOccurrence]
+            .compactMap { $0 as? OutlineItem }
+            .first(where: { tableView.liveRow(for: $0) != nil })
+        guard let anchorOccurrence,
+              let anchorRow = tableView.liveRow(for: anchorOccurrence)
+        else {
+            applyReplacementSelection(destination: destination, destinationRow: destinationRow)
+            return
+        }
+
+        let bounds = min(anchorRow, destinationRow) ... max(anchorRow, destinationRow)
+        let rangeRows = IndexSet(bounds.filter { row in
+            guard let item = tableView.item(atRow: row) as? OutlineItem else { return false }
+            return isSelectable(item)
+        })
+        let selectedEntries = orderedEntries(
+            inPhysicalRows: rangeRows,
+            anchorRow: anchorRow,
+            destinationRow: destinationRow,
+        )
+        let selectedIDs = Set(selectedEntries.map(\.id))
+        let validIDs = Set(orderedPresentationEntries().map(\.id))
+        let anchor = state.rangeAnchorId.flatMap { validIDs.contains($0) ? $0 : nil }
+            ?? focusIdentifier(for: anchorOccurrence)
+        applySelectionPlan(EntryListSelectionPlan(
+            canonical: EntryListCanonicalSelection(
+                ids: selectedIDs,
+                focus: focusIdentifier(for: destination),
+                anchor: anchor,
+            ),
+            physicalRows: physicalSelectionRows(for: selectedIDs),
+            activeOccurrence: destination,
+            anchorOccurrence: anchorOccurrence,
+        ))
+    }
+
+    private func applyReplacementSelection(destination: OutlineItem, destinationRow: Int) {
+        let entries = destination.orderedDistinctEntries()
+        guard !entries.isEmpty else { return }
+        let selectedIDs = Set(entries.map(\.id))
+        let physicalRows: IndexSet = if case .group = destination.kind {
+            physicalSelectionRows(for: selectedIDs)
+        } else {
+            IndexSet(integer: destinationRow)
+        }
+        let focus = entries.last?.id
+        applySelectionPlan(EntryListSelectionPlan(
+            canonical: EntryListCanonicalSelection(ids: selectedIDs, focus: focus, anchor: focus),
+            physicalRows: physicalRows,
+            activeOccurrence: destination,
+            anchorOccurrence: destination,
+        ))
+    }
+
+    private func applySelectionPlan(_ plan: EntryListSelectionPlan) {
+        isUpdatingSelectionFromStore = true
+        defer { isUpdatingSelectionFromStore = false }
+        tableView.applyCanonicalSelection(
+            plan.physicalRows,
+            activeOccurrence: plan.activeOccurrence,
+            anchorOccurrence: plan.anchorOccurrence,
+        )
+        guard plan.canonical.ids != state.selectedIds
+            || plan.canonical.focus != state.lastSelectedId
+            || plan.canonical.anchor != state.rangeAnchorId
+        else { return }
+        store.send(.view(.updateSelection(
+            ids: plan.canonical.ids,
+            lastSelectedId: plan.canonical.focus,
+            rangeAnchorId: plan.canonical.anchor,
+            shouldScrollToSelection: false,
+        )))
+    }
+
+    private func orderedPresentationEntries() -> [EntryModel] {
+        var seen: Set<EntryModel.ID> = []
+        return outlineItems.flatMap { item in
+            item.orderedDistinctEntries().compactMap { entry in
+                seen.insert(entry.id).inserted ? entry : nil
+            }
+        }
+    }
+
+    private func orderedEntries(
+        inPhysicalRows rows: IndexSet,
+        anchorRow: Int? = nil,
+        destinationRow: Int? = nil,
+    ) -> [EntryModel] {
+        var seen: Set<EntryModel.ID> = []
+        let entries = rows.flatMap { row -> [EntryModel] in
+            guard let item = tableView.item(atRow: row) as? OutlineItem else { return [] }
+            switch item.kind {
+            case .group:
+                guard anchorRow == row || destinationRow == row else { return [] }
+                return item.orderedDistinctEntries()
+            case let .entry(entry):
+                return [entry]
+            case .empty, .error:
+                return []
+            }
+        }
+        return entries.compactMap { entry in
+            seen.insert(entry.id).inserted ? entry : nil
+        }
+    }
+
+    private func focusIdentifier(for item: OutlineItem) -> EntryModel.ID? {
+        item.orderedDistinctEntries().last?.id
+    }
+
+    private func isSelectable(_ item: OutlineItem) -> Bool {
+        !item.orderedDistinctEntries().isEmpty
+    }
+
+    private func occurrenceRepresents(_ item: OutlineItem, id: EntryModel.ID) -> Bool {
+        item.orderedDistinctEntries().contains(where: { $0.id == id })
+    }
+}
+
 extension EntryListCoordinator {
     func configureHeaderMenu() {
         let headerView: EntryListHeaderView
@@ -80,15 +432,27 @@ extension EntryListCoordinator {
 extension EntryListCoordinator: EntryListView.EntryListTableViewContextMenuProviding {
     func contextMenu(forRow row: Int?, event _: NSEvent) -> NSMenu {
         updateContextMenuAnchor(forRow: row)
+        let rowItem = row.flatMap { tableView.item(atRow: $0) as? OutlineItem }
         let rowEntry = entryForRow(row)
-        let displayEntries = state.hierarchyProjectionIsActive
-            ? state.visibleSelectableEntries(isNormalDirectoryPage: true)
-            : state.entries
-        let target = EntryContextMenuTarget.resolve(
-            displayEntries: displayEntries,
-            selectedIds: state.selectedIds,
-            rowEntry: rowEntry,
-        )
+        let target: EntryContextMenuTarget
+        if let rowItem, case .group = rowItem.kind {
+            let entries = rowItem.orderedDistinctEntries()
+            guard !entries.isEmpty else { return NSMenu() }
+            target = .init(selectedIds: Set(entries.map(\.id)), entries: entries)
+        } else if let rowItem, case .empty = rowItem.kind {
+            return NSMenu()
+        } else if let rowItem, case .error = rowItem.kind {
+            return NSMenu()
+        } else {
+            let displayEntries = state.hierarchyProjectionIsActive
+                ? state.visibleSelectableEntries(isNormalDirectoryPage: true)
+                : state.entries
+            target = EntryContextMenuTarget.resolve(
+                displayEntries: displayEntries,
+                selectedIds: state.selectedIds,
+                rowEntry: rowEntry,
+            )
+        }
         synchronizeContextMenuSelection(target)
         preloadOpenWithApplications(selectedEntries: target.entries)
         let serviceNames = entryOpenClient.serviceNames()
