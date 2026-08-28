@@ -119,7 +119,9 @@ extension FileManagerContentIdentityTransitionCoordinator {
             transition.preservedLexicalBeforeID = nil
             state.pendingIdentityTransition = transition
             if selectedPaths.contains(afterPath) {
-                discard(state: &state)
+                if !hasPendingDestinationPairs(state) {
+                    discard(state: &state)
+                }
                 return
             }
             let beforePath = standardizedPath(transition.beforePath)
@@ -131,7 +133,10 @@ extension FileManagerContentIdentityTransitionCoordinator {
             return
         }
         if selectedPaths.contains(afterPath) {
-            discard(state: &state)
+            // 다중 이동: 다른 destination의 pending pair가 남아 있으면 전이를 유지한다.
+            if !hasPendingDestinationPairs(state) {
+                discard(state: &state)
+            }
             return
         }
         guard case .root = transition.projectionOwner,
@@ -139,7 +144,9 @@ extension FileManagerContentIdentityTransitionCoordinator {
               !visibleEntryPaths(in: state).contains(afterPath),
               !selectedPaths.contains(afterPath)
         else { return }
-        discard(state: &state)
+        if !hasPendingDestinationPairs(state) {
+            discard(state: &state)
+        }
     }
 
     static func rebaseFolderOwnersAfterRootSnapshot(
@@ -174,6 +181,21 @@ extension FileManagerContentIdentityTransitionCoordinator {
             discard(state: &state)
             return
         }
+        // additional destination 폴더의 terminal도 소비 지점이다: 모든 pair가 해소됐고
+        // 해당 폴더가 실제로 coreFinished에 도달했으면 전이를 닫는다.
+        if case let .entryViewLayout(.hierarchy(.folderChildrenResponse(
+            _, additionalFolderID, _, .event(.coreFinished),
+        ))) = action,
+            transition.additionalMoves.allSatisfy(\.migrated),
+            transition.additionalMoves.contains(where: { pair in
+                guard case let .folder(id, _) = pair.destinationOwner else { return false }
+                return canonicalizedPath(id) == canonicalizedPath(additionalFolderID)
+            }),
+            state.entryViewLayout.hierarchy.nodesByID[additionalFolderID]?.folder.coreFinished == true
+        {
+            discard(state: &state)
+            return
+        }
         guard case let .entryViewLayout(.hierarchy(.folderChildrenResponse(
             _, folderID, folderGeneration, response,
         ))) = action,
@@ -184,9 +206,11 @@ extension FileManagerContentIdentityTransitionCoordinator {
         switch response {
         case .event(.coreFinished):
             guard node.folder.coreFinished else { return }
+            guard !hasPendingDestinationPairs(state) else { return }
             discard(state: &state)
         case .streamCompleted:
             guard node.loadPhase == .loaded else { return }
+            guard !hasPendingDestinationPairs(state) else { return }
             discard(state: &state)
         case .failed:
             guard case .failed = node.loadPhase else { return }

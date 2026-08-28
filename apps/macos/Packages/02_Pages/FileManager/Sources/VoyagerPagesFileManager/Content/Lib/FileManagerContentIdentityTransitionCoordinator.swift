@@ -66,6 +66,12 @@ enum FileManagerContentIdentityTransitionCoordinator {
                         rootPath: normalizedRoot,
                         state: state,
                     ),
+                    destinationOwner: Self.destinationOwner(
+                        afterPath: target.rawAfter,
+                        projectionOwner: projectionOwner,
+                        rootPath: normalizedRoot,
+                        state: state,
+                    ),
                 )
             }
         // 새 전이로 덮기 전에 이전 staging을 폴더에 반영한다: cursor는 이미 증가했으므로
@@ -80,6 +86,7 @@ enum FileManagerContentIdentityTransitionCoordinator {
             projectionOwner: projectionOwner,
             preservationOwner: preservationOwner,
             afterLexicalPath: move.rawAfter,
+            beforeLexicalPath: move.rawBefore,
             additionalMoves: additionalMoves,
         )
         return .none
@@ -91,22 +98,47 @@ enum FileManagerContentIdentityTransitionCoordinator {
         projectionOwner: FileManagerContentState.EntryIdentityTransitionProjectionOwner,
         state: inout FileManagerContentState,
     ) -> Bool {
-        guard let transition = state.pendingIdentityTransition else { return false }
+        guard var transition = state.pendingIdentityTransition else { return false }
         guard case let .folder(currentPath) = state.navigation.navigationState,
               canonicalizedPath(currentPath) == transition.rootPath
         else {
             discard(state: &state)
             return false
         }
+        // 다중 이동 전이: 자체 destination owner를 가진 추가 이동은 해당 owner의 batch에서
+        // 개별 migration한다. primary 검증에 앞서 폴더 경로로 정합성을 판정해 undo처럼
+        // destination이 서로 다른 이동도 각자의 batch에서 선택을 옮길 수 있다.
+        var migratedPair = false
+        for index in transition.additionalMoves.indices {
+            guard let pairDestination = transition.additionalMoves[index].destinationOwner,
+                  !transition.additionalMoves[index].migrated,
+                  Self.pairOwner(pairDestination, projectsBatch: projectionOwner)
+            else { continue }
+            let move = transition.additionalMoves[index]
+            guard let additionalBeforeID = state.entryViewLayout.selectedIds.first(where: {
+                canonicalizedPath($0) == move.beforePath
+            }) else { continue }
+            let additionalAfter = move.afterLexicalPath.isEmpty ? move.afterPath : move.afterLexicalPath
+            guard let additionalAfterID = entries.first(where: {
+                standardizedPath($0.id) == standardizedPath(additionalAfter)
+            })?.id else { continue }
+            state.entryViewLayout.selectedIds.remove(additionalBeforeID)
+            state.entryViewLayout.selectedIds.insert(additionalAfterID)
+            transition.additionalMoves[index].migrated = true
+            migratedPair = true
+        }
+        if migratedPair {
+            state.pendingIdentityTransition = transition
+        }
         guard validateProjectionOwner(
             transition.projectionOwner,
             actual: projectionOwner,
             state: &state,
         ) else { return false }
-        // 다중 이동 전이: primary와 별개로 이번 배치에 도착한 추가 이동도 함께 옮겨
+        // 다중 이동 전이: primary 소유자를 따르는 추가 이동은 primary 검증 뒤 이번 배치에서 함께 옮겨
         // buffered reload terminal의 projection reconcile이 남은 before ID를 지우지 않게 한다.
         // after 매칭은 primary와 동일하게 lexical 행 identity 기준이다(symlink rename 대응).
-        for move in transition.additionalMoves {
+        for move in transition.additionalMoves where move.destinationOwner == nil {
             guard let additionalBeforeID = state.entryViewLayout.selectedIds.first(where: {
                 canonicalizedPath($0) == move.beforePath
             }) else { continue }
@@ -117,11 +149,24 @@ enum FileManagerContentIdentityTransitionCoordinator {
             state.entryViewLayout.selectedIds.remove(additionalBeforeID)
             state.entryViewLayout.selectedIds.insert(additionalAfterID)
         }
-        let matchedBeforeID = state.entryViewLayout.selectedIds.first {
-            canonicalizedPath($0) == transition.beforePath
+        // primary before는 raw lexical ID로만 매칭한다. canonical 비교는 rename된 symlink와
+        // 그 target을 같은 identity로 묶어 target 선택을 잘못 교체할 수 있다.
+        // beforeLexicalPath가 없는 구형/direct 구성 전이는 기존 canonical 매칭을 유지한다.
+        let matchedBeforeID: EntryModel.ID? = if transition.beforeLexicalPath.isEmpty {
+            state.entryViewLayout.selectedIds.first {
+                canonicalizedPath($0) == transition.beforePath
+            }
+        } else {
+            state.entryViewLayout.selectedIds.first {
+                standardizedPath($0) == standardizedPath(transition.beforeLexicalPath)
+            }
         }
         guard let matchedBeforeID else {
-            discard(state: &state)
+            // primary가 이미 migration됐거나 선택이 없어도 pending destination pair가
+            // 남아 있으면 전이를 유지한다(각자의 batch에서 마저 옮기기 위함).
+            if !hasPendingDestinationPairs(state) {
+                discard(state: &state)
+            }
             return false
         }
         let standardizedAfter = standardizedPath(afterLexicalPath(transition))
@@ -163,10 +208,22 @@ enum FileManagerContentIdentityTransitionCoordinator {
             guard case let .folder(sourceID, _) = move.sourceOwner else { continue }
             commitPreservationStaging(sourceID)
         }
-        if case .root = projectionOwner {
+        if case .root = projectionOwner, !hasPendingDestinationPairs(state) {
             discard(state: &state)
         }
         return true
+    }
+
+    /// 아직 자체 destination batch에서 migration되지 않은 additional 이동이 있는지 판정한다.
+    /// before 선택이 이미 사라졌다면 해결된 것으로 본다.
+    static func hasPendingDestinationPairs(_ state: FileManagerContentState) -> Bool {
+        guard let transition = state.pendingIdentityTransition else { return false }
+        return transition.additionalMoves.contains { move in
+            guard move.destinationOwner != nil, !move.migrated else { return false }
+            return state.entryViewLayout.selectedIds.contains { selectedID in
+                canonicalizedPath(selectedID) == move.beforePath
+            }
+        }
     }
 
     static func ownerIsCurrent(
@@ -255,6 +312,32 @@ enum FileManagerContentIdentityTransitionCoordinator {
 
     static func canonicalizedPath(_ path: String) -> String {
         URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath().path
+    }
+
+    /// pair의 destination 소유자가 이번 batch 소유자와 같은 대상(종류+경로)인지 판정한다.
+    /// 세대는 invalidation 재기준화 이후 어긋날 수 있어 경로만 비교한다.
+    private static func pairOwner(
+        _ owner: FileManagerContentState.EntryIdentityTransitionProjectionOwner,
+        projectsBatch batchOwner: FileManagerContentState.EntryIdentityTransitionProjectionOwner,
+    ) -> Bool {
+        switch (owner, batchOwner) {
+        case (.root, .root):
+            true
+        case let (.folder(id, _), .folder(batchID, _)):
+            canonicalizedPath(id) == canonicalizedPath(batchID)
+        default:
+            false
+        }
+    }
+
+    private static func destinationOwner(
+        afterPath: String,
+        projectionOwner: FileManagerContentState.EntryIdentityTransitionProjectionOwner,
+        rootPath: String,
+        state: FileManagerContentState,
+    ) -> FileManagerContentState.EntryIdentityTransitionProjectionOwner? {
+        let owner = makeProjectionOwner(afterPath: afterPath, rootPath: rootPath, state: state)
+        return owner == projectionOwner ? nil : owner
     }
 
     private static func validateProjectionOwner(

@@ -41,6 +41,10 @@ public struct FileManagerContentState: Equatable {
         var afterLexicalPath: String = ""
         /// 이동 source의 projection 소유자. destination과 같으면 nil.
         var sourceOwner: EntryIdentityTransitionProjectionOwner?
+        /// after 행을 투영하는 destination 소유자. primary와 같으면 nil.
+        var destinationOwner: EntryIdentityTransitionProjectionOwner?
+        /// destination batch에서 선택 이동이 완료됐는지 여부.
+        var migrated = false
     }
 
     struct EntryIdentityTransition: Equatable {
@@ -71,6 +75,8 @@ public struct FileManagerContentState: Equatable {
         /// 경로 비교는 canonical 기준으로 하되 재선택 ID는 lexical 표기를 유지한다
         /// (symlink 등 lexical 표기가 canonical과 다른 경로의 선택 손실 방지).
         var preservedLexicalBeforeID: String?
+        /// canonical 비교가 symlink와 target을 묶지 않도록 보존하는 raw lexical before 경로.
+        var beforeLexicalPath: String = ""
         /// 같은 record로 함께 이동한 나머지 선택 항목의 before→after 쌍.
         var additionalMoves: [EntryMovePair] = []
 
@@ -83,6 +89,7 @@ public struct FileManagerContentState: Equatable {
             projectionOwner: EntryIdentityTransitionProjectionOwner? = nil,
             preservationOwner: EntryIdentityTransitionProjectionOwner? = nil,
             afterLexicalPath: String = "",
+            beforeLexicalPath: String = "",
             additionalMoves: [EntryMovePair] = [],
         ) {
             self.recordID = recordID
@@ -93,6 +100,7 @@ public struct FileManagerContentState: Equatable {
             self.projectionOwner = projectionOwner ?? .root(generation: refreshGeneration)
             self.preservationOwner = preservationOwner
             self.afterLexicalPath = afterLexicalPath
+            self.beforeLexicalPath = beforeLexicalPath
             self.additionalMoves = additionalMoves
         }
     }

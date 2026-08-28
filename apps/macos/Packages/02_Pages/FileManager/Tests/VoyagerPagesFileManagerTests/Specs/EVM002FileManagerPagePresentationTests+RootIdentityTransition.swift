@@ -535,6 +535,163 @@ extension EVM002FileManagerPagePresentationTests {
         XCTAssertNil(store.state.pendingIdentityTransition)
     }
 
+    /// EVM-002-command_external_refresh_correlation: destination이 다른 additional 이동은 자체 batch에서 migration된다.
+    /// - 검증 내용: primary terminal에서도 pending pair가 남아 전이를 소비하지 않고, destination batch에서 선택이 이동한 뒤 소비된다.
+    /// - 사전 조건: primary destination A와 additional destination C가 모두 expanded 상태인 undo 방향 전이.
+    /// - 기대 결과: A terminal 뒤 전이 유지, C batch 뒤 r2 선택 + 전이 소비.
+    func testAdditionalDestinationOwnerMigratesInOwnBatchAndDefersConsumption() async {
+        let destinationA = EntryModel.temporaryFolder(id: "/root/A", name: "A")
+        let destinationC = EntryModel.temporaryFolder(id: "/root/C", name: "C")
+        let beforeY = EntryModel.temporaryFolder(id: "/root/D/y", name: "y")
+        let r1 = EntryModel.temporaryFolder(id: "/root/A/r1", name: "r1")
+        let r2 = EntryModel.temporaryFolder(id: "/root/C/r2", name: "r2")
+        let (state, rootContextGeneration) = additionalDestinationFixture()
+        let store = TestStore(initialState: state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.entryOpenClient = .testValue
+            $0.entryQuickLookClient = .previewValue
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+        }
+        store.exhaustivity = .off
+
+        await store.send(.entryViewLayout(.hierarchy(.folderChildrenResponse(
+            rootContextGeneration: rootContextGeneration,
+            folderID: destinationA.id,
+            folderGeneration: 3,
+            .event(.coreBatch(items: [r1], batchIndex: 0)),
+        ))))
+        XCTAssertEqual(store.state.entryViewLayout.selectedIds, [r1.id, beforeY.id])
+        await store.receive(\.entryViewLayout.delegate.selectionChanged)
+
+        await store.send(.entryViewLayout(.hierarchy(.folderChildrenResponse(
+            rootContextGeneration: rootContextGeneration,
+            folderID: destinationA.id,
+            folderGeneration: 3,
+            .event(.coreFinished(batchCount: 1)),
+        ))))
+        print(
+            "DBG after A terminal:",
+            store.state.pendingIdentityTransition as Any,
+            "sel:",
+            store.state.entryViewLayout.selectedIds,
+        )
+        XCTAssertNotNil(store.state.pendingIdentityTransition, "pending pair가 있으면 primary terminal도 전이를 소비하지 않는다")
+        XCTAssertEqual(store.state.entryViewLayout.selectedIds, [r1.id, beforeY.id])
+
+        await store.send(.entryViewLayout(.hierarchy(.folderChildrenResponse(
+            rootContextGeneration: rootContextGeneration,
+            folderID: destinationC.id,
+            folderGeneration: 3,
+            .event(.coreBatch(items: [r2], batchIndex: 0)),
+        ))))
+        XCTAssertEqual(store.state.entryViewLayout.selectedIds, [r1.id, r2.id])
+        await store.receive(\.entryViewLayout.delegate.selectionChanged)
+
+        await store.send(.entryViewLayout(.hierarchy(.folderChildrenResponse(
+            rootContextGeneration: rootContextGeneration,
+            folderID: destinationC.id,
+            folderGeneration: 3,
+            .event(.coreFinished(batchCount: 1)),
+        ))))
+        XCTAssertNil(store.state.pendingIdentityTransition)
+    }
+
+    /// EVM-002-command_external_refresh_correlation: primary before는 raw lexical ID로만 매칭한다.
+    /// - 검증 내용: rename된 symlink의 target만 선택돼 있으면 canonical 충돌로 target 선택을 교체하지 않는다.
+    /// - 사전 조건: 실제 symlink와 그 target 중 target만 선택된 상태에서 symlink rename 전이.
+    /// - 기대 결과: migration이 일어나지 않고 target 선택이 유지되며 전이는 만료된다.
+    func testPrimaryBeforeMatchesLexicalSelectionOnly() throws {
+        let rootURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let dirURL = rootURL.appendingPathComponent("dir", isDirectory: true)
+        try FileManager.default.createDirectory(at: dirURL, withIntermediateDirectories: true)
+        let targetURL = rootURL.appendingPathComponent("target.txt")
+        try FileManager.default.createFile(atPath: targetURL.path, contents: Data())
+        let linkURL = dirURL.appendingPathComponent("link")
+        try FileManager.default.createSymbolicLink(at: linkURL, withDestinationURL: targetURL)
+        let newLinkURL = dirURL.appendingPathComponent("link2")
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        var state = FileManagerContentState()
+        state.navigation.navigationState = .folder(rootURL.path)
+        state.entryViewLayout.entryOperations.loadingContext.generation = 1
+        state.entryViewLayout.selectedIds = [targetURL.path]
+
+        let record = EntryActionRecord(
+            operationKind: .pasteFileMove,
+            targets: [.init(beforePath: linkURL.path, afterPath: newLinkURL.path)],
+        )
+        _ = FileManagerContentIdentityTransitionCoordinator.recordIfEligible(record, state: &state)
+
+        let newLinkEntry = EntryModel.temporaryFolder(id: newLinkURL.path, name: "link2")
+        _ = FileManagerContentIdentityTransitionCoordinator.migrateSelection(
+            entries: [newLinkEntry],
+            projectionOwner: .root(generation: 1),
+            state: &state,
+        )
+
+        XCTAssertEqual(
+            Array(state.entryViewLayout.selectedIds),
+            [targetURL.path],
+            "canonical 충돌로 target 선택을 symlink로 교체하지 않는다",
+        )
+        XCTAssertNil(state.pendingIdentityTransition, "lexical before가 선택돼 있지 않으면 전이는 만료된다")
+    }
+
+    private func additionalDestinationFixture() -> (FileManagerContentState, Int) {
+        let rootPath = "/root"
+        let sourceD = EntryModel.temporaryFolder(id: "/root/D", name: "D")
+        let destinationA = EntryModel.temporaryFolder(id: "/root/A", name: "A")
+        let destinationC = EntryModel.temporaryFolder(id: "/root/C", name: "C")
+        let beforeX = EntryModel.temporaryFolder(id: "/root/D/x", name: "x")
+        let beforeY = EntryModel.temporaryFolder(id: "/root/D/y", name: "y")
+        let r1 = EntryModel.temporaryFolder(id: "/root/A/r1", name: "r1")
+        let r2 = EntryModel.temporaryFolder(id: "/root/C/r2", name: "r2")
+        var state = FileManagerContentState()
+        state.navigation.seedInitialFolderPath(rootPath)
+        state.entryViewLayout.mode = .list
+        state.entryViewLayout.entries = [sourceD, destinationA, destinationC]
+        state.entryViewLayout.entryOperations.items = [sourceD, destinationA, destinationC]
+        state.entryViewLayout.entryOperations.loadingContext.generation = 1
+        state.entryViewLayout.hierarchy = .init(rootPath: rootPath)
+        for (folder, children) in [
+            (destinationA, [EntryModel]()),
+            (destinationC, [EntryModel]()),
+            (sourceD, [beforeX, beforeY]),
+        ] {
+            state.entryViewLayout.hierarchy.nodesByID[folder.id] = .init(
+                children: children,
+                loadPhase: .loadingCore,
+                generation: 3,
+                expectedBatchIndex: 0,
+                coreFinished: false,
+            )
+        }
+        state.entryViewLayout.hierarchy.setExpandedIDs([sourceD.id, destinationA.id, destinationC.id])
+        state.entryViewLayout.selectedIds = [beforeX.id, beforeY.id]
+        state.entryViewLayout.lastSelectedId = beforeX.id
+        state.entryViewLayout.rangeAnchorId = beforeX.id
+        state.pendingIdentityTransition = .init(
+            recordID: UUID(),
+            beforePath: beforeX.id,
+            afterPath: r1.id,
+            rootPath: rootPath,
+            refreshGeneration: 1,
+            projectionOwner: .folder(id: destinationA.id, generation: 3),
+            preservationOwner: .folder(id: sourceD.id, generation: 3),
+            additionalMoves: [
+                .init(
+                    beforePath: beforeY.id,
+                    afterPath: r2.id,
+                    afterLexicalPath: "",
+                    sourceOwner: .folder(id: sourceD.id, generation: 3),
+                    destinationOwner: .folder(id: destinationC.id, generation: 3),
+                ),
+            ],
+        )
+        return (state, state.entryViewLayout.hierarchy.rootContextGeneration)
+    }
+
     private func receiveFolderRestart(
         _ store: TestStore<FileManagerContentState, FileManagerContentAction>,
         folderID: String,
