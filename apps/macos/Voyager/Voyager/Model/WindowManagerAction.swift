@@ -581,7 +581,7 @@ enum ExternalOpenPlacementApplication {
             guard let placementWindow = plan.windows.first(where: { window in
                 window.items.contains(where: { $0.itemID == item.itemID })
             }) else { continue }
-            guard !excludedWindowIDs.contains(placementWindow.windowID) else { continue }
+            let isExcluded = excludedWindowIDs.contains(placementWindow.windowID)
             guard !state.closingWindowIDs.contains(placementWindow.windowID),
                   !state.pendingWindowOpenIDs.contains(placementWindow.windowID),
                   let window = state.windows[id: placementWindow.windowID]?.window
@@ -600,6 +600,7 @@ enum ExternalOpenPlacementApplication {
                 continue
             }
             guard window.stillMatchesExternalOpenItem(item) else { return nil }
+            guard !isExcluded else { continue }
             lastMatch = placementWindow.windowID
         }
         return lastMatch

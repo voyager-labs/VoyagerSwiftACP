@@ -10494,8 +10494,8 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await store.finish()
     }
 
-    /// request-bearing plan의 제외되지 않은 planned window가 unavailable이면 survivor 활성화를 거부한다.
-    /// - 검증 내용: closing·pending-open·missing window는 whole-batch stale이고 excluded·legacy window는 skip됨
+    /// request-bearing plan의 planned window가 unavailable이면 native 후보 제외 여부와 관계없이 survivor 활성화를 거부한다.
+    /// - 검증 내용: closing·pending-open·missing window는 whole-batch stale이고 legacy request-nil window만 skip됨
     /// - 사전 조건: 첫 planned window와 마지막 survivor window가 서로 다른 route를 소유함
     /// - 기대 결과: production request는 nil을 반환하고 excluded 및 request-nil plan은 마지막 survivor를 반환함
     func testPlacementSurvivorRejectsUnavailableRequestWindowAndPreservesSkipContracts() {
@@ -10572,18 +10572,104 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             for: requestPlan,
             state: missingState,
         ))
-        XCTAssertEqual(
+        XCTAssertNil(
             ExternalOpenPlacementApplication.lastSurvivingWindowID(
                 for: requestPlan,
                 state: closingState,
                 excluding: [firstWindowID],
             ),
-            survivorWindowID,
         )
         XCTAssertEqual(
             ExternalOpenPlacementApplication.lastSurvivingWindowID(for: legacyPlan, state: missingState),
             survivorWindowID,
         )
+    }
+
+    /// native activation 후보에서 제외된 planned window의 tab 존재와 exact route도 계속 검증한다.
+    /// - 검증 내용: 유효한 excluded window는 survivor 선택에서만 빠지고 tab 제거·route drift는 whole-batch stale로 판정됨
+    /// - 사전 조건: request-bearing plan의 마지막 window가 excluded이고 앞선 window는 activation survivor임
+    /// - 기대 결과: excluded route가 유효하면 survivor를 반환하고 tab 제거 또는 route drift이면 nil을 반환함
+    func testPlacementSurvivorValidatesExcludedWindowTabAndRouteBeforeSelectingCandidate() {
+        let batchID = UUID()
+        let survivorWindowID = UUID()
+        let excludedWindowID = UUID()
+        let survivorTabID = ContentTabID(rawValue: "excluded-validation-survivor")
+        let excludedTabID = ContentTabID(rawValue: "excluded-validation-target")
+        let survivorItemID = UUID()
+        let excludedItemID = UUID()
+        let survivorAnchor = ContentTabPageAnchor.directory(path: "/tmp/excluded-validation-survivor")
+        let excludedAnchor = ContentTabPageAnchor.directory(path: "/tmp/excluded-validation-target")
+        let request = ExternalOpenPlacementRequest(
+            batchID: batchID,
+            items: [
+                .init(itemID: survivorItemID, anchor: survivorAnchor, pendingSelectEntryID: nil),
+                .init(itemID: excludedItemID, anchor: excludedAnchor, pendingSelectEntryID: nil),
+            ],
+            preferredWindowIDs: [],
+        )
+        let windows: [ExternalOpenPlacementPlan.Window] = [
+            .init(
+                windowID: survivorWindowID,
+                isNewWindow: false,
+                items: [.init(
+                    itemID: survivorItemID,
+                    tabID: survivorTabID,
+                    anchor: survivorAnchor,
+                    requiresReservation: false,
+                )],
+            ),
+            .init(
+                windowID: excludedWindowID,
+                isNewWindow: false,
+                items: [.init(
+                    itemID: excludedItemID,
+                    tabID: excludedTabID,
+                    anchor: excludedAnchor,
+                    requiresReservation: false,
+                )],
+            ),
+        ]
+        let plan = ExternalOpenPlacementPlan(batchID: batchID, windows: windows, request: request)
+        var state = WindowManagerFeature.State()
+        state.windows = [
+            Self.makeRouteWindow(
+                id: survivorWindowID,
+                tabs: [(survivorTabID, survivorAnchor)],
+                activeTabID: survivorTabID,
+            ),
+            Self.makeRouteWindow(
+                id: excludedWindowID,
+                tabs: [(excludedTabID, excludedAnchor)],
+                activeTabID: excludedTabID,
+            ),
+        ]
+
+        XCTAssertEqual(
+            ExternalOpenPlacementApplication.lastSurvivingWindowID(
+                for: plan,
+                state: state,
+                excluding: [excludedWindowID],
+            ),
+            survivorWindowID,
+        )
+
+        state.windows[id: excludedWindowID]?.window.contentTabs.tabs.remove(id: excludedTabID)
+        XCTAssertNil(ExternalOpenPlacementApplication.lastSurvivingWindowID(
+            for: plan,
+            state: state,
+            excluding: [excludedWindowID],
+        ))
+
+        state.windows[id: excludedWindowID] = Self.makeRouteWindow(
+            id: excludedWindowID,
+            tabs: [(excludedTabID, .directory(path: "/tmp/excluded-validation-drifted"))],
+            activeTabID: excludedTabID,
+        )
+        XCTAssertNil(ExternalOpenPlacementApplication.lastSurvivingWindowID(
+            for: plan,
+            state: state,
+            excluding: [excludedWindowID],
+        ))
     }
 
     /// 계획된 기존 tab 하나가 lifecycle-ineligible이면 다른 survivor를 활성화하지 않고 전체 배치를 재계획한다.
