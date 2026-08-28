@@ -60,6 +60,7 @@ func isPropertyClientContractError(err error) bool {
 		errors.Is(err, applicationproperty.ErrInvalidOptionOwner),
 		errors.Is(err, applicationproperty.ErrInvalidOptionOrder),
 		errors.Is(err, applicationproperty.ErrImmutableDefinitionField),
+		errors.Is(err, domainentry.ErrInvalidPropertyOptionSet),
 		errors.Is(err, domainentry.ErrInvalidEntryPropertyAssignment),
 		errors.Is(err, domainentry.ErrInvalidAssignmentTargetKind),
 		errors.Is(err, domainentry.ErrInvalidAssignmentState),

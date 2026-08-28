@@ -138,8 +138,11 @@ func buildCreatedOptions(
 	if !isSelect && len(labels) > 0 {
 		return nil, domainentry.ErrInvalidPropertyOptionSet
 	}
-	if isSelect && len(labels) < 1 {
-		return nil, domainentry.ErrInvalidPropertyOptionSet
+	// select는 빈 초기 선택지를 허용한다 — wire decoder가 options 생략을 수락하고
+	// Project preset도 선택지 없는 select로 생성된다. 이후 property.option.create로
+	// 채우는 흐름이 지원 경로다. 256 상한은 wire decode에서 유지된다.
+	if isSelect && len(labels) == 0 {
+		return nil, nil
 	}
 	if !isSelect {
 		return nil, nil

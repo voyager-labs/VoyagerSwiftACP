@@ -58,14 +58,28 @@ func TestCreateDefinitionSelectRequiresNonEmptyOptionSet(t *testing.T) {
 	workspace := mustWorkspaceContext(t)
 	ctx := context.Background()
 
-	if _, err := service.CreateDefinition(ctx, workspace, CreateDefinitionInput{
+	// select는 빈 초기 선택지를 허용한다 — wire decoder가 options 생략을 수락하고
+	// 이후 property.option.create로 채우는 흐름이 지원 경로다.
+	emptySelect, err := service.CreateDefinition(ctx, workspace, CreateDefinitionInput{
 		Key:         "status",
 		DisplayName: "Status",
 		ValueType:   domainentry.PropertyTypeSelect,
 		Cardinality: domainentry.PropertyCardinalityOne,
 		RequestID:   "req",
-	}); !errors.Is(err, domainentry.ErrInvalidPropertyOptionSet) {
-		t.Fatalf("select without options error = %v, want %v", err, domainentry.ErrInvalidPropertyOptionSet)
+	})
+	if err != nil {
+		t.Fatalf("select without options = %v, want accepted", err)
+	}
+	if len(emptySelect.Options) != 0 {
+		t.Fatalf("empty select options = %d, want 0", len(emptySelect.Options))
+	}
+	filled, err := service.CreateOption(ctx, workspace, emptySelect.Definition.PropertyID,
+		emptySelect.Definition.DefinitionRev, "req-fill", "Todo")
+	if err != nil {
+		t.Fatalf("fill empty select: %v", err)
+	}
+	if len(filled.Options) != 1 {
+		t.Fatalf("options after fill = %d, want 1", len(filled.Options))
 	}
 	if _, err := service.CreateDefinition(ctx, workspace, CreateDefinitionInput{
 		Key:          "title",
@@ -77,8 +91,8 @@ func TestCreateDefinitionSelectRequiresNonEmptyOptionSet(t *testing.T) {
 	}); !errors.Is(err, domainentry.ErrInvalidPropertyOptionSet) {
 		t.Fatalf("text with options error = %v, want %v", err, domainentry.ErrInvalidPropertyOptionSet)
 	}
-	if len(store.defs) != 0 {
-		t.Fatalf("rejected creates left %d definitions behind", len(store.defs))
+	if len(store.defs) != 1 {
+		t.Fatalf("definitions = %d, want 1 (accepted empty select)", len(store.defs))
 	}
 }
 

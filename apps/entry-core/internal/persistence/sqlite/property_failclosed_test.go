@@ -33,21 +33,42 @@ func TestPropertyRepositoryFailClosed(t *testing.T) {
 		t.Fatalf("cross-workspace write = %v, want ErrEntryPropertyWorkspaceMismatch", err)
 	}
 
-	// 비활성 옵션 참조: 도메인은 many 값에만 active 검사를 적용하고 scalar
-	// option_ref는 read-back 보존을 허용한다. 저장소는 도메인을 그대로 따른다.
+	// 비활성/교차 정의 옵션 참조 scalar 쓰기는 쓰기 진입점에서 거절된다(코멘트
+	// 계약: 값 행 FK는 (workspace_id, option_id)만 보므로 도메인 검증이 유일한
+	// 방어선). read-back 보존은 조립 경로(assemble)가 이 검증을 거치지 않는다는
+	// 것과 별개다.
 	disabled := fx.optionOff
 	inactiveFact := domainentry.ImplicitUnsetEntryPropertyAssignment(fx.wsctx.ID, testEntryID(501), fx.selectDef)
 	inactiveFact.RecordRevision = 1
 	inactiveFact.ValueContractRevision = 1
 	inactiveFact.State = domainentry.AssignmentStateValue
 	inactiveFact.Scalar = &domainentry.AssignmentValue{OptionID: &disabled}
-	if err := repo.SaveAssignments(ctx, fx.wsctx, []domainentry.EntryPropertyAssignment{inactiveFact}); err != nil {
-		t.Fatalf("scalar inactive-option write = %v, want preserved per domain semantics", err)
+	_, inactiveErr := domainentry.NewEntryPropertyAssignment(inactiveFact, fixtureContracts(fx)[fx.selectDef])
+	if !errors.Is(inactiveErr, domainentry.ErrAssignmentInactiveOption) {
+		t.Fatalf("scalar inactive-option stage = %v, want ErrAssignmentInactiveOption", inactiveErr)
 	}
-	loadedInactive, err := repo.LoadAssignments(ctx, fx.wsctx, []string{inactiveFact.EntryID}, []domainentry.PropertyID{fx.selectDef})
-	gotInactive := loadedInactive[EntryPropertyRef{EntryID: inactiveFact.EntryID, PropertyID: fx.selectDef}]
+
+	// read-back 보존: 이미 저장된 과거 행(비활성 옵션 참조)은 조립이 그대로 읽는다.
+	legacyNow := time.Now()
+	legacyHeader := EntryPropertyAssignmentRow{
+		WorkspaceID: fx.wsctx.ID.Bytes(), EntryID: testEntryID(501), PropertyID: fx.selectDef.Bytes(),
+		TargetKind: "locator_derived", State: "value", RecordRevision: 1, ValueContractRevision: 1,
+		CreatedAt: legacyNow, UpdatedAt: legacyNow,
+	}
+	if err := store.db.Create(&legacyHeader).Error; err != nil {
+		t.Fatalf("seed legacy header: %v", err)
+	}
+	legacyValue := EntryPropertyAssignmentValueRow{
+		WorkspaceID: fx.wsctx.ID.Bytes(), EntryID: testEntryID(501), PropertyID: fx.selectDef.Bytes(),
+		Ordinal: 0, ValueKind: "option_ref", OptionID: disabled.Bytes(), CreatedAt: legacyNow, UpdatedAt: legacyNow,
+	}
+	if err := store.db.Create(&legacyValue).Error; err != nil {
+		t.Fatalf("seed legacy value: %v", err)
+	}
+	loadedInactive, err := repo.LoadAssignments(ctx, fx.wsctx, []string{testEntryID(501)}, []domainentry.PropertyID{fx.selectDef})
+	gotInactive := loadedInactive[EntryPropertyRef{EntryID: testEntryID(501), PropertyID: fx.selectDef}]
 	if gotInactive.Scalar == nil || gotInactive.Scalar.OptionID == nil || *gotInactive.Scalar.OptionID != disabled {
-		t.Fatalf("scalar inactive-option round-trip broken: %+v", gotInactive.Scalar)
+		t.Fatalf("scalar inactive-option read-back broken: %+v", gotInactive.Scalar)
 	}
 
 	// many 값의 비활성 옵션 참조는 쓰기 시점에 거절된다(도메인 active 검사).

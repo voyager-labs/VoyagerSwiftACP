@@ -117,6 +117,16 @@ func NewEntryPropertyAssignment(fact EntryPropertyAssignment, contract Assignmen
 	if err := fact.Validate(contract); err != nil {
 		return EntryPropertyAssignment{}, err
 	}
+	// select 값의 활성 선택지 소유권은 쓰기 진입점에서만 검증한다. 값 행의 FK는
+	// (workspace_id, option_id)만 보므로 여기서 비활성·교차 정의 선택지 참조를
+	// 걸지 않으면 잘못된 assignment로 커밋된다. read-back 조립(assemble)은
+	// 과거 assignment가 비활성 선택지를 참조할 수 있으므로 이 검증을 거치지
+	// 않는다(read-back 보존 계약).
+	if fact.State == AssignmentStateValue && fact.Scalar != nil && contract.Type == PropertyTypeSelect {
+		if _, active := contract.ActiveOptions[*fact.Scalar.OptionID]; !active {
+			return EntryPropertyAssignment{}, ErrAssignmentInactiveOption
+		}
+	}
 	if fact.RecordRevision < 1 || fact.ValueContractRevision < 1 {
 		return EntryPropertyAssignment{}, ErrAssignmentRevisionRequired
 	}

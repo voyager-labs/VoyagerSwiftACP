@@ -33,7 +33,7 @@ func fixtureContracts(fx propertyFixture) map[domainentry.PropertyID]domainentry
 		fx.dateDef:     {Type: domainentry.PropertyTypeDate, Cardinality: domainentry.PropertyCardinalityOne},
 		fx.datetimeDef: {Type: domainentry.PropertyTypeDateTime, Cardinality: domainentry.PropertyCardinalityOne},
 		fx.selectDef: {Type: domainentry.PropertyTypeSelect, Cardinality: domainentry.PropertyCardinalityOne,
-			ActiveOptions: optionSet(fx.optionA, fx.optionB, fx.optionOff)},
+			ActiveOptions: optionSet(fx.optionA, fx.optionB)},
 		fx.nullableDef: {Type: domainentry.PropertyTypeText, Cardinality: domainentry.PropertyCardinalityOne, Nullable: true},
 		fx.multiDef: {Type: domainentry.PropertyTypeSelect, Cardinality: domainentry.PropertyCardinalityMany,
 			ActiveOptions: optionSet(fx.multiOptA, fx.multiOptB)},
