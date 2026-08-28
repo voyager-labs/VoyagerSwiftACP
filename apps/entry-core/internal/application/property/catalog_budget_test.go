@@ -106,6 +106,46 @@ func TestCreateDefinitionWithinBudgetStillSucceeds(t *testing.T) {
 	}
 }
 
+// 단일 정의 결과 봉투가 들어가도 최소 목록 페이지(ID 필터 page_size 1)는
+// definitions 배열과 has_more 필드 때문에 더 크다. 커밋된 정의는 커밋 이후에도
+// 최소 페이지로 조회 가능해야 하므로, 결과 봉투는 들어가지만 최소 목록 페이지가
+// 초과하는 생성은 커밋 전에 scope_too_large로 거절되고 쓰기는 0이다.
+func TestCreateDefinitionRejectsMinimalListEnvelopeOverflow(t *testing.T) {
+	store := newMemCatalogStore()
+	service, err := NewCatalogService(store, directTransactionRunner{})
+	if err != nil {
+		t.Fatalf("NewCatalogService: %v", err)
+	}
+	workspace := mustWorkspaceContext(t)
+
+	labels := make([]string, 186)
+	for index := range labels {
+		labels[index] = strings.Repeat("a", 255)
+	}
+	view, err := service.CreateDefinition(context.Background(), workspace, CreateDefinitionInput{
+		Key:          "k",
+		DisplayName:  "n",
+		ValueType:    domainentry.PropertyTypeSelect,
+		Cardinality:  domainentry.PropertyCardinalityOne,
+		OptionLabels: labels,
+		RequestID:    strings.Repeat("r", 128),
+	})
+	if !errors.Is(err, ErrScopeTooLarge) {
+		t.Fatalf("err = %v, want ErrScopeTooLarge", err)
+	}
+	if view.Definition.PropertyID != (domainentry.PropertyID{}) {
+		t.Fatalf("view returned on overflow: %+v", view)
+	}
+	for _, def := range store.defs {
+		t.Fatalf("definition persisted despite overflow: %+v", def)
+	}
+	for _, options := range store.opts {
+		if len(options) != 0 {
+			t.Fatalf("options persisted despite overflow: %d rows", len(options))
+		}
+	}
+}
+
 // 정의 안쪽 요청으로 만든 경계 부근의 카탈로그(220×200바이트 라벨)는 update나
 // option mutation 같은 작은 후속 요청의 결과 뷰를 65,536바이트 넘게 만들 수
 // 있다. 이때도 커밋 전에 scope_too_large로 실패 닫기하고 쓰기는 0이어야 한다.

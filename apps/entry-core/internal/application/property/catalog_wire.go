@@ -44,11 +44,18 @@ func DefinitionViewToWire(view DefinitionView) (schema.PropertyDefinition, schem
 // protocol EncodedSuccessBytes로 검사한다. execute의 commit 전 예산 검사와 같은
 // 65,536바이트 기준이다. 요청이 봉투에 들어도 발급 UUID와 상태 필드가 추가된
 // 성공 응답은 초과할 수 있으므로 모든 카탈로그 mutation이 커밋 전에 이를 확인한다.
+// 단일 정의 결과가 들어가도 최소 목록 페이지(ID 필터 page_size 1)는 definitions
+// 배열과 has_more 필드로 더 크므로, 커밋된 정의의 최소 페이지 조회 가능성까지
+// 함께 검사한다.
 func encodedDefinitionResponseFits(requestID string, view DefinitionView) bool {
 	wire, code := DefinitionViewToWire(view)
 	if code != "" {
 		return false
 	}
 	_, fits := schema.EncodedSuccessBytes(requestID, schema.PropertyDefinitionResult{Definition: wire})
+	if !fits {
+		return false
+	}
+	_, fits = schema.EncodedSuccessBytes(requestID, schema.PropertyDefinitionListResult{Definitions: []schema.PropertyDefinition{wire}, HasMore: false})
 	return fits
 }
