@@ -13,6 +13,7 @@ import (
 
 	"github.com/voyager-labs/voyager-app/apps/entry-core/internal/domain/entry"
 	"github.com/voyager-labs/voyager-app/apps/entry-core/internal/source"
+	"github.com/voyager-labs/voyager-app/apps/entry-core/internal/testfixture"
 )
 
 type trackingIdentityProvider struct {
@@ -48,7 +49,7 @@ func (provider *trackingIdentityProvider) Identify(_ string, info fs.FileInfo) (
 
 func TestStrongIdentityProvider(t *testing.T) {
 	root := t.TempDir()
-	writeFile(t, filepath.Join(root, "note.txt"), "note")
+	testfixture.CopyFile(t, filepath.Join(root, "note.txt"), testfixture.PlainText)
 	provider := &trackingIdentityProvider{}
 	adapter := mustAdapter(t, Config{Root: root, Generation: "generation-1", CursorKey: testCursorKey(), IdentityProvider: provider})
 	result, err := adapter.List(context.Background(), mustRequest(t, adapter.SourceIdentity(), "mount-local", "", nil))
@@ -85,7 +86,7 @@ func TestGenericLocalFSWeakIdentity(t *testing.T) {
 	root := t.TempDir()
 	oldPath := filepath.Join(root, "before.txt")
 	newPath := filepath.Join(root, "after.txt")
-	writeFile(t, oldPath, "note")
+	testfixture.CopyFile(t, oldPath, testfixture.PlainText)
 	adapter := mustAdapter(t, Config{Root: root, Generation: "generation-1", CursorKey: testCursorKey()})
 	before := onlyLocalItem(t, adapter, "")
 	if err := os.Rename(oldPath, newPath); err != nil {
@@ -105,7 +106,7 @@ func TestRenameMoveIdentity(t *testing.T) {
 	}
 	oldPath := filepath.Join(root, "note.txt")
 	newPath := filepath.Join(folder, "renamed.txt")
-	writeFile(t, oldPath, "note")
+	testfixture.CopyFile(t, oldPath, testfixture.PlainText)
 	provider := &trackingIdentityProvider{}
 	adapter := mustAdapter(t, Config{Root: root, Generation: "generation-1", CursorKey: testCursorKey(), IdentityProvider: provider})
 	before := localItemByPath(t, adapter, "", "note.txt")
@@ -121,14 +122,14 @@ func TestRenameMoveIdentity(t *testing.T) {
 func TestDeleteRecreateIdentity(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "note.txt")
-	writeFile(t, path, "old")
+	testfixture.CopyFile(t, path, testfixture.PlainText)
 	provider := &trackingIdentityProvider{}
 	adapter := mustAdapter(t, Config{Root: root, Generation: "generation-1", CursorKey: testCursorKey(), IdentityProvider: provider})
 	before := onlyLocalItem(t, adapter, "")
 	if err := os.Remove(path); err != nil {
 		t.Fatal(err)
 	}
-	writeFile(t, path, "new")
+	testfixture.CopyFile(t, path, testfixture.PlainText)
 	after := onlyLocalItem(t, adapter, "")
 	if before.Identity.EntryKey == after.Identity.EntryKey || before.Identity.IdentityStrength != entry.IdentityStrengthObjectLifetime || after.Identity.IdentityStrength != entry.IdentityStrengthObjectLifetime {
 		t.Fatalf("recreated identities = %#v %#v", before.Identity, after.Identity)
@@ -163,7 +164,7 @@ func TestStrongIdentityResourceAdapterResolveAfterRename(t *testing.T) {
 	root := t.TempDir()
 	oldPath := filepath.Join(root, "before.txt")
 	newPath := filepath.Join(root, "after.txt")
-	writeFile(t, oldPath, "note")
+	testfixture.CopyFile(t, oldPath, testfixture.PlainText)
 	provider := &trackingIdentityProvider{}
 	delegate := mustAdapter(t, Config{Root: root, Generation: "generation-1", CursorKey: testCursorKey(), IdentityProvider: provider})
 	adapter := NewResourceAdapter(delegate)
@@ -191,7 +192,7 @@ func TestStrongIdentityResourceAdapterResolveAfterRename(t *testing.T) {
 
 func TestLegacyLocatorCompatibilityWithLongKey(t *testing.T) {
 	root := t.TempDir()
-	writeFile(t, filepath.Join(root, "item"), "item")
+	testfixture.CopyFile(t, filepath.Join(root, "item"), testfixture.PlainText)
 	key := bytes.Repeat([]byte{0x31}, 48)
 	adapter := mustAdapter(t, Config{Root: root, Generation: "generation-1", CursorKey: key})
 	result, err := adapter.List(context.Background(), mustRequest(t, adapter.SourceIdentity(), "mount", "", nil))

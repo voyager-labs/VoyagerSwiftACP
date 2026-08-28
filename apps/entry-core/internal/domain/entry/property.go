@@ -176,7 +176,7 @@ func (definition PropertyDefinition) Validate() error {
 	if !definition.PropertyID.valid() || !definition.IdentityScheme.valid() ||
 		!definition.IdentityScheme.acceptsVersion(definition.PropertyID.version()) ||
 		!validUTF8Bytes(definition.Namespace, 1, 128) ||
-		!validUTF8Bytes(definition.Key, 1, 128) || !validUTF8Bytes(definition.DisplayName, 1, 256) ||
+		!validUTF8Bytes(definition.Key, 1, 256) || !validUTF8Bytes(definition.DisplayName, 1, 256) ||
 		!canonicalPropertyType(definition.ValueType) || !definition.Cardinality.valid() || !definition.Provenance.valid() ||
 		len(definition.ValidationRules) > maximumValidationRules {
 		return ErrInvalidPropertyDefinition

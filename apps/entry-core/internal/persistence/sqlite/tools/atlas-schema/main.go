@@ -21,6 +21,9 @@ func main() {
 		&sqlite.SourcePropertyDescriptorRow{},
 		&sqlite.PropertyBindingRow{},
 		&sqlite.WorkspacePropertyTermRow{},
+		&sqlite.WorkspacePropertyOptionRow{},
+		&sqlite.EntryPropertyAssignmentRow{},
+		&sqlite.EntryPropertyAssignmentValueRow{},
 	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to load gorm schema: %v\n", err)

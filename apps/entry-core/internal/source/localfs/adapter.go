@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 	"unicode/utf8"
 
@@ -27,6 +28,7 @@ const (
 	minimumCursorKeySize    = 32
 	maximumGeneration       = 128
 	maximumCursorLength     = 4096
+	maximumLocalPathBytes   = 4096
 	cursorPayloadSize       = 4 + sha256.Size
 	cursorTokenSize         = cursorPayloadSize + sha256.Size
 )
@@ -305,7 +307,16 @@ func localFilesystemError(err, notExist error) error {
 }
 
 func (adapter *Adapter) makeItem(parent string, directoryEntry os.DirEntry) (source.SourceItem, error) {
-	name := directoryEntry.Name()
+	info, err := directoryEntry.Info()
+	if err != nil || info.Mode()&os.ModeSymlink != 0 {
+		return source.SourceItem{}, source.ErrAdapterFailure
+	}
+	return adapter.makeItemFromInfo(parent, directoryEntry.Name(), info)
+}
+
+// makeItemFromInfo는 FileInfo에서 SourceItem을 만든다. symlink는 이미 걸러진
+// 상태로 들어온다.
+func (adapter *Adapter) makeItemFromInfo(parent, name string, info os.FileInfo) (source.SourceItem, error) {
 	if !utf8.ValidString(name) {
 		return source.SourceItem{}, source.ErrAdapterFailure
 	}
@@ -314,10 +325,6 @@ func (adapter *Adapter) makeItem(parent string, directoryEntry os.DirEntry) (sou
 		relativePath = parent + "/" + name
 	}
 	if !source.ValidateRelativePath(relativePath) {
-		return source.SourceItem{}, source.ErrAdapterFailure
-	}
-	info, err := directoryEntry.Info()
-	if err != nil || info.Mode()&os.ModeSymlink != 0 {
 		return source.SourceItem{}, source.ErrAdapterFailure
 	}
 
@@ -538,21 +545,24 @@ func (adapter *Adapter) resolveItem(ctx context.Context, relativePath string) (s
 		return source.SourceItem{}, false, err
 	}
 	defer directory.Close()
-	entries, err := directory.ReadDir(maximumDirectoryEntries + 1)
-	if err != nil && !errors.Is(err, io.EOF) {
-		return source.SourceItem{}, false, source.ErrAdapterFailure
-	}
-	if len(entries) > maximumDirectoryEntries {
-		return source.SourceItem{}, false, source.ErrAdapterFailure
-	}
-	for _, candidate := range entries {
-		if candidate.Name() != name || candidate.Type()&os.ModeSymlink != 0 {
-			continue
+	// 단일 대상 해석은 부모를 열거하지 않는다. 목록 API의 디렉터리 예산
+	// (1,024)을 여기 전파하면 큰 폴더의 존재하는 파일을 ErrAdapterFailure로
+	// 거절한다. Lstat 직접 조회로 이름을 찾고 symlink는 목록 경로와 동일하게
+	// 부재로 취급한다.
+	info, statErr := os.Lstat(filepath.Join(root.Name(), filepath.FromSlash(relativePath)))
+	if statErr != nil {
+		// 부재와 이름 길이 초과(4,096 경계 경로)는 목록 경로와 동일하게
+		// 부재로 취급한다. 나머지 오류만 접근 실패로 실패 닫기한다.
+		if errors.Is(statErr, fs.ErrNotExist) || errors.Is(statErr, syscall.ENAMETOOLONG) {
+			return source.SourceItem{}, false, nil
 		}
-		item, makeErr := adapter.makeItem(parent, candidate)
-		return item, makeErr == nil, makeErr
+		return source.SourceItem{}, false, source.ErrAdapterFailure
 	}
-	return source.SourceItem{}, false, nil
+	if info.Mode()&os.ModeSymlink != 0 {
+		return source.SourceItem{}, false, nil
+	}
+	item, makeErr := adapter.makeItemFromInfo(parent, name, info)
+	return item, makeErr == nil, makeErr
 }
 
 func (adapter *Adapter) canonicalLocatorRef(item source.SourceItem) (entry.LocatorRef, error) {
@@ -562,6 +572,87 @@ func (adapter *Adapter) canonicalLocatorRef(item source.SourceItem) (entry.Locat
 		return entry.LocatorRef{}, err
 	}
 	return locator.LocatorRef()
+}
+
+// ResolveLocalPath는 소스 루트 기준 clean 절대 UTF-8 경로 하나를 canonical
+// EntryRef로 해석한다. 원시 경로는 identity 재구성 입력으로만 쓰고 결과에는
+// locator 유도 값만 남으며 rename/move 연속성은 보장하지 않는다.
+func (adapter *Adapter) ResolveLocalPath(ctx context.Context, localPath string) (entry.EntryRef, error) {
+	if err := ctx.Err(); err != nil {
+		return entry.EntryRef{}, source.ErrAdapterFailure
+	}
+	if !utf8.ValidString(localPath) || len(localPath) < 1 || len(localPath) > maximumLocalPathBytes ||
+		strings.ContainsRune(localPath, '\x00') || !filepath.IsAbs(localPath) || filepath.Clean(localPath) != localPath {
+		return entry.EntryRef{}, source.ErrInvalidRequest
+	}
+	relativePath, err := filepath.Rel(adapter.root, localPath)
+	if err != nil {
+		return entry.EntryRef{}, source.ErrPathEscape
+	}
+	relativePath = filepath.ToSlash(relativePath)
+	if relativePath == "." {
+		// 소스 루트 자체는 assignment 대상 entry가 아니다.
+		return entry.EntryRef{}, source.ErrInvalidRequest
+	}
+	if !source.ValidateRelativePath(relativePath) {
+		return entry.EntryRef{}, source.ErrPathEscape
+	}
+	item, found, err := adapter.resolveItem(ctx, relativePath)
+	if err != nil {
+		return entry.EntryRef{}, err
+	}
+	if !found {
+		return entry.EntryRef{}, classifyMissingLocalPath(localPath)
+	}
+	if err := verifyLocalPathAccessible(adapter.root, relativePath); err != nil {
+		return entry.EntryRef{}, err
+	}
+	locatorRef, err := adapter.canonicalLocatorRef(item)
+	if err != nil {
+		return entry.EntryRef{}, source.ErrAdapterFailure
+	}
+	entryID := entry.DeriveEntryID(adapter.identity.SourceID, item.Snapshot.ResourceType, item.Identity.EntryKey)
+	ref, err := entry.NewEntryRef(entryID, adapter.identity.SourceID, item.Identity.EntryKey, item.Snapshot.ResourceType, locatorRef, item.Identity.IdentityStrength)
+	if err != nil {
+		return entry.EntryRef{}, source.ErrAdapterFailure
+	}
+	return ref, nil
+}
+
+// classifyMissingLocalPath는 walk가 대상을 찾지 못한 원인을 존재·권한·어댑터가
+// 다루지 않는 대상(symlink 등)으로 분류한다.
+func classifyMissingLocalPath(localPath string) error {
+	_, statErr := os.Lstat(localPath)
+	switch {
+	case statErr == nil:
+		return source.ErrPathEscape
+	case errors.Is(statErr, fs.ErrPermission):
+		return source.ErrPermissionDenied
+	default:
+		return source.ErrEntryNotFound
+	}
+}
+
+// verifyLocalPathAccessible은 최종 대상을 실제로 열어 접근 가능함을 확인한다.
+// ponytail: 부모 순회 중간의 권한 오류는 openDirectory가 ErrAdapterFailure로
+// 닫는다. 경로별 권한 정밀 분류가 필요해지면 openDirectory에 cause 매핑을 추가한다.
+func verifyLocalPathAccessible(rootPath, relativePath string) error {
+	root, err := os.OpenRoot(rootPath)
+	if err != nil {
+		return source.ErrAdapterFailure
+	}
+	defer root.Close()
+	// FIFO 등 특수 파일은 읽기 전용 Open이 writer 연결을 무한 대기한다.
+	// O_NONBLOCK probe로 접근 가능성만 검사해 요청 deadline이나 context 취소를
+	// 막지 않게 한다. O_NOFOLLOW로 symlink 경유도 차단한다.
+	probe, err := root.OpenFile(relativePath, os.O_RDONLY|syscall.O_NONBLOCK|syscall.O_NOFOLLOW, 0)
+	if err != nil {
+		if errors.Is(err, fs.ErrPermission) {
+			return source.ErrPermissionDenied
+		}
+		return source.ErrAdapterFailure
+	}
+	return probe.Close()
 }
 
 func (adapter *Adapter) resolveObjectKey(ctx context.Context, objectKey string) (source.SourceItem, bool, error) {

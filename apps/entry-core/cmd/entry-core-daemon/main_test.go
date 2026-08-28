@@ -18,6 +18,7 @@ import (
 	"time"
 
 	domainentry "github.com/voyager-labs/voyager-app/apps/entry-core/internal/domain/entry"
+	entryruntime "github.com/voyager-labs/voyager-app/apps/entry-core/internal/runtime"
 )
 
 func TestDaemonUsageErrors(t *testing.T) {
@@ -39,7 +40,7 @@ func TestDaemonUsageErrors(t *testing.T) {
 			var stderr bytes.Buffer
 			constructorCalled := false
 			dependencies := daemonDependencies{
-				newServer: func(string, *log.Logger) (daemonServer, error) {
+				newServer: func(string, *entryruntime.Runtime, *log.Logger) (daemonServer, error) {
 					constructorCalled = true
 					return nil, errors.New("unexpected constructor call")
 				},
@@ -81,7 +82,7 @@ func TestDaemonDatabaseArgs(t *testing.T) {
 				io.Discard,
 				io.Discard,
 				daemonDependencies{
-					newServer:    func(string, *log.Logger) (daemonServer, error) { return server, nil },
+					newServer:    func(string, *entryruntime.Runtime, *log.Logger) (daemonServer, error) { return server, nil },
 					signalSource: inertSignalSource,
 					openStore:    store.openStore,
 				},
@@ -110,7 +111,7 @@ func TestDaemonDatabaseArgs(t *testing.T) {
 				&stdout,
 				&stderr,
 				daemonDependencies{
-					newServer: func(string, *log.Logger) (daemonServer, error) {
+					newServer: func(string, *entryruntime.Runtime, *log.Logger) (daemonServer, error) {
 						constructorCalled = true
 						return nil, errors.New("unexpected constructor call")
 					},
@@ -214,7 +215,7 @@ func TestDaemonWorkspaceMetadataLog(t *testing.T) {
 				&stdout,
 				&stderr,
 				daemonDependencies{
-					newServer:    func(string, *log.Logger) (daemonServer, error) { return server, nil },
+					newServer:    func(string, *entryruntime.Runtime, *log.Logger) (daemonServer, error) { return server, nil },
 					signalSource: inertSignalSource,
 					openStore:    store.openStore,
 				},
@@ -262,7 +263,7 @@ func TestDaemonDatabaseLifecycleLog(t *testing.T) {
 				&stdout,
 				&stderr,
 				daemonDependencies{
-					newServer:    func(string, *log.Logger) (daemonServer, error) { return server, nil },
+					newServer:    func(string, *entryruntime.Runtime, *log.Logger) (daemonServer, error) { return server, nil },
 					signalSource: inertSignalSource,
 					openStore:    store.openStore,
 				},
@@ -276,7 +277,7 @@ func TestDaemonDatabaseLifecycleLog(t *testing.T) {
 			if !strings.Contains(stderr.String(), test.wantLog) {
 				t.Fatalf("stderr = %q, want it to contain %q", stderr.String(), test.wantLog)
 			}
-			if got := store.callOrder(); !slices.Equal(got, []string{"open", "migrate", "bootstrap", "seed", "validate", "close"}) {
+			if got := store.callOrder(); !slices.Equal(got, []string{"open", "migrate", "bootstrap", "seed", "validate", "presets", "validate", "compose", "close"}) {
 				t.Fatalf("call order = %v, want [open migrate bootstrap seed validate close]", got)
 			}
 		})
@@ -295,7 +296,7 @@ func TestDaemonForegroundGracefulShutdown(t *testing.T) {
 			&stdout,
 			&stderr,
 			daemonDependencies{
-				newServer:    func(string, *log.Logger) (daemonServer, error) { return server, nil },
+				newServer:    func(string, *entryruntime.Runtime, *log.Logger) (daemonServer, error) { return server, nil },
 				signalSource: func() (<-chan os.Signal, func()) { return signals, func() {} },
 			},
 		)
@@ -338,7 +339,7 @@ func TestDaemonGracefulShutdownStoreCloseFailure(t *testing.T) {
 			&stdout,
 			&stderr,
 			daemonDependencies{
-				newServer:    func(string, *log.Logger) (daemonServer, error) { return server, nil },
+				newServer:    func(string, *entryruntime.Runtime, *log.Logger) (daemonServer, error) { return server, nil },
 				signalSource: func() (<-chan os.Signal, func()) { return signals, func() {} },
 				openStore:    store.openStore,
 			},
@@ -366,7 +367,7 @@ func TestDaemonGracefulShutdownStoreCloseFailure(t *testing.T) {
 	if !strings.Contains(stderr.String(), "store close failed") {
 		t.Fatalf("stderr = %q, want it to contain the store close failure", stderr.String())
 	}
-	if got := store.callOrder(); !slices.Equal(got, []string{"open", "migrate", "bootstrap", "seed", "validate", "close"}) {
+	if got := store.callOrder(); !slices.Equal(got, []string{"open", "migrate", "bootstrap", "seed", "validate", "presets", "validate", "compose", "close"}) {
 		t.Fatalf("call order = %v, want [open migrate bootstrap seed validate close]", got)
 	}
 }
@@ -382,7 +383,7 @@ func TestDaemonSecondSignalClosesForceTrigger(t *testing.T) {
 			io.Discard,
 			io.Discard,
 			daemonDependencies{
-				newServer:    func(string, *log.Logger) (daemonServer, error) { return server, nil },
+				newServer:    func(string, *entryruntime.Runtime, *log.Logger) (daemonServer, error) { return server, nil },
 				signalSource: func() (<-chan os.Signal, func()) { return signals, func() {} },
 			},
 		)
@@ -442,7 +443,7 @@ func TestDaemonFailureExitMapping(t *testing.T) {
 			&stdout,
 			&stderr,
 			daemonDependencies{
-				newServer:    func(string, *log.Logger) (daemonServer, error) { return server, nil },
+				newServer:    func(string, *entryruntime.Runtime, *log.Logger) (daemonServer, error) { return server, nil },
 				signalSource: inertSignalSource,
 			},
 		)
@@ -477,7 +478,7 @@ func TestDaemonFailureExitMapping(t *testing.T) {
 					io.Discard,
 					io.Discard,
 					daemonDependencies{
-						newServer:    func(string, *log.Logger) (daemonServer, error) { return server, nil },
+						newServer:    func(string, *entryruntime.Runtime, *log.Logger) (daemonServer, error) { return server, nil },
 						signalSource: func() (<-chan os.Signal, func()) { return signals, func() {} },
 					},
 				)
@@ -506,7 +507,7 @@ func TestDaemonFailureExitMapping(t *testing.T) {
 			&stdout,
 			&stderr,
 			daemonDependencies{
-				newServer: func(string, *log.Logger) (daemonServer, error) {
+				newServer: func(string, *entryruntime.Runtime, *log.Logger) (daemonServer, error) {
 					constructorCalled = true
 					return nil, errors.New("unexpected constructor call")
 				},
@@ -537,7 +538,7 @@ func TestDaemonFailureExitMapping(t *testing.T) {
 			io.Discard,
 			io.Discard,
 			daemonDependencies{
-				newServer: func(string, *log.Logger) (daemonServer, error) {
+				newServer: func(string, *entryruntime.Runtime, *log.Logger) (daemonServer, error) {
 					constructorCalled = true
 					return nil, errors.New("unexpected constructor call")
 				},
@@ -565,7 +566,7 @@ func TestDaemonFailureExitMapping(t *testing.T) {
 			io.Discard,
 			io.Discard,
 			daemonDependencies{
-				newServer: func(string, *log.Logger) (daemonServer, error) {
+				newServer: func(string, *entryruntime.Runtime, *log.Logger) (daemonServer, error) {
 					constructorCalled = true
 					return nil, errors.New("unexpected constructor call")
 				},
@@ -758,9 +759,22 @@ func (f *fakeDaemonStore) ApplyCatalogSeed(context.Context, domainentry.Workspac
 	return f.seedErr
 }
 
-func (f *fakeDaemonStore) ValidateActiveCatalog(context.Context, domainentry.WorkspaceContext) error {
+func (f *fakeDaemonStore) ValidateActiveCatalog(context.Context, domainentry.WorkspaceContext) (domainentry.PropertyCatalogSnapshot, error) {
 	f.record("validate")
-	return f.validateErr
+	if f.validateErr != nil {
+		return domainentry.PropertyCatalogSnapshot{}, f.validateErr
+	}
+	return domainentry.PropertyCatalogSnapshot{}, nil
+}
+
+func (f *fakeDaemonStore) ApplyPropertyPresets(context.Context, domainentry.WorkspaceContext) error {
+	f.record("presets")
+	return nil
+}
+
+func (f *fakeDaemonStore) ComposeServices(context.Context, domainentry.WorkspaceContext, domainentry.PropertyCatalogSnapshot) (*entryruntime.Runtime, error) {
+	f.record("compose")
+	return entryruntime.New(), nil
 }
 
 func (f *fakeDaemonStore) Close() error {

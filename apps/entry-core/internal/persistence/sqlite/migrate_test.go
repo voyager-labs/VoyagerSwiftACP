@@ -35,16 +35,16 @@ func TestMigrateCleanReplay(t *testing.T) {
 	// default); a clean replay reaches the current head version and is not
 	// dirty. The embedded directory now holds 0001 (workspace_metadata), 0002
 	// (workspace property catalog), 0003 (term lifecycle), 0004 (active term
-	// uniqueness), 0005 (definition display-unit contract), and 0006 (catalog
-	// seed marker), so head is version 6.
+	// uniqueness), 0005 (definition display-unit contract), 0006 (catalog
+	// seed marker), and 0007 (entry properties), so head is version 7.
 	var version int
 	var dirty bool
 	if err := store.SQLDB().QueryRowContext(ctx,
 		"SELECT version, dirty FROM schema_migrations").Scan(&version, &dirty); err != nil {
 		t.Fatalf("query schema_migrations: %v", err)
 	}
-	if version != 6 || dirty {
-		t.Fatalf("schema_migrations: got version=%d dirty=%v, want version=6 dirty=false", version, dirty)
+	if version != 7 || dirty {
+		t.Fatalf("schema_migrations: got version=%d dirty=%v, want version=7 dirty=false", version, dirty)
 	}
 
 	// The singleton CHECK (singleton = 1) is satisfied by the row insert, so a
@@ -210,12 +210,12 @@ func TestMigratePopulatedUpgrade(t *testing.T) {
 	}
 	defer store.Close()
 
-	// MigrateUp runs the embedded directory through the seed marker migration,
-	// reaching head version 6.
+	// MigrateUp runs the embedded directory through the entry-properties
+	// migration, reaching head version 7.
 	if err := MigrateUp(ctx, store.SQLDB()); err != nil {
 		t.Fatalf("MigrateUp: %v", err)
 	}
-	assertLedger(t, store.SQLDB(), 6, false)
+	assertLedger(t, store.SQLDB(), 7, false)
 
 	// Insert a populated workspace_metadata singleton row (16-byte UUIDv7 blob
 	// satisfies the length CHECK).
@@ -588,9 +588,12 @@ func TestMigrateWorkspacePropertyCatalogPopulatedReplay(t *testing.T) {
 	}
 	defer store.Close()
 
-	// Create the DB at version 1 using the embedded 0001-only directory.
-	if err := MigrateUp(ctx, store.SQLDB()); err != nil {
-		t.Fatalf("MigrateUp to version 1: %v", err)
+	// Create the DB at version 1 using a 0001-only fixture directory.
+	up1Only, down1Only := embeddedMigration(t, "0001_workspace_metadata")
+	if err := MigrateUpFS(ctx, store.SQLDB(), buildFixtureFS(t,
+		fixtureMigration{base: "0001_workspace_metadata", up: up1Only, down: down1Only},
+	)); err != nil {
+		t.Fatalf("MigrateUpFS to version 1: %v", err)
 	}
 
 	row := []byte("0123456789abcdef")

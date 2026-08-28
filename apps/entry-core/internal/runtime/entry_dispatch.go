@@ -20,24 +20,28 @@ func NewWithEntryService(workspaceID string, service EntryService) *Runtime {
 	if nilInterface(service) || workspaceID == "" {
 		service = nil
 	}
-	return newWithAppVersionAndServices(AppVersion, workspaceID, service)
+	return newWithAppVersionAndServices(AppVersion, workspaceID, service, nil)
 }
 
 func (runtime *Runtime) Dispatch(ctx context.Context, request schema.Request) schema.Response {
 	runtime.mu.RLock()
 	state, appVersion := runtime.state, runtime.appVersion
-	entryService, workspaceID := runtime.entryService, runtime.workspaceID
+	entryService, propertyService := runtime.entryService, runtime.propertyService
+	workspaceID := runtime.workspaceID
 	runtime.mu.RUnlock()
 	if state != StateRunning {
 		return dispatchError(request, schema.ErrorInternal)
 	}
-	if !runtimeMethodAllowed(entryService != nil, request.Method) {
+	if !runtimeMethodAllowed(entryService != nil, propertyService != nil, request.Method) {
 		return dispatchError(request, schema.ErrorUnknownMethod)
 	}
 	if request.Method == schema.MethodEntryList && request.EntryListParams == nil {
 		return dispatchError(request, schema.ErrorInvalidRequest)
 	}
 	if request.Method == schema.MethodEntryResolve && request.EntryResolveParams == nil {
+		return dispatchError(request, schema.ErrorInvalidRequest)
+	}
+	if propertyParamsMissing(request) {
 		return dispatchError(request, schema.ErrorInvalidRequest)
 	}
 
@@ -55,6 +59,28 @@ func (runtime *Runtime) Dispatch(ctx context.Context, request schema.Request) sc
 		return dispatchUnifiedList(ctx, request, workspaceID, entryService)
 	case schema.MethodEntryResolve:
 		return dispatchResolve(ctx, request, workspaceID, entryService)
+	case schema.MethodPropertyDefinitionList:
+		return dispatchPropertyDefinitionList(ctx, request, workspaceID, propertyService)
+	case schema.MethodPropertyDefinitionCreate:
+		return dispatchPropertyDefinitionCreate(ctx, request, workspaceID, propertyService)
+	case schema.MethodPropertyDefinitionUpdate:
+		return dispatchPropertyDefinitionUpdate(ctx, request, workspaceID, propertyService)
+	case schema.MethodPropertyDefinitionDisable:
+		return dispatchPropertyDefinitionDisable(ctx, request, workspaceID, propertyService)
+	case schema.MethodPropertyOptionCreate:
+		return dispatchPropertyOptionCreate(ctx, request, workspaceID, propertyService)
+	case schema.MethodPropertyOptionUpdate:
+		return dispatchPropertyOptionUpdate(ctx, request, workspaceID, propertyService)
+	case schema.MethodPropertyOptionReorder:
+		return dispatchPropertyOptionReorder(ctx, request, workspaceID, propertyService)
+	case schema.MethodPropertyOptionDisable:
+		return dispatchPropertyOptionDisable(ctx, request, workspaceID, propertyService)
+	case schema.MethodPropertyAssignmentList:
+		return dispatchPropertyAssignmentList(ctx, request, workspaceID, propertyService)
+	case schema.MethodPropertyChangePrepare:
+		return dispatchPropertyChangePrepare(ctx, request, workspaceID, propertyService)
+	case schema.MethodPropertyChangeExecute:
+		return dispatchPropertyChangeExecute(ctx, request, workspaceID, propertyService)
 	default:
 		return dispatchError(request, schema.ErrorUnknownMethod)
 	}
@@ -129,12 +155,16 @@ func nilInterface(value any) bool {
 	return false
 }
 
-func runtimeMethodAllowed(hasEntryService bool, method schema.Method) bool {
+func runtimeMethodAllowed(hasEntryService bool, hasPropertyService bool, method schema.Method) bool {
 	switch method {
 	case schema.MethodPing, schema.MethodHealth, schema.MethodVersion:
 		return true
 	case schema.MethodEntryList, schema.MethodEntryResolve:
 		return hasEntryService
+	case schema.MethodPropertyDefinitionList, schema.MethodPropertyDefinitionCreate, schema.MethodPropertyDefinitionUpdate, schema.MethodPropertyDefinitionDisable,
+		schema.MethodPropertyOptionCreate, schema.MethodPropertyOptionUpdate, schema.MethodPropertyOptionReorder, schema.MethodPropertyOptionDisable,
+		schema.MethodPropertyAssignmentList, schema.MethodPropertyChangePrepare, schema.MethodPropertyChangeExecute:
+		return hasPropertyService
 	default:
 		return false
 	}

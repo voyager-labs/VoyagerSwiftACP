@@ -67,6 +67,72 @@ func DecodeRequest(wire []byte) (Request, string, *ProtocolError) {
 			return request, trustworthyID, newProtocolError(code)
 		}
 		request.EntryResolveParams = &params
+	case MethodPropertyDefinitionList:
+		params, code := decodePropertyDefinitionListParams(fields["params"])
+		if code != "" {
+			return request, trustworthyID, newProtocolError(code)
+		}
+		request.PropertyDefinitionListParams = &params
+	case MethodPropertyDefinitionCreate:
+		params, code := decodePropertyDefinitionCreateParams(fields["params"])
+		if code != "" {
+			return request, trustworthyID, newProtocolError(code)
+		}
+		request.PropertyDefinitionCreateParams = &params
+	case MethodPropertyDefinitionUpdate:
+		params, code := decodePropertyDefinitionUpdateParams(fields["params"])
+		if code != "" {
+			return request, trustworthyID, newProtocolError(code)
+		}
+		request.PropertyDefinitionUpdateParams = &params
+	case MethodPropertyDefinitionDisable:
+		params, code := decodePropertyDefinitionDisableParams(fields["params"])
+		if code != "" {
+			return request, trustworthyID, newProtocolError(code)
+		}
+		request.PropertyDefinitionDisableParams = &params
+	case MethodPropertyOptionCreate:
+		params, code := decodePropertyOptionCreateParams(fields["params"])
+		if code != "" {
+			return request, trustworthyID, newProtocolError(code)
+		}
+		request.PropertyOptionCreateParams = &params
+	case MethodPropertyOptionUpdate:
+		params, code := decodePropertyOptionUpdateParams(fields["params"])
+		if code != "" {
+			return request, trustworthyID, newProtocolError(code)
+		}
+		request.PropertyOptionUpdateParams = &params
+	case MethodPropertyOptionReorder:
+		params, code := decodePropertyOptionReorderParams(fields["params"])
+		if code != "" {
+			return request, trustworthyID, newProtocolError(code)
+		}
+		request.PropertyOptionReorderParams = &params
+	case MethodPropertyOptionDisable:
+		params, code := decodePropertyOptionDisableParams(fields["params"])
+		if code != "" {
+			return request, trustworthyID, newProtocolError(code)
+		}
+		request.PropertyOptionDisableParams = &params
+	case MethodPropertyAssignmentList:
+		params, code := decodePropertyAssignmentListParams(fields["params"])
+		if code != "" {
+			return request, trustworthyID, newProtocolError(code)
+		}
+		request.PropertyAssignmentListParams = &params
+	case MethodPropertyChangePrepare:
+		changes, code := decodePropertyChangeParams(fields["params"])
+		if code != "" {
+			return request, trustworthyID, newProtocolError(code)
+		}
+		request.PropertyChangePrepareParams = &PropertyChangePrepareParams{Changes: changes}
+	case MethodPropertyChangeExecute:
+		changes, code := decodePropertyChangeParams(fields["params"])
+		if code != "" {
+			return request, trustworthyID, newProtocolError(code)
+		}
+		request.PropertyChangeExecuteParams = &PropertyChangeExecuteParams{Changes: changes}
 	default:
 		if !validEmptyParams(fields["params"]) {
 			return request, trustworthyID, newProtocolError(ErrorInvalidRequest)

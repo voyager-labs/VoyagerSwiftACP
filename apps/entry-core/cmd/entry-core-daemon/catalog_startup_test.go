@@ -16,6 +16,7 @@ import (
 
 	domainentry "github.com/voyager-labs/voyager-app/apps/entry-core/internal/domain/entry"
 	sqlite "github.com/voyager-labs/voyager-app/apps/entry-core/internal/persistence/sqlite"
+	entryruntime "github.com/voyager-labs/voyager-app/apps/entry-core/internal/runtime"
 )
 
 // TestCatalogStartupOrder는 daemon이 DB startup 시
@@ -36,7 +37,7 @@ func TestCatalogStartupOrder(t *testing.T) {
 		io.Discard,
 		&stderr,
 		daemonDependencies{
-			newServer: func(string, *log.Logger) (daemonServer, error) {
+			newServer: func(string, *entryruntime.Runtime, *log.Logger) (daemonServer, error) {
 				constructorCalled = true
 				return server, nil
 			},
@@ -50,7 +51,7 @@ func TestCatalogStartupOrder(t *testing.T) {
 	if !constructorCalled {
 		t.Fatal("server constructor was not called after seed success")
 	}
-	if got := store.callOrder(); !slices.Equal(got, []string{"open", "migrate", "bootstrap", "seed", "validate", "close"}) {
+	if got := store.callOrder(); !slices.Equal(got, []string{"open", "migrate", "bootstrap", "seed", "validate", "presets", "validate", "compose", "close"}) {
 		t.Fatalf("call order = %v, want [open migrate bootstrap seed validate close]", got)
 	}
 	if strings.Contains(stderr.String(), "startup failed") {
@@ -74,7 +75,7 @@ func TestCatalogStartupSeedFailure(t *testing.T) {
 		&stdout,
 		&stderr,
 		daemonDependencies{
-			newServer: func(string, *log.Logger) (daemonServer, error) {
+			newServer: func(string, *entryruntime.Runtime, *log.Logger) (daemonServer, error) {
 				constructorCalled = true
 				return nil, errors.New("unexpected constructor call")
 			},
@@ -112,7 +113,7 @@ func TestCatalogStartupMigrateFailure(t *testing.T) {
 		&stdout,
 		&stderr,
 		daemonDependencies{
-			newServer: func(string, *log.Logger) (daemonServer, error) {
+			newServer: func(string, *entryruntime.Runtime, *log.Logger) (daemonServer, error) {
 				constructorCalled = true
 				return nil, errors.New("unexpected constructor call")
 			},
@@ -151,7 +152,7 @@ func TestCatalogStartupWorkspaceFailure(t *testing.T) {
 		&stdout,
 		&stderr,
 		daemonDependencies{
-			newServer: func(string, *log.Logger) (daemonServer, error) {
+			newServer: func(string, *entryruntime.Runtime, *log.Logger) (daemonServer, error) {
 				constructorCalled = true
 				return nil, errors.New("unexpected constructor call")
 			},
@@ -189,7 +190,7 @@ func TestCatalogStartupValidateFailureFailsClosed(t *testing.T) {
 		&stdout,
 		&stderr,
 		daemonDependencies{
-			newServer: func(string, *log.Logger) (daemonServer, error) {
+			newServer: func(string, *entryruntime.Runtime, *log.Logger) (daemonServer, error) {
 				constructorCalled = true
 				return nil, errors.New("unexpected constructor call")
 			},
@@ -320,7 +321,7 @@ func TestDaemonStartupFailsClosedOnNonSystemActiveOrphan(t *testing.T) {
 	constructorCalled := false
 
 	deps := productionDependencies()
-	deps.newServer = func(string, *log.Logger) (daemonServer, error) {
+	deps.newServer = func(string, *entryruntime.Runtime, *log.Logger) (daemonServer, error) {
 		constructorCalled = true
 		server := newFakeDaemonServer()
 		server.serveErr = errors.New("accept failed")
@@ -386,7 +387,7 @@ func TestDaemonStartupAcceptsValidMixedOwnerCatalog(t *testing.T) {
 	constructorCalled := false
 
 	deps := productionDependencies()
-	deps.newServer = func(string, *log.Logger) (daemonServer, error) {
+	deps.newServer = func(string, *entryruntime.Runtime, *log.Logger) (daemonServer, error) {
 		constructorCalled = true
 		server := newFakeDaemonServer()
 		server.serveErr = errors.New("accept failed")
@@ -416,7 +417,7 @@ func TestCatalogStartupDBLessNoStore(t *testing.T) {
 		io.Discard,
 		io.Discard,
 		daemonDependencies{
-			newServer:    func(string, *log.Logger) (daemonServer, error) { return server, nil },
+			newServer:    func(string, *entryruntime.Runtime, *log.Logger) (daemonServer, error) { return server, nil },
 			signalSource: inertSignalSource,
 			openStore: func(ctx context.Context, _ string) (daemonStore, error) {
 				storeOpened = true

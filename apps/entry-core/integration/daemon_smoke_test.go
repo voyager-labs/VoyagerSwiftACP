@@ -42,6 +42,13 @@ func TestDaemonProcessSmoke(t *testing.T) {
 	if err := os.Chmod(tempRoot, 0o700); err != nil {
 		t.Fatal(err)
 	}
+	// localfs 어댑터는 os.Root 심링크 순회를 거부하므로(/tmp·/var/folders가
+	// 심링크인 macOS 포함), Property 대상 경로는 실제 경로로 정규화한다.
+	resolvedRoot, err := filepath.EvalSymlinks(tempRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tempRoot = resolvedRoot
 
 	cliPath := filepath.Join(tempRoot, "ec")
 	daemonPath := filepath.Join(tempRoot, "ecd")
@@ -262,6 +269,28 @@ func TestDaemonProcessSmoke(t *testing.T) {
 		if !strings.Contains(drifted.stderr.String(), "startup failed") {
 			t.Fatalf("drifted daemon stderr=%q, want startup failed", drifted.stderr.String())
 		}
+	})
+
+	// VOY-765 todo 11: Property UDS/restart persistence 증명 서브테스트다.
+	// 각 서브테스트는 자체 DB와 daemon 부팅을 소유하며 공개 UDS 계약만 사용한다.
+	propertyEnv := propertyPersistenceEnv{tempRoot: tempRoot, daemonPath: daemonPath, socketPath: socketPath}
+	t.Run("property_atomic_persistence", func(t *testing.T) {
+		runPropertyAtomicPersistence(t, propertyEnv)
+	})
+	t.Run("property_response_budget_preflight", func(t *testing.T) {
+		runPropertyResponseBudgetPreflight(t, propertyEnv)
+	})
+	t.Run("property_change_stale_middle_target", func(t *testing.T) {
+		runPropertyStaleMiddleTarget(t, propertyEnv)
+	})
+	t.Run("property_change_invalid_final_target", func(t *testing.T) {
+		runPropertyInvalidFinalTarget(t, propertyEnv)
+	})
+	t.Run("property_change_inaccessible_path", func(t *testing.T) {
+		runPropertyInaccessiblePath(t, propertyEnv)
+	})
+	t.Run("property_change_oversized_envelope", func(t *testing.T) {
+		runPropertyOversizedEnvelope(t, propertyEnv)
 	})
 }
 
