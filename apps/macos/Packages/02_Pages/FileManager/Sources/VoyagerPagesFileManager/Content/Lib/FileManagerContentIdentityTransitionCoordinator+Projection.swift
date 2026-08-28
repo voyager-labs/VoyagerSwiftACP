@@ -28,6 +28,17 @@ extension FileManagerContentIdentityTransitionCoordinator {
             // 소스 coreFinished가 먼저 도착해도 retained before 행을 유지해 선택 깜빡임을 막는다.
             holdsUntilMigration = true
         }
+        if shouldDefer == nil {
+            // 다중 이동: additional 이동의 source 폴더도 primary 보존과 동일하게 보류한다.
+            for move in transition.additionalMoves {
+                guard case let .folder(ownerID, _) = move.sourceOwner,
+                      canonicalizedPath(ownerID) == canonicalizedPath(folderID)
+                else { continue }
+                shouldDefer = true
+                holdsUntilMigration = true
+                break
+            }
+        }
         guard shouldDefer == true else { return }
         state.entryViewLayout.hierarchy.beginDeferredFolderReplacement(
             folderID: folderID,

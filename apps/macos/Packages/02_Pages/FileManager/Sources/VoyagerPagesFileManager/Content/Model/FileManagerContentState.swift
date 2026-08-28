@@ -34,8 +34,13 @@ public struct FileManagerContentState: Equatable {
 
     /// 다중 선택 이동에서 primary 외의 before→after 쌍.
     struct EntryMovePair: Equatable {
+        /// canonical화된 이전·이후 경로(선택 매칭의 before 비교에 사용).
         let beforePath: String
         let afterPath: String
+        /// symlink 해석 전 lexical 이후 경로. 행 identity 매칭에 사용한다.
+        var afterLexicalPath: String = ""
+        /// 이동 source의 projection 소유자. destination과 같으면 nil.
+        var sourceOwner: EntryIdentityTransitionProjectionOwner?
     }
 
     struct EntryIdentityTransition: Equatable {

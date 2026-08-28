@@ -41,9 +41,6 @@ enum FileManagerContentIdentityTransitionCoordinator {
         }
         guard let move = trustedMoves.first else { return .none }
         guard isSameOrDescendant(path: move.before, of: normalizedRoot) else { return .none }
-        let additionalMoves = trustedMoves.dropFirst()
-            .filter { isSameOrDescendant(path: $0.before, of: normalizedRoot) }
-            .map { FileManagerContentState.EntryMovePair(beforePath: $0.before, afterPath: $0.after) }
 
         let projectionOwner = makeProjectionOwner(
             afterPath: move.rawAfter,
@@ -56,6 +53,21 @@ enum FileManagerContentIdentityTransitionCoordinator {
             rootPath: normalizedRoot,
             state: state,
         )
+        let additionalMoves = trustedMoves.dropFirst()
+            .filter { isSameOrDescendant(path: $0.before, of: normalizedRoot) }
+            .map { target in
+                FileManagerContentState.EntryMovePair(
+                    beforePath: target.before,
+                    afterPath: target.after,
+                    afterLexicalPath: target.rawAfter,
+                    sourceOwner: Self.preservationOwner(
+                        beforePath: target.rawBefore,
+                        projectionOwner: projectionOwner,
+                        rootPath: normalizedRoot,
+                        state: state,
+                    ),
+                )
+            }
         // 새 전이로 덮기 전에 이전 staging을 폴더에 반영한다: cursor는 이미 증가했으므로
         // 버리면 후속 generic batch에서 누락 항목이 생긴다.
         state.entryViewLayout.hierarchy.commitDeferredFolderReplacementsOnCancel()
@@ -93,12 +105,14 @@ enum FileManagerContentIdentityTransitionCoordinator {
         ) else { return false }
         // 다중 이동 전이: primary와 별개로 이번 배치에 도착한 추가 이동도 함께 옮겨
         // buffered reload terminal의 projection reconcile이 남은 before ID를 지우지 않게 한다.
+        // after 매칭은 primary와 동일하게 lexical 행 identity 기준이다(symlink rename 대응).
         for move in transition.additionalMoves {
             guard let additionalBeforeID = state.entryViewLayout.selectedIds.first(where: {
                 canonicalizedPath($0) == move.beforePath
             }) else { continue }
+            let additionalAfter = move.afterLexicalPath.isEmpty ? move.afterPath : move.afterLexicalPath
             guard let additionalAfterID = entries.first(where: {
-                standardizedPath($0.id) == standardizedPath(move.afterPath)
+                standardizedPath($0.id) == standardizedPath(additionalAfter)
             })?.id else { continue }
             state.entryViewLayout.selectedIds.remove(additionalBeforeID)
             state.entryViewLayout.selectedIds.insert(additionalAfterID)
@@ -119,15 +133,15 @@ enum FileManagerContentIdentityTransitionCoordinator {
         state.entryViewLayout.selectedIds.insert(matchedAfterID)
         state.entryViewLayout.lastSelectedId = matchedAfterID
         state.entryViewLayout.rangeAnchorId = matchedAfterID
-        // takeDeferredFolderReplacement는 이미 staging을 제거하므로, 빈 snapshot도
-        // authoritative 결과로 커밋해 retained before 행이 terminal 뒤에 남지 않게 한다.
-        // 단 이번 세대에 generic 적용이 먼저 일어난 폴더(hasAppliedContentBatch=true)의
-        // 실제 children을 빈 staging으로 덮어쓰지 않는다.
-        if case let .folder(preservationID, _) = transition.preservationOwner,
-           var targetNode = state.entryViewLayout.hierarchy.nodesByID[preservationID],
-           let staged = state.entryViewLayout.hierarchy.takeDeferredFolderReplacement(folderID: preservationID),
-           !targetNode.folder.hasAppliedContentBatch
-        {
+        /// takeDeferredFolderReplacement는 이미 staging을 제거하므로, 빈 snapshot도
+        /// authoritative 결과로 커밋해 retained before 행이 terminal 뒤에 남지 않게 한다.
+        /// 단 이번 세대에 generic 적용이 먼저 일어난 폴더(hasAppliedContentBatch=true)의
+        /// 실제 children을 빈 staging으로 덮어쓰지 않는다.
+        func commitPreservationStaging(_ preservationID: EntryModel.ID) {
+            guard var targetNode = state.entryViewLayout.hierarchy.nodesByID[preservationID],
+                  let staged = state.entryViewLayout.hierarchy.takeDeferredFolderReplacement(folderID: preservationID),
+                  !targetNode.folder.hasAppliedContentBatch
+            else { return }
             // 비종료 empty staging은 authoritative하지 않다: 빈 첫 batch 뒤 non-empty batch나
             // 실패가 올 수 있으므로 retained children을 유지하고 terminal 확정에 맡긴다
             // (applyCoreFinished의 empty 결과 기준과 동일).
@@ -140,6 +154,14 @@ enum FileManagerContentIdentityTransitionCoordinator {
                 // 이동 전 경로의 stale 로드 하위 node를 정리해 재확장 시 과거 캐시 재사용을 막는다.
                 state.entryViewLayout.hierarchy.reconcileNodesAfterMigrationCommit(folderID: preservationID)
             }
+        }
+        if case let .folder(preservationID, _) = transition.preservationOwner {
+            commitPreservationStaging(preservationID)
+        }
+        // 다중 이동: 각 additional 이동의 source 폴더 staging도 같은 계약으로 커밋한다.
+        for move in transition.additionalMoves {
+            guard case let .folder(sourceID, _) = move.sourceOwner else { continue }
+            commitPreservationStaging(sourceID)
         }
         if case .root = projectionOwner {
             discard(state: &state)
@@ -202,10 +224,16 @@ enum FileManagerContentIdentityTransitionCoordinator {
         _ transition: FileManagerContentState.EntryIdentityTransition,
     ) -> Bool {
         let normalizedEventPath = canonicalizedPath(eventPath)
-        return isSameOrDescendant(path: normalizedEventPath, of: transition.beforePath)
-            || isSameOrDescendant(path: normalizedEventPath, of: transition.afterPath)
-            || isSameOrDescendant(path: transition.beforePath, of: normalizedEventPath)
-            || isSameOrDescendant(path: transition.afterPath, of: normalizedEventPath)
+        func overlaps(_ beforePath: String, _ afterPath: String) -> Bool {
+            isSameOrDescendant(path: normalizedEventPath, of: beforePath)
+                || isSameOrDescendant(path: normalizedEventPath, of: afterPath)
+                || isSameOrDescendant(path: beforePath, of: normalizedEventPath)
+                || isSameOrDescendant(path: afterPath, of: normalizedEventPath)
+        }
+        // 다중 이동: primary뿐 아니라 additional 이동 경로의 rename echo도 병합해
+        // 명령 reload 위의 중복 refresh 예약을 막는다.
+        if overlaps(transition.beforePath, transition.afterPath) { return true }
+        return transition.additionalMoves.contains { overlaps($0.beforePath, $0.afterPath) }
     }
 
     static func discard(state: inout FileManagerContentState) {

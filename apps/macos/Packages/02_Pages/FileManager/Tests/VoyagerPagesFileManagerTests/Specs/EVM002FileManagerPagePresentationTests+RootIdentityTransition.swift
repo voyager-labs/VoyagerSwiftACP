@@ -351,6 +351,190 @@ extension EVM002FileManagerPagePresentationTests {
         await store.receive(\.entryViewLayout.hierarchy.rootSnapshotCompleted)
     }
 
+    /// EVM-002-command_external_refresh_correlation: command echo 상관관계는 additional 이동 경로도 포함한다.
+    /// - 검증 내용: additional before/after와 그 하위 경로의 FSEvent가 transitionOverlaps에서 겹침으로 판정된다.
+    /// - 사전 조건: additionalMoves가 하나 있는 대기 전이.
+    /// - 기대 결과: additional 경로·하위는 true, 무관 경로는 false.
+    func testTransitionOverlapsCoversAdditionalMoves() {
+        var transition = FileManagerContentState.EntryIdentityTransition(
+            recordID: UUID(),
+            beforePath: "/root/a",
+            afterPath: "/root/b",
+            rootPath: "/root",
+            refreshGeneration: 1,
+        )
+        transition.additionalMoves = [
+            .init(beforePath: "/root/c", afterPath: "/root/d"),
+        ]
+
+        XCTAssertTrue(
+            FileManagerContentIdentityTransitionCoordinator.transitionOverlaps("/root/c", transition),
+            "additional before 경로도 echo 병합 대상이다",
+        )
+        XCTAssertTrue(
+            FileManagerContentIdentityTransitionCoordinator.transitionOverlaps("/root/d/child", transition),
+            "additional after 하위 경로도 echo 병합 대상이다",
+        )
+        XCTAssertFalse(
+            FileManagerContentIdentityTransitionCoordinator.transitionOverlaps("/root/z", transition),
+            "무관한 경로는 병합하지 않는다",
+        )
+    }
+
+    /// EVM-002-command_external_refresh_correlation: 추가 symlink 이동도 lexical after 행으로 migration한다.
+    /// - 검증 내용: additional pair의 raw lexical after가 destination symlink 행과 매칭되어 선택이 이동한다.
+    /// - 사전 조건: 실제 symlink rename의 canonical after가 존재하고 lexical 행이 배치에 도착한다.
+    /// - 기대 결과: selectedIds가 lexical newlink 행을 포함하고 전이는 소비된다.
+    func testAdditionalSymlinkMoveMigratesToLexicalRow() throws {
+        let rootURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let dirURL = rootURL.appendingPathComponent("dir", isDirectory: true)
+        try FileManager.default.createDirectory(at: dirURL, withIntermediateDirectories: true)
+        let targetURL = rootURL.appendingPathComponent("target.txt")
+        try FileManager.default.createFile(atPath: targetURL.path, contents: Data())
+        let newLinkURL = dirURL.appendingPathComponent("newlink")
+        try FileManager.default.createSymbolicLink(at: newLinkURL, withDestinationURL: targetURL)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let oldLink = dirURL.appendingPathComponent("oldlink").path
+        let primaryBefore = rootURL.appendingPathComponent("f1").path
+        let primaryAfter = rootURL.appendingPathComponent("g1").path
+
+        var state = FileManagerContentState()
+        state.navigation.navigationState = .folder(rootURL.path)
+        state.entryViewLayout.entryOperations.loadingContext.generation = 1
+        state.entryViewLayout.selectedIds = [primaryBefore, oldLink]
+
+        let record = EntryActionRecord(
+            operationKind: .pasteFileMove,
+            targets: [
+                .init(beforePath: primaryBefore, afterPath: primaryAfter),
+                .init(beforePath: oldLink, afterPath: newLinkURL.path),
+            ],
+        )
+        _ = FileManagerContentIdentityTransitionCoordinator.recordIfEligible(record, state: &state)
+        let transition = try XCTUnwrap(state.pendingIdentityTransition, "다중 이동 전이가 만들어진다")
+        XCTAssertEqual(transition.additionalMoves.count, 1)
+
+        let primaryAfterEntry = EntryModel.temporaryFolder(id: primaryAfter, name: "g1")
+        let lexicalLinkEntry = EntryModel.temporaryFolder(id: newLinkURL.path, name: "newlink")
+        _ = FileManagerContentIdentityTransitionCoordinator.migrateSelection(
+            entries: [primaryAfterEntry, lexicalLinkEntry],
+            projectionOwner: .root(generation: 1),
+            state: &state,
+        )
+
+        XCTAssertEqual(
+            Set(state.entryViewLayout.selectedIds),
+            [primaryAfter, newLinkURL.path],
+            "additional symlink 이동은 lexical 행으로 migration한다",
+        )
+        XCTAssertNil(state.pendingIdentityTransition)
+    }
+
+    /// EVM-002-command_external_refresh_correlation: additional 이동의 source 폴더도 migration까지 보류·커밋한다.
+    /// - 검증 내용: additional source 폴더의 batch가 staging 보류되고, destination migration 시 커밋된다.
+    /// - 사전 조건: primary source A·additional source C·destination D가 모두 expanded 상태다.
+    /// - 기대 결과: C batch 뒤 holdsUntilMigration staging이 생기고, D batch 뒤 C children이 커밋되며 선택이 이동한다.
+    func testAdditionalSourceFolderStagesAndCommitsAtMigration() async {
+        let rootPath = "/root"
+        let sourceA = EntryModel.temporaryFolder(id: "/root/A", name: "A")
+        let sourceC = EntryModel.temporaryFolder(id: "/root/C", name: "C")
+        let destination = EntryModel.temporaryFolder(id: "/root/D", name: "D")
+        let beforeA = EntryModel.temporaryFolder(id: "/root/A/before", name: "before")
+        let beforeC = EntryModel.temporaryFolder(id: "/root/C/before", name: "before")
+        let afterA = EntryModel.temporaryFolder(id: "/root/D/afterA", name: "afterA")
+        let afterC = EntryModel.temporaryFolder(id: "/root/D/afterC", name: "afterC")
+        let unrelatedC = EntryModel.temporaryFolder(id: "/root/C/kept", name: "kept")
+        var state = FileManagerContentState()
+        state.navigation.seedInitialFolderPath(rootPath)
+        state.entryViewLayout.mode = .list
+        state.entryViewLayout.entries = [sourceA, sourceC, destination]
+        state.entryViewLayout.entryOperations.items = [sourceA, sourceC, destination]
+        state.entryViewLayout.entryOperations.loadingContext.generation = 1
+        state.entryViewLayout.hierarchy = .init(rootPath: rootPath)
+        for (folder, child) in [(sourceA, beforeA), (sourceC, beforeC)] {
+            state.entryViewLayout.hierarchy.nodesByID[folder.id] = .init(
+                children: [child],
+                loadPhase: .loadingCore,
+                generation: 3,
+                expectedBatchIndex: 0,
+                coreFinished: false,
+            )
+        }
+        state.entryViewLayout.hierarchy.nodesByID[destination.id] = .init(
+            children: [],
+            loadPhase: .loadingCore,
+            generation: 3,
+            expectedBatchIndex: 0,
+            coreFinished: false,
+        )
+        state.entryViewLayout.hierarchy.setExpandedIDs([sourceA.id, sourceC.id, destination.id])
+        state.entryViewLayout.selectedIds = [beforeA.id, beforeC.id]
+        state.entryViewLayout.lastSelectedId = beforeA.id
+        state.entryViewLayout.rangeAnchorId = beforeA.id
+        state.pendingIdentityTransition = .init(
+            recordID: UUID(),
+            beforePath: beforeA.id,
+            afterPath: afterA.id,
+            rootPath: rootPath,
+            refreshGeneration: 1,
+            projectionOwner: .folder(id: destination.id, generation: 3),
+            preservationOwner: .folder(id: sourceA.id, generation: 3),
+            additionalMoves: [
+                .init(
+                    beforePath: beforeC.id,
+                    afterPath: afterC.id,
+                    afterLexicalPath: "",
+                    sourceOwner: .folder(id: sourceC.id, generation: 3),
+                ),
+            ],
+        )
+        let store = TestStore(initialState: state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.entryOpenClient = .testValue
+            $0.entryQuickLookClient = .previewValue
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+        }
+        store.exhaustivity = .off
+        let rootContextGeneration = state.entryViewLayout.hierarchy.rootContextGeneration
+
+        await store.send(.entryViewLayout(.hierarchy(.folderChildrenResponse(
+            rootContextGeneration: rootContextGeneration,
+            folderID: sourceC.id,
+            folderGeneration: 3,
+            .event(.coreBatch(items: [unrelatedC], batchIndex: 0)),
+        ))))
+        XCTAssertEqual(
+            store.state.entryViewLayout.hierarchy.nodesByID[sourceC.id]?.folder.children.map(\.id),
+            [beforeC.id],
+            "additional source 폴더도 migration까지 retained children을 유지한다",
+        )
+        XCTAssertEqual(store.state.entryViewLayout.selectedIds, [beforeA.id, beforeC.id])
+
+        await store.send(.entryViewLayout(.hierarchy(.folderChildrenResponse(
+            rootContextGeneration: rootContextGeneration,
+            folderID: destination.id,
+            folderGeneration: 3,
+            .event(.coreBatch(items: [afterA, afterC], batchIndex: 0)),
+        ))))
+        XCTAssertEqual(store.state.entryViewLayout.selectedIds, [afterA.id, afterC.id])
+        XCTAssertEqual(
+            store.state.entryViewLayout.hierarchy.nodesByID[sourceC.id]?.folder.children.map(\.id),
+            [unrelatedC.id],
+            "additional source staging이 migration 시 커밋된다",
+        )
+        await store.receive(\.entryViewLayout.delegate.selectionChanged)
+
+        await store.send(.entryViewLayout(.hierarchy(.folderChildrenResponse(
+            rootContextGeneration: rootContextGeneration,
+            folderID: destination.id,
+            folderGeneration: 3,
+            .event(.coreFinished(batchCount: 1)),
+        ))))
+        XCTAssertNil(store.state.pendingIdentityTransition)
+    }
+
     private func receiveFolderRestart(
         _ store: TestStore<FileManagerContentState, FileManagerContentAction>,
         folderID: String,
