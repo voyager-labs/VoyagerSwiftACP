@@ -33,6 +33,7 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
     private let operationDelay: Duration
     private let operationGate: RuntimeTestGate?
     private let restartDelay: Duration
+    private let restartCompatibilityGate: RuntimeTestGate?
     private let terminalResultOverride: RuntimeResult?
     private let terminalResultGate: RuntimeTestGate?
     private let failsTerminalResult: Bool
@@ -51,6 +52,8 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
     private var queuedInputCount = 0
     private var restartBindings: [RuntimeRestartBinding] = []
     private var restartBindingCountWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
+    private(set) var restartCompletionCount = 0
+    private var restartCompletionCountWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
     private var approvalRequests: [RuntimeApprovalRequest] = []
 
     init(
@@ -77,6 +80,7 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
         failsLaunch: Bool = false,
         launchFailures: Int = 0,
         restartDelay: Duration = .zero,
+        restartCompatibilityGate: RuntimeTestGate? = nil,
         failsRestart: Bool = false,
         terminalResultOverride: RuntimeResult? = nil,
         terminalResultGate: RuntimeTestGate? = nil,
@@ -110,6 +114,7 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
         self.operationDelay = operationDelay
         self.operationGate = operationGate
         self.restartDelay = restartDelay
+        self.restartCompatibilityGate = restartCompatibilityGate
         self.failsRestart = failsRestart
         self.terminalResultOverride = terminalResultOverride
         self.terminalResultGate = terminalResultGate
@@ -226,12 +231,17 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
     ) async throws -> RuntimeRestartCompatibility {
         restartBindings.append(binding)
         resumeRestartBindingCountWaiters()
+        await restartCompatibilityGate?.wait()
         if restartDelay != .zero {
             try await clock.sleep(restartDelay)
         }
         if failsRestart {
+            restartCompletionCount += 1
+            resumeRestartCompletionCountWaiters()
             throw InjectedFailure.restart
         }
+        restartCompletionCount += 1
+        resumeRestartCompletionCountWaiters()
         return .compatible
     }
 
@@ -282,6 +292,13 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
         }
     }
 
+    func waitForRestartCompletionCount(_ minimumCount: Int) async {
+        guard restartCompletionCount < minimumCount else { return }
+        await withCheckedContinuation { continuation in
+            restartCompletionCountWaiters.append((minimumCount, continuation))
+        }
+    }
+
     private func resumeLaunchCountWaiters() {
         let ready = launchCountWaiters.filter { $0.0 <= launchCount }
         launchCountWaiters.removeAll { $0.0 <= launchCount }
@@ -309,6 +326,14 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
     private func resumeRestartBindingCountWaiters() {
         let ready = restartBindingCountWaiters.filter { $0.0 <= restartBindings.count }
         restartBindingCountWaiters.removeAll { $0.0 <= restartBindings.count }
+        for (_, continuation) in ready {
+            continuation.resume()
+        }
+    }
+
+    private func resumeRestartCompletionCountWaiters() {
+        let ready = restartCompletionCountWaiters.filter { $0.0 <= restartCompletionCount }
+        restartCompletionCountWaiters.removeAll { $0.0 <= restartCompletionCount }
         for (_, continuation) in ready {
             continuation.resume()
         }

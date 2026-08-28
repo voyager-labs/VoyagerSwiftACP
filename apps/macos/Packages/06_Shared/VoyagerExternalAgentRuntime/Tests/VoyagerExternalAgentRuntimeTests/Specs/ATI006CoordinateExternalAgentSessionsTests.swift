@@ -1778,6 +1778,67 @@ struct ATI006CoordinateExternalAgentSessionsTests {
         #expect(await adapter.receivedRestartBindings().count == 1)
     }
 
+    /// ATI-006-coordinate_external_agent_run_continuity: restore cancellation returns before uncooperative restart
+    /// compatibility completes.
+    /// uncooperative restart compatibility가 gate에 머물러도 caller 취소가 즉시 복귀하고 늦은 compatible 결과가 claim을 만들지 않는지 검증한다.
+    /// - 검증 내용: gate 개방 전 CancellationError 복귀, store apply·claim·lease 불변, 늦은 completion 이후에도 claim 미생성.
+    /// - 사전 조건: persisted running session의 restart compatibility가 취소를 무시하는 RuntimeTestGate에서 대기한다.
+    /// - 기대 결과: restore는 gate 개방 전에 취소되고 늦은 compatible 결과는 restore claim을 생성하지 않는다.
+    @Test
+    func `restore cancellation returns before uncooperative restart compatibility completes`() async throws {
+        let restartGate = RuntimeTestGate()
+        let adapter = DeterministicRuntimeAdapter(
+            id: "sdk",
+            transport: .sdkAsyncStream,
+            eventsByLaunch: [[]],
+            restartCompatibilityGate: restartGate,
+        )
+        let store = InMemoryRuntimeStateStore(state: reviewRegressionTestsMakeRunningState())
+        let plane = RuntimeControlPlane(store: store)
+        try await plane.register(adapter)
+        let recorder = ResumeProbeRecorder()
+        let restoreTask = Task {
+            do {
+                _ = try await plane.restore(
+                    hostReference: "host-a",
+                    expectedContext: reviewRegressionTestsMakeContext(),
+                )
+                await recorder.record(.failure("restore returned without cancellation"))
+            } catch is CancellationError {
+                await recorder.record(.cancellation)
+            } catch {
+                await recorder.record(.failure(String(describing: error)))
+            }
+        }
+        await adapter.waitForRestartBindingCount(1)
+        await restartGate.waitUntilWaiting()
+
+        restoreTask.cancel()
+        if await !(recorder.waitForValue(maxYields: 10000)) {
+            await recorder.record(.failure("restore did not return before restart compatibility completed"))
+        }
+        let observedOutcome = await recorder.value
+        #expect(observedOutcome == .cancellation)
+        #expect(await store.applyCount == 0)
+        #expect(await store.currentState()?.sessions.first?.restorationClaim == nil)
+        #expect(await plane.sessions["host-a"]?.stored.restorationClaim == nil)
+        #expect(await plane.sessions["host-a"]?.lease.isActive == false)
+        #expect(await plane.projection(for: "host-a") == .running)
+
+        await restartGate.open()
+        await adapter.waitForRestartCompletionCount(1)
+        for _ in 0 ..< 100 {
+            await Task.yield()
+        }
+        _ = await restoreTask.value
+
+        #expect(await store.applyCount == 0)
+        #expect(await store.currentState()?.sessions.first?.restorationClaim == nil)
+        #expect(await plane.sessions["host-a"]?.stored.restorationClaim == nil)
+        #expect(await plane.sessions["host-a"]?.lease.isActive == false)
+        #expect(await plane.projection(for: "host-a") == .running)
+    }
+
     /// ATI-006-coordinate_external_agent_run_continuity: 사전 취소된 restore는 restart compatibility를 호출하지 않는다.
     /// hydration이 이미 완료된 뒤 caller가 취소한 restore가 adapter 호환성 확인을 시작하지 않는지 검증한다.
     /// - 검증 내용: CancellationError 전파, restart binding 미호출(0회), projection·restoration claim·lease 불변.

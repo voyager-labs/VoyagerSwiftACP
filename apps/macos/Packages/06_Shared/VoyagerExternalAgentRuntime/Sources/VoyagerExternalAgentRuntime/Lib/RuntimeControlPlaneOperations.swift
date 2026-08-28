@@ -105,16 +105,10 @@ public extension RuntimeControlPlane {
             capabilitySnapshot: stored.capabilitySnapshot,
             contextPolicy: expectedContext,
         )
-        let compatibility: RuntimeRestartCompatibility
-        do {
-            // 사전에 취소된 caller의 restore가 외부 호환성 확인을 시작하지 않도록 호출 전에 취소를 검사한다.
-            try Task.checkCancellation()
-            compatibility = try await adapter.restartCompatibility(for: binding)
-        } catch is CancellationError {
-            throw CancellationError()
-        } catch {
-            throw normalizeAdapterError(error)
-        }
+        let compatibility = try await probeRestartCompatibility(
+            using: adapter,
+            binding: binding,
+        )
         guard sessionUnchanged(original, at: hostReference) else { return .stale }
         switch compatibility {
         case .compatible:
@@ -122,6 +116,48 @@ public extension RuntimeControlPlane {
         case .stale, .incompatible:
             return try await releaseStaleRestoreReservation(original, at: hostReference)
         }
+    }
+
+    private func probeRestartCompatibility(
+        using adapter: any ExternalAgentRuntimeAdapter,
+        binding: RuntimeRestartBinding,
+    ) async throws -> RuntimeRestartCompatibility {
+        // 사전에 취소된 caller의 restore가 외부 호환성 확인을 시작하지 않도록 호출 전에 취소를 검사한다.
+        try Task.checkCancellation()
+        let (stream, continuation) = AsyncStream<RestartCompatibilityProbeOutcome>.makeStream(
+            bufferingPolicy: .bufferingOldest(1),
+        )
+        let probeTask = Task { [self] in
+            do {
+                try await continuation.yield(.compatibility(adapter.restartCompatibility(for: binding)))
+            } catch is CancellationError {
+                continuation.yield(.cancelled)
+            } catch {
+                continuation.yield(.failure(normalizeAdapterError(error)))
+            }
+        }
+        defer {
+            probeTask.cancel()
+            continuation.finish()
+        }
+        return try await withTaskCancellationHandler(operation: {
+            var iterator = stream.makeAsyncIterator()
+            guard let outcome = await iterator.next() else {
+                try Task.checkCancellation()
+                throw RuntimeHostError.invalidEvent
+            }
+            try Task.checkCancellation()
+            switch outcome {
+            case let .compatibility(compatibility):
+                return compatibility
+            case let .failure(error):
+                throw error
+            case .cancelled:
+                throw CancellationError()
+            }
+        }, onCancel: {
+            continuation.yield(.cancelled)
+        })
     }
 
     private func evaluateRestore(_ session: Session) throws -> Bool {
@@ -447,6 +483,12 @@ private enum RestoreClaimAcquisition {
         claim: RuntimeRestorationClaim,
         lease: UInt64,
     )
+}
+
+private enum RestartCompatibilityProbeOutcome {
+    case compatibility(RuntimeRestartCompatibility)
+    case failure(RuntimeHostError)
+    case cancelled
 }
 
 struct OperationClaim {
