@@ -36,6 +36,15 @@ struct EntryOpenWithOperationsReducer {
                     if isTrash {
                         let fileName = URL(fileURLWithPath: filePath).lastPathComponent
                         _ = await alertClient.showTrashFileAlert(fileName, false)
+                        await send(.lifecycle(.entryActionCompleted(EntryActionRecord(
+                            operationKind: .openWithApp(bundleID),
+                            targets: [],
+                            failedCount: 0,
+                            cancelledCount: 1,
+                            succeededCount: 0,
+                            id: UUID(),
+                            timestamp: Date(),
+                        ))))
                         return
                     }
 
@@ -271,7 +280,7 @@ struct EntryOpenWithOperationsReducer {
                     operationKind: .openWithApp(""),
                     targets: [],
                     failedCount: 0,
-                    cancelledCount: 1,
+                    cancelledCount: files.count,
                     succeededCount: 0,
                     id: UUID(),
                     timestamp: Date(),
@@ -279,28 +288,11 @@ struct EntryOpenWithOperationsReducer {
                 return
             }
 
-            for file in files {
-                var actions: [Action] = []
-
-                if selection.setAsDefault, let type = UTType(filenameExtension: file.fileExtension) {
-                    actions.append(.openWith(.setDefaultAppForFile(
-                        type: type,
-                        bundleID: selection.bundleID,
-                        file: file,
-                    )))
-                }
-
-                let filePath = file.fullPath
-                actions.append(.openWith(.openFileWithAppBundleID(
-                    filePath: filePath,
-                    bundleID: selection.bundleID,
-                    url: URL(fileURLWithPath: filePath),
-                )))
-
-                for nextAction in actions {
-                    await send(nextAction)
-                }
-            }
+            await send(.openWith(.openFilesWithAppBundleID(
+                files: files,
+                bundleID: selection.bundleID,
+                shouldSetAsDefault: selection.setAsDefault,
+            )))
         }
     }
 
@@ -310,17 +302,26 @@ struct EntryOpenWithOperationsReducer {
         shouldSetAsDefault: Bool,
     ) -> Effect<Action> {
         .run { [entryOpenClient, alertClient] (send: Send<Action>) in
+            if await rejectTrashFiles(
+                files,
+                bundleID: bundleID,
+                clients: (entryOpenClient, alertClient),
+                send: send,
+            ) {
+                return
+            }
+
             var succeededCount = 0
             var failedCount = 0
             var cancelledCount = 0
-            await withTaskGroup(of: Result<Void, FileOpError>?.self) { group in
+            await withTaskGroup(of: Result<Void, FileOpError>.self) { group in
                 for file in files {
                     group.addTask {
                         await openFile(
                             file,
                             bundleID: bundleID,
                             shouldSetAsDefault: shouldSetAsDefault,
-                            clients: (entryOpenClient, alertClient),
+                            entryOpenClient: entryOpenClient,
                             send: send,
                         )
                     }
@@ -335,8 +336,6 @@ struct EntryOpenWithOperationsReducer {
                         } else {
                             failedCount += 1
                         }
-                    case nil:
-                        break
                     }
                 }
             }
@@ -352,14 +351,40 @@ struct EntryOpenWithOperationsReducer {
         }
     }
 
+    private func rejectTrashFiles(
+        _ files: [EntryModel],
+        bundleID: String,
+        clients: (open: EntryOpenClient, alert: EntryOperationsAlertClient),
+        send: Send<Action>,
+    ) async -> Bool {
+        let rejectedFiles: [EntryModel] = await MainActor.run {
+            guard let trashPath = clients.open.trashDirectoryPath(), !trashPath.isEmpty else { return [] }
+            return files.filter { $0.fullPath.starts(with: trashPath + "/") }
+        }
+        guard !rejectedFiles.isEmpty else { return false }
+
+        for (index, file) in rejectedFiles.enumerated() {
+            _ = await clients.alert.showTrashFileAlert(file.name, index < rejectedFiles.count - 1)
+        }
+        await send(.lifecycle(.entryActionCompleted(EntryActionRecord(
+            operationKind: .openWithApp(bundleID),
+            targets: [],
+            failedCount: 0,
+            cancelledCount: files.count,
+            succeededCount: 0,
+            id: UUID(),
+            timestamp: Date(),
+        ))))
+        return true
+    }
+
     private func openFile(
         _ file: EntryModel,
         bundleID: String,
         shouldSetAsDefault: Bool,
-        clients: (open: EntryOpenClient, alert: EntryOperationsAlertClient),
+        entryOpenClient: EntryOpenClient,
         send: Send<Action>,
-    ) async -> Result<Void, FileOpError>? {
-        let entryOpenClient = clients.open
+    ) async -> Result<Void, FileOpError> {
         if shouldSetAsDefault, let fileType = UTType(filenameExtension: file.fileExtension) {
             let kind = OperationKind.setDefaultApp(bundleID)
             await send(.lifecycle(.operationStarted(file.fullPath, kind)))
@@ -373,15 +398,6 @@ struct EntryOpenWithOperationsReducer {
                     .failure(error.fileOpError),
                 )))
             }
-        }
-
-        let isTrash = await MainActor.run {
-            guard let trashPath = entryOpenClient.trashDirectoryPath(), !trashPath.isEmpty else { return false }
-            return file.fullPath.starts(with: trashPath + "/")
-        }
-        if isTrash {
-            _ = await clients.alert.showTrashFileAlert(file.name, false)
-            return nil
         }
 
         let kind = OperationKind.openWithApp(bundleID)

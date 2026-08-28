@@ -498,6 +498,396 @@ final class EOP001ExecuteEntryTests: XCTestCase {
         XCTAssertEqual(terminal.cancelledCount, 0)
     }
 
+    /// EOP-001-open_entry_with_selected_app: 단일 Always Open With는 open 결과만 집계한 terminal 한 건을 낸다.
+    /// - 검증 내용: 기본 앱 설정 성공과 앱 목록 reload를 보존하면서 open 실패만 command terminal에 집계한다.
+    /// - 사전 조건: 고정 metadata, 성공하는 set-default와 실패하는 selected-app open이 있다.
+    /// - 기대 결과: terminal 한 건이 attempted 1, succeeded 0, failed 1, cancelled 0과 원본 metadata를 보존한다.
+    func testSingleOpenWithSetAsDefaultEmitsOneOpenAggregateTerminal() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+        let file = EntryModelFixtures.makeFileEntry(
+            id: sandbox.fileURL.path,
+            name: sandbox.fileURL.lastPathComponent,
+        )
+        let bundleID = "com.apple.Preview"
+        let metadata = try EntryCommandMetadata(
+            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000693")),
+            interaction: .openEntryWithSelectedApp,
+            source: .contextMenu,
+        )
+
+        let evidence = await EntryOperationsTestSupport.runOpenWithCommand(
+            files: [file],
+            currentPath: sandbox.root.path,
+            bundleID: bundleID,
+            metadata: metadata,
+            shouldSetAsDefault: true,
+            failingPath: file.fullPath,
+        )
+
+        XCTAssertEqual(evidence.setDefaultCallCount, 1)
+        XCTAssertEqual(evidence.defaultFinishedPaths, [file.fullPath])
+        XCTAssertEqual(evidence.reloadCallCount, 1)
+        XCTAssertEqual(evidence.openCallCount, 1)
+        XCTAssertEqual(evidence.terminals.count, 1)
+        let terminal = try XCTUnwrap(evidence.terminals.first)
+        XCTAssertEqual(terminal.command, metadata)
+        XCTAssertEqual(terminal.operationKind, .openWithApp(bundleID))
+        XCTAssertEqual(terminal.attemptedCount, 1)
+        XCTAssertEqual(terminal.succeededCount, 0)
+        XCTAssertEqual(terminal.failedCount, 1)
+        XCTAssertEqual(terminal.cancelledCount, 0)
+    }
+}
+
+extension EOP001ExecuteEntryTests {
+    /// EOP-001-open_entry_with_selected_app: Other picker 다중 선택은 성공·실패를 terminal 한 건으로 집계한다.
+    /// - 검증 내용: picker 선택 후 routed command metadata가 batch action과 단일 aggregate terminal까지 전파되는지 확인한다.
+    /// - 사전 조건: 두 일반 파일, Other picker selection, 한 파일만 실패하는 open client가 있다.
+    /// - 기대 결과: open 2회와 attempted 2, succeeded 1, failed 1인 terminal 한 건이 원본 metadata를 보존한다.
+    func testOtherPickerMultipleFilesEmitsOneMixedResultTerminal() async throws {
+        let files = ["/tmp/other-a.txt", "/tmp/other-b.txt"].map {
+            EntryModelFixtures.makeFileEntry(id: $0, name: URL(fileURLWithPath: $0).lastPathComponent)
+        }
+        let bundleID = "com.apple.Preview"
+        let metadata = try makeMetadata(id: "00000000-0000-0000-0000-000000000698")
+        let evidence = await EntryOperationsTestSupport.runOpenWithCommand(
+            files: files,
+            currentPath: "/tmp",
+            bundleID: bundleID,
+            metadata: metadata,
+            failingPath: files[1].fullPath,
+            usesOtherPicker: true,
+        )
+
+        XCTAssertEqual(evidence.batchActionCount, 1)
+        XCTAssertEqual(evidence.openCallCount, files.count)
+        XCTAssertEqual(evidence.terminals.count, 1)
+        let terminal = try XCTUnwrap(evidence.terminals.first)
+        XCTAssertEqual(terminal.command, metadata)
+        XCTAssertEqual(terminal.operationKind, .openWithApp(bundleID))
+        XCTAssertEqual(terminal.attemptedCount, files.count)
+        XCTAssertEqual(terminal.succeededCount, 1)
+        XCTAssertEqual(terminal.failedCount, 1)
+        XCTAssertEqual(terminal.cancelledCount, 0)
+    }
+
+    /// EOP-001-open_entry_with_selected_app: Other picker 혼합 Trash 선택은 mutation 전에 명령 전체를 취소한다.
+    /// - 검증 내용: picker selection이 batch Trash preflight를 공유하고 파일별 set-default/open으로 분기하지 않는지 확인한다.
+    /// - 사전 조건: 일반 파일과 휴지통 파일, set-default가 선택된 Other picker selection이 있다.
+    /// - 기대 결과: mutation/open 호출 없이 attempted 2, cancelled 2인 terminal 한 건이 원본 metadata를 보존한다.
+    func testOtherPickerMixedTrashSelectionCancelsWholeCommand() async throws {
+        let trashPath = "/tmp/.Trash"
+        let files = ["/tmp/normal.txt", "\(trashPath)/trashed.txt"].map {
+            EntryModelFixtures.makeFileEntry(id: $0, name: URL(fileURLWithPath: $0).lastPathComponent)
+        }
+        let bundleID = "com.apple.Preview"
+        let metadata = try makeMetadata(id: "00000000-0000-0000-0000-000000000699")
+        let evidence = await EntryOperationsTestSupport.runOpenWithCommand(
+            files: files,
+            currentPath: "/tmp",
+            bundleID: bundleID,
+            metadata: metadata,
+            shouldSetAsDefault: true,
+            usesOtherPicker: true,
+            trashPath: trashPath,
+        )
+
+        XCTAssertEqual(evidence.batchActionCount, 1)
+        XCTAssertEqual(evidence.setDefaultCallCount + evidence.openCallCount, 0)
+        try assertCancelledTerminal(
+            evidence.terminals.map { .lifecycle(.entryActionCompleted($0)) },
+            metadata: metadata,
+            operationKind: .openWithApp(bundleID),
+            attemptedCount: files.count,
+        )
+    }
+
+    /// EOP-001-open_entry_with_selected_app: Other picker 단일 Always Open With 실패는 terminal 한 건을 낸다.
+    /// - 검증 내용: picker selection의 set-default와 open 실패가 파일별 terminal로 분리되지 않는지 확인한다.
+    /// - 사전 조건: 단일 일반 파일, set-default가 선택된 Other picker, 실패하는 open client가 있다.
+    /// - 기대 결과: set-default/open 각 1회와 attempted 1, failed 1인 terminal 한 건이 원본 metadata를 보존한다.
+    func testOtherPickerSingleSetDefaultOpenFailureEmitsOneTerminal() async throws {
+        let file = EntryModelFixtures.makeFileEntry(id: "/tmp/other-single.txt", name: "other-single.txt")
+        let bundleID = "com.apple.Preview"
+        let metadata = try makeMetadata(id: "00000000-0000-0000-0000-000000000700")
+        let evidence = await EntryOperationsTestSupport.runOpenWithCommand(
+            files: [file],
+            currentPath: "/tmp",
+            bundleID: bundleID,
+            metadata: metadata,
+            shouldSetAsDefault: true,
+            failingPath: file.fullPath,
+            usesOtherPicker: true,
+        )
+
+        XCTAssertEqual(evidence.batchActionCount, 1)
+        XCTAssertEqual(evidence.setDefaultCallCount, 1)
+        XCTAssertEqual(evidence.openCallCount, 1)
+        XCTAssertEqual(evidence.terminals.count, 1)
+        let terminal = try XCTUnwrap(evidence.terminals.first)
+        XCTAssertEqual(terminal.command, metadata)
+        XCTAssertEqual(terminal.operationKind, .openWithApp(bundleID))
+        XCTAssertEqual(terminal.attemptedCount, 1)
+        XCTAssertEqual(terminal.succeededCount, 0)
+        XCTAssertEqual(terminal.failedCount, 1)
+        XCTAssertEqual(terminal.cancelledCount, 0)
+    }
+
+    /// EOP-001-open_entry_with_selected_app: Other picker 다중 선택 취소는 선택 전체를 cancelled로 집계한다.
+    /// - 검증 내용: picker가 nil을 반환할 때 파일별 action 없이 command terminal 한 건만 생성되는지 확인한다.
+    /// - 사전 조건: 두 일반 파일, 고정 metadata, 취소되는 Other picker가 있다.
+    /// - 기대 결과: mutation/open과 batch action 없이 attempted 2, cancelled 2인 terminal 한 건이 metadata를 보존한다.
+    func testOtherPickerMultipleFilesCancellationEmitsTruthfulTerminal() async throws {
+        let files = ["/tmp/cancel-a.txt", "/tmp/cancel-b.txt"].map {
+            EntryModelFixtures.makeFileEntry(id: $0, name: URL(fileURLWithPath: $0).lastPathComponent)
+        }
+        let metadata = try makeMetadata(id: "00000000-0000-0000-0000-000000000701")
+        let evidence = await EntryOperationsTestSupport.runOpenWithCommand(
+            files: files,
+            currentPath: "/tmp",
+            bundleID: "com.apple.Preview",
+            metadata: metadata,
+            shouldSetAsDefault: true,
+            usesOtherPicker: true,
+            cancelsOtherPicker: true,
+        )
+
+        XCTAssertEqual(evidence.batchActionCount, 0)
+        XCTAssertEqual(evidence.setDefaultCallCount + evidence.openCallCount, 0)
+        try assertCancelledTerminal(
+            evidence.terminals.map { .lifecycle(.entryActionCompleted($0)) },
+            metadata: metadata,
+            operationKind: .openWithApp(""),
+            attemptedCount: files.count,
+        )
+    }
+}
+
+extension EOP001ExecuteEntryTests {
+    /// EOP-001-open_entry_with_default_app: 휴지통에서 거부된 기본 앱 Open은 cancelled terminal 한 건을 낸다.
+    /// - 검증 내용: accepted command가 open lifecycle 없이 모든 거부 경로를 cancelled로 집계하는지 확인한다.
+    /// - 사전 조건: 휴지통 아래 두 파일과 고정 metadata가 있다.
+    /// - 기대 결과: open 호출과 operationStarted 없이 cancelled 2인 terminal 한 건이 metadata를 보존한다.
+    func testDefaultOpenTrashPreflightEmitsCancelledTerminal() async throws {
+        let trashPath = "/tmp/.Trash"
+        let files = ["a.txt", "b.txt"].map {
+            EntryModelFixtures.makeFileEntry(id: "\(trashPath)/\($0)", name: $0)
+        }
+        let metadata = try EntryCommandMetadata(
+            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000694")),
+            interaction: .openEntryWithDefaultApp,
+            source: .contextMenu,
+        )
+        let actions = LockIsolated<[EntryOperationsAction]>([])
+        let openCalls = LockIsolated(0)
+        let store = EntryOperationsTestSupport.makeObservedStore(
+            observeAction: { action in actions.withValue { $0.append(action) } },
+            configure: {
+                $0.entryOpenClient.trashDirectoryPath = { trashPath }
+                $0.entryOpenClient.open = { _, _ in openCalls.withValue { $0 += 1 } }
+                $0.entryOperationsAlertClient.showTrashFileAlert = { _, _ in true }
+            },
+        )
+        // store.exhaustivity = .off: observer로 accepted command의 전체 lifecycle 부재와 terminal을 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.routing(.executeCommand(
+            command: .navigation(.openSelectedItem),
+            context: .init(
+                selectedIds: Set(files.map(\.id)),
+                displayItems: files,
+                currentPath: "/tmp",
+            ),
+            metadata: metadata,
+        )))
+        await store.finish()
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(openCalls.value, 0)
+        XCTAssertFalse(actions.value.contains { action in
+            if case .lifecycle(.operationStarted) = action { return true }
+            return false
+        })
+        let terminals = actions.value.compactMap { action -> EntryActionRecord? in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return nil }
+            return record
+        }
+        XCTAssertEqual(terminals.count, 1)
+        let terminal = try XCTUnwrap(terminals.first)
+        XCTAssertEqual(terminal.command, metadata)
+        XCTAssertEqual(terminal.operationKind, .openDefault)
+        XCTAssertEqual(terminal.attemptedCount, files.count)
+        XCTAssertEqual(terminal.succeededCount, 0)
+        XCTAssertEqual(terminal.failedCount, 0)
+        XCTAssertEqual(terminal.cancelledCount, files.count)
+    }
+
+    /// EOP-001-open_entry_with_default_app: 휴지통과 일반 파일 혼합 선택은 명령 전체를 취소한다.
+    /// - 검증 내용: 기본 앱 Open이 일부 경로만 실행하지 않고 선택 전체를 cancelled로 집계하는지 확인한다.
+    /// - 사전 조건: 일반 파일 하나와 휴지통 파일 하나, 고정 metadata, open recorder가 있다.
+    /// - 기대 결과: open 호출 없이 attempted 2, cancelled 2인 terminal 한 건이 metadata를 보존한다.
+    func testDefaultOpenMixedTrashSelectionCancelsWholeCommand() async throws {
+        let trashPath = "/tmp/.Trash"
+        let files = [
+            EntryModelFixtures.makeFileEntry(id: "/tmp/normal.txt", name: "normal.txt"),
+            EntryModelFixtures.makeFileEntry(id: "\(trashPath)/trashed.txt", name: "trashed.txt"),
+        ]
+        let metadata = try EntryCommandMetadata(
+            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000696")),
+            interaction: .openEntryWithDefaultApp,
+            source: .contextMenu,
+        )
+        let actions = LockIsolated<[EntryOperationsAction]>([])
+        let openCalls = LockIsolated(0)
+        let store = EntryOperationsTestSupport.makeObservedStore(
+            observeAction: { action in actions.withValue { $0.append(action) } },
+            configure: {
+                $0.entryOpenClient.trashDirectoryPath = { trashPath }
+                $0.entryOpenClient.open = { _, _ in openCalls.withValue { $0 += 1 } }
+                $0.entryOperationsAlertClient.showTrashFileAlert = { _, _ in true }
+            },
+        )
+        // store.exhaustivity = .off: observer와 recorder로 명령 전체 거부 계약을 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.routing(.executeCommand(
+            command: .navigation(.openSelectedItem),
+            context: .init(
+                selectedIds: Set(files.map(\.id)),
+                displayItems: files,
+                currentPath: "/tmp",
+            ),
+            metadata: metadata,
+        )))
+        await store.finish()
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(openCalls.value, 0)
+        try assertCancelledTerminal(
+            actions.value,
+            metadata: metadata,
+            operationKind: .openDefault,
+            attemptedCount: files.count,
+        )
+    }
+
+    /// EOP-001-open_entry_with_selected_app: 휴지통 selected-app Open은 default mutation 전에 취소된다.
+    /// - 검증 내용: Always Open With accepted command가 set-default와 open lifecycle 없이 cancelled terminal을 내는지 확인한다.
+    /// - 사전 조건: 휴지통 파일, 고정 metadata, set-default와 open recorder가 있다.
+    /// - 기대 결과: mutation과 open 호출 없이 cancelled 1인 terminal 한 건이 metadata를 보존한다.
+    func testSelectedAppOpenTrashPreflightCancelsBeforeSetDefault() async throws {
+        let trashPath = "/tmp/.Trash"
+        let file = EntryModelFixtures.makeFileEntry(id: "\(trashPath)/a.txt", name: "a.txt")
+        let bundleID = "com.apple.Preview"
+        let metadata = try EntryCommandMetadata(
+            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000695")),
+            interaction: .openEntryWithSelectedApp,
+            source: .contextMenu,
+        )
+        let actions = LockIsolated<[EntryOperationsAction]>([])
+        let setDefaultCalls = LockIsolated(0)
+        let openCalls = LockIsolated(0)
+        let store = EntryOperationsTestSupport.makeObservedStore(
+            observeAction: { action in actions.withValue { $0.append(action) } },
+            configure: {
+                $0.entryOpenClient.trashDirectoryPath = { trashPath }
+                $0.entryOpenClient.setDefaultApp = { _, _ in setDefaultCalls.withValue { $0 += 1 } }
+                $0.entryOpenClient.open = { _, _ in openCalls.withValue { $0 += 1 } }
+                $0.entryOperationsAlertClient.showTrashFileAlert = { _, _ in true }
+            },
+        )
+        // store.exhaustivity = .off: observer와 recorder로 preflight 이후 lifecycle 부재를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.routing(.executeCommand(
+            command: .navigation(.openWithSelectedItem(
+                bundleID: bundleID,
+                shouldSetAsDefault: true,
+            )),
+            context: .init(
+                selectedIds: [file.id],
+                displayItems: [file],
+                currentPath: "/tmp",
+            ),
+            metadata: metadata,
+        )))
+        await store.finish()
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(setDefaultCalls.value, 0)
+        XCTAssertEqual(openCalls.value, 0)
+        XCTAssertFalse(actions.value.contains { action in
+            if case .lifecycle(.operationStarted) = action { return true }
+            return false
+        })
+        try assertCancelledTerminal(
+            actions.value,
+            metadata: metadata,
+            operationKind: .openWithApp(bundleID),
+            attemptedCount: 1,
+        )
+    }
+
+    /// EOP-001-open_entry_with_selected_app: 휴지통과 일반 파일 혼합 선택은 mutation 전에 명령 전체를 취소한다.
+    /// - 검증 내용: suspended Trash 경고 중에도 set-default/open이 시작되지 않고 선택 전체가 cancelled로 집계되는지 확인한다.
+    /// - 사전 조건: 일반 파일 하나와 휴지통 파일 하나, 고정 metadata, 경고 gate와 호출 recorder가 있다.
+    /// - 기대 결과: 경고 완료 전후 mutation/open 호출 없이 attempted 2, cancelled 2인 terminal 한 건이 metadata를 보존한다.
+    func testSelectedAppMixedTrashSelectionPreflightsBeforeMutationAndCancelsWholeCommand() async throws {
+        let trashPath = "/tmp/.Trash"
+        let files = [
+            EntryModelFixtures.makeFileEntry(id: "/tmp/normal.txt", name: "normal.txt"),
+            EntryModelFixtures.makeFileEntry(id: "\(trashPath)/trashed.txt", name: "trashed.txt"),
+        ]
+        let bundleID = "com.apple.Preview"
+        let metadata = try EntryCommandMetadata(
+            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000697")),
+            interaction: .openEntryWithSelectedApp,
+            source: .contextMenu,
+        )
+        let alertGate = SelectionGate()
+        let actions = LockIsolated<[EntryOperationsAction]>([])
+        let setDefaultCalls = LockIsolated(0)
+        let openCalls = LockIsolated(0)
+        let store = EntryOperationsTestSupport.makeObservedStore(
+            observeAction: { action in actions.withValue { $0.append(action) } },
+            configure: {
+                $0.entryOpenClient.trashDirectoryPath = { trashPath }
+                $0.entryOpenClient.setDefaultApp = { _, _ in setDefaultCalls.withValue { $0 += 1 } }
+                $0.entryOpenClient.open = { _, _ in openCalls.withValue { $0 += 1 } }
+                $0.entryOperationsAlertClient.showTrashFileAlert = { _, _ in
+                    await alertGate.wait("trash-alert")
+                    return true
+                }
+            },
+        )
+        // store.exhaustivity = .off: observer와 recorder로 preflight 중간·완료 상태를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.routing(.executeCommand(
+            command: .navigation(.openWithSelectedItem(bundleID: bundleID, shouldSetAsDefault: true)),
+            context: .init(selectedIds: Set(files.map(\.id)), displayItems: files, currentPath: "/tmp"),
+            metadata: metadata,
+        )))
+        while await !alertGate.isStarted("trash-alert") {
+            await Task.yield()
+        }
+
+        XCTAssertEqual(setDefaultCalls.value + openCalls.value, 0)
+
+        await alertGate.resume("trash-alert")
+        await store.finish()
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(setDefaultCalls.value + openCalls.value, 0)
+        try assertCancelledTerminal(
+            actions.value,
+            metadata: metadata,
+            operationKind: .openWithApp(bundleID),
+            attemptedCount: files.count,
+        )
+    }
+
     /// EOP-001-open_entry_with_selected_app: 휴지통 파일은 열지 않고 경고 표시
     /// - 검증 내용: 휴지통 파일을 선택 앱으로 열려 할 때 open 호출이 차단되는지 확인합니다.
     /// - 사전 조건: trashDirectoryPath가 휴지통 경로 반환
@@ -523,6 +913,13 @@ final class EOP001ExecuteEntryTests: XCTestCase {
             bundleID: "com.apple.Preview",
             url: URL(fileURLWithPath: filePath),
         )))
+        await store.receive { action in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return false }
+            return record.operationKind == .openWithApp("com.apple.Preview")
+                && record.succeededCount == 0
+                && record.failedCount == 0
+                && record.cancelledCount == 1
+        }
 
         XCTAssertTrue(openCalls.recorded.isEmpty)
     }
@@ -742,6 +1139,36 @@ final class EOP001ExecuteEntryTests: XCTestCase {
         await store.finish()
 
         XCTAssertTrue(quickLookSyncCalls.recorded.isEmpty)
+    }
+}
+
+private extension EOP001ExecuteEntryTests {
+    func makeMetadata(id: String) throws -> EntryCommandMetadata {
+        try EntryCommandMetadata(
+            id: XCTUnwrap(UUID(uuidString: id)),
+            interaction: .openEntryWithSelectedApp,
+            source: .contextMenu,
+        )
+    }
+
+    func assertCancelledTerminal(
+        _ actions: [EntryOperationsAction],
+        metadata: EntryCommandMetadata,
+        operationKind: OperationKind,
+        attemptedCount: Int,
+    ) throws {
+        let terminals = actions.compactMap { action -> EntryActionRecord? in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return nil }
+            return record
+        }
+        XCTAssertEqual(terminals.count, 1)
+        let terminal = try XCTUnwrap(terminals.first)
+        XCTAssertEqual(terminal.command, metadata)
+        XCTAssertEqual(terminal.operationKind, operationKind)
+        XCTAssertEqual(terminal.attemptedCount, attemptedCount)
+        XCTAssertEqual(terminal.succeededCount, 0)
+        XCTAssertEqual(terminal.failedCount, 0)
+        XCTAssertEqual(terminal.cancelledCount, attemptedCount)
     }
 }
 

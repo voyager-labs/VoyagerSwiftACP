@@ -164,6 +164,7 @@ struct OpenWithCommandEvidence {
     let setDefaultCallCount: Int
     let reloadCallCount: Int
     let openCallCount: Int
+    let batchActionCount: Int
 }
 
 @MainActor
@@ -243,16 +244,17 @@ enum EntryOperationsTestSupport {
         shouldSetAsDefault: Bool = false,
         failingPath: String? = nil,
         completionOrder: [String] = [],
+        usesOtherPicker: Bool = false,
+        cancelsOtherPicker: Bool = false,
+        trashPath: String? = nil,
     ) async -> OpenWithCommandEvidence {
         let gate = OpenWithCommandCompletionGate()
         let actions = LockIsolated<[EntryOperationsAction]>([])
-        let setDefaultCalls = LockIsolated(0)
-        let reloadCalls = LockIsolated(0)
-        let openCalls = LockIsolated(0)
+        let (setDefaultCalls, reloadCalls, openCalls) = (LockIsolated(0), LockIsolated(0), LockIsolated(0))
         let store = makeObservedStore(
             observeAction: { action in actions.withValue { $0.append(action) } },
             configure: {
-                $0.entryOpenClient.trashDirectoryPath = { nil }
+                $0.entryOpenClient.trashDirectoryPath = { trashPath }
                 $0.entryOpenClient.setDefaultApp = { _, _ in setDefaultCalls.withValue { $0 += 1 } }
                 $0.entryOpenClient.invalidateApplicationsForType = { _ in }
                 $0.entryOpenClient.applicationsForType = { _, _ in
@@ -269,23 +271,27 @@ enum EntryOperationsTestSupport {
                         throw FileOpError.system(message: "open denied")
                     }
                 }
+                if usesOtherPicker {
+                    $0.openWithPanelClient.selectApplication = { _, _, _ in
+                        if cancelsOtherPicker { return nil }
+                        return OpenWithPanelSelection(bundleID: bundleID, setAsDefault: shouldSetAsDefault)
+                    }
+                }
             },
         )
         // store.exhaustivity = .off: observer와 dependency recorder가 전체 command lifecycle을 검증한다.
         store.exhaustivity = .off
 
-        await store.send(.routing(.executeCommand(
-            command: .navigation(.openWithSelectedItem(
-                bundleID: bundleID,
-                shouldSetAsDefault: shouldSetAsDefault,
-            )),
-            context: .init(
-                selectedIds: Set(files.map(\.id)),
-                displayItems: files,
-                currentPath: currentPath,
-            ),
-            metadata: metadata,
-        )))
+        let command = EntryOperationsNavigationCommand.openWithSelectedItem(
+            bundleID: usesOtherPicker ? nil : bundleID,
+            shouldSetAsDefault: shouldSetAsDefault,
+        )
+        let context = EntryOperationsCommandContext(
+            selectedIds: Set(files.map(\.id)),
+            displayItems: files,
+            currentPath: currentPath,
+        )
+        await store.send(.routing(.executeCommand(command: .navigation(command), context: context, metadata: metadata)))
         await completeOpenWithCommand(store, gate: gate, completionOrder: completionOrder)
 
         return makeOpenWithEvidence(
@@ -468,6 +474,10 @@ enum EntryOperationsTestSupport {
             guard case let .lifecycle(.entryActionCompleted(record)) = action else { return nil }
             return record
         }
+        let batchActionCount = actions.reduce(into: 0) { count, action in
+            guard case .acceptedCommand(_, .openWith(.openFilesWithAppBundleID)) = action else { return }
+            count += 1
+        }
         return OpenWithCommandEvidence(
             openStartedPaths: openStartedPaths,
             openFinishedPaths: openFinishedPaths,
@@ -476,6 +486,7 @@ enum EntryOperationsTestSupport {
             setDefaultCallCount: setDefaultCallCount,
             reloadCallCount: reloadCallCount,
             openCallCount: openCallCount,
+            batchActionCount: batchActionCount,
         )
     }
 

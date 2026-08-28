@@ -30,22 +30,30 @@ struct EntryOpenOperationsReducer {
                 let entryOpenClient = entryOpenClient
                 let workspaceClient = workspaceClient
                 return .run { [entryOpenClient, workspaceClient] (send: Send<Action>) in
-                    guard let firstFilePath = paths.first else { return }
-                    let isTrash = await MainActor.run {
+                    let rejectedPaths: [String] = await MainActor.run {
                         guard let trashPath = entryOpenClient.trashDirectoryPath(), !trashPath.isEmpty else {
-                            return false
+                            return []
                         }
-                        return firstFilePath.starts(with: trashPath + "/")
+                        return paths.filter { $0.starts(with: trashPath + "/") }
                     }
 
-                    if isTrash {
-                        for (index, path) in paths.enumerated() {
-                            let hasMoreFiles = index < paths.count - 1
+                    if !rejectedPaths.isEmpty {
+                        for (index, path) in rejectedPaths.enumerated() {
+                            let hasMoreFiles = index < rejectedPaths.count - 1
                             _ = await alertClient.showTrashFileAlert(
                                 URL(fileURLWithPath: path).lastPathComponent,
                                 hasMoreFiles,
                             )
                         }
+                        await send(.lifecycle(.entryActionCompleted(EntryActionRecord(
+                            operationKind: .openDefault,
+                            targets: [],
+                            failedCount: 0,
+                            cancelledCount: paths.count,
+                            succeededCount: 0,
+                            id: UUID(),
+                            timestamp: Date(),
+                        ))))
                         return
                     }
 
@@ -109,8 +117,6 @@ struct EntryOpenOperationsReducer {
                         }
                     }
 
-                    // 수용된 open 명령은 정확히 한 건의 terminal로 마무리한다.
-                    // 휴지통 사전 안내처럼 시도 없이 끝난 경로는 위에서 조기 반환되어 terminal이 없다.
                     await send(.lifecycle(.entryActionCompleted(
                         EntryActionRecord(
                             operationKind: .openDefault,
