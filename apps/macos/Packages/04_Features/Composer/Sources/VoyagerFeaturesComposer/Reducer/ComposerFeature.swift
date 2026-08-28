@@ -68,7 +68,11 @@ public struct ComposerFeature {
         Reduce { state, action in
             switch action {
             case let .view(.setPresented(isPresented)):
-                return handleSetPresented(state: &state, isPresented: isPresented)
+                return handleSetPresented(
+                    state: &state,
+                    isPresented: isPresented,
+                    composerMetricClient: composerMetricClient,
+                )
 
             case let .view(.setText(text)):
                 state.text = text
@@ -222,6 +226,7 @@ public struct ComposerFeature {
 private func handleSetPresented(
     state: inout ComposerFeature.State,
     isPresented: Bool,
+    composerMetricClient: ComposerMetricClient,
 ) -> Effect<ComposerFeature.Action> {
     state.isPresented = isPresented
     if !isPresented {
@@ -233,14 +238,14 @@ private func handleSetPresented(
             || state.isLoadingFilters
         let shouldKeepFiltersAlive = shouldPreserveFilterLifecycle || hasActiveFilterLifecycle
         let shouldCloseScopeEditorWithoutCommit = state.scopeEditor.isPresented && !shouldPreserveFilterLifecycle
+        let searchCancellation = handleCancelSearch(
+            state: &state,
+            composerMetricClient: composerMetricClient,
+        )
 
         state.hasSubmittedInSession = false
-        state.searchStartedAt = nil
         state.transientFeedback = nil
-        state.isLoadingSearch = false
-        state.activeSearchRequestID = nil
         state.lastAcceptedSearchRequestID = nil
-        applyQueryPhaseTransition(.reset, state: &state)
 
         if !shouldKeepFiltersAlive {
             state.filtersStartedAt = nil
@@ -253,7 +258,7 @@ private func handleSetPresented(
         }
 
         var effects: [Effect<ComposerFeature.Action>] = [
-            .cancel(id: ComposerFeature.CancelID.search(ownerID: state.cancellationOwnerID)),
+            searchCancellation,
             .cancel(id: ComposerFeature.CancelID.feedbackDismiss(ownerID: state.cancellationOwnerID)),
         ]
         if shouldPreserveFilterLifecycle {

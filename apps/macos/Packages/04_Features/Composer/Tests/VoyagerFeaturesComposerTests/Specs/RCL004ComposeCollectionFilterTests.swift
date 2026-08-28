@@ -425,6 +425,32 @@ final class RCL004ComposeCollectionFilterTests: XCTestCase {
         XCTAssertFalse(state.isFilteringInFlight)
     }
 
+    /// RCL-004-apply_generated_filter_changes: Composer dismissal은 활성 filter/scope lifecycle을 보존함
+    /// scope editor 변경을 auto-apply하는 동안 Composer를 닫아도 filter lifecycle이 유지되는지 검증한다.
+    /// - 검증 내용: active filter request, loading/in-flight 상태, scope editor pending 변경 보존
+    /// - 사전 조건: filter apply가 진행 중이고 scope editor에 pending rule 변경이 있음
+    /// - 기대 결과: dismissal 후 active filter와 scope lifecycle이 유지되고 query만 종료됨
+    func testSetPresentedDismissal_withActiveFilterAndPendingScopeChange_preservesLifecycle() {
+        let filterID = UUID()
+        var state = makeFiltersLoadingState(activeRequestID: filterID)
+        state.isPresented = true
+        state.scopeEditor.isPresented = true
+        state.scopeEditor.selection = .explicit(
+            bases: [ComposerScopeBase(path: "/VoyagerFixtures/Documents")],
+            exceptions: [],
+        )
+        state.pendingSearchQuery = "find invoices"
+
+        _ = ComposerFeature().reduce(into: &state, action: .view(.setPresented(false)))
+
+        XCTAssertFalse(state.isPresented)
+        XCTAssertTrue(state.isLoadingFilters)
+        XCTAssertTrue(state.isFilteringInFlight)
+        XCTAssertEqual(state.activeFiltersRequestID, filterID)
+        XCTAssertTrue(state.scopeEditor.isPresented)
+        XCTAssertTrue(state.scopeEditor.hasPendingScopeRuleChanges)
+    }
+
     /// RCL-004-show_query_execution_failure_feedback: collection cleanup은 실행 중 effect를 함께 취소함
     /// semantic cleanup이 search client 작업과 transient feedback timer를 모두 종료하는지 검증한다.
     /// - 검증 내용: search cancellation handler 실행 및 feedback dismiss action 미발생

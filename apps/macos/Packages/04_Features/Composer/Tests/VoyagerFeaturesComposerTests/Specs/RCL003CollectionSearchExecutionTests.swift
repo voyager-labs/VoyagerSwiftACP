@@ -243,6 +243,41 @@ final class RCL003CollectionSearchExecutionTests: XCTestCase {
         XCTAssertFalse(state.isLoadingSearch)
     }
 
+    /// RCL-003-execute_filtered_collection_retrieval: Composer dismissal은 활성 query terminal을 한 번 기록함
+    /// Composer를 닫을 때 활성 query가 canonical cancelled terminal로 종료되는지 검증한다.
+    /// - 검증 내용: dismissal 1회, 반복 dismissal, 늦은 response 이후 cancelled query event 1건
+    /// - 사전 조건: 검색 요청이 진행 중인 Composer 상태
+    /// - 기대 결과: dismissal만 cancelled metric을 기록하고 반복/늦은 event는 no-op임
+    func testSetPresentedDismissal_withActiveQuery_recordsOneCancelledTerminal() throws {
+        let recorder = ComposerMetricRecorder()
+        let requestID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000025"))
+        var state = ComposerState()
+        state.isPresented = true
+        state.isLoadingSearch = true
+        state.activeSearchRequestID = requestID
+        state.searchStartedAt = Date(timeIntervalSinceNow: -0.1)
+
+        withDependencies {
+            $0.composerMetricClient = ComposerMetricClient(recordProductMetric: recorder.record)
+        } operation: {
+            let feature = ComposerFeature()
+            _ = feature.reduce(into: &state, action: .view(.setPresented(false)))
+            _ = feature.reduce(into: &state, action: .view(.setPresented(false)))
+            _ = feature.reduce(
+                into: &state,
+                action: .internal(.searchResponse(requestID, .success(SearchResponsePayload(itemCount: 1)))),
+            )
+        }
+
+        XCTAssertEqual(recorder.names, [ComposerCollectionFilterMetrics.queryResult])
+        let call = try XCTUnwrap(recorder.callsSnapshot.first)
+        XCTAssertEqual(call.tags?["result_status"], "cancelled")
+        XCTAssertEqual(call.tags?["operation_id"], requestID.uuidString.lowercased())
+        XCTAssertNotNil(Int(call.tags?["duration_ms"] ?? ""))
+        XCTAssertNil(state.activeSearchRequestID)
+        XCTAssertFalse(state.isLoadingSearch)
+    }
+
     /// RCL-003-execute_filtered_collection_retrieval: value commit은 filter 실행을 한 번만 시작한다.
     /// parent condition mutation이 실제 SearchClient chain으로 이어질 때 중복 apply effect를 만들지 않는지 검증한다.
     /// - 검증 내용: single value commit, one applyFilters request, committed payload
