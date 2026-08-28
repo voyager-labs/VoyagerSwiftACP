@@ -62,11 +62,23 @@ func (r *EntryPropertyRepository) LoadAssignmentsPage(
 	after *domainentry.PropertyID,
 	limit int,
 ) ([]domainentry.EntryPropertyAssignment, *domainentry.PropertyID, bool, error) {
-	db := r.store.db.WithContext(ctx)
-	if scope, ok := ctx.Value(txScopeKey{}).(*txScope); ok && scope != nil && scope.tx != nil {
-		db = scope.tx.WithContext(ctx)
+	// 네 조회(header/value/정의/선택지)와 조립을 하나의 read snapshot 안에서
+	// 수행한다. 연결마다 goroutine이 실행되므로 조회 사이에 execute가 커밋하면
+	// 이전 revision의 header와 새 payload가 조합되어 잘못된 CAS 토큰이나
+	// ErrAssignmentPayloadRequired internal_error가 만들어진다. tx 스코프 ctx로
+	// 호출되면 기존 트랜잭션에 SAVEPOINT로 참여한다.
+	var facts []domainentry.EntryPropertyAssignment
+	var next *domainentry.PropertyID
+	var hasMore bool
+	wrapErr := r.store.WithinTx(ctx, func(tx *gorm.DB) error {
+		var err error
+		facts, next, hasMore, err = LoadEntryPropertyAssignmentsPage(tx, wsctx, entryID, requestedIDs, after, limit)
+		return err
+	})
+	if wrapErr != nil {
+		return nil, nil, false, wrapErr
 	}
-	return LoadEntryPropertyAssignmentsPage(db, wsctx, entryID, requestedIDs, after, limit)
+	return facts, next, hasMore, nil
 }
 
 // LoadAssignmentsCapped는 overlay 조회의 행 예산 버전이다. 자세한 계약은
