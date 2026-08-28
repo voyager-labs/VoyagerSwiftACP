@@ -11281,6 +11281,108 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await store.finish()
     }
 
+    /// .discarded로 제외된 request-bearing 계획 창이 제거되면 전체 배치를 stale 재계획한다.
+    /// - 검증 내용: 제외 창 제거 뒤 replacement apply가 원래 item 순서와 route를 보존함
+    /// - 사전 조건: 마지막 계획 창이 제외되고 다른 survivor가 activation 대상인 상태에서 제외 창이 제거됨
+    /// - 기대 결과: staleReplanCount 1 전체 배치가 적용되고 제거 route가 신규 reservation으로 복구됨
+    func testPlacementExcludedWindowRemovalReplansRequestBearingBatchAfterDiscard() async {
+        let batchID = UUID()
+        let survivorWindowID = UUID()
+        let excludedWindowID = UUID()
+        let survivorItemID = UUID()
+        let excludedItemID = UUID()
+        let survivorTabID = ContentTabID(rawValue: "excluded-removal-survivor")
+        let excludedTabID = ContentTabID(rawValue: "excluded-removal-target")
+        let survivorRoute = ContentTabPageAnchor.directory(path: "/tmp/excluded-removal-survivor")
+        let excludedRoute = ContentTabPageAnchor.directory(path: "/tmp/excluded-removal-target")
+        let request = ExternalOpenPlacementRequest(
+            batchID: batchID,
+            items: [
+                .init(itemID: survivorItemID, anchor: survivorRoute, pendingSelectEntryID: nil),
+                .init(itemID: excludedItemID, anchor: excludedRoute, pendingSelectEntryID: nil),
+            ],
+            preferredWindowIDs: [],
+        )
+        let plan = ExternalOpenPlacementPlan(
+            batchID: batchID,
+            windows: [
+                .init(
+                    windowID: survivorWindowID,
+                    isNewWindow: false,
+                    items: [.init(
+                        itemID: survivorItemID,
+                        tabID: survivorTabID,
+                        anchor: survivorRoute,
+                        requiresReservation: false,
+                    )],
+                ),
+                .init(
+                    windowID: excludedWindowID,
+                    isNewWindow: false,
+                    items: [.init(
+                        itemID: excludedItemID,
+                        tabID: excludedTabID,
+                        anchor: excludedRoute,
+                        requiresReservation: false,
+                    )],
+                ),
+            ],
+            request: request,
+        )
+        var state = WindowManagerFeature.State()
+        state.windows = [
+            Self.makeRouteWindow(
+                id: survivorWindowID,
+                tabs: [(survivorTabID, survivorRoute)],
+                activeTabID: survivorTabID,
+            ),
+            Self.makeRouteWindow(
+                id: excludedWindowID,
+                tabs: [(excludedTabID, excludedRoute)],
+                activeTabID: excludedTabID,
+            ),
+        ]
+        state.authorizedExternalOpenBatchID = batchID
+        state.externalOpenActivationAttempt = .init(
+            batchID: batchID,
+            plan: plan,
+            windowID: survivorWindowID,
+            excludedWindowIDs: [excludedWindowID],
+        )
+        let store = TestStore(initialState: state) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.fileManagerWindowClient.activate = { _ in
+                XCTFail("제외 창 제거는 survivor activation 완료 전에 전체 재계획해야 함")
+                return .becameKey
+            }
+            Self.configureAutoRegisteringWindowOpen(&$0.fileManagerWindowClient)
+        }
+        // store.exhaustivity = .off: stale replacement apply 이후 native window lifecycle보다 제외 창 route 보존을 검증함.
+        store.exhaustivity = .off
+
+        await store.send(.event(.windowClosed(excludedWindowID)))
+        await store.receive { action in
+            guard case let .placement(.apply(replacementPlan, reservationsByItemID)) = action else {
+                return false
+            }
+            let survivorItem = replacementPlan.orderedItems.first(where: { $0.itemID == survivorItemID })
+            let excludedItem = replacementPlan.orderedItems.first(where: { $0.itemID == excludedItemID })
+            return replacementPlan.request?.staleReplanCount == 1
+                && replacementPlan.orderedItems.map(\.itemID) == request.items.map(\.itemID)
+                && replacementPlan.orderedItems.map(\.anchor) == request.items.map(\.anchor)
+                && survivorItem?.tabID == survivorTabID
+                && survivorItem?.requiresReservation == false
+                && excludedItem?.tabID != excludedTabID
+                && excludedItem?.requiresReservation == true
+                && reservationsByItemID.count == 1
+        }
+        await store.skipReceivedActions()
+        await store.finish()
+    }
+
     /// native activation 대상인 계획 창이 닫히면 그 창의 미정착 pinned 복귀를 실패로 소비해 재계획한다.
     /// - 검증 내용: target 창 제거 시 unsettled pinned 항목이 correlated failure로 처리됨
     /// - 사전 조건: activation attempt의 대상 창에 아직 settle되지 않은 pinned 복귀 항목이 있음

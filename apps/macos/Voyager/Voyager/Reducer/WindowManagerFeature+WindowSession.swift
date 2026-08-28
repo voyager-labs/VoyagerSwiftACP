@@ -399,7 +399,6 @@ extension WindowManagerFeature {
                 state: &state,
             )
         }
-        guard attempt.windowID == id else { return nil }
         if let request = attempt.plan.request {
             state.externalOpenActivationAttempt = nil
             state.externalOpenActivationBecameKey = false
@@ -421,6 +420,7 @@ extension WindowManagerFeature {
                 reservationsByItemID: replacementPlan.reservationsByItemID,
             )))
         }
+        guard attempt.windowID == id else { return nil }
         return retryExternalOpenActivation(after: attempt, state: &state)
     }
 
