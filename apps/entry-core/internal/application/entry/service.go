@@ -150,6 +150,11 @@ func NewUnifiedServiceWithCatalog(registry MountRegistry, bindings []ResourceAda
 // 인덱스를 재사용하게 한다. live 정의 조회는 요청당 한 번이고, 요청 Property가
 // 비어 있으면 저장소를 읽지 않는다.
 func (service *UnifiedService) requestedDefinitions(ctx context.Context, requestedProperties []string) ([]string, []domainentry.WorkspacePropertyDefinition, map[domainentry.PropertyID]domainentry.WorkspacePropertyDefinition, error) {
+	// live 정의 조회는 Property 요청이 비어 있어도 생략할 수 없다: 소스
+	// availability 거부(auth_required/provider_unavailable)는 sourcePropertyContracts
+	// 이후의 소스 에러 매핑으로 유지돼야 하는데, 빈 정의 인덱스에서 이 흐름을
+	// 건너뛰면 거부가 adapter_failure로 퇴화한다(integration 실측). 스캔 자체의
+	// 제거는 정의 인덱스 캐시+원자 갱신 설계와 함께 별도 과제다.
 	definitionList, definitions, err := service.definitionIndex(ctx)
 	if err != nil {
 		return nil, nil, nil, err

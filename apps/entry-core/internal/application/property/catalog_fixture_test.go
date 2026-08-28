@@ -37,6 +37,22 @@ func (store *memCatalogStore) Definition(_ context.Context, workspace domainentr
 	return def, nil
 }
 
+func (store *memCatalogStore) DefinitionByKey(
+	_ context.Context,
+	workspace domainentry.WorkspaceContext,
+	namespace, canonicalKey string,
+) (domainentry.WorkspacePropertyDefinition, error) {
+	if err := ValidateWorkspaceContext(workspace); err != nil {
+		return domainentry.WorkspacePropertyDefinition{}, err
+	}
+	for _, def := range store.defs {
+		if def.Namespace == namespace && def.CanonicalKey == canonicalKey {
+			return def, nil
+		}
+	}
+	return domainentry.WorkspacePropertyDefinition{}, ErrDefinitionNotFound
+}
+
 func (store *memCatalogStore) Option(_ context.Context, workspace domainentry.WorkspaceContext, optionID domainentry.PropertyOptionID) (domainentry.PropertyOption, error) {
 	if err := ValidateWorkspaceContext(workspace); err != nil {
 		return domainentry.PropertyOption{}, err

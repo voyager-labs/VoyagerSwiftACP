@@ -180,3 +180,32 @@ func TestRegistryOwnedDefinitionsRejectCatalogMutations(t *testing.T) {
 	}
 	mustEqualSnapshot(t, before, snapshotStore(store))
 }
+
+// 생성 중복 검사는 (namespace, key) exact 조회로 bounded하다. tombstoned 행도
+// 유일성 판정에 포함되며(UNIQUE 인덱스 계약), 전체 정의 열거는 생략한다.
+func TestCreateDefinitionDuplicateKeyIncludesTombstoned(t *testing.T) {
+	store := newMemCatalogStore()
+	service := mustCatalogService(t, store)
+	workspace := mustWorkspaceContext(t)
+	ctx := context.Background()
+
+	first, err := service.CreateDefinition(ctx, workspace, CreateDefinitionInput{
+		Key: "dup", DisplayName: "First", ValueType: domainentry.PropertyTypeText,
+		Cardinality: domainentry.PropertyCardinalityOne, RequestID: "req-1",
+	})
+	if err != nil {
+		t.Fatalf("first create: %v", err)
+	}
+	if _, err := service.DisableDefinition(ctx, workspace, first.Definition.PropertyID, first.Definition.DefinitionRev, "req-2"); err != nil {
+		t.Fatalf("disable: %v", err)
+	}
+	before := snapshotStore(store)
+
+	if _, err := service.CreateDefinition(ctx, workspace, CreateDefinitionInput{
+		Key: "dup", DisplayName: "Second", ValueType: domainentry.PropertyTypeText,
+		Cardinality: domainentry.PropertyCardinalityOne, RequestID: "req-3",
+	}); !errors.Is(err, ErrDuplicateDefinitionKey) {
+		t.Fatalf("duplicate key over tombstoned = %v, want ErrDuplicateDefinitionKey", err)
+	}
+	mustEqualSnapshot(t, before, snapshotStore(store))
+}

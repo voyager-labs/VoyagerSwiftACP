@@ -82,6 +82,35 @@ func (s *PropertyCatalogStore) Definition(ctx context.Context, workspace domaine
 	return mapDefinitionRow(row)
 }
 
+// DefinitionByKey는 (workspace, namespace, canonical_key) exact 조회다.
+// idx_def_ns_key UNIQUE 인덱스를 타므로 mutation 트랜잭션 안의 생성 중복 검사가
+// 워크스페이스 전체 스캔이 되지 않는다. tombstoned 행도 유일성 판정에 포함된다.
+func (s *PropertyCatalogStore) DefinitionByKey(
+	ctx context.Context,
+	workspace domainentry.WorkspaceContext,
+	namespace, canonicalKey string,
+) (domainentry.WorkspacePropertyDefinition, error) {
+	if err := s.requireWorkspace(workspace); err != nil {
+		return domainentry.WorkspacePropertyDefinition{}, err
+	}
+	db, err := s.session(ctx)
+	if err != nil {
+		return domainentry.WorkspacePropertyDefinition{}, err
+	}
+	var row WorkspacePropertyDefinitionRow
+	queryErr := db.Where(
+		"workspace_id = ? AND namespace = ? AND canonical_key = ?",
+		workspace.ID.Bytes(), namespace, canonicalKey,
+	).First(&row).Error
+	if errors.Is(queryErr, gorm.ErrRecordNotFound) {
+		return domainentry.WorkspacePropertyDefinition{}, applicationproperty.ErrDefinitionNotFound
+	}
+	if queryErr != nil {
+		return domainentry.WorkspacePropertyDefinition{}, queryErr
+	}
+	return mapDefinitionRow(row)
+}
+
 // Definitions은 워크스페이스의 모든 정의를 (namespace, canonical_key) 순으로
 // 돌려준다. 비활성 행도 과거 assignment read-back을 위해 포함한다.
 func (s *PropertyCatalogStore) Definitions(ctx context.Context, workspace domainentry.WorkspaceContext) ([]domainentry.WorkspacePropertyDefinition, error) {

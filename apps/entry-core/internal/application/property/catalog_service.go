@@ -2,6 +2,7 @@ package property
 
 import (
 	"context"
+	"errors"
 	"unicode/utf8"
 
 	domainentry "github.com/voyager-labs/voyager-app/apps/entry-core/internal/domain/entry"
@@ -96,14 +97,13 @@ func (service *CatalogService) CreateDefinition(
 
 	var result DefinitionView
 	if err := service.runner.WithinTx(ctx, func(txCtx context.Context) error {
-		existing, err := service.store.Definitions(txCtx, workspace)
-		if err != nil {
+		// 중복 검사는 (namespace, key) exact 조회다(idx_def_ns_key UNIQUE 인덱스).
+		// mutation 트랜잭션 안에서 정의 전체를 열거하면 생성 한 건이 전체 스캔으로
+		// 단일 연결을 점유한다. tombstoned 행도 유일성 판정에 포함된다.
+		if _, err := service.store.DefinitionByKey(txCtx, workspace, definition.Namespace, definition.CanonicalKey); err == nil {
+			return ErrDuplicateDefinitionKey
+		} else if !errors.Is(err, ErrDefinitionNotFound) {
 			return err
-		}
-		for _, candidate := range existing {
-			if candidate.Namespace == definition.Namespace && candidate.CanonicalKey == definition.CanonicalKey {
-				return ErrDuplicateDefinitionKey
-			}
 		}
 		// 커밋 전 응답 봉투 예산 검사다. 요청이 봉투에 들어도 발급 UUID와 상태
 		// 필드가 추가된 성공 응답은 초과할 수 있으므로, 초과 예상은 쓰기 없이

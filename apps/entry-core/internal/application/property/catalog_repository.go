@@ -64,6 +64,9 @@ func (view DefinitionView) IsActive() bool {
 // 오름차순으로 돌려준다.
 type CatalogRepository interface {
 	Definition(ctx context.Context, workspace domainentry.WorkspaceContext, propertyID domainentry.PropertyID) (domainentry.WorkspacePropertyDefinition, error)
+	// DefinitionByKey는 (namespace, canonical_key) exact 조회다. idx_def_ns_key
+	// UNIQUE 인덱스로 bounded하며 tombstoned 행도 포함한다.
+	DefinitionByKey(ctx context.Context, workspace domainentry.WorkspaceContext, namespace, canonicalKey string) (domainentry.WorkspacePropertyDefinition, error)
 	Definitions(ctx context.Context, workspace domainentry.WorkspaceContext) ([]domainentry.WorkspacePropertyDefinition, error)
 	// DefinitionsPage는 definition.list의 저장소 단계 페이징이다. property_id
 	// 오름차순으로 after 이후 limit+1행을 읽어 has_more과 다음 커서를 돌려준다.
