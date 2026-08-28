@@ -52,15 +52,19 @@ public enum EntryDropValidationResolver {
     public static func resolve(_ context: EntryDropValidationContext) -> EntryDropValidationResult {
         let destinationPath = context.destinationPath
         let sourcePaths = context.sourcePaths
-        let hasSourcePaths = !sourcePaths.isEmpty
 
-        if hasSourcePaths, !context.prefersCopy,
+        // 빈 source는 항상 no-op으로 resolve한다 (외부 drop의 빈 payload 방어).
+        guard !sourcePaths.isEmpty else {
+            return .init(destinationPath: destinationPath, resolvedOperation: .none, isOptionDrag: false)
+        }
+
+        if !context.prefersCopy,
            let rejection = moveRejection(destinationPath: destinationPath, sourcePaths: sourcePaths)
         {
             return rejection
         }
 
-        if hasSourcePaths, context.prefersCopy,
+        if context.prefersCopy,
            rejectsCopyDescendantSelf(destinationPath: destinationPath, sourcePaths: sourcePaths)
         {
             return .init(

@@ -87,9 +87,6 @@ git diff --check            # Check for whitespace errors before commit
 - Treat `opencode.json` as a user-managed local file.
 - Never automatically reset, revert, or discard changes in `opencode.json`.
 - Never include `opencode.json` in commits unless the user explicitly asks for it.
-- `docs/canonical/` 내부 파일(콘텐츠)은 사용자가 요청하면 자유롭게 읽고 편집할 수 있다.
-- 단, **submodule pointer**(부모 레포에서 `docs/canonical`이 가리키는 커밋 참조)는 사용자가 명시적으로 inspect/update/reset/restore를 요청하지 않는 한 절대 변경하지 않는다.
-- 관련 없는 작업 중 `git status`에 submodule pointer dirty가 보여도 추적하거나 정리하지 않는다.
 
 ## Plan quality conventions
 
@@ -116,7 +113,7 @@ Agents must never silence lint/type warnings with inline suppression comments or
 
 ## Validation
 
-Run the commands that match your change scope. Swift 컴파일·테스트 검증은 `lsp_diagnostics` 대신 `.agents/skills/code-tooling/SKILL.md`의 실행 매트릭스를 따르고, macOS 범위는 저장소 `mise` task를 사용한다.
+Run the commands that match your change scope. Swift 컴파일·테스트 검증은 `lsp_diagnostics` 대신 `.agents/skills/code-tooling/SKILL.md`의 실행 매트릭스를 따르고, macOS 범위는 저장소 `mise` task를 사용한다. Storybook work follows the change-scoped rules below; do not expand a bounded Storybook change into a full native/E2E/browser matrix by default.
 
 ### Entry Core (Go)
 
@@ -141,6 +138,31 @@ mise exec -- swiftformat --config apps/macos/.swiftformat apps/macos --verbose
 ```bash
 git diff --check       # whitespace/conflict markers
 ```
+
+### Storybook change-scoped verification
+
+For `apps/storybook/**`, match verification to the changed concern and the acceptance criteria:
+
+- isolated fixture/style/story change: run the affected package typecheck and `git diff --check`;
+- package API, root composition, tokens, registry, or catalog change: run the affected Storybook checks (`pnpm check`, `pnpm build-storybook`, and `verify:contract` when the contract script covers the changed surface);
+- visual, responsive, accessibility, or interaction claim: inspect only the affected stories and representative changed states after implementation convergence;
+- use one viewport by default; add viewports, schemes, or states only when the acceptance criteria require them;
+- native evidence and full application E2E are opt-in for an explicit named runtime claim, never a default consequence of a Storybook change;
+- if the acceptance criteria do not require browser/native evidence, stop after the focused checks and report that those evidence classes are not applicable.
+
+Browser evidence proves only the inspected Storybook presentation or interaction. It does not prove native runtime behavior, reducer/backend/auth/filesystem behavior, or production E2E. If a browser server is intentionally used, prove readiness with `lsof` and `curl`, then stop it and re-check the port.
+
+### OMO / Hephaestus Storybook handoff boundary
+
+Every delegated Storybook task must state its verification envelope before execution:
+
+- changed paths and affected stories;
+- acceptance criteria that require evidence;
+- checks to run;
+- checks explicitly out of scope;
+- the stop condition.
+
+OMO and Hephaestus must not infer an exhaustive story × viewport × state matrix, native macOS build/test, full application E2E, or per-edit browser screenshots from a generic visual-change instruction. Browser inspection happens after implementation convergence and only for the affected stories when the acceptance criteria require it. Do not introduce named verification profiles for this; use this single change-scoped rule.
 
 ## PR review rules
 

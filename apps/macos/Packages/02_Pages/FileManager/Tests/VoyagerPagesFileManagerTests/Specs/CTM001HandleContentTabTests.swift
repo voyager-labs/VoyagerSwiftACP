@@ -42,6 +42,19 @@ private struct BatchPendingCloseFixture {
     let state: FileManagerFeature.State
 }
 
+private struct ConfiguredDirectoryHandoffFixture {
+    let preferences: VoyagerPagesFileManager.AppPreferencesState
+    let state: FileManagerFeature.State
+    let previousID: ContentTabID
+    let sourcePath: String
+    let directoryPath: String
+}
+
+private struct ConfiguredDirectoryHandoffRecorders {
+    let cancellationCount = LockIsolated(0)
+    let loadPaths = LockIsolated<[String]>([])
+}
+
 @MainActor
 private func makeBatchDirectorySourceContent() -> FileManagerContentFeature.State {
     var content = FileManagerContentFeature.State.initialContent(
@@ -6702,6 +6715,44 @@ final class CTM001HandleContentTabTests: XCTestCase {
         XCTAssertNotEqual(store.state.contentTabs.activeTabID, beforeActiveID, "active tab ID must change to new tab")
     }
 
+    /// CTM-001-open_new_content_tab_start_page: Cmd+T는 request-time default start page snapshot으로 새 tab을 생성함
+    /// - 검증 내용: preference directory가 유효하면 command가 Directory initial tab을 직접 생성함
+    /// - 사전 조건: 실제 fixture directory를 가리키는 defaultStartPage와 선택된 기존 Home tab
+    /// - 기대 결과: 기존 selection은 유지되고 새 Directory tab의 content session은 기존 session과 독립됨
+    func testOpenNewContentTab_commandRouting_usesRequestTimeDirectorySnapshot() async throws {
+        let directory = try FileManagerFixtureSandbox.readOnlyDirectory(from: "fixtures/fixtures/documents")
+        var preferences = VoyagerPagesFileManager.AppPreferencesState()
+        preferences.defaultStartPage = .directory(directory.path)
+        var initialState = FileManagerFeature.State()
+        let originalID = try XCTUnwrap(initialState.contentTabs.activeTabID)
+        initialState.contentTabs.selectedTabIDs = [originalID]
+        initialState.contentTabs.selectionAnchorID = originalID
+        initialState.content.navigation.backHistory = [ContentPageNavigationHistorySnapshot(navigationState: .recents)]
+        initialState.content.entryViewLayout.entryOperations.isLoading = true
+        let store = TestStore(initialState: initialState) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.startPageAvailabilityClient.probeDirectory = { _ in .availableDirectory }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.applyAppPreferences(preferences))
+        await store.skipReceivedActions(strict: false)
+        let originalContent = store.state.content
+        await store.send(.request(.openNewContentTab))
+        await store.skipReceivedActions(strict: false)
+
+        let newTab = try XCTUnwrap(store.state.contentTabs.tabs.last)
+        XCTAssertEqual(newTab.anchor, .directory(path: directory.path))
+        XCTAssertEqual(newTab.page, .directory)
+        XCTAssertEqual(store.state.contentTabs.selectedTabIDs, [originalID])
+        let savedOriginalContent = try XCTUnwrap(store.state.tabContentStates[originalID])
+        XCTAssertEqual(savedOriginalContent.navigation, originalContent.navigation)
+        XCTAssertNotEqual(store.state.tabContentStates[originalID], store.state.tabContentStates[newTab.id])
+        XCTAssertEqual(store.state.content.navigation.currentPath, directory.path)
+    }
+
     /// CTM-001-open_new_content_tab_routing: 기존 active Directory/Collection anchor가 새 tab에 복제되지 않음
     /// VOY-447 AC3와 CTM contract의 "copy 방지" 정책을 검증한다.
     /// - 검증 내용: Directory tab이 active인 상태에서 openNewContentTab 전송 시 last.anchor == .homeDefault
@@ -6754,6 +6805,138 @@ final class CTM001HandleContentTabTests: XCTestCase {
             "previous active tab must still exist in tabs",
         )
         XCTAssertNotEqual(newActiveID, previousActiveID, "active tab ID must change")
+    }
+
+    // MARK: - CTM-001-open_new_content_tab_handoff
+
+    private func makeConfiguredDirectoryHandoffState(
+        directoryPath: String,
+        sourcePath: String,
+    ) throws -> ConfiguredDirectoryHandoffFixture {
+        var preferences = VoyagerPagesFileManager.AppPreferencesState()
+        preferences.defaultStartPage = .directory(directoryPath)
+        var state = FileManagerWindowState.makeInitial(path: sourcePath)
+        let previousID = try XCTUnwrap(state.contentTabs.activeTabID)
+        state.content.navigation.backHistory = [ContentPageNavigationHistorySnapshot(navigationState: .recents)]
+        return .init(
+            preferences: preferences,
+            state: state,
+            previousID: previousID,
+            sourcePath: sourcePath,
+            directoryPath: directoryPath,
+        )
+    }
+
+    private func receiveConfiguredDirectoryHandoffActions(
+        _ store: TestStoreOf<FileManagerFeature>,
+        previousID: ContentTabID,
+        directoryPath: String,
+    ) async {
+        await store.receive { action in
+            guard case let .tabContent(tabID, .entryViewLayout(.entryOperations(.loading(.cancelAllFolderItems)))) =
+                action
+            else { return false }
+            return tabID == previousID
+        }
+        await store.receive { action in
+            guard case let .tabContent(tabID, .entryViewLayout(.internal(.cancelCollectionMaterialization))) = action
+            else { return false }
+            return tabID == previousID
+        }
+        await store.receive { action in
+            guard case let .tabContent(tabID, .internal(.applyNavigationState(.folder(receivedPath)))) = action
+            else { return false }
+            return tabID != previousID && receivedPath == directoryPath
+        }
+    }
+
+    private func startConfiguredDirectoryOutgoingLoad(
+        _ store: TestStoreOf<FileManagerFeature>,
+        sourcePath: String,
+        started: XCTestExpectation,
+    ) async {
+        await store.sendTabContent(.entryViewLayout(.entryOperations(.loading(
+            .loadItems(path: sourcePath, showHidden: false),
+        ))))
+        await fulfillment(of: [started], timeout: 1)
+    }
+
+    private func verifyConfiguredDirectoryHandoffResult(
+        _ state: FileManagerFeature.State,
+        fixture: ConfiguredDirectoryHandoffFixture,
+        recorders: ConfiguredDirectoryHandoffRecorders,
+    ) throws {
+        let newTabID = try XCTUnwrap(state.contentTabs.activeTabID)
+        XCTAssertNotEqual(newTabID, fixture.previousID)
+        XCTAssertEqual(state.contentTabs.tabs[id: newTabID]?.anchor, .directory(path: fixture.directoryPath))
+        XCTAssertEqual(state.content.navigation.backHistory.count, 0)
+        XCTAssertFalse(state.content.entryViewLayout.entryOperations.isLoading)
+        XCTAssertEqual(state.content.navigation.currentPath, fixture.directoryPath)
+        let savedPreviousContent = try XCTUnwrap(state.tabContentStates[fixture.previousID])
+        XCTAssertEqual(savedPreviousContent.navigation.backHistory.map(\.navigationState), [.recents])
+        XCTAssertEqual(recorders.cancellationCount.value, 1)
+        XCTAssertEqual(recorders.loadPaths.value, [fixture.sourcePath, fixture.directoryPath])
+    }
+
+    /// CTM-001-open_new_content_tab_handoff: Directory 시작 페이지 새 탭은 정상 handoff cleanup과 navigation resync를 수행함
+    /// 구성된 시작 페이지(.directory)로 연 새 탭이 이전 탭의 in-flight 작업을 취소하고 destination 폴더 로드를
+    /// 시작하는지 검증한다. anchor가 directory라는 이유로 handoff 전체를 생략하지 않는다.
+    /// - 검증 내용: 이전 탭 소유 cancelAllFolderItems/cancelCollectionMaterialization 수신, 새 탭 소유
+    ///   applyNavigationState(.folder) 수신, 새 content는 source session 복제가 아닌 anchor seed 상태
+    /// - 사전 조건: defaultStartPage = fixture directory, 이전 Home tab에 backHistory와 isLoading=true in-flight 표식
+    /// - 기대 결과: handoff cleanup/resync가 한 번 실행되고 source owner state는 이전 탭 소유로 저장됨
+    func testOpenNewContentTab_configuredDirectoryStartPage_performsHandoffCleanupAndResync() async throws {
+        let directory = try FileManagerFixtureSandbox.readOnlyDirectory(from: "fixtures/fixtures/documents")
+        let sourcePath = "/seed"
+        let outgoingLoadStarted = expectation(description: "outgoing load started"),
+            outgoingLoadCancelled = expectation(description: "outgoing load cancelled")
+        let outgoingLoadGate = AsyncStream<Void>.makeStream()
+        let recorders = ConfiguredDirectoryHandoffRecorders()
+        let fixture = try makeConfiguredDirectoryHandoffState(directoryPath: directory.path, sourcePath: sourcePath)
+        let store = TestStore(initialState: fixture.state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.startPageAvailabilityClient.probeDirectory = { _ in .availableDirectory }
+            $0.entryLoadingClient.loadItems = { url, _ in
+                recorders.loadPaths.withValue { $0.append(url.path) }
+                guard url.path == sourcePath else { return [] }
+                outgoingLoadStarted.fulfill()
+                return await withTaskCancellationHandler {
+                    for await _ in outgoingLoadGate.stream {}
+                    return []
+                } onCancel: {
+                    recorders.cancellationCount.withValue { $0 += 1 }
+                    outgoingLoadGate.continuation.finish()
+                    outgoingLoadCancelled.fulfill()
+                }
+            }
+            $0.fileChangeGatewayClient.observeEvents = {
+                AsyncStream { $0.finish() }
+            }
+        }
+        // 비포괄적: open flow의 부수 child action을 제외하고 handoff cancellation/resync 시그니처 검증에 집중한다.
+        store.exhaustivity = .off
+
+        await store.send(.applyAppPreferences(fixture.preferences))
+        await store.skipReceivedActions(strict: false)
+        await startConfiguredDirectoryOutgoingLoad(store, sourcePath: sourcePath, started: outgoingLoadStarted)
+
+        await store.send(.request(.openNewContentTab))
+        await receiveConfiguredDirectoryHandoffActions(
+            store,
+            previousID: fixture.previousID,
+            directoryPath: directory.path,
+        )
+        await fulfillment(of: [outgoingLoadCancelled], timeout: 1)
+
+        await store.skipReceivedActions(strict: false)
+        await store.finish()
+        try verifyConfiguredDirectoryHandoffResult(
+            store.state,
+            fixture: fixture,
+            recorders: recorders,
+        )
     }
 
     // MARK: - CTM-001-open_new_content_tab_invariants

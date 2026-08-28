@@ -5,9 +5,11 @@ import PerceptionCore
 import SwiftUI
 import UniformTypeIdentifiers
 import VoyagerEntitiesAppPreferences
+import VoyagerEntitiesEntry
 import VoyagerFeaturesEntryOperations
 @testable import VoyagerPagesFileManager
 import VoyagerShared
+import VoyagerWidgetsEntryViewLayout
 import XCTest
 
 @MainActor
@@ -1791,6 +1793,48 @@ final class FMW001FileManagerWindowTests: XCTestCase {
             makeContentViewController: { _, _ in NSViewController() },
         )
     }
+
+    // MARK: - EVM-001-view_current_page_title
+
+    /// EVM-001-view_current_page_title: Home 초기 상태의 창 제목은 "Home"
+    /// legacy defaultTabPath 페이로드가 유지되더라도 초기 route(.home)에 바인딩된 창 제목은 "Home"이어야 한다.
+    /// - 검증 내용: makeInitial(path: nil) 상태에서 navigationState == .home, titlePath == "Home", makeTitle 결과 == "Home"
+    /// - 사전 조건: path 없이 생성한 FileManagerWindowState
+    /// - 기대 결과: 창 제목 계산 결과가 legacy 홈 디렉터리 경로가 아닌 "Home"
+    func testWindowTitleForHomeInitialStateShowsHome() {
+        let state = FileManagerWindowState.makeInitial(path: nil)
+
+        XCTAssertEqual(state.content.navigation.navigationState, .home)
+        XCTAssertEqual(state.content.navigation.titlePath, "Home")
+
+        let title = FileManagerWindowChrome.makeTitle(
+            openedCollectionName: nil,
+            isCollectionMode: false,
+            titlePath: state.content.navigation.titlePath,
+            makeWindowTitle: { $0 },
+        )
+        XCTAssertEqual(title, "Home")
+    }
+
+    /// EVM-001-view_current_page_title: Directory seed 상태의 창 제목은 경로 유지
+    /// seedInitialFolderPath로 시작한 Directory route의 창 제목은 해당 경로 그대로여야 한다.
+    /// - 검증 내용: makeInitial(path:) 상태에서 titlePath와 makeTitle 결과가 시드 경로와 일치
+    /// - 사전 조건: path "/tmp/voyager-directory"로 생성한 FileManagerWindowState
+    /// - 기대 결과: Directory route의 제목은 경로 식별자 그대로 유지
+    func testWindowTitleForDirectorySeedKeepsPath() {
+        let state = FileManagerWindowState.makeInitial(path: "/tmp/voyager-directory")
+
+        XCTAssertEqual(state.content.navigation.navigationState, .folder("/tmp/voyager-directory"))
+        XCTAssertEqual(state.content.navigation.titlePath, "/tmp/voyager-directory")
+
+        let title = FileManagerWindowChrome.makeTitle(
+            openedCollectionName: nil,
+            isCollectionMode: false,
+            titlePath: state.content.navigation.titlePath,
+            makeWindowTitle: { $0 },
+        )
+        XCTAssertEqual(title, "/tmp/voyager-directory")
+    }
 }
 
 private final class ForeignUndoTarget {
@@ -2015,6 +2059,114 @@ extension FMW001FileManagerWindowTests {
 
         XCTAssertTrue(fixture.window.firstResponder is KeyCommandHostingView)
         XCTAssertNotIdentical(fixture.window.firstResponder, nonTextResponder)
+    }
+
+    // MARK: - FMW-001-type_scroll_mounted_content_page
+
+    /// FMW-001-type_scroll_mounted_content_page: requestFocus가 비텍스트 responder를 등록된 KeyCommandHostingView로 교체한다.
+    /// 실제 mounted ContentPage에서 list/grid를 대표하는 비텍스트 responder가 키 입력 소유자인 host로 대체되는지 검증한다.
+    /// - 검증 내용: requestFocus 이후 window firstResponder가 KeyCommandHostingView인지
+    /// - 사전 조건: mounted ContentPage window에 비텍스트 KeyCommandHostingView가 first responder
+    /// - 기대 결과: 등록된 host가 first responder가 되고 기존 비텍스트 responder는 아님
+    func testMountedContentPageRequestFocusReplacesNonTextResponderWithHost() async {
+        let perceptionCheckingWasEnabled = disablePerceptionChecking()
+        defer { PerceptionCore.isPerceptionCheckingEnabled = perceptionCheckingWasEnabled }
+        let fixture = await makeMountedContentPageFixture()
+        let nonTextResponder = KeyCommandHostingView()
+        fixture.window.contentView?.addSubview(nonTextResponder)
+        XCTAssertTrue(fixture.window.makeFirstResponder(nonTextResponder))
+
+        fixture.store.send(.view(.selectAllEntries))
+        await drainMountedFocusUpdates()
+
+        XCTAssertTrue(fixture.window.firstResponder is KeyCommandHostingView)
+        XCTAssertNotIdentical(fixture.window.firstResponder, nonTextResponder)
+    }
+
+    /// FMW-001-type_scroll_mounted_content_page: requestFocus가 editable NSTextView responder를 교체하지 않는다.
+    /// list/grid 스크롤과 달리 검색·이름 변경 같은 텍스트 입력은 host로 빼앗기지 않고 유지되는지 검증한다.
+    /// - 검증 내용: requestFocus 이후 editable NSTextView가 first responder로 유지되는지
+    /// - 사전 조건: mounted ContentPage window에 editable NSTextView가 first responder
+    /// - 기대 결과: NSTextView가 first responder로 유지됨
+    func testMountedContentPageRequestFocusPreservesEditableTextView() async {
+        let perceptionCheckingWasEnabled = disablePerceptionChecking()
+        defer { PerceptionCore.isPerceptionCheckingEnabled = perceptionCheckingWasEnabled }
+        let fixture = await makeMountedContentPageFixture()
+        let textView = NSTextView()
+        textView.isEditable = true
+        fixture.window.contentView?.addSubview(textView)
+        XCTAssertTrue(fixture.window.makeFirstResponder(textView))
+
+        fixture.store.send(.view(.selectAllEntries))
+        await drainMountedFocusUpdates()
+
+        XCTAssertIdentical(fixture.window.firstResponder, textView)
+    }
+
+    /// FMW-001-type_scroll_mounted_content_page: mounted host의 insertText가 handleTextInput으로 라우팅돼 pending target을 설정한다.
+    /// 실제 mounted ContentPage의 KeyCommandHostingView에 한 글자를 커밋하면 host→handleTextInput→typeScrollEffect→
+    /// setTypeScrollTarget 체인으로 entryViewLayout.pendingTypeScrollTargetId가 첫 매칭 id로 설정되는지 검증한다.
+    /// (list/grid 소비·reset은 위젯 테스트가 소유하므로 여기서는 host→action→state 체인만 검증한다.)
+    /// - 검증 내용: host.insertText("가") 후 entryViewLayout.pendingTypeScrollTargetId == 첫 매칭 id
+    /// - 사전 조건: /root 폴더 페이지에 "가나다" 엔트리가 있고 host가 first responder
+    /// - 기대 결과: pendingTypeScrollTargetId가 "가"로 시작하는 첫 엔트리 id로 설정됨
+    func testMountedContentPageHostInsertTextSetsPendingTypeScrollTarget() async {
+        let perceptionCheckingWasEnabled = disablePerceptionChecking()
+        defer { PerceptionCore.isPerceptionCheckingEnabled = perceptionCheckingWasEnabled }
+        let target = EntryModel.temporaryFolder(id: "/root/가나다", name: "가나다")
+        let fixture = await makeMountedTypeScrollContentPageFixture(entries: [target])
+        let nonTextResponder = KeyCommandHostingView()
+        fixture.window.contentView?.addSubview(nonTextResponder)
+        XCTAssertTrue(fixture.window.makeFirstResponder(nonTextResponder))
+
+        // selectedIds 변경이 실제 requestFocus caller를 실행해 비텍스트 responder를 등록된 host로 교체한다.
+        fixture.store.send(.view(.selectAllEntries))
+        await drainMountedFocusUpdates()
+        guard let host = fixture.window.firstResponder as? KeyCommandHostingView,
+              host !== nonTextResponder
+        else {
+            return XCTFail("Expected registered KeyCommandHostingView as first responder")
+        }
+
+        host.insertText("가", replacementRange: NSRange(location: 0, length: 0))
+        await drainMountedFocusUpdates()
+
+        XCTAssertEqual(fixture.store.state.entryViewLayout.pendingTypeScrollTargetId, target.id)
+    }
+
+    private func makeMountedTypeScrollContentPageFixture(
+        entries: [EntryModel],
+    ) async -> (window: NSWindow, store: Store<FileManagerContentState, FileManagerContentAction>) {
+        var initialState = FileManagerContentState()
+        initialState.navigation.seedInitialFolderPath("/root")
+        initialState.entryViewLayout.entries = entries
+        let store: Store<FileManagerContentState, FileManagerContentAction> = Store(
+            initialState: initialState,
+        ) {
+            Reduce<FileManagerContentState, FileManagerContentAction> { state, action in
+                guard case .view(.selectAllEntries) = action else { return .none }
+                state.entryViewLayout.selectedIds = ["mounted-focus-trigger"]
+                return .none
+            }
+            FileManagerContentKeyCommandReducer()
+            Scope(state: \.entryViewLayout, action: \.entryViewLayout) {
+                EntryViewLayoutFeature()
+            }
+        }
+        let coordinator = FileManagerKeyCommandFocusCoordinator()
+        let hostingController = NSHostingController(
+            rootView: ContentPageView(store: store)
+                .environment(\.fileManagerKeyCommandFocusCoordinator, coordinator),
+        )
+        let containerController = NSViewController()
+        containerController.view = NSView(frame: NSRect(x: 0, y: 0, width: 640, height: 480))
+        containerController.addChild(hostingController)
+        hostingController.view.frame = containerController.view.bounds
+        containerController.view.addSubview(hostingController.view)
+        let window = NSWindow(contentViewController: containerController)
+        window.makeKey()
+        await drainMountedFocusUpdates()
+        return (window, store)
     }
 
     private func disablePerceptionChecking() -> Bool {

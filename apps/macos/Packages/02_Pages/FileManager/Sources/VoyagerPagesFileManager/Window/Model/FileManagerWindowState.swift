@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAi
+import VoyagerEntitiesAppPreferences
 import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
 import VoyagerFeaturesAiChat
@@ -186,6 +187,7 @@ public extension FileManagerTopNavigationArrangementPresentation {
 
 @ObservableState
 public struct FileManagerWindowState: Equatable {
+    public var defaultStartPage: StartPage
     public var content: FileManagerContentFeature.State
     public var tabContentStates: [ContentTabID: FileManagerContentFeature.State]
     public var tabInspectorStates: [ContentTabID: FileManagerInspectorFeature.State]
@@ -219,6 +221,10 @@ public struct FileManagerWindowState: Equatable {
     var pendingRuntimePreservationRecords: [ContentTabID: ContentTabPinnedRecord] = [:]
     public var pendingContentTabTeardown: PendingContentTabTeardown?
     public var isClosing: Bool
+    /// 윈도우가 현재 key(포커스) 상태인지 여부.
+    /// 앱 레벨 `WindowManagerFeature`가 windowBecameKey/ResignedKey 이벤트로 설정한다.
+    /// 프로세스 전역 Quick Look 패널을 동기화할 수 있는 소유자(포커스된 윈도우의 활성 탭)를 판별하는 데 사용한다.
+    public var isFocused: Bool
     public var pendingDirectoryReloadTabIDs: Set<ContentTabID>
     public var undoManagerAvailability: UndoManagerAvailability
     public var undoRedoPhase: FileManagerUndoRedoPhase
@@ -235,6 +241,7 @@ public struct FileManagerWindowState: Equatable {
     var homeFavoriteItems: [FileManagerHomeFavoriteItem] = []
 
     public init() {
+        defaultStartPage = .home
         content = .init()
         sidebar = .init()
         inspector = .init()
@@ -257,6 +264,7 @@ public struct FileManagerWindowState: Equatable {
         deferredPinnedContentTabsMode = nil
         pendingContentTabTeardown = nil
         isClosing = false
+        isFocused = false
         pendingDirectoryReloadTabIDs = []
         undoManagerAvailability = .init()
         undoRedoPhase = .idle
@@ -295,7 +303,7 @@ public struct FileManagerWindowState: Equatable {
                 inheritingWindowContextFrom: state.content,
             )
         }
-        state.content.pendingSelectEntryID = selectEntryID
+        state.content.setPendingEntrySelection(entryID: selectEntryID, destinationPath: nil)
 
         state.syncActiveTabContentState()
         state.restoreInspectorStateForActiveTab()
@@ -332,7 +340,7 @@ public struct FileManagerWindowState: Equatable {
             )
         }
 
-        state.content.pendingSelectEntryID = selectEntryID
+        state.content.setPendingEntrySelection(entryID: selectEntryID, destinationPath: nil)
 
         state.syncActiveTabContentState()
         state.restoreInspectorStateForActiveTab()
@@ -395,6 +403,7 @@ public struct FileManagerWindowState: Equatable {
         externalInspector: FileManagerInspectorFeature.State,
         windowID initialWindowID: UUID?,
     ) {
+        defaultStartPage = .home
         content = externalContent
         tabContentStates = externalContentStates
         tabInspectorStates = externalInspectorStates
@@ -417,6 +426,7 @@ public struct FileManagerWindowState: Equatable {
         deferredPinnedContentTabsMode = nil
         pendingContentTabTeardown = nil
         isClosing = false
+        isFocused = false
         pendingDirectoryReloadTabIDs = []
         undoManagerAvailability = .init()
         undoRedoPhase = .idle

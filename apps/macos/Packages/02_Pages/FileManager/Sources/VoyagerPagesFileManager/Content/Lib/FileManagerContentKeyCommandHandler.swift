@@ -7,10 +7,38 @@ import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
 import VoyagerShared
+import VoyagerWidgetsEntryViewLayout
+
+enum FileManagerKeyCommandCompositionPolicy: Equatable {
+    case preserveMarkedText
+    case cancelMarkedText
+}
 
 enum FileManagerContentKeyCommandHandler {
     private static let undoSelector = Selector(("undo:"))
     private static let redoSelector = Selector(("redo:"))
+
+    /// 커밋된 타자 입력을 type-scroll 타깃으로 라우팅한다.
+    /// 입력이 유효한 단일 문자이고 rename이 진행 중이 아니면, 표시 순서상 첫 매칭 엔트리로
+    /// target을 교체한다. 매칭이 없으면 이전 pending target을 reset한다.
+    static func typeScrollEffect(
+        for text: String,
+        state: FileManagerContentState,
+    ) -> Effect<FileManagerContentAction> {
+        // 방어 계층: 매처가 다시 검증하지만 여기서도 단일 문자 커밋을 보장한다.
+        guard CommittedTypeScrollInput.character(from: text) != nil else { return .none }
+        // rename이 우선권을 가지므로 rename 중에는 type-scroll을 비활성화한다.
+        guard state.entryViewLayout.entryOperations.renamingItemId == nil else { return .none }
+
+        let entries = typeScrollCandidateEntries(state: state)
+        guard let firstMatch = EntryViewLayoutTypeScrollMatcher.firstMatchID(in: entries, inputText: text)
+        else {
+            guard state.entryViewLayout.pendingTypeScrollTargetId != nil else { return .none }
+            return .send(.entryViewLayout(.view(.resetTypeScrollTarget)))
+        }
+
+        return .send(.entryViewLayout(.view(.setTypeScrollTarget(firstMatch))))
+    }
 
     static func effect(
         for command: KeyCommand,
@@ -31,6 +59,46 @@ enum FileManagerContentKeyCommandHandler {
             textResponderIsEditing: textResponderIsEditing,
         ) { return effect }
         return .none
+    }
+
+    static func compositionPolicy(
+        for command: KeyCommand,
+        state: FileManagerContentState,
+    ) -> FileManagerKeyCommandCompositionPolicy {
+        guard command.modifiers.contains(.command) else { return .preserveMarkedText }
+
+        if command.keyCode == 51 {
+            return state.entryViewLayout.selectedIds.isEmpty ? .preserveMarkedText : .cancelMarkedText
+        }
+
+        if command.modifiers.isDisjoint(with: [.option, .control]),
+           command.charactersIgnoringModifiers == "z"
+        {
+            return state.composer.isPresented ? .preserveMarkedText : .cancelMarkedText
+        }
+
+        if command.characters == ".", command.modifiers.contains(.shift) {
+            return .cancelMarkedText
+        }
+
+        if command.keyCode == 125,
+           command.modifiers.isDisjoint(with: [.option, .control, .shift])
+        {
+            return state.entryViewLayout.selectedIds.isEmpty ? .preserveMarkedText : .cancelMarkedText
+        }
+
+        guard command.modifiers.isDisjoint(with: [.option, .control, .shift]) else {
+            return .preserveMarkedText
+        }
+
+        switch command.charactersIgnoringModifiers {
+        case "v":
+            return .cancelMarkedText
+        case "d":
+            return state.entryViewLayout.selectedIds.isEmpty ? .preserveMarkedText : .cancelMarkedText
+        default:
+            return .preserveMarkedText
+        }
     }
 
     private static func quickLookKeyEffect(
@@ -299,6 +367,18 @@ enum FileManagerContentKeyCommandHandler {
         state.entryViewLayout.visibleSelectableEntries(
             isNormalDirectoryPage: isNormalDirectoryPage(state),
         )
+    }
+
+    /// type-scroll 후보 엔트리 목록. 계층형 목록 모드에서는 outline projection의
+    /// visibleSelectableEntries(expanded folder를 반영)를, 그 외 flat/grouped 모드에서는
+    /// collapsed group을 반영한 presentation.visibleEntries를 사용한다.
+    private static func typeScrollCandidateEntries(state: FileManagerContentState) -> [EntryModel] {
+        if state.entryViewLayout.hierarchyProjectionIsActive {
+            return state.entryViewLayout.visibleSelectableEntries(
+                isNormalDirectoryPage: isNormalDirectoryPage(state),
+            )
+        }
+        return state.entryViewLayout.presentation.visibleEntries
     }
 
     private static func sendNativeAction(_ selector: Selector) -> Bool {

@@ -1741,6 +1741,7 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
             $0.isLoading = true
             $0.loadingContext.generation = 1
             $0.loadingContext.sourceKind = .directory
+            $0.loadingContext.directoryPath = "/tmp"
         }
         await store.receive(\.loading.streamEvent, .init(
             generation: 1,
@@ -1772,6 +1773,167 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
             $0.loadingContext.streamTerminal = true
         }
         await store.receive(\.lifecycle.restorableTrashPathsLoaded)
+    }
+
+    /// EOP-003-load_entry_items: 다른 디렉터리로 이동할 때는 reload 중이라도 이전 경로 snapshot을 보존하지 않는다.
+    /// 원자 reload가 동일 경로 복원에만 적용되고 일반 폴더 이동의 기존 초기화 계약을 바꾸지 않는지 검증한다.
+    /// - 검증 내용: isReloading이 true여도 source directoryPath 불일치 시 candidate buffer 미생성 및 committed items 초기화
+    /// - 사전 조건: `/tmp/old`에서 완료된 snapshot과 isReloading=true 상태로 `/tmp/new` load 시작
+    /// - 기대 결과: 신규 load는 non-preserving flow로 시작하고 이전 items를 즉시 제거한다.
+    func testDifferentDirectoryLoadDoesNotPreserveCompletedSnapshot() async {
+        let oldEntry = EntryModelFixtures.makeFileEntry(id: "/tmp/old/item.txt", name: "item.txt")
+        var state = EntryOperationsState()
+        state.items = [oldEntry]
+        state.isReloading = true
+        state.loadingContext.sourceKind = .directory
+        state.loadingContext.directoryPath = "/tmp/old"
+        state.loadingContext.coreFinished = true
+        state.loadingContext.streamTerminal = true
+        let store = EntryOperationsTestSupport.makeStore(initialState: state) {
+            $0.entryLoadingClient.stagedLoadItems = { _, _, _ in
+                AsyncThrowingStream { continuation in continuation.finish() }
+            }
+        }
+        store.exhaustivity = .off // streamFinished no-op보다 load 시작 시 snapshot 경계만 검증한다.
+
+        await store.send(.loading(.loadItems(path: "/tmp/new", showHidden: false))) {
+            $0.items = []
+            $0.isLoading = true
+            $0.loadingContext.generation = 1
+            $0.loadingContext.coreFinished = false
+            $0.loadingContext.streamTerminal = false
+            $0.loadingContext.sourceKind = .directory
+            $0.loadingContext.directoryPath = "/tmp/new"
+        }
+        XCTAssertNil(store.state.loadingContext.preservedDirectoryReloadItems)
+        await store.skipReceivedActions(strict: false)
+        await store.finish()
+    }
+
+    /// EOP-003-load_entry_items: 보존 디렉터리 reload는 완성된 후보를 stream 종료 시 한 번 반영한다.
+    /// 복원된 탭의 기존 목록이 core/metadata 진행 중 비거나 부분 순서로 노출되지 않는지 검증한다.
+    /// - 검증 내용: .loadItems 진입에서 동일 경로 snapshot 보존, core batch 비공개 staging, streamFinished 원자 교체
+    /// - 사전 조건: 완료된 동일 경로 directory snapshot과 다른 신규 core 결과
+    /// - 기대 결과: terminal 전까지 기존 items 유지, terminal에서 후보 items로 한 번 교체됨
+    func testPreservedDirectoryReloadStagesItemsUntilStreamFinishes() async {
+        let oldEntry = EntryModelFixtures.makeFileEntry(id: "/tmp/old.txt", name: "old.txt")
+        let newEntry = EntryModelFixtures.makeFileEntry(id: "/tmp/new.txt", name: "new.txt")
+        var state = EntryOperationsState()
+        state.items = [oldEntry]
+        state.isReloading = true
+        state.loadingContext.sourceKind = .directory
+        state.loadingContext.directoryPath = "/tmp"
+        state.loadingContext.coreFinished = true
+        state.loadingContext.streamTerminal = true
+        let store = EntryOperationsTestSupport.makeStore(initialState: state) {
+            $0.entryLoadingClient.stagedLoadItems = { _, _, _ in
+                immediateStagedStream(entries: [newEntry])
+            }
+        }
+
+        await store.send(.loading(.loadItems(path: "/tmp", showHidden: false))) {
+            $0.isLoading = true
+            $0.loadingContext.generation = 1
+            $0.loadingContext.coreFinished = false
+            $0.loadingContext.streamTerminal = false
+            $0.loadingContext.preservedDirectoryReloadItems = []
+        }
+        XCTAssertEqual(store.state.items, [oldEntry])
+        await store.receive(\.loading.streamEvent, .init(
+            generation: 1,
+            event: .coreBatch(items: [newEntry], batchIndex: 0),
+        )) {
+            $0.loadingContext.preservedDirectoryReloadItems = [newEntry]
+            $0.loadingContext.expectedCoreBatchIndex = 1
+        }
+        XCTAssertEqual(store.state.items, [oldEntry])
+        await store.receive(\.loading.streamEvent, .init(
+            generation: 1,
+            event: .coreFinished(batchCount: 1),
+        )) {
+            $0.loadingContext.coreFinished = true
+            $0.loadingContext.acceptedCoreFinishedGeneration = 1
+        }
+        XCTAssertEqual(store.state.items, [oldEntry])
+        await store.receive(\.loading.streamFinished, 1) {
+            $0.items = IdentifiedArray(uniqueElements: [newEntry])
+            $0.loadingContext.preservedDirectoryReloadItems = nil
+            $0.loadingContext.streamTerminal = true
+            $0.isLoading = false
+            $0.isReloading = false
+        }
+        await store.receive(\.lifecycle.restorableTrashPathsLoaded)
+        await store.finish()
+    }
+
+    /// EOP-003-load_entry_items: 보존 디렉터리의 성공한 빈 reload는 terminal에서 빈 목록을 확정한다.
+    /// 빈 core completion이 기존 목록을 중간에 제거하지 않는지 검증한다.
+    /// - 검증 내용: empty coreFinished 전후 기존 snapshot과 streamFinished 빈 commit
+    /// - 사전 조건: 기존 항목 하나와 비어 있는 preserving directory candidate
+    /// - 기대 결과: coreFinished까지 기존 항목 유지, streamFinished에서 items가 빈 배열로 교체됨
+    func testPreservedDirectoryReloadEmptySuccessCommitsAtStreamFinish() async {
+        let oldEntry = EntryModelFixtures.makeFileEntry(id: "/tmp/old.txt", name: "old.txt")
+        var state = EntryOperationsState()
+        state.items = [oldEntry]
+        let generation = state.loadingContext.begin(sourceKind: .directory, preservesSnapshot: true)
+        state.isLoading = true
+        state.isReloading = true
+        let store = EntryOperationsTestSupport.makeStore(initialState: state)
+
+        await store.send(.loading(.streamEvent(.init(
+            generation: generation,
+            event: .coreFinished(batchCount: 0),
+        )))) {
+            $0.loadingContext.coreFinished = true
+            $0.loadingContext.acceptedCoreFinishedGeneration = generation
+        }
+        XCTAssertEqual(store.state.items, [oldEntry])
+        await store.send(.loading(.streamFinished(generation: generation))) {
+            $0.items = []
+            $0.loadingContext.preservedDirectoryReloadItems = nil
+            $0.loadingContext.streamTerminal = true
+            $0.isLoading = false
+            $0.isReloading = false
+        }
+        await store.receive(\.lifecycle.restorableTrashPathsLoaded)
+    }
+
+    /// EOP-003-load_entry_items: 보존 디렉터리 reload 실패는 staged 후보를 폐기하고 committed snapshot을 유지한다.
+    /// 일부 core batch 뒤 실패해도 기존 목록과 rename 상태가 사라지지 않는지 검증한다.
+    /// - 검증 내용: candidate discard, committed items/rename 보존, incomplete terminal 기록
+    /// - 사전 조건: 기존 항목과 rename 상태, 신규 후보 batch를 수신한 preserving reload
+    /// - 기대 결과: 실패 후 후보만 제거되고 기존 items와 rename state는 그대로 유지됨
+    func testPreservedDirectoryReloadFailureDiscardsCandidateAndKeepsSnapshot() async {
+        let oldEntry = EntryModelFixtures.makeFileEntry(id: "/tmp/old.txt", name: "old.txt")
+        let candidate = EntryModelFixtures.makeFileEntry(id: "/tmp/candidate.txt", name: "candidate.txt")
+        var state = EntryOperationsState()
+        state.items = [oldEntry]
+        state.renamingItemId = oldEntry.id
+        state.renamingText = "renaming"
+        state.renamingItem = oldEntry
+        let generation = state.loadingContext.begin(sourceKind: .directory, preservesSnapshot: true)
+        state.isLoading = true
+        state.isReloading = true
+        let store = EntryOperationsTestSupport.makeStore(initialState: state)
+
+        await store.send(.loading(.streamEvent(.init(
+            generation: generation,
+            event: .coreBatch(items: [candidate], batchIndex: 0),
+        )))) {
+            $0.loadingContext.preservedDirectoryReloadItems = [candidate]
+            $0.loadingContext.expectedCoreBatchIndex = 1
+        }
+        await store.send(.loading(.streamFailed(generation: generation))) {
+            $0.loadingContext.preservedDirectoryReloadItems = nil
+            $0.loadingContext.streamTerminal = true
+            $0.loadingContext.isIncomplete = true
+            $0.isLoading = false
+            $0.isReloading = false
+        }
+        XCTAssertEqual(store.state.items, [oldEntry])
+        XCTAssertEqual(store.state.renamingItemId, oldEntry.id)
+        XCTAssertEqual(store.state.renamingText, "renaming")
+        XCTAssertEqual(store.state.renamingItem, oldEntry)
     }
 
     /// EOP-003-load_entry_items: stale 또는 잘못된 root stream event는 현재 항목을 변경하지 않는다.
@@ -2378,37 +2540,35 @@ private extension EOP003ManageEntryLifecycleTests {
             }
         }
         await store.send(.loading(.loadItems(path: "/tmp", showHidden: false))) {
+            $0.items = []
             $0.isLoading = true
             $0.loadingContext.generation = 1
             $0.loadingContext.sourceKind = .directory
+            $0.loadingContext.directoryPath = "/tmp"
         }
         await gate.waitUntilWaiting()
         await gate.resume(with: .failure)
         await store.receive(\.loading.streamFailed, 1) {
-            $0.items = []
             $0.isLoading = false
             $0.isReloading = false
+            $0.loadingContext.streamTerminal = true
+            $0.loadingContext.isIncomplete = true
             $0.renamingItemId = nil
             $0.renamingText = ""
             $0.renamingItem = nil
-            $0.loadingContext.streamTerminal = true
-            $0.loadingContext.isIncomplete = true
         }
         await store.send(.loading(.loadItems(path: "/tmp", showHidden: false))) {
             $0.isLoading = true
             $0.loadingContext.generation = 2
-            $0.loadingContext.expectedCoreBatchIndex = 0
-            $0.loadingContext.coreFinished = false
             $0.loadingContext.streamTerminal = false
             $0.loadingContext.isIncomplete = false
-            $0.loadingContext.sourceKind = .directory
         }
         await gate.waitUntilWaiting()
         await gate.resume(with: .entries([]))
         await store.receive(\.loading.streamEvent, .init(generation: 2, event: .coreFinished(batchCount: 0))) {
-            $0.isLoading = false
             $0.loadingContext.coreFinished = true
             $0.loadingContext.acceptedCoreFinishedGeneration = 2
+            $0.isLoading = false
         }
         await store.receive(\.loading.streamFinished, 2) {
             $0.loadingContext.streamTerminal = true

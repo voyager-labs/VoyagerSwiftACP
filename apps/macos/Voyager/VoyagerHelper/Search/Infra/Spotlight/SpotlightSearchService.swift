@@ -368,6 +368,7 @@ extension SpotlightSearchService {
             creatorApplication: makeCreatorApplicationName(for: url, isDirectory: isDirectory.boolValue),
             tags: tags,
             supplementaryMetadata: makeSupplementaryMetadata(url: url, isDirectory: isDirectory.boolValue),
+            isPackage: isDirectory.boolValue && isPackageDirectory(url),
         )
     }
 
@@ -513,23 +514,6 @@ extension SpotlightSearchService {
     }
 
     func isPackageDirectory(_ url: URL) -> Bool {
-        if let values = try? url.resourceValues(forKeys: [.isPackageKey]),
-           values.isPackage == true
-        {
-            return true
-        }
-
-        let ext = url.pathExtension.lowercased()
-        if ["app", "icon"].contains(ext) {
-            return true
-        }
-
-        if let type = UTType(filenameExtension: url.pathExtension),
-           type.conforms(to: .package)
-        {
-            return true
-        }
-
-        return false
+        PackageDirectoryClassification.isPackageDirectory(url)
     }
 }

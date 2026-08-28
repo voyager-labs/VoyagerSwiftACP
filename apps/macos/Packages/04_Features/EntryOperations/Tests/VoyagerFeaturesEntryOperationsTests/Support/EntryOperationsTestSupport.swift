@@ -313,6 +313,7 @@ enum EntryOperationsTestSupport {
             state.loadingContext.streamTerminal = false
             state.loadingContext.isIncomplete = false
             state.loadingContext.sourceKind = .directory
+            state.loadingContext.directoryPath = "/tmp"
         }
         await store.receive(\.loading.streamEvent, .init(
             generation: generation,
@@ -486,7 +487,7 @@ enum EntryOperationsTestSupport {
     }
 }
 
-private func immediateStagedStream(entries: [EntryModel]) -> AsyncThrowingStream<EntryLoadEvent, Error> {
+func immediateStagedStream(entries: [EntryModel]) -> AsyncThrowingStream<EntryLoadEvent, Error> {
     AsyncThrowingStream { continuation in
         if !entries.isEmpty {
             continuation.yield(.coreBatch(items: entries, batchIndex: 0))

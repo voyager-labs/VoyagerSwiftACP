@@ -50,7 +50,10 @@ final class PackageEntriesFlowTests: XCTestCase {
         }
 
         await store.receive { action in
-            guard case let .entryViewLayout(.entryOperations(.archive(.compressItems(paths)))) = action
+            guard case let .entryViewLayout(.entryOperations(.acceptedCommand(
+                metadata: _,
+                action: .archive(.compressItems(paths)),
+            ))) = action
             else { return false }
             return paths == [sandbox.fileURL.path]
         }

@@ -1926,4 +1926,53 @@ private final class ResolverInterleavingGate: @unchecked Sendable {
 
         XCTAssertEqual(items.first?.facets.tags, [favoriteTag])
     }
+
+    /// EVM-001-reload_directory_page_on_external_change: payload adapter preserves package classification.
+    /// 검색 페이로드의 isPackage 분류가 EntryModel로 전달되는 경계를 검증한다.
+    /// - 검증 내용: `EntryModelPayloadAdapter.makeEntry`가 payload의 isPackage를 그대로 보존
+    /// - 사전 조건: isPackage: true / false로 설정된 directory payload
+    /// - 기대 결과: adapter 결과 EntryModel의 isPackage가 payload와 동일하게 true/false
+    func testPayloadAdapterPreservesIsPackage() {
+        let date = Date(timeIntervalSince1970: 1_700_000_000)
+
+        let packageEntry = EntryModelPayloadAdapter.makeEntry(payload(
+            isFolder: true,
+            isPackage: true,
+            date: date,
+        ))
+        let ordinaryEntry = EntryModelPayloadAdapter.makeEntry(payload(
+            isFolder: true,
+            isPackage: false,
+            date: date,
+        ))
+
+        XCTAssertTrue(packageEntry.isFolder)
+        XCTAssertTrue(packageEntry.isPackage)
+        XCTAssertTrue(ordinaryEntry.isFolder)
+        XCTAssertFalse(ordinaryEntry.isPackage)
+    }
+
+    private func payload(
+        isFolder: Bool,
+        isPackage: Bool,
+        date: Date,
+    ) -> SearchEntryPayload {
+        SearchEntryPayload(
+            name: "Voyager.app",
+            fullPath: "/tmp/Voyager.app",
+            isFolder: isFolder,
+            isHidden: false,
+            size: 0,
+            modifiedDate: date,
+            fileExtension: "app",
+            createdDate: date,
+            addedDate: date,
+            lastOpenedDate: date,
+            kind: "Folder",
+            creatorApplication: nil,
+            tags: nil,
+            supplementaryMetadata: nil,
+            isPackage: isPackage,
+        )
+    }
 }

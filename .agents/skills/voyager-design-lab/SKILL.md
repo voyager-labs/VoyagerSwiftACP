@@ -28,19 +28,27 @@ Storybook is an inspectable review surface, not product or native-runtime truth.
 
 ## Workflow
 
-1. **Establish authority.** Read `../../../apps/storybook/package.json`, `../../../apps/storybook/.storybook/main.ts`, and the affected package's `DESIGN.md`. Read canonical product docs for product intent; use Linear only for scope and ownership.
+1. **Establish authority.** Read `../../../apps/storybook/DESIGN.md` (workspace workflow owner), `../../../apps/storybook/surface-registry.ts` (registry lifecycle), `../../../apps/storybook/.storybook/main.ts`, and the affected package's `DESIGN.md`. For add/move/retire work, read the registry and the workspace root DESIGN document. Read canonical product docs for product intent; use Linear only for scope and ownership.
 2. **Classify the state.** It is either root File Manager composition, a reusable specimen, or an independent experiment. Apply the state contract before adding a workflow.
 3. **Route alternatives.** When more than one design is active, load the design-version workflow and derive each candidate from the closest current variation instead of cloning the state matrix.
 4. **Gate parity claims.** Classify native evidence, require a deterministic fixture for runtime-dependent rendering, and map roles through `--macos-*` then `--fm-*`.
-5. **Implement boundedly.** Fixtures are deterministic and local: no network, clock, random data, or simulated production backend. A clickable control proves only the web prototype unless an executable test proves more.
-6. **Verify and hand off.** Run the matching checks and record only the evidence actually obtained. Retire a state when its review question is resolved and it has no root consumer.
+5. **Implement boundedly.** Define interaction-state acceptance criteria with the visual states: every interactive element declares its trigger→state transition mapping, native-parity behavior contract, guard/disabled conditions, and accessibility attributes in the same batch. Fixtures are deterministic and local: no network, clock, random data, or simulated production backend. A clickable control proves only the web prototype unless an executable test proves more.
+6. **Verify and hand off.** Run the matching checks and record only the evidence actually obtained. Record layout and composition decisions in the affected package's `DESIGN.md` when they are made. Retire a state when its review question is resolved and it has no root consumer.
 
 ## Storybook browser verification
 
-- Use the `agent-browser` CLI for Storybook accessibility, interaction, and screenshot verification required by this skill.
-- Do not substitute Playwright MCP for this project workflow. If `agent-browser` is unavailable, report the verification as blocked instead of silently changing tools.
+Browser verification is conditional, change-scoped evidence. Use it only when the acceptance criteria make a visual, responsive, accessibility, or interaction claim. Do not turn every Storybook edit into a browser run, screenshot, native build/test, full application E2E, or exhaustive story × viewport × state matrix.
+
+- Inspect only affected stories and representative changed states after implementation convergence; do not capture intermediate edits.
+- Use one viewport by default. Add viewports, schemes, or states only when the acceptance criteria require them.
+- Use the `agent-browser` CLI for the required Storybook accessibility, interaction, or screenshot claim. Do not substitute Playwright MCP for this project workflow.
+- If browser evidence is required and `agent-browser` is unavailable, report the verification as blocked instead of silently changing tools. If browser evidence is not required, do not run it and report it as not applicable.
 - Use a fresh named session, wait for `networkidle`, capture `snapshot -i --json`, exercise the target interaction, and save a screenshot after the final state.
-- Record the Storybook URL, session, viewport, state, interaction result, and screenshot path. A successful build remains insufficient evidence for visual or interaction claims.
+- Record the Storybook URL, session, viewport, state, interaction result, and screenshot path when browser evidence is collected.
+- A Storybook browser capture proves only the inspected Storybook presentation or interaction. It does not prove native runtime, reducer/backend/auth/filesystem behavior, or production E2E.
+- If a server is intentionally started for verification, prove readiness with `lsof` and `curl`, then stop it and re-check the port.
+
+Native evidence and full application E2E are opt-in for explicit named runtime claims. OMO and Hephaestus handoffs must state changed paths, affected stories, required evidence, out-of-scope checks, and the stop condition; do not infer a larger verification matrix from a generic visual-change instruction. Do not introduce named verification profiles for this workflow.
 
 ## Common mistakes
 
@@ -51,4 +59,5 @@ Storybook is an inspectable review surface, not product or native-runtime truth.
 - Leaving an isolated workflow after its review question has been decided.
 - Encoding appearance, OS baseline, geometry, or UI state into candidate IDs and duplicating their stories.
 - Treating a successful build as visual-regression, accessibility, or native-parity proof.
-- Implementing a reusable component without a sibling `.stories.tsx` — Storybook discovers `**/*.stories.tsx`, so a story-less component never appears in Navigation. Every component ships its own story file.
+- Deferring interaction-state wiring, accessibility attributes, or layout-decision records out of the batch that introduced the change.
+- Adding a surface to the catalog without a registry entry and an app-owned story root — appearance in Storybook follows the app catalog (`src/<Surface>/` per `surface-registry.ts`), not a colocated `*.stories.tsx` beside package source.

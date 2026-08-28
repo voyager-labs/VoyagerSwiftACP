@@ -5,7 +5,10 @@ import VoyagerEntitiesAppPreferences
 
 @ObservableState
 public struct ContentPageNavigationState: Equatable {
-    public init() {}
+    public init() {
+        // 초기 route에 대응하는 제목으로 초기화한다. legacy defaultTabPath 설정 페이로드는 그대로 유지된다.
+        titlePath = currentPath
+    }
 
     public var navigationState: ContentPageNavigationRoute = .home
     public var titlePath: String = SettingsDefaults.defaultTabPath()

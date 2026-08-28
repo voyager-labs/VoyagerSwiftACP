@@ -1,4 +1,3 @@
-[data-file-manager-illustration] .collection-composer-property-picker,
 [data-file-manager-illustration] .collection-composer-operator-picker,
 [data-file-manager-illustration] .collection-composer-value-picker,
 [data-file-manager-illustration] .collection-composer-scope-picker {
@@ -9,163 +8,97 @@
   overflow: hidden;
   border: 1px solid var(--fm-window-border);
   border-radius: var(--fm-radius-sm);
-  background: var(--fm-elevated);
-  box-shadow: var(--fm-shadow-card);
+  background: var(--fm-composer-popover-background);
+  box-shadow: var(--fm-composer-popover-shadow);
   backdrop-filter: var(--fm-backdrop-blur);
+  -webkit-backdrop-filter: var(--fm-backdrop-blur);
   color: var(--fm-text-primary);
   margin: 0;
   padding: 0;
 }
 
+/* 네이티브 ComposerNativeMenuButton searchable menu 번역:
+ * 320px 검색 메뉴(공유 fm-menu가 표면 소유) + 루트 유지 인접 서브메뉴 */
+[data-file-manager-illustration] .collection-composer-property-picker-group {
+  position: absolute;
+  z-index: 4;
+  top: calc(100% + 6px);
+  left: 16px;
+  display: flex;
+  align-items: flex-start;
+}
+
 [data-file-manager-illustration] .collection-composer-property-picker {
   display: grid;
-  width: 200px;
-  max-height: 320px;
+  width: 320px;
+  /* 네이티브 NSMenu처럼 컨텐츠에 맞게 자라되 화면을 넘지 않는다 */
+  max-height: calc(100vh - 96px);
   grid-template-rows: auto auto minmax(0, 1fr);
 }
 
-/* 네이티브 duplicateWarning: 노란 삼각형 + popover search 배경 + 12/6 패딩 */
-[data-file-manager-illustration] .collection-composer-duplicate-warning {
-  display: flex;
-  align-items: center;
-  gap: var(--fm-space-4);
-  border-bottom: 1px solid var(--fm-separator);
-  background: var(--fm-composer-popover-search-background);
-  padding: var(--fm-space-3) 12px;
-  font-size: var(--fm-font-size-body);
-}
-
-[data-file-manager-illustration] .collection-composer-duplicate-warning > .sf-symbol {
-  color: var(--fm-composer-warning);
-}
-
-[data-file-manager-illustration] .collection-composer-duplicate-warning > span {
-  min-width: 0;
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-[data-file-manager-illustration] .collection-composer-duplicate-warning > button {
-  display: inline-flex;
-  flex: 0 0 auto;
-  border: 0;
+/* 네이티브 ComposerNativeMenuSearchRow: 24pt 무보더·무배경·포커스링 없는 검색 행 */
+[data-file-manager-illustration]
+  .collection-composer-property-picker
+  .collection-composer-picker-search {
+  min-height: 24px;
+  border-bottom: 0;
   background: transparent;
-  color: var(--fm-text-secondary);
-  padding: 0;
-  outline: 0;
-}
-
-[data-file-manager-illustration] .collection-composer-duplicate-warning > button:hover {
-  color: var(--fm-text-primary);
-}
-
-[data-file-manager-illustration] .collection-composer-duplicate-warning > button:focus-visible {
-  box-shadow: 0 0 0 2px var(--fm-focus-ring);
-  border-radius: 4px;
 }
 
 [data-file-manager-illustration]
   .collection-composer-property-picker
-  .collection-composer-picker-list {
+  .collection-composer-picker-search
+  input:focus-visible {
+  box-shadow: none;
+}
+
+/* 네이티브 검색 메뉴 구분선: 풀블리드가 아니라 좌우 인셋과 넉넉한 상하 호흡을 가진다 */
+[data-file-manager-illustration] .collection-composer-property-picker .fm-menu-separator {
+  margin: var(--fm-space-3) var(--fm-space-4);
+}
+
+[data-file-manager-illustration] .collection-composer-property-list {
   min-height: 0;
-  overflow: auto;
+  overflow-y: auto;
 }
 
-[data-file-manager-illustration]
-  .collection-composer-property-picker
-  .collection-composer-picker-list
-  > button,
-[data-file-manager-illustration]
-  .collection-composer-property-picker
-  .collection-composer-picker-back {
-  font-size: 13px;
-}
-
-[data-file-manager-illustration]
-  .collection-composer-property-picker
-  .collection-composer-picker-list
-  > button {
-  padding: var(--fm-space-4) 12px;
-}
-
-[data-file-manager-illustration]
-  .collection-composer-operator-picker
-  .collection-composer-picker-list
-  button {
-  padding: var(--fm-space-4) 10px;
-  font-size: 12px;
-}
-
-[data-file-manager-illustration] .collection-composer-picker-back {
-  display: flex;
-  min-height: 26px;
-  width: 100%;
-  border: 0;
-  border-radius: var(--fm-radius-sm);
-  align-items: center;
-  gap: var(--fm-space-4);
-  background: transparent;
-  padding: var(--fm-space-3) var(--fm-space-4);
-  color: var(--macos-control-accent-color);
-  font: inherit;
-  font-weight: 600;
-  outline: 0;
-}
-
-[data-file-manager-illustration] .collection-composer-picker-back:hover {
-  background: var(--fm-composer-hover-background);
-}
-
-[data-file-manager-illustration] .collection-composer-picker-separator {
-  height: 1px;
-  margin: 5px 10px;
-  background: var(--fm-separator);
-}
-
-[data-file-manager-illustration] .collection-composer-category-row {
-  display: flex;
-  min-height: 26px;
-  width: 100%;
-  border: 0;
-  border-radius: var(--fm-radius-sm);
-  align-items: center;
-  gap: var(--fm-space-4);
-  background: transparent;
-  padding: var(--fm-space-3) var(--fm-space-4);
-  color: var(--fm-text-primary);
-  font: inherit;
-  font-size: var(--fm-font-size-body);
-  outline: 0;
-  text-align: left;
-}
-
-[data-file-manager-illustration] .collection-composer-category-label {
-  min-width: 0;
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  text-align: left;
-}
-
-[data-file-manager-illustration] .collection-composer-category-row small {
+/* 네이티브 섹션 캡션: 11pt semibold secondaryLabel */
+[data-file-manager-illustration] .collection-composer-picker-caption {
+  padding: var(--fm-space-3) var(--fm-space-6) var(--fm-space-1);
   color: var(--fm-text-secondary);
-  font-size: 11px;
+  font-size: var(--fm-font-size-caption-2);
+  font-weight: var(--fm-weight-semibold);
 }
 
-[data-file-manager-illustration] .collection-composer-category-row:hover {
-  background: var(--fm-composer-hover-background);
+/* 서브메뉴 top/left는 클릭된 카테고리 행 기준으로 인라인 지정된다 */
+[data-file-manager-illustration] .collection-composer-property-submenu {
+  position: absolute;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+/* 스토리 하네스: 절대 배치 그룹을 흐름 배치로 되돌려 specimen이 크기를 가진다 */
+[data-file-manager-illustration]
+  .collection-composer-property-stage
+  .collection-composer-property-picker-group {
+  position: relative;
+  top: auto;
+  left: auto;
 }
 
 [data-file-manager-illustration] .collection-composer-scope-picker {
-  width: 420px;
-  max-height: 520px;
+  width: min(420px, calc(100% - 32px));
+  max-height: 420px;
+  top: calc(100% + 8px);
+  right: 16px;
+  left: auto;
 }
 
 [data-file-manager-illustration] .collection-composer-operator-picker {
   width: 180px;
+  /* 네이티브 NSMenu처럼 컨텐츠에 맞게 자라되 화면을 넘지 않는다 */
+  max-height: calc(100vh - 96px);
+  overflow-y: auto;
 }
 
 [data-file-manager-illustration] .collection-composer-value-picker {
@@ -173,7 +106,8 @@
 }
 
 [data-file-manager-illustration] .collection-composer-value-picker.boolean {
-  width: 150px;
+  width: max-content;
+  min-width: 150px;
 }
 
 [data-file-manager-illustration] .collection-composer-value-picker.date {
@@ -341,6 +275,196 @@
   gap: 4px;
 }
 
+[data-file-manager-illustration] .collection-composer-date-form {
+  justify-items: center;
+  gap: 12px;
+  padding: 14px 12px;
+}
+
+[data-file-manager-illustration] .collection-composer-date-type {
+  display: grid;
+  width: 139px;
+  justify-items: center;
+  gap: 6px;
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+[data-file-manager-illustration] .collection-composer-date-type legend {
+  padding: 0;
+  color: var(--fm-text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: center;
+}
+
+[data-file-manager-illustration] .collection-composer-date-type > div {
+  display: grid;
+  width: 100%;
+  grid-template-columns: 1fr 1fr;
+  border: 1px solid var(--fm-separator);
+  border-radius: var(--fm-radius-sm);
+  background: var(--fm-control);
+  padding: 1px;
+}
+
+[data-file-manager-illustration] .collection-composer-date-type button {
+  min-height: 20px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fm-text-primary);
+  font: inherit;
+  font-size: 11px;
+  outline: 0;
+}
+
+[data-file-manager-illustration] .collection-composer-date-type button[aria-pressed="true"] {
+  background: var(--fm-composer-control-hover);
+  color: var(--fm-text-primary);
+  font-weight: 600;
+}
+
+[data-file-manager-illustration] .collection-composer-date-type button:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--fm-focus-ring);
+}
+
+[data-file-manager-illustration] .collection-composer-relative-date-fields {
+  display: grid;
+  width: 139px;
+  justify-items: center;
+  gap: 8px;
+}
+
+[data-file-manager-illustration] .collection-composer-relative-date-fields > select {
+  width: 139px;
+}
+
+[data-file-manager-illustration] .collection-composer-relative-date-fields > small {
+  line-height: 1;
+  text-align: center;
+}
+
+[data-file-manager-illustration] .collection-composer-calendar {
+  display: grid;
+  width: 139px;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+[data-file-manager-illustration] .collection-composer-calendar.preview {
+  opacity: 0.72;
+}
+
+[data-file-manager-illustration] .collection-composer-calendar-header {
+  display: grid;
+  min-height: 20px;
+  grid-template-columns: 1fr repeat(3, 20px);
+  align-items: center;
+}
+
+[data-file-manager-illustration] .collection-composer-calendar-header strong {
+  color: var(--fm-text-primary);
+  font-size: var(--fm-font-size-caption);
+  font-weight: 600;
+  text-align: left;
+}
+
+[data-file-manager-illustration] .collection-composer-calendar-header button,
+[data-file-manager-illustration] .collection-composer-calendar-grid button {
+  display: inline-flex;
+  border: 0;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  outline: 0;
+}
+
+[data-file-manager-illustration] .collection-composer-calendar-header button {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  color: var(--fm-text-secondary);
+}
+
+[data-file-manager-illustration] .collection-composer-calendar-header button:hover:not(:disabled),
+[data-file-manager-illustration] .collection-composer-calendar-grid button:hover:not(:disabled) {
+  background: var(--fm-composer-control-hover);
+}
+
+[data-file-manager-illustration] .collection-composer-calendar-header button:focus-visible,
+[data-file-manager-illustration] .collection-composer-calendar-grid button:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--fm-focus-ring);
+}
+
+[data-file-manager-illustration] .collection-composer-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 1px;
+}
+
+[data-file-manager-illustration] .collection-composer-calendar-grid > span {
+  color: var(--fm-text-secondary);
+  font-size: 9px;
+  font-weight: 600;
+  text-align: center;
+}
+
+[data-file-manager-illustration] .collection-composer-calendar-grid button {
+  width: 19px;
+  height: 19px;
+  border-radius: var(--fm-radius-xs);
+  color: var(--fm-text-primary);
+  font-size: 10px;
+}
+
+[data-file-manager-illustration] .collection-composer-calendar-grid button.outside-month {
+  color: var(--fm-text-secondary);
+  opacity: 0.64;
+}
+
+/* 네이티브 NSMenu 선택 하이라이트 계약: accent fill + on-accent 라벨(AA 대비) */
+[data-file-manager-illustration] .collection-composer-calendar-grid button[aria-pressed="true"] {
+  background: var(--macos-control-accent-color);
+  color: var(--fm-text-on-accent);
+  font-weight: 600;
+}
+
+[data-file-manager-illustration] .collection-composer-date-actions {
+  display: flex;
+  width: 139px;
+  justify-content: flex-end;
+  padding-top: 4px;
+}
+
+[data-file-manager-illustration] .collection-composer-date-actions > button {
+  min-height: 22px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: var(--macos-control-accent-color);
+  color: var(--fm-text-on-accent);
+  padding: 2px 10px;
+  font: inherit;
+  font-weight: 600;
+  outline: 0;
+}
+
+[data-file-manager-illustration] .collection-composer-date-actions > button:hover {
+  background: color-mix(in srgb, var(--macos-control-accent-color) 90%, white);
+}
+
+[data-file-manager-illustration] .collection-composer-date-actions > button:active {
+  background: color-mix(in srgb, var(--macos-control-accent-color) 82%, black);
+  transform: translateY(1px);
+}
+
+[data-file-manager-illustration] .collection-composer-date-actions > button:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--fm-focus-ring);
+}
+
 [data-file-manager-illustration] .collection-composer-picker-search {
   display: flex;
   min-height: 37px;
@@ -405,7 +529,6 @@
   box-shadow: 0 0 0 2px var(--fm-focus-ring);
 }
 
-[data-file-manager-illustration] .collection-composer-picker-empty,
 [data-file-manager-illustration] .collection-composer-scope-empty {
   padding: 16px 12px;
   color: var(--fm-text-secondary);
@@ -778,20 +901,12 @@
   box-shadow: inset 0 0 0 2px var(--fm-focus-ring);
 }
 
+[data-file-manager-illustration] .collection-composer-scope-feedback > .sf-symbol {
+  color: var(--fm-text-secondary);
+}
+
 [data-file-manager-illustration] .collection-composer-scope-feedback.failed > .sf-symbol {
-  color: var(--fm-composer-error);
-}
-
-[data-file-manager-illustration] .collection-composer-scope-feedback.applying > .sf-symbol {
   color: var(--fm-composer-warning);
-}
-
-[data-file-manager-illustration] .collection-composer-scope-feedback.applied > .sf-symbol {
-  color: var(--fm-composer-success);
-}
-
-[data-file-manager-illustration] .collection-composer-scope-feedback.failed strong {
-  color: var(--fm-composer-error);
 }
 
 [data-file-manager-illustration] .collection-composer-toast {
@@ -809,6 +924,7 @@
   padding: 10px 12px;
   color: var(--fm-text-primary);
   font-size: 12px;
+  pointer-events: none;
   transform: translateX(-50%);
 }
 

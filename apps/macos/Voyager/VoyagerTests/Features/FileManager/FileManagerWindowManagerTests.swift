@@ -4,8 +4,10 @@ import OrderedCollections
 @testable import Voyager
 import VoyagerEntitiesAi
 import VoyagerEntitiesAppPreferences
+import VoyagerEntitiesEntry
 import VoyagerFeaturesAiChat
 import VoyagerFeaturesComposer
+import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
 @testable import VoyagerPagesFileManager
 import VoyagerPagesOnboarding
@@ -71,6 +73,365 @@ final class FileManagerWindowManagerTests: XCTestCase {
         await store.send(.lifecycle(.openInitialWindowIfNeeded))
 
         XCTAssertEqual(openCallCount.value, 0, "기존 window가 있으면 openInitialWindowIfNeeded는 open client를 다시 호출하지 않아야 한다")
+    }
+
+    /// FMW-001-open_new_file_manager_window: 새 창 요청 시 defaultStartPage를 한 번 해석해 Directory를 직접 seed한다.
+    /// 요청 시점의 preference snapshot이 Home shell을 거치지 않고 initial state에 반영되는지 검증한다.
+    /// - 검증 내용: `path:nil` 요청의 첫 상태가 Directory route/anchor인지, resolver가 available 결과를 반환하는지
+    /// - 사전 조건: WindowManager preference는 `/request-time-directory`, directory probe는 available이다.
+    /// - 기대 결과: 생성된 창의 navigation state가 즉시 해당 Directory이고 Home navigation action은 방출되지 않는다.
+    func testNewWindowUsesRequestTimeDefaultStartPageWithoutHomeFlash() async {
+        let windowID = UUID()
+        let directory = "/request-time-directory"
+        var initialState = WindowManagerFeature.State()
+        initialState.appPreferences.defaultStartPage = .directory(directory)
+        let store = makeStore(initialState: initialState, uuid: windowID) {
+            $0.startPageAvailabilityClient = .init { path in
+                path == directory ? .availableDirectory : .missing
+            }
+            $0.fileManagerWindowClient.registeredWindowIDs = { [windowID] }
+        }
+        store.exhaustivity = .off
+
+        // 디렉터리 프로브는 비동기 effect로 실행되므로 해석 완료 액션 이후 창이 생성된다.
+        await store.send(.file(.newWindow(path: nil)))
+        await store.receive { action in
+            guard case let .defaultStartPageResolved(_, requestID, selectEntryID, startPage) = action,
+                  requestID == nil,
+                  selectEntryID == nil,
+                  startPage == .directory(directory)
+            else { return false }
+            return true
+        }
+        XCTAssertEqual(
+            store.state.windows[id: windowID]?.window.content.navigation.navigationState,
+            .folder(directory),
+        )
+        await store.finish()
+    }
+
+    /// FMW-001-open_new_file_manager_window: 최초 기본 창도 Directory를 직접 seed한다.
+    /// lifecycle 경로가 `path:nil` 새 창 요청으로 연결될 때 Home shell을 먼저 만들지 않는지 검증한다.
+    /// - 검증 내용: 최초 창의 첫 observable state가 Directory route/anchor인지, Home navigation action이 없는지
+    /// - 사전 조건: app preference는 available Directory이고 기존 창은 없다.
+    /// - 기대 결과: lifecycle 요청 직후 생성된 window가 해당 Directory에서 시작한다.
+    func testInitialWindowUsesDefaultDirectoryWithoutHomeFlash() async {
+        let windowID = UUID()
+        let directory = "/initial-directory"
+        var initialState = WindowManagerFeature.State()
+        initialState.appPreferences.defaultStartPage = .directory(directory)
+        let store = makeStore(initialState: initialState, uuid: windowID) {
+            $0.startPageAvailabilityClient = .init { path in
+                path == directory ? .availableDirectory : .missing
+            }
+            $0.fileManagerWindowClient.registeredWindowIDs = { [windowID] }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.lifecycle(.openInitialWindowIfNeeded))
+        await store.receive { action in
+            guard case let .file(.newWindow(path, _)) = action, path == nil else { return false }
+            return true
+        }
+        await store.receive { action in
+            guard case let .defaultStartPageResolved(_, requestID, selectEntryID, startPage) = action,
+                  requestID == nil,
+                  selectEntryID == nil,
+                  startPage == .directory(directory)
+            else { return false }
+            return true
+        }
+        XCTAssertEqual(
+            store.state.windows[id: windowID]?.window.content.navigation.navigationState,
+            .folder(directory),
+        )
+        await store.finish()
+    }
+
+    /// FMW-001-open_new_file_manager_window: 진행 중인 Directory 해석은 initial/reopen 중복 요청을 막는다.
+    /// - 검증 내용: probe 중 반복 lifecycle 요청 뒤에도 probe와 생성 창이 각각 하나인지 검증
+    /// - 사전 조건: 기존 창이 없고 default Directory probe가 제어 gate에서 중단됨
+    /// - 기대 결과: pending 해석 하나만 유지되고 완료 후 창 하나만 생성됨
+    func testPendingDefaultStartPageResolutionBlocksDuplicateInitialAndReopenRequests() async {
+        let windowID = UUID()
+        let directory = "/slow-initial-directory"
+        let probeGate = DirectoryProbeGate()
+        let probeCount = LockIsolated(0)
+        var initialState = WindowManagerFeature.State()
+        initialState.appPreferences.defaultStartPage = .directory(directory)
+        let store = makeStore(initialState: initialState, uuid: windowID) {
+            $0.startPageAvailabilityClient = .init { _ in
+                probeCount.withValue { $0 += 1 }
+                probeGate.suspend()
+                return .availableDirectory
+            }
+            $0.fileManagerWindowClient.registeredWindowIDs = { [windowID] }
+        }
+        // store.exhaustivity = .off: lifecycle 중복 방지와 최종 창 identity만 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.lifecycle(.openInitialWindowIfNeeded))
+        await store.receive(\.file.newWindow)
+        await probeGate.waitUntilSuspended()
+        XCTAssertEqual(store.state.pendingDefaultStartPageResolutions.count, 1)
+
+        await store.send(.lifecycle(.openInitialWindowIfNeeded))
+        await store.send(.lifecycle(.reopenWindowIfNeeded(hasVisibleWindows: false)))
+        var updatedPreferences = store.state.appPreferences
+        updatedPreferences.defaultStartPage = .home
+        await store.send(.lifecycle(.applyAppPreferences(updatedPreferences)))
+        probeGate.resume()
+        await store.receive(\.defaultStartPageResolved)
+        await store.finish()
+
+        XCTAssertEqual(probeCount.value, 1)
+        XCTAssertEqual(store.state.windows.count, 1)
+        XCTAssertEqual(
+            store.state.windows[id: windowID]?.window.content.navigation.navigationState,
+            .folder(directory),
+        )
+        XCTAssertTrue(store.state.pendingDefaultStartPageResolutions.isEmpty)
+    }
+
+    /// FMW-001-quit_voyager: Close All은 진행 중인 Directory 해석을 취소한다.
+    /// - 검증 내용: Close All 뒤 늦은 probe 반환이 창을 생성하지 않는지 검증
+    /// - 사전 조건: 기존 창 없이 default Directory probe가 제어 gate에서 중단됨
+    /// - 기대 결과: probe 반환 뒤에도 window와 native open 호출이 없음
+    func testCloseAllCancelsPendingDefaultStartPageResolution() async {
+        let directory = "/slow-close-all-directory"
+        let probeGate = DirectoryProbeGate()
+        let openedIDs = LockIsolated<[UUID]>([])
+        var initialState = WindowManagerFeature.State()
+        initialState.appPreferences.defaultStartPage = .directory(directory)
+        let store = makeStore(initialState: initialState) {
+            $0.startPageAvailabilityClient = .init { _ in
+                probeGate.suspend()
+                return .availableDirectory
+            }
+            $0.fileManagerWindowClient.open = { id in openedIDs.withValue { $0.append(id) } }
+        }
+        // store.exhaustivity = .off: 취소 뒤 late completion의 무효화만 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.file(.newWindow(path: nil)))
+        await probeGate.waitUntilSuspended()
+        XCTAssertEqual(store.state.pendingDefaultStartPageResolutions.count, 1)
+        await store.send(.window(.closeAllWindows))
+        probeGate.resume()
+        await store.finish()
+
+        XCTAssertTrue(store.state.windows.isEmpty)
+        XCTAssertTrue(openedIDs.value.isEmpty)
+        XCTAssertTrue(store.state.pendingDefaultStartPageResolutions.isEmpty)
+    }
+
+    /// FMW-001-open_new_file_manager_window: 소유권 없는 Directory 해석 completion은 stale no-op이다.
+    /// - 검증 내용: 임의 completion이 window session을 만들지 않는지 검증
+    /// - 사전 조건: pending Directory 해석이 없는 빈 상태
+    /// - 기대 결과: 상태와 native open 호출이 모두 불변임
+    func testStaleDefaultStartPageResolutionCompletionIsNoOp() async {
+        let openedIDs = LockIsolated<[UUID]>([])
+        let store = makeStore {
+            $0.fileManagerWindowClient.open = { id in openedIDs.withValue { $0.append(id) } }
+        }
+        // store.exhaustivity = .off: stale completion이 downstream action을 만들지 않는지만 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.defaultStartPageResolved(
+            resolutionID: UUID(),
+            requestID: nil,
+            selectEntryID: nil,
+            startPage: .directory("/stale-directory"),
+        ))
+        await store.finish()
+
+        XCTAssertTrue(store.state.windows.isEmpty)
+        XCTAssertTrue(openedIDs.value.isEmpty)
+    }
+
+    /// FMW-001-open_new_file_manager_window: tracked revoke는 pending probe를 취소하고 terminal을 한 번만 보낸다.
+    /// - 검증 내용: revoke 뒤 late probe 반환, window 미생성, terminal 정확히 한 번을 검증
+    /// - 사전 조건: authorized tracked initial 요청의 Directory probe가 제어 gate에서 중단됨
+    /// - 기대 결과: revoke completion 하나만 방출되고 stale probe는 no-op임
+    func testTrackedRevokeCancelsPendingDefaultStartPageResolutionExactlyOnce() async {
+        let requestID = UUID()
+        let directory = "/slow-tracked-directory"
+        let probeGate = DirectoryProbeGate()
+        let terminalCount = LockIsolated(0)
+        var initialState = WindowManagerFeature.State()
+        initialState.authorizedTrackedSingletonRequestID = requestID
+        initialState.appPreferences.defaultStartPage = .directory(directory)
+        let store = TestStore(initialState: initialState) {
+            CombineReducers {
+                WindowManagerFeature()
+                Reduce { _, action in
+                    if case .delegate(.trackedSingletonCompleted(requestID: requestID)) = action {
+                        terminalCount.withValue { $0 += 1 }
+                    }
+                    return .none
+                }
+            }
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.startPageAvailabilityClient = .init { _ in
+                probeGate.suspend()
+                return .availableDirectory
+            }
+        }
+        // store.exhaustivity = .off: revoke cancellation과 terminal exactly-once만 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.trackedSingleton(.openInitialWindow(requestID: requestID)))
+        await probeGate.waitUntilSuspended()
+        XCTAssertEqual(store.state.pendingDefaultStartPageResolutions.count, 1)
+        await store.send(.trackedSingleton(.revoke(requestID: requestID)))
+        await store.receive(\.delegate.trackedSingletonCompleted, requestID)
+        probeGate.resume()
+        await store.finish()
+
+        XCTAssertTrue(store.state.windows.isEmpty)
+        XCTAssertTrue(store.state.pendingDefaultStartPageResolutions.isEmpty)
+        XCTAssertEqual(terminalCount.value, 1)
+    }
+
+    /// FMW-001-quit_voyager: Close All은 tracked pending probe를 취소하고 terminal을 한 번만 보낸다.
+    /// - 검증 내용: Close All 뒤 late probe 반환, window 미생성, terminal 정확히 한 번을 검증
+    /// - 사전 조건: authorized tracked initial 요청의 Directory probe가 제어 gate에서 중단됨
+    /// - 기대 결과: Close All completion 하나만 방출되고 stale probe는 no-op임
+    func testCloseAllCancelsTrackedPendingDefaultStartPageResolutionExactlyOnce() async {
+        let requestID = UUID()
+        let directory = "/slow-tracked-close-all-directory"
+        let probeGate = DirectoryProbeGate()
+        let terminalCount = LockIsolated(0)
+        var initialState = WindowManagerFeature.State()
+        initialState.authorizedTrackedSingletonRequestID = requestID
+        initialState.appPreferences.defaultStartPage = .directory(directory)
+        let store = TestStore(initialState: initialState) {
+            CombineReducers {
+                WindowManagerFeature()
+                Reduce { _, action in
+                    if case .delegate(.trackedSingletonCompleted(requestID: requestID)) = action {
+                        terminalCount.withValue { $0 += 1 }
+                    }
+                    return .none
+                }
+            }
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.startPageAvailabilityClient = .init { _ in
+                probeGate.suspend()
+                return .availableDirectory
+            }
+        }
+        // store.exhaustivity = .off: Close All cancellation과 tracked terminal exactly-once만 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.trackedSingleton(.openInitialWindow(requestID: requestID)))
+        await probeGate.waitUntilSuspended()
+        XCTAssertEqual(store.state.pendingDefaultStartPageResolutions.count, 1)
+        await store.send(.window(.closeAllWindows))
+        await store.receive(\.delegate.trackedSingletonCompleted, requestID)
+        probeGate.resume()
+        await store.finish()
+
+        XCTAssertTrue(store.state.windows.isEmpty)
+        XCTAssertTrue(store.state.pendingDefaultStartPageResolutions.isEmpty)
+        XCTAssertEqual(terminalCount.value, 1)
+    }
+
+    /// FMW-001-open_new_file_manager_window: unavailable default는 Home으로 fallback하고 explicit path가 우선한다.
+    /// - 검증 내용: default Directory probe 실패 시 Home 생성, explicit path 요청 시 preference 무시
+    /// - 사전 조건: default preference는 missing Directory이다.
+    /// - 기대 결과: 첫 새 창은 Home이고 explicit path 새 창은 요청 path Directory이다.
+    func testUnavailableDefaultFallsBackToHomeAndExplicitPathWins() async throws {
+        let defaultDirectory = "/missing-default"
+        let explicitDirectory = "/explicit-directory"
+        var initialState = WindowManagerFeature.State()
+        initialState.appPreferences.defaultStartPage = .directory(defaultDirectory)
+        let store = makeStore(initialState: initialState) {
+            $0.uuid = .incrementing
+            $0.startPageAvailabilityClient = .init { _ in .missing }
+            $0.fileManagerWindowClient.registeredWindowIDs = { [] }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.file(.newWindow(path: nil)))
+        // probe 실패(missing)는 Home으로 fallback된다.
+        await store.receive { action in
+            guard case let .defaultStartPageResolved(_, requestID, selectEntryID, startPage) = action,
+                  requestID == nil,
+                  selectEntryID == nil,
+                  startPage == .home
+            else { return false }
+            return true
+        }
+        let firstWindowID = try XCTUnwrap(store.state.windows.ids.first)
+        XCTAssertEqual(
+            store.state.windows[id: firstWindowID]?.window.content.navigation.navigationState,
+            .home,
+        )
+
+        await store.send(.file(.newWindow(path: explicitDirectory)))
+        let secondWindowID = try XCTUnwrap(store.state.windows.ids.last)
+        XCTAssertEqual(
+            store.state.windows[id: secondWindowID]?.window.content.navigation.navigationState,
+            .folder(explicitDirectory),
+        )
+        XCTAssertTrue(store.state.pendingDefaultStartPageResolutions.isEmpty)
+        await store.finish()
+    }
+
+    /// FMW-001-open_new_file_manager_window: 설정 변경은 기존 창을 이동시키지 않고 다음 창 snapshot만 바꾼다.
+    /// - 검증 내용: preference update 후 기존 Directory 보존 및 후속 `path:nil` 창의 새 Directory 적용
+    /// - 사전 조건: 기존 창은 첫 Directory, 새 preference는 두 번째 available Directory이다.
+    /// - 기대 결과: 기존 창은 첫 Directory 불변이고 새 창은 두 번째 Directory에서 시작한다.
+    func testPreferenceUpdatePreservesExistingWindowAndChangesNextWindowSnapshot() async {
+        let existingID = UUID()
+        let nextID = UUID()
+        let firstDirectory = "/first-directory"
+        let secondDirectory = "/second-directory"
+        var initialState = WindowManagerFeature.State()
+        initialState.appPreferences.defaultStartPage = .directory(firstDirectory)
+        initialState.windows = .init(uniqueElements: [
+            .init(id: existingID, window: .makeInitial(path: firstDirectory)),
+        ])
+        initialState.focusedWindowID = existingID
+        let store = makeStore(initialState: initialState, uuid: nextID) {
+            $0.startPageAvailabilityClient = .init { path in
+                path == firstDirectory || path == secondDirectory ? .availableDirectory : .missing
+            }
+            $0.fileManagerWindowClient.registeredWindowIDs = { [existingID, nextID] }
+        }
+        store.exhaustivity = .off
+
+        var updatedPreferences = Voyager.AppPreferencesState()
+        updatedPreferences.defaultStartPage = .directory(secondDirectory)
+        await store.send(.lifecycle(.applyAppPreferences(updatedPreferences))) {
+            $0.appPreferences = updatedPreferences
+        }
+        await store.finish()
+
+        XCTAssertEqual(
+            store.state.windows[id: existingID]?.window.content.navigation.navigationState,
+            .folder(firstDirectory),
+        )
+
+        await store.send(.file(.newWindow(path: nil)))
+        await store.receive { action in
+            guard case let .defaultStartPageResolved(_, requestID, selectEntryID, startPage) = action,
+                  requestID == nil,
+                  selectEntryID == nil,
+                  startPage == .directory(secondDirectory)
+            else { return false }
+            return true
+        }
+        XCTAssertEqual(
+            store.state.windows[id: nextID]?.window.content.navigation.navigationState,
+            .folder(secondDirectory),
+        )
+        await store.finish()
     }
 
     // MARK: - FMW-001-close_file_manager_window (detail)
@@ -244,6 +605,7 @@ final class FileManagerWindowManagerTests: XCTestCase {
         await store.send(.event(.windowClosed(firstID))) {
             $0.closingWindowIDs.insert(firstID)
             $0.invalidatingWindowIDs.insert(firstID)
+            $0.windows[id: firstID]?.window.isFocused = false
             $0.refreshContentTabMoveTargets()
         }
         await store.receive(\.windowInvalidationFinished) {
@@ -289,6 +651,7 @@ final class FileManagerWindowManagerTests: XCTestCase {
         await store.send(.window(.closeFocusedWindow)) {
             $0.closingWindowIDs.insert(focusedID)
             $0.focusedWindowID = nil
+            $0.windows[id: focusedID]?.window.isFocused = false
             $0.refreshContentTabMoveTargets()
         }
 
@@ -364,6 +727,7 @@ final class FileManagerWindowManagerTests: XCTestCase {
         await store.send(.window(.closeFocusedWindow)) {
             $0.closingWindowIDs.insert(windowID)
             $0.focusedWindowID = nil
+            $0.windows[id: windowID]?.window.isFocused = false
             $0.refreshContentTabMoveTargets()
         }
         await store.receive(\.pendingWindowCloseFinalized) {
@@ -417,6 +781,7 @@ final class FileManagerWindowManagerTests: XCTestCase {
         await store.send(.window(.closeFocusedWindow)) {
             $0.closingWindowIDs.insert(windowID)
             $0.focusedWindowID = nil
+            $0.windows[id: windowID]?.window.isFocused = false
             $0.refreshContentTabMoveTargets()
         }
         await store.send(.windowOpenCompleted(
@@ -496,6 +861,7 @@ final class FileManagerWindowManagerTests: XCTestCase {
         await store.send(.event(.windowClosed(windowID))) {
             $0.closingWindowIDs.insert(windowID)
             $0.invalidatingWindowIDs.insert(windowID)
+            $0.windows[id: windowID]?.window.isFocused = false
             $0.refreshContentTabMoveTargets()
         }
         await gate.waitUntilSuspended()
@@ -537,6 +903,7 @@ final class FileManagerWindowManagerTests: XCTestCase {
         await store.send(.window(.closeFocusedWindow)) {
             $0.closingWindowIDs.insert(closingID)
             $0.focusedWindowID = nil
+            $0.windows[id: closingID]?.window.isFocused = false
             $0.refreshContentTabMoveTargets()
         }
         await store.send(.event(.windowClosed(closingID))) {
@@ -554,6 +921,7 @@ final class FileManagerWindowManagerTests: XCTestCase {
         XCTAssertNotNil(store.state.windows[id: closingID])
         XCTAssertNotNil(store.state.windows[id: otherID])
         XCTAssertNil(store.state.focusedWindowID)
+        XCTAssertEqual(store.state.windows[id: closingID]?.window.isFocused, false)
         XCTAssertEqual(finalizeCalls.value, [])
         await store.finish()
     }
@@ -580,6 +948,7 @@ final class FileManagerWindowManagerTests: XCTestCase {
         await store.send(.window(.closeFocusedWindow)) {
             $0.closingWindowIDs.insert(closingID)
             $0.focusedWindowID = nil
+            $0.windows[id: closingID]?.window.isFocused = false
             $0.refreshContentTabMoveTargets()
         }
         XCTAssertEqual(store.state.lastUsedWindowIDs, [closingID, otherID])
@@ -588,11 +957,147 @@ final class FileManagerWindowManagerTests: XCTestCase {
         await store.send(.event(.windowBecameKey(otherID))) {
             $0.focusedWindowID = otherID
             $0.lastUsedWindowIDs = [otherID, closingID]
+            $0.windows[id: otherID]?.window.isFocused = true
+            $0.windows[id: closingID]?.window.isFocused = false
         }
 
         XCTAssertNotNil(store.state.windows[id: closingID])
         XCTAssertNotNil(store.state.windows[id: otherID])
         await store.finish()
+    }
+
+    /// VOY-618: windowBecameKey가 포커스 소유권을 각 윈도우 reducer의 isFocused에 반영한다.
+    /// - 검증 내용: becameKey 이벤트 후 focused 윈도우만 isFocused == true, 나머지는 false
+    func testWindowBecameKeySetsFocusOwnershipOnWindowState() async {
+        let firstID = UUID()
+        let secondID = UUID()
+        let store = makeStore(initialState: makeState(
+            focusedID: firstID,
+            windows: [(firstID, Spec.focusedPath), (secondID, Spec.backgroundPath)],
+        ))
+        store.exhaustivity = .off
+
+        await store.send(.event(.windowBecameKey(secondID)))
+
+        XCTAssertEqual(store.state.windows[id: secondID]?.window.isFocused, true)
+        XCTAssertEqual(store.state.windows[id: firstID]?.window.isFocused, false)
+    }
+
+    /// VOY-618: windowBecameKey가 포커스 소유권을 이전한 두 번째 윈도우의 활성 선택을
+    /// 프로세스 전역 Quick Look 패널과 정확히 한 번 동기화한다.
+    /// 배타적 포커스 소유권 이전 후 두 번째 윈도우만 활성 탭 선택을 resync해야 한다.
+    /// - 검증 내용: becameKey(secondID) 후 focusedWindowID == secondID, first isFocused == false,
+    ///   entryQuickLookClient.syncQuickLookSelection가 secondID 윈도우의 선택 payload로 정확히 한 번 호출
+    /// - 사전 조건: 두 윈도우 모두 활성 콘텐츠 선택을 명시적으로 구성하고,
+    ///   Quick Look client 경계를 LockIsolated payload 레코더로 대체
+    /// - 기대 결과: 동기화 payload는 secondID 윈도우의 선택 항목 하나만, 호출 횟수는 정확히 1
+    func testWindowBecameKeySynchronizesSecondWindowActiveSelectionOnce() async {
+        let firstID = UUID()
+        let secondID = UUID()
+        let syncCalls = LockIsolated<[[String]]>([])
+
+        // makeState(path:)는 활성 콘텐츠 선택을 구성하지 않으므로 두 윈도우 모두 명시적으로 설정한다.
+        var initialState = makeState(
+            focusedID: firstID,
+            windows: [(firstID, Spec.focusedPath), (secondID, Spec.backgroundPath)],
+        )
+        setActiveSelection(on: &initialState, windowID: firstID, entryPath: "/focused/entry-a")
+        setActiveSelection(on: &initialState, windowID: secondID, entryPath: "/background/entry-b")
+
+        let store = makeStore(initialState: initialState) {
+            $0.entryQuickLookClient = .init(
+                quickLook: { _, _ in },
+                syncQuickLookSelection: { urls, _ in
+                    syncCalls.withValue { $0.append(urls.map(\.path)) }
+                },
+            )
+        }
+        // store.exhaustivity = .off: focus ownership 자체는 위 테스트가 검증하며,
+        // 이 테스트는 포커스 이전 후 selection resync 발행 여부만 추적한다.
+        store.exhaustivity = .off
+
+        await store.send(.event(.windowBecameKey(secondID))) {
+            $0.focusedWindowID = secondID
+            $0.windows[id: secondID]?.window.isFocused = true
+            $0.windows[id: firstID]?.window.isFocused = false
+        }
+
+        // RED: 현재 생산 코드의 windowBecameKey는 .none을 반환해 selectionChanged를 라우팅하지 않으므로
+        // 아래 receive가 도달하지 않아 실패한다. VOY-618 수정 후 secondID로 selectionChanged가 라우팅되어야 한다.
+        await store.receive {
+            guard case let .windows(.element(
+                id: id,
+                action: .window(.content(.entryViewLayout(.delegate(.selectionChanged)))),
+            )) = $0 else {
+                return false
+            }
+            return id == secondID
+        }
+
+        XCTAssertEqual(
+            syncCalls.value,
+            [["/background/entry-b"]],
+            "포커스 이전된 두 번째 윈도우의 활성 선택이 정확히 한 번 동기화되어야 한다",
+        )
+    }
+
+    private func setActiveSelection(
+        on state: inout WindowManagerFeature.State,
+        windowID: UUID,
+        entryPath: String,
+    ) {
+        let entry = EntryModel.temporaryFolder(
+            id: entryPath,
+            name: (entryPath as NSString).lastPathComponent,
+        )
+        state.windows[id: windowID]?.window.content.entryViewLayout.entries = [entry]
+        state.windows[id: windowID]?.window.content.entryViewLayout.selectedIds = [entry.id]
+        state.windows[id: windowID]?.window.content.entryViewLayout.lastSelectedId = entry.id
+    }
+
+    /// VOY-618: 새 윈도우 append는 native key callback 전에 포커스 소유권을 획득하지 않는다.
+    /// - 검증 내용: 기존 key window만 focused이고 새 pending window는 unfocused
+    /// - 사전 조건: 기존 focused window 한 개와 고정된 새 window ID
+    /// - 기대 결과: windowBecameKey 전까지 isFocused == true인 window는 기존 window 하나뿐임
+    func testOpenWindowSessionDoesNotCreateSecondFocusOwnerBeforeBecameKey() async {
+        let existingID = UUID()
+        let newID = UUID()
+        let initialState = makeState(
+            focusedID: existingID,
+            windows: [(existingID, Spec.focusedPath)],
+        )
+        let store = makeStore(initialState: initialState, uuid: newID) {
+            $0.fileManagerWindowClient.open = { _ in }
+            $0.fileManagerWindowClient.registeredWindowIDs = { [newID] }
+        }
+        // store.exhaustivity = .off: 새 윈도우 준비 effect보다 key callback 전 focus ownership만 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.file(.newWindow(path: Spec.backgroundPath)))
+
+        XCTAssertEqual(store.state.windows[id: existingID]?.window.isFocused, true)
+        XCTAssertEqual(store.state.windows[id: newID]?.window.isFocused, false)
+        XCTAssertEqual(store.state.windows.filter(\.window.isFocused).count, 1)
+        await store.skipReceivedActions()
+        await store.finish()
+    }
+
+    /// VOY-618: key window resign은 해당 윈도우의 포커스 소유권을 제거한다.
+    /// - 검증 내용: focusedWindowID와 child isFocused를 함께 해제
+    /// - 사전 조건: 단일 key window
+    /// - 기대 결과: focusedWindowID == nil, isFocused == false
+    func testWindowResignedKeyClearsFocusOwnership() async {
+        let windowID = UUID()
+        let initialState = makeState(
+            focusedID: windowID,
+            windows: [(windowID, Spec.focusedPath)],
+        )
+        let store = makeStore(initialState: initialState)
+
+        await store.send(.event(.windowResignedKey(windowID))) {
+            $0.focusedWindowID = nil
+            $0.windows[id: windowID]?.window.isFocused = false
+        }
     }
 
     // MARK: - CTM-001-open_new_content_tab
@@ -623,6 +1128,8 @@ final class FileManagerWindowManagerTests: XCTestCase {
         await store.send(.window(.closeAllWindows)) {
             $0.closingWindowIDs = [firstID, secondID]
             $0.focusedWindowID = nil
+            $0.windows[id: firstID]?.window.isFocused = false
+            $0.windows[id: secondID]?.window.isFocused = false
             $0.refreshContentTabMoveTargets()
         }
 
@@ -1203,11 +1710,13 @@ enum WindowManagerTestSupport {
         TestStore(initialState: initialState) {
             WindowManagerFeature()
         } withDependencies: {
+            $0.uuid = .incrementing
             if let uuid {
                 $0.uuid = .constant(uuid)
             }
             $0.date = .constant(Date(timeIntervalSince1970: 0))
             $0.onboardingWindowClient.showIfNeeded = { onboardingRequired }
+            $0.fileManagerWindowClient.open = { _ in }
             configureDependencies?(&$0)
         }
     }
@@ -1219,7 +1728,9 @@ enum WindowManagerTestSupport {
     ) -> WindowManagerFeature.State {
         var state = WindowManagerFeature.State()
         state.windows = .init(uniqueElements: windows.map { id, path in
-            WindowSessionState(id: id, window: .makeInitial(path: path))
+            var window = FileManagerWindowFeature.State.makeInitial(path: path)
+            window.isFocused = id == focusedID
+            return WindowSessionState(id: id, window: window)
         })
         state.focusedWindowID = focusedID
         return state
@@ -1269,5 +1780,28 @@ private actor WindowInvalidationGate {
     func resume() {
         continuation?.resume()
         continuation = nil
+    }
+}
+
+private final class DirectoryProbeGate: @unchecked Sendable {
+    private let entered = DispatchSemaphore(value: 0)
+    private let release = DispatchSemaphore(value: 0)
+
+    func suspend() {
+        entered.signal()
+        release.wait()
+    }
+
+    func waitUntilSuspended() async {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global().async { [entered] in
+                entered.wait()
+                continuation.resume()
+            }
+        }
+    }
+
+    func resume() {
+        release.signal()
     }
 }

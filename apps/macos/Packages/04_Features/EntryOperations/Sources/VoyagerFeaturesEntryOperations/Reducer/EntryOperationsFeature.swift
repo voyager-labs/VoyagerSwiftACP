@@ -34,6 +34,7 @@ struct EntryOperationsExecutionReducer {
             EntryTrashOperationsReducer()
             EntryArchiveOperationsReducer()
             EntryTaggingOperationsReducer()
+            EntryExternalDropOperationsReducer()
         }
     }
 }

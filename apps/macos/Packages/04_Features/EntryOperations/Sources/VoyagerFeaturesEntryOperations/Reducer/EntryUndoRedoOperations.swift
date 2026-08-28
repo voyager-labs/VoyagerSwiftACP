@@ -355,7 +355,8 @@ struct EntryUndoRedoOperationsReducer {
              .copyPath,
              .deleteImmediately,
              .compress,
-             .extract:
+             .extract,
+             .externalObjectImportItem:
             throw FileOpError.system(message: "Unsupported undo operation kind")
         }
     }

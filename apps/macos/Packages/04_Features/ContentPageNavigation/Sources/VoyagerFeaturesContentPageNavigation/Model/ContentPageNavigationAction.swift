@@ -108,6 +108,7 @@ public enum ContentPageNavigationAction: ViewAction, Equatable, Sendable {
             next: ContentPageNavigationRoute,
             identity: ContentPageNavigationInteractionIdentity,
         )
+        case revealEntryAfterNavigation(destinationPath: String, entryPath: String)
         case resetComposer
     }
 }

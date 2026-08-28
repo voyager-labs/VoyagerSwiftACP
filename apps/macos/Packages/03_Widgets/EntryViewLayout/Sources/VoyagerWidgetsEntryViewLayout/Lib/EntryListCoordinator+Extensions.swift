@@ -71,7 +71,7 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
             return entry.fullPath
         }
         guard !paths.isEmpty else { return }
-        store.send(.view(.startDrag(paths: paths)))
+        entryFileOpsClient.saveDragPaths(paths)
     }
 
     public func outlineView(
@@ -81,7 +81,7 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
         operation: NSDragOperation,
     ) {
         guard EntryViewLayoutDragStateClearRuleSet.shouldClearAfterSessionEnd(operation: operation) else { return }
-        store.send(.view(.startDrag(paths: [])))
+        entryFileOpsClient.saveDragPaths([])
         store.send(.view(.setDropTargeted(false)))
     }
 
@@ -354,8 +354,13 @@ extension EntryListCoordinator {
         syncSortIndicatorsIfNeeded(previous: previous, snapshot: snapshot)
         saveScrollPositionIfNeeded(previous: previous, snapshot: snapshot)
         scrollToSelectionIfNeeded(previous: previous, snapshot: snapshot)
+        consumeTypeScrollTargetIfNeeded(previous: previous, snapshot: snapshot)
         updateDropTargetBorderIfNeeded(previous: previous, snapshot: snapshot)
         syncThumbnailProjectionIfNeeded(previous: previous, snapshot: snapshot)
+        externalDropSessionController.handleSessionTerminal(
+            previousActive: previous.activeExternalDrop,
+            currentActive: snapshot.activeExternalDrop,
+        )
     }
 
     func handleVisibleColumnsChange(previous: RenderSnapshot, snapshot: RenderSnapshot) {
@@ -605,6 +610,10 @@ extension EntryListCoordinator {
 
     func resetThumbnailSessionIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
         if previous.currentPath != snapshot.currentPath {
+            // snapshot diff 함수는 main queue에서 실행되므로 main actor 격리를 단언한다.
+            MainActor.assumeIsolated {
+                externalDropSessionController.cancel()
+            }
             resetThumbnailSession()
             restoredScrollForCurrentPath = false
         }
@@ -644,6 +653,22 @@ extension EntryListCoordinator {
 
     func scrollToSelectionIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
         if !previous.shouldScrollToSelection, snapshot.shouldScrollToSelection { scrollToSelectionIfNeeded() }
+    }
+
+    /// pending type-scroll target의 nil→id 엣지에서 첫 매칭 row로 스크롤하고 reset한다.
+    func consumeTypeScrollTargetIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
+        guard previous.pendingTypeScrollTargetId != snapshot.pendingTypeScrollTargetId,
+              let targetId = snapshot.pendingTypeScrollTargetId
+        else { return }
+        scrollToTypeScrollTarget(targetId)
+    }
+
+    /// 첫 bind 시점에 이미 설정돼 있던 pending type-scroll target을 소비한다.
+    /// unmount 중 생성된 target은 nil→id 엣지가 처음 baseline(lastRenderSnapshot)에 흡수돼
+    /// consumeTypeScrollTargetIfNeeded가 못 잡으므로, row가 존재한 뒤 여기서 일회성 소비한다.
+    func consumeInitialTypeScrollTargetIfNeeded() {
+        guard let targetId = state.pendingTypeScrollTargetId else { return }
+        scrollToTypeScrollTarget(targetId)
     }
 
     func updateDropTargetBorderIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {

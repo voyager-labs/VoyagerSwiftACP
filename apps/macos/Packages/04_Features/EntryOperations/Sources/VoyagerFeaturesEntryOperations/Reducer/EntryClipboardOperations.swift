@@ -5,6 +5,8 @@ import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
 import VoyagerShared
 
+private typealias SecurePlacementCopy = @Sendable (URL, URL) async throws -> Bool
+
 public struct EntryClipboardOperationsCutClearMonitor: Sendable {
     public var heuristic: EntryOperationsCutClearHeuristic
 
@@ -80,6 +82,8 @@ struct EntryClipboardOperationsReducer {
     var pasteboardClient
     @Dependency(\.uuid)
     var uuid
+    @Dependency(\.externalDropAcquisitionClient)
+    var acquisitionClient
 
     /// copyPath terminal은 pasteboard write 성공 여부를 그대로 집계한다.
     private func copyPathTerminal(didWrite: Bool) -> EntryActionRecord {
@@ -259,13 +263,52 @@ struct EntryClipboardOperationsReducer {
                 )
 
             case let .clipboard(.pasteItems(sourcePaths, destinationPath, operation, operationKind)):
-                return pasteItemsEffect(
+                // 외부 drop placement(.externalObjectImportItem) 복사는 세션별 CancelID로 등록해
+                // resetForDuplicate가 진행 중 복사를 취소할 수 있게 한다. 또 effect가 취소되면
+                // (창 닫힘 등 child store 제거) acquisition 세션을 finish해 staging/session
+                // registry가 영구 잔류하지 않도록 정리한다.
+                let placementSessionID: ExternalDropSessionID? = operationKind == .externalObjectImportItem
+                    ? state.externalDropImportPlacement?.sessionID
+                    : nil
+                if operationKind == .externalObjectImportItem, placementSessionID == nil {
+                    // placement 세션이 없는 외부 import는 일반 mutable paste로 강등하지 않고
+                    // 항목별 실패로 닫는다(fail-closed).
+                    return .run { send in
+                        for sourcePath in sourcePaths {
+                            await send(.lifecycle(.operationFinished(
+                                sourcePath,
+                                operationKind,
+                                .failure(.system(message: "외부 drop placement 세션이 없다")),
+                            )))
+                        }
+                    }
+                }
+                let secureCopy: SecurePlacementCopy? = if let placementSessionID {
+                    { [acquisitionClient] sourceURL, destinationURL in
+                        try await acquisitionClient.copyPlacementSource(
+                            placementSessionID,
+                            sourceURL.path,
+                            destinationURL.path,
+                        )
+                    }
+                } else {
+                    nil
+                }
+                var effect = pasteItemsEffect(
                     sourcePaths: sourcePaths,
                     destinationPath: destinationPath,
                     operation: operation,
                     operationKind: operationKind,
                     mutationImpactDestinationPath: nil,
+                    onCancelCleanup: placementSessionID.map { sessionID in
+                        { @MainActor in acquisitionClient.finish(sessionID) }
+                    },
+                    secureCopy: secureCopy,
                 )
+                if let placementSessionID {
+                    effect = effect.cancellable(id: CancelID.externalDrop(placementSessionID))
+                }
+                return effect
 
             case let .clipboard(.duplicateItems(groups)):
                 let destinations = groups.flatMap { group in
@@ -306,6 +349,8 @@ struct EntryClipboardOperationsReducer {
         operation: ClipboardOperation,
         operationKind: OperationKind,
         mutationImpactDestinationPath: String?,
+        onCancelCleanup: (@MainActor @Sendable () -> Void)? = nil,
+        secureCopy: SecurePlacementCopy? = nil,
     ) -> Effect<Action> {
         let destinations = EntryClipboardOperationsSupport.avoidNameCollisions(
             sourcePaths: sourcePaths,
@@ -324,6 +369,8 @@ struct EntryClipboardOperationsReducer {
             operation: operation,
             operationKind: operationKind,
             mutationImpactDestinationPath: mutationImpactDestinationPath,
+            onCancelCleanup: onCancelCleanup,
+            secureCopy: secureCopy,
         )
     }
 
@@ -332,17 +379,24 @@ struct EntryClipboardOperationsReducer {
         operation: ClipboardOperation,
         operationKind: OperationKind,
         mutationImpactDestinationPath: String?,
+        onCancelCleanup: (@MainActor @Sendable () -> Void)? = nil,
+        secureCopy: SecurePlacementCopy? = nil,
     ) -> Effect<Action> {
         let executor = EntryClipboardOperationsSupport.PasteExecutor(
             entryFileOpsClient: entryFileOpsClient,
             alertClient: alertClient,
             mutationImpactDestinationPath: mutationImpactDestinationPath,
+            secureCopy: secureCopy,
         )
-        return .run { send in
+        let copyLoop: @Sendable (Send<Action>) async throws -> Void = { send in
             var targets: [EntryActionRecord.Target] = []
             var failedCount = 0
             var cancelledCount = 0
             for (sourceURL, destinationURL) in destinations {
+                // resetForDuplicate가 effect task를 취소한 뒤에도 live pasteFile(동기 copyItem)은
+                // CancellationError를 던지지 않아 루프가 남은 항목까지 계속 진행할 수 있다.
+                // 각 항목 복사 전에 명시적으로 취소를 확인해 즉시 중단한다.
+                try Task.checkCancellation()
                 await send(.lifecycle(.operationStarted(sourceURL.path, operationKind)))
                 let result = await executor.execute(
                     sourceURL: sourceURL,
@@ -370,6 +424,26 @@ struct EntryClipboardOperationsReducer {
                 send: send,
             )
         }
+        guard let onCancelCleanup else {
+            return .run { send in
+                try await copyLoop(send)
+            }
+        }
+        // placement 복사 effect가 취소(창 닫힘 등 child store 제거)되면 획득 세션을
+        // finish해 staging과 session registry가 영구 잔류하지 않게 정리한다. finish는
+        // copyLoop가 종료된 뒤(현재 동기 pasteFile이 반환된 후)에만 수행해, 복사 도중
+        // staging이 제거돼 부분 실패/잔류가 생기지 않게 한다. 정상 완료는 reducer의
+        // finishPlacementIfComplete가 담당하므로 취소된 경우에만 여기서 정리한다.
+        return .run { send in
+            defer {
+                if Task.isCancelled {
+                    Task { @MainActor in
+                        onCancelCleanup()
+                    }
+                }
+            }
+            try await copyLoop(send)
+        }
     }
 }
 
@@ -378,6 +452,7 @@ private enum EntryClipboardOperationsSupport {
         let entryFileOpsClient: EntryFileOpsClient
         let alertClient: EntryOperationsAlertClient
         let mutationImpactDestinationPath: String?
+        let secureCopy: SecurePlacementCopy?
 
         func execute(
             sourceURL: URL,
@@ -388,7 +463,7 @@ private enum EntryClipboardOperationsSupport {
         ) async -> Result<EntryActionRecord.Target, FileOpError> {
             let context = OperationContext(isCopy: isCopy, operationKind: operationKind)
             do {
-                try await mutate(sourceURL: sourceURL, destinationURL: destinationURL, isCopy: isCopy)
+                try await mutate(context: context, sourceURL: sourceURL, destinationURL: destinationURL)
                 return await .success(finishSuccess(
                     sourceURL: sourceURL,
                     destinationURL: destinationURL,
@@ -470,8 +545,32 @@ private enum EntryClipboardOperationsSupport {
                 return .failure(.cancelled)
             }
             do {
-                try await entryFileOpsClient.deleteImmediately(destinationURL)
-                try await mutate(sourceURL: sourceURL, destinationURL: destinationURL, isCopy: context.isCopy)
+                // 기존 목적지를 먼저 삭제하지 않고 같은 디렉터리 임시 이름으로 치워둔다
+                // (코멘트 #3837908188). 복사가 성공한 뒤에만 임시 항목을 제거하고, 실패 시
+                // 원래 항목을 되돌려 새 파일·기존 파일 이중 상실을 막는다.
+                let backupURL = destinationURL
+                    .deletingLastPathComponent()
+                    .appendingPathComponent(".voyager-replace-\(UUID().uuidString)")
+                try await entryFileOpsClient.moveFile(destinationURL, backupURL)
+                do {
+                    try await mutate(context: context, sourceURL: sourceURL, destinationURL: destinationURL)
+                } catch {
+                    // 부분 목적지 정리와 백업 복원을 시도한다. 복원에 실패하면 백업이
+                    // 임시 이름에 남은 채 묻히지 않도록 복구 오류로 전파한다(코멘트 #3837956593).
+                    // 부분 목적지는 copier가 생성 전에 실패하면 존재하지 않는다. 정리는
+                    // 선택적으로 처리하고 백업 복원은 항상 시도하며, 복원 자체가 실패할
+                    // 때만 복구 오류로 전파한다(코멘트 #3840293881).
+                    try? await entryFileOpsClient.deleteImmediately(destinationURL)
+                    do {
+                        try await entryFileOpsClient.moveFile(backupURL, destinationURL)
+                    } catch {
+                        throw FileOpError.system(
+                            message: "교체 복구 실패, 원본 백업이 \(backupURL.path)에 보존됐다",
+                        )
+                    }
+                    throw error
+                }
+                try? await entryFileOpsClient.deleteImmediately(backupURL)
                 return await .success(finishSuccess(
                     sourceURL: sourceURL,
                     destinationURL: destinationURL,
@@ -503,10 +602,26 @@ private enum EntryClipboardOperationsSupport {
             return .lifecycle(.dropOperationFinished(path, operationKind, result))
         }
 
-        private func mutate(sourceURL: URL, destinationURL: URL, isCopy: Bool) async throws {
-            if isCopy {
+        private func mutate(context: OperationContext, sourceURL: URL, destinationURL: URL) async throws {
+            switch (context.isCopy, context.operationKind) {
+            case (true, .externalObjectImportItem):
+                // 외부 import는 고정 descriptor 복사만 허용한다. copier 부재·false 반환을
+                // 일반 paste 경로로 강등하지 않는 fail-closed 계약이다.
+                guard let secureCopy else {
+                    throw FileOpError.system(message: "placement copier가 준비되지 않았다")
+                }
+                do {
+                    guard try await secureCopy(sourceURL, destinationURL) else {
+                        throw FileOpError.system(message: "placement copier가 항목을 처리하지 않았다")
+                    }
+                } catch let error as POSIXError where error.code == .EEXIST {
+                    // descriptor 복사의 O_EXCL 목적지 충돌을 기존 교체 알림 계약으로 정규화한다.
+                    // stop/replace와 per-item 집합 의미는 execute의 fileExists 분기가 소유한다.
+                    throw FileOpError.fileExists(itemName: destinationURL.lastPathComponent)
+                }
+            case (true, _):
                 try await entryFileOpsClient.pasteFile(sourceURL, destinationURL)
-            } else {
+            case (false, _):
                 try await entryFileOpsClient.moveFile(sourceURL, destinationURL)
             }
         }

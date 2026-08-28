@@ -36,6 +36,6 @@
 ## 4. Rules
 
 - **모든 색상은 `--macos-*` 토큰만 사용** — 컴포넌트 레벨 원시 색상 금지.
-- **모든 컴포넌트는 형제 `.stories.tsx`** — Storybook 카탈로그에서 리뷰 가능해야 함.
+- **카탈로그 소유권은 앱 카탈로그 루트** — 이 표면의 활성 레지스트리 루트는 `surface-registry.ts`(id `design-foundation`, `lifecycle: "active"`, `story.directory: "../src/DesignFoundation"`)입니다. 스토리는 패키지 소스 옆이 아닌 앱 소유 카탈로그 `src/DesignFoundation/`에서 발견됩니다. 전체 레지스트리 라이프사이클과 카탈로그 소유권 계약은 워크스페이스 루트 `apps/storybook/DESIGN.md`를 따릅니다.
 - 토큰 값/주석/순서는 `file-manager-illustration` 소스와 바이트 동일하게 유지(셀렉터 스코프만 변경).
 - `src/index.ts`는 공용 진입점으로, UI 키트(Controls/Display/Feedback/Navigation/Overlays)와 토큰 스타일을 배럴로 내보낸다.

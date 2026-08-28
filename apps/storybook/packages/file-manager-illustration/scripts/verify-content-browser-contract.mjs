@@ -11,11 +11,11 @@ export function verifyContentBrowserContract(packageRoot, css, runtime, fileMana
   const adapterSource = source("src/lib/file-manager-adapter.ts")
   const reducerSource = source("src/model/reducer.ts")
   const fixtureSource = source("src/data/content-browser-fixtures.ts")
-  const storySource = source("src/Stories/ContentBrowserStates.stories.tsx")
+  const storySource = source("../../src/FileManager/Stories/ContentBrowserStates.stories.tsx")
   const entryListSource = source("src/Domains/Entries/EntryList.tsx")
   const entryListRowSource = source("src/Domains/Entries/EntryListRow.tsx")
-  const toolbarSource = source("src/Patterns/Content/FileToolbar.tsx")
-  const toolbarNavigationSource = source("src/Patterns/Content/ToolbarNavigation.tsx")
+  const toolbarSource = source("src/Pages/FileManager/FileToolbar.tsx")
+  const toolbarNavigationSource = source("src/Pages/FileManager/ToolbarNavigation.tsx")
 
   assert.match(typesSource, /export type FileManagerInitialPresentation/)
   assert.match(typesSource, /readonly initialPresentation\?: FileManagerInitialPresentation/)
@@ -136,9 +136,6 @@ export function verifyContentBrowserContract(packageRoot, css, runtime, fileMana
   for (const storyID of storyIDs) {
     const story = fileManagerStories.find((entry) => entry.id === storyID)
     assert.ok(story, `Missing VOY-720 content browser story: ${storyID}`)
-    assert.equal(
-      story.importPath,
-      "./packages/file-manager-illustration/src/Stories/ContentBrowserStates.stories.tsx",
-    )
+    assert.equal(story.importPath, "./src/FileManager/Stories/ContentBrowserStates.stories.tsx")
   }
 }

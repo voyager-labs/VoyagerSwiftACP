@@ -30,6 +30,18 @@ struct FileManagerContentNavigationBridgeReducer {
         Reduce { state, action in
             switch action {
             case let .internal(.applyNavigationState(navigationState)):
+                if let destinationPath = state.pendingSelectEntryDestinationPath {
+                    let matchesDestination: Bool = switch navigationState {
+                    case let .folder(path):
+                        URL(fileURLWithPath: path).standardizedFileURL.path
+                            == URL(fileURLWithPath: destinationPath).standardizedFileURL.path
+                    default:
+                        false
+                    }
+                    if !matchesDestination {
+                        state.setPendingEntrySelection(entryID: nil, destinationPath: nil)
+                    }
+                }
                 let scrollPositionKey = scrollPositionKey(for: navigationState)
                 state.entryViewLayout.currentPath = scrollPositionKey
                 state.entryViewLayout.savedScrollOffset = state.navigation.scrollPositions[scrollPositionKey]

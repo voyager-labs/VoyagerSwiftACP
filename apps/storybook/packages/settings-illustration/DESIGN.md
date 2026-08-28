@@ -46,7 +46,9 @@ The illustration mirrors the native macOS Settings window, which uses a **top ho
 
 ## 4. Catalog Taxonomy
 
-- **Foundations** — `SFSymbol` is a product-agnostic visual primitive for SF Symbol glyphs; it owns no Settings workflow state.
+This surface's active registry root is `surface-registry.ts` (id `settings`, `lifecycle: "active"`, `story.directory: "../src/Settings"`). Its stories are discovered from the app-owned catalog root `src/Settings/` (the root `SettingsWindow` composition), not from package-adjacent `*.stories.tsx`. See the workspace root `apps/storybook/DESIGN.md` for the registry lifecycle and catalog ownership contract.
+
+- **Foundations** — `SFSymbol` is a product-agnostic visual primitive for SF Symbol glyphs (owned by `design-foundation`); it owns no Settings workflow state.
 - **Layouts** — `GeneralSettingsPane`, `AppearanceSettingsPane`, `AiSettingsPane` own pane geometry and composition within the tab content area, plus their section rows.
 - **Root** — `SettingsWindow` is the root composition owning the unified top band (traffic lights + horizontal `TabView`) and the active pane below it. It is presentational and deterministic: fixture-driven, no live reducer, no real event handlers beyond tab navigation.
 - **Domains** — AI connection rows belong to the AI pane's domain; provider/auth/status are fixture data only.
@@ -65,7 +67,6 @@ The illustration mirrors the native macOS Settings window, which uses a **top ho
 - Target WCAG 2.2 AA semantics: the tab bar is a `<nav aria-label="Settings categories">` with real `<button>` items exposing `aria-current="page"` on the active item; the window is a `<section aria-label="Voyager Settings">`. The horizontal tab bar changes only the visual geometry, not the semantic structure — the `<nav aria-label>` and `aria-current` contract is unchanged.
 - Toggles are real `<button role="switch" aria-checked>`; the theme cards and disclosure rows are real interactive elements where the review surface needs it.
 - Icons render through `SFSymbol` with `aria-hidden="true"` on their owning controls; no visible emoji icons.
-- Browser verification: after every visual change, drive a real browser (`agent-browser`) to capture and inspect the affected states. Screenshot evidence is required before declaring a visual task complete.
 
 ## 7. Not in scope
 

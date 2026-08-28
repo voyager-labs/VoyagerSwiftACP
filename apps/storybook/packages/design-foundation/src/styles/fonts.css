@@ -4,7 +4,7 @@
   font-style: normal;
   font-weight: 400;
   src: local("SF Pro Text"), local("SFProText-Regular"),
-    url("/fonts/sf-pro/SF-Pro-Text-Regular.otf") format("opentype");
+    url("../assets/fonts/SF-Pro-Text-Regular.otf") format("opentype");
 }
 
 @font-face {
@@ -13,7 +13,7 @@
   font-style: normal;
   font-weight: 500;
   src: local("SF Pro Text Medium"), local("SFProText-Medium"),
-    url("/fonts/sf-pro/SF-Pro-Text-Medium.otf") format("opentype");
+    url("../assets/fonts/SF-Pro-Text-Medium.otf") format("opentype");
 }
 
 @font-face {
@@ -22,7 +22,7 @@
   font-style: normal;
   font-weight: 600;
   src: local("SF Pro Text Semibold"), local("SFProText-Semibold"),
-    url("/fonts/sf-pro/SF-Pro-Text-Semibold.otf") format("opentype");
+    url("../assets/fonts/SF-Pro-Text-Semibold.otf") format("opentype");
 }
 
 @font-face {
@@ -30,8 +30,8 @@
   font-display: swap;
   font-style: normal;
   font-weight: 700;
-  src: local("SF Pro Text Bold"), local("SFProText-Bold"), url("/fonts/sf-pro/SF-Pro-Text-Bold.otf")
-    format("opentype");
+  src: local("SF Pro Text Bold"), local("SFProText-Bold"),
+    url("../assets/fonts/SF-Pro-Text-Bold.otf") format("opentype");
 }
 
 @font-face {
@@ -40,7 +40,7 @@
   font-style: normal;
   font-weight: 400;
   src: local("SF Pro Display"), local("SFProDisplay-Regular"),
-    url("/fonts/sf-pro/SF-Pro-Display-Regular.otf") format("opentype");
+    url("../assets/fonts/SF-Pro-Display-Regular.otf") format("opentype");
 }
 
 @font-face {
@@ -49,7 +49,7 @@
   font-style: normal;
   font-weight: 500;
   src: local("SF Pro Display Medium"), local("SFProDisplay-Medium"),
-    url("/fonts/sf-pro/SF-Pro-Display-Medium.otf") format("opentype");
+    url("../assets/fonts/SF-Pro-Display-Medium.otf") format("opentype");
 }
 
 @font-face {
@@ -58,7 +58,7 @@
   font-style: normal;
   font-weight: 600;
   src: local("SF Pro Display Semibold"), local("SFProDisplay-Semibold"),
-    url("/fonts/sf-pro/SF-Pro-Display-Semibold.otf") format("opentype");
+    url("../assets/fonts/SF-Pro-Display-Semibold.otf") format("opentype");
 }
 
 @font-face {
@@ -67,7 +67,7 @@
   font-style: normal;
   font-weight: 700;
   src: local("SF Pro Display Bold"), local("SFProDisplay-Bold"),
-    url("/fonts/sf-pro/SF-Pro-Display-Bold.otf") format("opentype");
+    url("../assets/fonts/SF-Pro-Display-Bold.otf") format("opentype");
 }
 
 @font-face {
@@ -75,6 +75,6 @@
   font-display: swap;
   font-style: normal;
   font-weight: 1 1000;
-  src: local(".SF Symbols"), local("SF Pro Symbols"), url("/fonts/sf-pro/SF-Pro-Symbols.otf")
+  src: local(".SF Symbols"), local("SF Pro Symbols"), url("../assets/fonts/SF-Pro-Symbols.otf")
     format("opentype");
 }

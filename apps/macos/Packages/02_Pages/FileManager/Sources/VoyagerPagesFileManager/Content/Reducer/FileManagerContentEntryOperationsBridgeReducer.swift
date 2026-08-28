@@ -176,11 +176,20 @@ struct FileManagerContentEntryOperationsBridgeReducer {
 
         case .selectionChanged:
             let currentContext = FileManagerAiChatContextAdapter.makeCurrentContextSnapshot(content: state)
-            return .concatenate(
+            var effects: [Effect<Action>] = [
                 .send(.entryViewLayout(.entryOperations(.lifecycle(.syncSelectedEntryIDs(state.entryViewLayout
                         .selectedIds))))),
                 .send(.delegate(.currentContextChanged(currentContext))),
-            )
+            ]
+            let orderedSelected = orderedSelectedEntries(in: state)
+            if !orderedSelected.isEmpty {
+                let selectedIndex = orderedSelected.firstIndex { $0.id == state.entryViewLayout.lastSelectedId } ?? 0
+                effects.append(.send(.entryViewLayout(.entryOperations(.open(.syncQuickLookSelection(
+                    paths: orderedSelected.map(\.fullPath),
+                    selectedIndex: selectedIndex,
+                ))))))
+            }
+            return .concatenate(effects)
 
         case let .sortChanged(sortKey, sortOrder):
             let featureSortKey = sortKey.sharedSortKey
@@ -548,12 +557,15 @@ struct FileManagerContentEntryOperationsBridgeReducer {
     }
 
     private func selectedItemPaths(in state: State) -> [String] {
+        orderedSelectedEntries(in: state).map(\.fullPath)
+    }
+
+    private func orderedSelectedEntries(in state: State) -> [EntryModel] {
         let displayItems = state.entryViewLayout.hierarchyProjectionIsActive
             ? state.entryViewLayout.visibleSelectableEntries(isNormalDirectoryPage: true)
             : state.entryViewLayout.entries
         return displayItems
             .filter { state.entryViewLayout.selectedIds.contains($0.id) }
-            .map(\.fullPath)
     }
 
     private func lexicalAncestorPaths(for id: EntryModel.ID, state: State) -> [String] {
