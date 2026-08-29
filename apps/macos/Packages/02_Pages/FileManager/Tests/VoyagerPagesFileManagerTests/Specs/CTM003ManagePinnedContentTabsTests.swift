@@ -7073,12 +7073,21 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                     id: tabID,
                     page: .collection,
                     anchor: .collectionFile(url: runtimeURL),
-                    isPinned: false,
+                    isPinned: true,
                     title: "Closing Collection",
                     iconName: "rectangle.stack",
                 ),
             ],
             activeTabID: tabID,
+            pinnedRecords: [
+                tabID: Self.pinnedRecord(
+                    id: tabID,
+                    page: .collection,
+                    anchor: .collectionFile(url: durableURL),
+                    title: "Durable Collection",
+                    iconName: "rectangle.stack",
+                ),
+            ],
         )
         state.content = .initialContent(for: .collectionFile(url: runtimeURL))
         state.tabContentStates[tabID] = state.content
@@ -7110,6 +7119,59 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         await store.finish()
 
         XCTAssertEqual(failedTabIDs.value, [tabID])
+        XCTAssertNil(store.state.pendingCollectionOpenRequest)
+    }
+
+    /// CTM-003-go_to_anchored_path_of_pinned_tab: 정착 후 일반 Collection 요청 중 tab close는 복귀 실패로 오상관하지 않는다.
+    /// 실제 pinned 복귀와 무관한 Collection 취소가 완료된 durable route를 재계획하지 않는지 검증한다.
+    /// - 검증 내용: ordinary Collection request 정리와 pinnedContentTabRuntimeNavigationFailed 미발행
+    /// - 사전 조건: pinned persistence가 끝난 Collection tab이 durable route에 정착한 뒤 다른 Collection request가 진행 중임
+    /// - 기대 결과: tab close와 pending request 정리는 완료되지만 pinned 복귀 failure terminal은 비어 있음
+    func testClosingSettledPinnedTabWhileOrdinaryCollectionOpenIsPendingDoesNotEmitFailureTerminal() async {
+        let tabID = ContentTabID(rawValue: "closing-settled-pinned-collection")
+        let settledURL = URL(fileURLWithPath: "/tmp/closing-settled-a.voycoll")
+        let ordinaryURL = URL(fileURLWithPath: "/tmp/closing-ordinary-b.voycoll")
+        let settledAnchor = ContentTabPageAnchor.collectionFile(url: settledURL)
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: tabID,
+                    page: .collection,
+                    anchor: settledAnchor,
+                    isPinned: false,
+                ),
+            ],
+            activeTabID: tabID,
+        )
+        state.content = .initialContent(for: settledAnchor)
+        state.pendingCollectionOpenRequest = ContentPageCollectionOpenRequest(
+            id: UUID(),
+            url: ordinaryURL,
+            sourceRoute: state.content.navigation.navigationState,
+            prePrepareBackHistory: [],
+            prePrepareForwardHistory: [],
+        )
+        let failedTabIDs = LockIsolated<[ContentTabID]>([])
+        let store = TestStore(initialState: state) {
+            Reduce<FileManagerWindowState, FileManagerWindowAction> { state, action in
+                if case let .delegate(.pinnedContentTabRuntimeNavigationFailed(failedTabID)) = action {
+                    failedTabIDs.withValue { $0.append(failedTabID) }
+                    return .none
+                }
+                return FileManagerFeature().reduce(into: &state, action: action)
+            }
+        } withDependencies: {
+            $0.date = .constant(Self.pinnedAt)
+        }
+        // store.exhaustivity = .off: close handoff 세부 action보다 ordinary Collection 취소의 terminal 상관을 검증한다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.contentTabs(.commitClose(tabID)))
+        await store.skipReceivedActions(strict: false)
+        await store.finish()
+
+        XCTAssertTrue(failedTabIDs.value.isEmpty)
         XCTAssertNil(store.state.pendingCollectionOpenRequest)
     }
 
