@@ -46,6 +46,17 @@ public struct ConditionDisplayState: Equatable {
     }
 }
 
+struct ComposerQueryRecoveryContext: Equatable {
+    enum Stage: Equatable {
+        case search(UUID)
+        case filters(UUID)
+    }
+
+    let rawText: String
+    let capturedInputRevision: UInt64
+    var stage: Stage
+}
+
 @ObservableState
 public struct ComposerState: Equatable {
     public var propertyPicker: ConditionPropertyPickerFeature.State = .init()
@@ -64,6 +75,8 @@ public struct ComposerState: Equatable {
     public var cancellationOwnerID: UUID?
 
     public var text: String = ""
+    var inputRevision: UInt64 = 0
+    var queryRecoveryContext: ComposerQueryRecoveryContext?
     public var scopes: [String] {
         get { scopeEditor.selection.legacyScopePaths }
         set { scopeEditor.selection = ComposerScopeSelection.fromLegacyScopes(newValue) }
@@ -110,6 +123,49 @@ public struct ComposerState: Equatable {
     public var hasSubmittedInSession: Bool = false
 
     public init() {}
+
+    mutating func setTextFromUserIntent(_ text: String) {
+        inputRevision &+= 1
+        self.text = text
+    }
+
+    mutating func replaceTextAndDiscardQueryRecovery(_ text: String) {
+        inputRevision &+= 1
+        queryRecoveryContext = nil
+        self.text = text
+    }
+
+    mutating func clearTextForSubmit() {
+        text = ""
+    }
+
+    mutating func captureQueryRecovery(rawText: String, requestID: UUID) {
+        queryRecoveryContext = ComposerQueryRecoveryContext(
+            rawText: rawText,
+            capturedInputRevision: inputRevision,
+            stage: .search(requestID),
+        )
+    }
+
+    mutating func retargetQueryRecovery(from searchRequestID: UUID, to filtersRequestID: UUID) {
+        guard queryRecoveryContext?.stage == .search(searchRequestID) else { return }
+        queryRecoveryContext?.stage = .filters(filtersRequestID)
+    }
+
+    mutating func restoreQueryRecoveryIfEligible(for stage: ComposerQueryRecoveryContext.Stage) {
+        defer { queryRecoveryContext = nil }
+        guard let context = queryRecoveryContext,
+              context.stage == stage,
+              context.capturedInputRevision == inputRevision
+        else {
+            return
+        }
+        text = context.rawText
+    }
+
+    mutating func discardQueryRecovery() {
+        queryRecoveryContext = nil
+    }
 
     public var canUndo: Bool {
         !history.isEmpty
@@ -231,11 +287,8 @@ public struct ComposerState: Equatable {
     ) {
         let trimmedQuery = payload.context.query.trimmingCharacters(in: .whitespacesAndNewlines)
         pendingSearchQuery = trimmedQuery.isEmpty ? nil : trimmedQuery
-        if payload.openedURL == nil {
-            text = payload.context.query
-        } else {
-            text = ""
-        }
+        let restoredText = payload.openedURL == nil ? payload.context.query : ""
+        replaceTextAndDiscardQueryRecovery(restoredText)
         let selection = ComposerScopeSelection.fromCanonicalScopes(
             bases: payload.context.scopes,
             exceptions: payload.context.excludedScopes,
@@ -256,7 +309,7 @@ public struct ComposerState: Equatable {
     ) {
         let trimmedQuery = payload.composerText.trimmingCharacters(in: .whitespacesAndNewlines)
         pendingSearchQuery = trimmedQuery.isEmpty ? nil : trimmedQuery
-        text = payload.composerText
+        replaceTextAndDiscardQueryRecovery(payload.composerText)
         let selection = ComposerScopeSelection.fromCanonicalScopes(
             bases: payload.scopes,
             exceptions: payload.excludedScopes,
@@ -277,7 +330,7 @@ public struct ComposerState: Equatable {
         uuid: () -> UUID = UUID.init,
     ) {
         pendingSearchQuery = payload.context.query.isEmpty ? nil : payload.context.query
-        text = payload.context.query
+        replaceTextAndDiscardQueryRecovery(payload.context.query)
         let selection = ComposerScopeSelection.fromCanonicalScopes(
             bases: payload.context.scopes,
             exceptions: payload.context.excludedScopes,

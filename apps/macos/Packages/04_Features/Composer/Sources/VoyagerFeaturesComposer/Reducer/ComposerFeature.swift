@@ -69,7 +69,7 @@ public struct ComposerFeature {
                 return handleSetPresented(state: &state, isPresented: isPresented)
 
             case let .view(.setText(text)):
-                state.text = text
+                state.setTextFromUserIntent(text)
                 state.transientFeedback = nil
                 return .cancel(id: CancelID.feedbackDismiss(ownerID: state.cancellationOwnerID))
 
@@ -129,6 +129,7 @@ public struct ComposerFeature {
                 state.searchStartedAt = nil
                 state.filtersStartedAt = nil
                 state.activeFiltersMetricSource = nil
+                state.discardQueryRecovery()
                 applyQueryPhaseTransition(.reset, state: &state)
                 return .merge(
                     .cancel(id: CancelID.search(ownerID: state.cancellationOwnerID)),
@@ -229,6 +230,12 @@ private func handleSetPresented(
             || state.isLoadingFilters
         let shouldKeepFiltersAlive = shouldPreserveFilterLifecycle || hasActiveFilterLifecycle
         let shouldCloseScopeEditorWithoutCommit = state.scopeEditor.isPresented && !shouldPreserveFilterLifecycle
+        let shouldRetainQueryRecovery = shouldKeepFiltersAlive
+            && state.activeFiltersRequestID.map { state.queryRecoveryContext?.stage == .filters($0) } == true
+
+        if !shouldRetainQueryRecovery {
+            state.discardQueryRecovery()
+        }
 
         state.hasSubmittedInSession = false
         state.searchStartedAt = nil
