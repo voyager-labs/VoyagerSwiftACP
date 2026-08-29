@@ -12,7 +12,19 @@ extension FileManagerContentIdentityTransitionCoordinator {
         var shouldDefer: Bool?
         var holdsUntilMigration = false
         var untilEntryID: EntryModel.ID?
-        if case let .folder(ownerID, _) = transition.projectionOwner,
+        // nil sourceOwner는 primary projectionOwner와 같은 source라는 sentinel이다.
+        if transition.additionalMoves.contains(where: { move in
+            guard !move.migrated,
+                  case let .folder(ownerID, _) = move.sourceOwner ?? transition.projectionOwner
+            else { return false }
+            return canonicalizedPath(ownerID) == canonicalizedPath(folderID)
+        }) {
+            shouldDefer = true
+            holdsUntilMigration = true
+        }
+        if shouldDefer == nil,
+           !transition.primaryMigrated,
+           case let .folder(ownerID, _) = transition.projectionOwner,
            canonicalizedPath(ownerID) == canonicalizedPath(folderID)
         {
             let afterIdentity = afterLexicalPath(transition)
@@ -30,24 +42,33 @@ extension FileManagerContentIdentityTransitionCoordinator {
             holdsUntilMigration = true
         }
         if shouldDefer == nil {
-            print("DBG dest branch scan:", folderID)
             // 다중 이동: additional destination 폴더도 after 행 도착까지 retained children을 유지한다.
-            for move in transition.additionalMoves {
-                guard case let .folder(ownerID, _) = move.destinationOwner,
-                      canonicalizedPath(ownerID) == canonicalizedPath(folderID)
+            // 같은 destination을 공유하는 pair가 여러 개면 모든 pending after가 도착했을 때만
+            // combine하도록 untilEntryID를 미도착 after로 갱신해 누적한다.
+            var pendingAfters: [String] = []
+            for move in transition.additionalMoves where !move.migrated {
+                guard case let .folder(ownerID, _) = move.destinationOwner ?? transition.projectionOwner,
+                      standardizedPath(ownerID) == standardizedPath(folderID)
                 else { continue }
-                let pairAfter = move.afterLexicalPath.isEmpty ? move.afterPath : move.afterLexicalPath
-                shouldDefer = !items.contains {
-                    standardizedPath($0.id) == standardizedPath(pairAfter)
-                }
-                untilEntryID = pairAfter
-                break
+                pendingAfters.append(
+                    move.afterLexicalPath.isEmpty ? move.afterPath : move.afterLexicalPath,
+                )
+            }
+            if let nextUntil = pendingAfters.first(where: { after in
+                !items.contains { standardizedPath($0.id) == standardizedPath(after) }
+            }) {
+                shouldDefer = true
+                untilEntryID = nextUntil
+                state.entryViewLayout.hierarchy.upsertDeferredFolderReplacement(
+                    folderID: folderID,
+                    untilEntryID: nextUntil,
+                )
             }
         }
         if shouldDefer == nil {
             // 다중 이동: additional 이동의 source 폴더도 primary 보존과 동일하게 보류한다.
-            for move in transition.additionalMoves {
-                guard case let .folder(ownerID, _) = move.sourceOwner,
+            for move in transition.additionalMoves where !move.migrated {
+                guard case let .folder(ownerID, _) = move.sourceOwner ?? transition.projectionOwner,
                       canonicalizedPath(ownerID) == canonicalizedPath(folderID)
                 else { continue }
                 shouldDefer = true
@@ -69,6 +90,14 @@ extension FileManagerContentIdentityTransitionCoordinator {
     ) -> Bool {
         guard let transition = state.pendingIdentityTransition else { return false }
         if case .root = transition.preservationOwner {
+            return true
+        }
+        // 다중 이동: 아직 migration되지 않은 additional pair의 source가 root면
+        // 해당 pair의 destination batch가 선택을 옮길 때까지 root projection을 유지한다.
+        if transition.additionalMoves.contains(where: { move in
+            guard !move.migrated, case .root = move.sourceOwner ?? transition.projectionOwner else { return false }
+            return true
+        }) {
             return true
         }
         // after 행이 오기 전 스트림 실패에서도 마지막 root projection을 유지한다:
@@ -150,14 +179,6 @@ extension FileManagerContentIdentityTransitionCoordinator {
         }
         if selectedPaths.contains(afterPath) {
             // 다중 이동: 다른 destination의 pending pair가 남아 있으면 전이를 유지한다.
-            print(
-                "DBG rRS after-selected: alive:",
-                state.pendingIdentityTransition != nil,
-                "pairs:",
-                state.pendingIdentityTransition?.additionalMoves.map { ($0.destinationOwner, $0.migrated) } as Any,
-                "hasPending:",
-                hasPendingDestinationPairs(state),
-            )
             if !hasPendingDestinationPairs(state) {
                 discard(state: &state)
             }
@@ -191,6 +212,11 @@ extension FileManagerContentIdentityTransitionCoordinator {
         }
         transition.projectionOwner = rebased(transition.projectionOwner)
         transition.preservationOwner = transition.preservationOwner.map(rebased)
+        for index in transition.additionalMoves.indices {
+            transition.additionalMoves[index].sourceOwner = transition.additionalMoves[index].sourceOwner.map(rebased)
+            transition.additionalMoves[index].destinationOwner = transition.additionalMoves[index].destinationOwner
+                .map(rebased)
+        }
         state.pendingIdentityTransition = transition
     }
 
@@ -198,37 +224,22 @@ extension FileManagerContentIdentityTransitionCoordinator {
         on action: FileManagerContentAction,
         state: inout FileManagerContentState,
     ) {
-        // additional destination 폴더의 terminal도 소비 지점이다: 모든 pair가 해소됐고
-        // 해당 폴더가 실제로 coreFinished에 도달했으면 전이를 닫는다. primary 종류와 무관하게
-        // 판정해야 root primary + folder additional 조합도 닫을 수 있다.
-        if case let .entryViewLayout(.hierarchy(.folderChildrenResponse(
-            _, additionalFolderID, _, .event(.coreFinished),
-        ))) = action,
-            let transition = state.pendingIdentityTransition,
-            transition.primaryMigrated,
-            transition.additionalMoves.allSatisfy(\.migrated),
-            transition.additionalMoves.contains(where: { pair in
-                guard case let .folder(id, _) = pair.destinationOwner else { return false }
-                return canonicalizedPath(id) == canonicalizedPath(additionalFolderID)
-            }),
-            state.entryViewLayout.hierarchy.nodesByID[additionalFolderID]?.folder.coreFinished == true
-        {
-            discard(state: &state)
-            return
-        }
-        guard let transition = state.pendingIdentityTransition,
-              case let .folder(expectedID, expectedGeneration) = transition.projectionOwner
-        else { return }
-        guard ownerIsCurrent(transition.projectionOwner, state: state) else {
-            discard(state: &state)
+        if resolveAdditionalDestinationTerminal(on: action, state: &state) {
             return
         }
         guard case let .entryViewLayout(.hierarchy(.folderChildrenResponse(
             _, folderID, folderGeneration, response,
         ))) = action,
-            canonicalizedPath(folderID) == canonicalizedPath(expectedID),
-            folderGeneration == expectedGeneration,
-            let node = state.entryViewLayout.hierarchy.nodesByID[folderID]
+            let transition = state.pendingIdentityTransition,
+            case let .folder(expectedID, expectedGeneration) = transition.projectionOwner
+        else { return }
+        guard ownerIsCurrent(transition.projectionOwner, state: state) else {
+            discard(state: &state)
+            return
+        }
+        guard canonicalizedPath(folderID) == canonicalizedPath(expectedID),
+              folderGeneration == expectedGeneration,
+              let node = state.entryViewLayout.hierarchy.nodesByID[folderID]
         else { return }
         switch response {
         case .event(.coreFinished):
@@ -241,9 +252,89 @@ extension FileManagerContentIdentityTransitionCoordinator {
             discard(state: &state)
         case .failed:
             guard case .failed = node.loadPhase else { return }
+            guard !hasPendingDestinationPairs(state) else { return }
             discard(state: &state)
         case .event(.coreBatch), .event(.metadataPatches):
             break
+        }
+    }
+
+    /// additional destination의 성공·실패 terminal을 pair 상태에 반영한다.
+    private static func resolveAdditionalDestinationTerminal(
+        on action: FileManagerContentAction,
+        state: inout FileManagerContentState,
+    ) -> Bool {
+        guard case let .entryViewLayout(.hierarchy(.folderChildrenResponse(
+            rootContextGeneration, folderID, folderGeneration, response,
+        ))) = action,
+            rootContextGeneration == state.entryViewLayout.hierarchy.rootContextGeneration,
+            var transition = state.pendingIdentityTransition,
+            transition.additionalMoves.contains(where: { pair in
+                guard case let .folder(id, generation) = pair.destinationOwner else { return false }
+                return standardizedPath(id) == standardizedPath(folderID)
+                    && generation == folderGeneration
+            }),
+            let node = state.entryViewLayout.hierarchy.nodesByID[folderID],
+            node.generation == folderGeneration
+        else { return false }
+        let isTerminal = switch response {
+        case .event(.coreFinished):
+            node.folder.coreFinished
+        case .failed:
+            if case .failed = node.loadPhase { true } else { false }
+        case .event(.coreBatch), .event(.metadataPatches), .streamCompleted:
+            false
+        }
+        guard isTerminal else { return false }
+        markDestinationPairsResolved(
+            folderID: folderID,
+            folderGeneration: folderGeneration,
+            transition: &transition,
+        )
+        state.pendingIdentityTransition = transition
+        if transition.primaryMigrated || primaryOwnerIsTerminal(transition, state: state),
+           !hasPendingDestinationPairs(state)
+        {
+            discard(state: &state)
+        }
+        return true
+    }
+
+    /// reducer 적용 후 primary owner가 성공·실패 terminal에 도달했는지 판정한다.
+    private static func primaryOwnerIsTerminal(
+        _ transition: FileManagerContentState.EntryIdentityTransition,
+        state: FileManagerContentState,
+    ) -> Bool {
+        switch transition.projectionOwner {
+        case .root:
+            return state.entryViewLayout.entryOperations.loadingContext.streamTerminal
+        case let .folder(id, generation):
+            guard let node = state.entryViewLayout.hierarchy.nodesByID[id],
+                  node.generation == generation
+            else { return false }
+            if node.folder.coreFinished || node.loadPhase == .loaded {
+                return true
+            }
+            if case .failed = node.loadPhase {
+                return true
+            }
+            return false
+        }
+    }
+
+    /// destination 폴더에 속한 미해소 pair들을 해소 처리한다.
+    private static func markDestinationPairsResolved(
+        folderID: EntryModel.ID,
+        folderGeneration: Int,
+        transition: inout FileManagerContentState.EntryIdentityTransition,
+    ) {
+        for index in transition.additionalMoves.indices {
+            guard case let .folder(id, generation) = transition.additionalMoves[index].destinationOwner,
+                  standardizedPath(id) == standardizedPath(folderID),
+                  generation == folderGeneration,
+                  !transition.additionalMoves[index].migrated
+            else { continue }
+            transition.additionalMoves[index].migrated = true
         }
     }
 

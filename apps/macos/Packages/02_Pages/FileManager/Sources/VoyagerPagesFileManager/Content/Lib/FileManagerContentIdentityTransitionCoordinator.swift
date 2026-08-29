@@ -90,6 +90,7 @@ enum FileManagerContentIdentityTransitionCoordinator {
             beforeLexicalPath: move.rawBefore,
             additionalMoves: additionalMoves,
         )
+        prepareSourceProjectionHolds(state: &state)
         return .none
     }
 
@@ -244,6 +245,11 @@ enum FileManagerContentIdentityTransitionCoordinator {
         }
         transition.projectionOwner = rebased(transition.projectionOwner)
         transition.preservationOwner = transition.preservationOwner.map(rebased)
+        for index in transition.additionalMoves.indices {
+            transition.additionalMoves[index].sourceOwner = transition.additionalMoves[index].sourceOwner.map(rebased)
+            transition.additionalMoves[index].destinationOwner = transition.additionalMoves[index].destinationOwner
+                .map(rebased)
+        }
         state.pendingIdentityTransition = transition
     }
 
@@ -265,7 +271,6 @@ enum FileManagerContentIdentityTransitionCoordinator {
     }
 
     static func discard(state: inout FileManagerContentState) {
-        print("DBG discard from:", Thread.callStackSymbols[1 ... 2].joined(separator: " | "))
         state.pendingIdentityTransition = nil
         // 취소된 전이의 folder staging은 버리지 않는다: staging 누적 동안 이미 증가한
         // batch cursor와 children 불일치가 남아 같은 세대 후속 batch가 어긋난다.
@@ -284,6 +289,32 @@ enum FileManagerContentIdentityTransitionCoordinator {
 
     static func canonicalizedPath(_ path: String) -> String {
         URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath().path
+    }
+
+    /// record 완료 시점의 hierarchy snapshot으로 source folder hold를 미리 설치한다.
+    /// coreBatch 없이 coreFinished가 먼저 와도 child reducer 전에 retained projection을 보존한다.
+    private static func prepareSourceProjectionHolds(state: inout FileManagerContentState) {
+        guard let transition = state.pendingIdentityTransition else { return }
+        var preparedFolderIDs = Set<EntryModel.ID>()
+        if case let .folder(id, _) = transition.preservationOwner {
+            preparedFolderIDs.insert(id)
+            state.entryViewLayout.hierarchy.beginDeferredFolderReplacement(
+                folderID: id,
+                untilEntryID: afterLexicalPath(transition),
+                holdsUntilMigration: true,
+            )
+        }
+        for move in transition.additionalMoves where !move.migrated {
+            guard case let .folder(id, _) = move.sourceOwner ?? transition.projectionOwner,
+                  preparedFolderIDs.insert(id).inserted
+            else { continue }
+            let afterIdentity = move.afterLexicalPath.isEmpty ? move.afterPath : move.afterLexicalPath
+            state.entryViewLayout.hierarchy.beginDeferredFolderReplacement(
+                folderID: id,
+                untilEntryID: afterIdentity,
+                holdsUntilMigration: true,
+            )
+        }
     }
 
     /// 자체 destination owner가 이번 batch 소유자와 일치하는 additional pair를 migration한다.
@@ -356,17 +387,26 @@ enum FileManagerContentIdentityTransitionCoordinator {
         transition: FileManagerContentState.EntryIdentityTransition,
         state: inout FileManagerContentState,
     ) {
-        let unmigratedSourceFolderIDs = Set(transition.additionalMoves.compactMap { move -> EntryModel.ID? in
-            guard !move.migrated, case let .folder(id, _) = move.sourceOwner else { return nil }
+        func effectiveSourceFolderID(_ move: FileManagerContentState.EntryMovePair) -> EntryModel.ID? {
+            guard case let .folder(id, _) = move.sourceOwner ?? transition.projectionOwner else { return nil }
             return id
+        }
+        let unmigratedSourceFolderIDs = Set(transition.additionalMoves.compactMap { move in
+            move.migrated ? nil : effectiveSourceFolderID(move)
         })
+        var sourceFolderIDsToCommit = Set<EntryModel.ID>()
         if case let .folder(preservationID, _) = transition.preservationOwner,
            !unmigratedSourceFolderIDs.contains(preservationID)
         {
-            commitPreservationStaging(preservationID, state: &state)
+            sourceFolderIDsToCommit.insert(preservationID)
         }
         for move in transition.additionalMoves where move.migrated {
-            guard case let .folder(sourceID, _) = move.sourceOwner else { continue }
+            guard let sourceID = effectiveSourceFolderID(move),
+                  !unmigratedSourceFolderIDs.contains(sourceID)
+            else { continue }
+            sourceFolderIDsToCommit.insert(sourceID)
+        }
+        for sourceID in sourceFolderIDsToCommit {
             commitPreservationStaging(sourceID, state: &state)
         }
     }
@@ -402,8 +442,9 @@ enum FileManagerContentIdentityTransitionCoordinator {
         switch (owner, batchOwner) {
         case (.root, .root):
             true
-        case let (.folder(id, _), .folder(batchID, _)):
-            canonicalizedPath(id) == canonicalizedPath(batchID)
+        case let (.folder(id, generation), .folder(batchID, batchGeneration)):
+            standardizedPath(id) == standardizedPath(batchID)
+                && generation == batchGeneration
         default:
             false
         }

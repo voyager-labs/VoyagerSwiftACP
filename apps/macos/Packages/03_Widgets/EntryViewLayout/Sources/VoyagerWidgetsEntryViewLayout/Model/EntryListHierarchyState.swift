@@ -67,7 +67,7 @@ public struct FolderNodeState: Equatable, Sendable {
 }
 
 public struct DeferredFolderReplacement: Equatable, Sendable {
-    public let untilEntryID: EntryModel.ID
+    public var untilEntryID: EntryModel.ID
     public var stagedChildren: [EntryModel]
     /// 보존(preservation) 소유자 폴더처럼 migration 완료까지 staging을 보류해야 하는지 여부.
     /// true면 해당 폴더의 coreFinished가 terminal만 기록하고 retained children과 staging을 유지하며,
@@ -135,12 +135,34 @@ public struct EntryListHierarchyState: Equatable, Sendable {
         )
     }
 
+    /// 기존 deferred replacement의 untilEntryID를 갱신하거나, 없으면 생성한다.
+    /// 다중 이동에서 동일 destination을 공유하는 pair들의 after 도착 진행에 따라
+    /// combine 시점을 조정하는 데 사용한다.
+    public mutating func upsertDeferredFolderReplacement(
+        folderID: EntryModel.ID,
+        untilEntryID: EntryModel.ID,
+    ) {
+        if deferredFolderReplacements[folderID] != nil {
+            deferredFolderReplacements[folderID]?.untilEntryID = untilEntryID
+        } else {
+            beginDeferredFolderReplacement(folderID: folderID, untilEntryID: untilEntryID)
+        }
+    }
+
     public mutating func takeDeferredFolderReplacement(folderID: EntryModel.ID) -> [EntryModel]? {
         deferredFolderReplacements.removeValue(forKey: folderID)?.stagedChildren
     }
 
     public mutating func discardDeferredFolderReplacement(folderID: EntryModel.ID) {
-        deferredFolderReplacements.removeValue(forKey: folderID)
+        guard let replacement = deferredFolderReplacements[folderID] else { return }
+        guard replacement.holdsUntilMigration else {
+            deferredFolderReplacements.removeValue(forKey: folderID)
+            return
+        }
+        deferredFolderReplacements[folderID] = .init(
+            untilEntryID: replacement.untilEntryID,
+            holdsUntilMigration: true,
+        )
     }
 
     public func deferredFolderReplacement(folderID: EntryModel.ID) -> DeferredFolderReplacement? {
