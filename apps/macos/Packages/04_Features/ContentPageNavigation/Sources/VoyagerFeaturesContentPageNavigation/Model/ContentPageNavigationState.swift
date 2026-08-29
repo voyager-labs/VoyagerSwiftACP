@@ -88,6 +88,13 @@ public struct ContentPageNavigationState: Equatable {
         trimHistory()
     }
 
+    public mutating func applyPinnedPeerNavigationState(_ target: ContentPageNavigationRoute) {
+        guard navigationState != target else { return }
+        appendBackHistory(makeContentPageNavigationHistorySnapshot())
+        forwardHistory.removeAll()
+        navigationState = target
+    }
+
     public mutating func trimHistory() {
         if backHistory.count > 10 {
             backHistory.removeFirst(backHistory.count - 10)
