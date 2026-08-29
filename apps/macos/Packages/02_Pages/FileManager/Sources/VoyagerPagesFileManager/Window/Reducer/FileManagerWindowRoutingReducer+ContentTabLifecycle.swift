@@ -603,9 +603,9 @@ extension FileManagerWindowRoutingReducer {
         switch choice {
         case .cancel:
             guard let operationID = pendingClose.batchOperationID else {
-                clearProductContentTabCloseMetric(for: pendingClose.tabID, state: &state)
-                state.pendingContentTabClose = nil
-                return .none
+                return finishSingleContentTabCloseWithoutClosing(
+                    tabID: pendingClose.tabID, result: .cancelled, state: &state,
+                )
             }
             return .send(.selectedContentTabCloseItemCompleted(
                 operationID: operationID,
@@ -620,9 +620,11 @@ extension FileManagerWindowRoutingReducer {
             stagePendingTargetContentIfNeeded(pendingClose, state: &state)
             guard canStartPendingContentSave(state.content) else {
                 restorePreviousActiveContentIfNeeded(pendingClose, state: &state)
-                clearProductContentTabCloseMetric(for: pendingClose.tabID, state: &state)
-                state.pendingContentTabClose = nil
-                guard let operationID = pendingClose.batchOperationID else { return .none }
+                guard let operationID = pendingClose.batchOperationID else {
+                    return finishSingleContentTabCloseWithoutClosing(
+                        tabID: pendingClose.tabID, result: .failure, state: &state,
+                    )
+                }
                 return .send(.selectedContentTabCloseItemCompleted(
                     operationID: operationID,
                     tabID: pendingClose.tabID,
@@ -723,7 +725,16 @@ extension FileManagerWindowRoutingReducer {
         guard let pendingClose = state.pendingContentTabClose else { return .none }
         restorePreviousActiveContentIfNeeded(pendingClose, state: &state)
         guard let operationID = pendingClose.batchOperationID else {
-            clearProductContentTabCloseMetric(for: pendingClose.tabID, state: &state)
+            let result: ContentTabActionResult = switch outcome {
+            case .cancelled: .cancelled
+            case .failed: .failure
+            case .removed, .unpinned, .missing: .success
+            }
+            recordProductContentTabCloseMetric(
+                for: pendingClose.tabID,
+                result: result,
+                state: &state,
+            )
             state.pendingContentTabClose = nil
             return .none
         }
@@ -732,14 +743,6 @@ extension FileManagerWindowRoutingReducer {
             tabID: pendingClose.tabID,
             outcome: outcome,
         ))
-    }
-
-    private func clearProductContentTabCloseMetric(
-        for tabID: ContentTabID,
-        state: inout State,
-    ) {
-        guard state.productContentTabCloseMetric?.tabID == tabID else { return }
-        state.productContentTabCloseMetric = nil
     }
 
     func canStartPendingContentSave(_ content: FileManagerContentFeature.State) -> Bool {

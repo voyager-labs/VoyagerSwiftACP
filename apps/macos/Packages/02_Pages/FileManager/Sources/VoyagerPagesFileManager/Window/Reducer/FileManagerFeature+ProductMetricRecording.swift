@@ -1,6 +1,35 @@
 import ComposableArchitecture
 import Foundation
 
+extension FileManagerWindowRoutingReducer {
+    func finishSingleContentTabCloseWithoutClosing(
+        tabID: ContentTabID,
+        result: ContentTabActionResult,
+        state: inout State,
+    ) -> Effect<Action> {
+        recordProductContentTabCloseMetric(for: tabID, result: result, state: &state)
+        state.pendingContentTabClose = nil
+        return .none
+    }
+
+    func recordProductContentTabCloseMetric(
+        for tabID: ContentTabID,
+        result: ContentTabActionResult,
+        state: inout State,
+    ) {
+        guard let metric = state.productContentTabCloseMetric,
+              metric.tabID == tabID
+        else { return }
+        state.productContentTabCloseMetric = nil
+        productMetricsClient.record(FileManagerProductMetricsProducer.contentTabTerminal(
+            operationID: metric.context.operationID,
+            identity: .closeContentTab,
+            source: metric.context.source,
+            result: result,
+        ))
+    }
+}
+
 /// direct pin/unpin 터미널 메트릭 기록을 담당하는 FileManagerFeature 확장.
 extension FileManagerFeature {
     func clearProductContentTabCloseMetricIfFailed(
@@ -9,10 +38,25 @@ extension FileManagerFeature {
         state: inout State,
     ) {
         guard case let .close(tabID) = intent,
-              case .failed = terminal,
-              state.productContentTabCloseMetric?.tabID == tabID
+              let metric = state.productContentTabCloseMetric,
+              metric.tabID == tabID,
+              case let .failed(failure) = terminal
         else { return }
+        let result: ContentTabActionResult = switch failure {
+        case .cancelled:
+            .cancelled
+        case .storeUnavailable:
+            .unavailable
+        case .save, .superseded:
+            .failure
+        }
         state.productContentTabCloseMetric = nil
+        productMetricsClient.record(FileManagerProductMetricsProducer.contentTabTerminal(
+            operationID: metric.context.operationID,
+            identity: .closeContentTab,
+            source: metric.context.source,
+            result: result,
+        ))
     }
 
     func captureDirectContentTabCloseMetric(

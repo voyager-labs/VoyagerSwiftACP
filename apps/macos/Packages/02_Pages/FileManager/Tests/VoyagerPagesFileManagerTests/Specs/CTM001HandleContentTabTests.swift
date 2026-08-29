@@ -6058,9 +6058,9 @@ final class CTM001HandleContentTabTests: XCTestCase {
         ])
     }
 
-    /// CTM-001-content_tab_action_metrics: dirty close cancel은 메트릭 없이 context를 지우고 다음 close를 오염시키지 않는다.
-    /// 취소된 contextMenu 요청 뒤 direct reducer close가 독립 contentTabBar operation으로 기록되는지 검증한다.
-    /// - 검증 내용: cancel 후 metric 0건/context nil, 다음 direct close의 contentTabBar terminal 1건
+    /// CTM-001-content_tab_action_metrics: dirty close cancel은 cancelled terminal 메트릭 한 건을 기록한다.
+    /// 취소된 contextMenu 요청이 원래 operation ID/source를 보존하고 다음 close와 분리되는지 검증한다.
+    /// - 검증 내용: cancel 후 cancelled metric 1건/context nil, 다음 direct close의 contentTabBar terminal 1건
     /// - 사전 조건: dirty Collection active tab, Home sibling, cancel alert response
     /// - 기대 결과: dirty tab 유지, sibling 제거, 다음 operation만 contentTabBar source로 기록됨
     func testDirtyCloseCancelClearsContextBeforeNextDirectClose() async {
@@ -6088,11 +6088,24 @@ final class CTM001HandleContentTabTests: XCTestCase {
         XCTAssertNotNil(store.state.contentTabs.tabs[id: fixture.dirtyID])
         XCTAssertNil(store.state.pendingContentTabClose)
         XCTAssertNil(store.state.productContentTabCloseMetric)
-        XCTAssertTrue(recorder.metrics().isEmpty)
+        XCTAssertEqual(recorder.metrics(), [
+            .contentTabAction(
+                result: .cancelled,
+                identity: .closeContentTab,
+                source: .contextMenu,
+                operationID: cancelledID,
+            ),
+        ])
 
         await store.send(.contentTabs(.close(fixture.otherID)))
 
         XCTAssertEqual(recorder.metrics(), [
+            .contentTabAction(
+                result: .cancelled,
+                identity: .closeContentTab,
+                source: .contextMenu,
+                operationID: cancelledID,
+            ),
             .contentTabAction(
                 result: .success,
                 identity: .closeContentTab,
@@ -6100,6 +6113,159 @@ final class CTM001HandleContentTabTests: XCTestCase {
                 operationID: nextID,
             ),
         ])
+    }
+
+    /// CTM-001-content_tab_action_metrics: save를 시작할 수 없으면 failure terminal 메트릭 한 건을 기록한다.
+    /// Save gate가 거절한 단일 close가 accepted correlation을 소비하는지 검증한다.
+    /// - 검증 내용: `.save` 거절 후 failure/close/source/operation ID metric 1건과 correlation nil
+    /// - 사전 조건: dirty Collection close pending 상태와 이미 saving 중인 content
+    /// - 기대 결과: 탭은 유지되고 failure metric이 정확히 한 번 기록됨
+    func testDirtyCloseSaveCannotStartEmitsSingleFailureMetric() async {
+        let fixture = makeDirtyMetricCloseState()
+        let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 5))
+        var state = fixture.state
+        state.content.collection.isSaving = true
+        state.pendingContentTabClose = PendingContentTabClose(
+            tabID: fixture.dirtyID,
+            actionSource: .contextMenu,
+            metricOperationID: operationID,
+        )
+        state.productContentTabCloseMetric = ProductContentTabCloseMetric(
+            tabID: fixture.dirtyID,
+            context: ProductContentTabActionMetricContext(
+                operationID: operationID,
+                source: .contextMenu,
+            ),
+        )
+        let recorder = FileManagerProductMetricRecorder()
+        let store = TestStore(initialState: state) { FileManagerWindowRoutingReducer() } withDependencies: {
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: save gate와 terminal metric correlation만 검증함
+        store.exhaustivity = .off
+
+        await store.send(.contentTabCloseAlertResponse(.save))
+
+        XCTAssertNil(store.state.pendingContentTabClose)
+        XCTAssertNil(store.state.productContentTabCloseMetric)
+        XCTAssertEqual(recorder.metrics(), [
+            .contentTabAction(
+                result: .failure,
+                identity: .closeContentTab,
+                source: .contextMenu,
+                operationID: operationID,
+            ),
+        ])
+    }
+
+    /// CTM-001-content_tab_action_metrics: save failure terminal은 failure 메트릭 한 건만 기록한다.
+    /// Save 완료 실패와 feedback이 함께 도착한 뒤 correlation 소비 순서를 검증한다.
+    /// - 검증 내용: save failure terminal의 failure metric, pending/correlation 제거, late feedback 무시
+    /// - 사전 조건: active dirty Collection close pending 상태
+    /// - 기대 결과: 원래 contextMenu operation ID의 failure metric 1건
+    func testDirtyCloseSaveFailureEmitsSingleFailureMetricAndRejectsLateFeedback() {
+        let fixture = makeDirtyMetricCloseState()
+        let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 6))
+        var state = fixture.state
+        state.pendingContentTabClose = PendingContentTabClose(
+            tabID: fixture.dirtyID,
+            actionSource: .contextMenu,
+            metricOperationID: operationID,
+        )
+        state.productContentTabCloseMetric = ProductContentTabCloseMetric(
+            tabID: fixture.dirtyID,
+            context: ProductContentTabActionMetricContext(
+                operationID: operationID,
+                source: .contextMenu,
+            ),
+        )
+        let recorder = FileManagerProductMetricRecorder()
+        let reducer = FileManagerWindowRoutingReducer()
+        withDependencies {
+            $0.fileManagerProductMetricsClient = recorder.client
+        } operation: {
+            _ = reducer.finishPendingContentTabCloseWithoutClosing(outcome: .failed, state: &state)
+            XCTAssertNil(state.pendingContentTabClose)
+            XCTAssertNil(state.productContentTabCloseMetric)
+            XCTAssertEqual(recorder.metrics(), [
+                .contentTabAction(
+                    result: .failure,
+                    identity: .closeContentTab,
+                    source: .contextMenu,
+                    operationID: operationID,
+                ),
+            ])
+            _ = reducer.finishPendingContentTabCloseWithoutClosing(outcome: .failed, state: &state)
+            XCTAssertEqual(recorder.metrics().count, 1)
+        }
+    }
+
+    /// CTM-001-content_tab_action_metrics: pinned close terminal은 save/storeUnavailable/cancelled를 정규 결과로 매핑한다.
+    /// 일치 terminal만 correlation을 소비하고 stale 및 duplicate terminal은 보존하는지 검증한다.
+    /// - 검증 내용: failure, unavailable, cancelled 각각의 identity/source/operation ID와 exactly-once 소비
+    /// - 사전 조건: close intent와 탭별 product close correlation
+    /// - 기대 결과: 일치 terminal 3건 기록, stale terminal correlation 유지, duplicate terminal no-op
+    func testPinnedCloseTerminalMetricsConsumeMatchingCorrelationExactlyOnce() {
+        let tabID = ContentTabID(rawValue: "metric-pinned-close")
+        let staleTabID = ContentTabID(rawValue: "metric-pinned-close-stale")
+        let terminals: [(FileManagerTopNavigationIntentFailure, ContentTabActionResult)] = [
+            (.save, .failure),
+            (.storeUnavailable(.corrupt), .unavailable),
+            (.cancelled, .cancelled),
+        ]
+        let recorder = FileManagerProductMetricRecorder()
+        let feature = FileManagerFeature()
+        var state = FileManagerFeature.State()
+
+        withDependencies {
+            $0.fileManagerProductMetricsClient = recorder.client
+        } operation: {
+            for (index, (failure, result)) in terminals.enumerated() {
+                let operationID = UUID(uuid: (
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, UInt8(index + 7),
+                ))
+                state.productContentTabCloseMetric = ProductContentTabCloseMetric(
+                    tabID: tabID,
+                    context: ProductContentTabActionMetricContext(
+                        operationID: operationID,
+                        source: .menuCommand,
+                    ),
+                )
+                feature.clearProductContentTabCloseMetricIfFailed(
+                    intent: .close(tabID),
+                    terminal: .failed(failure),
+                    state: &state,
+                )
+                XCTAssertNil(state.productContentTabCloseMetric)
+                XCTAssertEqual(recorder.metrics().last, .contentTabAction(
+                    result: result,
+                    identity: .closeContentTab,
+                    source: .menuCommand,
+                    operationID: operationID,
+                ))
+                feature.clearProductContentTabCloseMetricIfFailed(
+                    intent: .close(tabID),
+                    terminal: .failed(failure),
+                    state: &state,
+                )
+            }
+
+            let staleOperationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 10))
+            state.productContentTabCloseMetric = ProductContentTabCloseMetric(
+                tabID: tabID,
+                context: ProductContentTabActionMetricContext(
+                    operationID: staleOperationID,
+                    source: .toolbar,
+                ),
+            )
+            feature.clearProductContentTabCloseMetricIfFailed(
+                intent: .close(staleTabID),
+                terminal: .failed(.save),
+                state: &state,
+            )
+            XCTAssertNotNil(state.productContentTabCloseMetric)
+            XCTAssertEqual(recorder.metrics().count, terminals.count)
+        }
     }
 
     /// CTM-001-content_tab_action_metrics: dirty close save 선택은 pending context를 terminal 전까지 보존한다.
