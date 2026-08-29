@@ -11473,6 +11473,133 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await store.finish()
     }
 
+    /// request-bearing activation 대상 제거는 replacement apply 전에 sibling pinned Collection 복귀를 취소한다.
+    /// - 검증 내용: 실제 pending URL과 일치하는 sibling cancel action이 replacement apply보다 먼저 처리됨
+    /// - 사전 조건: 같은 window에서 inactive pinned 복귀가 먼저 계획되고 active pinned Collection 복귀가 pending임
+    /// - 기대 결과: 제거 창을 제외한 미정착 복귀가 취소되고 staleReplanCount 1 replacement plan이 적용됨
+    func testPlacementTargetRemovalCancelsUnsettledSiblingPinnedReturnBeforeReplan() async throws {
+        let fixture = Self.makePinnedCollectionActivationFixture(pendingOpen: true)
+        let pinnedWindowID = fixture.plan.windows[0].windowID
+        let pinnedRequestItem = try XCTUnwrap(fixture.plan.request?.items.first)
+        let inactiveTabID = ContentTabID(rawValue: "removal-cancel-inactive-pinned")
+        let inactiveItemID = UUID()
+        let inactiveRuntimeAnchor = ContentTabPageAnchor.collectionFile(
+            url: URL(fileURLWithPath: "/tmp/removal-cancel-inactive-runtime.voycoll"),
+        )
+        let inactiveDurableAnchor = ContentTabPageAnchor.collectionFile(
+            url: URL(fileURLWithPath: "/tmp/removal-cancel-inactive-durable.voycoll"),
+        )
+        let targetWindowID = UUID()
+        let targetTabID = ContentTabID(rawValue: "removal-cancel-target")
+        let targetItemID = UUID()
+        let targetRoute = ContentTabPageAnchor.directory(path: "/tmp/removal-cancel-target")
+        let request = ExternalOpenPlacementRequest(
+            batchID: fixture.plan.batchID,
+            items: [
+                .init(itemID: targetItemID, anchor: targetRoute, pendingSelectEntryID: nil),
+                .init(itemID: inactiveItemID, anchor: inactiveDurableAnchor, pendingSelectEntryID: nil),
+                pinnedRequestItem,
+            ],
+            preferredWindowIDs: [],
+        )
+        let plan = ExternalOpenPlacementPlan(
+            batchID: fixture.plan.batchID,
+            windows: [
+                .init(
+                    windowID: targetWindowID,
+                    isNewWindow: false,
+                    items: [.init(
+                        itemID: targetItemID,
+                        tabID: targetTabID,
+                        anchor: targetRoute,
+                        requiresReservation: false,
+                    )],
+                ),
+                .init(
+                    windowID: pinnedWindowID,
+                    isNewWindow: false,
+                    items: [
+                        .init(
+                            itemID: inactiveItemID,
+                            tabID: inactiveTabID,
+                            anchor: inactiveDurableAnchor,
+                            requiresReservation: false,
+                            requiresPinnedAnchorReturn: true,
+                        ),
+                        fixture.plan.windows[0].items[0],
+                    ],
+                ),
+            ],
+            request: request,
+        )
+        var state = fixture.state
+        state.windows[id: pinnedWindowID]?.window.contentTabs.tabs.append(.init(
+            id: inactiveTabID,
+            page: .collection,
+            anchor: inactiveRuntimeAnchor,
+            isPinned: true,
+        ))
+        state.windows[id: pinnedWindowID]?.window.contentTabs.pinnedRecords[inactiveTabID] = .init(
+            id: inactiveTabID.rawValue,
+            page: .collection,
+            anchor: inactiveDurableAnchor,
+            title: "Inactive Durable Collection",
+            iconName: "rectangle.stack",
+            pinnedAt: Date(timeIntervalSince1970: 1_234_567_890),
+        )
+        state.windows.append(Self.makeRouteWindow(
+            id: targetWindowID,
+            tabs: [(targetTabID, targetRoute)],
+            activeTabID: targetTabID,
+        ))
+        state.externalOpenActivationAttempt = .init(
+            batchID: plan.batchID,
+            plan: plan,
+            windowID: targetWindowID,
+            excludedWindowIDs: [],
+        )
+        let store = TestStore(initialState: state) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.fileManagerWindowClient.activate = { _ in
+                XCTFail("request-bearing target 제거는 native activation 전에 stale 재계획해야 함")
+                return .becameKey
+            }
+            Self.configureAutoRegisteringWindowOpen(&$0.fileManagerWindowClient)
+        }
+        // store.exhaustivity = .off: replacement apply 이후 native window lifecycle은 기존 owner가 검증함.
+        store.exhaustivity = .off
+
+        await store.send(.event(.windowClosed(targetWindowID)))
+        await store.receive { action in
+            guard case let .windows(.element(
+                id: windowID,
+                action: .window(.cancelPendingPinnedCollectionReturn(tabID)),
+            )) = action
+            else { return false }
+            return windowID == pinnedWindowID && tabID == fixture.tabID
+        }
+        XCTAssertNil(store.state.windows[id: pinnedWindowID]?.window.pendingCollectionOpenRequest)
+        await store.receive { action in
+            guard case let .placement(.apply(replacementPlan, reservationsByItemID)) = action else {
+                return false
+            }
+            let targetItem = replacementPlan.orderedItems.first(where: {
+                $0.itemID == targetItemID
+            })
+            return replacementPlan.request?.staleReplanCount == 1
+                && replacementPlan.request?.pinnedFallbackCount == 0
+                && replacementPlan.orderedItems.map(\.itemID) == request.items.map(\.itemID)
+                && targetItem?.tabID != targetTabID
+                && targetItem?.requiresReservation == true
+                && reservationsByItemID[targetItemID] != nil
+        }
+        await store.skipReceivedActions()
+        await store.finish()
+    }
+
     /// .discarded로 제외된 request-bearing 계획 창이 제거되면 전체 배치를 stale 재계획한다.
     /// - 검증 내용: 제외 창 제거 뒤 replacement apply가 원래 item 순서와 route를 보존함
     /// - 사전 조건: 마지막 계획 창이 제외되고 다른 survivor가 activation 대상인 상태에서 제외 창이 제거됨

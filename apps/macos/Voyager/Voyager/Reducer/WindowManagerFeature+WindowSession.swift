@@ -405,6 +405,12 @@ extension WindowManagerFeature {
             )
         }
         if let request = attempt.plan.request {
+            let cancellationEffects = externalOpenPinnedReturnCancellationEffects(
+                attempt,
+                excludingWindowID: id,
+                excludingTabID: nil,
+                state: state,
+            )
             state.externalOpenActivationAttempt = nil
             state.externalOpenActivationBecameKey = false
             guard let retryRequest = request.retryRequest,
@@ -415,15 +421,19 @@ extension WindowManagerFeature {
                   )
             else {
                 state.authorizedExternalOpenBatchID = nil
-                return .send(.delegate(.externalOpenActivationFailed(
-                    batchID: attempt.batchID,
-                    failure: .recoveryExhausted,
-                )))
+                return .concatenate(cancellationEffects + [
+                    .send(.delegate(.externalOpenActivationFailed(
+                        batchID: attempt.batchID,
+                        failure: .recoveryExhausted,
+                    ))),
+                ])
             }
-            return .send(.placement(.apply(
-                plan: replacementPlan,
-                reservationsByItemID: replacementPlan.reservationsByItemID,
-            )))
+            return .concatenate(cancellationEffects + [
+                .send(.placement(.apply(
+                    plan: replacementPlan,
+                    reservationsByItemID: replacementPlan.reservationsByItemID,
+                ))),
+            ])
         }
         guard attempt.windowID == id else { return nil }
         return retryExternalOpenActivation(after: attempt, state: &state)

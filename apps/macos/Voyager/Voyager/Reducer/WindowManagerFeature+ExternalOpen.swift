@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesCollection
+import VoyagerFeaturesContentPageNavigation
 import VoyagerPagesFileManager
 import VoyagerShared
 import VoyagerWidgetsEntryViewLayout
@@ -238,8 +239,8 @@ extension WindowManagerFeature {
         else { return .none }
         let cancellationEffects = externalOpenPinnedReturnCancellationEffects(
             attempt,
-            failedWindowID: windowID,
-            failedTabID: tabID,
+            excludingWindowID: windowID,
+            excludingTabID: tabID,
             state: state,
         )
         state.externalOpenActivationAttempt = nil
@@ -296,26 +297,35 @@ extension WindowManagerFeature {
         return excludedTabIDs
     }
 
-    private func externalOpenPinnedReturnCancellationEffects(
+    func externalOpenPinnedReturnCancellationEffects(
         _ attempt: ExternalOpenActivationAttempt,
-        failedWindowID: State.WindowID,
-        failedTabID: ContentTabID,
+        excludingWindowID: State.WindowID,
+        excludingTabID: ContentTabID?,
         state: State,
     ) -> [Effect<Action>] {
         var windowIDs: Set<State.WindowID> = []
         var effects: [Effect<Action>] = []
         for window in attempt.plan.windows where !window.isNewWindow {
-            guard state.windows[id: window.windowID] != nil else { continue }
-            for item in window.items where item.requiresPinnedAnchorReturn {
-                guard !(window.windowID == failedWindowID && item.tabID == failedTabID),
-                      !attempt.settledPinnedReturnTabIDs.contains(item.tabID),
-                      windowIDs.insert(window.windowID).inserted
-                else { continue }
-                effects.append(.send(.windows(.element(
-                    id: window.windowID,
-                    action: .window(.cancelPendingPinnedCollectionReturn(item.tabID)),
-                ))))
-            }
+            guard let liveWindow = state.windows[id: window.windowID]?.window,
+                  let pendingRequest = liveWindow.pendingCollectionOpenRequest,
+                  let item = window.items.last(where: { item in
+                      guard item.requiresPinnedAnchorReturn,
+                            !attempt.settledPinnedReturnTabIDs.contains(item.tabID),
+                            case let .collectionFile(url) = item.anchor,
+                            url.standardizedFileURL == pendingRequest.url.standardizedFileURL
+                      else { return false }
+                      return true
+                  })
+            else { continue }
+            let isExcluded = window.windowID == excludingWindowID
+                && (excludingTabID == nil || item.tabID == excludingTabID)
+            guard !isExcluded,
+                  windowIDs.insert(window.windowID).inserted
+            else { continue }
+            effects.append(.send(.windows(.element(
+                id: window.windowID,
+                action: .window(.cancelPendingPinnedCollectionReturn(item.tabID)),
+            ))))
         }
         return effects
     }
