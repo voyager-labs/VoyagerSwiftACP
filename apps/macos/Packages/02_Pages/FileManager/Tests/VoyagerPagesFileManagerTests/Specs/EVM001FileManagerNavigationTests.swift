@@ -840,28 +840,61 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         }
     }
 
-    /// EVM-001-content_browsing_correlation: overlapping window navigations emit exactly one event
-    /// 겹치는 folder navigation에서 단말이 정확히 한 번만 기록되는지 검증.
-    /// - 검증 내용: A 로딩 대기 중 B로 재탐색하면 event 총 1회(선행 operation ID)
-    /// - 사전 조건: A 경로 로딩을 gate로 지연시킨 stub loader
-    /// - 기대 결과: event 1회, source sidebar
+    /// EVM-001-content_browsing_correlation: superseded navigation cannot consume the current correlation.
+    /// 서로 다른 A/B 탐색이 겹칠 때 B가 새 상관을 소유하고 A의 stale 단말은 무음인지 검증한다.
+    /// - 검증 내용: A/B의 ID·identity·source 구분, stale A 무이벤트, current B exactly-once
+    /// - 사전 조건: A back/content 로딩 중 B forward/sidebar 탐색을 수락한 응답 없는 loader
+    /// - 기대 결과: B의 operation ID와 metadata를 가진 success terminal 한 건만 기록됨
     func testOverlappingWindowNavigationsEmitExactlyOneEvent() async {
-        let gatedPath = "/tmp/voyager-evm001-gated-folder"
-        let nextPath = "/tmp/voyager-evm001-next-folder"
-        let entry = EntryModel.temporaryFolder(id: "/tmp/voyager-evm001-entry", name: "entry")
+        let currentPath = "/tmp/voyager-evm001-current-folder"
+        let pathA = "/tmp/voyager-evm001-folder-a"
+        let entryB = EntryModel.temporaryFolder(id: currentPath + "/entry-b", name: "entry-b")
+        var state = FileManagerFeature.State()
+        state.content.navigation.navigationState = .folder(currentPath)
+        state.content.navigation.backHistory = [
+            ContentPageNavigationHistorySnapshot(navigationState: .folder(pathA)),
+        ]
         let metrics = LockIsolated<[FileManagerProductMetric]>([])
-        let store = makeTypedBrowsingStore(metrics: metrics) {
+        let store = makeTypedBrowsingStore(metrics: metrics, initialState: state) {
             $0.entryLoadingClient.loadItems = Self.suspendedLoadItems
         }
 
-        await store.send(.navigation(.view(.navigateToPath(gatedPath))))
-        await store.send(.navigation(.view(.navigateToPath(nextPath))))
+        await store.send(.content(.internal(.requestNavigation(.view(.goBack)))))
+        await store.send(.navigation(.view(.goBack)))
+        await store.skipReceivedActions()
+        let generationA = store.state.content.entryViewLayout.entryOperations.loadingContext.generation
+        XCTAssertEqual(store.state.content.productBrowsingOperationID, Self.typedBrowsingOperationIDs[0])
+        XCTAssertEqual(store.state.content.productBrowsingIdentity, .back)
+        XCTAssertEqual(store.state.content.productBrowsingSource, .fileManagerContent)
+
+        await store.send(.navigation(.view(.goForward)))
+        await store.skipReceivedActions()
+        let generationB = store.state.content.entryViewLayout.entryOperations.loadingContext.generation
+        XCTAssertGreaterThan(generationB, generationA)
+        XCTAssertEqual(store.state.content.productBrowsingOperationID, Self.typedBrowsingOperationIDs[1])
+        XCTAssertEqual(store.state.content.productBrowsingIdentity, .forward)
+        XCTAssertEqual(store.state.content.productBrowsingSource, .fileManagerSidebar)
 
         await store.send(.content(.entryViewLayout(.entryOperations(.loading(
-            .itemsLoaded([entry]),
+            .streamFailed(generation: generationA),
+        )))))
+        XCTAssertTrue(metrics.value.isEmpty, "superseded A must not emit a synthetic terminal")
+        XCTAssertEqual(store.state.content.productBrowsingOperationID, Self.typedBrowsingOperationIDs[1])
+
+        await store.send(.content(.entryViewLayout(.entryOperations(.loading(
+            .streamEvent(EntryLoadingStreamEvent(
+                generation: generationB,
+                event: .coreBatch(items: [entryB], batchIndex: 0),
+            )),
         )))))
         await store.send(.content(.entryViewLayout(.entryOperations(.loading(
-            .itemsLoaded([entry]),
+            .streamEvent(EntryLoadingStreamEvent(
+                generation: generationB,
+                event: .coreFinished(batchCount: 1),
+            )),
+        )))))
+        await store.send(.content(.entryViewLayout(.entryOperations(.loading(
+            .streamFinished(generation: generationB),
         )))))
 
         XCTAssertEqual(
@@ -869,11 +902,11 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             [.contentBrowsing(
                 result: .success,
                 content: .folder,
-                identity: .direct,
+                identity: .forward,
                 source: .fileManagerSidebar,
-                operationID: Self.typedBrowsingOperationIDs[0],
+                operationID: Self.typedBrowsingOperationIDs[1],
             )],
-            "overlapping navigations must emit exactly one browsing event",
+            "only current B may emit exactly one browsing event",
         )
     }
 
@@ -1082,7 +1115,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             charactersIgnoringModifiers: nil,
         ))))
         await store.receive { action in
-            guard case let .entryViewLayout(.delegate(.startRename(item, text))) = action else {
+            guard case let .entryViewLayout(.delegate(.startRename(item, text, _))) = action else {
                 return false
             }
             return item == child && text == child.name

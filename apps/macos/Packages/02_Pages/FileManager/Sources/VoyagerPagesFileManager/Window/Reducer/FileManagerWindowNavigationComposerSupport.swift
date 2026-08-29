@@ -69,11 +69,9 @@ private func syncProductBrowsingCorrelation(
         state.content.productBrowsingContent = nil
         return .none
     }
-    if state.content.productBrowsingOperationID == nil {
-        state.content.productBrowsingOperationID = productMetricsClient.makeOperationID()
-        state.content.productBrowsingIdentity = identity
-        state.content.productBrowsingSource = source
-    }
+    state.content.productBrowsingOperationID = productMetricsClient.makeOperationID()
+    state.content.productBrowsingIdentity = identity
+    state.content.productBrowsingSource = source
     state.content.productBrowsingContent = content
     return .none
 }
