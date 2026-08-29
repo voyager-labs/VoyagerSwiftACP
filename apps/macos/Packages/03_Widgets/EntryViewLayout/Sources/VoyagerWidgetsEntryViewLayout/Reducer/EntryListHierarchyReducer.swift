@@ -222,6 +222,7 @@ struct EntryListHierarchyReducer {
                     state.hierarchy.deferredFolderReplacements[folderID] = nil
                     nodeState.folder.children = replacement.stagedChildren
                     nodeState.folder.hasAppliedContentBatch = true
+                    nodeState.folder.retainsPreviousGenerationChildren = false
                     state.hierarchy.nodesByID[folderID] = nodeState
                     return .none
                 }
@@ -239,6 +240,7 @@ struct EntryListHierarchyReducer {
                     }
                     nodeState.folder.children = replacement.stagedChildren
                     nodeState.folder.hasAppliedContentBatch = !replacement.stagedChildren.isEmpty
+                    nodeState.folder.retainsPreviousGenerationChildren = false
                     nodeState.folder.coreFinished = true
                     state.hierarchy.deferredFolderReplacements[folderID] = nil
                     state.hierarchy.nodesByID[folderID] = nodeState

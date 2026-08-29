@@ -186,6 +186,7 @@ public struct EntryListHierarchyState: Equatable, Sendable {
             if replacement.stagedChildren.isEmpty, !node.folder.coreFinished { continue }
             node.folder.children = replacement.stagedChildren
             node.folder.hasAppliedContentBatch = !replacement.stagedChildren.isEmpty
+            node.folder.retainsPreviousGenerationChildren = false
             nodesByID[folderID] = node
             if node.folder.coreFinished {
                 reconcileNodesAfterMigrationCommit(folderID: folderID)
