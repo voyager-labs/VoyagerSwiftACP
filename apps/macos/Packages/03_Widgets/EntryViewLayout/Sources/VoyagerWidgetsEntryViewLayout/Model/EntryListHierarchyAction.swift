@@ -17,6 +17,7 @@ public enum EntryListHierarchyAction: CasePathable, Sendable {
     case coarseHierarchyRefreshRequested
     case restartUnfinishedExpandedFolderLoads
     case rootSnapshotCompleted(rootContextGeneration: Int, rootFolders: [EntryModel])
+    case rootSnapshotReconciled(rootContextGeneration: Int, rootFolders: [EntryModel])
     case folderExpansionRequested(id: EntryModel.ID)
     case folderCollapseRequested(id: EntryModel.ID)
     case folderRetryRequested(id: EntryModel.ID)

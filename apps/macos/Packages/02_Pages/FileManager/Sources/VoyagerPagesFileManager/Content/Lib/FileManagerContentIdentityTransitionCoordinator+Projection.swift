@@ -106,6 +106,17 @@ extension FileManagerContentIdentityTransitionCoordinator {
         }
     }
 
+    static func hasPendingRootSourceMigration(_ state: FileManagerContentState) -> Bool {
+        guard let transition = state.pendingIdentityTransition else { return false }
+        if !transition.primaryMigrated, case .root = transition.preservationOwner {
+            return true
+        }
+        return transition.additionalMoves.contains { move in
+            guard !move.migrated, case .root = move.sourceOwner ?? transition.projectionOwner else { return false }
+            return true
+        }
+    }
+
     static func markReplacementSelection(
         on action: FileManagerContentAction,
         state: inout FileManagerContentState,

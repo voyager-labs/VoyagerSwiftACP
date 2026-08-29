@@ -107,6 +107,40 @@ struct EntryListHierarchyReducer {
                 }
                 return .merge(effects + renameEffects)
 
+            case let .rootSnapshotReconciled(rootContextGeneration, rootFolders):
+                guard rootContextGeneration == state.hierarchy.rootContextGeneration else { return .none }
+                let previousSelectedIds = state.selectedIds
+                let rootFolderIDs = Set(rootFolders.map(\.id))
+                let removedRootIDs = state.hierarchy.nodesByID.keys.filter { id in
+                    isImmediateRootFolder(id, rootPath: state.hierarchy.rootPath)
+                        && !rootFolderIDs.contains(id)
+                }
+                var idsToRemove = Set(removedRootIDs)
+                for id in removedRootIDs {
+                    let descendants = state.hierarchy.nodesByID.keys.filter {
+                        isDescendantViaParentID($0, of: id, in: state.hierarchy.nodesByID)
+                    }
+                    idsToRemove.formUnion(descendants)
+                }
+                for id in idsToRemove {
+                    state.hierarchy.nodesByID[id] = nil
+                }
+                for folder in rootFolders where state.hierarchy.nodesByID[folder.id] == nil {
+                    state.hierarchy.nodesByID[folder.id] = FolderNodeState()
+                }
+                state.reconcileSelectionWithVisibleEntries()
+                var effects: [Effect<Action>] = []
+                if let renamingID = state.entryOperations.renamingItemId,
+                   previousSelectedIds.contains(renamingID),
+                   !state.selectedIds.contains(renamingID)
+                {
+                    effects.append(.send(.delegate(.renameCanceled)))
+                }
+                if previousSelectedIds != state.selectedIds {
+                    effects.append(.send(.delegate(.selectionChanged)))
+                }
+                return .merge(effects)
+
             case .coarseHierarchyRefreshRequested:
                 return reloadFoldersForPresentationChange(state: &state)
 

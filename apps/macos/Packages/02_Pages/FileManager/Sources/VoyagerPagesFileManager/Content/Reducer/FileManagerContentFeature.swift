@@ -215,6 +215,16 @@ public struct FileManagerContentFeature {
                 collectionWindowID: state.entryViewLayout.entryOperations.windowID,
                 collectionLoadingCancellationOwnerID: state.entryViewLayout.entryOperations.loadingCancellationOwnerID,
             )
+            if case .internal(.commitRootCandidateAfterMigration) = action {
+                let rootFolders = arrangedEntries.filter(\.supportsListHierarchyExpansion)
+                return .concatenate(
+                    .send(.entryViewLayout(.view(.applyContentProjection(projection)))),
+                    .send(.entryViewLayout(.hierarchy(.rootSnapshotReconciled(
+                        rootContextGeneration: state.entryViewLayout.hierarchy.rootContextGeneration,
+                        rootFolders: rootFolders,
+                    )))),
+                )
+            }
             // hierarchy root가 설정된 경우에만 root completion을 전송한다.
             let isRootCompletion = FileManagerContentFeature.isRootCompletion(action, state: &state)
                 && !state.entryViewLayout.hierarchy.rootPath.isEmpty
@@ -369,6 +379,8 @@ public struct FileManagerContentFeature {
         _ action: Action,
         state: inout State,
     ) -> Effect<Action> {
+        let hadPendingRootSourceMigration = FileManagerContentIdentityTransitionCoordinator
+            .hasPendingRootSourceMigration(state)
         let entries: [EntryModel]
         let projectionOwner: FileManagerContentState.EntryIdentityTransitionProjectionOwner
         switch action {
@@ -387,6 +399,7 @@ public struct FileManagerContentFeature {
             // 커밋 전 selection migration은 화면의 before snapshot과 어긋나므로 terminal 커밋으로 미룬다.
             guard !state.entryViewLayout.entryOperations.loadingContext.isBufferingPreservedDirectoryReload
             else { return .none }
+            if state.pendingIdentityTransition != nil { return .none }
             entries = items
             projectionOwner = .root(generation: streamEvent.generation)
 
@@ -425,7 +438,15 @@ public struct FileManagerContentFeature {
         let additionalMigrated = state.pendingIdentityTransition?.additionalMoves
             .contains { $0.destinationOwner != nil && $0.migrated } == true
         guard identityMigrated || additionalMigrated else { return .none }
-        return .send(.entryViewLayout(.delegate(.selectionChanged)))
+        let releasedRootSource = hadPendingRootSourceMigration
+            && !FileManagerContentIdentityTransitionCoordinator.hasPendingRootSourceMigration(state)
+        guard releasedRootSource else {
+            return .send(.entryViewLayout(.delegate(.selectionChanged)))
+        }
+        return .concatenate(
+            .send(.entryViewLayout(.delegate(.selectionChanged))),
+            .send(.internal(.commitRootCandidateAfterMigration)),
+        )
     }
 
     private func resolveRootIdentityTransitionAfterEntryLayoutLoaded(
@@ -454,6 +475,41 @@ public struct FileManagerContentFeature {
         }
 
         switch action {
+        case let .entryViewLayout(.entryOperations(.loading(.streamEvent(streamEvent)))):
+            guard case let .coreBatch(items, batchIndex) = streamEvent.event,
+                  streamEvent.generation == generation,
+                  streamEvent.generation == state.entryViewLayout.entryOperations.loadingContext.generation,
+                  state.entryViewLayout.entryOperations.loadingContext.expectedCoreBatchIndex > batchIndex,
+                  !state.entryViewLayout.entryOperations.loadingContext.isBufferingPreservedDirectoryReload
+            else { return false }
+            let previousSelectedIDs = state.entryViewLayout.selectedIds
+            if transition.preserveSelectionForReplacementBatch,
+               let preservedBeforeID = transition.preservedLexicalBeforeID
+            {
+                state.entryViewLayout.selectedIds.insert(preservedBeforeID)
+            }
+            let primaryBefore = transition.beforeLexicalPath.isEmpty
+                ? transition.beforePath
+                : transition.beforeLexicalPath
+            let primaryAfter = FileManagerContentIdentityTransitionCoordinator.afterLexicalPath(transition)
+            if items.contains(where: {
+                FileManagerContentIdentityTransitionCoordinator.standardizedPath($0.id)
+                    == FileManagerContentIdentityTransitionCoordinator.standardizedPath(primaryAfter)
+            }),
+                !state.entryViewLayout.selectedIds.contains(where: {
+                    FileManagerContentIdentityTransitionCoordinator.standardizedPath($0)
+                        == FileManagerContentIdentityTransitionCoordinator.standardizedPath(primaryBefore)
+                })
+            {
+                state.entryViewLayout.selectedIds.insert(primaryBefore)
+            }
+            _ = FileManagerContentIdentityTransitionCoordinator.migrateSelection(
+                entries: items,
+                projectionOwner: .root(generation: streamEvent.generation),
+                state: &state,
+            )
+            return state.entryViewLayout.selectedIds != previousSelectedIDs
+
         case let .entryViewLayout(.entryOperations(.loading(.streamFinished(streamGeneration)))):
             guard streamGeneration == generation,
                   state.entryViewLayout.entryOperations.loadingContext.streamTerminal,
@@ -567,6 +623,7 @@ public struct FileManagerContentFeature {
              .entryViewLayout(.internal(.collectionAppendEvent)),
              .entryViewLayout(.internal(.removeCollectionPaths)),
              .externalFileSystemChanged,
+             .internal(.commitRootCandidateAfterMigration),
              .internal(.clearCollectionMode),
              .internal(.exitCollectionMode):
             return true
