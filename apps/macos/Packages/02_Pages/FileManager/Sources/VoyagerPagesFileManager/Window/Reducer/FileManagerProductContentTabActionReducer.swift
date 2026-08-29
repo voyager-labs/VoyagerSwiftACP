@@ -45,6 +45,34 @@ struct FileManagerProductContentTabActionReducer {
                       state.pendingSelectedContentTabClose == nil,
                       state.pendingSelectedContentTabPinMutation == nil
                 else { return .none }
+                switch contentTabAction {
+                case let .pin(tabID, placement):
+                    guard FileManagerFeature().requestTopNavigationPin(
+                        tabID: tabID,
+                        placement: placement,
+                        state: &state,
+                    ) else { return .none }
+                    state.productContentTabPinMutationMetrics[tabID] = ProductContentTabPinMutationMetric(
+                        operationID: productMetricsClient.makeOperationID(),
+                        identity: .pinContentTabs,
+                        source: source,
+                    )
+
+                case let .unpin(tabID, placement):
+                    guard FileManagerFeature().prepareTopNavigationUnpin(
+                        tabID: tabID,
+                        placement: placement,
+                        state: &state,
+                    ) else { return .none }
+                    state.productContentTabPinMutationMetrics[tabID] = ProductContentTabPinMutationMetric(
+                        operationID: productMetricsClient.makeOperationID(),
+                        identity: .unpinContentTabs,
+                        source: source,
+                    )
+
+                default:
+                    break
+                }
                 return FileManagerFeature().reduceContentTabAction(
                     contentTabAction,
                     state: &state,

@@ -125,10 +125,16 @@ extension FileManagerTopNavigationIntent {
 public struct ProductContentTabPinMutationMetric: Equatable, Sendable {
     public let operationID: UUID
     public let identity: ContentTabInteractionIdentity
+    public let source: ContentTabActionSource
 
-    public init(operationID: UUID, identity: ContentTabInteractionIdentity) {
+    public init(
+        operationID: UUID,
+        identity: ContentTabInteractionIdentity,
+        source: ContentTabActionSource,
+    ) {
         self.operationID = operationID
         self.identity = identity
+        self.source = source
     }
 }
 

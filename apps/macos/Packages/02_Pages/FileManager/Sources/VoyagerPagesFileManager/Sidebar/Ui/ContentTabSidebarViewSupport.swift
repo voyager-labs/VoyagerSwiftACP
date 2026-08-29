@@ -310,7 +310,7 @@ enum ContentTabSidebarTrailingCommand: Equatable {
     func viewAction(tabID: ContentTabID) -> FileManagerSidebarAction.View {
         switch self {
         case .unpin:
-            .unpinContentTab(tabID)
+            .unpinContentTabFromTrailingControl(tabID)
         case .close:
             .closeContentTab(tabID)
         }

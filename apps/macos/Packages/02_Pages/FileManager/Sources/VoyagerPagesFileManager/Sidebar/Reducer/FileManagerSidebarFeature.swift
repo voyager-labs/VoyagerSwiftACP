@@ -117,6 +117,9 @@ struct FileManagerSidebarContentTabPinRoutingReducer {
             case let .view(.unpinContentTab(id)):
                 .send(.delegate(.unpinContentTab(id)))
 
+            case let .view(.unpinContentTabFromTrailingControl(id)):
+                .send(.delegate(.unpinContentTabFromTrailingControl(id)))
+
             case let .view(.setSelectedContentTabsPinned(target)):
                 .send(.delegate(.setSelectedContentTabsPinned(target: target)))
 

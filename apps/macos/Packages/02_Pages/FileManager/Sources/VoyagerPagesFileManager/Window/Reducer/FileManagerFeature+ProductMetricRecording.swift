@@ -125,7 +125,7 @@ extension FileManagerFeature {
         productMetricsClient.record(FileManagerProductMetricsProducer.contentTabTerminal(
             operationID: correlation.operationID,
             identity: correlation.identity,
-            source: .contentTabBar,
+            source: correlation.source,
             result: result,
         ))
     }

@@ -43,6 +43,67 @@ extension CTM003ManagePinnedContentTabsTests {
         ))
     }
 
+    /// CTM-003-product_terminal_metrics: Sidebar context menu Pin은 terminal까지 원래 source를 보존한다.
+    /// 사용자가 Sidebar context menu에서 단일 Pin을 실행한 실제 경로의 source 상관을 검증한다.
+    /// - 검증 내용: Sidebar Pin 수락 correlation과 durable success terminal의 source
+    /// - 사전 조건: pin 가능한 unpinned Directory tab과 context-menu delegate action
+    /// - 기대 결과: `.success/.pin/.contextMenu` 메트릭 정확히 1건
+    func testSidebarContextMenuPinTerminalPreservesSource() async {
+        let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 50))
+        let recorder = FileManagerProductMetricRecorder(makeOperationID: { operationID })
+        let tabID = ContentTabID(rawValue: "sidebar-context-menu-pin-source")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: tabID,
+                    page: .directory,
+                    anchor: .directory(path: "/sidebar-context-menu-pin-source"),
+                    isPinned: false,
+                    title: nil,
+                    iconName: nil,
+                ),
+            ],
+            activeTabID: tabID,
+            recentlyClosed: nil,
+        )
+        state.syncContentTabSidebarItems()
+        let store = TestStore(initialState: state) {
+            CTM003FileManagerPersistenceHarness()
+        } withDependencies: {
+            $0.date = .constant(Self.pinnedAt)
+            $0.fileManagerProductMetricsClient = recorder.client
+            $0.fileManagerPinnedRecordOwner = .windowManager
+        }
+        // store.exhaustivity = .off: persistence delegate보다 source correlation terminal에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.sidebar(.delegate(.pinContentTab(tabID))))
+        await store.receive(\.contentTabs)
+        guard let intentID = PinnedRecordPersistenceIntent.latestIntentID(
+            scopeID: store.state.contentTabs.pinnedRecordPersistenceScopeID,
+            tabID: tabID,
+        ) else {
+            return XCTFail("accepted context-menu Pin must mark a persistence intent")
+        }
+        await store.send(.contentTabs(.pinnedRecordSaveSucceeded(
+            tabID: tabID,
+            context: ContentTabPinnedRecordTerminalContext(
+                intentID: intentID,
+                generation: ContentTabPinnedRecordMutationGeneration(tabID: tabID, value: UUID()),
+            ),
+        )))
+
+        XCTAssertEqual(recorder.metrics(), [
+            .contentTabAction(
+                result: .success,
+                identity: .pinContentTabs,
+                source: .contextMenu,
+                operationID: operationID,
+            ),
+        ])
+    }
+
     /// CTM-003-product_terminal_metrics: 같은 탭 pin→unpin 중첩에서 구 pin의 superseded 터미널이 먼저 도착해도
     /// false 이벤트가 없고 상관이 보존되어, 현재 unpin 성공 터미널이 `.unpin/.success`를 정확히 한 번 기록한다.
     /// - 검증 내용: 구 intent 터미널 무이벤트·상관 유지, 신규 intent 터미널 1건 기록, 상관 완전 소비
@@ -5645,6 +5706,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 tabID: ProductContentTabPinMutationMetric(
                     operationID: metricOperationID,
                     identity: .pinContentTabs,
+                    source: .contentTabBar,
                 ),
             ]
         }

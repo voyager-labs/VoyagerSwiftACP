@@ -189,13 +189,19 @@ extension FileManagerWindowRoutingReducer {
                 guard state.canPinContentTab(tabID) else {
                     return cannotPinCollectionFeedbackEffect()
                 }
-                return .send(.contentTabs(.pin(tabID)))
+                return .send(.contentTabActionRequested(.pin(tabID), source: .contextMenu))
 
             case let .sidebar(.delegate(.unpinContentTab(tabID))):
                 guard state.pendingSelectedContentTabPinMutation == nil,
                       state.contentTabRowInteractionSurface.isCloseEnabled
                 else { return .none }
-                return .send(.contentTabs(.unpin(tabID)))
+                return .send(.contentTabActionRequested(.unpin(tabID), source: .contextMenu))
+
+            case let .sidebar(.delegate(.unpinContentTabFromTrailingControl(tabID))):
+                guard state.pendingSelectedContentTabPinMutation == nil,
+                      state.contentTabRowInteractionSurface.isCloseEnabled
+                else { return .none }
+                return .send(.contentTabActionRequested(.unpin(tabID), source: .contentTabBar))
 
             case let .sidebar(.delegate(.setSelectedContentTabsPinned(target))):
                 return .send(.requestSelectedContentTabPinMutation(target: target))

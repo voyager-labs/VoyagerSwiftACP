@@ -6722,7 +6722,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         XCTAssertEqual(pinnedAction.systemName, "minus")
         XCTAssertEqual(ordinaryAction, .close)
         XCTAssertEqual(ordinaryAction.systemName, "xmark")
-        guard case let .unpinContentTab(pinnedTabID) = pinnedAction.viewAction(tabID: tabID) else {
+        guard case let .unpinContentTabFromTrailingControl(pinnedTabID) = pinnedAction.viewAction(tabID: tabID) else {
             return XCTFail("Pinned trailing action must preserve the tab and unpin it")
         }
         XCTAssertEqual(pinnedTabID, tabID)
@@ -6730,6 +6730,129 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             return XCTFail("Ordinary trailing action must close the tab")
         }
         XCTAssertEqual(ordinaryTabID, tabID)
+    }
+
+    /// CTM-004-sidebar_close_selected_content_tabs: Sidebar context-menu Pin은 source-bearing window action으로 라우팅된다.
+    /// context menu와 direct/trailing control이 terminal metric에서 구분 가능한 route를 갖는지 검증한다.
+    /// - 검증 내용: Sidebar Pin delegate에서 source `.contextMenu`를 포함한 단일 pin mutation request
+    /// - 사전 조건: pin 가능한 unpinned Directory tab
+    /// - 기대 결과: `.contentTabActionRequested(.pin, source: .contextMenu)` 한 건
+    func testSidebarContextMenuPinRoutesContextMenuSource() async {
+        let tabID = ContentTabID(rawValue: "sidebar-context-menu-pin-route")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: tabID,
+                    page: .directory,
+                    anchor: .directory(path: "/sidebar-context-menu-pin-route"),
+                    isPinned: false,
+                    title: nil,
+                    iconName: nil,
+                ),
+            ],
+            activeTabID: tabID,
+            recentlyClosed: nil,
+        )
+        let store = TestStore(initialState: state) {
+            FileManagerWindowRoutingReducer()
+        }
+
+        await store.send(.sidebar(.delegate(.pinContentTab(tabID))))
+        await store.receive { action in
+            guard case let .contentTabActionRequested(.pin(receivedTabID, placement), source) = action else {
+                return false
+            }
+            return receivedTabID == tabID && placement == nil && source == .contextMenu
+        }
+    }
+
+    /// CTM-004-sidebar_close_selected_content_tabs: Sidebar context-menu Unpin은 source-bearing window action으로 라우팅된다.
+    /// context menu Unpin이 trailing control과 같은 source-less delegate로 붕괴하지 않는지 검증한다.
+    /// - 검증 내용: Sidebar Unpin delegate에서 source `.contextMenu`를 포함한 단일 unpin mutation request
+    /// - 사전 조건: pinned Directory tab과 close 가능한 sibling tab
+    /// - 기대 결과: `.contentTabActionRequested(.unpin, source: .contextMenu)` 한 건
+    func testSidebarContextMenuUnpinRoutesContextMenuSource() async {
+        let tabID = ContentTabID(rawValue: "sidebar-context-menu-unpin-route")
+        let siblingID = ContentTabID(rawValue: "sidebar-context-menu-unpin-sibling")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: tabID,
+                    page: .directory,
+                    anchor: .directory(path: "/sidebar-context-menu-unpin-route"),
+                    isPinned: true,
+                    title: nil,
+                    iconName: nil,
+                ),
+                ContentTabItem(
+                    id: siblingID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+            ],
+            activeTabID: tabID,
+            recentlyClosed: nil,
+        )
+        let store = TestStore(initialState: state) {
+            FileManagerWindowRoutingReducer()
+        }
+
+        await store.send(.sidebar(.delegate(.unpinContentTab(tabID))))
+        await store.receive { action in
+            guard case let .contentTabActionRequested(.unpin(receivedTabID, placement), source) = action else {
+                return false
+            }
+            return receivedTabID == tabID && placement == nil && source == .contextMenu
+        }
+    }
+
+    /// CTM-004-sidebar_close_selected_content_tabs: Sidebar trailing Unpin은 content-tab-bar source로 라우팅된다.
+    /// pinned row의 직접 trailing control이 context menu source로 오분류되지 않는지 검증한다.
+    /// - 검증 내용: trailing Unpin delegate에서 source `.contentTabBar`를 포함한 단일 unpin mutation request
+    /// - 사전 조건: pinned Directory tab과 close 가능한 sibling tab
+    /// - 기대 결과: `.contentTabActionRequested(.unpin, source: .contentTabBar)` 한 건
+    func testSidebarTrailingUnpinRoutesContentTabBarSource() async {
+        let tabID = ContentTabID(rawValue: "sidebar-trailing-unpin-route")
+        let siblingID = ContentTabID(rawValue: "sidebar-trailing-unpin-sibling")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: tabID,
+                    page: .directory,
+                    anchor: .directory(path: "/sidebar-trailing-unpin-route"),
+                    isPinned: true,
+                    title: nil,
+                    iconName: nil,
+                ),
+                ContentTabItem(
+                    id: siblingID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+            ],
+            activeTabID: tabID,
+            recentlyClosed: nil,
+        )
+        let store = TestStore(initialState: state) {
+            FileManagerWindowRoutingReducer()
+        }
+
+        await store.send(.sidebar(.delegate(.unpinContentTabFromTrailingControl(tabID))))
+        await store.receive { action in
+            guard case let .contentTabActionRequested(.unpin(receivedTabID, placement), source) = action else {
+                return false
+            }
+            return receivedTabID == tabID && placement == nil && source == .contentTabBar
+        }
     }
 
     /// CTM-004-sidebar_close_selected_content_tabs: native trailing action은 hover 배경을 복원함
