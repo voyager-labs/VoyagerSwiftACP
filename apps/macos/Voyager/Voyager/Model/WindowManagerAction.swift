@@ -528,6 +528,7 @@ enum ExternalOpenPlacementApplication {
         let windows: IdentifiedArrayOf<WindowSessionFeature.State>
         let newWindowIDs: [WindowManagerState.WindowID]
         let existingWindowActivations: [ExistingWindowActivation]
+        let existingWindowPreconditions: [WindowManagerState.WindowID: FileManagerWindowFeature.State]
     }
 
     static func apply(
@@ -540,6 +541,7 @@ enum ExternalOpenPlacementApplication {
         var updatedWindows = state.windows
         var newWindowIDs: [WindowManagerState.WindowID] = []
         var existingWindowActivations: [ExistingWindowActivation] = []
+        var existingWindowPreconditions: [WindowManagerState.WindowID: FileManagerWindowFeature.State] = [:]
         for placementWindow in plan.windows {
             guard !state.closingWindowIDs.contains(placementWindow.windowID),
                   !state.pendingWindowOpenIDs.contains(placementWindow.windowID)
@@ -556,6 +558,8 @@ enum ExternalOpenPlacementApplication {
                 ) else { return nil }
                 newWindowIDs.append(placementWindow.windowID)
             } else {
+                guard let existingWindow = updatedWindows[id: placementWindow.windowID]?.window else { return nil }
+                existingWindowPreconditions[placementWindow.windowID] = existingWindow
                 guard let activation = updateExistingWindow(
                     placementWindow,
                     reservations: reservations,
@@ -568,6 +572,7 @@ enum ExternalOpenPlacementApplication {
             windows: updatedWindows,
             newWindowIDs: newWindowIDs,
             existingWindowActivations: existingWindowActivations,
+            existingWindowPreconditions: existingWindowPreconditions,
         )
     }
 
@@ -908,6 +913,12 @@ enum WindowManagerAction: CasePathable {
             plan: ExternalOpenPlacementPlan,
             reservationsByItemID: [UUID: ExternalContentTabReservation],
         )
+        case commit(
+            plan: ExternalOpenPlacementPlan,
+            application: ExternalOpenPlacementApplication.Result,
+            transactionID: UUID,
+        )
+        case registrationFailed(batchID: UUID, transactionID: UUID)
         case activate(ExternalOpenPlacementPlan)
         case cancel(batchID: UUID)
     }

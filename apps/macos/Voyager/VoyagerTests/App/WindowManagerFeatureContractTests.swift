@@ -12666,6 +12666,71 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await store.finish()
     }
 
+    /// FMW-003: registration terminal은 현재 transaction과 provisional window 생존을 모두 검증한다.
+    /// 같은 batch의 늦은 terminal이나 사라진 신규 창이 기존 창 projection을 오염시키지 않는 경계를 검증한다.
+    /// - 검증 내용: stale success·failure no-op, 신규 창 소실 시 typed failure와 기존 창 보존
+    /// - 사전 조건: 동일 batch의 현재 transaction과 과거 transaction이 공존하고 provisional 신규 창이 제거됨
+    /// - 기대 결과: 과거 terminal은 무시되고 현재 commit은 기존 창을 변경하지 않은 채 validation failure로 종료됨
+    func testPlacementRegistrationTerminalRequiresCurrentTransactionAndLiveProvisionalWindows() async {
+        let batchID = UUID()
+        let existingWindowID = UUID()
+        let newWindowID = UUID()
+        let currentTransactionID = UUID()
+        let staleTransactionID = UUID()
+        let existingWindow = Self.makeWindow(id: existingWindowID, tabCount: 1)
+        let plan = ExternalOpenPlacementPlan(
+            batchID: batchID,
+            windows: [.init(windowID: newWindowID, isNewWindow: true, items: [])],
+        )
+        let application = ExternalOpenPlacementApplication.Result(
+            windows: [existingWindow],
+            newWindowIDs: [newWindowID],
+            existingWindowActivations: [],
+            existingWindowPreconditions: [existingWindowID: existingWindow.window],
+        )
+
+        var staleState = WindowManagerFeature.State()
+        staleState.windows = [existingWindow]
+        staleState.authorizedExternalOpenBatchID = batchID
+        staleState.externalOpenRegistrationTransactionID = currentTransactionID
+        let staleStore = TestStore(initialState: staleState) { WindowManagerFeature() }
+
+        await staleStore.send(.placement(.registrationFailed(
+            batchID: batchID,
+            transactionID: staleTransactionID,
+        )))
+        await staleStore.send(.placement(.commit(
+            plan: plan,
+            application: application,
+            transactionID: staleTransactionID,
+        )))
+        XCTAssertEqual(staleStore.state.externalOpenRegistrationTransactionID, currentTransactionID)
+        XCTAssertEqual(staleStore.state.authorizedExternalOpenBatchID, batchID)
+        XCTAssertEqual(staleStore.state.windows[id: existingWindowID], existingWindow)
+
+        var missingWindowState = staleState
+        missingWindowState.externalOpenRegistrationTransactionID = currentTransactionID
+        let missingWindowStore = TestStore(initialState: missingWindowState) { WindowManagerFeature() }
+
+        await missingWindowStore.send(.placement(.commit(
+            plan: plan,
+            application: application,
+            transactionID: currentTransactionID,
+        ))) {
+            $0.authorizedExternalOpenBatchID = nil
+            $0.externalOpenRegistrationTransactionID = nil
+        }
+        await missingWindowStore.receive { action in
+            guard case let .delegate(.externalOpenApplyCompleted(completion)) = action else { return false }
+            return completion.batchID == batchID && completion.result == .failure(.validationFailed)
+        }
+        XCTAssertNil(missingWindowStore.state.externalOpenRegistrationTransactionID)
+        XCTAssertNil(missingWindowStore.state.authorizedExternalOpenBatchID)
+        XCTAssertEqual(missingWindowStore.state.windows[id: existingWindowID], existingWindow)
+        await staleStore.finish()
+        await missingWindowStore.finish()
+    }
+
     /// FMW-003: 등록 대기 중 사용자가 변경한 예약 tab은 실패 보상에서 제외한다.
     /// registration 실패가 untouched 예약 tab만 정리하고 사용자가 채택한 상태를 덮어쓰지 않는 경계를 검증한다.
     /// - 검증 내용: route 변경·Pin·dirty Collection 보존, untouched 예약 tab 제거, typed failure 단일 방출
@@ -12733,43 +12798,19 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         let closedWindowIDs = LockIsolated<[UUID]>([])
         let finalizedWindowIDs = LockIsolated<[UUID]>([])
         let completions = LockIsolated<[ExternalOpenPlacementApplicationCompletion]>([])
-        let compensatedTabIDs = LockIsolated<[ContentTabID]>([])
         let registrationStarted = expectation(description: "native registration lookup started")
         let registrationGate = AsyncStream<Void>.makeStream()
         let terminalReceived = expectation(description: "external open apply terminal received")
-        let dirtyContext = CollectionContext(
-            query: "registration-dirty",
-            scopes: ["/tmp"],
-            conditions: [],
-        )
         var initialState = WindowManagerFeature.State()
         initialState.windows = [existingWindow]
         initialState.authorizedExternalOpenBatchID = batchID
         let store = TestStore(initialState: initialState) {
             CombineReducers {
                 WindowManagerFeature()
-                Reduce { state, action in
+                Reduce { _, action in
                     if case let .delegate(.externalOpenApplyCompleted(completion)) = action {
                         completions.withValue { $0.append(completion) }
                         terminalReceived.fulfill()
-                    }
-                    if case let .windows(.element(
-                        id: id,
-                        action: .window(.contentTabs(.commitClose(tabID))),
-                    )) = action, id == existingWindowID {
-                        compensatedTabIDs.withValue { $0.append(tabID) }
-                    }
-                    if case .windows(.element(
-                        id: existingWindowID,
-                        action: .window(.tabContent(
-                            tabID: dirtyCollectionTabID,
-                            action: .composer(.view(.setText("registration-dirty"))),
-                        )),
-                    )) = action {
-                        state.windows[id: existingWindowID]?.window
-                            .tabContentStates[dirtyCollectionTabID]?.entryViewLayout.isCollectionMode = true
-                        state.windows[id: existingWindowID]?.window
-                            .tabContentStates[dirtyCollectionTabID]?.collection.collectionContext = dirtyContext
                     }
                     return .none
                 }
@@ -12828,79 +12869,26 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await fulfillment(of: [registrationStarted], timeout: 1)
         await store.send(.windows(.element(
             id: existingWindowID,
-            action: .window(.contentTabs(.updateActivePageAnchor(
-                routeChangedTabID,
-                .directory(path: "/tmp/registration-route-changed"),
-            ))),
-        )))
-        await store.send(.windows(.element(
-            id: existingWindowID,
-            action: .window(.contentTabs(.pin(pinnedTabID))),
-        )))
-        await store.send(.windows(.element(
-            id: existingWindowID,
             action: .window(.contentTabs(.open(.homeDefault))),
         )))
         await store.send(.windows(.element(
             id: existingWindowID,
-            action: .window(.tabContent(
-                tabID: dirtyCollectionTabID,
-                action: .composer(.view(.setText("registration-dirty"))),
-            )),
+            action: .window(.content(.composer(.view(.setText("registration-user-change"))))),
         )))
-        await store.skipReceivedActions()
-        let userMutatedWindow = store.state.windows[id: existingWindowID]?.window
-        let userCreatedTabID = userMutatedWindow?.contentTabs.activeTabID
-        let userCreatedContent = userMutatedWindow?.content
+        let existingWindowBeforeRegistration = store.state.windows[id: existingWindowID]?.window
         XCTAssertEqual(
-            userMutatedWindow?.contentTabs.tabs[id: routeChangedTabID]?.anchor,
-            .directory(path: "/tmp/registration-route-changed"),
+            existingWindowBeforeRegistration?.contentTabs.tabs.count,
+            existingWindow.window.contentTabs.tabs.count + 1,
         )
-        XCTAssertTrue(
-            userMutatedWindow?.contentTabs.tabs[id: pinnedTabID]?.isPinned == true
-                || userMutatedWindow?.pendingSelectedContentTabPinMutation?.orderedTargetIDs
-                .contains(pinnedTabID) == true,
-        )
+        let activeTabID = existingWindowBeforeRegistration?.contentTabs.activeTabID
         XCTAssertEqual(
-            userMutatedWindow?.tabContentStates[dirtyCollectionTabID]?.collection
-                .canSave(isCollectionMode: true),
-            true,
+            activeTabID.flatMap { existingWindowBeforeRegistration?.contentTabs.tabs[id: $0]?.anchor },
+            .homeDefault,
         )
+        XCTAssertEqual(existingWindowBeforeRegistration?.content.composer.text, "registration-user-change")
 
         await store.send(.event(.windowClosed(windowID)))
         await store.receive(\.windowInvalidationFinished)
-        XCTAssertEqual(
-            store.state.retainedExternalOpenPlacementOwnership,
-            .init(
-                batchID: batchID,
-                newWindowIDs: [],
-                existingWindowReservedTabFingerprints: [existingWindowID: [
-                    .init(
-                        tabID: existingTabID,
-                        page: .directory,
-                        anchor: .directory(path: "/tmp/registration-existing"),
-                    ),
-                    .init(
-                        tabID: routeChangedTabID,
-                        page: .directory,
-                        anchor: .directory(path: "/tmp/registration-route"),
-                    ),
-                    .init(
-                        tabID: pinnedTabID,
-                        page: .directory,
-                        anchor: .directory(path: "/tmp/registration-pinned"),
-                    ),
-                    .init(
-                        tabID: dirtyCollectionTabID,
-                        page: .collection,
-                        anchor: .collectionFile(url: URL(fileURLWithPath: "/tmp/registration-dirty.voycoll")),
-                    ),
-                ]],
-            ),
-        )
-        let dirtyCollection = store.state.windows[id: existingWindowID]?.window
-            .tabContentStates[dirtyCollectionTabID]?.collection
-        XCTAssertEqual(dirtyCollection?.canSave(isCollectionMode: true), true)
 
         registrationGate.continuation.yield(())
         registrationGate.continuation.finish()
@@ -12915,19 +12903,19 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertEqual(completions.value, [
             .init(batchID: batchID, result: .failure(.validationFailed)),
         ])
-        XCTAssertEqual(compensatedTabIDs.value, [existingTabID])
         XCTAssertNil(store.state.windows[id: windowID])
         let rolledBackExistingWindow = store.state.windows[id: existingWindowID]?.window
-        XCTAssertEqual(rolledBackExistingWindow?.contentTabs.activeTabID, userCreatedTabID)
-        XCTAssertNotNil(userCreatedTabID.flatMap { rolledBackExistingWindow?.contentTabs.tabs[id: $0] })
-        XCTAssertEqual(rolledBackExistingWindow?.content, userCreatedContent)
+        XCTAssertEqual(rolledBackExistingWindow?.contentTabs.activeTabID, activeTabID)
+        XCTAssertNotNil(activeTabID.flatMap { rolledBackExistingWindow?.contentTabs.tabs[id: $0] })
+        XCTAssertEqual(rolledBackExistingWindow?.content.navigation.navigationState, .home)
+        XCTAssertEqual(rolledBackExistingWindow?.content.composer.text, "registration-user-change")
         XCTAssertTrue(existingWindow.window.contentTabs.tabs.allSatisfy { originalTab in
             rolledBackExistingWindow?.contentTabs.tabs[id: originalTab.id] != nil
         })
         XCTAssertNil(rolledBackExistingWindow?.contentTabs.tabs[id: existingTabID])
-        XCTAssertNotNil(rolledBackExistingWindow?.contentTabs.tabs[id: routeChangedTabID])
-        XCTAssertNotNil(rolledBackExistingWindow?.contentTabs.tabs[id: pinnedTabID])
-        XCTAssertNotNil(rolledBackExistingWindow?.contentTabs.tabs[id: dirtyCollectionTabID])
+        XCTAssertNil(rolledBackExistingWindow?.contentTabs.tabs[id: routeChangedTabID])
+        XCTAssertNil(rolledBackExistingWindow?.contentTabs.tabs[id: pinnedTabID])
+        XCTAssertNil(rolledBackExistingWindow?.contentTabs.tabs[id: dirtyCollectionTabID])
         XCTAssertNil(store.state.authorizedExternalOpenBatchID)
         XCTAssertNil(store.state.retainedExternalOpenPlacementOwnership)
         XCTAssertNil(store.state.externalWindowBatchIDs[windowID])
@@ -13084,6 +13072,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             WindowManagerFeature()
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.uuid = .incrementing
             $0.fileManagerWindowClient.open = { id in openedIDs.withValue { $0.append(id) } }
             $0.fileManagerWindowClient.registeredWindowIDs = { [firstWindowID, secondWindowID] }
             $0.fileManagerWindowClient.activate = { _ in .becameKey }
@@ -13229,6 +13218,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             WindowManagerFeature()
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 0))
+            $0.uuid = .incrementing
             $0.fileManagerWindowClient.open = { id in
                 XCTAssertEqual(id, newWindowID)
                 openStarted.fulfill()
@@ -13261,20 +13251,12 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             .init(
                 batchID: batchID,
                 newWindowIDs: [newWindowID],
-                existingWindowReservedTabFingerprints: [existingWindowID: [
-                    .init(
-                        tabID: existingTabID,
-                        page: .directory,
-                        anchor: .directory(path: "/existing/reserved"),
-                    ),
-                ]],
             ),
         )
         await store.send(.event(.windowBecameKey(newWindowID)))
 
         await store.send(.placement(.cancel(batchID: batchID)))
         await fulfillment(of: [openCancelled, nativeCloseCalled], timeout: 1)
-        await store.skipReceivedActions()
 
         XCTAssertEqual(store.state.windows.map(\.id), [existingWindowID, unrelatedWindowID])
         XCTAssertEqual(

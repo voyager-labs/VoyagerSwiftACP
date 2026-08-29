@@ -1479,6 +1479,7 @@ final class AppRootCompositionTests: XCTestCase {
             AppRootFeature()
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 0))
+            $0.uuid = .incrementing
             $0.fileManagerWindowClient.open = { id in
                 XCTAssertEqual(id, windowID)
                 openStarted.fulfill()

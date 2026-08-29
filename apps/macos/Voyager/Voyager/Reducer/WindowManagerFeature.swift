@@ -226,6 +226,29 @@ struct WindowManagerFeature {
                 )
                 .cancellable(id: CancelID.externalOpenBatch(plan.batchID), cancelInFlight: true)
 
+            case let .placement(.commit(plan, application, transactionID)):
+                guard state.authorizedExternalOpenBatchID == plan.batchID,
+                      state.externalOpenRegistrationTransactionID == transactionID
+                else { return .none }
+                return commitExternalOpenPlacement(
+                    plan: plan,
+                    application: application,
+                    transactionID: transactionID,
+                    state: &state,
+                )
+
+            case let .placement(.registrationFailed(batchID, transactionID)):
+                guard state.authorizedExternalOpenBatchID == batchID,
+                      state.externalOpenRegistrationTransactionID == transactionID
+                else { return .none }
+                return .concatenate(
+                    cancelExternalOpenPlacement(batchID: batchID, state: &state),
+                    .send(.delegate(.externalOpenApplyCompleted(.init(
+                        batchID: batchID,
+                        result: .failure(.validationFailed),
+                    )))),
+                )
+
             case let .placement(.activate(plan)):
                 guard state.authorizedExternalOpenBatchID == plan.batchID else { return .none }
                 return startExternalOpenActivation(

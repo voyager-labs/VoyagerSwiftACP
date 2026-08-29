@@ -80,27 +80,15 @@ extension WindowManagerFeature {
         _ batchID: UUID,
         _ newWindowIDs: [State.WindowID],
         state: inout State,
-        existingWindowReservedTabIDs: [State.WindowID: [ContentTabID]] = [:],
     ) {
         if newWindowIDs.isEmpty {
             if state.retainedExternalOpenPlacementOwnership?.batchID == batchID {
                 state.retainedExternalOpenPlacementOwnership = nil
             }
         } else {
-            let fingerprints = existingWindowReservedTabIDs.reduce(
-                into: [State.WindowID: [WindowManagerExternalOpenReservationFingerprint]](),
-            ) { result, entry in
-                let (windowID, tabIDs) = entry
-                result[windowID] = tabIDs.compactMap { tabID in
-                    guard let tab = state.windows[id: windowID]?.window.contentTabs.tabs[id: tabID]
-                    else { return nil }
-                    return .init(tabID: tab.id, page: tab.page, anchor: tab.anchor)
-                }
-            }
             state.retainedExternalOpenPlacementOwnership = .init(
                 batchID: batchID,
                 newWindowIDs: newWindowIDs,
-                existingWindowReservedTabFingerprints: fingerprints,
             )
         }
     }
@@ -109,7 +97,13 @@ extension WindowManagerFeature {
         batchID: UUID,
         state: inout State,
     ) -> Effect<Action> {
-        if state.authorizedExternalOpenBatchID == batchID { state.authorizedExternalOpenBatchID = nil }
+        if state.authorizedExternalOpenBatchID == batchID {
+            state.authorizedExternalOpenBatchID = nil
+            state.externalOpenRegistrationTransactionID = nil
+        }
+        if state.retainedExternalOpenPlacementOwnership?.batchID == batchID {
+            state.externalOpenRegistrationTransactionID = nil
+        }
         if state.externalOpenActivationAttempt?.batchID == batchID {
             state.externalOpenActivationAttempt = nil
             state.externalOpenActivationBecameKey = false
@@ -119,28 +113,6 @@ extension WindowManagerFeature {
               ownership.batchID == batchID
         else { return .concatenate(effects) }
         state.retainedExternalOpenPlacementOwnership = nil
-        for (windowID, fingerprints) in ownership.existingWindowReservedTabFingerprints {
-            guard let window = state.windows[id: windowID]?.window else { continue }
-            for fingerprint in fingerprints.reversed() {
-                guard !externalOpenReservationLifecycleOwnsTab(fingerprint.tabID, in: window),
-                      let tab = window.contentTabs.tabs[id: fingerprint.tabID],
-                      tab.page == fingerprint.page,
-                      tab.anchor == fingerprint.anchor,
-                      !tab.isPinned,
-                      window.contentTabs.pinnedRecords[fingerprint.tabID] == nil,
-                      !window.contentTabs.pendingPinnedRecordIDs.contains(fingerprint.tabID),
-                      let content = fingerprint.tabID == window.contentTabs.activeTabID
-                      ? window.content
-                      : window.tabContentStates[fingerprint.tabID],
-                      !content.collection.canSave(isCollectionMode: content.entryViewLayout.isCollectionMode)
-                else { continue }
-                effects.append(.send(.windows(.element(
-                    id: windowID,
-                    action: .window(.contentTabs(.commitClose(fingerprint.tabID))),
-                ))))
-            }
-        }
-        effects.append(.send(.refreshContentTabMoveTargets))
         let ownedWindowIDs = ownership.newWindowIDs.filter { state.externalWindowBatchIDs[$0] == batchID }
         for windowID in ownedWindowIDs {
             state.closingWindowIDs.insert(windowID)
