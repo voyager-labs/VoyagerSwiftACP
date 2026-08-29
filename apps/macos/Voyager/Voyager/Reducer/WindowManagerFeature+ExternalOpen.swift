@@ -244,18 +244,12 @@ extension WindowManagerFeature {
         )
         state.externalOpenActivationAttempt = nil
         state.externalOpenActivationBecameKey = false
-        var excludedTabIDs = Set(attempt.plan.orderedItems.compactMap { item in
-            item.requiresPinnedAnchorReturn ? item.tabID : nil
-        })
-        excludedTabIDs.insert(tabID)
-        for window in state.windows {
-            for tab in window.window.contentTabs.tabs
-                where tab.isPinned
-                && window.window.contentTabs.pinnedRecords[tab.id]?.anchor == failedItem.anchor
-            {
-                excludedTabIDs.insert(tab.id)
-            }
-        }
+        let excludedTabIDs = externalOpenPinnedFallbackExclusions(
+            attempt,
+            failedItem: failedItem,
+            failedTabID: tabID,
+            state: state,
+        )
         guard let request = attempt.plan.request?.fallbackExcludingPinnedCandidates(excludedTabIDs),
               case let .success(replacementPlan) = ExternalOpenPlacementPlanner.make(
                   request,
@@ -277,6 +271,29 @@ extension WindowManagerFeature {
                 reservationsByItemID: replacementPlan.reservationsByItemID,
             ))),
         ])
+    }
+
+    private func externalOpenPinnedFallbackExclusions(
+        _ attempt: ExternalOpenActivationAttempt,
+        failedItem: ExternalOpenPlacementPlan.Item,
+        failedTabID: ContentTabID,
+        state: State,
+    ) -> Set<ContentTabID> {
+        let settledTabIDs = attempt.settledPinnedReturnTabIDs
+        var excludedTabIDs = Set<ContentTabID>(attempt.plan.orderedItems.compactMap { item in
+            item.requiresPinnedAnchorReturn && !settledTabIDs.contains(item.tabID) ? item.tabID : nil
+        })
+        excludedTabIDs.insert(failedTabID)
+        for window in state.windows {
+            for tab in window.window.contentTabs.tabs
+                where tab.isPinned
+                && !settledTabIDs.contains(tab.id)
+                && window.window.contentTabs.pinnedRecords[tab.id]?.anchor == failedItem.anchor
+            {
+                excludedTabIDs.insert(tab.id)
+            }
+        }
+        return excludedTabIDs
     }
 
     private func externalOpenPinnedReturnCancellationEffects(

@@ -11053,6 +11053,112 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await store.finish()
     }
 
+    /// A pinned 복귀가 정착한 뒤 B pinned 복귀가 실패하면 정착한 A를 재사용한다.
+    /// - 검증 내용: replacement plan이 A의 exact runtime tab을 유지하고 B만 신규 reservation함
+    /// - 사전 조건: A는 durable anchor에 정착했고 B는 같은 activation plan에서 미정착 상태로 실패함
+    /// - 기대 결과: pinnedFallbackCount 1에서 A는 재사용되고 B만 새 tab identity와 reservation을 받음
+    func testPlacementActivationReusesSettledPinnedReturnAfterSiblingFailure() async throws {
+        let fixture = Self.makePinnedCollectionActivationFixture(pendingOpen: false)
+        let firstWindowID = fixture.plan.windows[0].windowID
+        let firstRequestItem = try XCTUnwrap(fixture.plan.request?.items.first)
+        let secondWindowID = UUID()
+        let secondItemID = UUID()
+        let secondTabID = ContentTabID(rawValue: "second-unsettled-pinned")
+        let secondRuntimeAnchor = ContentTabPageAnchor.collectionFile(
+            url: URL(fileURLWithPath: "/tmp/second-unsettled-runtime.voycoll"),
+        )
+        let secondDurableAnchor = ContentTabPageAnchor.collectionFile(
+            url: URL(fileURLWithPath: "/tmp/second-unsettled-durable.voycoll"),
+        )
+        var secondWindow = FileManagerWindowFeature.State.makeInitial(path: "/tmp")
+        secondWindow.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: secondTabID,
+                    page: .collection,
+                    anchor: secondRuntimeAnchor,
+                    isPinned: true,
+                ),
+            ],
+            activeTabID: secondTabID,
+            pinnedRecords: [
+                secondTabID: .init(
+                    id: secondTabID.rawValue,
+                    page: .collection,
+                    anchor: secondDurableAnchor,
+                    title: "Second Unsettled Collection",
+                    iconName: "rectangle.stack",
+                    pinnedAt: Date(timeIntervalSince1970: 1_234_567_890),
+                ),
+            ],
+        )
+        let request = ExternalOpenPlacementRequest(
+            batchID: fixture.plan.batchID,
+            items: [
+                firstRequestItem,
+                .init(itemID: secondItemID, anchor: secondDurableAnchor, pendingSelectEntryID: nil),
+            ],
+            preferredWindowIDs: [],
+        )
+        let plan = ExternalOpenPlacementPlan(
+            batchID: fixture.plan.batchID,
+            windows: [
+                fixture.plan.windows[0],
+                .init(
+                    windowID: secondWindowID,
+                    isNewWindow: false,
+                    items: [.init(
+                        itemID: secondItemID,
+                        tabID: secondTabID,
+                        anchor: secondDurableAnchor,
+                        requiresReservation: false,
+                        requiresPinnedAnchorReturn: true,
+                    )],
+                ),
+            ],
+            request: request,
+        )
+        var state = fixture.state
+        state.windows[id: firstWindowID]?.window.contentTabs.tabs[id: fixture.tabID]?.anchor = firstRequestItem.anchor
+        state.windows.append(.init(id: secondWindowID, window: secondWindow))
+        state.externalOpenActivationAttempt = .init(
+            batchID: plan.batchID,
+            plan: plan,
+            windowID: secondWindowID,
+            excludedWindowIDs: [],
+            settledPinnedReturnTabIDs: [fixture.tabID],
+        )
+        let store = TestStore(initialState: state) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            Self.configureAutoRegisteringWindowOpen(&$0.fileManagerWindowClient)
+        }
+        // store.exhaustivity = .off: replacement apply 이후 native window lifecycle은 기존 owner가 검증함.
+        store.exhaustivity = .off
+
+        await store.send(.windows(.element(
+            id: secondWindowID,
+            action: .window(.delegate(.pinnedContentTabRuntimeNavigationFailed(tabID: secondTabID))),
+        )))
+        await store.receive { action in
+            guard case let .placement(.apply(replacementPlan, reservationsByItemID)) = action else { return false }
+            let items = replacementPlan.orderedItems
+            return replacementPlan.request?.pinnedFallbackCount == 1
+                && items.count == 2
+                && items[0].tabID == fixture.tabID
+                && !items[0].requiresReservation
+                && !items[0].requiresPinnedAnchorReturn
+                && items[1].tabID != secondTabID
+                && items[1].requiresReservation
+                && reservationsByItemID.count == 1
+                && reservationsByItemID[secondItemID] != nil
+        }
+        await store.skipReceivedActions()
+        await store.finish()
+    }
+
     /// 다른 window에 복제된 동일 ContentTabID의 실패 terminal은 현재 activation plan을 오염시키지 않는다.
     /// - 검증 내용: pinned 실패가 plan의 정확한 windowID와 tabID 쌍에 속할 때만 fallback 재계획을 시작함
     /// - 사전 조건: W1의 pinned tab이 activation plan에 있고 W2에 동일 ContentTabID가 복제되어 있음
