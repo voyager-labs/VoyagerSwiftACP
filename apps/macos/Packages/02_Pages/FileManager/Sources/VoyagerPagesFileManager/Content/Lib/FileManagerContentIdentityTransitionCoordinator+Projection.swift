@@ -22,14 +22,31 @@ extension FileManagerContentIdentityTransitionCoordinator {
             shouldDefer = true
             holdsUntilMigration = true
         }
-        if shouldDefer == nil,
-           !transition.primaryMigrated,
+        var pendingAfters: [String] = []
+        if !transition.primaryMigrated,
            case let .folder(ownerID, _) = transition.projectionOwner,
-           canonicalizedPath(ownerID) == canonicalizedPath(folderID)
+           standardizedPath(ownerID) == standardizedPath(folderID)
         {
-            let afterIdentity = afterLexicalPath(transition)
-            shouldDefer = !items.contains {
-                standardizedPath($0.id) == standardizedPath(afterIdentity)
+            pendingAfters.append(afterLexicalPath(transition))
+        }
+        for move in transition.additionalMoves where !move.migrated {
+            guard case let .folder(ownerID, _) = move.destinationOwner ?? transition.projectionOwner,
+                  standardizedPath(ownerID) == standardizedPath(folderID)
+            else { continue }
+            pendingAfters.append(
+                move.afterLexicalPath.isEmpty ? move.afterPath : move.afterLexicalPath,
+            )
+        }
+        if let nextUntil = pendingAfters.first(where: { after in
+            !items.contains { standardizedPath($0.id) == standardizedPath(after) }
+        }) {
+            shouldDefer = true
+            untilEntryID = nextUntil
+            if state.entryViewLayout.hierarchy.deferredFolderReplacement(folderID: folderID) != nil {
+                state.entryViewLayout.hierarchy.upsertDeferredFolderReplacement(
+                    folderID: folderID,
+                    untilEntryID: nextUntil,
+                )
             }
         }
         if case let .folder(ownerID, _) = transition.preservationOwner,
@@ -40,30 +57,6 @@ extension FileManagerContentIdentityTransitionCoordinator {
             // 보존(소스) 폴더는 destination migration까지 staging을 보류한다.
             // 소스 coreFinished가 먼저 도착해도 retained before 행을 유지해 선택 깜빡임을 막는다.
             holdsUntilMigration = true
-        }
-        if shouldDefer == nil {
-            // 다중 이동: additional destination 폴더도 after 행 도착까지 retained children을 유지한다.
-            // 같은 destination을 공유하는 pair가 여러 개면 모든 pending after가 도착했을 때만
-            // combine하도록 untilEntryID를 미도착 after로 갱신해 누적한다.
-            var pendingAfters: [String] = []
-            for move in transition.additionalMoves where !move.migrated {
-                guard case let .folder(ownerID, _) = move.destinationOwner ?? transition.projectionOwner,
-                      standardizedPath(ownerID) == standardizedPath(folderID)
-                else { continue }
-                pendingAfters.append(
-                    move.afterLexicalPath.isEmpty ? move.afterPath : move.afterLexicalPath,
-                )
-            }
-            if let nextUntil = pendingAfters.first(where: { after in
-                !items.contains { standardizedPath($0.id) == standardizedPath(after) }
-            }) {
-                shouldDefer = true
-                untilEntryID = nextUntil
-                state.entryViewLayout.hierarchy.upsertDeferredFolderReplacement(
-                    folderID: folderID,
-                    untilEntryID: nextUntil,
-                )
-            }
         }
         if shouldDefer == nil {
             // 다중 이동: additional 이동의 source 폴더도 primary 보존과 동일하게 보류한다.
@@ -227,6 +220,7 @@ extension FileManagerContentIdentityTransitionCoordinator {
         if resolveAdditionalRootDestinationFailure(on: action, state: &state) {
             return
         }
+        _ = resolvePrimaryOwnedDestinationTerminal(on: action, state: &state)
         if resolveAdditionalDestinationTerminal(on: action, state: &state) {
             return
         }
@@ -260,6 +254,50 @@ extension FileManagerContentIdentityTransitionCoordinator {
         case .event(.coreBatch), .event(.metadataPatches):
             break
         }
+    }
+
+    /// primary folder terminal을 공유하는 nil-owner additional pair를 함께 종결한다.
+    private static func resolvePrimaryOwnedDestinationTerminal(
+        on action: FileManagerContentAction,
+        state: inout FileManagerContentState,
+    ) -> Bool {
+        guard case let .entryViewLayout(.hierarchy(.folderChildrenResponse(
+            rootContextGeneration, folderID, folderGeneration, response,
+        ))) = action,
+            rootContextGeneration == state.entryViewLayout.hierarchy.rootContextGeneration,
+            var transition = state.pendingIdentityTransition,
+            case let .folder(expectedID, expectedGeneration) = transition.projectionOwner,
+            standardizedPath(folderID) == standardizedPath(expectedID),
+            folderGeneration == expectedGeneration,
+            let node = state.entryViewLayout.hierarchy.nodesByID[folderID],
+            node.generation == folderGeneration,
+            transition.additionalMoves.contains(where: { $0.destinationOwner == nil && !$0.migrated })
+        else { return false }
+        let isTerminal = switch response {
+        case .event(.coreFinished):
+            node.folder.coreFinished
+        case .streamCompleted:
+            node.loadPhase == .loaded
+        case .failed:
+            if case .failed = node.loadPhase { true } else { false }
+        case .event(.coreBatch), .event(.metadataPatches):
+            false
+        }
+        guard isTerminal else { return false }
+        for index in transition.additionalMoves.indices
+            where transition.additionalMoves[index].destinationOwner == nil
+            && !transition.additionalMoves[index].migrated
+        {
+            transition.additionalMoves[index].migrated = true
+        }
+        state.pendingIdentityTransition = transition
+        commitMigratedSourceStagings(transition: transition, state: &state)
+        if transition.primaryMigrated || primaryOwnerIsTerminal(transition, state: state),
+           !hasPendingDestinationPairs(state)
+        {
+            discard(state: &state)
+        }
+        return true
     }
 
     /// current root 실패를 matching additional root destination의 terminal로 기록한다.

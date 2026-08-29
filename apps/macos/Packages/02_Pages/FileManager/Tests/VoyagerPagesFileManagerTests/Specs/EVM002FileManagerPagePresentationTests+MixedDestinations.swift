@@ -100,6 +100,142 @@ extension EVM002FileManagerPagePresentationTests {
         XCTAssertNil(store.state.pendingIdentityTransition, "primary가 root여도 additional terminal에서 소비한다")
     }
 
+    /// EVM-002-replacement_reload_snapshot_retention: shared destination은 primary-first batch도 전체 after까지 보류한다.
+    /// - 검증 내용: C primary after, unrelated, additional after 순서의 세 batch를 retained replacement로 누적한다.
+    /// - 사전 조건: primary와 nil-owner additional pair가 expanded destination C를 공유한다.
+    /// - 기대 결과: 첫 두 batch는 old children을 유지하고 마지막 after에서 세 batch를 한 번에 커밋한다.
+    func testSharedPrimaryDestinationWaitsAfterPrimaryFirstBatch() async {
+        let destination = EntryModel.temporaryFolder(id: "/root/C", name: "C")
+        let old1 = EntryModel.temporaryFolder(id: "/root/C/old1", name: "old1")
+        let old2 = EntryModel.temporaryFolder(id: "/root/C/old2", name: "old2")
+        let beforePrimary = EntryModel.temporaryFolder(id: "/root/p", name: "p")
+        let beforeAdditional = EntryModel.temporaryFolder(id: "/root/q", name: "q")
+        let afterPrimary = EntryModel.temporaryFolder(id: "/root/C/p", name: "p")
+        let afterAdditional = EntryModel.temporaryFolder(id: "/root/C/q", name: "q")
+        let unrelated = EntryModel.temporaryFolder(id: "/root/C/kept", name: "kept")
+        var state = FileManagerContentState()
+        state.navigation.seedInitialFolderPath("/root")
+        state.entryViewLayout.entries = [destination, beforePrimary, beforeAdditional]
+        state.entryViewLayout.hierarchy = .init(rootPath: "/root")
+        state.entryViewLayout.hierarchy.nodesByID[destination.id] = .init(
+            children: [old1, old2],
+            loadPhase: .loadingCore,
+            generation: 3,
+        )
+        state.entryViewLayout.hierarchy.setExpandedIDs([destination.id])
+        state.entryViewLayout.selectedIds = [beforePrimary.id, beforeAdditional.id]
+        state.pendingIdentityTransition = .init(
+            recordID: UUID(),
+            beforePath: beforePrimary.id,
+            afterPath: afterPrimary.id,
+            rootPath: "/root",
+            refreshGeneration: 1,
+            projectionOwner: .folder(id: destination.id, generation: 3),
+            additionalMoves: [
+                .init(
+                    beforePath: beforeAdditional.id,
+                    afterPath: afterAdditional.id,
+                    sourceOwner: .root(generation: 1),
+                ),
+            ],
+        )
+        var probe = state
+        FileManagerContentIdentityTransitionCoordinator.beginDeferredFolderReplacementIfNeeded(
+            folderID: destination.id,
+            items: [afterPrimary],
+            state: &probe,
+        )
+        XCTAssertEqual(
+            probe.entryViewLayout.hierarchy.deferredFolderReplacement(folderID: destination.id)?.untilEntryID,
+            afterAdditional.id,
+        )
+        let store = makeFileManagerContentFeatureStore(initialState: state)
+        store.exhaustivity = .off
+
+        await store.send(.entryViewLayout(.hierarchy(.folderChildrenResponse(
+            rootContextGeneration: 0,
+            folderID: destination.id,
+            folderGeneration: 3,
+            .event(.coreBatch(items: [afterPrimary], batchIndex: 0)),
+        ))))
+        XCTAssertEqual(
+            store.state.entryViewLayout.hierarchy.nodesByID[destination.id]?.folder.children,
+            [old1, old2],
+        )
+        await store.receive(\.entryViewLayout.delegate.selectionChanged)
+
+        await store.send(.entryViewLayout(.hierarchy(.folderChildrenResponse(
+            rootContextGeneration: 0,
+            folderID: destination.id,
+            folderGeneration: 3,
+            .event(.coreBatch(items: [unrelated], batchIndex: 1)),
+        ))))
+        XCTAssertEqual(
+            store.state.entryViewLayout.hierarchy.nodesByID[destination.id]?.folder.children,
+            [old1, old2],
+        )
+
+        await store.send(.entryViewLayout(.hierarchy(.folderChildrenResponse(
+            rootContextGeneration: 0,
+            folderID: destination.id,
+            folderGeneration: 3,
+            .event(.coreBatch(items: [afterAdditional], batchIndex: 2)),
+        ))))
+        XCTAssertEqual(
+            store.state.entryViewLayout.hierarchy.nodesByID[destination.id]?.folder.children,
+            [afterPrimary, unrelated, afterAdditional],
+        )
+        XCTAssertEqual(Set(store.state.entryViewLayout.selectedIds), [afterPrimary.id, afterAdditional.id])
+        XCTAssertNil(store.state.pendingIdentityTransition)
+        await store.receive(\.entryViewLayout.delegate.selectionChanged)
+    }
+
+    /// EVM-002-replacement_reload_snapshot_retention: shared destination additional-first는 primary after를 기다린다.
+    /// - 검증 내용: additional after만 온 owner batch가 primary sentinel을 만들고 additional 선택만 이전한다.
+    /// - 사전 조건: primary와 nil-owner additional pair가 같은 folder generation을 사용한다.
+    /// - 기대 결과: deferred untilEntryID는 primary after이고 migration 결과는 additional 변경을 보고한다.
+    func testSharedPrimaryDestinationAdditionalFirstDefersForPrimaryAfter() {
+        let destination = EntryModel.temporaryFolder(id: "/root/C", name: "C")
+        let beforePrimary = EntryModel.temporaryFolder(id: "/root/p", name: "p")
+        let beforeAdditional = EntryModel.temporaryFolder(id: "/root/q", name: "q")
+        let afterPrimary = EntryModel.temporaryFolder(id: "/root/C/p", name: "p")
+        let afterAdditional = EntryModel.temporaryFolder(id: "/root/C/q", name: "q")
+        var state = FileManagerContentState()
+        state.navigation.seedInitialFolderPath("/root")
+        state.entryViewLayout.hierarchy = .init(rootPath: "/root")
+        state.entryViewLayout.hierarchy.nodesByID[destination.id] = .init(
+            children: [], loadPhase: .loadingCore, generation: 3,
+        )
+        state.entryViewLayout.selectedIds = [beforePrimary.id, beforeAdditional.id]
+        state.pendingIdentityTransition = .init(
+            recordID: UUID(),
+            beforePath: beforePrimary.id,
+            afterPath: afterPrimary.id,
+            rootPath: "/root",
+            refreshGeneration: 1,
+            projectionOwner: .folder(id: destination.id, generation: 3),
+            additionalMoves: [
+                .init(beforePath: beforeAdditional.id, afterPath: afterAdditional.id),
+            ],
+        )
+
+        FileManagerContentIdentityTransitionCoordinator.beginDeferredFolderReplacementIfNeeded(
+            folderID: destination.id,
+            items: [afterAdditional],
+            state: &state,
+        )
+        XCTAssertEqual(
+            state.entryViewLayout.hierarchy.deferredFolderReplacement(folderID: destination.id)?.untilEntryID,
+            afterPrimary.id,
+        )
+        XCTAssertTrue(FileManagerContentIdentityTransitionCoordinator.migrateSelection(
+            entries: [afterAdditional],
+            projectionOwner: .folder(id: destination.id, generation: 3),
+            state: &state,
+        ))
+        XCTAssertEqual(Set(state.entryViewLayout.selectedIds), [beforePrimary.id, afterAdditional.id])
+    }
+
     /// EVM-002-command_external_refresh_correlation: current root 실패는 root pair만 종결한다.
     /// - 검증 내용: entryActionCompleted reload 실패가 additional root pair를 해소하고 folder primary 기회를 유지한다.
     /// - 사전 조건: primary D/x→A/r1, additional D/y→root/y 이동이 invalidation/startLoad를 통과한다.

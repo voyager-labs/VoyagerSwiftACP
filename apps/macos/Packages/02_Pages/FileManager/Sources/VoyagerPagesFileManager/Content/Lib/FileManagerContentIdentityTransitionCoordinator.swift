@@ -155,12 +155,12 @@ enum FileManagerContentIdentityTransitionCoordinator {
             if !hasPendingDestinationPairs(state) {
                 discard(state: &state)
             }
-            return false
+            return primaryOwnedMigrated
         }
         let standardizedAfter = standardizedPath(afterLexicalPath(transition))
         guard let matchedAfterID = entries.first(where: {
             standardizedPath($0.id) == standardizedAfter
-        })?.id else { return false }
+        })?.id else { return primaryOwnedMigrated }
 
         state.entryViewLayout.selectedIds.remove(matchedBeforeID)
         state.entryViewLayout.selectedIds.insert(matchedAfterID)
@@ -174,7 +174,6 @@ enum FileManagerContentIdentityTransitionCoordinator {
         if case .root = projectionOwner, !hasPendingDestinationPairs(state) {
             discard(state: &state)
         }
-        _ = primaryOwnedMigrated
         return true
     }
 
@@ -196,7 +195,7 @@ enum FileManagerContentIdentityTransitionCoordinator {
             return true
         }
         return transition.additionalMoves.contains { move in
-            guard move.destinationOwner != nil, !move.migrated else { return false }
+            guard !move.migrated else { return false }
             let beforeIdentity = move.beforeLexicalPath.isEmpty ? move.beforePath : move.beforeLexicalPath
             return state.entryViewLayout.selectedIds.contains { selectedID in
                 standardizedPath(selectedID) == standardizedPath(beforeIdentity)
