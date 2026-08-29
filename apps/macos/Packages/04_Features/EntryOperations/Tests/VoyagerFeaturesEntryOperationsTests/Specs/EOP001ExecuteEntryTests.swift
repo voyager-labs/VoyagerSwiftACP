@@ -541,6 +541,130 @@ final class EOP001ExecuteEntryTests: XCTestCase {
 }
 
 extension EOP001ExecuteEntryTests {
+    /// EOP-001-open_entry_with_selected_app: 기본 앱 설정 실패 후 열기 성공도 파일 결과는 실패로 남는다.
+    /// Always Open With의 두 단계 중 기본 앱 설정 실패가 성공한 open에 의해 지워지지 않는지 검증한다.
+    /// - 검증 내용: set-default와 open lifecycle을 각각 한 번 실행하고 파일 상태와 command aggregate에 첫 실패를 보존한다.
+    /// - 사전 조건: `fixtures/fixtures/texts/plain/11.txt` sandbox, 실패하는 set-default와 성공하는 open client가 있다.
+    /// - 기대 결과: attempted 1, succeeded 0, failed 1이며 최종 파일 오류가 set-default 오류다.
+    func testSingleAlwaysOpenWithRetainsSetDefaultFailureWhenOpenSucceeds() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+        let file = EntryModelFixtures.makeFileEntry(
+            id: sandbox.fileURL.path,
+            name: sandbox.fileURL.lastPathComponent,
+        )
+        let bundleID = "com.apple.Preview"
+        let metadata = try makeMetadata(id: "00000000-0000-0000-0000-000000000702")
+
+        let evidence = await EntryOperationsTestSupport.runOpenWithCommand(
+            files: [file],
+            currentPath: sandbox.root.path,
+            bundleID: bundleID,
+            metadata: metadata,
+            shouldSetAsDefault: true,
+            failingDefaultTypeIDs: [UTType.plainText.identifier],
+        )
+
+        XCTAssertEqual(evidence.setDefaultCallCount, 1)
+        XCTAssertEqual(evidence.defaultFailedPaths, [file.fullPath])
+        XCTAssertEqual(evidence.openCallCount, 1)
+        XCTAssertEqual(evidence.openFinishedPaths, [file.fullPath])
+        XCTAssertEqual(evidence.lastErrors[file.fullPath], .system(message: "set default denied"))
+        XCTAssertEqual(evidence.terminals.count, 1)
+        let terminal = try XCTUnwrap(evidence.terminals.first)
+        XCTAssertEqual(terminal.command, metadata)
+        XCTAssertEqual(terminal.attemptedCount, 1)
+        XCTAssertEqual(terminal.succeededCount, 0)
+        XCTAssertEqual(terminal.failedCount, 1)
+        XCTAssertEqual(terminal.cancelledCount, 0)
+    }
+
+    /// EOP-001-open_entry_with_selected_app: 기본 앱 설정 취소는 파일 열기 전에 명령을 종료한다.
+    /// 사용자 취소가 후속 앱 열기와 추가 lifecycle을 발생시키지 않는지 검증한다.
+    /// - 검증 내용: set-default 취소 뒤 open 호출 없이 cancelled terminal 한 건만 기록한다.
+    /// - 사전 조건: 단일 텍스트 파일과 취소를 반환하는 set-default client가 있다.
+    /// - 기대 결과: attempted 1, cancelled 1이며 open 호출과 open lifecycle이 없다.
+    func testSingleAlwaysOpenWithSetDefaultCancellationStopsBeforeOpen() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+        let file = EntryModelFixtures.makeFileEntry(
+            id: sandbox.fileURL.path,
+            name: sandbox.fileURL.lastPathComponent,
+        )
+        let bundleID = "com.apple.Preview"
+        let metadata = try makeMetadata(id: "00000000-0000-0000-0000-000000000704")
+
+        let evidence = await EntryOperationsTestSupport.runOpenWithCommand(
+            files: [file],
+            currentPath: sandbox.root.path,
+            bundleID: bundleID,
+            metadata: metadata,
+            shouldSetAsDefault: true,
+            cancelledDefaultTypeIDs: [UTType.plainText.identifier],
+        )
+
+        XCTAssertEqual(evidence.setDefaultCallCount, 1)
+        XCTAssertEqual(evidence.defaultFailedPaths, [file.fullPath])
+        XCTAssertEqual(evidence.openCallCount, 0)
+        XCTAssertTrue(evidence.openStartedPaths.isEmpty)
+        XCTAssertTrue(evidence.openFinishedPaths.isEmpty)
+        XCTAssertEqual(evidence.lastErrors[file.fullPath], .cancelled)
+        XCTAssertEqual(evidence.terminals.count, 1)
+        let terminal = try XCTUnwrap(evidence.terminals.first)
+        XCTAssertEqual(terminal.command, metadata)
+        XCTAssertEqual(terminal.attemptedCount, 1)
+        XCTAssertEqual(terminal.succeededCount, 0)
+        XCTAssertEqual(terminal.failedCount, 0)
+        XCTAssertEqual(terminal.cancelledCount, 1)
+    }
+
+    /// EOP-001-open_entry_with_selected_app: 두 파일의 역순 open 완료에도 기본 앱 설정 실패 집계는 결정적이다.
+    /// 서로 다른 타입의 Always Open With가 선택 역순으로 완료되어도 파일별 결과와 terminal이 한 번만 수렴하는지 검증한다.
+    /// - 검증 내용: 한 파일의 set-default만 실패시키고 두 open을 역순 완료해 최종 오류와 aggregate count를 확인한다.
+    /// - 사전 조건: `fixtures/fixtures/texts/plain/11.txt`, `fixtures/fixtures/images/jpeg/resize.jpg` sandbox와 gated open
+    /// client가 있다.
+    /// - 기대 결과: attempted 2, succeeded 1, failed 1인 terminal 한 건과 실패 파일의 set-default 오류가 남는다.
+    func testAlwaysOpenWithMixedSetDefaultResultsRemainDeterministicWhenOpenCompletesInReverse() async throws {
+        let textSandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { textSandbox.cleanup() }
+        let imageSandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/images/jpeg/resize.jpg")
+        defer { imageSandbox.cleanup() }
+        let files = [textSandbox.fileURL, imageSandbox.fileURL].map {
+            EntryModelFixtures.makeFileEntry(
+                id: $0.path,
+                name: $0.lastPathComponent,
+                fileExtension: $0.pathExtension,
+            )
+        }
+        let bundleID = "com.apple.Preview"
+        let metadata = try makeMetadata(id: "00000000-0000-0000-0000-000000000703")
+
+        let evidence = await EntryOperationsTestSupport.runOpenWithCommand(
+            files: files,
+            currentPath: textSandbox.root.path,
+            bundleID: bundleID,
+            metadata: metadata,
+            shouldSetAsDefault: true,
+            failingDefaultTypeIDs: [UTType.plainText.identifier],
+            completionOrder: [files[1].fullPath, files[0].fullPath],
+        )
+
+        XCTAssertEqual(evidence.setDefaultCallCount, 2)
+        XCTAssertEqual(evidence.defaultFailedPaths, [files[0].fullPath])
+        XCTAssertEqual(Set(evidence.openFinishedPaths), Set(files.map(\.fullPath)))
+        XCTAssertEqual(evidence.lastErrors[files[0].fullPath], .system(message: "set default denied"))
+        XCTAssertNil(evidence.lastErrors[files[1].fullPath])
+        XCTAssertEqual(evidence.terminals.count, 1)
+        let terminal = try XCTUnwrap(evidence.terminals.first)
+        XCTAssertEqual(terminal.command, metadata)
+        XCTAssertEqual(terminal.attemptedCount, 2)
+        XCTAssertEqual(terminal.succeededCount, 1)
+        XCTAssertEqual(terminal.failedCount, 1)
+        XCTAssertEqual(terminal.cancelledCount, 0)
+    }
+}
+
+extension EOP001ExecuteEntryTests {
     /// EOP-001-open_entry_with_selected_app: Other picker 다중 선택은 성공·실패를 terminal 한 건으로 집계한다.
     /// - 검증 내용: picker 선택 후 routed command metadata가 batch action과 단일 aggregate terminal까지 전파되는지 확인한다.
     /// - 사전 조건: 두 일반 파일, Other picker selection, 한 파일만 실패하는 open client가 있다.

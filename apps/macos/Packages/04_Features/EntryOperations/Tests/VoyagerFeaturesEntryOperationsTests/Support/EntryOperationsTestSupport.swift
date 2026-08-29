@@ -2,6 +2,7 @@ import AppKit
 import ComposableArchitecture
 import Dependencies
 import Foundation
+import UniformTypeIdentifiers
 import VoyagerEntitiesEntry
 @testable import VoyagerFeaturesEntryOperations
 import VoyagerShared
@@ -160,6 +161,8 @@ struct OpenWithCommandEvidence {
     let openStartedPaths: [String]
     let openFinishedPaths: [String]
     let defaultFinishedPaths: [String]
+    let defaultFailedPaths: [String]
+    let lastErrors: [String: FileOpError]
     let terminals: [EntryActionRecord]
     let setDefaultCallCount: Int
     let reloadCallCount: Int
@@ -243,6 +246,8 @@ enum EntryOperationsTestSupport {
         metadata: EntryCommandMetadata,
         shouldSetAsDefault: Bool = false,
         failingPath: String? = nil,
+        failingDefaultTypeIDs: Set<String> = [],
+        cancelledDefaultTypeIDs: Set<String> = [],
         completionOrder: [String] = [],
         usesOtherPicker: Bool = false,
         cancelsOtherPicker: Bool = false,
@@ -255,7 +260,11 @@ enum EntryOperationsTestSupport {
             observeAction: { action in actions.withValue { $0.append(action) } },
             configure: {
                 $0.entryOpenClient.trashDirectoryPath = { trashPath }
-                $0.entryOpenClient.setDefaultApp = { _, _ in setDefaultCalls.withValue { $0 += 1 } }
+                $0.entryOpenClient.setDefaultApp = makeSetDefaultAppRecorder(
+                    calls: setDefaultCalls,
+                    failingTypeIDs: failingDefaultTypeIDs,
+                    cancelledTypeIDs: cancelledDefaultTypeIDs,
+                )
                 $0.entryOpenClient.invalidateApplicationsForType = { _ in }
                 $0.entryOpenClient.applicationsForType = { _, _ in
                     reloadCalls.withValue { $0 += 1 }
@@ -286,20 +295,16 @@ enum EntryOperationsTestSupport {
             bundleID: usesOtherPicker ? nil : bundleID,
             shouldSetAsDefault: shouldSetAsDefault,
         )
-        let context = EntryOperationsCommandContext(
-            selectedIds: Set(files.map(\.id)),
-            displayItems: files,
-            currentPath: currentPath,
-        )
+        let context = makeOpenWithContext(files: files, currentPath: currentPath)
         await store.send(.routing(.executeCommand(command: .navigation(command), context: context, metadata: metadata)))
         await completeOpenWithCommand(store, gate: gate, completionOrder: completionOrder)
 
         return makeOpenWithEvidence(
             actions: actions.value,
-            bundleID: bundleID,
             setDefaultCallCount: setDefaultCalls.value,
             reloadCallCount: reloadCalls.value,
             openCallCount: openCalls.value,
+            lastErrors: store.state.itemStates.compactMapValues(\.lastError),
         )
     }
 
@@ -445,29 +450,54 @@ enum EntryOperationsTestSupport {
         await store.skipReceivedActions()
     }
 
+    private static func makeSetDefaultAppRecorder(
+        calls: LockIsolated<Int>,
+        failingTypeIDs: Set<String>,
+        cancelledTypeIDs: Set<String>,
+    ) -> @Sendable (UTType, String) async throws -> Void {
+        { type, _ in
+            calls.withValue { $0 += 1 }
+            if cancelledTypeIDs.contains(type.identifier) {
+                throw FileOpError.cancelled
+            }
+            if failingTypeIDs.contains(type.identifier) {
+                throw FileOpError.system(message: "set default denied")
+            }
+        }
+    }
+
+    private static func makeOpenWithContext(
+        files: [EntryModel],
+        currentPath: String,
+    ) -> EntryOperationsCommandContext {
+        EntryOperationsCommandContext(
+            selectedIds: Set(files.map(\.id)),
+            displayItems: files,
+            currentPath: currentPath,
+        )
+    }
+
     private static func makeOpenWithEvidence(
         actions: [EntryOperationsAction],
-        bundleID: String,
         setDefaultCallCount: Int,
         reloadCallCount: Int,
         openCallCount: Int,
+        lastErrors: [String: FileOpError],
     ) -> OpenWithCommandEvidence {
         let openStartedPaths = actions.compactMap { action -> String? in
-            guard case let .lifecycle(.operationStarted(path, .openWithApp(id))) = action,
-                  id == bundleID
-            else { return nil }
+            guard case let .lifecycle(.operationStarted(path, .openWithApp)) = action else { return nil }
             return path
         }
         let openFinishedPaths = actions.compactMap { action -> String? in
-            guard case let .lifecycle(.operationFinished(path, .openWithApp(id), _)) = action,
-                  id == bundleID
-            else { return nil }
+            guard case let .lifecycle(.operationFinished(path, .openWithApp, _)) = action else { return nil }
             return path
         }
         let defaultFinishedPaths = actions.compactMap { action -> String? in
-            guard case let .lifecycle(.operationFinished(path, .setDefaultApp(id), .success)) = action,
-                  id == bundleID
-            else { return nil }
+            guard case let .lifecycle(.operationFinished(path, .setDefaultApp, .success)) = action else { return nil }
+            return path
+        }
+        let defaultFailedPaths = actions.compactMap { action -> String? in
+            guard case let .lifecycle(.operationFinished(path, .setDefaultApp, .failure)) = action else { return nil }
             return path
         }
         let terminals = actions.compactMap { action -> EntryActionRecord? in
@@ -482,6 +512,8 @@ enum EntryOperationsTestSupport {
             openStartedPaths: openStartedPaths,
             openFinishedPaths: openFinishedPaths,
             defaultFinishedPaths: defaultFinishedPaths,
+            defaultFailedPaths: defaultFailedPaths,
+            lastErrors: lastErrors,
             terminals: terminals,
             setDefaultCallCount: setDefaultCallCount,
             reloadCallCount: reloadCallCount,

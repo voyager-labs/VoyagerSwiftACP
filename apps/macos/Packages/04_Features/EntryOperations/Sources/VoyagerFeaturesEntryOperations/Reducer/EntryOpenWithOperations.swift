@@ -385,6 +385,7 @@ struct EntryOpenWithOperationsReducer {
         entryOpenClient: EntryOpenClient,
         send: Send<Action>,
     ) async -> Result<Void, FileOpError> {
+        var setDefaultFailure: FileOpError?
         if shouldSetAsDefault, let fileType = UTType(filenameExtension: file.fileExtension) {
             let kind = OperationKind.setDefaultApp(bundleID)
             await send(.lifecycle(.operationStarted(file.fullPath, kind)))
@@ -392,25 +393,36 @@ struct EntryOpenWithOperationsReducer {
                 try await entryOpenClient.setDefaultApp(fileType, bundleID)
                 await send(.lifecycle(.operationFinished(file.fullPath, kind, .success(()))))
             } catch {
-                await send(.lifecycle(.operationFinished(
-                    file.fullPath,
-                    kind,
-                    .failure(error.fileOpError),
-                )))
+                let failure = error.fileOpError
+                if failure == .cancelled {
+                    await send(.lifecycle(.operationFinished(file.fullPath, kind, .failure(failure))))
+                    return .failure(failure)
+                }
+                setDefaultFailure = failure
             }
         }
 
         let kind = OperationKind.openWithApp(bundleID)
         await send(.lifecycle(.operationStarted(file.fullPath, kind)))
+        let openResult: Result<Void, FileOpError>
         do {
             try await entryOpenClient.open(URL(fileURLWithPath: file.fullPath), .bundleID(bundleID))
             await send(.lifecycle(.operationFinished(file.fullPath, kind, .success(()))))
-            return .success(())
+            openResult = .success(())
         } catch {
             let failure = error.fileOpError
             await send(.lifecycle(.operationFinished(file.fullPath, kind, .failure(failure))))
-            return .failure(failure)
+            openResult = .failure(failure)
         }
+        if let setDefaultFailure {
+            await send(.lifecycle(.operationFinished(
+                file.fullPath,
+                .setDefaultApp(bundleID),
+                .failure(setDefaultFailure),
+            )))
+            return .failure(setDefaultFailure)
+        }
+        return openResult
     }
 }
 
