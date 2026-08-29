@@ -194,6 +194,9 @@ struct WindowManagerFeature {
             case .file(.quickLook):
                 return sendCommandToFocusedWindow(state, .quickLookSelectedItem)
 
+            case .file(.getInfo):
+                return sendCommandToFocusedWindow(state, .getInfo)
+
             case .file(.saveCollection):
                 return sendCommandToFocusedWindow(state, .saveCollection)
 

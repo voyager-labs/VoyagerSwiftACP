@@ -53,6 +53,12 @@ struct AppMenuCommands: Commands {
             }
             .keyboardShortcut(.space, modifiers: [])
             .disabled(!viewStore.canQuickLook)
+
+            Button("Get Info") {
+                send(.app(.getInfo))
+            }
+            .keyboardShortcut("i", modifiers: .command)
+            .disabled(!viewStore.canPerformEntryCommands)
         }
 
         CommandGroup(replacing: .saveItem) {
