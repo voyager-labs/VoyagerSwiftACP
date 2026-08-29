@@ -178,10 +178,23 @@ enum FileManagerContentIdentityTransitionCoordinator {
         return true
     }
 
-    /// 아직 자체 destination batch에서 migration되지 않은 additional 이동이 있는지 판정한다.
-    /// before 선택이 이미 사라졌다면 해결된 것으로 본다.
+    /// 아직 migration되지 않은 folder primary 또는 자체 destination의 additional 이동이 있는지 판정한다.
+    /// before 선택이 이미 사라졌거나 primary owner가 terminal이면 해결된 것으로 본다.
     static func hasPendingDestinationPairs(_ state: FileManagerContentState) -> Bool {
         guard let transition = state.pendingIdentityTransition else { return false }
+        let primaryBefore = transition.beforeLexicalPath.isEmpty
+            ? transition.beforePath
+            : transition.beforeLexicalPath
+        if !transition.primaryMigrated,
+           case .folder = transition.projectionOwner,
+           ownerIsCurrent(transition.projectionOwner, state: state),
+           !primaryOwnerIsTerminal(transition, state: state),
+           state.entryViewLayout.selectedIds.contains(where: {
+               standardizedPath($0) == standardizedPath(primaryBefore)
+           })
+        {
+            return true
+        }
         return transition.additionalMoves.contains { move in
             guard move.destinationOwner != nil, !move.migrated else { return false }
             let beforeIdentity = move.beforeLexicalPath.isEmpty ? move.beforePath : move.beforeLexicalPath
@@ -291,6 +304,13 @@ enum FileManagerContentIdentityTransitionCoordinator {
         URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath().path
     }
 
+    static func commitMigratedSourceStagings(
+        transition: FileManagerContentState.EntryIdentityTransition,
+        state: inout FileManagerContentState,
+    ) {
+        commitMigratedSourceStagingsImpl(transition: transition, state: &state)
+    }
+
     /// record 완료 시점의 hierarchy snapshot으로 source folder hold를 미리 설치한다.
     /// coreBatch 없이 coreFinished가 먼저 와도 child reducer 전에 retained projection을 보존한다.
     private static func prepareSourceProjectionHolds(state: inout FileManagerContentState) {
@@ -383,7 +403,7 @@ enum FileManagerContentIdentityTransitionCoordinator {
 
     /// migration이 완료된 pair의 source 폴더 staging을 커밋한다.
     /// 아직 migration하지 않은 pair의 source는 보류해 before 선택이 조기에 제거되지 않게 한다.
-    private static func commitMigratedSourceStagings(
+    private static func commitMigratedSourceStagingsImpl(
         transition: FileManagerContentState.EntryIdentityTransition,
         state: inout FileManagerContentState,
     ) {
@@ -391,9 +411,14 @@ enum FileManagerContentIdentityTransitionCoordinator {
             guard case let .folder(id, _) = move.sourceOwner ?? transition.projectionOwner else { return nil }
             return id
         }
-        let unmigratedSourceFolderIDs = Set(transition.additionalMoves.compactMap { move in
+        var unmigratedSourceFolderIDs = Set(transition.additionalMoves.compactMap { move in
             move.migrated ? nil : effectiveSourceFolderID(move)
         })
+        if !transition.primaryMigrated,
+           case let .folder(preservationID, _) = transition.preservationOwner
+        {
+            unmigratedSourceFolderIDs.insert(preservationID)
+        }
         var sourceFolderIDsToCommit = Set<EntryModel.ID>()
         if case let .folder(preservationID, _) = transition.preservationOwner,
            !unmigratedSourceFolderIDs.contains(preservationID)

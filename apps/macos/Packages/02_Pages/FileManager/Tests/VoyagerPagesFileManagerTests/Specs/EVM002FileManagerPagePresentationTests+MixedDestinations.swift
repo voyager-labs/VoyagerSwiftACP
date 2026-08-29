@@ -100,10 +100,10 @@ extension EVM002FileManagerPagePresentationTests {
         XCTAssertNil(store.state.pendingIdentityTransition, "primary가 root여도 additional terminal에서 소비한다")
     }
 
-    /// EVM-002-command_external_refresh_correlation: primary dest가 폴더면 root 스트림 실패로 전이를 폐기하지 않는다.
-    /// - 검증 내용: additional root destination owner로 root 실패 세대가 일치해도 primary folder 전이는 유지된다.
-    /// - 사전 조건: primary dest A(폴더), additional dest root인 혼합 undo 전이와 buffered root reload 실패.
-    /// - 기대 결과: streamFailed 뒤에도 전이와 선택, source retained children이 유지된다.
+    /// EVM-002-command_external_refresh_correlation: current root 실패는 root pair만 종결한다.
+    /// - 검증 내용: entryActionCompleted reload 실패가 additional root pair를 해소하고 folder primary 기회를 유지한다.
+    /// - 사전 조건: primary D/x→A/r1, additional D/y→root/y 이동이 invalidation/startLoad를 통과한다.
+    /// - 기대 결과: 실패 뒤 root pair 종결, A migration·terminal 뒤 전이와 source hold가 닫힌다.
     func testMixedDestinationRootFailureKeepsPrimaryFolderTransition() async {
         let rootPath = "/root"
         let sourceD = EntryModel.temporaryFolder(id: "/root/D", name: "D")
@@ -114,46 +114,33 @@ extension EVM002FileManagerPagePresentationTests {
         let rootY = EntryModel.temporaryFolder(id: "/root/y", name: "y")
         var state = FileManagerContentState()
         state.navigation.seedInitialFolderPath(rootPath)
-        state.entryViewLayout.mode = .list
         state.entryViewLayout.entries = [sourceD, destinationA]
+        _ = state.entryViewLayout.entryOperations.loadingContext.begin(
+            sourceKind: .directory,
+            preservesSnapshot: false,
+            directoryPath: rootPath,
+        )
         state.entryViewLayout.entryOperations.items = [sourceD, destinationA]
-        state.entryViewLayout.entryOperations.loadingContext.generation = 1
-        state.entryViewLayout.entryOperations.loadingContext.preservedDirectoryReloadItems = []
-        state.entryViewLayout.entryOperations.isReloading = true
         state.entryViewLayout.hierarchy = .init(rootPath: rootPath)
         state.entryViewLayout.hierarchy.nodesByID[sourceD.id] = .init(
             children: [beforeX, beforeY],
-            loadPhase: .loadingCore,
+            loadPhase: .loaded,
             generation: 3,
-            expectedBatchIndex: 0,
-            coreFinished: false,
+            coreFinished: true,
         )
         state.entryViewLayout.hierarchy.nodesByID[destinationA.id] = .init(
             children: [],
-            loadPhase: .loadingCore,
+            loadPhase: .loaded,
             generation: 3,
-            expectedBatchIndex: 0,
-            coreFinished: false,
+            coreFinished: true,
         )
         state.entryViewLayout.hierarchy.setExpandedIDs([sourceD.id, destinationA.id])
         state.entryViewLayout.selectedIds = [beforeX.id, beforeY.id]
-        state.entryViewLayout.lastSelectedId = beforeX.id
-        state.entryViewLayout.rangeAnchorId = beforeX.id
-        state.pendingIdentityTransition = .init(
-            recordID: UUID(),
-            beforePath: beforeX.id,
-            afterPath: r1.id,
-            rootPath: rootPath,
-            refreshGeneration: 1,
-            projectionOwner: .folder(id: destinationA.id, generation: 3),
-            preservationOwner: .folder(id: sourceD.id, generation: 3),
-            additionalMoves: [
-                .init(
-                    beforePath: beforeY.id,
-                    afterPath: rootY.id,
-                    sourceOwner: .folder(id: sourceD.id, generation: 3),
-                    destinationOwner: .root(generation: 1),
-                ),
+        let record = EntryActionRecord(
+            operationKind: .pasteFileMove,
+            targets: [
+                .init(beforePath: beforeX.id, afterPath: r1.id),
+                .init(beforePath: beforeY.id, afterPath: rootY.id),
             ],
         )
         let store = TestStore(initialState: state) {
@@ -162,20 +149,155 @@ extension EVM002FileManagerPagePresentationTests {
             $0.entryOpenClient = .testValue
             $0.entryQuickLookClient = .previewValue
             $0.date = .constant(Date(timeIntervalSince1970: 0))
+            $0.entryLoadingClient.stagedLoadItems = { _, _, _ in AsyncThrowingStream { _ in } }
         }
         store.exhaustivity = .off
 
+        await store.send(.entryViewLayout(.entryOperations(.lifecycle(.entryActionCompleted(record)))))
+        await store.receive { action in
+            guard case .entryViewLayout(.hierarchy(.hierarchyInvalidated)) = action else { return false }
+            return true
+        }
+        await store.receive(\.entryViewLayout.entryOperations.loading.loadItems)
+        XCTAssertTrue(store.state.entryViewLayout.entryOperations.loadingContext.isBufferingPreservedDirectoryReload)
         await store.send(.entryViewLayout(.entryOperations(.loading(.streamFailed(generation: 1)))))
-        XCTAssertNotNil(
-            store.state.pendingIdentityTransition,
-            "primary 폴더 destination의 migration 기회를 위해 전이가 유지된다",
+        XCTAssertEqual(store.state.pendingIdentityTransition?.additionalMoves.first?.migrated, false)
+        await store.send(.entryViewLayout(.entryOperations(.loading(.streamFailed(generation: 2)))))
+        XCTAssertEqual(store.state.pendingIdentityTransition?.additionalMoves.first?.migrated, true)
+        XCTAssertEqual(store.state.pendingIdentityTransition?.primaryMigrated, false)
+        XCTAssertEqual(
+            store.state.entryViewLayout.hierarchy.deferredFolderReplacement(folderID: sourceD.id)?
+                .holdsUntilMigration,
+            true,
         )
-        XCTAssertEqual(store.state.entryViewLayout.selectedIds, [beforeX.id, beforeY.id])
+
+        await store.send(.entryViewLayout(.hierarchy(.folderChildrenResponse(
+            rootContextGeneration: state.entryViewLayout.hierarchy.rootContextGeneration,
+            folderID: destinationA.id,
+            folderGeneration: 4,
+            .event(.coreBatch(items: [r1], batchIndex: 0)),
+        ))))
+        XCTAssertEqual(store.state.entryViewLayout.selectedIds, [r1.id, beforeY.id])
+        XCTAssertNil(store.state.entryViewLayout.hierarchy.deferredFolderReplacement(folderID: sourceD.id))
+        await store.receive(\.entryViewLayout.delegate.selectionChanged)
+
+        await store.send(.entryViewLayout(.hierarchy(.folderChildrenResponse(
+            rootContextGeneration: state.entryViewLayout.hierarchy.rootContextGeneration,
+            folderID: destinationA.id,
+            folderGeneration: 4,
+            .event(.coreFinished(batchCount: 1)),
+        ))))
+        XCTAssertNil(store.state.pendingIdentityTransition)
         XCTAssertEqual(
             store.state.entryViewLayout.hierarchy.nodesByID[sourceD.id]?.folder.children.map(\.id),
             [beforeX.id, beforeY.id],
-            "root 실패는 source retained snapshot을 강등하지 않는다",
         )
+        await store.skipInFlightEffects()
+    }
+
+    /// EVM-002-replacement_reload_snapshot_retention: root additional migration은 pending primary source를 커밋하지 않는다.
+    /// - 검증 내용: D staging 완료 뒤 root pair가 먼저 migration돼도 primary A 전까지 D retained snapshot을 유지한다.
+    /// - 사전 조건: entryActionCompleted가 primary와 additional의 shared source D hold를 pre-arm한다.
+    /// - 기대 결과: root terminal 뒤 D hold 유지, A migration 뒤 staging이 한 번 커밋되고 전이가 닫힌다.
+    func testRootAdditionalMigrationKeepsPendingPrimarySourceStaging() async {
+        let rootPath = "/root"
+        let sourceD = EntryModel.temporaryFolder(id: "/root/D", name: "D")
+        let destinationA = EntryModel.temporaryFolder(id: "/root/A", name: "A")
+        let beforeX = EntryModel.temporaryFolder(id: "/root/D/x", name: "x")
+        let beforeY = EntryModel.temporaryFolder(id: "/root/D/y", name: "y")
+        let r1 = EntryModel.temporaryFolder(id: "/root/A/r1", name: "r1")
+        let rootY = EntryModel.temporaryFolder(id: "/root/y", name: "y")
+        let kept = EntryModel.temporaryFolder(id: "/root/D/kept", name: "kept")
+        var state = FileManagerContentState()
+        state.navigation.seedInitialFolderPath(rootPath)
+        state.entryViewLayout.entries = [sourceD, destinationA]
+        _ = state.entryViewLayout.entryOperations.loadingContext.begin(
+            sourceKind: .directory,
+            preservesSnapshot: false,
+            directoryPath: rootPath,
+        )
+        state.entryViewLayout.entryOperations.items = [sourceD, destinationA]
+        state.entryViewLayout.hierarchy = .init(rootPath: rootPath)
+        for (folder, children) in [(sourceD, [beforeX, beforeY]), (destinationA, [])] {
+            state.entryViewLayout.hierarchy.nodesByID[folder.id] = .init(
+                children: children,
+                loadPhase: .loaded,
+                generation: 3,
+                coreFinished: true,
+            )
+        }
+        state.entryViewLayout.hierarchy.setExpandedIDs([sourceD.id, destinationA.id])
+        state.entryViewLayout.selectedIds = [beforeX.id, beforeY.id]
+        let record = EntryActionRecord(
+            operationKind: .pasteFileMove,
+            targets: [
+                .init(beforePath: beforeX.id, afterPath: r1.id),
+                .init(beforePath: beforeY.id, afterPath: rootY.id),
+            ],
+        )
+        let store = TestStore(initialState: state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+            $0.entryQuickLookClient = .previewValue
+            $0.entryLoadingClient.stagedLoadItems = { _, _, _ in AsyncThrowingStream { _ in } }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.entryViewLayout(.entryOperations(.lifecycle(.entryActionCompleted(record)))))
+        await store.receive { action in
+            guard case .entryViewLayout(.hierarchy(.hierarchyInvalidated)) = action else { return false }
+            return true
+        }
+        await store.receive(\.entryViewLayout.entryOperations.loading.loadItems)
+        XCTAssertTrue(store.state.entryViewLayout.entryOperations.loadingContext.isBufferingPreservedDirectoryReload)
+        await completeHeldFolderReload(store, folderID: sourceD.id, item: kept)
+        XCTAssertEqual(store.state.entryViewLayout.selectedIds, [beforeX.id, beforeY.id])
+        XCTAssertEqual(
+            store.state.pendingIdentityTransition?.additionalMoves.first?.destinationOwner,
+            .root(generation: 2),
+        )
+
+        await store.send(.entryViewLayout(.entryOperations(.loading(.streamEvent(.init(
+            generation: 2,
+            event: .coreBatch(items: [sourceD, destinationA, rootY], batchIndex: 0),
+        ))))))
+        XCTAssertEqual(store.state.entryViewLayout.selectedIds, [beforeX.id, beforeY.id])
+        await store.send(.entryViewLayout(.entryOperations(.loading(.streamEvent(.init(
+            generation: 2,
+            event: .coreFinished(batchCount: 1),
+        ))))))
+        XCTAssertEqual(store.state.entryViewLayout.selectedIds, [beforeX.id, beforeY.id])
+        await store.send(.entryViewLayout(.entryOperations(.loading(.streamFinished(generation: 2)))))
+        XCTAssertEqual(store.state.pendingIdentityTransition?.additionalMoves.first?.migrated, true)
+        XCTAssertEqual(store.state.entryViewLayout.selectedIds, [beforeX.id, rootY.id])
+        XCTAssertEqual(store.state.entryViewLayout.hierarchy.nodesByID[sourceD.id]?.folder.children, [beforeX, beforeY])
+        XCTAssertNotNil(store.state.pendingIdentityTransition)
+        await store.receive(\.entryViewLayout.delegate.selectionChanged)
+        await store.receive { action in
+            guard case .entryViewLayout(.view(.applyContentProjection)) = action else { return false }
+            return true
+        }
+        await store.receive(\.entryViewLayout.hierarchy.rootSnapshotCompleted)
+
+        await store.send(.entryViewLayout(.hierarchy(.folderChildrenResponse(
+            rootContextGeneration: 0,
+            folderID: destinationA.id,
+            folderGeneration: 5,
+            .event(.coreBatch(items: [r1], batchIndex: 0)),
+        ))))
+        XCTAssertEqual(store.state.entryViewLayout.selectedIds, [r1.id, rootY.id])
+        XCTAssertEqual(store.state.entryViewLayout.hierarchy.nodesByID[sourceD.id]?.folder.children, [kept])
+        XCTAssertNil(store.state.entryViewLayout.hierarchy.deferredFolderReplacement(folderID: sourceD.id))
+        await store.receive(\.entryViewLayout.delegate.selectionChanged)
+        await store.send(.entryViewLayout(.hierarchy(.folderChildrenResponse(
+            rootContextGeneration: 0,
+            folderID: destinationA.id,
+            folderGeneration: 5,
+            .event(.coreFinished(batchCount: 1)),
+        ))))
+        XCTAssertNil(store.state.pendingIdentityTransition)
+        await store.skipInFlightEffects()
     }
 
     /// EVM-002-command_external_refresh_correlation: additional terminal은 primary migration 완료를 기다린다.
@@ -1037,5 +1159,30 @@ extension EVM002FileManagerPagePresentationTests {
             .event(.coreFinished(batchCount: 0)),
         ))))
         XCTAssertNil(store.state.pendingIdentityTransition)
+    }
+
+    private func completeHeldFolderReload(
+        _ store: TestStore<FileManagerContentState, FileManagerContentAction>,
+        folderID: EntryModel.ID,
+        item: EntryModel,
+    ) async {
+        await store.send(.entryViewLayout(.hierarchy(.folderChildrenResponse(
+            rootContextGeneration: 0,
+            folderID: folderID,
+            folderGeneration: 4,
+            .event(.coreBatch(items: [item], batchIndex: 0)),
+        ))))
+        await store.send(.entryViewLayout(.hierarchy(.folderChildrenResponse(
+            rootContextGeneration: 0,
+            folderID: folderID,
+            folderGeneration: 4,
+            .event(.coreFinished(batchCount: 1)),
+        ))))
+        await store.send(.entryViewLayout(.hierarchy(.folderChildrenResponse(
+            rootContextGeneration: 0,
+            folderID: folderID,
+            folderGeneration: 4,
+            .streamCompleted,
+        ))))
     }
 }

@@ -1044,10 +1044,10 @@ extension EVM002FileManagerPagePresentationTests {
         return (state, state.entryViewLayout.hierarchy.rootContextGeneration)
     }
 
-    /// EVM-002-command_external_refresh_correlation: 혼합 destination의 root pair도 terminal에서 이전한다.
-    /// - 검증 내용: primary destination이 폴더여도 root destination pair가 buffered root reload terminal 커밋에서 migration된다.
+    /// EVM-002-command_external_refresh_correlation: root pair terminal은 미이전 folder primary를 보존한다.
+    /// - 검증 내용: root destination pair가 먼저 migration돼도 folder primary batch까지 전이를 유지한다.
     /// - 사전 조건: primary → expanded A, additional → root인 undo 전이와 preserved root reload.
-    /// - 기대 결과: streamFinished 뒤 y 선택이 root 행으로 이동하고 전이는 소비된다.
+    /// - 기대 결과: streamFinished 뒤 root pair만 이전되고, A batch·terminal 뒤 전이가 소비된다.
     func testMixedDestinationRootPairMigratesAtRootTerminal() async {
         let rootPath = "/root"
         let sourceD = EntryModel.temporaryFolder(id: "/root/D", name: "D")
@@ -1058,19 +1058,17 @@ extension EVM002FileManagerPagePresentationTests {
         let rootY = EntryModel.temporaryFolder(id: "/root/y", name: "y")
         var state = FileManagerContentState()
         state.navigation.seedInitialFolderPath(rootPath)
-        state.entryViewLayout.mode = .list
         state.entryViewLayout.entries = [sourceD, destinationA]
-        state.entryViewLayout.entryOperations.items = [sourceD, destinationA]
         state.entryViewLayout.entryOperations.loadingContext.generation = 1
         state.entryViewLayout.entryOperations.loadingContext.preservedDirectoryReloadItems = []
         state.entryViewLayout.entryOperations.isReloading = true
         state.entryViewLayout.hierarchy = .init(rootPath: rootPath)
         state.entryViewLayout.hierarchy.nodesByID[sourceD.id] = .init(
             children: [beforeX, beforeY],
-            loadPhase: .loadingCore,
+            loadPhase: .loaded,
             generation: 3,
             expectedBatchIndex: 0,
-            coreFinished: false,
+            coreFinished: true,
         )
         state.entryViewLayout.hierarchy.nodesByID[destinationA.id] = .init(
             children: [],
@@ -1081,8 +1079,6 @@ extension EVM002FileManagerPagePresentationTests {
         )
         state.entryViewLayout.hierarchy.setExpandedIDs([sourceD.id, destinationA.id])
         state.entryViewLayout.selectedIds = [beforeX.id, beforeY.id]
-        state.entryViewLayout.lastSelectedId = beforeX.id
-        state.entryViewLayout.rangeAnchorId = beforeX.id
         state.pendingIdentityTransition = .init(
             recordID: UUID(),
             beforePath: beforeX.id,
@@ -1107,17 +1103,9 @@ extension EVM002FileManagerPagePresentationTests {
             $0.entryOpenClient = .testValue
             $0.entryQuickLookClient = .previewValue
             $0.date = .constant(Date(timeIntervalSince1970: 0))
+            $0.entryLoadingClient.stagedLoadItems = { _, _, _ in AsyncThrowingStream { _ in } }
         }
         store.exhaustivity = .off
-
-        await store.send(.entryViewLayout(.hierarchy(.folderChildrenResponse(
-            rootContextGeneration: state.entryViewLayout.hierarchy.rootContextGeneration,
-            folderID: destinationA.id,
-            folderGeneration: 3,
-            .event(.coreBatch(items: [r1], batchIndex: 0)),
-        ))))
-        XCTAssertEqual(store.state.entryViewLayout.selectedIds, [r1.id, beforeY.id])
-        await store.receive(\.entryViewLayout.delegate.selectionChanged)
 
         await store.send(.entryViewLayout(.entryOperations(.loading(.streamEvent(.init(
             generation: 1,
@@ -1130,16 +1118,40 @@ extension EVM002FileManagerPagePresentationTests {
         await store.send(.entryViewLayout(.entryOperations(.loading(.streamFinished(generation: 1)))))
         XCTAssertEqual(
             store.state.entryViewLayout.selectedIds,
-            [r1.id, rootY.id],
+            [beforeX.id, rootY.id],
             "root destination pair가 terminal 커밋에서 migration된다",
         )
-        XCTAssertNil(store.state.pendingIdentityTransition)
+        XCTAssertNotNil(store.state.pendingIdentityTransition)
+        XCTAssertEqual(store.state.pendingIdentityTransition?.primaryMigrated, false)
+        XCTAssertEqual(store.state.pendingIdentityTransition?.additionalMoves.first?.migrated, true)
         await store.receive(\.entryViewLayout.delegate.selectionChanged)
         await store.receive { action in
             guard case let .entryViewLayout(.view(.applyContentProjection(projection))) = action else { return false }
             return projection.entries.map(\.id).sorted() == [destinationA.id, sourceD.id, rootY.id]
         }
         await store.receive(\.entryViewLayout.hierarchy.rootSnapshotCompleted)
+        XCTAssertEqual(
+            store.state.pendingIdentityTransition?.projectionOwner,
+            .folder(id: destinationA.id, generation: 4),
+        )
+
+        await store.send(.entryViewLayout(.hierarchy(.folderChildrenResponse(
+            rootContextGeneration: state.entryViewLayout.hierarchy.rootContextGeneration,
+            folderID: destinationA.id,
+            folderGeneration: 4,
+            .event(.coreBatch(items: [r1], batchIndex: 0)),
+        ))))
+        XCTAssertEqual(store.state.entryViewLayout.selectedIds, [r1.id, rootY.id])
+        await store.receive(\.entryViewLayout.delegate.selectionChanged)
+
+        await store.send(.entryViewLayout(.hierarchy(.folderChildrenResponse(
+            rootContextGeneration: state.entryViewLayout.hierarchy.rootContextGeneration,
+            folderID: destinationA.id,
+            folderGeneration: 4,
+            .event(.coreFinished(batchCount: 1)),
+        ))))
+        XCTAssertNil(store.state.pendingIdentityTransition)
+        await store.skipInFlightEffects()
     }
 
     /// EVM-002-command_external_refresh_correlation: additional before도 lexical 행 ID로만 교체한다.

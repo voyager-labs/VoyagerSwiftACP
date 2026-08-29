@@ -224,6 +224,9 @@ extension FileManagerContentIdentityTransitionCoordinator {
         on action: FileManagerContentAction,
         state: inout FileManagerContentState,
     ) {
+        if resolveAdditionalRootDestinationFailure(on: action, state: &state) {
+            return
+        }
         if resolveAdditionalDestinationTerminal(on: action, state: &state) {
             return
         }
@@ -257,6 +260,38 @@ extension FileManagerContentIdentityTransitionCoordinator {
         case .event(.coreBatch), .event(.metadataPatches):
             break
         }
+    }
+
+    /// current root 실패를 matching additional root destination의 terminal로 기록한다.
+    private static func resolveAdditionalRootDestinationFailure(
+        on action: FileManagerContentAction,
+        state: inout FileManagerContentState,
+    ) -> Bool {
+        guard case let .entryViewLayout(.entryOperations(.loading(.streamFailed(streamGeneration)))) = action,
+              state.entryViewLayout.entryOperations.loadingContext.generation == streamGeneration,
+              state.entryViewLayout.entryOperations.loadingContext.streamTerminal,
+              state.entryViewLayout.entryOperations.loadingContext.isIncomplete,
+              var transition = state.pendingIdentityTransition,
+              transition.additionalMoves.contains(where: { move in
+                  guard !move.migrated, case let .root(generation) = move.destinationOwner else { return false }
+                  return generation == streamGeneration
+              })
+        else { return false }
+        for index in transition.additionalMoves.indices {
+            guard !transition.additionalMoves[index].migrated,
+                  case let .root(generation) = transition.additionalMoves[index].destinationOwner,
+                  generation == streamGeneration
+            else { continue }
+            transition.additionalMoves[index].migrated = true
+        }
+        state.pendingIdentityTransition = transition
+        commitMigratedSourceStagings(transition: transition, state: &state)
+        if transition.primaryMigrated || primaryOwnerIsTerminal(transition, state: state),
+           !hasPendingDestinationPairs(state)
+        {
+            discard(state: &state)
+        }
+        return true
     }
 
     /// additional destination의 성공·실패 terminal을 pair 상태에 반영한다.
@@ -301,7 +336,7 @@ extension FileManagerContentIdentityTransitionCoordinator {
     }
 
     /// reducer 적용 후 primary owner가 성공·실패 terminal에 도달했는지 판정한다.
-    private static func primaryOwnerIsTerminal(
+    static func primaryOwnerIsTerminal(
         _ transition: FileManagerContentState.EntryIdentityTransition,
         state: FileManagerContentState,
     ) -> Bool {
