@@ -1235,6 +1235,97 @@ extension EVM002ManageEntriesViewPresentationTests {
         ) as? EntryListEntryCellView)
         XCTAssertEqual(updatedCell.textField?.stringValue, "new.txt")
     }
+
+    /// EVM-002-atomic_identity_swap: retained preorder가 같아도 parent topology가 다르면 full rebuild한다.
+    /// - 검증 내용: direct child swap과 B(C,D)→B(C(D)) 재배치를 같은 projection change로 적용한다.
+    /// - 사전 조건: retained B subtree의 preorder IDs는 [B,C,D]로 같지만 C/D parent 경계가 다르다.
+    /// - 기대 결과: incremental merge를 거부하고 rendered B children=[C], C children=[D]가 된다.
+    func testExpandedListIdentitySwapRejectsRetainedTopologyChange() throws {
+        let root = EntryModel.temporaryFolder(id: "/root/A", name: "A")
+        let before = EntryModel.temporaryFolder(id: "/root/A/0-before", name: "0-before")
+        let after = EntryModel.temporaryFolder(id: "/root/A/0-after", name: "0-after")
+        let folderB = EntryModel.temporaryFolder(id: "/root/A/B", name: "B")
+        let folderC = EntryModel.temporaryFolder(id: "/root/A/B/C", name: "C")
+        let folderD = EntryModel.temporaryFolder(id: "/root/A/B/D", name: "D")
+        var oldHierarchy = EntryListHierarchyState(rootPath: "/root")
+        oldHierarchy.nodesByID[root.id] = .init(
+            children: [before, folderB], loadPhase: .loaded, generation: 1, coreFinished: true,
+        )
+        oldHierarchy.nodesByID[folderB.id] = .init(
+            children: [folderC, folderD], loadPhase: .loaded, generation: 1, coreFinished: true,
+        )
+        oldHierarchy.nodesByID[folderC.id] = .init(
+            children: [], loadPhase: .loaded, generation: 1, coreFinished: true,
+        )
+        oldHierarchy.setExpandedIDs([root.id, folderB.id])
+        var newHierarchy = oldHierarchy
+        newHierarchy.nodesByID[root.id]?.folder.children = [after, folderB]
+        newHierarchy.nodesByID[folderB.id]?.folder.children = [folderC]
+        newHierarchy.nodesByID[folderC.id]?.folder.children = [folderD]
+        newHierarchy.setExpandedIDs([root.id, folderB.id, folderC.id])
+        let context = EntryListOutlineProjection.Context(
+            mode: .list,
+            isNormalDirectoryPage: true,
+            hasActiveGrouping: false,
+        )
+        let oldProjection = EntryListOutlineProjection(
+            revision: 1,
+            rootEntries: [root],
+            hierarchyState: oldHierarchy,
+            context: context,
+            sortKey: .name,
+            sortOrder: .ascending,
+        )
+        let newProjection = EntryListOutlineProjection(
+            revision: 2,
+            rootEntries: [root],
+            hierarchyState: newHierarchy,
+            context: context,
+            sortKey: .name,
+            sortOrder: .ascending,
+        )
+        var state = EntryViewLayoutState()
+        state.mode = .list
+        state.entries = [root]
+        state.hierarchy = newHierarchy
+        let coordinator = EntryListCoordinator(store: Store(initialState: state) { EntryViewLayoutFeature() })
+        coordinator.bind(to: EntryListView(frame: .zero))
+        coordinator.isRenderObservationEnabled = false
+        func entryIDs(_ items: [EntryListOutlineItem]) -> [EntryModel.ID] {
+            items.compactMap { item in
+                guard case let .entry(entry) = item.kind else { return nil }
+                return entry.id
+            }
+        }
+        func findItem(withID id: EntryModel.ID, in items: [EntryListOutlineItem]) -> EntryListOutlineItem? {
+            for item in items {
+                if entryIDs([item]) == [id] { return item }
+                if let match = findItem(withID: id, in: item.children) { return match }
+            }
+            return nil
+        }
+
+        coordinator.applyStoreProjection(oldProjection)
+        var incomingItems: [EntryListOutlineItem] = []
+        EntryListCoordinatorProjectionSession().apply(newProjection) { _, items in
+            incomingItems = items
+        }
+        let existingRoot = try XCTUnwrap(coordinator.entryItemById[root.id])
+        let existingB = try XCTUnwrap(coordinator.entryItemById[folderB.id])
+        let incomingRoot = try XCTUnwrap(findItem(withID: root.id, in: incomingItems))
+        let incomingB = try XCTUnwrap(findItem(withID: folderB.id, in: incomingItems))
+        XCTAssertEqual(entryIDs(existingRoot.children), [before.id, folderB.id])
+        XCTAssertEqual(entryIDs(incomingRoot.children), [after.id, folderB.id])
+        XCTAssertEqual(existingB.flattenEntries().map(\.0), [folderB.id, folderC.id, folderD.id])
+        XCTAssertEqual(incomingB.flattenEntries().map(\.0), [folderB.id, folderC.id, folderD.id])
+        XCTAssertFalse(coordinator.tryIncrementalHierarchyIdentitySwap(items: incomingItems))
+        coordinator.applyStoreProjection(newProjection)
+
+        let renderedB = try XCTUnwrap(coordinator.entryItemById[folderB.id])
+        let renderedC = try XCTUnwrap(coordinator.entryItemById[folderC.id])
+        XCTAssertEqual(entryIDs(renderedB.children), [folderC.id])
+        XCTAssertEqual(entryIDs(renderedC.children), [folderD.id])
+    }
 }
 
 private extension EntryListOutlineItem {

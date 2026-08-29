@@ -244,6 +244,7 @@ struct EntryListHierarchyReducer {
                     nodeState.folder.coreFinished = true
                     state.hierarchy.deferredFolderReplacements[folderID] = nil
                     state.hierarchy.nodesByID[folderID] = nodeState
+                    state.hierarchy.reconcileNodesAfterMigrationCommit(folderID: folderID)
                     return .none
                 }
                 if case let .event(.metadataPatches(patches)) = response,

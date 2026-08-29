@@ -411,11 +411,11 @@ extension EntryListCoordinator {
         return entry.id
     }
 
-    private func outlineEntryShape(_ item: OutlineItem) -> [EntryModel.ID]? {
+    private func outlineEntryShape(_ item: OutlineItem) -> OutlineEntryTopology? {
         guard let id = outlineEntryID(item) else { return nil }
         let childShapes = item.children.compactMap(outlineEntryShape)
         guard childShapes.count == item.children.count else { return nil }
-        return [id] + childShapes.flatMap(\.self)
+        return .init(id: id, children: childShapes)
     }
 
     private func mergeOutlinePayload(existing: OutlineItem, incoming: OutlineItem) {
@@ -430,6 +430,11 @@ extension EntryListCoordinator {
         let rootIndex: Int
         let removed: IndexSet
         let inserted: IndexSet
+    }
+
+    private struct OutlineEntryTopology: Equatable {
+        let id: EntryModel.ID
+        let children: [OutlineEntryTopology]
     }
 
     private enum HierarchyRootIdentityDelta {

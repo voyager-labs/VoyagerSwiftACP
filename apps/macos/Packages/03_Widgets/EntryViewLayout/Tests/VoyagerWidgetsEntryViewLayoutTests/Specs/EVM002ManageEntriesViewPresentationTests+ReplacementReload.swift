@@ -116,6 +116,60 @@ extension EVM002ManageEntriesViewPresentationTests {
         XCTAssertEqual(state.hierarchy.nodesByID[folder.id]?.loadPhase, .failed(.permissionDenied))
     }
 
+    /// EVM-002-replacement_reload_snapshot_retention: terminal deferred commit은 stale descendant cache를 제거한다.
+    /// - 검증 내용: after가 필터링된 replacement를 coreFinished에서 확정한 뒤 제거된 subtree cache를 검사한다.
+    /// - 사전 조건: retained child subtree와 after를 기다리는 generation 4 deferred replacement가 있다.
+    /// - 기대 결과: authoritative kept child만 남고 제거된 child와 descendant node는 모두 사라진다.
+    func testTerminalDeferredCommitReconcilesStaleDescendants() {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let removed = EntryModel.temporaryFolder(id: "/root/a/removed", name: "removed")
+        let descendant = replacementReloadFile(id: "/root/a/removed/child", name: "child")
+        let kept = replacementReloadFile(id: "/root/a/kept", name: "kept")
+        var state = replacementReloadState(folder: folder)
+        state.hierarchy.nodesByID[folder.id] = .init(
+            children: [removed], loadPhase: .loaded, generation: 3,
+        )
+        state.hierarchy.nodesByID[removed.id] = .init(
+            children: [descendant], loadPhase: .loaded, generation: 2,
+        )
+        state.hierarchy.nodesByID[descendant.id] = .init(
+            parentID: removed.id, generation: 1, loadPhase: .loaded,
+        )
+        state.hierarchy.setExpandedIDs([folder.id, removed.id])
+        let reducer = EntryListHierarchyReducer()
+
+        _ = reducer.reduce(
+            into: &state,
+            action: .hierarchy(.hierarchyInvalidated(affectedPaths: [folder.id], removedPrefixes: [])),
+        )
+        state.hierarchy.beginDeferredFolderReplacement(
+            folderID: folder.id,
+            untilEntryID: "/root/a/.hidden-after",
+        )
+        _ = reducer.reduce(
+            into: &state,
+            action: .hierarchy(.folderChildrenResponse(
+                rootContextGeneration: 0,
+                folderID: folder.id,
+                folderGeneration: 4,
+                .event(.coreBatch(items: [kept], batchIndex: 0)),
+            )),
+        )
+        _ = reducer.reduce(
+            into: &state,
+            action: .hierarchy(.folderChildrenResponse(
+                rootContextGeneration: 0,
+                folderID: folder.id,
+                folderGeneration: 4,
+                .event(.coreFinished(batchCount: 1)),
+            )),
+        )
+
+        XCTAssertEqual(state.hierarchy.nodesByID[folder.id]?.folder.children, [kept])
+        XCTAssertNil(state.hierarchy.nodesByID[removed.id])
+        XCTAssertNil(state.hierarchy.nodesByID[descendant.id])
+    }
+
     /// EVM-002-toggle_directory_expansion_in_list: canonical watcher path가 lexical hierarchy key를 다시 로드한다.
     /// symlink를 통해 연 folder가 실경로 이벤트를 받아도 expanded child cache가 stale로 남지 않는지 검증한다.
     /// - 검증 내용: `/private/var` affected path가 `/var` folder ID의 새 load request를 생성함
