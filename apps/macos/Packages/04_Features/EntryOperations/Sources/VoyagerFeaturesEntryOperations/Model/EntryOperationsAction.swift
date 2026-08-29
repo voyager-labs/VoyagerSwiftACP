@@ -149,7 +149,11 @@ public enum EntryOperationsAction: CasePathable, Sendable {
         case createNewFolder(parentPath: String, siblingNames: [String])
         case createAliases(paths: [String])
         case renameItem(oldPath: String, newPath: String)
-        case startRename(item: EntryModel, text: String)
+        case startRename(
+            item: EntryModel,
+            text: String,
+            source: EntryCommandSource = .fileManagerContent,
+        )
         case updateRenamingText(String)
         case commitRename
         case cancelRename

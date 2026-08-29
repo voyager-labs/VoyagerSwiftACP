@@ -211,7 +211,7 @@ final class EntryContextMenuCoordinator: NSObject, NSMenuDelegate, NSPopoverDele
               target.entries.count == 1,
               let item = target.entries.first
         else { return }
-        store.send(.view(.startRename(item: item, text: item.name)))
+        store.send(.view(.startRename(item: item, text: item.name, source: .contextMenu)))
     }
 
     @objc

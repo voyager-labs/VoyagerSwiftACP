@@ -222,8 +222,11 @@ public struct EntryViewLayoutFeature {
             case let .view(.performService(serviceName)):
                 return .send(.delegate(.performService(serviceName: serviceName)))
 
-            case let .view(.startRename(item, text)):
-                return .send(.delegate(.startRename(item: item, text: text)))
+            case let .view(.startRename(item, text, source)):
+                return .send(.delegate(.startRename(item: item, text: text, source: source)))
+
+            case let .view(.updateRenamingText(text)):
+                return .send(.entryOperations(.edit(.updateRenamingText(text))))
 
             case let .view(.commitRename(itemID, newName)):
                 return .send(.delegate(.renameCommitted(itemID: itemID, newName: newName)))
@@ -279,11 +282,15 @@ public struct EntryViewLayoutFeature {
 
             case let .view(.applyContentProjection(projection)):
                 let previousSelectedIds = state.selectedIds
+                let previousRenamingItemID = state.entryOperations.renamingItemId
                 state.entries = projection.entries
                 state.trashDirectoryPath = projection.trashDirectoryPath
                 state.entryOperations.isLoading = projection.isLoading
                 state.entryOperations.renamingItemId = projection.renamingItemId
                 state.entryOperations.renamingText = projection.renamingText
+                if projection.renamingItemId != previousRenamingItemID {
+                    state.entryOperations.renamingCommandSource = nil
+                }
                 state.entryOperations.windowID = projection.collectionWindowID
                 state.entryOperations.loadingCancellationOwnerID = projection.collectionLoadingCancellationOwnerID
                 state.reconcileSelectionWithVisibleEntries(preservesScrollIntent: true)

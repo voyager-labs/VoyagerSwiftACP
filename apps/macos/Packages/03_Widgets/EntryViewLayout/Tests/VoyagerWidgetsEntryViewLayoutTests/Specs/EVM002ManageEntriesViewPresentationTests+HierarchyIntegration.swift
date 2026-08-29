@@ -2,6 +2,7 @@ import AppKit
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesEntry
+import VoyagerFeaturesEntryOperations
 import VoyagerShared
 @testable import VoyagerWidgetsEntryViewLayout
 import XCTest
@@ -906,9 +907,11 @@ extension EVM002ManageEntriesViewPresentationTests {
         state.hierarchy = .init(rootPath: "/root")
         state.hierarchy.nodesByID = [folder.id: .init(children: [child], loadPhase: .loaded, generation: 0)]
         state.hierarchy.setExpandedIDs([folder.id])
+        let source = LockIsolated<EntryCommandSource?>(nil)
         let store = Store(initialState: state) {
             Reduce<EntryViewLayoutState, EntryViewLayoutAction> { state, action in
-                guard case let .view(.startRename(item, _)) = action else { return .none }
+                guard case let .view(.startRename(item, _, commandSource)) = action else { return .none }
+                source.setValue(commandSource)
                 state.entryOperations.renamingItemId = item.id
                 return .none
             }
@@ -932,6 +935,7 @@ extension EVM002ManageEntriesViewPresentationTests {
         coordinator.contextMenuCoordinator?.contextMenuStartRename()
 
         XCTAssertEqual(store.state.entryOperations.renamingItemId, child.id)
+        XCTAssertEqual(source.value, .contextMenu)
     }
 
     /// EVM-002-set_entries_view_as_icon_grid: collection restore는 제거 tombstone을 해제함
@@ -998,6 +1002,7 @@ extension EVM002ManageEntriesViewPresentationTests {
         var state = EntryViewLayoutState()
         state.entries = [renamed]
         state.entryOperations.renamingItemId = renamed.id
+        state.entryOperations.renamingCommandSource = .contextMenu
         let store = TestStore(initialState: state) {
             EntryViewLayoutFeature()
         } withDependencies: {
@@ -1014,6 +1019,7 @@ extension EVM002ManageEntriesViewPresentationTests {
         await store.finish()
 
         XCTAssertNil(store.state.entryOperations.renamingItemId)
+        XCTAssertNil(store.state.entryOperations.renamingCommandSource)
         XCTAssertEqual(store.state.entries, [replacement])
     }
 

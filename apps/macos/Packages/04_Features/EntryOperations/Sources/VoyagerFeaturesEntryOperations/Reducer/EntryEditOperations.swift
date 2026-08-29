@@ -134,10 +134,11 @@ struct EntryEditOperationsReducer {
                     )
                 }
 
-            case let .edit(.startRename(item, text)):
+            case let .edit(.startRename(item, text, source)):
                 state.renamingItemId = item.id
                 state.renamingText = text
                 state.renamingItem = item
+                state.renamingCommandSource = source
                 return .none
 
             case let .edit(.updateRenamingText(text)):
@@ -146,6 +147,7 @@ struct EntryEditOperationsReducer {
                 return .none
 
             case .edit(.commitRename):
+                state.renamingCommandSource = nil
                 guard let itemId = state.renamingItemId,
                       let item = state.renamingItem ?? state.items[id: itemId]
                 else {
@@ -199,6 +201,7 @@ struct EntryEditOperationsReducer {
                 state.renamingItemId = nil
                 state.renamingText = ""
                 state.renamingItem = nil
+                state.renamingCommandSource = nil
                 return .none
 
             default:

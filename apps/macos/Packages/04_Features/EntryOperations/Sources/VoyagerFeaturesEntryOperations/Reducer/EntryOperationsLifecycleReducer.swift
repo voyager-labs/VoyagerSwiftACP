@@ -99,6 +99,7 @@ struct EntryOperationsLifecycleReducer {
                 if case .rename = kind {
                     state.renamingItemId = nil
                     state.renamingText = ""
+                    state.renamingCommandSource = nil
                 }
 
                 switch result {
@@ -108,6 +109,7 @@ struct EntryOperationsLifecycleReducer {
                     if case .createFolder = kind {
                         state.renamingItemId = filePath
                         state.renamingText = URL(fileURLWithPath: filePath).lastPathComponent
+                        state.renamingCommandSource = .fileManagerContent
                     }
 
                 case let .failure(error):

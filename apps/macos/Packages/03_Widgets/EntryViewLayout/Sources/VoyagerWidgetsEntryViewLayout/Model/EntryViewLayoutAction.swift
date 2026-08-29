@@ -72,7 +72,8 @@ public enum EntryViewLayoutAction: ViewAction, CasePathable, Sendable {
         case openPathInNewWindow(String)
         case openInNewTab([String])
         case performService(serviceName: String)
-        case startRename(item: EntryModel, text: String)
+        case startRename(item: EntryModel, text: String, source: EntryCommandSource)
+        case updateRenamingText(String)
         case commitRename(itemID: EntryModel.ID, newName: String)
         case openEntry(EntryModel)
         case saveScrollOffset(CGPoint, forPath: String)
@@ -95,7 +96,7 @@ public enum EntryViewLayoutAction: ViewAction, CasePathable, Sendable {
         case openPathInNewWindow(String)
         case openInNewTab([String])
         case performService(serviceName: String)
-        case startRename(item: EntryModel, text: String)
+        case startRename(item: EntryModel, text: String, source: EntryCommandSource)
         case saveScrollOffset(CGPoint, forPath: String)
         case selectionChanged
         // Feature로 라우팅할 intent

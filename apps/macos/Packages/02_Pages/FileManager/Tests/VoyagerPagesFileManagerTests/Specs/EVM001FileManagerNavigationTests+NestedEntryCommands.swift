@@ -167,9 +167,50 @@ extension EVM001FileManagerNavigationTests {
 
         await store.send(.view(.handleKeyCommand(command)))
         await store.receive { action in
-            guard case let .entryViewLayout(.delegate(.startRename(item, text))) = action else { return false }
-            return item == child && text == child.name
+            guard case let .entryViewLayout(.delegate(.startRename(item, text, source))) = action else {
+                return false
+            }
+            return item == child && text == child.name && source == .keyboardShortcut
         }
+    }
+
+    /// EVM-001-route_entry_selection_commands: rename commit은 시작 source를 accepted metadata에 한 번 사용한다.
+    /// - 검증 내용: pending context-menu source가 accepted rename metadata로 전달되고 commit에서 제거된다.
+    /// - 사전 조건: 단일 child rename 세션이 `.contextMenu` source로 시작돼 있다.
+    /// - 기대 결과: metadata source는 `.contextMenu`이고 state source는 nil이다.
+    func testRenameCommitConsumesPendingSource() async {
+        let entry = EntryModel.temporaryFolder(id: "/root/folder", name: "folder")
+        var state = FileManagerContentState()
+        state.navigation.navigationState = .folder("/root")
+        state.entryViewLayout.entries = [entry]
+        state.entryViewLayout.entryOperations.items = [entry]
+        state.entryViewLayout.entryOperations.renamingItemId = entry.id
+        state.entryViewLayout.entryOperations.renamingItem = entry
+        state.entryViewLayout.entryOperations.renamingText = entry.name
+        state.entryViewLayout.entryOperations.renamingCommandSource = .contextMenu
+        let store = TestStore(initialState: state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.date = .constant(Date())
+            $0.entryFileOpsClient.renameFile = { _, _ in }
+        }
+        // store.exhaustivity = .off: parent composition의 부가 action보다 accepted metadata와 source 소비를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.entryViewLayout(.view(.updateRenamingText("renamed"))))
+        await store.send(.entryViewLayout(.delegate(.renameCommitted(
+            itemID: entry.id,
+            newName: "renamed",
+        ))))
+        await store.receive { action in
+            guard case let .entryViewLayout(.entryOperations(.acceptedCommand(metadata, _))) = action else {
+                return false
+            }
+            return metadata.source == .contextMenu
+        }
+        await store.finish()
+
+        XCTAssertNil(store.state.entryViewLayout.entryOperations.renamingCommandSource)
     }
 
     /// empty trash command는 계층 projection과 무관하게 기존 root snapshot만 사용하는지 검증한다.

@@ -13,6 +13,7 @@ public struct EntryOperationsState: Equatable {
     public var renamingItemId: EntryModel.ID?
     public var renamingText: String = ""
     public var renamingItem: EntryModel?
+    public var renamingCommandSource: EntryCommandSource?
 
     public var windowID: UUID?
     public var loadingCancellationOwnerID: UUID
@@ -66,6 +67,7 @@ public struct EntryOperationsState: Equatable {
         renamingItemId = nil
         renamingText = ""
         renamingItem = nil
+        renamingCommandSource = nil
         self.windowID = windowID
         self.loadingCancellationOwnerID = loadingCancellationOwnerID
         self.undoOwnerID = undoOwnerID

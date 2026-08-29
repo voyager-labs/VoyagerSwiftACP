@@ -122,6 +122,126 @@ final class EOP004EditEntryMetadataTests: XCTestCase {
 
     // MARK: - EOP-004-rename_entry
 
+    /// EOP-004-rename_entry: rename source는 세션 동안 보존되고 취소 시 제거된다.
+    /// - 검증 내용: startRename source 저장과 cancelRename cleanup
+    /// - 사전 조건: context menu에서 단일 entry rename을 시작한다.
+    /// - 기대 결과: source가 `.contextMenu`로 저장된 뒤 cancel에서 nil이 된다.
+    func testRenameEntry_sourceClearsOnCancel() async {
+        let entry = EntryModelFixtures.makeFileEntry(
+            id: "/tmp/source.txt",
+            name: "source.txt",
+            fileExtension: "txt",
+        )
+        let store = EntryOperationsTestSupport.makeStore()
+
+        await store.send(.edit(.startRename(
+            item: entry,
+            text: entry.name,
+            source: .contextMenu,
+        ))) {
+            $0.renamingItemId = entry.id
+            $0.renamingText = entry.name
+            $0.renamingItem = entry
+            $0.renamingCommandSource = .contextMenu
+        }
+        await store.send(.edit(.cancelRename)) {
+            $0.renamingItemId = nil
+            $0.renamingText = ""
+            $0.renamingItem = nil
+            $0.renamingCommandSource = nil
+        }
+    }
+
+    /// EOP-004-rename_entry: no-op commit도 rename source를 소모한다.
+    /// - 검증 내용: 원래 이름 commit 후 rename 세션 전체 cleanup
+    /// - 사전 조건: keyboard rename의 draft가 기존 이름과 같다.
+    /// - 기대 결과: 파일 작업 없이 source와 rename state가 nil로 초기화된다.
+    func testRenameEntry_noOpCommitConsumesSource() async {
+        let entry = EntryModelFixtures.makeFileEntry(
+            id: "/tmp/source.txt",
+            name: "source.txt",
+            fileExtension: "txt",
+        )
+        let store = EntryOperationsTestSupport.makeStore()
+
+        await store.send(.edit(.startRename(
+            item: entry,
+            text: entry.name,
+            source: .keyboardShortcut,
+        ))) {
+            $0.renamingItemId = entry.id
+            $0.renamingText = entry.name
+            $0.renamingItem = entry
+            $0.renamingCommandSource = .keyboardShortcut
+        }
+        await store.send(.edit(.commitRename)) {
+            $0.renamingItemId = nil
+            $0.renamingText = ""
+            $0.renamingItem = nil
+            $0.renamingCommandSource = nil
+        }
+    }
+
+    /// EOP-004-rename_entry: accepted rename의 terminal record는 시작 source를 보존한다.
+    /// - 검증 내용: command metadata가 성공 terminal의 `EntryActionRecord.command`에 연결된다.
+    /// - 사전 조건: context-menu source metadata로 이름 변경 commit이 수용된다.
+    /// - 기대 결과: terminal command source가 `.contextMenu`이고 pending source는 nil이다.
+    func testRenameEntry_terminalPreservesAcceptedSource() async {
+        let entry = EntryModelFixtures.makeFileEntry(
+            id: "/tmp/source.txt",
+            name: "source.txt",
+            fileExtension: "txt",
+        )
+        let metadata = EntryCommandMetadata(
+            id: UUID(3),
+            interaction: .renameEntry,
+            source: .contextMenu,
+        )
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryFileOpsClient.renameFile = { _, _ in }
+            $0.entryThumbnailCacheClient = .testValue
+        }
+        // store.exhaustivity = .off: lifecycle 중간 action보다 terminal command metadata를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.edit(.startRename(
+            item: entry,
+            text: "renamed.txt",
+            source: .contextMenu,
+        )))
+        await store.send(.acceptedCommand(metadata: metadata, action: .edit(.commitRename)))
+        await store.receive { action in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return false }
+            return record.command?.source == .contextMenu
+        }
+        await store.finish()
+
+        XCTAssertNil(store.state.renamingCommandSource)
+    }
+
+    /// EOP-004-rename_entry: reset과 terminal loading cleanup은 stale source를 남기지 않는다.
+    /// - 검증 내용: duplicate reset과 itemsLoadFailed의 source cleanup
+    /// - 사전 조건: context-menu rename source가 pending 상태다.
+    /// - 기대 결과: 두 lifecycle 경로 모두 source를 nil로 만든다.
+    func testRenameEntry_resetAndLoadingFailureClearSource() async {
+        var resetState = EntryOperationsState()
+        resetState.renamingCommandSource = .contextMenu
+        resetState.resetForDuplicate(
+            windowID: UUID(0),
+            loadingCancellationOwnerID: UUID(1),
+            undoOwnerID: UUID(2),
+        )
+        XCTAssertNil(resetState.renamingCommandSource)
+
+        var loadingState = EntryOperationsState()
+        loadingState.renamingCommandSource = .keyboardShortcut
+        let store = EntryOperationsTestSupport.makeStore(initialState: loadingState)
+        await store.send(.loading(.itemsLoadFailed)) {
+            $0.loadingContext.streamTerminal = false
+            $0.renamingCommandSource = nil
+        }
+    }
+
     /// EOP-004-rename_entry: itemsLoaded는 rename visibility 판단을 layout owner에 위임
     /// EntryOperations의 root-only snapshot이 hierarchy child rename을 직접 취소하지 않는지 검증한다.
     /// - 검증 내용: `itemsLoaded` 이벤트가 renamingItemId 미포함 목록이어도 rename state를 직접 변경하지 않음

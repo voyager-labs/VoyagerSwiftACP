@@ -158,7 +158,11 @@ enum FileManagerContentKeyCommandHandler {
               let entry = commandEntries(state: state).first(where: { $0.id == selectedId })
         else { return .none }
 
-        return .send(.entryViewLayout(.delegate(.startRename(item: entry, text: entry.name))))
+        return .send(.entryViewLayout(.delegate(.startRename(
+            item: entry,
+            text: entry.name,
+            source: .keyboardShortcut,
+        ))))
     }
 
     private static func commandModifierEffect(

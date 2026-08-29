@@ -109,14 +109,14 @@ struct FileManagerContentEntryOperationsBridgeReducer {
         state: inout State,
     ) -> Effect<Action>? {
         switch delegateAction {
-        case let .startRename(item, text):
-            return sendEntryOperations(.edit(.startRename(item: item, text: text)))
+        case let .startRename(item, text, source):
+            return sendEntryOperations(.edit(.startRename(item: item, text: text, source: source)))
 
         case let .renameCommitted(_, newName):
             let metadata = EntryCommandMetadata(
                 id: productMetricsClient.makeOperationID(),
                 interaction: .renameEntry,
-                source: .fileManagerContent,
+                source: state.entryViewLayout.entryOperations.renamingCommandSource ?? .fileManagerContent,
             )
             return .concatenate(
                 sendEntryOperations(.edit(.updateRenamingText(newName))),

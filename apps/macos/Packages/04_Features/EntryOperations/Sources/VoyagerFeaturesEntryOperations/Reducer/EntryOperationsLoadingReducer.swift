@@ -141,6 +141,7 @@ public struct EntryOperationsLoadingReducer {
                 state.renamingItemId = nil
                 state.renamingText = ""
                 state.renamingItem = nil
+                state.renamingCommandSource = nil
                 return .cancel(
                     id: EntryOperationsLoadingCancelID.loadItems(
                         windowID: state.windowID,
@@ -236,6 +237,7 @@ public struct EntryOperationsLoadingReducer {
                         state.renamingItemId = nil
                         state.renamingText = ""
                         state.renamingItem = nil
+                        state.renamingCommandSource = nil
                     }
                     state.isLoading = false
                     state.isReloading = false
@@ -261,6 +263,7 @@ public struct EntryOperationsLoadingReducer {
                     state.renamingItemId = nil
                     state.renamingText = ""
                     state.renamingItem = nil
+                    state.renamingCommandSource = nil
                     return .none
                 }
                 return .none
@@ -273,6 +276,7 @@ public struct EntryOperationsLoadingReducer {
                 state.renamingItemId = nil
                 state.renamingText = ""
                 state.renamingItem = nil
+                state.renamingCommandSource = nil
                 return .none
 
             default:
