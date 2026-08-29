@@ -119,6 +119,137 @@ extension EVM002FileManagerPagePresentationTests {
         await fixture.store.skipInFlightEffects()
     }
 
+    /// EVM-002-command_external_refresh_correlation: additional destination collapse는 pair와 source hold를 종결한다.
+    /// - 검증 내용: primary A migration 뒤 pending C folder를 collapse하고 transition/source replacement를 검사한다.
+    /// - 사전 조건: entryActionCompleted invalidation이 source D와 destinations A/C를 generation 4로 시작했다.
+    /// - 기대 결과: C response 없이도 pair가 terminalized되고 primary selection과 retained source snapshot이 유지된다.
+    func testAdditionalDestinationCollapseSettlesPairAndSourceHold() async {
+        let source = EntryModel.temporaryFolder(id: "/root/D", name: "D")
+        let primaryDestination = EntryModel.temporaryFolder(id: "/root/A", name: "A")
+        let additionalDestination = EntryModel.temporaryFolder(id: "/root/C", name: "C")
+        let beforePrimary = EntryModel.temporaryFolder(id: "/root/D/p", name: "p")
+        let beforeAdditional = EntryModel.temporaryFolder(id: "/root/D/q", name: "q")
+        let afterPrimary = EntryModel.temporaryFolder(id: "/root/A/p", name: "p")
+        var state = FileManagerContentState()
+        state.navigation.seedInitialFolderPath("/root")
+        state.entryViewLayout.entries = [source, primaryDestination, additionalDestination]
+        state.entryViewLayout.hierarchy = .init(rootPath: "/root")
+        for (folder, children) in [
+            (source, [beforePrimary, beforeAdditional]),
+            (primaryDestination, []),
+            (additionalDestination, []),
+        ] {
+            state.entryViewLayout.hierarchy.nodesByID[folder.id] = .init(
+                children: children, loadPhase: .loaded, generation: 3, coreFinished: true,
+            )
+        }
+        state.entryViewLayout.hierarchy.setExpandedIDs([source.id, primaryDestination.id, additionalDestination.id])
+        state.entryViewLayout.selectedIds = [beforePrimary.id, beforeAdditional.id]
+        let record = EntryActionRecord(
+            operationKind: .pasteFileMove,
+            targets: [
+                .init(beforePath: beforePrimary.id, afterPath: afterPrimary.id),
+                .init(beforePath: beforeAdditional.id, afterPath: "/root/C/q"),
+            ],
+        )
+        let store = makeIdentityTransitionStore(state)
+
+        await store.send(.entryViewLayout(.entryOperations(.lifecycle(.entryActionCompleted(record)))))
+        await receiveHierarchyInvalidation(store)
+        await store.send(folderResponse(
+            primaryDestination.id,
+            generation: 4,
+            .event(.coreBatch(items: [afterPrimary], batchIndex: 0)),
+        ))
+        await store.receive(\.entryViewLayout.delegate.selectionChanged)
+        await store.send(.entryViewLayout(.hierarchy(.folderCollapseRequested(id: additionalDestination.id))))
+
+        XCTAssertNil(store.state.pendingIdentityTransition)
+        XCTAssertNil(store.state.entryViewLayout.hierarchy.deferredFolderReplacement(folderID: source.id))
+        XCTAssertEqual(store.state.entryViewLayout.selectedIds, [afterPrimary.id, beforeAdditional.id])
+        XCTAssertEqual(
+            store.state.entryViewLayout.hierarchy.nodesByID[source.id]?.folder.children,
+            [beforePrimary, beforeAdditional],
+        )
+        await store.skipInFlightEffects()
+    }
+
+    /// EVM-002-command_external_refresh_correlation: shared primary collapse는 nil-owner pair까지 함께 종결한다.
+    /// - 검증 내용: entryActionCompleted 직후 primary destination C를 collapse해 transition/source hold를 검사한다.
+    /// - 사전 조건: primary와 additional이 C generation 4를 공유하고 source D hold가 pre-arm돼 있다.
+    /// - 기대 결과: primary와 nil-owner pair가 모두 cancellation terminal로 정산되고 retained source가 유지된다.
+    func testSharedPrimaryDestinationCollapseSettlesNilOwnerPair() async {
+        let fixture = makeSharedPrimaryTerminalFixture()
+        await startSharedPrimaryTerminalFixture(fixture)
+
+        await fixture.store.send(.entryViewLayout(.hierarchy(.folderCollapseRequested(id: fixture.destination.id))))
+
+        XCTAssertNil(fixture.store.state.pendingIdentityTransition)
+        XCTAssertNil(fixture.store.state.entryViewLayout.hierarchy.deferredFolderReplacement(
+            folderID: fixture.source.id,
+        ))
+        XCTAssertEqual(
+            fixture.store.state.entryViewLayout.hierarchy.nodesByID[fixture.source.id]?.folder.children,
+            [fixture.beforePrimary, fixture.beforeAdditional],
+        )
+        XCTAssertEqual(
+            fixture.store.state.entryViewLayout.selectedIds,
+            [fixture.beforePrimary.id, fixture.beforeAdditional.id],
+        )
+        await fixture.store.skipInFlightEffects()
+    }
+
+    /// EVM-002-command_external_refresh_correlation: stale destination owner도 collapse cancellation으로 종결한다.
+    /// - 검증 내용: generation 3 owner가 남은 transition에서 generation 5 C node를 collapse한다.
+    /// - 사전 조건: primary는 이미 migrated이고 explicit additional C pair와 source hold만 pending이다.
+    /// - 기대 결과: response generation과 무관하게 exact lexical C pair와 hold가 닫힌다.
+    func testStaleAdditionalDestinationCollapseSettlesCanceledOwner() async {
+        let source = EntryModel.temporaryFolder(id: "/root/D", name: "D")
+        let destination = EntryModel.temporaryFolder(id: "/root/C", name: "C")
+        let before = EntryModel.temporaryFolder(id: "/root/D/q", name: "q")
+        var state = FileManagerContentState()
+        state.navigation.seedInitialFolderPath("/root")
+        state.entryViewLayout.entries = [source, destination]
+        state.entryViewLayout.hierarchy = .init(rootPath: "/root")
+        state.entryViewLayout.hierarchy.nodesByID[source.id] = .init(
+            children: [before], loadPhase: .loadingCore, generation: 5,
+        )
+        state.entryViewLayout.hierarchy.nodesByID[destination.id] = .init(
+            children: [], loadPhase: .loadingCore, generation: 5,
+        )
+        state.entryViewLayout.hierarchy.setExpandedIDs([source.id, destination.id])
+        state.entryViewLayout.selectedIds = [before.id]
+        state.pendingIdentityTransition = .init(
+            recordID: UUID(),
+            beforePath: "/root/primary",
+            afterPath: "/root/primary-after",
+            rootPath: "/root",
+            refreshGeneration: 1,
+            projectionOwner: .root(generation: 1),
+            additionalMoves: [
+                .init(
+                    beforePath: before.id,
+                    afterPath: "/root/C/q",
+                    sourceOwner: .folder(id: source.id, generation: 3),
+                    destinationOwner: .folder(id: destination.id, generation: 3),
+                ),
+            ],
+        )
+        state.pendingIdentityTransition?.primaryMigrated = true
+        state.entryViewLayout.hierarchy.beginDeferredFolderReplacement(
+            folderID: source.id,
+            untilEntryID: "/root/C/q",
+            holdsUntilMigration: true,
+        )
+        let store = makeIdentityTransitionStore(state)
+
+        await store.send(.entryViewLayout(.hierarchy(.folderCollapseRequested(id: destination.id))))
+
+        XCTAssertNil(store.state.pendingIdentityTransition)
+        XCTAssertNil(store.state.entryViewLayout.hierarchy.deferredFolderReplacement(folderID: source.id))
+        XCTAssertEqual(store.state.entryViewLayout.selectedIds, [before.id])
+    }
+
     /// EVM-002-command_external_refresh_correlation: canonical alias success terminal은 exact primary owner만 종결한다.
     /// - 검증 내용: canonical-equal B coreFinished 뒤 A nil-owner pair와 replacements를 유지하고 A terminal에서 닫는다.
     /// - 사전 조건: distinct lexical alias A/B node가 같은 target과 generation 3을 공유한다.
@@ -165,6 +296,22 @@ extension EVM002FileManagerPagePresentationTests {
             .failed(.permissionDenied),
         ))
         assertCanonicalAliasTerminalSettled(fixture, destinationChildren: [fixture.oldA])
+    }
+
+    /// EVM-002-command_external_refresh_correlation: canonical alias collapse도 exact destination만 취소한다.
+    /// - 검증 내용: B collapse 뒤 A transition/holds를 유지하고 A collapse에서만 정산한다.
+    /// - 사전 조건: canonical-equal lexical aliases A/B와 A nil-owner shared pair가 있다.
+    /// - 기대 결과: B는 no-op, A는 transition과 source/destination replacement를 닫는다.
+    func testCanonicalAliasDestinationCollapseRequiresExactLexicalOwner() async throws {
+        let fixture = try makeCanonicalAliasTerminalFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
+        await startCanonicalAliasTerminalFixture(fixture)
+
+        await fixture.store.send(.entryViewLayout(.hierarchy(.folderCollapseRequested(id: fixture.aliasB.id))))
+        assertCanonicalAliasTerminalRemainsPending(fixture)
+
+        await fixture.store.send(.entryViewLayout(.hierarchy(.folderCollapseRequested(id: fixture.aliasA.id))))
+        assertCanonicalAliasTerminalSettled(fixture, destinationChildren: [])
     }
 
     private func makeSharedPrimaryTerminalFixture() -> SharedPrimaryTerminalFixture {
@@ -221,6 +368,29 @@ extension EVM002FileManagerPagePresentationTests {
         XCTAssertNotNil(fixture.store.state.entryViewLayout.hierarchy.deferredFolderReplacement(
             folderID: fixture.source.id,
         ))
+    }
+
+    private func makeIdentityTransitionStore(
+        _ state: FileManagerContentState,
+    ) -> TestStore<FileManagerContentState, FileManagerContentAction> {
+        let store = TestStore(initialState: state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+            $0.entryQuickLookClient = .previewValue
+            $0.entryLoadingClient.stagedLoadItems = { _, _, _ in AsyncThrowingStream { _ in } }
+        }
+        store.exhaustivity = .off
+        return store
+    }
+
+    private func receiveHierarchyInvalidation(
+        _ store: TestStore<FileManagerContentState, FileManagerContentAction>,
+    ) async {
+        await store.receive { action in
+            guard case .entryViewLayout(.hierarchy(.hierarchyInvalidated)) = action else { return false }
+            return true
+        }
     }
 
     private func makeCanonicalAliasTerminalFixture() throws -> CanonicalAliasTerminalFixture {

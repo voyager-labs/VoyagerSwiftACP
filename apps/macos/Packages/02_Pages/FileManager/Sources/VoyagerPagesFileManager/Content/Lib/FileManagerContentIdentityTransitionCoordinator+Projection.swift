@@ -217,6 +217,9 @@ extension FileManagerContentIdentityTransitionCoordinator {
         on action: FileManagerContentAction,
         state: inout FileManagerContentState,
     ) {
+        if resolveDestinationCollapse(on: action, state: &state) {
+            return
+        }
         if resolveAdditionalRootDestinationFailure(on: action, state: &state) {
             return
         }
@@ -254,6 +257,44 @@ extension FileManagerContentIdentityTransitionCoordinator {
         case .event(.coreBatch), .event(.metadataPatches):
             break
         }
+    }
+
+    /// collapsed folder가 소유한 destination을 response 없는 cancellation terminal로 종결한다.
+    private static func resolveDestinationCollapse(
+        on action: FileManagerContentAction,
+        state: inout FileManagerContentState,
+    ) -> Bool {
+        guard case let .entryViewLayout(.hierarchy(.folderCollapseRequested(folderID))) = action,
+              var transition = state.pendingIdentityTransition
+        else { return false }
+        var resolved = false
+        if !transition.primaryMigrated,
+           case let .folder(primaryID, _) = transition.projectionOwner,
+           standardizedPath(primaryID) == standardizedPath(folderID)
+        {
+            transition.primaryMigrated = true
+            resolved = true
+        }
+        for index in transition.additionalMoves.indices where !transition.additionalMoves[index].migrated {
+            let owner = transition.additionalMoves[index].destinationOwner ?? transition.projectionOwner
+            guard case let .folder(ownerID, _) = owner,
+                  standardizedPath(ownerID) == standardizedPath(folderID)
+            else { continue }
+            transition.additionalMoves[index].migrated = true
+            resolved = true
+        }
+        guard resolved else { return false }
+        if state.entryViewLayout.hierarchy.deferredFolderReplacement(folderID: folderID)?.holdsUntilMigration == false {
+            _ = state.entryViewLayout.hierarchy.takeDeferredFolderReplacement(folderID: folderID)
+        }
+        state.pendingIdentityTransition = transition
+        commitMigratedSourceStagings(transition: transition, state: &state)
+        if transition.primaryMigrated || primaryOwnerIsTerminal(transition, state: state),
+           !hasPendingDestinationPairs(state)
+        {
+            discard(state: &state)
+        }
+        return true
     }
 
     /// primary folder terminal을 공유하는 nil-owner additional pair를 함께 종결한다.
