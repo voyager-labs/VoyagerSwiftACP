@@ -55,6 +55,10 @@ public struct FileManagerContentFeature {
                     ),
                     state: state,
                 )
+            case .internal(.checkRootCandidateAfterTerminal):
+                guard !FileManagerContentIdentityTransitionCoordinator.hasPendingRootSourceMigration(state)
+                else { return .none }
+                return .send(.internal(.commitRootCandidateAfterMigration))
             case .internal(.reloadDirectoryListing):
                 guard case .folder = state.navigation.navigationState else { return .none }
                 // entryActionCompleted가 예약한 identity reload가 같은 root의 현재 또는 다음
@@ -123,8 +127,11 @@ public struct FileManagerContentFeature {
                 on: action,
                 state: &state,
             )
-            guard identityMigrated else { return .none }
-            return .send(.entryViewLayout(.delegate(.selectionChanged)))
+            var effects: [Effect<Action>] = []
+            if identityMigrated {
+                effects.append(.send(.entryViewLayout(.delegate(.selectionChanged))))
+            }
+            return .concatenate(effects)
         }
 
         FileManagerContentComposerReducer()
@@ -381,6 +388,25 @@ public struct FileManagerContentFeature {
     ) -> Effect<Action> {
         let hadPendingRootSourceMigration = FileManagerContentIdentityTransitionCoordinator
             .hasPendingRootSourceMigration(state)
+        let isRootCandidateTerminalAction = switch action {
+        case .entryViewLayout(.entryOperations(.loading(.streamFinished))),
+             .entryViewLayout(.hierarchy(.folderCollapseRequested)):
+            true
+        case let .entryViewLayout(.hierarchy(.folderChildrenResponse(_, _, _, response))):
+            switch response {
+            case .event(.coreFinished), .streamCompleted, .failed:
+                true
+            case .event(.coreBatch), .event(.metadataPatches):
+                false
+            }
+        default:
+            false
+        }
+        let shouldCheckRootCandidateAfterTerminal = hadPendingRootSourceMigration
+            && isRootCandidateTerminalAction
+        let terminalCheckEffect: Effect<Action> = shouldCheckRootCandidateAfterTerminal
+            ? .send(.internal(.checkRootCandidateAfterTerminal))
+            : .none
         let entries: [EntryModel]
         let projectionOwner: FileManagerContentState.EntryIdentityTransitionProjectionOwner
         switch action {
@@ -394,7 +420,7 @@ public struct FileManagerContentFeature {
             guard case let .coreBatch(items: items, batchIndex: batchIndex) = streamEvent.event,
                   streamEvent.generation == state.entryViewLayout.entryOperations.loadingContext.generation,
                   batchIndex == state.entryViewLayout.entryOperations.loadingContext.expectedCoreBatchIndex
-            else { return .none }
+            else { return terminalCheckEffect }
             // 보존 reload buffering 중 배치는 candidate에만 누적되고 streamFinished에서 커밋된다.
             // 커밋 전 selection migration은 화면의 before snapshot과 어긋나므로 terminal 커밋으로 미룬다.
             guard !state.entryViewLayout.entryOperations.loadingContext.isBufferingPreservedDirectoryReload
@@ -415,7 +441,7 @@ public struct FileManagerContentFeature {
                   node.loadPhase == .loadingCore || node.loadPhase == .enriching,
                   case let .event(.coreBatch(items: items, batchIndex: batchIndex)) = response,
                   batchIndex == node.folder.expectedBatchIndex
-            else { return .none }
+            else { return terminalCheckEffect }
             entries = items
             projectionOwner = .folder(id: folderID, generation: folderGeneration)
             FileManagerContentIdentityTransitionCoordinator.beginDeferredFolderReplacementIfNeeded(
@@ -425,7 +451,7 @@ public struct FileManagerContentFeature {
             )
 
         default:
-            return .none
+            return terminalCheckEffect
         }
 
         let identityMigrated = FileManagerContentIdentityTransitionCoordinator.migrateSelection(
@@ -520,12 +546,16 @@ public struct FileManagerContentFeature {
                 projectionOwner: .root(generation: streamGeneration),
                 state: &state,
             )
+            let terminalized = FileManagerContentIdentityTransitionCoordinator.resolveRootDestinationSuccess(
+                generation: streamGeneration,
+                state: &state,
+            )
             // migration 성공 여부와 무관하게 root pair가 있으면 terminal 처리 후 동기화를 발행하고
             // 대기 pair가 없으면 전이를 닫는다.
             if !FileManagerContentIdentityTransitionCoordinator.hasPendingDestinationPairs(state) {
                 FileManagerContentIdentityTransitionCoordinator.discard(state: &state)
             }
-            return migrated || hadRootPair
+            return migrated || hadRootPair || terminalized
 
         case let .entryViewLayout(.entryOperations(.loading(.streamFailed(streamGeneration)))):
             guard streamGeneration == generation,
