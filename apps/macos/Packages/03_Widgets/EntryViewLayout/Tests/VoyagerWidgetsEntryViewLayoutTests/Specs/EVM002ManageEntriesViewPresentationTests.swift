@@ -2,6 +2,7 @@ import AppKit
 import ComposableArchitecture
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
+import VoyagerShared
 @testable import VoyagerWidgetsEntryViewLayout
 import XCTest
 
@@ -95,12 +96,12 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
 
     // MARK: - EVM-002-set_entries_view_as_list_table
 
-    /// EVM-002-set_entries_view_as_list_table: 반복 타일링에서도 목록 헤더 배경이 현재 appearance에 맞게 불투명하다.
-    /// 스크롤 중 헤더 아래 행이 비치지 않으면서 기존 AppKit 헤더와 투명 콘텐츠 표면이 유지되는지 검증한다.
-    /// - 검증 내용: Aqua와 Dark Aqua에서 두 번씩 tile한 헤더 clip이 동적 control background와 alpha 1을 사용한다.
+    /// EVM-002-set_entries_view_as_list_table: 목록 헤더는 withinWindow material 백드롭으로 블러 배경을 유지한다.
+    /// 반복 타일링에서 백드롭이 중복 생성되지 않고 헤더 z-순서와 투명 콘텐츠 표면이 보존되는지 검증한다.
+    /// - 검증 내용: 두 번 tile해도 NSVisualEffectView 백드롭이 정확히 1개이며 listHeaderSurface 설정과 clip 비그리기를 따른다.
     /// - 사전 조건: 실제 EntryListScrollView와 NSTableHeaderView를 구성하고 header clip에 장식 sibling을 추가한다.
-    /// - 기대 결과: 헤더 clip만 배경을 그리며 native header는 보이고 장식 sibling은 숨으며 나머지 표면은 투명하다.
-    func testListHeaderClipUsesOpaqueDynamicBackgroundAcrossTilePasses() throws {
+    /// - 기대 결과: 백드롭이 헤더 뷰 아래에 clip 전체 폭으로 고정되고 native header는 보이며 장식 sibling은 숨는다.
+    func testListHeaderBackdropUsesWithinWindowMaterialAcrossTilePasses() throws {
         let view = EntryListView(frame: NSRect(x: 0, y: 0, width: 640, height: 360))
         view.layoutSubtreeIfNeeded()
         view.scrollView.tile()
@@ -121,40 +122,37 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
         XCTAssertEqual(view.tableView.backgroundColor.alphaComponent, 0)
         XCTAssertEqual(view.tableView.layer?.backgroundColor?.alpha, 0)
 
-        for appearanceName in [NSAppearance.Name.aqua, .darkAqua] {
-            let appearance = try XCTUnwrap(NSAppearance(named: appearanceName))
-            for _ in 0 ..< 2 {
-                headerClip.drawsBackground = false
-                headerClip.backgroundColor = .clear
+        for _ in 0 ..< 2 {
+            headerClip.drawsBackground = true
+            headerClip.backgroundColor = .red
 
-                appearance.performAsCurrentDrawingAppearance {
-                    view.scrollView.tile()
-                }
+            view.scrollView.tile()
+            view.layoutSubtreeIfNeeded()
 
-                var actualColor: NSColor?
-                var expectedColor: NSColor?
-                appearance.performAsCurrentDrawingAppearance {
-                    actualColor = headerClip.backgroundColor.usingColorSpace(.sRGB)
-                    expectedColor = NSColor.controlBackgroundColor.usingColorSpace(.sRGB)
-                }
-                let resolvedActualColor = try XCTUnwrap(actualColor)
-                let resolvedExpectedColor = try XCTUnwrap(expectedColor)
+            let backdrops = headerClip.subviews.compactMap { $0 as? NSVisualEffectView }
+            XCTAssertEqual(backdrops.count, 1)
+            let backdrop = try XCTUnwrap(backdrops.first)
+            XCTAssertEqual(backdrop.blendingMode, .withinWindow)
+            XCTAssertEqual(backdrop.state, .followsWindowActiveState)
+            XCTAssertEqual(backdrop.alphaValue, 1, accuracy: 0.001)
+            XCTAssertFalse(headerClip.drawsBackground)
 
-                XCTAssertTrue(headerClip.drawsBackground)
-                XCTAssertEqual(resolvedActualColor.alphaComponent, 1, accuracy: 0.001)
-                XCTAssertTrue(resolvedActualColor.isEqual(resolvedExpectedColor))
-                XCTAssertFalse(headerView.isHidden)
-                XCTAssertTrue(decorationView.isHidden)
-            }
+            let backdropIndex = try XCTUnwrap(headerClip.subviews.firstIndex(of: backdrop))
+            let headerIndex = try XCTUnwrap(headerClip.subviews.firstIndex(of: headerView))
+            XCTAssertLessThan(backdropIndex, headerIndex)
+            XCTAssertEqual(backdrop.frame, headerClip.bounds)
+
+            XCTAssertFalse(headerView.isHidden)
+            XCTAssertTrue(decorationView.isHidden)
         }
     }
 
-    /// EVM-002-set_entries_view_as_list_table: 그룹 행은 상태와 appearance에 맞는 불투명 배경과 28pt 높이를 사용한다.
+    /// EVM-002-set_entries_view_as_list_table: 그룹 행은 상태와 appearance에 맞는 반투명 오버레이 배경과 28pt 높이를 사용한다.
     /// 사용자가 그룹화된 목록을 펼치거나 접고 선택해도 일반 행의 줄무늬와 네이티브 선택 표현이 보존되는지 검증한다.
-    /// - 검증 내용: Aqua와 Dark Aqua의 그룹 배경, 선택 위임, 재사용 초기화, 행 높이와 인접 간격을 실제 AppKit 행으로 확인한다.
+    /// - 검증 내용: Aqua와 Dark Aqua의 그룹 배경(material 투과 유지), 선택 위임, 재사용 초기화, 행 높이와 인접 간격을 실제 AppKit 행으로 확인한다.
     /// - 사전 조건: 펼침·접힘 그룹과 두 일반 항목을 실제 EntryListCoordinator와 EntryListView에 바인딩한다.
-    /// - 기대 결과: 미선택 그룹은 전체 폭 control background, 선택 그룹은 AppKit 기본 배경, 그룹은 28pt이고 기존 지표는 유지된다.
-    func testGroupedListRowsUseOpaqueBackgroundAndCompactSpacing() throws {
+    /// - 기대 결과: 미선택 그룹은 전체 폭 DS contentPaneOverlay 오버레이, 선택 그룹은 AppKit 기본 배경, 그룹은 28pt이고 기존 지표는 유지된다.
+    func testGroupedListRowsUseTranslucentOverlayAndCompactSpacing() throws {
         for appearanceName in [NSAppearance.Name.aqua, .darkAqua] {
             try assertTask3Appearance(appearanceName)
         }
@@ -1697,11 +1695,11 @@ private func assertTask3Appearance(_ appearanceName: NSAppearance.Name) throws {
     coordinator.bind(to: view)
     let groupItem = try XCTUnwrap(coordinator.outlineItems.first)
     let groupRow = try XCTUnwrap(view.tableView.rowView(atRow: 0, makeIfNecessary: true))
-    var controlBackground: NSColor?
-    appearance.performAsCurrentDrawingAppearance {
-        controlBackground = NSColor.controlBackgroundColor.usingColorSpace(.sRGB)
-    }
-    let expectedGroupColor = try XCTUnwrap(controlBackground)
+    let expectedGroupColor = try XCTUnwrap(
+        VoyagerDS.AppKitSurface
+            .contentPaneOverlay(isDark: appearanceName == .darkAqua)
+            .usingColorSpace(.sRGB),
+    )
     try assertTask3Solid(task3Render(groupRow, appearance), expectedGroupColor)
     view.tableView.collapseItem(groupItem)
     try assertTask3Solid(task3Render(groupRow, appearance), expectedGroupColor)

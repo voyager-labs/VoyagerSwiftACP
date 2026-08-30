@@ -1,6 +1,7 @@
 @preconcurrency import AppKit
 import ComposableArchitecture
 import SwiftUI
+import VoyagerShared
 
 @MainActor
 public struct EntryListViewRepresentable: NSViewRepresentable {
@@ -76,8 +77,11 @@ final class EntryListSelectionRowView: NSTableRowView {
             return
         }
 
+        // 불투명 색으로 덮으면 하위 NSVisualEffectView material 투과가 죽으므로 반투명 오버레이를 쓴다(VOY-598).
+        let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+
         if isGroupRow {
-            NSColor.controlBackgroundColor.setFill()
+            VoyagerDS.AppKitSurface.contentPaneOverlay(isDark: isDark).setFill()
             dirtyRect.fill()
             return
         }
@@ -85,7 +89,6 @@ final class EntryListSelectionRowView: NSTableRowView {
         guard let tableView,
               tableView.row(for: self) % 2 == 1 else { return }
 
-        let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         let backgroundColor = isDark
             ? NSColor.white.withAlphaComponent(0.035)
             : NSColor.black.withAlphaComponent(0.055)
@@ -97,6 +100,47 @@ final class EntryListSelectionRowView: NSTableRowView {
 struct EntryListNativeSelectionContext {
     let destinationOccurrence: AnyObject
     let modifierFlags: NSEvent.ModifierFlags
+}
+
+final class EntryListScrollView: NSScrollView {
+    override func tile() {
+        super.tile()
+
+        guard let headerClipView = subviews
+            .compactMap({ $0 as? NSClipView })
+            .first(where: { $0.documentView is NSTableHeaderView })
+        else { return }
+
+        installHeaderBackdrop(in: headerClipView)
+        headerClipView.drawsBackground = false
+        headerClipView.backgroundColor = .clear
+        for subview in headerClipView.subviews
+            where !(subview is NSTableHeaderView) && !(subview is NSVisualEffectView)
+        {
+            subview.isHidden = true
+        }
+    }
+
+    /// 헤더 배경은 색 fill이 아니라 withinWindow material 백드롭으로 그려
+    /// 아래 콘텐츠 표면이 블러로 비치게 한다(VOY-598).
+    private func installHeaderBackdrop(in headerClipView: NSClipView) {
+        if let existing = headerClipView.subviews
+            .first(where: { $0 is NSVisualEffectView }) as? NSVisualEffectView
+        {
+            VoyagerDS.SurfaceMaterialRole.listHeaderSurface.apply(to: existing)
+            return
+        }
+        guard let headerView = headerClipView.documentView as? NSTableHeaderView else { return }
+        let backdrop = VoyagerDS.SurfaceMaterialRole.listHeaderSurface.makeBackgroundView()
+        backdrop.translatesAutoresizingMaskIntoConstraints = false
+        headerClipView.addSubview(backdrop, positioned: .below, relativeTo: headerView)
+        NSLayoutConstraint.activate([
+            backdrop.leadingAnchor.constraint(equalTo: headerClipView.leadingAnchor),
+            backdrop.trailingAnchor.constraint(equalTo: headerClipView.trailingAnchor),
+            backdrop.topAnchor.constraint(equalTo: headerClipView.topAnchor),
+            backdrop.bottomAnchor.constraint(equalTo: headerClipView.bottomAnchor),
+        ])
+    }
 }
 
 public final class EntryListView: NSView {
@@ -382,23 +426,6 @@ public final class EntryListView: NSView {
             let row = row(at: location)
             guard row >= 0 else { return nil }
             return (row, frameOfOutlineCell(atRow: row).contains(location))
-        }
-    }
-
-    final class EntryListScrollView: NSScrollView {
-        override func tile() {
-            super.tile()
-
-            guard let headerClipView = subviews
-                .compactMap({ $0 as? NSClipView })
-                .first(where: { $0.documentView is NSTableHeaderView })
-            else { return }
-
-            headerClipView.drawsBackground = true
-            headerClipView.backgroundColor = NSColor.controlBackgroundColor
-            for subview in headerClipView.subviews where !(subview is NSTableHeaderView) {
-                subview.isHidden = true
-            }
         }
     }
 
