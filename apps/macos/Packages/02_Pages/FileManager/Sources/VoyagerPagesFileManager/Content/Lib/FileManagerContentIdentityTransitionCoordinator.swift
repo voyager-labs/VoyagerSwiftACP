@@ -164,8 +164,14 @@ enum FileManagerContentIdentityTransitionCoordinator {
 
         state.entryViewLayout.selectedIds.remove(matchedBeforeID)
         state.entryViewLayout.selectedIds.insert(matchedAfterID)
-        state.entryViewLayout.lastSelectedId = matchedAfterID
-        state.entryViewLayout.rangeAnchorId = matchedAfterID
+        // anchor가 primary before를 가리킬 때만 after로 교체한다. pending additional
+        // pair의 anchor까지 덮어쓰면 선택 집합은 유지되지만 기준 행이 틀어진다.
+        if state.entryViewLayout.lastSelectedId == matchedBeforeID {
+            state.entryViewLayout.lastSelectedId = matchedAfterID
+        }
+        if state.entryViewLayout.rangeAnchorId == matchedBeforeID {
+            state.entryViewLayout.rangeAnchorId = matchedAfterID
+        }
         // primary destination이 폴더일 때는 전이가 추가 terminal까지 생존하므로
         // primary migration 완료를 명시적으로 기록해 소비 판정에 사용한다.
         transition.primaryMigrated = true
@@ -391,6 +397,14 @@ enum FileManagerContentIdentityTransitionCoordinator {
             })?.id else { continue }
             state.entryViewLayout.selectedIds.remove(additionalBeforeID)
             state.entryViewLayout.selectedIds.insert(additionalAfterID)
+            // anchor가 이 pair의 before를 가리킬 때만 after로 교체한다. 다른 pair의
+            // identity를 무조건 덮어쓰면 Quick Look index와 Shift 범위 선택이 어긋난다.
+            if state.entryViewLayout.lastSelectedId == additionalBeforeID {
+                state.entryViewLayout.lastSelectedId = additionalAfterID
+            }
+            if state.entryViewLayout.rangeAnchorId == additionalBeforeID {
+                state.entryViewLayout.rangeAnchorId = additionalAfterID
+            }
             transition.additionalMoves[index].migrated = true
             migrated = true
         }

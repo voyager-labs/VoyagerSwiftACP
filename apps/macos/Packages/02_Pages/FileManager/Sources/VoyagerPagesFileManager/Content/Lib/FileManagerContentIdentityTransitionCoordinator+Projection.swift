@@ -438,6 +438,9 @@ extension FileManagerContentIdentityTransitionCoordinator {
             transition: &transition,
         )
         state.pendingIdentityTransition = transition
+        // terminalized pair의 source staging을 즉시 정산한다. 다른 destination이
+        // pending이어도 해당 source의 ghost before 행을 유지하면 안 된다.
+        commitMigratedSourceStagings(transition: transition, state: &state)
         if transition.primaryMigrated || primaryOwnerIsTerminal(transition, state: state),
            !hasPendingDestinationPairs(state)
         {
