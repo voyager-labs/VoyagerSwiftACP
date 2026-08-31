@@ -102,4 +102,17 @@ public struct FileManagerContentState: Equatable {
     var isOpenedCollectionDirty: Bool {
         collection.isDirty
     }
+
+    @discardableResult
+    mutating func consumeExternalPendingSelectionIfAlreadyLoaded() -> Bool {
+        guard pendingSelectEntryID != nil else { return false }
+        let entries = isCollectionMode
+            ? Array(entryViewLayout.collectionItems)
+            : Array(entryViewLayout.entryOperations.items)
+        guard !entries.isEmpty else { return false }
+        return FileManagerContentEntryOpsCoordinator.applyPendingSelectionForLoadedEntries(
+            entries: entries,
+            state: &self,
+        )
+    }
 }

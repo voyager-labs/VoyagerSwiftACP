@@ -622,6 +622,10 @@ extension FileManagerFeature {
         source: ContentTabActionSource = .contentTabBar,
     ) -> Effect<Action> {
         let syncMetricObservation = contentTabSyncMetricObservation(for: action, state: state)
+        let pendingCollectionOpenCancellationEffect = pendingCollectionOpenCancellationEffect(
+            for: action,
+            state: &state,
+        )
         let reducedAction: ContentTabAction = if case let .pin(tabID, placement) = action, placement == nil {
             .pinUsingDormantSlot(
                 tabID,
@@ -659,7 +663,28 @@ extension FileManagerFeature {
         captureDirectContentTabCloseMetric(action, source: source, state: &state)
         let closeCancellationEffect = contentTabCloseCancellationEffect(for: action, state: &state)
         recordContentTabSyncMetricIfAccepted(syncMetricObservation, source: source, state: &state)
-        return .merge(preReductionEffect, closeCancellationEffect, childEffect)
+        return .merge(
+            preReductionEffect,
+            pendingCollectionOpenCancellationEffect,
+            closeCancellationEffect,
+            childEffect,
+        )
+    }
+
+    func pendingCollectionOpenCancellationEffect(
+        for action: ContentTabAction,
+        state: inout State,
+    ) -> Effect<Action> {
+        let tabID: ContentTabID? = switch action {
+        case let .close(tabID), let .commitClose(tabID): tabID
+        default: nil
+        }
+        guard let tabID, state.contentTabs.activeTabID == tabID else { return .none }
+        let failedPinnedReturnTabID = state.pendingPinnedCollectionReturnTabID(for: tabID)
+        return cancelPendingCollectionOpen(
+            state: &state,
+            failedPinnedReturnTabID: failedPinnedReturnTabID,
+        )
     }
 
     /// 동기 content tab 작업의 수용 판정에 필요한 사전 상태 스냅샷.
