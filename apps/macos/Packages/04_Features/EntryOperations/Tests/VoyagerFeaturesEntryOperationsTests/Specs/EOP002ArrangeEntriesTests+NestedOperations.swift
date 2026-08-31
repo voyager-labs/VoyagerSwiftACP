@@ -38,13 +38,9 @@ extension EOP002ArrangeEntriesTests {
             context: scenario.context,
         )
 
-        XCTAssertEqual(outputs.count, 2)
-        guard case let .entryOperations(.clipboard(.copySelectedItems(files))) = try XCTUnwrap(outputs.first) else {
-            return XCTFail("잘라내기 명령은 먼저 copySelectedItems payload를 계획해야 합니다.")
-        }
-        guard case .entryOperations(.clipboard(.setClipboardOperation(operation: .cut))) = try XCTUnwrap(outputs.last)
-        else {
-            return XCTFail("잘라내기 명령은 copy payload 뒤에 cut operation을 계획해야 합니다.")
+        XCTAssertEqual(outputs.count, 1)
+        guard case let .entryOperations(.clipboard(.cutSelectedItems(files))) = try XCTUnwrap(outputs.first) else {
+            return XCTFail("잘라내기 명령은 하나의 cutSelectedItems payload를 계획해야 합니다.")
         }
         XCTAssertEqual(files.map(\.fullPath), scenario.expectedSourcePaths)
     }

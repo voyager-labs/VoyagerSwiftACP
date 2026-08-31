@@ -256,8 +256,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
 
     /// EOP-002-cut_entries: 선택한 Entry가 이동용 잘라내기 상태로 저장되는지 검증한다.
     /// 사용자가 `fixtures/fixtures/texts/plain/11.txt`를 선택한 뒤 cut으로 전환할 때 clipboard marker와 cut session이 설정되는지 확인한다.
-    /// - 검증 내용: `.clipboard(.copySelectedItems)`와 `.clipboard(.setClipboardOperation(.cut))`가 clipboard state와 cut
-    /// session을 갱신한다.
+    /// - 검증 내용: `.clipboard(.cutSelectedItems)`가 URL과 cut marker를 함께 기록하고 clipboard state와 cut session을 갱신한다.
     /// - 사전 조건: `fixtures/fixtures/texts/plain/11.txt`를 FixtureSandbox로 복사하고, clipboard recorder와 session recorder를
     /// 주입한다.
     /// - 기대 결과: clipboard는 cut 상태가 되고, cut session이 현재 선택 경로를 포함하며, 원본 fixture 경로는 그대로 유지된다.
@@ -283,11 +282,10 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             $0.uuid = .constant(UUID())
         }
 
-        // store.exhaustivity = .off: setClipboardOperation이 cutClearSession을 내부 갱신하므로 최종 상태만 검증한다.
+        // store.exhaustivity = .off: cut action의 terminal보다 최종 clipboard 상태와 기록을 검증한다.
         store.exhaustivity = .off
 
-        await store.send(.clipboard(.copySelectedItems(files: [entry])))
-        await store.send(.clipboard(.setClipboardOperation(operation: .cut)))
+        await store.send(.clipboard(.cutSelectedItems(files: [entry])))
         await store.finish()
 
         XCTAssertEqual(recorder.setStrings.map(\.value), ["cut"])
@@ -302,13 +300,72 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
     }
 
+    /// EOP-002-cut_entries: Cut marker 기록 실패는 명령 성공으로 확정하지 않는다.
+    /// URL 기록과 Cut marker 기록을 하나의 명령 terminal로 집계하는지 검증한다.
+    /// - 검증 내용: URL 기록 성공 뒤 marker 기록 실패 시 failure terminal 한 건과 copy fallback 상태를 확인한다.
+    /// - 사전 조건: 실제 fixture 파일, URL 기록 성공 pasteboard, marker 기록 실패 pasteboard가 있다.
+    /// - 기대 결과: accepted metadata를 보존한 failure terminal 한 건, copy operation, 비어 있는 Cut session이다.
+    func testCutEntries_markerFailureEmitsSingleFailureTerminal() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+
+        let recorder = ClipboardRecorder()
+        let entry = EntryModelFixtures.makeFileEntry(
+            id: sandbox.fileURL.path,
+            name: sandbox.fileURL.lastPathComponent,
+            fileExtension: sandbox.fileURL.pathExtension,
+        )
+        let commandID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000202"))
+        let metadata = EntryCommandMetadata(
+            id: commandID,
+            interaction: .cutEntries,
+            source: .keyboardShortcut,
+        )
+        let store = EntryOperationsTestSupport.makeStore(initialState: .init()) {
+            $0.pasteboardClient = makeClipboardClient(
+                recorder: recorder,
+                setStringResult: { _, type in
+                    type.rawValue != "fm.voyager.clipboard.operation"
+                },
+            )
+            $0.entryFileOpsClient.saveClipboardCutSessionId = { _ in }
+            $0.uuid = .constant(UUID())
+        }
+        // store.exhaustivity = .off: command 내부 accepted action은 건너뛰고 최종 terminal 계약을 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.routing(.executeCommand(
+            command: .clipboard(.cutSelectedItems),
+            context: .init(
+                selectedIds: [entry.id],
+                displayItems: [entry],
+                currentPath: sandbox.root.path,
+            ),
+            metadata: metadata,
+        )))
+        await store.receive { action in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return false }
+            return record.command?.id == commandID
+                && record.command?.interaction == .cutEntries
+                && record.command?.source == .keyboardShortcut
+                && record.succeededCount == 0
+                && record.failedCount == 1
+        }
+        await store.finish()
+
+        XCTAssertEqual(recorder.writtenObjectPaths, [[sandbox.fileURL.path]])
+        XCTAssertEqual(store.state.clipboardItems, [sandbox.fileURL.path])
+        XCTAssertEqual(store.state.clipboardOperation, .copy)
+        XCTAssertNil(store.state.cutClearSession)
+    }
+
     /// EOP-002-cut_entries: 선택된 부모와 하위 항목은 표시 순서와 무관하게 부모만 잘라내기 payload로 계획한다.
     /// 사용자가 폴더, 그 하위 파일, 그리고 문자열 접두사만 같은 peer 파일을 함께 선택할 때 하위 파일은 제외하고 topmost source만 유지하는지 확인한다.
-    /// - 검증 내용: `.clipboard(.copySelectedItems)`가 URL pathComponents의 엄격한 조상 관계로 하위 항목만 제거하고, 뒤이어 cut operation을 설정하며
-    /// 남은 source의 표시 순서와 원본 fullPath를 보존한다.
+    /// - 검증 내용: `.clipboard(.cutSelectedItems)`가 URL pathComponents의 엄격한 조상 관계로 하위 항목만 제거하고 남은 source의 표시 순서와 원본
+    /// fullPath를 보존한다.
     /// - 사전 조건: 동일한 폴더와 하위 파일을 선택하되 descendant-first 및 ancestor-first 표시 순서를 각각 구성하고, 경로 구성요소상 조상이 아닌 raw-prefix peer를
     /// 포함한다.
-    /// - 기대 결과: 두 표시 순서 모두 parent와 raw-prefix peer만 cut의 copy payload에 포함되고, 하위 파일은 포함되지 않으며 cut operation이 뒤따른다.
+    /// - 기대 결과: 두 표시 순서 모두 parent와 raw-prefix peer만 단일 cut payload에 포함되고 하위 파일은 포함되지 않는다.
     func testCutEntries_excludesSelectedDescendantsRegardlessOfDisplayOrder() throws {
         try assertCutEntriesExcludingSelectedDescendant(isDescendantFirst: true)
         try assertCutEntriesExcludingSelectedDescendant(isDescendantFirst: false)
@@ -6064,7 +6121,10 @@ private final class CutSessionRecorder: @unchecked Sendable {
     }
 }
 
-private func makeClipboardClient(recorder: ClipboardRecorder) -> PasteboardClient {
+private func makeClipboardClient(
+    recorder: ClipboardRecorder,
+    setStringResult: @Sendable @escaping (String, NSPasteboard.PasteboardType) -> Bool = { _, _ in true },
+) -> PasteboardClient {
     .init(
         changeCount: { 0 },
         clearContents: {
@@ -6077,7 +6137,7 @@ private func makeClipboardClient(recorder: ClipboardRecorder) -> PasteboardClien
         readObjects: { _, _ in nil },
         setString: { string, type in
             recorder.recordSetString(string, type: type)
-            return true
+            return setStringResult(string, type)
         },
         string: { _ in nil },
     )

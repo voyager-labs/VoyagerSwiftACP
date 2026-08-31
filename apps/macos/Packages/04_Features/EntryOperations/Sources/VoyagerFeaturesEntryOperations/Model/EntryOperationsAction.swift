@@ -162,6 +162,7 @@ public enum EntryOperationsAction: CasePathable, Sendable {
     @CasePathable
     public enum Clipboard: CasePathable, Sendable {
         case copySelectedItems(files: [EntryModel])
+        case cutSelectedItems(files: [EntryModel])
         case copyAbsolutePaths(paths: [String])
         case copyURLs(paths: [String])
         case setClipboardOperation(operation: ClipboardOperation)

@@ -117,6 +117,41 @@ struct EntryClipboardOperationsReducer {
                     succeededCount: didWrite ? 1 : 0,
                 ))))
 
+            case let .clipboard(.cutSelectedItems(files)):
+                let paths = files.map(\.fullPath)
+                state.clipboardItems = paths
+                state.clipboardOperation = .copy
+                state.cutClearSession = nil
+                entryFileOpsClient.saveClipboardCutSessionId(nil)
+
+                pasteboardClient.clearContents()
+                let urls = paths.map { URL(fileURLWithPath: $0) }
+                let wroteURLs = pasteboardClient.writeObjects(urls as [NSURL])
+                let wroteMarker = wroteURLs && pasteboardClient.setString(
+                    "cut",
+                    NSPasteboard.PasteboardType("fm.voyager.clipboard.operation"),
+                )
+
+                if wroteMarker {
+                    state.clipboardOperation = .cut
+                    let cutSessionId = uuid().uuidString
+                    entryFileOpsClient.saveClipboardCutSessionId(cutSessionId)
+                    state.cutClearSession = EntryOperationsCutClearHeuristic().makeInitialSession(
+                        cutSessionId: cutSessionId,
+                        pasteboardChangeCount: entryFileOpsClient.clipboardChangeCount(),
+                        sourcePaths: paths,
+                        now: Date(),
+                    )
+                }
+
+                entryFileOpsClient.postFileSystemChanged([])
+                return .send(.lifecycle(.entryActionCompleted(EntryActionRecord(
+                    operationKind: .copyPath,
+                    targets: [],
+                    failedCount: wroteMarker ? 0 : 1,
+                    succeededCount: wroteMarker ? 1 : 0,
+                ))))
+
             case .lifecycle(.loadClipboardState):
                 let (clipboardPaths, clipboardOperation) = entryFileOpsClient.loadClipboardPaths()
                 return .send(.lifecycle(.syncClipboardState(paths: clipboardPaths, operation: clipboardOperation)))

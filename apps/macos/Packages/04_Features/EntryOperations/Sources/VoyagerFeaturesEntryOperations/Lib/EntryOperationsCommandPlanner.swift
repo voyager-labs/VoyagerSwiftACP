@@ -281,10 +281,7 @@ enum EntryOperationsCommandPlanner {
     {
         let selected = topmostSelectedItems(in: context)
         guard !selected.isEmpty else { return [] }
-        return [
-            .entryOperations(.clipboard(.copySelectedItems(files: selected))),
-            .entryOperations(.clipboard(.setClipboardOperation(operation: .cut))),
-        ]
+        return [.entryOperations(.clipboard(.cutSelectedItems(files: selected)))]
     }
 
     private static func planDuplicateSelectedItems(_ context: EntryOperationsCommandContext)
