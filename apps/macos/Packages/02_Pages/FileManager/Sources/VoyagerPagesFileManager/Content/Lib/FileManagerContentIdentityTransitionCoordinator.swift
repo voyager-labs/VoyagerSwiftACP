@@ -466,6 +466,26 @@ enum FileManagerContentIdentityTransitionCoordinator {
         }
         for sourceID in sourceFolderIDsToCommit {
             commitPreservationStaging(sourceID, state: &state)
+            // staging 커밋 뒤 사라진 before 행은 선택·anchor에도 stale로 남는다.
+            // 배치 migration은 swap이 먼저 일어나 이 정산의 대상이 아니다(자동 no-op).
+            let remainingChildPaths = Set(
+                (state.entryViewLayout.hierarchy.nodesByID[sourceID]?.folder.children.map(\.id) ?? [])
+                    .map(standardizedPath),
+            )
+            for move in transition.additionalMoves where move.migrated {
+                guard effectiveSourceFolderID(move) == sourceID else { continue }
+                let beforeIdentity = move.beforeLexicalPath.isEmpty ? move.beforePath : move.beforeLexicalPath
+                guard let staleID = state.entryViewLayout.selectedIds.first(where: {
+                    standardizedPath($0) == standardizedPath(beforeIdentity)
+                }), !remainingChildPaths.contains(standardizedPath(staleID)) else { continue }
+                state.entryViewLayout.selectedIds.remove(staleID)
+                if state.entryViewLayout.lastSelectedId == staleID {
+                    state.entryViewLayout.lastSelectedId = nil
+                }
+                if state.entryViewLayout.rangeAnchorId == staleID {
+                    state.entryViewLayout.rangeAnchorId = nil
+                }
+            }
         }
     }
 

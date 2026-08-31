@@ -78,6 +78,30 @@ extension EVM002FileManagerPagePresentationTests {
         XCTAssertNotNil(store.state.pendingIdentityTransition)
     }
 
+    /// terminal 정산로 커밋된 source staging에서 사라진 before 행의 선택·anchor를 정산한다.
+    /// - 검증 내용: C terminal 뒤 S1의 before가 선택과 anchor에서 함께 제거되는지 확인한다.
+    /// - 사전 조건: S1 source staging이 커밋 가능한 상태(coreFinished)이고 anchor가 before를 가리킨다.
+    /// - 기대 결과: 존재하지 않는 before 경로가 breadcrumb·Quick Look 기준에 남지 않는다.
+    func testAdditionalTerminalSettlesStalePairSelection() async {
+        var state = makeMultiMoveSourceStagingState()
+        state.entryViewLayout.hierarchy.nodesByID["/root/S1"]?.folder.coreFinished = true
+        state.entryViewLayout.lastSelectedId = "/root/S1/q"
+        state.entryViewLayout.rangeAnchorId = "/root/S1/q"
+        let store = makeRootSourceCandidateStore(state)
+
+        await store.send(.entryViewLayout(.hierarchy(.folderChildrenResponse(
+            rootContextGeneration: 0,
+            folderID: "/root/C",
+            folderGeneration: 3,
+            .event(.coreFinished(batchCount: 0)),
+        ))))
+
+        XCTAssertFalse(store.state.entryViewLayout.selectedIds.contains("/root/S1/q"))
+        XCTAssertNil(store.state.entryViewLayout.lastSelectedId)
+        XCTAssertNil(store.state.entryViewLayout.rangeAnchorId)
+        XCTAssertEqual(store.state.pendingIdentityTransition?.additionalMoves.map(\.migrated), [true, false])
+    }
+
     /// 완료된 primary의 collapse로 세대가 어긋나도 pending destination 소유자가 current면 전이를 유지한다.
     /// - 검증 내용: primary stale 상태에서 additional 경로 rename FSEvent가 와도 discard하지 않는다.
     /// - 사전 조건: primaryMigrated=true, primary node는 collapse로 세대 증가, pending B pair는 current.
