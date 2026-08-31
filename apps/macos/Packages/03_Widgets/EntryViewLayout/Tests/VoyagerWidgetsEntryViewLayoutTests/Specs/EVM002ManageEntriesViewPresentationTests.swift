@@ -6,6 +6,24 @@ import VoyagerShared
 @testable import VoyagerWidgetsEntryViewLayout
 import XCTest
 
+private final class TrackingTableHeaderView: NSTableHeaderView {
+    private(set) var invalidationCount = 0
+
+    override var needsDisplay: Bool {
+        get { super.needsDisplay }
+        set {
+            if newValue {
+                invalidationCount += 1
+            }
+            super.needsDisplay = newValue
+        }
+    }
+
+    func resetInvalidationCount() {
+        invalidationCount = 0
+    }
+}
+
 @MainActor
 final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
     // MARK: - EVM-002-show_hide_hidden_entry
@@ -145,6 +163,50 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
             XCTAssertFalse(headerView.isHidden)
             XCTAssertTrue(decorationView.isHidden)
         }
+    }
+
+    /// EVM-002-set_entries_view_as_list_table: 그룹 헤더가 시야 상단에서 가려지기 시작하면 Name 컬럼 제목이 그룹 제목으로 대체된다.
+    /// Finder 리스트뷰처럼 현재 섹션의 그룹 제목이 헤더 행 1열을 대체하는지 검증한다.
+    /// - 검증 내용: G1 헤더가 1pt 가려지면 Name 컬럼 제목이 G1로 바뀌고, 최상단 복귀 시 원래 제목으로 복원된다.
+    /// - 사전 조건: 그룹 3개와 자식 항목으로 구성된 실제 EntryListView를 세로 스크롤이 가능한 크기로 구성한다.
+    /// - 기대 결과: 스크롤 후 헤더 제목이 G1이고, 최상단에서는 원래 Name 컬럼 제목으로 돌아온다.
+    func testGroupTitleReplacesNameHeaderDuringNormalScrolling() throws {
+        var state = EntryViewLayoutState()
+        state.listIconSize = 30
+        func folder(_ id: String) -> EntryModel {
+            EntryModel.temporaryFolder(id: "/\(id)", name: id)
+        }
+        state.entryArrangements.groupedItems = [
+            .init(groupName: "G1", items: [folder("a"), folder("b"), folder("c")], colorCode: nil),
+            .init(groupName: "G2", items: [folder("d")], colorCode: nil),
+            .init(groupName: "G3", items: [folder("e")], colorCode: nil),
+        ]
+        let coordinator = EntryListCoordinator(store: Store(initialState: state) { EntryViewLayoutFeature() })
+        let view = EntryListView(frame: NSRect(x: 0, y: 0, width: 800, height: 150))
+        view.layoutSubtreeIfNeeded()
+        coordinator.bind(to: view)
+        view.layoutSubtreeIfNeeded()
+
+        let clip = view.scrollView.contentView
+        let nameColumn = try XCTUnwrap(
+            view.tableView.tableColumns.first { $0.identifier.rawValue == EntryListColumn.name.rawValue },
+        )
+        let headerView = TrackingTableHeaderView()
+        view.tableView.headerView = headerView
+        let originalTitle = nameColumn.title
+        let firstGroupRow = view.tableView.rect(ofRow: 0)
+
+        headerView.resetInvalidationCount()
+        clip.scroll(to: NSPoint(x: 0, y: firstGroupRow.minY + 1))
+        view.scrollView.reflectScrolledClipView(clip)
+        view.layoutSubtreeIfNeeded()
+        XCTAssertEqual(nameColumn.title, "G1")
+        XCTAssertGreaterThan(headerView.invalidationCount, 0)
+
+        clip.scroll(to: NSPoint(x: 0, y: 0))
+        view.scrollView.reflectScrolledClipView(clip)
+        view.layoutSubtreeIfNeeded()
+        XCTAssertEqual(nameColumn.title, originalTitle)
     }
 
     /// EVM-002-set_entries_view_as_list_table: 그룹 행은 상태와 appearance에 맞는 반투명 오버레이 배경과 28pt 높이를 사용한다.

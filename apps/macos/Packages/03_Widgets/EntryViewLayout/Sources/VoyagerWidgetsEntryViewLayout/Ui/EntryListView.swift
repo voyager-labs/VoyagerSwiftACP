@@ -431,6 +431,10 @@ public final class EntryListView: NSView {
 
     let scrollView = EntryListScrollView()
     let tableView = EntryListTableView()
+    private lazy var groupHeaderTitleController = EntryListGroupHeaderTitleController(
+        scrollView: scrollView,
+        tableView: tableView,
+    )
     private var availableColumns: [EntryListColumn: NSTableColumn] = [:]
 
     override init(frame frameRect: NSRect) {
@@ -504,7 +508,17 @@ public final class EntryListView: NSView {
             scrollView.topAnchor.constraint(equalTo: topAnchor),
             scrollView.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
+
         NSAccessibility.post(element: self, notification: .layoutChanged)
+    }
+
+    func updateGroupHeaderTitle() {
+        groupHeaderTitleController.update()
+    }
+
+    override public func layout() {
+        super.layout()
+        groupHeaderTitleController.update()
     }
 
     func applyColumns(_ visibleColumns: [EntryListColumn]) {
