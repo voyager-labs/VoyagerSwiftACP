@@ -44,7 +44,7 @@ public struct FileManagerContentFeature {
                         sortKey: key,
                         groupKey: state.entryViewLayout.entryArrangements.groupKey,
                     ),
-                    state: state,
+                    state: &state,
                 )
             case let .entryViewLayout(.entryArrangements(.setGroupKey(key))):
                 guard state.entryViewLayout.entryArrangements.groupKey != key else { return .none }
@@ -53,7 +53,7 @@ public struct FileManagerContentFeature {
                         sortKey: state.entryViewLayout.entryArrangements.sortKey,
                         groupKey: key,
                     ),
-                    state: state,
+                    state: &state,
                 )
             case .internal(.checkRootCandidateAfterTerminal):
                 guard !FileManagerContentIdentityTransitionCoordinator.hasPendingRootSourceMigration(state)
@@ -351,9 +351,16 @@ public struct FileManagerContentFeature {
 
     private func arrangementMetadataReloadEffect(
         priority: EntryMetadataPriority,
-        state: State,
+        state: inout State,
     ) -> Effect<Action> {
         guard !priority.probes.isEmpty else { return .none }
+        if !state.entryViewLayout.isCollectionMode {
+            // folder route의 metadata reload도 세대를 올리므로 대기 전이를 재기준화한다.
+            FileManagerContentIdentityTransitionCoordinator.rebaseForSameRootReload(
+                navigationState: state.navigation.navigationState,
+                state: &state,
+            )
+        }
         let rootReloadEffect: Effect<Action>
         if state.entryViewLayout.isCollectionMode {
             let basePaths = state.entryViewLayout.activeCollectionReplacePaths.isEmpty

@@ -234,10 +234,21 @@ extension FileManagerContentIdentityTransitionCoordinator {
         return selectedPaths.contains(standardizedPath(anchorID))
     }
 
-    static func rebaseFolderOwnersAfterRootSnapshot(
-        on action: FileManagerContentAction,
+    /// 같은 root의 우회 reload(sort/group·hidden toggle)가 세대를 올리기 전에 전이 소유자를 재기준화한다.
+    static func rebaseForSameRootReload(
+        navigationState: ContentPageNavigationRoute,
         state: inout FileManagerContentState,
     ) {
+        guard let transition = state.pendingIdentityTransition,
+              case let .folder(currentPath) = navigationState,
+              canonicalizedPath(currentPath) == transition.rootPath
+        else { return }
+        rebaseForNextRootReload(state: &state)
+    }
+
+    static func rebaseFolderOwnersAfterRootSnapshot(on action: FileManagerContentAction,
+                                                    state: inout FileManagerContentState)
+    {
         guard case .entryViewLayout(.hierarchy(.rootSnapshotCompleted)) = action,
               var transition = state.pendingIdentityTransition
         else { return }
