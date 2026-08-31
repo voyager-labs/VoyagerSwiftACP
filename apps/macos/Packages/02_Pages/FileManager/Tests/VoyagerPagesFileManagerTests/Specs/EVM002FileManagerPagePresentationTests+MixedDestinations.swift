@@ -1108,11 +1108,11 @@ extension EVM002FileManagerPagePresentationTests {
         await store.skipInFlightEffects()
     }
 
-    /// EVM-002-replacement_reload_snapshot_retention: destination-first nil source fallback은 마지막 pair 뒤 해제된다.
+    /// EVM-002-replacement_reload_snapshot_retention: destination-first nil source fallback은 source terminal 뒤 해제된다.
     /// - 검증 내용: 같은 effective source S를 공유하는 nil-owner pair 2건이 순차 migration될 때 hold 수명을 추적한다.
     /// - 사전 조건: primary X→S, additional S→D·S→E 이동이 entryActionCompleted invalidation을 통과한다.
-    /// - 기대 결과: D 뒤 hold 유지, E 뒤 hold 해제, 늦은 S batch가 staging 없이 현재 snapshot이 된다.
-    func testDestinationFirstNilFallbackSourceHoldCommitsAfterMigration() async {
+    /// - 기대 결과: D·E 뒤 hold와 staged snapshot을 유지하고, 늦은 S terminal 뒤 현재 snapshot을 커밋한다.
+    func testDestinationFirstNilFallbackSourceHoldCommitsAfterSourceTerminal() async {
         let rootPath = "/root"
         let source = EntryModel.temporaryFolder(id: "/root/X", name: "X")
         let shared = EntryModel.temporaryFolder(id: "/root/S", name: "S")
@@ -1191,7 +1191,9 @@ extension EVM002FileManagerPagePresentationTests {
             .event(.coreBatch(items: [afterR], batchIndex: 0)),
         ))))
         XCTAssertNotNil(store.state.pendingIdentityTransition)
-        XCTAssertNil(store.state.entryViewLayout.hierarchy.deferredFolderReplacement(folderID: shared.id))
+        XCTAssertEqual(store.state.entryViewLayout.hierarchy.deferredFolderReplacement(
+            folderID: shared.id,
+        )?.migrationCompleted, true)
         await store.receive(\.entryViewLayout.delegate.selectionChanged)
 
         await store.send(.entryViewLayout(.hierarchy(.folderChildrenResponse(
@@ -1202,6 +1204,10 @@ extension EVM002FileManagerPagePresentationTests {
         ))))
         XCTAssertEqual(
             store.state.entryViewLayout.hierarchy.nodesByID[shared.id]?.folder.children,
+            [beforeQ, beforeR],
+        )
+        XCTAssertEqual(
+            store.state.entryViewLayout.hierarchy.deferredFolderReplacement(folderID: shared.id)?.stagedChildren,
             [afterPrimary, kept],
         )
         XCTAssertEqual(
@@ -1217,6 +1223,11 @@ extension EVM002FileManagerPagePresentationTests {
             .event(.coreFinished(batchCount: 1)),
         ))))
         XCTAssertNil(store.state.pendingIdentityTransition)
+        XCTAssertNil(store.state.entryViewLayout.hierarchy.deferredFolderReplacement(folderID: shared.id))
+        XCTAssertEqual(
+            store.state.entryViewLayout.hierarchy.nodesByID[shared.id]?.folder.children,
+            [afterPrimary, kept],
+        )
         await store.skipInFlightEffects()
     }
 
