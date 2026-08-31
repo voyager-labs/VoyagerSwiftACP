@@ -37,6 +37,7 @@ private extension FileManagerFeature {
         Reduce { state, action in
             switch action {
             case let .content(contentAction):
+                recordContentEntryTerminalIfNeeded(contentAction, state: &state)
                 guard state.pendingSelectedContentTabClose == nil
                     || !isComposerSaveRequest(contentAction)
                 else { return .none }
@@ -57,6 +58,7 @@ private extension FileManagerFeature {
                 }
 
             case let .tabContent(tabID, contentAction):
+                recordContentEntryTerminalIfNeeded(contentAction, state: &state)
                 guard state.contentTabs.tabs[id: tabID] != nil else { return .none }
 
                 let generation = undoManagerGeneration(tabID: tabID, state: state)
@@ -323,6 +325,7 @@ private extension FileManagerFeature {
                 return cancelPendingCollectionOpen(state: &state)
 
             case let .internal(.entryActionCompleted(tabID, record, expectedGeneration)):
+                recordContentEntryTerminalIfNeeded(record, state: &state)
                 guard record.operationKind.isUndoable,
                       let expectedGeneration,
                       undoManagerGeneration(tabID: tabID, state: state) == expectedGeneration,
@@ -610,6 +613,25 @@ private extension FileManagerFeature {
         default:
             false
         }
+    }
+
+    func recordContentEntryTerminalIfNeeded(
+        _ action: FileManagerContentAction,
+        state: inout State,
+    ) {
+        guard let record = Self.completedEntryActionRecord(from: action) else { return }
+        recordContentEntryTerminalIfNeeded(record, state: &state)
+    }
+
+    func recordContentEntryTerminalIfNeeded(
+        _ record: EntryActionRecord,
+        state: inout State,
+    ) {
+        guard let command = record.command,
+              state.recordedContentEntryCommandIDs.insert(command.id).inserted,
+              let metric = FileManagerProductMetricsProducer.entryTerminal(for: record)
+        else { return }
+        productMetricsClient.record(metric)
     }
 }
 

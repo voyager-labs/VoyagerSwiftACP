@@ -372,14 +372,6 @@ struct FileManagerContentEntryOperationsBridgeReducer {
             state.productBrowsingSource = nil
             state.productBrowsingContent = nil
         }
-
-        if case let .lifecycle(.entryActionCompleted(record)) = action,
-           let command = record.command,
-           state.recordedEntryCommandIDs.insert(command.id).inserted,
-           let metric = FileManagerProductMetricsProducer.entryTerminal(for: record)
-        {
-            productMetricsClient.record(metric)
-        }
     }
 
     // MARK: - Helpers

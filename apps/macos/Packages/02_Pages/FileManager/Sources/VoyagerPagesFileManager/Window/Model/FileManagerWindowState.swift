@@ -235,6 +235,7 @@ public struct FileManagerWindowState: Equatable {
     public var undoManagerAvailability: UndoManagerAvailability
     public var undoRedoPhase: FileManagerUndoRedoPhase
     public var sidebarEntryDropOperations: EntryOperationsState
+    var recordedContentEntryCommandIDs: Set<UUID> = []
     var recordedSidebarEntryCommandIDs: Set<UUID> = []
     public var pendingCollectionOpenRequest: ContentPageCollectionOpenRequest?
     public var pendingContentTabMove: FileManagerWindowContentTabMovePending?
