@@ -11600,6 +11600,207 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await store.finish()
     }
 
+    /// .discarded 재시도는 stale replacement를 만들기 전에 sibling pinned Collection 복귀를 취소한다.
+    /// - 검증 내용: pending URL과 일치하는 cancel action이 내부 retry와 replacement apply보다 먼저 처리됨
+    /// - 사전 조건: pinned 복귀 window는 이미 native 후보에서 제외되고 다른 planned route가 drift된 상태임
+    /// - 기대 결과: 취소 후 최신 state로 staleReplanCount 1 replacement가 생성되고 pinned route identity를 재사용함
+    func testPlacementDiscardRetryCancelsPinnedReturnBeforeStaleReplan() async throws {
+        let fixture = Self.makePinnedCollectionActivationFixture(pendingOpen: true)
+        let pinnedWindowID = fixture.plan.windows[0].windowID
+        let pinnedRequestItem = try XCTUnwrap(fixture.plan.request?.items.first)
+        let targetWindowID = UUID()
+        let targetTabID = ContentTabID(rawValue: "discard-cancel-target")
+        let targetItemID = UUID()
+        let targetRoute = ContentTabPageAnchor.directory(path: "/tmp/discard-cancel-target")
+        let driftWindowID = UUID()
+        let driftTabID = ContentTabID(rawValue: "discard-cancel-drift")
+        let driftItemID = UUID()
+        let driftRoute = ContentTabPageAnchor.directory(path: "/tmp/discard-cancel-drift")
+        let request = ExternalOpenPlacementRequest(
+            batchID: fixture.plan.batchID,
+            items: [
+                .init(itemID: targetItemID, anchor: targetRoute, pendingSelectEntryID: nil),
+                pinnedRequestItem,
+                .init(itemID: driftItemID, anchor: driftRoute, pendingSelectEntryID: nil),
+            ],
+            preferredWindowIDs: [],
+        )
+        let plan = ExternalOpenPlacementPlan(
+            batchID: fixture.plan.batchID,
+            windows: [
+                .init(
+                    windowID: targetWindowID,
+                    isNewWindow: false,
+                    items: [.init(
+                        itemID: targetItemID,
+                        tabID: targetTabID,
+                        anchor: targetRoute,
+                        requiresReservation: false,
+                    )],
+                ),
+                fixture.plan.windows[0],
+                .init(
+                    windowID: driftWindowID,
+                    isNewWindow: false,
+                    items: [.init(
+                        itemID: driftItemID,
+                        tabID: driftTabID,
+                        anchor: driftRoute,
+                        requiresReservation: false,
+                    )],
+                ),
+            ],
+            request: request,
+        )
+        var state = fixture.state
+        state.windows.append(Self.makeRouteWindow(
+            id: targetWindowID,
+            tabs: [(targetTabID, targetRoute)],
+            activeTabID: targetTabID,
+        ))
+        state.windows.append(Self.makeRouteWindow(
+            id: driftWindowID,
+            tabs: [(driftTabID, .directory(path: "/tmp/discard-cancel-drifted"))],
+            activeTabID: driftTabID,
+        ))
+        let attempt = ExternalOpenActivationAttempt(
+            batchID: plan.batchID,
+            plan: plan,
+            windowID: targetWindowID,
+            excludedWindowIDs: [pinnedWindowID],
+        )
+        state.externalOpenActivationAttempt = attempt
+        let store = TestStore(initialState: state) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            Self.configureAutoRegisteringWindowOpen(&$0.fileManagerWindowClient)
+        }
+        // store.exhaustivity = .off: replacement apply 이후 native window lifecycle은 기존 owner가 검증함.
+        store.exhaustivity = .off
+
+        await store.send(.externalOpenActivationResult(attempt: attempt, result: .discarded))
+        await store.receive { action in
+            guard case let .windows(.element(
+                id: windowID,
+                action: .window(.cancelPendingPinnedCollectionReturn(tabID)),
+            )) = action
+            else { return false }
+            return windowID == pinnedWindowID && tabID == fixture.tabID
+        }
+        XCTAssertNil(store.state.windows[id: pinnedWindowID]?.window.pendingCollectionOpenRequest)
+        await store.receive { action in
+            guard case let .placement(.apply(replacementPlan, reservationsByItemID)) = action else {
+                return false
+            }
+            let pinnedItem = replacementPlan.orderedItems.first(where: {
+                $0.itemID == pinnedRequestItem.itemID
+            })
+            let driftItem = replacementPlan.orderedItems.first(where: { $0.itemID == driftItemID })
+            return replacementPlan.request?.staleReplanCount == 1
+                && replacementPlan.request?.pinnedFallbackCount == 0
+                && replacementPlan.orderedItems.map(\.itemID) == request.items.map(\.itemID)
+                && pinnedItem?.tabID == fixture.tabID
+                && pinnedItem?.requiresReservation == false
+                && driftItem?.tabID != driftTabID
+                && driftItem?.requiresReservation == true
+                && reservationsByItemID.count == 1
+        }
+        await store.skipReceivedActions()
+        await store.finish()
+    }
+
+    /// .discarded 대상 window 안의 pending pinned 복귀도 stale replacement 전에 취소한다.
+    /// - 검증 내용: discarded window의 실제 pending tab cancel과 최신 state 기반 replacement apply 순서를 검증함
+    /// - 사전 조건: 같은 window의 pinned Collection 복귀가 pending이고 sibling planned Directory route가 drift됨
+    /// - 기대 결과: pending load가 취소되고 pinned identity는 재사용하며 drift route만 신규 reservation함
+    func testPlacementDiscardRetryCancelsPinnedReturnInDiscardedWindow() async throws {
+        let fixture = Self.makePinnedCollectionActivationFixture(pendingOpen: true)
+        let windowID = fixture.plan.windows[0].windowID
+        let pinnedRequestItem = try XCTUnwrap(fixture.plan.request?.items.first)
+        let driftTabID = ContentTabID(rawValue: "discard-window-drift")
+        let driftItemID = UUID()
+        let driftRoute = ContentTabPageAnchor.directory(path: "/tmp/discard-window-drift")
+        let request = ExternalOpenPlacementRequest(
+            batchID: fixture.plan.batchID,
+            items: [
+                .init(itemID: driftItemID, anchor: driftRoute, pendingSelectEntryID: nil),
+                pinnedRequestItem,
+            ],
+            preferredWindowIDs: [],
+        )
+        let plan = ExternalOpenPlacementPlan(
+            batchID: fixture.plan.batchID,
+            windows: [.init(
+                windowID: windowID,
+                isNewWindow: false,
+                items: [
+                    .init(
+                        itemID: driftItemID,
+                        tabID: driftTabID,
+                        anchor: driftRoute,
+                        requiresReservation: false,
+                    ),
+                    fixture.plan.windows[0].items[0],
+                ],
+            )],
+            request: request,
+        )
+        var state = fixture.state
+        state.windows[id: windowID]?.window.contentTabs.tabs.append(.init(
+            id: driftTabID,
+            page: .directory,
+            anchor: .directory(path: "/tmp/discard-window-drifted"),
+            isPinned: false,
+        ))
+        let attempt = ExternalOpenActivationAttempt(
+            batchID: plan.batchID,
+            plan: plan,
+            windowID: windowID,
+            excludedWindowIDs: [],
+        )
+        state.externalOpenActivationAttempt = attempt
+        let store = TestStore(initialState: state) {
+            WindowManagerFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            Self.configureAutoRegisteringWindowOpen(&$0.fileManagerWindowClient)
+        }
+        // store.exhaustivity = .off: replacement apply 이후 native window lifecycle은 기존 owner가 검증함.
+        store.exhaustivity = .off
+
+        await store.send(.externalOpenActivationResult(attempt: attempt, result: .discarded))
+        await store.receive { action in
+            guard case let .windows(.element(
+                id: receivedWindowID,
+                action: .window(.cancelPendingPinnedCollectionReturn(tabID)),
+            )) = action
+            else { return false }
+            return receivedWindowID == windowID && tabID == fixture.tabID
+        }
+        XCTAssertNil(store.state.windows[id: windowID]?.window.pendingCollectionOpenRequest)
+        await store.receive { action in
+            guard case let .placement(.apply(replacementPlan, reservationsByItemID)) = action else {
+                return false
+            }
+            let pinnedItem = replacementPlan.orderedItems.first(where: {
+                $0.itemID == pinnedRequestItem.itemID
+            })
+            let driftItem = replacementPlan.orderedItems.first(where: { $0.itemID == driftItemID })
+            return replacementPlan.request?.staleReplanCount == 1
+                && replacementPlan.orderedItems.map(\.itemID) == request.items.map(\.itemID)
+                && pinnedItem?.tabID == fixture.tabID
+                && pinnedItem?.requiresReservation == false
+                && driftItem?.tabID != driftTabID
+                && driftItem?.requiresReservation == true
+                && reservationsByItemID.count == 1
+        }
+        await store.skipReceivedActions()
+        await store.finish()
+    }
+
     /// .discarded로 제외된 request-bearing 계획 창이 제거되면 전체 배치를 stale 재계획한다.
     /// - 검증 내용: 제외 창 제거 뒤 replacement apply가 원래 item 순서와 route를 보존함
     /// - 사전 조건: 마지막 계획 창이 제외되고 다른 survivor가 activation 대상인 상태에서 제외 창이 제거됨

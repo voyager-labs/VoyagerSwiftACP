@@ -7,6 +7,31 @@ import VoyagerShared
 import VoyagerWidgetsEntryViewLayout
 
 extension WindowManagerFeature {
+    func replanExternalOpenPlacement(
+        _ request: ExternalOpenPlacementRequest,
+        state: inout State,
+    ) -> Effect<Action> {
+        guard state.authorizedExternalOpenBatchID == request.batchID,
+              state.externalOpenActivationAttempt == nil
+        else { return .none }
+        guard case let .success(replacementPlan) = ExternalOpenPlacementPlanner.make(
+            request,
+            state: state,
+            generateUUID: uuid(),
+        ) else {
+            state.authorizedExternalOpenBatchID = nil
+            state.externalOpenActivationBecameKey = false
+            return .send(.delegate(.externalOpenActivationFailed(
+                batchID: request.batchID,
+                failure: .recoveryExhausted,
+            )))
+        }
+        return .send(.placement(.apply(
+            plan: replacementPlan,
+            reservationsByItemID: replacementPlan.reservationsByItemID,
+        )))
+    }
+
     func startExternalOpenActivation(
         plan: ExternalOpenPlacementPlan,
         excluding excludedWindowIDs: Set<State.WindowID>,
@@ -70,11 +95,33 @@ extension WindowManagerFeature {
     ) -> Effect<Action> {
         var excludedWindowIDs = attempt.excludedWindowIDs
         excludedWindowIDs.insert(attempt.windowID)
-        return startExternalOpenActivation(
-            plan: attempt.plan,
-            excluding: excludedWindowIDs,
-            state: &state,
+        let cancellationEffects = externalOpenPinnedReturnCancellationEffects(
+            attempt,
+            excludingWindowID: nil,
+            excludingTabID: nil,
+            state: state,
         )
+        guard !cancellationEffects.isEmpty else {
+            return startExternalOpenActivation(
+                plan: attempt.plan,
+                excluding: excludedWindowIDs,
+                state: &state,
+            )
+        }
+        state.externalOpenActivationAttempt = nil
+        state.externalOpenActivationBecameKey = false
+        guard let retryRequest = attempt.plan.request?.retryRequest else {
+            state.authorizedExternalOpenBatchID = nil
+            return .concatenate(cancellationEffects + [
+                .send(.delegate(.externalOpenActivationFailed(
+                    batchID: attempt.batchID,
+                    failure: .recoveryExhausted,
+                ))),
+            ])
+        }
+        return .concatenate(cancellationEffects + [
+            .send(.placement(.replan(retryRequest))),
+        ])
     }
 
     func retainExternalOpenPlacementOwnership(
@@ -299,7 +346,7 @@ extension WindowManagerFeature {
 
     func externalOpenPinnedReturnCancellationEffects(
         _ attempt: ExternalOpenActivationAttempt,
-        excludingWindowID: State.WindowID,
+        excludingWindowID: State.WindowID?,
         excludingTabID: ContentTabID?,
         state: State,
     ) -> [Effect<Action>] {
@@ -317,7 +364,7 @@ extension WindowManagerFeature {
                       return true
                   })
             else { continue }
-            let isExcluded = window.windowID == excludingWindowID
+            let isExcluded = excludingWindowID == window.windowID
                 && (excludingTabID == nil || item.tabID == excludingTabID)
             guard !isExcluded,
                   windowIDs.insert(window.windowID).inserted
