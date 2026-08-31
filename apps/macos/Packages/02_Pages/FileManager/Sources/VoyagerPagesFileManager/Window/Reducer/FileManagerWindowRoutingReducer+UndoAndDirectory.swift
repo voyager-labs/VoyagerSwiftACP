@@ -19,6 +19,9 @@ extension FileManagerWindowRoutingReducer {
             restorePreviousActiveContentIfNeeded(pendingClose, state: &state)
             normalizeCloseTriggeredSaveState(pendingClose, state: &state)
         }
+        if let metric = state.productContentTabCloseMetric {
+            recordProductContentTabCloseMetric(for: metric.tabID, result: .cancelled, state: &state)
+        }
         if let teardown = state.pendingContentTabTeardown,
            case let .tearingDownTab(requestID, ownerID) = state.undoRedoPhase,
            requestID == teardown.requestID,
@@ -31,7 +34,6 @@ extension FileManagerWindowRoutingReducer {
         state.pendingSelectedContentTabClose = nil
         state.pendingSelectedContentTabPinMutation = nil
         state.pendingContentTabClose = nil
-        state.productContentTabCloseMetric = nil
         state.deferredPinnedContentTabs = nil
         state.deferredPinnedContentTabsMode = nil
         state.pendingRuntimePreservationRecords.removeAll()

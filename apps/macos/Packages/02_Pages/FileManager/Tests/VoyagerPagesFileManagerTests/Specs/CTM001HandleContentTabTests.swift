@@ -6115,6 +6115,49 @@ final class CTM001HandleContentTabTests: XCTestCase {
         ])
     }
 
+    /// CTM-001-content_tab_action_metrics: pending 단일 close 중 window teardown은 cancelled terminal을 기록한다.
+    /// 창 종료 cleanup이 accepted close correlation을 제거하기 전에 원래 context를 소비하는지 검증한다.
+    /// - 검증 내용: onDisappear의 cancelled metric 1건, pending/correlation 제거, 반복 teardown 무중복
+    /// - 사전 조건: contextMenu source와 operation ID를 보유한 dirty Content Tab close pending 상태
+    /// - 기대 결과: 원 operation ID/source의 cancelled terminal 한 건과 완전히 정리된 close 상태
+    func testWindowDisappearRecordsSingleCancelledMetricForPendingContentTabClose() async {
+        let fixture = makeDirtyMetricCloseState()
+        let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 2))
+        var state = fixture.state
+        state.pendingContentTabClose = PendingContentTabClose(
+            tabID: fixture.dirtyID,
+            actionSource: .contextMenu,
+            metricOperationID: operationID,
+        )
+        state.productContentTabCloseMetric = ProductContentTabCloseMetric(
+            tabID: fixture.dirtyID,
+            context: ProductContentTabActionMetricContext(
+                operationID: operationID,
+                source: .contextMenu,
+            ),
+        )
+        let recorder = FileManagerProductMetricRecorder()
+        let store = TestStore(initialState: state) { FileManagerWindowRoutingReducer() } withDependencies: {
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: window teardown의 metric terminal과 close state cleanup에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.onDisappear)
+        await store.send(.onDisappear)
+
+        XCTAssertNil(store.state.pendingContentTabClose)
+        XCTAssertNil(store.state.productContentTabCloseMetric)
+        XCTAssertEqual(recorder.metrics(), [
+            .contentTabAction(
+                result: .cancelled,
+                identity: .closeContentTab,
+                source: .contextMenu,
+                operationID: operationID,
+            ),
+        ])
+    }
+
     /// CTM-001-content_tab_action_metrics: save를 시작할 수 없으면 failure terminal 메트릭 한 건을 기록한다.
     /// Save gate가 거절한 단일 close가 accepted correlation을 소비하는지 검증한다.
     /// - 검증 내용: `.save` 거절 후 failure/close/source/operation ID metric 1건과 correlation nil
