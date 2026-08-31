@@ -378,6 +378,14 @@ enum FileManagerContentIdentityTransitionCoordinator {
             })?.id else { continue }
             state.entryViewLayout.selectedIds.remove(additionalBeforeID)
             state.entryViewLayout.selectedIds.insert(additionalAfterID)
+            // owner-scoped pair도 anchor가 이 pair의 before를 가리킬 때만 after로 교체해
+            // nil-owner pair와 동일한 anchor 계약을 유지한다.
+            if state.entryViewLayout.lastSelectedId == additionalBeforeID {
+                state.entryViewLayout.lastSelectedId = additionalAfterID
+            }
+            if state.entryViewLayout.rangeAnchorId == additionalBeforeID {
+                state.entryViewLayout.rangeAnchorId = additionalAfterID
+            }
             transition.additionalMoves[index].migrated = true
             migratedPair = true
         }

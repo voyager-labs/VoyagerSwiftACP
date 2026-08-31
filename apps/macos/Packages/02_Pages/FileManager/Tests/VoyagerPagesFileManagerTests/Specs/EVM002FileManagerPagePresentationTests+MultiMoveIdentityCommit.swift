@@ -122,6 +122,50 @@ extension EVM002FileManagerPagePresentationTests {
         XCTAssertNotNil(store.state.pendingIdentityTransition)
     }
 
+    /// owner-scoped additional pair가 anchor identity를 가리킬 때 root batch migration이 anchor를 함께 이전한다.
+    /// - 검증 내용: root 소유자 batch migration 뒤 lastSelectedId/rangeAnchorId가 pair after로 교체된다.
+    /// - 사전 조건: anchor가 root destination pair의 before를 가리고 batch에 after 행만 도착한다.
+    /// - 기대 결과: stale before anchor가 남지 않아 Quick Look·범위 선택 기준이 유지된다.
+    func testOwnerScopedPairMigrationAdvancesAnchorIdentity() async {
+        let beforePrimary = EntryModel.temporaryFolder(id: "/root/primary", name: "primary")
+        let beforeAdditional = EntryModel.temporaryFolder(id: "/root/S/q", name: "q")
+        let afterAdditional = EntryModel.temporaryFolder(id: "/root/after-q", name: "q")
+        var state = bufferedRootSourceState(
+            rootPath: "/root",
+            entries: [beforePrimary, beforeAdditional],
+        )
+        state.entryViewLayout.selectedIds = [beforePrimary.id, beforeAdditional.id]
+        state.entryViewLayout.lastSelectedId = beforeAdditional.id
+        state.entryViewLayout.rangeAnchorId = beforeAdditional.id
+        state.pendingIdentityTransition = .init(
+            recordID: UUID(),
+            beforePath: beforePrimary.id,
+            afterPath: "/root/A/primary",
+            rootPath: "/root",
+            refreshGeneration: 1,
+            projectionOwner: .root(generation: 1),
+            preservationOwner: .root(generation: 1),
+            additionalMoves: [
+                .init(
+                    beforePath: beforeAdditional.id,
+                    afterPath: afterAdditional.id,
+                    sourceOwner: nil,
+                    destinationOwner: .root(generation: 1),
+                ),
+            ],
+        )
+        let store = makeRootSourceCandidateStore(state)
+
+        await store.send(.entryViewLayout(.entryOperations(.loading(.itemsLoaded([
+            beforePrimary,
+            afterAdditional,
+        ])))))
+
+        XCTAssertEqual(store.state.entryViewLayout.lastSelectedId, afterAdditional.id)
+        XCTAssertEqual(store.state.entryViewLayout.rangeAnchorId, afterAdditional.id)
+        XCTAssertEqual(store.state.pendingIdentityTransition?.additionalMoves.first?.migrated, true)
+    }
+
     private func makeMultiMoveSourceStagingState() -> FileManagerContentState {
         let beforePrimary = EntryModel.temporaryFolder(id: "/root/before", name: "before")
         let s1 = EntryModel.temporaryFolder(id: "/root/S1", name: "S1")
