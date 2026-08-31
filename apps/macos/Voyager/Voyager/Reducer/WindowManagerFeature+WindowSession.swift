@@ -272,9 +272,6 @@ extension WindowManagerFeature {
         state.lastUsedWindowIDs.removeAll { $0 == id }
         state.defaultWindowBootstrapWindowIDs.remove(id)
         state.externalWindowBatchIDs[id] = nil
-        if state.retainedExternalOpenPlacementOwnership?.newWindowIDs.contains(id) == true {
-            state.externalOpenRegistrationTransactionID = nil
-        }
         if var ownership = state.retainedExternalOpenPlacementOwnership {
             ownership.newWindowIDs.removeAll { $0 == id }
             let isEmpty = ownership.newWindowIDs.isEmpty

@@ -12964,6 +12964,140 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         await missingWindowStore.finish()
     }
 
+    /// FMW-003-deferred_persistence_close: mixed external placement의 provisional 신규 창이 persistence 중 닫혀도 registration
+    /// transaction을 보존한다.
+    /// registration 조회가 대기하는 동안 닫힌 신규 창의 늦은 commit이 live preflight에서 실패하고 deferred tombstone이 persistence 완료까지 유지되는지
+    /// 검증한다.
+    /// - 검증 내용: transaction 보존, validation failure terminal 단일 방출, authorization·transaction·ownership 정리, persistence
+    /// 전 window 유지
+    /// - 사전 조건: 기존 창과 provisional 신규 창을 함께 적용하고 신규 창 registration 조회와 top-navigation persistence를 각각 대기시킨다.
+    /// - 기대 결과: 늦은 commit은 성공 terminal 없이 validation failure를 한 번 방출하며, deferred window는 persistence finalization 뒤
+    /// 제거된다.
+    @MainActor
+    func testDeferredPersistenceClosePreservesExternalRegistrationTerminal() async throws {
+        let batchID = UUID()
+        let existingWindowID = UUID()
+        let newWindowID = UUID()
+        let existingItemID = UUID()
+        let newItemID = UUID()
+        let existingTabID = ContentTabID(rawValue: "deferred-existing")
+        let newTabID = ContentTabID(rawValue: "deferred-new")
+        let existingWindow = Self.makeWindow(id: existingWindowID, tabCount: 1)
+        let plan = ExternalOpenPlacementPlan(
+            batchID: batchID,
+            windows: [
+                .init(
+                    windowID: existingWindowID,
+                    isNewWindow: false,
+                    items: [.init(
+                        itemID: existingItemID,
+                        tabID: existingTabID,
+                        anchor: .directory(path: "/tmp/deferred-existing"),
+                    )],
+                ),
+                .init(
+                    windowID: newWindowID,
+                    isNewWindow: true,
+                    items: [.init(
+                        itemID: newItemID,
+                        tabID: newTabID,
+                        anchor: .directory(path: "/tmp/deferred-new"),
+                    )],
+                ),
+            ],
+        )
+        let persistenceRequest = WindowManagerTopNavigationPersistenceRequest(
+            sourceWindowID: newWindowID,
+            token: .init(value: UUID()),
+            operation: .move(
+                source: .location("deferred-source"),
+                destination: .after(.location("deferred-destination")),
+                discoveredLocationIDs: [],
+            ),
+        )
+        let registrationStarted = expectation(description: "native registration lookup started")
+        let registrationGate = AsyncStream<Void>.makeStream()
+        let terminalReceived = expectation(description: "validation failure terminal received")
+        let completions = LockIsolated<[ExternalOpenPlacementApplicationCompletion]>([])
+        var initialState = WindowManagerFeature.State()
+        initialState.windows = [existingWindow]
+        initialState.authorizedExternalOpenBatchID = batchID
+        initialState.topNavigationPersistenceQueue = [persistenceRequest]
+        initialState.isTopNavigationPersistenceInFlight = true
+        let store = TestStore(initialState: initialState) {
+            CombineReducers {
+                WindowManagerFeature()
+                Reduce { _, action in
+                    if case let .delegate(.externalOpenApplyCompleted(completion)) = action {
+                        completions.withValue { $0.append(completion) }
+                        terminalReceived.fulfill()
+                    }
+                    return .none
+                }
+            }
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.fileManagerWindowClient.open = { _ in }
+            $0.fileManagerWindowClient.registeredWindowIDs = {
+                registrationStarted.fulfill()
+                for await _ in registrationGate.stream {
+                    break
+                }
+                return [newWindowID]
+            }
+            $0.undoManagerClient.invalidateWindow = { _ in
+                .init(succeeded: true, availability: .init())
+            }
+            $0.fileManagerWindowClient.finalizeClose = { _ in }
+        }
+        // store.exhaustivity = .off: mixed placement의 registration effect와 deferred persistence terminal만 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.placement(.apply(
+            plan: plan,
+            reservationsByItemID: [
+                existingItemID: .init(id: existingTabID, anchor: .directory(path: "/tmp/deferred-existing")),
+                newItemID: .init(id: newTabID, anchor: .directory(path: "/tmp/deferred-new")),
+            ],
+        )))
+        await fulfillment(of: [registrationStarted], timeout: 1)
+
+        let transactionID = try XCTUnwrap(store.state.externalOpenRegistrationTransactionID)
+        XCTAssertEqual(store.state.externalWindowBatchIDs[newWindowID], batchID)
+        XCTAssertEqual(store.state.retainedExternalOpenPlacementOwnership?.newWindowIDs, [newWindowID])
+
+        await store.send(.event(.windowClosed(newWindowID)))
+        XCTAssertEqual(store.state.externalOpenRegistrationTransactionID, transactionID)
+        XCTAssertNil(store.state.externalWindowBatchIDs[newWindowID])
+        XCTAssertNil(store.state.retainedExternalOpenPlacementOwnership)
+        XCTAssertTrue(store.state.deferredClosedWindowIDs.contains(newWindowID))
+
+        registrationGate.continuation.yield(())
+        registrationGate.continuation.finish()
+        await fulfillment(of: [terminalReceived], timeout: 1)
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(completions.value, [
+            .init(batchID: batchID, result: .failure(.validationFailed)),
+        ])
+        XCTAssertNil(store.state.authorizedExternalOpenBatchID)
+        XCTAssertNil(store.state.externalOpenRegistrationTransactionID)
+        XCTAssertNil(store.state.retainedExternalOpenPlacementOwnership)
+        XCTAssertNotNil(store.state.windows[id: newWindowID])
+        XCTAssertTrue(store.state.deferredClosedWindowIDs.contains(newWindowID))
+
+        await store.send(.topNavigationPersistenceCompleted(.init(
+            request: persistenceRequest,
+            terminal: .failed(.save),
+            authoritativePinnedContentTabs: nil,
+        )))
+        await store.receive(\.windowInvalidationFinished)
+        await store.finish()
+
+        XCTAssertNil(store.state.windows[id: newWindowID])
+    }
+
     /// FMW-003: 등록 대기 중 사용자가 변경한 예약 tab은 실패 보상에서 제외한다.
     /// registration 실패가 untouched 예약 tab만 정리하고 사용자가 채택한 상태를 덮어쓰지 않는 경계를 검증한다.
     /// - 검증 내용: route 변경·Pin·dirty Collection 보존, untouched 예약 tab 제거, typed failure 단일 방출
