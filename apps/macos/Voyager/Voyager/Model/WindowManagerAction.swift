@@ -920,6 +920,7 @@ enum WindowManagerAction: CasePathable {
         )
         case registrationFailed(batchID: UUID, transactionID: UUID)
         case activate(ExternalOpenPlacementPlan)
+        case replan(ExternalOpenPlacementRequest)
         case cancel(batchID: UUID)
     }
 

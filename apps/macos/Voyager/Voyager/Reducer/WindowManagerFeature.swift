@@ -257,6 +257,9 @@ struct WindowManagerFeature {
                     state: &state,
                 )
 
+            case let .placement(.replan(request)):
+                return replanExternalOpenPlacement(request, state: &state)
+
             case let .placement(.cancel(batchID)):
                 return cancelExternalOpenPlacement(batchID: batchID, state: &state)
 
