@@ -139,14 +139,6 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
         }
     }
 
-    public func outlineView(_: NSOutlineView, isGroupItem item: Any) -> Bool {
-        guard let outlineItem = item as? OutlineItem else { return false }
-        if case .group = outlineItem.kind {
-            return true
-        }
-        return false
-    }
-
     public func outlineView(_: NSOutlineView, shouldSelectItem item: Any) -> Bool {
         guard let outlineItem = item as? OutlineItem else { return false }
         switch outlineItem.kind {
