@@ -542,13 +542,14 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         )
     }
 
-    /// EVM-001-content_browsing_correlation: folder load failure emits one typed failure event
-    /// folder load 실패 delegate가 correlation을 소비해 `.failure` 단말을 한 번 기록하는지 검증.
-    /// - 검증 내용: root load를 실패시킨 뒤 folderLoadFailed(permissionDenied)로 `.failure` 1회
-    /// - 사전 조건: throw하는 directory stub loader와 permissionDenied folder load 실패
-    /// - 기대 결과: `.failure` 1회 후 correlation 해제
-    func testFolderLoadFailureEmitsTypedBrowsingFailureOnce() async {
-        let path = "/tmp/voyager-evm001-denied-folder"
+    /// EVM-001-content_browsing_correlation: child folder failure preserves root browsing correlation
+    /// outline 하위 폴더 실패가 진행 중인 root browsing terminal을 대신 소비하지 않는지 검증.
+    /// - 검증 내용: root navigation 중 child folderLoadFailed(permissionDenied)를 전달한다.
+    /// - 사전 조건: 응답 없는 root loader와 별도 child folder load request가 있다.
+    /// - 기대 결과: metric 없이 root browsing correlation이 유지된다.
+    func testChildFolderLoadFailureDoesNotConsumeRootBrowsingCorrelation() async {
+        let path = "/tmp/voyager-evm001-root-folder"
+        let childPath = "\(path)/child"
         let metrics = LockIsolated<[FileManagerProductMetric]>([])
         let store = makeTypedBrowsingStore(metrics: metrics) {
             $0.entryLoadingClient.loadItems = Self.suspendedLoadItems
@@ -558,9 +559,9 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
 
         let request = EntryFolderLoadRequest(
             rootContextGeneration: 0,
-            folderID: path,
+            folderID: childPath,
             folderGeneration: 0,
-            path: path,
+            path: childPath,
             showHidden: false,
             priority: .none,
         )
@@ -568,17 +569,11 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             .folderLoadFailed(request: request, failure: .permissionDenied),
         )))))
 
-        XCTAssertEqual(
-            metrics.value,
-            [.contentBrowsing(
-                result: .failure,
-                content: .folder,
-                identity: .direct,
-                source: .fileManagerSidebar,
-                operationID: Self.typedBrowsingOperationIDs[0],
-            )],
-        )
-        XCTAssertNil(store.state.content.productBrowsingOperationID)
+        XCTAssertTrue(metrics.value.isEmpty)
+        XCTAssertEqual(store.state.content.productBrowsingOperationID, Self.typedBrowsingOperationIDs[0])
+        XCTAssertEqual(store.state.content.productBrowsingIdentity, .direct)
+        XCTAssertEqual(store.state.content.productBrowsingSource, .fileManagerSidebar)
+        XCTAssertEqual(store.state.content.productBrowsingContent, .folder)
     }
 
     /// EVM-001-content_browsing_correlation: same-route window navigation stays silent

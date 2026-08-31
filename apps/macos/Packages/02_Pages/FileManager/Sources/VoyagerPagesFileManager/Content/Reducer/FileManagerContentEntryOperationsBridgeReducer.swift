@@ -302,26 +302,6 @@ struct FileManagerContentEntryOperationsBridgeReducer {
                 case let .unavailable(description):
                     .unavailable(description: description)
                 }
-                if let operationID = state.productBrowsingOperationID,
-                   let identity = state.productBrowsingIdentity,
-                   let source = state.productBrowsingSource,
-                   let content = state.productBrowsingContent
-                {
-                    let result = FileManagerProductMetricsProducer.browsingFailure(
-                        failure == .permissionDenied ? .permissionDenied : .unavailable,
-                    )
-                    productMetricsClient.record(.contentBrowsing(
-                        result: result,
-                        content: content,
-                        identity: identity,
-                        source: source,
-                        operationID: operationID,
-                    ))
-                    state.productBrowsingOperationID = nil
-                    state.productBrowsingIdentity = nil
-                    state.productBrowsingSource = nil
-                    state.productBrowsingContent = nil
-                }
                 return .send(.entryViewLayout(.hierarchy(.folderChildrenResponse(
                     rootContextGeneration: request.id.rootContextGeneration,
                     folderID: request.id.folderID,
