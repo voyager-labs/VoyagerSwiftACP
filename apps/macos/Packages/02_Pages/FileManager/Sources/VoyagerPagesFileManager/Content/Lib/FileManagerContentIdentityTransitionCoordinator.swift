@@ -519,6 +519,7 @@ enum FileManagerContentIdentityTransitionCoordinator {
             sourceFolderIDsToCommit.insert(sourceID)
         }
         for sourceID in sourceFolderIDsToCommit {
+            state.entryViewLayout.hierarchy.markDeferredFolderReplacementMigrationCompleted(folderID: sourceID)
             commitPreservationStaging(sourceID, state: &state)
             // staging 커밋 뒤 사라진 before 행은 선택·anchor에도 stale로 남는다.
             // 배치 migration은 swap이 먼저 일어나 이 정산의 대상이 아니다(자동 no-op).
@@ -561,22 +562,18 @@ enum FileManagerContentIdentityTransitionCoordinator {
         state: inout FileManagerContentState,
     ) {
         guard var targetNode = state.entryViewLayout.hierarchy.nodesByID[preservationID],
-              let staged = state.entryViewLayout.hierarchy.takeDeferredFolderReplacement(folderID: preservationID),
-              !targetNode.folder.hasAppliedContentBatch
+              !targetNode.folder.hasAppliedContentBatch,
+              state.entryViewLayout.hierarchy.deferredFolderReplacement(folderID: preservationID) != nil
         else { return }
-        // 비종료 empty staging은 authoritative하지 않다: 빈 첫 batch 뒤 non-empty batch나
-        // 실패가 올 수 있으므로 retained children을 유지하고 terminal 확정에 맡긴다
-        // (applyCoreFinished의 empty 결과 기준과 동일).
-        let isTerminalStaging = !staged.isEmpty || targetNode.folder.coreFinished
-        // 실패한 소스 스트림이 남긴 부분 staging은 불완전 목록이라 커밋하지 않고 폐기한다.
-        if case .failed = targetNode.loadPhase {} else if isTerminalStaging {
-            targetNode.folder.children = staged
-            targetNode.folder.hasAppliedContentBatch = true
-            targetNode.folder.retainsPreviousGenerationChildren = false
-            state.entryViewLayout.hierarchy.nodesByID[preservationID] = targetNode
-            // 이동 전 경로의 stale 로드 하위 node를 정리해 재확장 시 과거 캐시 재사용을 막는다.
-            state.entryViewLayout.hierarchy.reconcileNodesAfterMigrationCommit(folderID: preservationID)
-        }
+        guard targetNode.folder.coreFinished else { return }
+        guard let staged = state.entryViewLayout.hierarchy.takeDeferredFolderReplacement(folderID: preservationID)
+        else { return }
+        targetNode.folder.children = staged
+        targetNode.folder.hasAppliedContentBatch = !staged.isEmpty
+        targetNode.folder.retainsPreviousGenerationChildren = false
+        state.entryViewLayout.hierarchy.nodesByID[preservationID] = targetNode
+        // 이동 전 경로의 stale 로드 하위 node를 정리해 재확장 시 과거 캐시 재사용을 막는다.
+        state.entryViewLayout.hierarchy.reconcileNodesAfterMigrationCommit(folderID: preservationID)
     }
 
     /// pair의 destination 소유자가 이번 batch 소유자와 같은 대상(종류+경로)인지 판정한다.

@@ -439,6 +439,7 @@ extension EVM002FileManagerPagePresentationTests {
         let afterA = EntryModel.temporaryFolder(id: "/root/D/afterA", name: "afterA")
         let afterC = EntryModel.temporaryFolder(id: "/root/D/afterC", name: "afterC")
         let unrelatedC = EntryModel.temporaryFolder(id: "/root/C/kept", name: "kept")
+        let unreceivedC = EntryModel.temporaryFolder(id: "/root/C/unreceived", name: "unreceived")
         var state = FileManagerContentState()
         state.navigation.seedInitialFolderPath(rootPath)
         state.entryViewLayout.mode = .list
@@ -446,9 +447,9 @@ extension EVM002FileManagerPagePresentationTests {
         state.entryViewLayout.entryOperations.items = [sourceA, sourceC, destination]
         state.entryViewLayout.entryOperations.loadingContext.generation = 1
         state.entryViewLayout.hierarchy = .init(rootPath: rootPath)
-        for (folder, child) in [(sourceA, beforeA), (sourceC, beforeC)] {
+        for (folder, children) in [(sourceA, [beforeA]), (sourceC, [beforeC, unreceivedC])] {
             state.entryViewLayout.hierarchy.nodesByID[folder.id] = .init(
-                children: [child],
+                children: children,
                 loadPhase: .loadingCore,
                 generation: 3,
                 expectedBatchIndex: 0,
@@ -495,7 +496,7 @@ extension EVM002FileManagerPagePresentationTests {
         ))))
         XCTAssertEqual(
             store.state.entryViewLayout.hierarchy.nodesByID[sourceC.id]?.folder.children.map(\.id),
-            [beforeC.id],
+            [beforeC.id, unreceivedC.id],
             "additional source 폴더도 migration까지 retained children을 유지한다",
         )
         XCTAssertEqual(store.state.entryViewLayout.selectedIds, ["/root/A/before", beforeC.id])
@@ -509,10 +510,31 @@ extension EVM002FileManagerPagePresentationTests {
         XCTAssertEqual(store.state.entryViewLayout.selectedIds, [afterA.id, afterC.id])
         XCTAssertEqual(
             store.state.entryViewLayout.hierarchy.nodesByID[sourceC.id]?.folder.children.map(\.id),
+            [beforeC.id, unreceivedC.id],
+            "non-terminal additional source staging은 retained children을 교체하지 않는다",
+        )
+        XCTAssertEqual(
+            store.state.entryViewLayout.hierarchy.deferredFolderReplacement(folderID: sourceC.id)?.stagedChildren
+                .map(\.id),
             [unrelatedC.id],
-            "additional source staging이 migration 시 커밋된다",
+        )
+        XCTAssertTrue(
+            store.state.entryViewLayout.hierarchy.deferredFolderReplacement(folderID: sourceC.id)?
+                .migrationCompleted ?? false,
         )
         await store.receive(\.entryViewLayout.delegate.selectionChanged)
+
+        await store.send(.entryViewLayout(.hierarchy(.folderChildrenResponse(
+            rootContextGeneration: rootContextGeneration,
+            folderID: sourceC.id,
+            folderGeneration: 3,
+            .event(.coreFinished(batchCount: 1)),
+        ))))
+        XCTAssertEqual(
+            store.state.entryViewLayout.hierarchy.nodesByID[sourceC.id]?.folder.children.map(\.id),
+            [unrelatedC.id],
+            "source coreFinished 뒤 staged snapshot이 커밋된다",
+        )
 
         await store.send(.entryViewLayout(.hierarchy(.folderChildrenResponse(
             rootContextGeneration: rootContextGeneration,
@@ -851,7 +873,7 @@ extension EVM002FileManagerPagePresentationTests {
         await store.receive(\.entryViewLayout.delegate.selectionChanged)
     }
 
-    private func dualSourceFixture() -> (FileManagerContentState, Int) {
+    func dualSourceFixture() -> (FileManagerContentState, Int) {
         let rootPath = "/root"
         let sourceA = EntryModel.temporaryFolder(id: "/root/A", name: "A")
         let sourceC = EntryModel.temporaryFolder(id: "/root/C", name: "C")
@@ -1255,77 +1277,6 @@ extension EVM002FileManagerPagePresentationTests {
             .event(.coreFinished(batchCount: 1)),
         ))))
         XCTAssertNil(store.state.pendingIdentityTransition, "모든 pair가 해소되면 additional terminal에서 소비한다")
-    }
-
-    /// EVM-002-command_external_refresh_correlation: 미이전 pair의 source staging은 보류된다.
-    /// - 검증 내용: 한 destination이 먼저 migration돼도 미이전 pair의 source staging은 커밋되지 않아 before 선택이 유지된다.
-    /// - 사전 조건: 서로 다른 source/destination pair 2건이 모두 staging 보류 중이다.
-    /// - 기대 결과: D1 batch 뒤에도 C source children이 retained로 유지되고 beforeC 선택이 남는다.
-    func testUnmigratedPairSourceStagingStaysHeldUntilItsDestination() async {
-        let beforeC = EntryModel.temporaryFolder(id: "/root/C/before", name: "before")
-        let keptC = EntryModel.temporaryFolder(id: "/root/C/kept", name: "kept")
-        let keptA = EntryModel.temporaryFolder(id: "/root/A/kept", name: "kept")
-        let afterA = EntryModel.temporaryFolder(id: "/root/D1/after", name: "after")
-        let afterC = EntryModel.temporaryFolder(id: "/root/D2/after", name: "after")
-        let (state, rootContextGeneration) = dualSourceFixture()
-        let store = TestStore(initialState: state) {
-            FileManagerContentFeature()
-        } withDependencies: {
-            $0.entryOpenClient = .testValue
-            $0.entryQuickLookClient = .previewValue
-            $0.date = .constant(Date(timeIntervalSince1970: 0))
-        }
-        store.exhaustivity = .off
-
-        await store.send(.entryViewLayout(.hierarchy(.folderChildrenResponse(
-            rootContextGeneration: rootContextGeneration,
-            folderID: "/root/A",
-            folderGeneration: 3,
-            .event(.coreBatch(items: [keptA], batchIndex: 0)),
-        ))))
-        await store.send(.entryViewLayout(.hierarchy(.folderChildrenResponse(
-            rootContextGeneration: rootContextGeneration,
-            folderID: "/root/C",
-            folderGeneration: 3,
-            .event(.coreBatch(items: [keptC], batchIndex: 0)),
-        ))))
-        XCTAssertEqual(store.state.entryViewLayout.selectedIds, ["/root/A/before", beforeC.id])
-
-        await store.send(.entryViewLayout(.hierarchy(.folderChildrenResponse(
-            rootContextGeneration: rootContextGeneration,
-            folderID: "/root/D1",
-            folderGeneration: 3,
-            .event(.coreBatch(items: [afterA], batchIndex: 0)),
-        ))))
-        XCTAssertEqual(store.state.entryViewLayout.selectedIds, [afterA.id, beforeC.id])
-        XCTAssertEqual(
-            store.state.entryViewLayout.hierarchy.nodesByID["/root/C"]?.folder.children.map(\.id),
-            [beforeC.id, keptC.id],
-            "미이전 pair의 source staging은 보류되어 retained children이 유지된다",
-        )
-        await store.receive(\.entryViewLayout.delegate.selectionChanged)
-
-        await store.send(.entryViewLayout(.hierarchy(.folderChildrenResponse(
-            rootContextGeneration: rootContextGeneration,
-            folderID: "/root/D2",
-            folderGeneration: 3,
-            .event(.coreBatch(items: [afterC], batchIndex: 0)),
-        ))))
-        XCTAssertEqual(store.state.entryViewLayout.selectedIds, [afterA.id, afterC.id])
-        XCTAssertEqual(
-            store.state.entryViewLayout.hierarchy.nodesByID["/root/C"]?.folder.children.map(\.id),
-            [keptC.id],
-            "pair migration 뒤 source staging이 커밋된다",
-        )
-        await store.receive(\.entryViewLayout.delegate.selectionChanged)
-
-        await store.send(.entryViewLayout(.hierarchy(.folderChildrenResponse(
-            rootContextGeneration: rootContextGeneration,
-            folderID: "/root/D2",
-            folderGeneration: 3,
-            .event(.coreFinished(batchCount: 1)),
-        ))))
-        XCTAssertNil(store.state.pendingIdentityTransition)
     }
 
     /// EVM-002-command_external_refresh_correlation: rebase 후에도 root destination pair가 terminal에서 migration된다.

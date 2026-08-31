@@ -55,10 +55,10 @@ extension EVM002FileManagerPagePresentationTests {
         XCTAssertNotNil(store.state.pendingIdentityTransition)
     }
 
-    /// terminalized additional pair의 source staging은 즉시 커밋되고 pending pair의 staging은 유지된다.
-    /// - 검증 내용: C terminal 뒤 S1 staging 커밋, S2 staging 보류, 전이 생존을 함께 검사한다.
+    /// terminalized additional pair도 source terminal까지 staging을 유지하고 pending pair는 계속 보류한다.
+    /// - 검증 내용: C terminal 뒤 S1 migration 완료 표시, source terminal 뒤 staging 커밋, S2 hold를 함께 검사한다.
     /// - 사전 조건: 서로 다른 source·destination의 pending pair 2개와 root 보존 primary가 있다.
-    /// - 기대 결과: terminalized pair의 ghost before 행이 사라지고 다른 destination hold는 남는다.
+    /// - 기대 결과: source terminal 전에는 retained snapshot을 유지하고 이후 S1 staging만 커밋한다.
     func testAdditionalTerminalCommitsTerminalizedPairSourceStaging() async {
         let state = makeMultiMoveSourceStagingState()
         let s1 = "/root/S1"
@@ -73,9 +73,112 @@ extension EVM002FileManagerPagePresentationTests {
             .event(.coreFinished(batchCount: 0)),
         ))))
 
+        XCTAssertEqual(store.state.entryViewLayout.hierarchy.deferredFolderReplacement(
+            folderID: s1,
+        )?.migrationCompleted, true)
+        XCTAssertEqual(
+            store.state.entryViewLayout.hierarchy.nodesByID[s1]?.folder.children.map(\.id),
+            ["/root/S1/q"],
+        )
+
+        await store.send(.entryViewLayout(.hierarchy(.folderChildrenResponse(
+            rootContextGeneration: 0,
+            folderID: s1,
+            folderGeneration: 3,
+            .event(.coreFinished(batchCount: 0)),
+        ))))
+
         XCTAssertNil(store.state.entryViewLayout.hierarchy.deferredFolderReplacement(folderID: s1))
         XCTAssertNotNil(store.state.entryViewLayout.hierarchy.deferredFolderReplacement(folderID: s2))
         XCTAssertNotNil(store.state.pendingIdentityTransition)
+    }
+
+    /// EVM-002-command_external_refresh_correlation: source staging은 source terminal까지 보류된다.
+    /// - 검증 내용: destination migration 뒤에도 source staging은 커밋되지 않고 source terminal에서만 반영된다.
+    /// - 사전 조건: 서로 다른 source/destination pair 2건이 모두 staging 보류 중이다.
+    /// - 기대 결과: D1/D2 batch 뒤 C source children이 retained로 유지되고 C terminal 뒤 staging이 커밋된다.
+    func testUnmigratedPairSourceStagingStaysHeldUntilItsSourceTerminal() async {
+        let beforeC = EntryModel.temporaryFolder(id: "/root/C/before", name: "before")
+        let keptC = EntryModel.temporaryFolder(id: "/root/C/kept", name: "kept")
+        let keptA = EntryModel.temporaryFolder(id: "/root/A/kept", name: "kept")
+        let afterA = EntryModel.temporaryFolder(id: "/root/D1/after", name: "after")
+        let afterC = EntryModel.temporaryFolder(id: "/root/D2/after", name: "after")
+        let (state, rootContextGeneration) = dualSourceFixture()
+        let store = TestStore(initialState: state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.entryOpenClient = .testValue
+            $0.entryQuickLookClient = .previewValue
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+        }
+        store.exhaustivity = .off
+
+        await store.send(.entryViewLayout(.hierarchy(.folderChildrenResponse(
+            rootContextGeneration: rootContextGeneration,
+            folderID: "/root/A",
+            folderGeneration: 3,
+            .event(.coreBatch(items: [keptA], batchIndex: 0)),
+        ))))
+        await store.send(.entryViewLayout(.hierarchy(.folderChildrenResponse(
+            rootContextGeneration: rootContextGeneration,
+            folderID: "/root/C",
+            folderGeneration: 3,
+            .event(.coreBatch(items: [keptC], batchIndex: 0)),
+        ))))
+        XCTAssertEqual(store.state.entryViewLayout.selectedIds, ["/root/A/before", beforeC.id])
+
+        await store.send(.entryViewLayout(.hierarchy(.folderChildrenResponse(
+            rootContextGeneration: rootContextGeneration,
+            folderID: "/root/D1",
+            folderGeneration: 3,
+            .event(.coreBatch(items: [afterA], batchIndex: 0)),
+        ))))
+        XCTAssertEqual(store.state.entryViewLayout.selectedIds, [afterA.id, beforeC.id])
+        XCTAssertEqual(
+            store.state.entryViewLayout.hierarchy.nodesByID["/root/C"]?.folder.children.map(\.id),
+            [beforeC.id, keptC.id],
+            "미이전 pair의 source staging은 보류되어 retained children이 유지된다",
+        )
+        await store.receive(\.entryViewLayout.delegate.selectionChanged)
+
+        await store.send(.entryViewLayout(.hierarchy(.folderChildrenResponse(
+            rootContextGeneration: rootContextGeneration,
+            folderID: "/root/D2",
+            folderGeneration: 3,
+            .event(.coreBatch(items: [afterC], batchIndex: 0)),
+        ))))
+        XCTAssertEqual(store.state.entryViewLayout.selectedIds, [afterA.id, afterC.id])
+        XCTAssertEqual(
+            store.state.entryViewLayout.hierarchy.nodesByID["/root/C"]?.folder.children.map(\.id),
+            [beforeC.id, keptC.id],
+            "pair migration 뒤에도 source terminal 전에는 retained children을 유지한다",
+        )
+        XCTAssertEqual(store.state.entryViewLayout.hierarchy.deferredFolderReplacement(
+            folderID: "/root/C",
+        )?.migrationCompleted, true)
+        await store.receive(\.entryViewLayout.delegate.selectionChanged)
+
+        await store.send(.entryViewLayout(.hierarchy(.folderChildrenResponse(
+            rootContextGeneration: rootContextGeneration,
+            folderID: "/root/D2",
+            folderGeneration: 3,
+            .event(.coreFinished(batchCount: 1)),
+        ))))
+        XCTAssertNil(store.state.pendingIdentityTransition)
+
+        await store.send(.entryViewLayout(.hierarchy(.folderChildrenResponse(
+            rootContextGeneration: rootContextGeneration,
+            folderID: "/root/C",
+            folderGeneration: 3,
+            .event(.coreFinished(batchCount: 1)),
+        ))))
+        XCTAssertEqual(
+            store.state.entryViewLayout.hierarchy.nodesByID["/root/C"]?.folder.children.map(\.id),
+            [keptC.id],
+            "source terminal 뒤 source staging이 커밋된다",
+        )
+        XCTAssertNil(store.state.entryViewLayout.hierarchy.deferredFolderReplacement(folderID: "/root/C"))
+        XCTAssertNil(store.state.pendingIdentityTransition)
     }
 
     /// terminal 정산로 커밋된 source staging에서 사라진 before 행의 선택·anchor를 정산한다.
