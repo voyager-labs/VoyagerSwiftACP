@@ -24,7 +24,7 @@ Core rule: **never replace a proven working mechanism to satisfy a review findin
 
 1. Classify the finding against the ladder below and stop at the first rung that closes it.
 2. Before any rung-3+ change, complete the capability-parity checklist.
-3. Apply the fix, run the existing suite unchanged-green, then push.
+3. Apply the fix, run the existing suite unchanged-green, then commit and push only when the user explicitly requested it.
 
 ## The ladder (stop at the first rung that closes the finding)
 
