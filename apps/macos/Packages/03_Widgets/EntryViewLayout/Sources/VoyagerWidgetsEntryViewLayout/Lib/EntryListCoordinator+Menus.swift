@@ -111,10 +111,15 @@ extension EntryListCoordinator {
             focus = groupEntries.last?.id
             activeOccurrence = item
         }
+        let groupRows = tableView.liveRow(for: item).map { IndexSet(integer: $0) } ?? []
 
         applySelectionPlan(EntryListSelectionPlan(
             canonical: EntryListCanonicalSelection(ids: selectedIDs, focus: focus, anchor: focus),
-            physicalRows: physicalSelectionRows(for: selectedIDs),
+            physicalRows: physicalSelectionRows(
+                for: selectedIDs,
+                includingGroupRows: groupRows,
+                preservingSelectedGroupRows: commandPressed,
+            ),
             activeOccurrence: activeOccurrence,
             anchorOccurrence: activeOccurrence,
         ))
@@ -188,14 +193,30 @@ extension EntryListCoordinator {
         ))
     }
 
-    func physicalSelectionRows(for selectedIDs: Set<EntryModel.ID>) -> IndexSet {
+    func physicalSelectionRows(
+        for selectedIDs: Set<EntryModel.ID>,
+        includingGroupRows: IndexSet = [],
+        preservingSelectedGroupRows: Bool = true,
+    ) -> IndexSet {
+        let includedGroupNames = Set(includingGroupRows.compactMap { row -> String? in
+            guard let item = tableView.item(atRow: row) as? OutlineItem,
+                  case let .group(name, _, _) = item.kind
+            else { return nil }
+            return name
+        })
+        let selectedGroupNames = preservingSelectedGroupRows
+            ? tableView.selectedGroupNames.union(includedGroupNames)
+            : includedGroupNames
         var indexes = IndexSet()
         for row in 0 ..< tableView.numberOfRows {
             guard let item = tableView.item(atRow: row) as? OutlineItem else { continue }
             switch item.kind {
-            case .group:
+            case let .group(name, _, _):
                 let groupIDs = item.orderedDistinctEntries().map(\.id)
-                if !groupIDs.isEmpty, groupIDs.allSatisfy(selectedIDs.contains) {
+                if selectedGroupNames.contains(name),
+                   !groupIDs.isEmpty,
+                   groupIDs.allSatisfy(selectedIDs.contains)
+                {
                     indexes.insert(row)
                 }
             case let .entry(entry) where selectedIDs.contains(entry.id):
@@ -267,7 +288,11 @@ extension EntryListCoordinator {
                 focus: focusIdentifier(for: destination),
                 anchor: anchor,
             ),
-            physicalRows: physicalSelectionRows(for: selectedIDs),
+            physicalRows: physicalSelectionRows(
+                for: selectedIDs,
+                includingGroupRows: rangeRows,
+                preservingSelectedGroupRows: false,
+            ),
             activeOccurrence: destination,
             anchorOccurrence: anchorOccurrence,
         ))
@@ -278,7 +303,11 @@ extension EntryListCoordinator {
         guard !entries.isEmpty else { return }
         let selectedIDs = Set(entries.map(\.id))
         let physicalRows: IndexSet = if case .group = destination.kind {
-            physicalSelectionRows(for: selectedIDs)
+            physicalSelectionRows(
+                for: selectedIDs,
+                includingGroupRows: IndexSet(integer: destinationRow),
+                preservingSelectedGroupRows: false,
+            )
         } else {
             IndexSet(integer: destinationRow)
         }

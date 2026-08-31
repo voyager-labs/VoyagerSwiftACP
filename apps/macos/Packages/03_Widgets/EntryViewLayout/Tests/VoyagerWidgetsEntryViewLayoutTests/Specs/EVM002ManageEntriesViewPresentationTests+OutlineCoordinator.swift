@@ -128,6 +128,15 @@ extension EVM002ManageEntriesViewPresentationTests {
         XCTAssertFalse(fixture.coordinator.outlineView(fixture.tableView, shouldSelectItem: emptyItem))
         XCTAssertTrue(try fixture.routeBody(row: fixture.groupRow(named: "Empty")))
         fixture.assertCanonical([first.id, second.id], focus: second.id, updates: 5)
+
+        let entrySelection = Task4Fixture(
+            entries: [third, second, first],
+            groups: [("Alpha", [first, second]), ("Beta", [third])],
+        )
+        entrySelection.setSelection([third.id], focus: third.id)
+        XCTAssertFalse(try entrySelection.groupRowIsSelected(entrySelection.groupRow(named: "Beta")))
+        entrySelection.setSelection([first.id, second.id], focus: second.id)
+        XCTAssertFalse(try entrySelection.groupRowIsSelected(entrySelection.groupRow(named: "Alpha")))
     }
 
     /// EVM-002-update_entry_selection: 그룹 disclosure 입력은 확장 상태만 바꾸고 선택을 갱신하지 않는다.
@@ -194,7 +203,7 @@ extension EVM002ManageEntriesViewPresentationTests {
             renaming: entries[3].id,
         )
         fixture.prependRootEntry(entries[0])
-        fixture.setSelection(Set(entries[1 ... 3].map(\.id)), focus: entries[3].id)
+        XCTAssertTrue(try fixture.routeBody(row: fixture.groupRow(named: "Alpha")))
         XCTAssertTrue(try fixture.tableView.beginNativeSelection(
             atRow: fixture.entryRow(id: entries[1].id),
             modifierFlags: .command,
@@ -202,7 +211,7 @@ extension EVM002ManageEntriesViewPresentationTests {
         fixture.tableView.selectRowIndexes(IndexSet(integersIn: 3 ... 4), byExtendingSelection: false)
         fixture.coordinator.outlineViewSelectionDidChange(Notification(name: .init("native-command-remove")))
         fixture.assertCanonical(Set(entries[2 ... 3].map(\.id)), focus: entries[3].id, updates: 2)
-        fixture.setSelection(Set(entries[1 ... 3].map(\.id)), focus: entries[3].id)
+        XCTAssertTrue(try fixture.routeBody(row: fixture.groupRow(named: "Alpha")))
         try fixture.mouseDownAndFlush(row: fixture.groupRow(named: "Alpha"), disclosure: true)
         try fixture.mouseDownAndFlush(row: fixture.entryRow(id: entries[0].id), modifiers: .command)
         fixture.assertCanonical(Set(entries.map(\.id)), focus: entries[0].id, updates: 4)
@@ -261,7 +270,7 @@ extension EVM002ManageEntriesViewPresentationTests {
             let fixture = makeFixture()
             try fixture.appendDuplicate(entries[1], toGroupNamed: "G1")
             let groupRow = try fixture.groupRow(named: "G1")
-            fixture.setSelection(Set(entries[1 ... 3].map(\.id)), focus: entries[3].id)
+            XCTAssertTrue(try fixture.routeBody(row: groupRow))
             fixture.assertSelection(
                 Set(entries[1 ... 3].map(\.id)), focus: entries[3].id,
                 rows: IndexSet(integersIn: groupRow ... groupRow + 4), updates: 1,
@@ -275,7 +284,7 @@ extension EVM002ManageEntriesViewPresentationTests {
         do {
             let fixture = makeFixture()
             let groupRow = try fixture.groupRow(named: "G1")
-            fixture.setSelection(Set(entries[1 ... 3].map(\.id)), focus: entries[3].id)
+            XCTAssertTrue(try fixture.routeBody(row: groupRow))
             try fixture.mouseDownAndFlush(row: groupRow, disclosure: true)
             fixture.assertSelection(
                 Set(entries[1 ... 3].map(\.id)), focus: entries[3].id, rows: [groupRow], updates: 1,
@@ -397,7 +406,7 @@ extension EVM002ManageEntriesViewPresentationTests {
         let fixture = Task4Fixture(entries: entries, groups: [("G1", entries)])
         let ids = Set(entries.map(\.id))
         let bRow = try fixture.entryRow(id: entries[0].id)
-        fixture.setSelection(ids, focus: entries[2].id)
+        XCTAssertTrue(try fixture.routeBody(row: fixture.groupRow(named: "G1")))
         try fixture.mouseDownAndFlush(row: bRow, modifiers: .command) { try fixture.rightMouseDown(row: bRow) }
         try fixture.mouseDownAndFlush(row: bRow, modifiers: .command) { try fixture.keyDown(.rightArrow) }
         fixture.assertSelection(ids, focus: entries[2].id, rows: IndexSet(integersIn: 0 ... 3), updates: 1)
@@ -407,7 +416,7 @@ extension EVM002ManageEntriesViewPresentationTests {
         fixture.assertSelection(
             Set(entries[1 ... 2].map(\.id)), focus: entries[2].id, rows: IndexSet(integersIn: 2 ... 3), updates: 2,
         )
-        fixture.setSelection(ids, focus: entries[2].id)
+        XCTAssertTrue(try fixture.routeBody(row: fixture.groupRow(named: "G1")))
         try fixture.mouseDownAndFlush(row: fixture.entryRow(id: entries[0].id), modifiers: .command, dragOffset: 40)
         fixture.assertCanonical(ids, focus: entries[2].id, updates: 3)
     }
@@ -523,6 +532,16 @@ extension EVM002ManageEntriesViewPresentationTests {
         fixture.tableView.invalidateSelectionProjection()
         try fixture.keyDown(.upArrow, modifiers: .shift)
         fixture.assertSelection([entries[0].id], focus: entries[0].id, rows: IndexSet(integer: 1), updates: 2)
+
+        let reordered = Task4Fixture(entries: entries, groups: [("G1", entries), ("G2", entries)])
+        XCTAssertTrue(try reordered.routeBody(row: reordered.groupRow(named: "G1")))
+        reordered.tableView.invalidateSelectionProjection()
+        reordered.coordinator.outlineItems.reverse()
+        reordered.tableView.reloadData()
+        reordered.coordinator.rebuildItemIndexes()
+        reordered.coordinator.syncListSelectionFromStore()
+        XCTAssertTrue(try reordered.groupRowIsSelected(reordered.groupRow(named: "G1")))
+        XCTAssertFalse(try reordered.groupRowIsSelected(reordered.groupRow(named: "G2")))
     }
 
     // MARK: - EVM-002-toggle_directory_expansion_in_list
@@ -1451,8 +1470,9 @@ private final class Task4Fixture {
         let window = NSWindow(contentRect: view.frame, styleMask: [.titled], backing: .buffered, defer: false)
         window.contentView = view
         Self.retainedWindows.append(window)
+        window.setFrameOrigin(NSPoint(x: -100_000, y: -100_000))
+        window.alphaValue = 0
         window.makeKeyAndOrderFront(nil)
-        window.orderFrontRegardless()
         window.makeFirstResponder(tableView)
         let windowNumber = window.windowNumber
         let mouseDown = try event(

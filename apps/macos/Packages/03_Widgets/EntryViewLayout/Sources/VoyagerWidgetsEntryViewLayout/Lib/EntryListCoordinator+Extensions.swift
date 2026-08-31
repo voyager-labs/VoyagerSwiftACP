@@ -694,7 +694,6 @@ extension EntryListCoordinator {
 
     public func syncListSelectionFromStore() {
         tableView.invalidateSelectionProjectionIfNeeded()
-        let indexes = physicalSelectionRows(for: state.selectedIds)
         let activeOccurrence = selectionOccurrence(
             for: state.lastSelectedId,
             preserving: tableView.activeSelectionOccurrence,
@@ -702,6 +701,14 @@ extension EntryListCoordinator {
         let anchorOccurrence = selectionOccurrence(
             for: state.rangeAnchorId,
             preserving: tableView.rangeAnchorOccurrence,
+        )
+        let explicitGroupRows = IndexSet([activeOccurrence, anchorOccurrence].compactMap { occurrence in
+            guard let occurrence, case .group = occurrence.kind else { return nil }
+            return tableView.liveRow(for: occurrence)
+        })
+        let indexes = physicalSelectionRows(
+            for: state.selectedIds,
+            includingGroupRows: explicitGroupRows,
         )
         isUpdatingSelectionFromStore = true
         defer {
