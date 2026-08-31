@@ -244,6 +244,11 @@ extension FileManagerContentIdentityTransitionCoordinator {
               canonicalizedPath(currentPath) == transition.rootPath
         else { return }
         rebaseForNextRootReload(state: &state)
+        // 이 reload는 모든 expanded folder도 재시작하므로 folder 소유자 세대도 동행한다.
+        rebaseForHierarchyInvalidation(
+            affectedPaths: Array(state.entryViewLayout.hierarchy.expandedFolderIDs),
+            state: &state,
+        )
     }
 
     static func rebaseFolderOwnersAfterRootSnapshot(on action: FileManagerContentAction,

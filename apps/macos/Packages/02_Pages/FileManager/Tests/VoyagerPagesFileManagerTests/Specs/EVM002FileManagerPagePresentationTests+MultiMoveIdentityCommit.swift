@@ -95,6 +95,7 @@ extension EVM002FileManagerPagePresentationTests {
             folderGeneration: 3,
             .event(.coreFinished(batchCount: 0)),
         ))))
+        await store.receive(\.entryViewLayout.delegate.selectionChanged)
 
         XCTAssertFalse(store.state.entryViewLayout.selectedIds.contains("/root/S1/q"))
         XCTAssertNil(store.state.entryViewLayout.lastSelectedId)
@@ -462,6 +463,49 @@ extension EVM002FileManagerPagePresentationTests {
 
         await store.send(.view(.toggleShowHiddenFilesAndReload))
         XCTAssertEqual(store.state.pendingIdentityTransition?.projectionOwner, .root(generation: 3))
+    }
+
+    /// 같은 root의 arrangement reload도 folder 소유자 세대를 재기준화한다.
+    /// - 검증 내용: setGroupKey 뒤 pending pair의 destination folder owner가 새 세대로 올라간다.
+    /// - 사전 조건: folder destination 소유자 pair와 expanded folder node가 gen 3으로 있다.
+    /// - 기대 결과: reload가 폴더를 재시작해도 pair 소유자 세대가 동행해 전이가 생존한다.
+    func testSameRootArrangementReloadRebasesFolderOwners() async {
+        let beforeAdditional = EntryModel.temporaryFolder(id: "/root/S/q", name: "q")
+        let destinationB = EntryModel.temporaryFolder(id: "/root/B", name: "B")
+        var state = bufferedRootSourceState(
+            rootPath: "/root",
+            entries: [beforeAdditional, destinationB],
+        )
+        state.entryViewLayout.hierarchy.nodesByID[destinationB.id] = .init(
+            children: [], loadPhase: .loadingCore, generation: 3,
+        )
+        state.entryViewLayout.hierarchy.setExpandedIDs([destinationB.id])
+        state.pendingIdentityTransition = .init(
+            recordID: UUID(),
+            beforePath: "/root/primary",
+            afterPath: "/root/A/primary",
+            rootPath: "/root",
+            refreshGeneration: 1,
+            projectionOwner: .root(generation: 1),
+            preservationOwner: .root(generation: 1),
+            additionalMoves: [
+                .init(
+                    beforePath: beforeAdditional.id,
+                    afterPath: "/root/B/q",
+                    sourceOwner: nil,
+                    destinationOwner: .folder(id: destinationB.id, generation: 3),
+                ),
+            ],
+        )
+        let store = makeRootSourceCandidateStore(state)
+
+        await store.send(.entryViewLayout(.entryArrangements(.setGroupKey(.kind))))
+
+        XCTAssertEqual(
+            store.state.pendingIdentityTransition?.additionalMoves.first?.destinationOwner,
+            .folder(id: destinationB.id, generation: 4),
+        )
+        XCTAssertEqual(store.state.pendingIdentityTransition?.projectionOwner, .root(generation: 2))
     }
 
     /// 같은 folder 재적용(탭 복원) reload도 전이 세대를 재기준화한다.
