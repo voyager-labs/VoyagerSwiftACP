@@ -38,7 +38,7 @@ public enum VoyagerDS {
             case .listHeaderSurface:
                 AppKitMaterialConfiguration(
                     material: .sidebar,
-                    blendingMode: .withinWindow,
+                    blendingMode: .behindWindow,
                     state: .followsWindowActiveState,
                     opacity: 1.0,
                 )

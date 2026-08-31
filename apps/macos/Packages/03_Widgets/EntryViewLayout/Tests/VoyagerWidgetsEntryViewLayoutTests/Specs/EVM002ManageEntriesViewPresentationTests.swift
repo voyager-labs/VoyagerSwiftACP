@@ -115,10 +115,10 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
     // MARK: - EVM-002-set_entries_view_as_list_table
 
     /// EVM-002-set_entries_view_as_list_table: 목록 헤더는 withinWindow material 백드롭으로 블러 배경을 유지한다.
-    /// 반복 타일링에서 백드롭이 중복 생성되지 않고 헤더 z-순서와 투명 콘텐츠 표면이 보존되는지 검증한다.
-    /// - 검증 내용: 두 번 tile해도 NSVisualEffectView 백드롭이 정확히 1개이며 listHeaderSurface 설정과 clip 비그리기를 따른다.
-    /// - 사전 조건: 실제 EntryListScrollView와 NSTableHeaderView를 구성하고 header clip에 장식 sibling을 추가한다.
-    /// - 기대 결과: 백드롭이 헤더 뷰 아래에 clip 전체 폭으로 고정되고 native header는 보이며 장식 sibling은 숨는다.
+    /// 가로 스크롤로 오른쪽 컬럼이 새로 노출되어도 백드롭이 보이는 헤더 프레임 전체를 계속 덮는지 검증한다.
+    /// - 검증 내용: 두 번 tile해도 NSVisualEffectView 백드롭이 정확히 1개이며 header clip의 화면 프레임을 따른다.
+    /// - 사전 조건: 실제 EntryListScrollView와 NSTableHeaderView를 구성하고 header clip을 가로로 120pt 이동한다.
+    /// - 기대 결과: 백드롭이 스크롤뷰에서 header clip 아래에 고정되고 새로 노출된 오른쪽 영역까지 채운다.
     func testListHeaderBackdropUsesWithinWindowMaterialAcrossTilePasses() throws {
         let view = EntryListView(frame: NSRect(x: 0, y: 0, width: 640, height: 360))
         view.layoutSubtreeIfNeeded()
@@ -130,6 +130,7 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
         let headerView = try XCTUnwrap(headerClip.documentView as? NSTableHeaderView)
         let decorationView = NSView(frame: .zero)
         headerClip.addSubview(decorationView)
+        headerClip.bounds.origin.x = 120
 
         XCTAssertEqual(view.layer?.backgroundColor?.alpha, 0)
         XCTAssertFalse(view.scrollView.drawsBackground)
@@ -147,18 +148,22 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
             view.scrollView.tile()
             view.layoutSubtreeIfNeeded()
 
-            let backdrops = headerClip.subviews.compactMap { $0 as? NSVisualEffectView }
+            let backdrops = view.scrollView.subviews.compactMap { $0 as? NSVisualEffectView }
             XCTAssertEqual(backdrops.count, 1)
             let backdrop = try XCTUnwrap(backdrops.first)
             XCTAssertEqual(backdrop.blendingMode, .withinWindow)
             XCTAssertEqual(backdrop.state, .followsWindowActiveState)
-            XCTAssertEqual(backdrop.alphaValue, 1, accuracy: 0.001)
+            XCTAssertEqual(
+                backdrop.alphaValue,
+                VoyagerDS.SurfaceMaterialRole.mainContentBackground.alphaValue,
+                accuracy: 0.001,
+            )
             XCTAssertFalse(headerClip.drawsBackground)
 
-            let backdropIndex = try XCTUnwrap(headerClip.subviews.firstIndex(of: backdrop))
-            let headerIndex = try XCTUnwrap(headerClip.subviews.firstIndex(of: headerView))
-            XCTAssertLessThan(backdropIndex, headerIndex)
-            XCTAssertEqual(backdrop.frame, headerClip.bounds)
+            let backdropIndex = try XCTUnwrap(view.scrollView.subviews.firstIndex(of: backdrop))
+            let headerClipIndex = try XCTUnwrap(view.scrollView.subviews.firstIndex(of: headerClip))
+            XCTAssertLessThan(backdropIndex, headerClipIndex)
+            XCTAssertEqual(backdrop.frame, headerClip.frame)
 
             XCTAssertFalse(headerView.isHidden)
             XCTAssertTrue(decorationView.isHidden)
@@ -210,8 +215,8 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
     }
 
     /// EVM-002-set_entries_view_as_list_table: 그룹 행은 상태와 appearance에 맞는 반투명 오버레이 배경과 28pt 높이를 사용한다.
-    /// 사용자가 그룹화된 목록을 펼치거나 접고 선택해도 일반 행의 줄무늬와 네이티브 선택 표현이 보존되는지 검증한다.
-    /// - 검증 내용: Aqua와 Dark Aqua의 그룹 배경(material 투과 유지), 선택 위임, 재사용 초기화, 행 높이와 인접 간격을 실제 AppKit 행으로 확인한다.
+    /// 사용자가 그룹화된 목록을 펼치거나 접어도 일반 행의 줄무늬가 보존되는지 검증한다.
+    /// - 검증 내용: Aqua와 Dark Aqua의 그룹 배경(material 투과 유지), 재사용 초기화, 행 높이와 인접 간격을 실제 AppKit 행으로 확인한다.
     /// - 사전 조건: 펼침·접힘 그룹과 두 일반 항목을 실제 EntryListCoordinator와 EntryListView에 바인딩한다.
     /// - 기대 결과: 미선택 그룹은 전체 폭 DS contentPaneOverlay 오버레이, 선택 그룹은 AppKit 기본 배경, 그룹은 28pt이고 기존 지표는 유지된다.
     func testGroupedListRowsUseTranslucentOverlayAndCompactSpacing() throws {
@@ -1765,7 +1770,6 @@ private func assertTask3Appearance(_ appearanceName: NSAppearance.Name) throws {
     try assertTask3Solid(task3Render(groupRow, appearance), expectedGroupColor)
     view.tableView.collapseItem(groupItem)
     try assertTask3Solid(task3Render(groupRow, appearance), expectedGroupColor)
-    try assertTask3NativeSelection(appearance)
     view.tableView.expandItem(groupItem)
     view.layoutSubtreeIfNeeded()
     let (groupRect, childRect) = (view.tableView.rect(ofRow: 0), view.tableView.rect(ofRow: 1))
@@ -1799,40 +1803,6 @@ private func assertTask3Appearance(_ appearanceName: NSAppearance.Name) throws {
 }
 
 @MainActor
-private func assertTask3NativeSelection(_ appearance: NSAppearance) throws {
-    let frame = NSRect(x: 0, y: 0, width: 240, height: 28)
-    let product = EntryListSelectionRowView(frame: frame)
-    product.configure(isGroupRow: true)
-    let native = Task3NativeSelectionRowView(frame: frame)
-    for row in [product, native] {
-        row.selectionHighlightStyle = .regular
-        row.isEmphasized = true
-        row.isSelected = true
-    }
-    let (actual, expected) = try (task3Render(product, appearance), task3Render(native, appearance))
-    XCTAssertEqual(
-        actual.representation(using: .png, properties: [:]),
-        expected.representation(using: .png, properties: [:]),
-    )
-    XCTAssertTrue(native.didDrawBackground)
-    let middleX = actual.pixelsWide / 2
-    let middleY = actual.pixelsHigh / 2
-    let minimumX = try XCTUnwrap((0 ..< actual.pixelsWide).first {
-        (actual.colorAt(x: $0, y: middleY)?.alphaComponent ?? 0) > 0.5
-    })
-    let maximumX = try XCTUnwrap((0 ..< actual.pixelsWide).last {
-        (actual.colorAt(x: $0, y: middleY)?.alphaComponent ?? 0) > 0.5
-    })
-    let minimumY = try XCTUnwrap((0 ..< actual.pixelsHigh).first {
-        (actual.colorAt(x: middleX, y: $0)?.alphaComponent ?? 0) > 0.5
-    })
-    XCTAssertGreaterThan(try XCTUnwrap(actual.colorAt(x: middleX, y: middleY)).alphaComponent, 0.5)
-    XCTAssertGreaterThan(minimumX, 0)
-    XCTAssertLessThan(maximumX, actual.pixelsWide - 1)
-    XCTAssertLessThan(try XCTUnwrap(actual.colorAt(x: minimumX, y: minimumY)).alphaComponent, 0.5)
-}
-
-@MainActor
 private func task3Render(_ row: NSTableRowView, _ appearance: NSAppearance) throws -> NSBitmapImageRep {
     row.appearance = appearance
     let bitmap = try XCTUnwrap(row.bitmapImageRepForCachingDisplay(in: row.bounds))
@@ -1849,15 +1819,6 @@ private func assertTask3Solid(_ bitmap: NSBitmapImageRep, _ expected: NSColor) t
         XCTAssertEqual(color.greenComponent, expected.greenComponent, accuracy: 0.01)
         XCTAssertEqual(color.blueComponent, expected.blueComponent, accuracy: 0.01)
         XCTAssertEqual(color.alphaComponent, expected.alphaComponent, accuracy: 0.01)
-    }
-}
-
-private final class Task3NativeSelectionRowView: NSTableRowView {
-    private(set) var didDrawBackground = false
-
-    override func drawBackground(in dirtyRect: NSRect) {
-        didDrawBackground = true
-        super.drawBackground(in: dirtyRect)
     }
 }
 

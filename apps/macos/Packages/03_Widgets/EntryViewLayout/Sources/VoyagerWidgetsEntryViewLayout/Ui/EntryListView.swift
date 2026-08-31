@@ -77,11 +77,15 @@ final class EntryListSelectionRowView: NSTableRowView {
             return
         }
 
-        // 불투명 색으로 덮으면 하위 NSVisualEffectView material 투과가 죽으므로 반투명 오버레이를 쓴다(VOY-598).
         let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
 
         if isGroupRow {
-            VoyagerDS.AppKitSurface.contentPaneOverlay(isDark: isDark).setFill()
+            let entryListTableView = tableView as? EntryListView.EntryListTableView
+            let opacity = isDark
+                ? entryListTableView?.groupRowDarkOpacity ?? 0.065
+                : entryListTableView?.groupRowLightOpacity ?? 0.035
+            let backgroundColor = isDark ? NSColor.white : NSColor.black
+            backgroundColor.withAlphaComponent(opacity).setFill()
             dirtyRect.fill()
             return
         }
@@ -103,6 +107,11 @@ struct EntryListNativeSelectionContext {
 }
 
 final class EntryListScrollView: NSScrollView {
+    private let headerBackdrop = VoyagerDS.SurfaceMaterialRole.listHeaderSurface.makeBackgroundView()
+    var headerMaterial = VoyagerDS.SurfaceMaterialRole.listHeaderSurface.material
+    var headerBlendingMode = VoyagerDS.SurfaceMaterialRole.listHeaderSurface.blendingMode
+    var headerAlphaValue = VoyagerDS.SurfaceMaterialRole.listHeaderSurface.alphaValue
+
     override func tile() {
         super.tile()
 
@@ -111,7 +120,7 @@ final class EntryListScrollView: NSScrollView {
             .first(where: { $0.documentView is NSTableHeaderView })
         else { return }
 
-        installHeaderBackdrop(in: headerClipView)
+        installHeaderBackdrop(below: headerClipView)
         headerClipView.drawsBackground = false
         headerClipView.backgroundColor = .clear
         for subview in headerClipView.subviews
@@ -121,25 +130,15 @@ final class EntryListScrollView: NSScrollView {
         }
     }
 
-    /// 헤더 배경은 색 fill이 아니라 withinWindow material 백드롭으로 그려
-    /// 아래 콘텐츠 표면이 블러로 비치게 한다(VOY-598).
-    private func installHeaderBackdrop(in headerClipView: NSClipView) {
-        if let existing = headerClipView.subviews
-            .first(where: { $0 is NSVisualEffectView }) as? NSVisualEffectView
-        {
-            VoyagerDS.SurfaceMaterialRole.listHeaderSurface.apply(to: existing)
-            return
+    private func installHeaderBackdrop(below headerClipView: NSClipView) {
+        VoyagerDS.SurfaceMaterialRole.listHeaderSurface.apply(to: headerBackdrop)
+        headerBackdrop.material = headerMaterial
+        headerBackdrop.blendingMode = headerBlendingMode
+        headerBackdrop.alphaValue = headerAlphaValue
+        if headerBackdrop.superview !== self {
+            addSubview(headerBackdrop, positioned: .below, relativeTo: headerClipView)
         }
-        guard let headerView = headerClipView.documentView as? NSTableHeaderView else { return }
-        let backdrop = VoyagerDS.SurfaceMaterialRole.listHeaderSurface.makeBackgroundView()
-        backdrop.translatesAutoresizingMaskIntoConstraints = false
-        headerClipView.addSubview(backdrop, positioned: .below, relativeTo: headerView)
-        NSLayoutConstraint.activate([
-            backdrop.leadingAnchor.constraint(equalTo: headerClipView.leadingAnchor),
-            backdrop.trailingAnchor.constraint(equalTo: headerClipView.trailingAnchor),
-            backdrop.topAnchor.constraint(equalTo: headerClipView.topAnchor),
-            backdrop.bottomAnchor.constraint(equalTo: headerClipView.bottomAnchor),
-        ])
+        headerBackdrop.frame = headerClipView.frame
     }
 }
 
@@ -167,9 +166,12 @@ public final class EntryListView: NSView {
         var blankSpaceContextMenuProvider: (() -> NSMenu)?
         private(set) var activeSelectionOccurrence: AnyObject?
         private(set) var rangeAnchorOccurrence: AnyObject?
+        private(set) var selectedGroupNames: Set<String> = []
         private(set) var selectionTransactionGeneration: UInt = 0
         private(set) var expectedSelectionSignature: IndexSet?
         private(set) var isApplyingDisclosureSelectionTransaction = false
+        var groupRowLightOpacity: CGFloat = 0.035
+        var groupRowDarkOpacity: CGFloat = 0.065
         private var hasPendingDisclosureSelectionCallbacks = false
         private var didBeginNativeDrag = false
         private var pendingNativeSelectionContext: EntryListNativeSelectionContext?
@@ -181,11 +183,18 @@ public final class EntryListView: NSView {
             activeOccurrence: AnyObject?,
             anchorOccurrence: AnyObject?,
         ) -> Bool {
+            let groupNames = Set(indexes.compactMap { row -> String? in
+                guard let item = item(atRow: row) as? EntryListOutlineItem,
+                      case let .group(name, _, _) = item.kind
+                else { return nil }
+                return name
+            })
             let cursorUnchanged = activeSelectionOccurrence === activeOccurrence
                 && rangeAnchorOccurrence === anchorOccurrence
             guard selectedRowIndexes != indexes
                 || expectedSelectionSignature != indexes
                 || !cursorUnchanged
+                || selectedGroupNames != groupNames
             else { return false }
 
             selectionTransactionGeneration &+= 1
@@ -193,6 +202,7 @@ public final class EntryListView: NSView {
             hasPendingDisclosureSelectionCallbacks = false
             activeSelectionOccurrence = activeOccurrence
             rangeAnchorOccurrence = anchorOccurrence
+            selectedGroupNames = groupNames
             pendingNativeSelectionContext = nil
             selectRowIndexes(indexes, byExtendingSelection: false)
             return true
@@ -456,6 +466,22 @@ public final class EntryListView: NSView {
         NSAccessibility.post(element: self, notification: .layoutChanged)
     }
 
+    public func updateMaterialAppearance(
+        headerMaterial: NSVisualEffectView.Material,
+        headerBlendingMode: NSVisualEffectView.BlendingMode,
+        headerAlphaValue: CGFloat,
+        groupRowLightOpacity: CGFloat,
+        groupRowDarkOpacity: CGFloat,
+    ) {
+        scrollView.headerMaterial = headerMaterial
+        scrollView.headerBlendingMode = headerBlendingMode
+        scrollView.headerAlphaValue = min(max(headerAlphaValue, 0), 1)
+        tableView.groupRowLightOpacity = min(max(groupRowLightOpacity, 0), 1)
+        tableView.groupRowDarkOpacity = min(max(groupRowDarkOpacity, 0), 1)
+        scrollView.tile()
+        tableView.needsDisplay = true
+    }
+
     private func setupViewTree() {
         setAccessibilityElement(false)
         wantsLayer = true
@@ -482,6 +508,8 @@ public final class EntryListView: NSView {
         tableView.setAccessibilityLabel("File entries")
         tableView.setAccessibilityRole(.outline)
         tableView.backgroundColor = NSColor.clear
+        tableView.style = .fullWidth
+        tableView.floatsGroupRows = false
         tableView.headerView = NSTableHeaderView()
         tableView.allowsColumnReordering = true
         tableView.allowsColumnResizing = true
