@@ -760,7 +760,11 @@ extension EVM002FileManagerPagePresentationTests {
                 ),
             ],
         )
-        let store = TestStore(initialState: state) { FileManagerContentFeature() }
+        let store = TestStore(initialState: state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.entryQuickLookClient = .previewValue
+        }
         store.exhaustivity = .off
 
         await store.send(.entryViewLayout(.hierarchy(.folderChildrenResponse(

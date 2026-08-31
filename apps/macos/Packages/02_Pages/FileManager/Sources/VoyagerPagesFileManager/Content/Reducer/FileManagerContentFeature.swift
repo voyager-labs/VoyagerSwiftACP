@@ -111,6 +111,9 @@ public struct FileManagerContentFeature {
         FileManagerContentPendingSelectionReducer(phase: .afterEntryViewLayout)
 
         Reduce { state, action in
+            let selectionBefore = state.entryViewLayout.selectedIds
+            let lastSelectedBefore = state.entryViewLayout.lastSelectedId
+            let anchorBefore = state.entryViewLayout.rangeAnchorId
             let identityMigrated = resolveRootIdentityTransitionAfterEntryLayoutLoaded(
                 action,
                 state: &state,
@@ -127,11 +130,15 @@ public struct FileManagerContentFeature {
                 on: action,
                 state: &state,
             )
-            var effects: [Effect<Action>] = []
-            if identityMigrated {
-                effects.append(.send(.entryViewLayout(.delegate(.selectionChanged))))
+            // terminal 정산(discard·collapse)도 선택을 바꾸므로 migration과 동일하게
+            // selectionChanged를 발행해 syncSelectedEntryIDs·Quick Look 동기화를 보장한다.
+            let selectionSettled = state.entryViewLayout.selectedIds != selectionBefore
+                || state.entryViewLayout.lastSelectedId != lastSelectedBefore
+                || state.entryViewLayout.rangeAnchorId != anchorBefore
+            if identityMigrated || selectionSettled {
+                return .send(.entryViewLayout(.delegate(.selectionChanged)))
             }
-            return .concatenate(effects)
+            return .none
         }
 
         FileManagerContentComposerReducer()
