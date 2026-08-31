@@ -174,9 +174,11 @@ struct WindowManagerState: Equatable {
     var externalWindowBatchIDs: [WindowID: UUID] = [:]
     var retainedExternalOpenPlacementOwnership: WindowManagerRetainedExternalOpenPlacementOwnership?
     var authorizedExternalOpenBatchID: UUID?
+    var externalOpenRegistrationTransactionID: UUID?
     var authorizedTrackedSingletonRequestID: UUID?
     var trackedSingletonWindow: WindowManagerTrackedSingletonWindow?
     var externalOpenActivationAttempt: ExternalOpenActivationAttempt?
+    var externalOpenActivationBecameKey = false
     var topNavigationPersistenceQueue: [WindowManagerTopNavigationPersistenceRequest] = []
     var isTopNavigationPersistenceInFlight = false
     var contentTabMoveTerminalRecords: [UUID: ContentTabMoveTerminalRecord] = [:]
