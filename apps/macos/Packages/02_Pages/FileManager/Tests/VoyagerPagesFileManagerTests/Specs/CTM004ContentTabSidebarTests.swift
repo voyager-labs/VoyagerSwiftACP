@@ -4413,6 +4413,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         var state = FileManagerFeature.State()
         state.sidebar.setFixedLocationItems([location])
         let providers = [NSItemProvider(), NSItemProvider()]
+        let operationID = UUID()
         let request = FileManagerSidebarEntryDropRequest(
             target: .fixedLocation(location.id),
             providers: providers,
@@ -4420,22 +4421,23 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         )
         let store = TestStore(initialState: state) {
             FileManagerWindowCommandRoutingReducer()
+        } withDependencies: {
+            $0.fileManagerProductMetricsClient = .init(
+                record: { _ in },
+                makeOperationID: { operationID },
+            )
         }
-        let expectedRoute = AnyCasePath<FileManagerFeature.Action, Void>(
-            embed: { _ in
-                .internal(.sidebarEntryDrop(.routing(.handleDropToTrash(providers: providers))))
-            },
-            extract: { action in
-                guard case let .internal(.sidebarEntryDrop(.routing(.handleDropToTrash(receivedProviders)))) = action
-                else { return nil }
-                XCTAssertEqual(receivedProviders.count, providers.count)
-                XCTAssertTrue(zip(receivedProviders, providers).allSatisfy { $0 === $1 })
-                return ()
-            },
-        )
-
         await store.send(.sidebar(.delegate(.entryDropRequested(request))))
-        await store.receive(expectedRoute)
+        await store.receive { action in
+            guard case let .internal(.sidebarEntryDrop(.acceptedCommand(metadata, nestedAction))) = action,
+                  metadata.id == operationID,
+                  metadata.interaction == .moveEntriesToTrash,
+                  metadata.source == .dragAndDrop,
+                  case let .routing(.handleDropToTrash(receivedProviders)) = nestedAction
+            else { return false }
+            XCTAssertEqual(receivedProviders.count, providers.count)
+            return zip(receivedProviders, providers).allSatisfy { $0 === $1 }
+        }
         XCTAssertEqual(store.state, state)
         await store.finish()
     }
@@ -6458,39 +6460,32 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             providers: providers,
             isOptionDrag: isOptionDrag,
         )
+        let operationID = UUID()
         let store = TestStore(initialState: initialState) {
             FileManagerWindowCommandRoutingReducer()
+        } withDependencies: {
+            $0.fileManagerProductMetricsClient = .init(
+                record: { _ in },
+                makeOperationID: { operationID },
+            )
         }
-        let expectedHandleDrop = AnyCasePath<FileManagerFeature.Action, Void>(
-            embed: { _ in
-                FileManagerFeature.Action.internal(.sidebarEntryDrop(.routing(.handleDrop(
-                    providers: providers,
-                    destinationPath: destinationPath,
-                    isOptionDrag: isOptionDrag,
-                ))))
-            },
-            extract: { action in
-                guard case let .internal(.sidebarEntryDrop(.routing(.handleDrop(
-                    receivedProviders,
-                    receivedDestinationPath,
-                    receivedIsOptionDrag,
-                )))) = action
-                else { return nil }
-                XCTAssertEqual(receivedProviders.count, providers.count, file: file, line: line)
-                XCTAssertTrue(
-                    zip(receivedProviders, providers).allSatisfy { $0 === $1 },
-                    "provider identity and order must be preserved",
-                    file: file,
-                    line: line,
-                )
-                XCTAssertEqual(receivedDestinationPath, destinationPath, file: file, line: line)
-                XCTAssertEqual(receivedIsOptionDrag, isOptionDrag, file: file, line: line)
-                return ()
-            },
-        )
-
         await store.send(.sidebar(.delegate(.entryDropRequested(request))))
-        await store.receive(expectedHandleDrop)
+        await store.receive { action in
+            guard case let .internal(.sidebarEntryDrop(.acceptedCommand(metadata, nestedAction))) = action,
+                  metadata.id == operationID,
+                  metadata.interaction == (isOptionDrag ? .copyEntries : .moveEntries),
+                  metadata.source == .dragAndDrop,
+                  case let .routing(.handleDrop(
+                      receivedProviders,
+                      receivedDestinationPath,
+                      receivedIsOptionDrag,
+                  )) = nestedAction
+            else { return false }
+            XCTAssertEqual(receivedProviders.count, providers.count, file: file, line: line)
+            XCTAssertEqual(receivedDestinationPath, destinationPath, file: file, line: line)
+            XCTAssertEqual(receivedIsOptionDrag, isOptionDrag, file: file, line: line)
+            return zip(receivedProviders, providers).allSatisfy { $0 === $1 }
+        }
         XCTAssertEqual(store.state, initialState, "drop routing must preserve Window state", file: file, line: line)
         await store.finish()
     }

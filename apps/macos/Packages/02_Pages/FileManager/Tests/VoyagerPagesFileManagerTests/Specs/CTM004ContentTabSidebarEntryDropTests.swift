@@ -3,6 +3,7 @@ import ComposableArchitecture
 import Foundation
 import SwiftUI
 import UniformTypeIdentifiers
+import VoyagerFeaturesEntryOperations
 @testable import VoyagerPagesFileManager
 import XCTest
 
@@ -304,6 +305,190 @@ extension CTM004ContentTabSidebarTests {
                 && !receivedRequest.isOptionDrag
         }
         await store.finish()
+    }
+
+    /// CTM-004-sidebar_entry_drop_routing: Window는 수용한 copy/move/trash drop에 유한 metadata를 한 번 부여한다.
+    /// Sidebar drop의 Product 상관관계가 Content bridge를 우회해도 보존되는지 검증한다.
+    /// - 검증 내용: interaction/source/operation ID와 provider 순서, 수용당 ID 1회, invalid target ID 0회
+    /// - 사전 조건: visible 일반 위치와 Trash 위치, Option copy와 move 요청, 존재하지 않는 위치 요청
+    /// - 기대 결과: 세 수용 route만 `.acceptedCommand`로 감싸지고 모두 `.dragAndDrop` source를 사용함
+    func testWindowAcceptedEntryDropsAttachFiniteMetadataOnce() async throws {
+        let copyID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000401"))
+        let moveID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000402"))
+        let trashID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000403"))
+        let operationIDs = LockIsolated([copyID, moveID, trashID])
+        let fixture = AcceptedEntryDropFixture()
+        let providers = [NSItemProvider(), NSItemProvider()]
+        let store = TestStore(initialState: fixture.state) {
+            FileManagerWindowCommandRoutingReducer()
+        } withDependencies: {
+            $0.fileManagerProductMetricsClient = FileManagerProductMetricsClient(
+                record: { _ in },
+                makeOperationID: { operationIDs.withValue { $0.removeFirst() } },
+            )
+        }
+
+        let scenarios = [
+            AcceptedEntryDropScenario(fixture.desktop.id, true, copyID, .copyEntries),
+            AcceptedEntryDropScenario(fixture.desktop.id, false, moveID, .moveEntries),
+            AcceptedEntryDropScenario(fixture.trash.id, true, trashID, .moveEntriesToTrash),
+        ]
+        for scenario in scenarios {
+            await store.send(.sidebar(.delegate(.entryDropRequested(.init(
+                target: scenario.target,
+                providers: providers,
+                isOptionDrag: scenario.isOptionDrag,
+            )))))
+            await store.receive { action in
+                matchesAcceptedDrop(action, scenario: scenario, providers: providers, fixture: fixture)
+            }
+        }
+
+        await store.send(.sidebar(.delegate(.entryDropRequested(.init(
+            target: .fixedLocation("missing"),
+            providers: providers,
+            isOptionDrag: false,
+        )))))
+        XCTAssertTrue(operationIDs.value.isEmpty)
+        await store.finish()
+    }
+
+    /// CTM-004-sidebar_entry_drop_routing: Window-owned Sidebar terminal은 완료 순서대로 정확히 한 번 기록된다.
+    /// 수용 역순 완료와 중복 delivery에서도 result/aggregate 상관관계가 흔들리지 않는지 검증한다.
+    /// - 검증 내용: success/partial/failure 집계, 역순 operation ID, duplicate terminal 억제
+    /// - 사전 조건: copy/move/trash metadata를 가진 세 terminal과 move terminal 중복 delivery
+    /// - 기대 결과: Product metric은 trash→move→copy 순서로 각 operation ID당 정확히 하나만 기록됨
+    func testWindowSidebarTerminalsRecordReverseOrderAndSuppressDuplicates() async throws {
+        let copy = try makeEntryDropCommand("00000000-0000-0000-0000-000000000411", .copyEntries)
+        let move = try makeEntryDropCommand("00000000-0000-0000-0000-000000000412", .moveEntries)
+        let trash = try makeEntryDropCommand("00000000-0000-0000-0000-000000000413", .moveEntriesToTrash)
+        let copyFailure = makeEntryDropRecord(copy, .pasteFileCopy, succeeded: 0, failed: 2)
+        let movePartial = makeEntryDropRecord(move, .pasteFileMove, succeeded: 1, failed: 1)
+        let trashSuccess = makeEntryDropRecord(trash, .moveToTrash, succeeded: 2, failed: 0)
+        let recorder = FileManagerProductMetricRecorder()
+        let store = TestStore(initialState: FileManagerFeature.State()) {
+            FileManagerWindowRoutingReducer()
+        } withDependencies: {
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+
+        var recordedCommandIDs: Set<UUID> = []
+        for record in [trashSuccess, movePartial, copyFailure, movePartial] {
+            let inserted = recordedCommandIDs.insert(record.id).inserted
+            if inserted {
+                await store.send(.internal(.sidebarEntryDrop(.lifecycle(.entryActionCompleted(record))))) {
+                    $0.recordedSidebarEntryCommandIDs = recordedCommandIDs
+                }
+            } else {
+                await store.send(.internal(.sidebarEntryDrop(.lifecycle(.entryActionCompleted(record)))))
+            }
+        }
+        await store.finish()
+
+        XCTAssertEqual(recorder.metrics(), [
+            entryDropMetric(trash, .success, succeeded: 2, failed: 0),
+            entryDropMetric(move, .partial, succeeded: 1, failed: 1),
+            entryDropMetric(copy, .failure, succeeded: 0, failed: 2),
+        ])
+    }
+
+    private struct AcceptedEntryDropScenario {
+        let target: FileManagerSidebarEntryDropTarget
+        let isOptionDrag: Bool
+        let operationID: UUID
+        let interaction: EntryInteractionIdentity
+
+        init(_ locationID: String, _ isOptionDrag: Bool, _ operationID: UUID, _ interaction: EntryInteractionIdentity) {
+            target = .fixedLocation(locationID)
+            self.isOptionDrag = isOptionDrag
+            self.operationID = operationID
+            self.interaction = interaction
+        }
+    }
+
+    private struct AcceptedEntryDropFixture {
+        let desktop = FileManagerFixedLocationItem(
+            id: "desktop",
+            title: "Desktop",
+            path: "/Desktop",
+            iconName: "folder",
+            accessibilityLabel: "Desktop",
+        )
+        let trash = FileManagerFixedLocationItem(
+            id: "trash",
+            title: "Trash",
+            path: "/Trash",
+            iconName: "trash",
+            accessibilityLabel: "Trash",
+            kind: .trash,
+        )
+        var state: FileManagerFeature.State {
+            var state = FileManagerFeature.State()
+            state.sidebar.setFixedLocationItems([desktop, trash])
+            return state
+        }
+    }
+
+    private func matchesAcceptedDrop(
+        _ action: FileManagerFeature.Action,
+        scenario: AcceptedEntryDropScenario,
+        providers: [NSItemProvider],
+        fixture: AcceptedEntryDropFixture,
+    ) -> Bool {
+        guard case let .internal(.sidebarEntryDrop(.acceptedCommand(metadata, nestedAction))) = action,
+              metadata.id == scenario.operationID,
+              metadata.interaction == scenario.interaction,
+              metadata.source == .dragAndDrop
+        else { return false }
+        switch (scenario.interaction, nestedAction) {
+        case let (.moveEntriesToTrash, .routing(.handleDropToTrash(receivedProviders))):
+            return receivedProviders.elementsEqual(providers, by: { $0 === $1 })
+        case let (_, .routing(.handleDrop(receivedProviders, destinationPath, isOptionDrag))):
+            return receivedProviders.elementsEqual(providers, by: { $0 === $1 })
+                && destinationPath == fixture.desktop.path
+                && isOptionDrag == scenario.isOptionDrag
+        default:
+            return false
+        }
+    }
+
+    private func makeEntryDropCommand(
+        _ id: String,
+        _ interaction: EntryInteractionIdentity,
+    ) throws -> EntryCommandMetadata {
+        try .init(id: XCTUnwrap(UUID(uuidString: id)), interaction: interaction, source: .dragAndDrop)
+    }
+
+    private func makeEntryDropRecord(
+        _ command: EntryCommandMetadata,
+        _ operationKind: OperationKind,
+        succeeded: Int,
+        failed: Int,
+    ) -> EntryActionRecord {
+        EntryActionRecord(
+            operationKind: operationKind,
+            targets: [],
+            failedCount: failed,
+            cancelledCount: 0,
+            succeededCount: succeeded,
+            id: UUID(),
+            timestamp: Date(timeIntervalSince1970: 1_234_567_890),
+        ).attaching(command: command)
+    }
+
+    private func entryDropMetric(
+        _ command: EntryCommandMetadata,
+        _ result: EntryActionResult,
+        succeeded: Int,
+        failed: Int,
+    ) -> FileManagerProductMetric {
+        .entryAction(
+            result: result,
+            identity: command.interaction,
+            source: command.source,
+            operationID: command.id,
+            aggregate: .init(attempted: succeeded + failed, succeeded: succeeded, failed: failed, cancelled: 0),
+        )
     }
 
     private func makeDelegate(

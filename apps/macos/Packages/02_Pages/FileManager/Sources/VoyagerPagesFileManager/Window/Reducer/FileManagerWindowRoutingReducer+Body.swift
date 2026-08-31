@@ -407,8 +407,16 @@ extension FileManagerWindowRoutingReducer {
             case let .internal(.sidebarEntryDrop(.outcome(.entriesMutated(impact)))):
                 return handleEntriesMutated(impact, state: &state)
 
-            case let .internal(.sidebarEntryDrop(.lifecycle(.entryActionCompleted(record))))
-                where record.operationKind == .moveToTrash:
+            case let .internal(.sidebarEntryDrop(.lifecycle(.entryActionCompleted(record)))):
+                if let command = record.command {
+                    guard state.recordedSidebarEntryCommandIDs.insert(command.id).inserted else {
+                        return .none
+                    }
+                    if let metric = FileManagerProductMetricsProducer.entryTerminal(for: record) {
+                        productMetricsClient.record(metric)
+                    }
+                }
+                guard record.operationKind == .moveToTrash else { return .none }
                 return handleAffectedDirectoryRefresh(
                     paths: parentDirectoryPaths(for: record.targets),
                     state: &state,

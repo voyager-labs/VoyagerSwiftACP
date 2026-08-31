@@ -260,4 +260,33 @@ public enum FileManagerProductMetricsProducer {
             aggregate: aggregate,
         )
     }
+
+    static func entryTerminal(for record: EntryActionRecord) -> FileManagerProductMetric? {
+        guard let command = record.command else { return nil }
+        let succeeded = record.succeededCount
+        let failed = record.failedCount
+        let cancelled = record.cancelledCount
+        return entryTerminal(
+            operationID: command.id,
+            identity: command.interaction,
+            source: command.source,
+            result: entryResult(succeeded: succeeded, failed: failed, cancelled: cancelled),
+            aggregate: .init(
+                attempted: record.attemptedCount,
+                succeeded: succeeded,
+                failed: failed,
+                cancelled: cancelled,
+            ),
+        )
+    }
+
+    private static func entryResult(
+        succeeded: Int,
+        failed: Int,
+        cancelled: Int,
+    ) -> EntryActionResult {
+        if succeeded > 0 { return failed + cancelled > 0 ? .partial : .success }
+        if failed > 0 { return .failure }
+        return cancelled > 0 ? .cancelled : .success
+    }
 }

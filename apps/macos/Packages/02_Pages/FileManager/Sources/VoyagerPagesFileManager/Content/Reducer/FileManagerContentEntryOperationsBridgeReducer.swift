@@ -375,30 +375,11 @@ struct FileManagerContentEntryOperationsBridgeReducer {
 
         if case let .lifecycle(.entryActionCompleted(record)) = action,
            let command = record.command,
-           state.recordedEntryCommandIDs.insert(command.id).inserted
+           state.recordedEntryCommandIDs.insert(command.id).inserted,
+           let metric = FileManagerProductMetricsProducer.entryTerminal(for: record)
         {
-            let succeeded = record.succeededCount
-            let failed = record.failedCount
-            let cancelled = record.cancelledCount
-            productMetricsClient.record(FileManagerProductMetricsProducer.entryTerminal(
-                operationID: command.id,
-                identity: command.interaction,
-                source: command.source,
-                result: Self.entryResult(succeeded: succeeded, failed: failed, cancelled: cancelled),
-                aggregate: .init(
-                    attempted: record.attemptedCount,
-                    succeeded: succeeded,
-                    failed: failed,
-                    cancelled: cancelled,
-                ),
-            ))
+            productMetricsClient.record(metric)
         }
-    }
-
-    private static func entryResult(succeeded: Int, failed: Int, cancelled: Int) -> EntryActionResult {
-        if succeeded > 0 { return failed + cancelled > 0 ? .partial : .success }
-        if failed > 0 { return .failure }
-        return cancelled > 0 ? .cancelled : .success
     }
 
     // MARK: - Helpers

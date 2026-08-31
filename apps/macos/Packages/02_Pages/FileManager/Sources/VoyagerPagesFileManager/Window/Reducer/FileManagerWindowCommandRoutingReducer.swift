@@ -40,6 +40,8 @@ struct FileManagerWindowCommandRoutingReducer {
     var fileManagerLocationsClient
     @Dependency(\.fileManagerFavoritesClient)
     var fileManagerFavoritesClient
+    @Dependency(\.fileManagerProductMetricsClient)
+    var productMetricsClient
     @Dependency(\.entryLoadingClient)
     var entryLoadingClient
     @Dependency(\.userDefaultsClient)
@@ -212,20 +214,34 @@ struct FileManagerWindowCommandRoutingReducer {
                     guard let location = state.sidebar.fixedLocationItems.first(where: { $0.id == id })
                     else { return .none }
                     if location.kind == .trash {
-                        return .send(.internal(.sidebarEntryDrop(.routing(.handleDropToTrash(
-                            providers: request.providers,
-                        )))))
+                        let metadata = EntryCommandMetadata(
+                            id: productMetricsClient.makeOperationID(),
+                            interaction: .moveEntriesToTrash,
+                            source: .dragAndDrop,
+                        )
+                        return .send(.internal(.sidebarEntryDrop(.acceptedCommand(
+                            metadata: metadata,
+                            action: .routing(.handleDropToTrash(providers: request.providers)),
+                        ))))
                     }
                 }
                 guard let destinationPath = sidebarEntryDropDestinationPath(
                     for: request.target,
                     state: state,
                 ) else { return .none }
-                return .send(.internal(.sidebarEntryDrop(.routing(.handleDrop(
-                    providers: request.providers,
-                    destinationPath: destinationPath,
-                    isOptionDrag: request.isOptionDrag,
-                )))))
+                let metadata = EntryCommandMetadata(
+                    id: productMetricsClient.makeOperationID(),
+                    interaction: request.isOptionDrag ? .copyEntries : .moveEntries,
+                    source: .dragAndDrop,
+                )
+                return .send(.internal(.sidebarEntryDrop(.acceptedCommand(
+                    metadata: metadata,
+                    action: .routing(.handleDrop(
+                        providers: request.providers,
+                        destinationPath: destinationPath,
+                        isOptionDrag: request.isOptionDrag,
+                    )),
+                ))))
 
             case let .sidebar(.view(.setFixedLocationVisibility(id, isVisible))):
                 state.sidebar.setFixedLocationVisibility(id: id, isVisible: isVisible)
