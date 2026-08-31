@@ -472,9 +472,22 @@ enum FileManagerContentIdentityTransitionCoordinator {
                 (state.entryViewLayout.hierarchy.nodesByID[sourceID]?.folder.children.map(\.id) ?? [])
                     .map(standardizedPath),
             )
+            var staleBeforeIdentities: [String] = []
             for move in transition.additionalMoves where move.migrated {
                 guard effectiveSourceFolderID(move) == sourceID else { continue }
-                let beforeIdentity = move.beforeLexicalPath.isEmpty ? move.beforePath : move.beforeLexicalPath
+                staleBeforeIdentities.append(
+                    move.beforeLexicalPath.isEmpty ? move.beforePath : move.beforeLexicalPath,
+                )
+            }
+            // primary before도 committed staging에서 사라지면 동일하게 정산한다.
+            if case let .folder(preservationID, _) = transition.preservationOwner,
+               preservationID == sourceID
+            {
+                staleBeforeIdentities.append(
+                    transition.beforeLexicalPath.isEmpty ? transition.beforePath : transition.beforeLexicalPath,
+                )
+            }
+            for beforeIdentity in staleBeforeIdentities {
                 guard let staleID = state.entryViewLayout.selectedIds.first(where: {
                     standardizedPath($0) == standardizedPath(beforeIdentity)
                 }), !remainingChildPaths.contains(standardizedPath(staleID)) else { continue }

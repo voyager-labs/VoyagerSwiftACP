@@ -102,6 +102,53 @@ extension EVM002FileManagerPagePresentationTests {
         XCTAssertEqual(store.state.pendingIdentityTransition?.additionalMoves.map(\.migrated), [true, false])
     }
 
+    /// primary terminal 정산에서도 committed staging에서 사라진 before의 선택·anchor를 정산한다.
+    /// - 검증 내용: destination collapse로 primary source staging이 커밋되면 primary before 선택이 제거된다.
+    /// - 사전 조건: preservation이 folder source고 primary before만 선택된 상태로 collapse가 발생한다.
+    /// - 기대 결과: primary before가 breadcrumb·Quick Look 기준에 stale로 남지 않는다.
+    func testPrimaryCollapseSettlesStalePrimarySelection() async {
+        let before = EntryModel.temporaryFolder(id: "/root/S/before", name: "before")
+        let destination = EntryModel.temporaryFolder(id: "/root/A", name: "A")
+        let source = EntryModel.temporaryFolder(id: "/root/S", name: "S")
+        var state = bufferedRootSourceState(
+            rootPath: "/root",
+            entries: [before, destination],
+        )
+        state.entryViewLayout.hierarchy.nodesByID[source.id] = .init(
+            folder: .init(children: [before], coreFinished: true),
+            generation: 3,
+            loadPhase: .loadingCore,
+        )
+        state.entryViewLayout.hierarchy.nodesByID[destination.id] = .init(
+            children: [], loadPhase: .loadingCore, generation: 3,
+        )
+        state.entryViewLayout.selectedIds = [before.id]
+        state.entryViewLayout.lastSelectedId = before.id
+        state.entryViewLayout.rangeAnchorId = before.id
+        state.pendingIdentityTransition = .init(
+            recordID: UUID(),
+            beforePath: before.id,
+            afterPath: "/root/A/after",
+            rootPath: "/root",
+            refreshGeneration: 1,
+            projectionOwner: .folder(id: destination.id, generation: 3),
+            preservationOwner: .folder(id: source.id, generation: 3),
+        )
+        state.entryViewLayout.hierarchy.beginDeferredFolderReplacement(
+            folderID: source.id,
+            untilEntryID: "/root/A/after",
+            holdsUntilMigration: true,
+        )
+        let store = makeRootSourceCandidateStore(state)
+
+        await store.send(.entryViewLayout(.hierarchy(.folderCollapseRequested(id: destination.id))))
+
+        XCTAssertNil(store.state.pendingIdentityTransition)
+        XCTAssertFalse(store.state.entryViewLayout.selectedIds.contains(before.id))
+        XCTAssertNil(store.state.entryViewLayout.lastSelectedId)
+        XCTAssertNil(store.state.entryViewLayout.rangeAnchorId)
+    }
+
     /// 완료된 primary의 collapse로 세대가 어긋나도 pending destination 소유자가 current면 전이를 유지한다.
     /// - 검증 내용: primary stale 상태에서 additional 경로 rename FSEvent가 와도 discard하지 않는다.
     /// - 사전 조건: primaryMigrated=true, primary node는 collapse로 세대 증가, pending B pair는 current.
