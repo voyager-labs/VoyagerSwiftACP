@@ -384,13 +384,17 @@ extension FileManagerContentIdentityTransitionCoordinator {
               state.entryViewLayout.entryOperations.loadingContext.isIncomplete,
               var transition = state.pendingIdentityTransition,
               transition.additionalMoves.contains(where: { move in
-                  guard !move.migrated, case let .root(generation) = move.destinationOwner else { return false }
+                  guard !move.migrated else { return false }
+                  // nil destinationOwner는 primary projectionOwner를 공유하는 sentinel이다.
+                  let owner = move.destinationOwner ?? transition.projectionOwner
+                  guard case let .root(generation) = owner else { return false }
                   return generation == streamGeneration
               })
         else { return false }
         for index in transition.additionalMoves.indices {
-            guard !transition.additionalMoves[index].migrated,
-                  case let .root(generation) = transition.additionalMoves[index].destinationOwner,
+            guard !transition.additionalMoves[index].migrated else { continue }
+            let owner = transition.additionalMoves[index].destinationOwner ?? transition.projectionOwner
+            guard case let .root(generation) = owner,
                   generation == streamGeneration
             else { continue }
             transition.additionalMoves[index].migrated = true

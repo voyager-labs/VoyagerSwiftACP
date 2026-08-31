@@ -166,6 +166,57 @@ extension EVM002FileManagerPagePresentationTests {
         XCTAssertEqual(store.state.pendingIdentityTransition?.additionalMoves.first?.migrated, true)
     }
 
+    /// primary 공유 root destination의 nil-owner pair도 root 실패 terminal에서 종결한다.
+    /// - 검증 내용: root streamFailed 뒤 nil-owner pair는 migrated로 정산되고 folder pair는 유지된다.
+    /// - 사전 조건: primary projectionOwner가 root이고 nil-owner pair와 folder pair가 함께 pending이다.
+    /// - 기대 결과: nil-owner pair의 staging이 정산돼 source ghost와 echo 억제 잔존이 사라진다.
+    func testRootFailureSettlesPrimarySharedNilOwnerPair() async {
+        let beforePrimary = EntryModel.temporaryFolder(id: "/root/primary", name: "primary")
+        let nilOwnerBefore = EntryModel.temporaryFolder(id: "/root/S/x", name: "x")
+        let folderBefore = EntryModel.temporaryFolder(id: "/root/S/y", name: "y")
+        let destinationB = EntryModel.temporaryFolder(id: "/root/B", name: "B")
+        var state = bufferedRootSourceState(
+            rootPath: "/root",
+            entries: [beforePrimary, nilOwnerBefore, folderBefore, destinationB],
+        )
+        state.entryViewLayout.hierarchy.nodesByID[destinationB.id] = .init(
+            children: [], loadPhase: .loadingCore, generation: 3,
+        )
+        state.entryViewLayout.hierarchy.setExpandedIDs([destinationB.id])
+        state.entryViewLayout.selectedIds = [beforePrimary.id, nilOwnerBefore.id, folderBefore.id]
+        state.entryViewLayout.entryOperations.loadingContext.streamTerminal = true
+        state.entryViewLayout.entryOperations.loadingContext.isIncomplete = true
+        state.pendingIdentityTransition = .init(
+            recordID: UUID(),
+            beforePath: beforePrimary.id,
+            afterPath: "/root/after-primary",
+            rootPath: "/root",
+            refreshGeneration: 1,
+            projectionOwner: .root(generation: 1),
+            preservationOwner: .root(generation: 1),
+            additionalMoves: [
+                .init(
+                    beforePath: nilOwnerBefore.id,
+                    afterPath: "/root/after-x",
+                    sourceOwner: nil,
+                    destinationOwner: nil,
+                ),
+                .init(
+                    beforePath: folderBefore.id,
+                    afterPath: "/root/B/y",
+                    sourceOwner: .folder(id: "/root/S", generation: 3),
+                    destinationOwner: .folder(id: destinationB.id, generation: 3),
+                ),
+            ],
+        )
+        let store = makeRootSourceCandidateStore(state)
+
+        await store.send(.entryViewLayout(.entryOperations(.loading(.streamFailed(generation: 1)))))
+
+        XCTAssertEqual(store.state.pendingIdentityTransition?.additionalMoves.map(\.migrated), [true, false])
+        XCTAssertNotNil(store.state.pendingIdentityTransition)
+    }
+
     private func makeMultiMoveSourceStagingState() -> FileManagerContentState {
         let beforePrimary = EntryModel.temporaryFolder(id: "/root/before", name: "before")
         let s1 = EntryModel.temporaryFolder(id: "/root/S1", name: "S1")
