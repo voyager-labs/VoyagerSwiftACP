@@ -1793,6 +1793,80 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
     }
 
+    /// EOP-002-provider_drop_impact: 수용된 Sidebar Option-copy provider decode 실패는 취소 terminal을 한 번 보냄
+    /// - 검증 내용: accepted metadata, operation kind, provider 수 기반 cancelled aggregate, 빈 target
+    /// - 사전 조건: 유효한 file URL provider 뒤에 잘못된 file URL data provider가 있는 Option-copy 요청
+    /// - 기대 결과: copy metadata를 보존한 cancelled terminal 한 건만 만들고 filesystem mutation은 없음
+    func testAcceptedProviderDrop_optionCopyDecodeFailureEmitsCancelledTerminal() async throws {
+        try await assertAcceptedProviderDropDecodeFailure(
+            id: "00000000-0000-0000-0000-000000000221",
+            interaction: .copyEntries,
+            operationKind: .pasteFileCopy,
+            isOptionDrag: true,
+        )
+    }
+
+    /// EOP-002-provider_drop_impact: 수용된 Sidebar move provider decode 실패는 취소 terminal을 한 번 보냄
+    /// - 검증 내용: accepted metadata, operation kind, provider 수 기반 cancelled aggregate, 빈 target
+    /// - 사전 조건: 유효한 file URL provider 뒤에 잘못된 file URL data provider가 있는 move 요청
+    /// - 기대 결과: move metadata를 보존한 cancelled terminal 한 건만 만들고 filesystem mutation은 없음
+    func testAcceptedProviderDrop_moveDecodeFailureEmitsCancelledTerminal() async throws {
+        try await assertAcceptedProviderDropDecodeFailure(
+            id: "00000000-0000-0000-0000-000000000222",
+            interaction: .moveEntries,
+            operationKind: .pasteFileMove,
+            isOptionDrag: false,
+        )
+    }
+
+    private func assertAcceptedProviderDropDecodeFailure(
+        id: String,
+        interaction: EntryInteractionIdentity,
+        operationKind: OperationKind,
+        isOptionDrag: Bool,
+    ) async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+        let destination = sandbox.root.appendingPathComponent("RejectedTarget")
+        let metadata = try EntryCommandMetadata(
+            id: XCTUnwrap(UUID(uuidString: id)),
+            interaction: interaction,
+            source: .dragAndDrop,
+        )
+        let validProvider = NSItemProvider(item: sandbox.fileURL as NSURL, typeIdentifier: UTType.fileURL.identifier)
+        let failingProvider = NSItemProvider()
+        failingProvider.registerDataRepresentation(forTypeIdentifier: UTType.fileURL.identifier, visibility: .all) {
+            $0(Data("not-a-file-url".utf8), nil)
+            return nil
+        }
+        let mutationCalls = LockIsolated(0)
+        let reloadRecorder = CallRecorder<[String]>()
+        var fileOps = EntryFileOpsClient.previewValue
+        fileOps.pasteFile = { _, _ in mutationCalls.withValue { $0 += 1 } }
+        fileOps.moveFile = { _, _ in mutationCalls.withValue { $0 += 1 } }
+        fileOps.postFileSystemChanged = reloadRecorder.record
+        let store = EntryOperationsTestSupport.makeStore(initialState: .init()) { $0.entryFileOpsClient = fileOps }
+
+        await store.send(.acceptedCommand(metadata: metadata, action: .routing(.handleDrop(
+            providers: [validProvider, failingProvider],
+            destinationPath: destination.path,
+            isOptionDrag: isOptionDrag,
+        ))))
+        await store.receive { action in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return false }
+            return record.command == metadata && record.operationKind == operationKind
+                && record.attemptedCount == 2 && record.cancelledCount == 2
+                && record.succeededCount == 0 && record.failedCount == 0 && record.targets.isEmpty
+        }
+        await store.finish()
+
+        XCTAssertEqual(mutationCalls.value, 0)
+        XCTAssertTrue(reloadRecorder.recorded.isEmpty)
+        XCTAssertTrue(store.state.undoRecords.isEmpty)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.fileURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
+    }
+
     /// EOP-002-provider_drop_impact: directory를 자기 자신에 move-drop하면 path guard가 실행을 거절함
     /// 사용자가 source directory 자체를 destination으로 지정하는 self-drop 경로를 검증한다.
     /// - 검증 내용: decoded provider 1회, move/copy command 0회, mutation impact 0회

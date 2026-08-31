@@ -354,17 +354,25 @@ extension CTM004ContentTabSidebarTests {
     }
 
     /// CTM-004-sidebar_entry_drop_routing: Window-owned Sidebar terminal은 완료 순서대로 정확히 한 번 기록된다.
-    /// 수용 역순 완료와 중복 delivery에서도 result/aggregate 상관관계가 흔들리지 않는지 검증한다.
-    /// - 검증 내용: success/partial/failure 집계, 역순 operation ID, duplicate terminal 억제
-    /// - 사전 조건: copy/move/trash metadata를 가진 세 terminal과 move terminal 중복 delivery
-    /// - 기대 결과: Product metric은 trash→move→copy 순서로 각 operation ID당 정확히 하나만 기록됨
+    /// 수용 역순 완료와 cancelled/duplicate delivery에서도 result/aggregate 상관관계가 흔들리지 않는지 검증한다.
+    /// - 검증 내용: success/partial/failure/cancelled 집계, 역순 operation ID, duplicate terminal 억제
+    /// - 사전 조건: copy/move/trash metadata를 가진 네 terminal과 move/cancelled terminal 중복 delivery
+    /// - 기대 결과: Product metric은 완료 순서대로 각 operation ID당 정확히 하나만 기록됨
     func testWindowSidebarTerminalsRecordReverseOrderAndSuppressDuplicates() async throws {
         let copy = try makeEntryDropCommand("00000000-0000-0000-0000-000000000411", .copyEntries)
         let move = try makeEntryDropCommand("00000000-0000-0000-0000-000000000412", .moveEntries)
         let trash = try makeEntryDropCommand("00000000-0000-0000-0000-000000000413", .moveEntriesToTrash)
+        let cancelled = try makeEntryDropCommand("00000000-0000-0000-0000-000000000414", .copyEntries)
         let copyFailure = makeEntryDropRecord(copy, .pasteFileCopy, succeeded: 0, failed: 2)
         let movePartial = makeEntryDropRecord(move, .pasteFileMove, succeeded: 1, failed: 1)
         let trashSuccess = makeEntryDropRecord(trash, .moveToTrash, succeeded: 2, failed: 0)
+        let copyCancelled = makeEntryDropRecord(
+            cancelled,
+            .pasteFileCopy,
+            succeeded: 0,
+            failed: 0,
+            cancelled: 2,
+        )
         let recorder = FileManagerProductMetricRecorder()
         let store = TestStore(initialState: FileManagerFeature.State()) {
             FileManagerWindowRoutingReducer()
@@ -372,23 +380,27 @@ extension CTM004ContentTabSidebarTests {
             $0.fileManagerProductMetricsClient = recorder.client
         }
 
-        var recordedCommandIDs: Set<UUID> = []
-        for record in [trashSuccess, movePartial, copyFailure, movePartial] {
-            let inserted = recordedCommandIDs.insert(record.id).inserted
-            if inserted {
-                await store.send(.internal(.sidebarEntryDrop(.lifecycle(.entryActionCompleted(record))))) {
-                    $0.recordedSidebarEntryCommandIDs = recordedCommandIDs
-                }
-            } else {
-                await store.send(.internal(.sidebarEntryDrop(.lifecycle(.entryActionCompleted(record)))))
-            }
+        await store.send(.internal(.sidebarEntryDrop(.lifecycle(.entryActionCompleted(trashSuccess))))) {
+            $0.recordedSidebarEntryCommandIDs = [trash.id]
         }
+        await store.send(.internal(.sidebarEntryDrop(.lifecycle(.entryActionCompleted(movePartial))))) {
+            $0.recordedSidebarEntryCommandIDs = [trash.id, move.id]
+        }
+        await store.send(.internal(.sidebarEntryDrop(.lifecycle(.entryActionCompleted(copyFailure))))) {
+            $0.recordedSidebarEntryCommandIDs = [trash.id, move.id, copy.id]
+        }
+        await store.send(.internal(.sidebarEntryDrop(.lifecycle(.entryActionCompleted(copyCancelled))))) {
+            $0.recordedSidebarEntryCommandIDs = [trash.id, move.id, copy.id, cancelled.id]
+        }
+        await store.send(.internal(.sidebarEntryDrop(.lifecycle(.entryActionCompleted(movePartial)))))
+        await store.send(.internal(.sidebarEntryDrop(.lifecycle(.entryActionCompleted(copyCancelled)))))
         await store.finish()
 
         XCTAssertEqual(recorder.metrics(), [
             entryDropMetric(trash, .success, succeeded: 2, failed: 0),
             entryDropMetric(move, .partial, succeeded: 1, failed: 1),
             entryDropMetric(copy, .failure, succeeded: 0, failed: 2),
+            entryDropMetric(cancelled, .cancelled, succeeded: 0, failed: 0, cancelled: 2),
         ])
     }
 
@@ -464,12 +476,13 @@ extension CTM004ContentTabSidebarTests {
         _ operationKind: OperationKind,
         succeeded: Int,
         failed: Int,
+        cancelled: Int = 0,
     ) -> EntryActionRecord {
         EntryActionRecord(
             operationKind: operationKind,
             targets: [],
             failedCount: failed,
-            cancelledCount: 0,
+            cancelledCount: cancelled,
             succeededCount: succeeded,
             id: UUID(),
             timestamp: Date(timeIntervalSince1970: 1_234_567_890),
@@ -481,13 +494,19 @@ extension CTM004ContentTabSidebarTests {
         _ result: EntryActionResult,
         succeeded: Int,
         failed: Int,
+        cancelled: Int = 0,
     ) -> FileManagerProductMetric {
         .entryAction(
             result: result,
             identity: command.interaction,
             source: command.source,
             operationID: command.id,
-            aggregate: .init(attempted: succeeded + failed, succeeded: succeeded, failed: failed, cancelled: 0),
+            aggregate: .init(
+                attempted: succeeded + failed + cancelled,
+                succeeded: succeeded,
+                failed: failed,
+                cancelled: cancelled,
+            ),
         )
     }
 

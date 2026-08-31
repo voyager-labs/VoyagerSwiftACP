@@ -130,12 +130,12 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: secondSandbox.originalFixture.path))
     }
 
-    /// EOP-003-move_entries_to_trash: provider 하나라도 decode 실패하면 batch 전체를 변경하지 않음
+    /// EOP-003-move_entries_to_trash: 수용된 provider decode 실패는 mutation 없이 취소 terminal을 한 번 보냄
     /// all-or-none resolver가 일부 성공 path를 Trash mutation으로 흘리지 않는 회귀를 검증한다.
-    /// - 검증 내용: valid + invalid provider batch의 moveToTrash/generic move/paste 호출 0회, metadata/Undo 없음
+    /// - 검증 내용: metadata 보존 cancelled terminal 한 건, moveToTrash/generic move/paste 호출 0회, Trash metadata/Undo 없음
     /// - 사전 조건: `fixtures/fixtures/texts/plain/11.txt` temp copy provider와 fileURL payload가 없는 provider
-    /// - 기대 결과: fixture copy와 원본이 유지되고 EntryOperations state가 변경되지 않음
-    func testHandleDropToTrash_decodeFailureMutatesNothing() async throws {
+    /// - 기대 결과: provider 수 2의 cancelled terminal만 생성되고 fixture copy와 원본이 유지됨
+    func testHandleDropToTrash_decodeFailureEmitsCancelledTerminalWithoutMutation() async throws {
         let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
         defer { sandbox.cleanup() }
         let validProvider = NSItemProvider(
@@ -143,31 +143,49 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
             typeIdentifier: UTType.fileURL.identifier,
         )
         let mutationCalls = LockIsolated(0)
+        let reloadRecorder = CallRecorder<[String]>()
         var fileOps = EntryFileOpsClient.previewValue
-        fileOps.pasteFile = { _, _ in
-            mutationCalls.withValue { $0 += 1 }
-            throw FileOpError.system(message: "generic paste must not run")
-        }
-        fileOps.moveFile = { _, _ in
-            mutationCalls.withValue { $0 += 1 }
-            throw FileOpError.system(message: "generic move must not run")
-        }
         fileOps.moveToTrashAndReturnURL = { _ in
             mutationCalls.withValue { $0 += 1 }
             throw FileOpError.system(message: "trash mutation must not run")
         }
+        fileOps.postFileSystemChanged = reloadRecorder.record
+        let commandID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000303"))
+        let metadata = EntryCommandMetadata(
+            id: commandID,
+            interaction: .moveEntriesToTrash,
+            source: .dragAndDrop,
+        )
+        let undoSpy = UndoManagerSpy()
         let store = EntryOperationsTestSupport.makeStore(initialState: .init()) {
             $0.entryFileOpsClient = fileOps
+            $0.undoManagerClient = undoSpy.client
         }
-        // store.exhaustivity = .off: decode failure의 action 부재와 filesystem 불변만 검증한다.
-        store.exhaustivity = .off
 
-        await store.send(.routing(.handleDropToTrash(providers: [validProvider, NSItemProvider()])))
+        await store.send(.acceptedCommand(
+            metadata: metadata,
+            action: .routing(.handleDropToTrash(providers: [validProvider, NSItemProvider()])),
+        ))
+        await store.receive { action in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return false }
+            return record.command == metadata
+                && record.operationKind == .moveToTrash
+                && record.attemptedCount == 2
+                && record.cancelledCount == 2
+                && record.succeededCount == 0
+                && record.failedCount == 0
+                && record.targets.isEmpty
+        }
         await store.finish()
 
         XCTAssertEqual(mutationCalls.value, 0)
+        XCTAssertTrue(reloadRecorder.recorded.isEmpty)
         XCTAssertTrue(store.state.undoRecords.isEmpty)
         XCTAssertTrue(store.state.itemStates.isEmpty)
+        XCTAssertTrue(undoSpy.registerUndoCalls.isEmpty)
+        let trashPath = sandbox.root.appendingPathComponent(".Trash/\(sandbox.fileURL.lastPathComponent)").path
+        let trashMetadata = await store.dependencies.trashMetadataStoreClient.find(trashPath)
+        XCTAssertNil(trashMetadata)
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.fileURL.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
     }

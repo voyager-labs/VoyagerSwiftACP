@@ -23,6 +23,48 @@ struct EntryOperationsCommandRoutingReducer {
                 guard !outputs.isEmpty else { return .none }
                 return .merge(outputs.map { effect(for: $0, metadata: metadata) })
 
+            case let .acceptedCommand(
+                metadata,
+                .routing(.handleDrop(providers, destinationPath, isOptionDrag)),
+            ) where !providers.isEmpty:
+                return .run { @MainActor send in
+                    let sourcePaths = await resolveEntryDroppedPaths(from: providers)
+                    guard !sourcePaths.isEmpty else {
+                        send(Self.cancelledDropTerminal(
+                            metadata: metadata,
+                            operationKind: isOptionDrag ? .pasteFileCopy : .pasteFileMove,
+                            providerCount: providers.count,
+                        ))
+                        return
+                    }
+                    await send(.acceptedCommand(
+                        metadata: metadata,
+                        action: .routing(.dropItems(
+                            sourcePaths: sourcePaths,
+                            destinationPath: destinationPath,
+                            isOptionDrag: isOptionDrag,
+                        )),
+                    ))
+                }
+
+            case let .acceptedCommand(metadata, .routing(.handleDropToTrash(providers)))
+                where !providers.isEmpty:
+                return .run { @MainActor send in
+                    let paths = await resolveEntryDroppedPaths(from: providers)
+                    guard !paths.isEmpty else {
+                        send(Self.cancelledDropTerminal(
+                            metadata: metadata,
+                            operationKind: .moveToTrash,
+                            providerCount: providers.count,
+                        ))
+                        return
+                    }
+                    await send(.acceptedCommand(
+                        metadata: metadata,
+                        action: .trash(.moveToTrash(paths: paths)),
+                    ))
+                }
+
             case let .acceptedCommand(metadata, nestedAction):
                 let effect = if case .routing = nestedAction {
                     EntryOperationsCommandRoutingReducer().reduce(into: &state, action: nestedAction)
@@ -123,6 +165,22 @@ struct EntryOperationsCommandRoutingReducer {
         default:
             .acceptedCommand(metadata: metadata, action: action)
         }
+    }
+
+    private static func cancelledDropTerminal(
+        metadata: EntryCommandMetadata,
+        operationKind: OperationKind,
+        providerCount: Int,
+    ) -> Action {
+        .lifecycle(.entryActionCompleted(EntryActionRecord(
+            operationKind: operationKind,
+            targets: [],
+            failedCount: 0,
+            cancelledCount: providerCount,
+            succeededCount: 0,
+            id: metadata.id,
+            timestamp: Date(),
+        ).attaching(command: metadata)))
     }
 
     private func topmostPaths(_ paths: [String]) -> [String] {
