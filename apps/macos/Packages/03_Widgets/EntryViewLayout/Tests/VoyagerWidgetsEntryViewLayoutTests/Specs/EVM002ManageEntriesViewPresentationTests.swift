@@ -1858,7 +1858,7 @@ extension EVM002ManageEntriesViewPresentationTests {
         hierarchy.beginDeferredFolderReplacement(
             folderID: folder.id,
             untilEntryID: "/root/destination/moved",
-            holdsUntilMigration: true,
+            holdsUntilMigration: false,
         )
         hierarchy.deferredFolderReplacements[folder.id]?.stagedChildren = [kept]
 
@@ -1896,7 +1896,7 @@ extension EVM002ManageEntriesViewPresentationTests {
         hierarchy.beginDeferredFolderReplacement(
             folderID: folder.id,
             untilEntryID: "/root/destination/moved",
-            holdsUntilMigration: true,
+            holdsUntilMigration: false,
         )
 
         hierarchy.commitDeferredFolderReplacementsOnCancel()
@@ -1906,10 +1906,10 @@ extension EVM002ManageEntriesViewPresentationTests {
         XCTAssertNil(hierarchy.nodesByID[removedDescendant.id])
     }
 
-    /// EVM-002-toggle_directory_expansion_in_list: nonterminal partial 취소는 cache eviction을 수행하지 않는다.
-    /// - 검증 내용: partial staging 커밋이 기존 child subtree cache를 제거하지 않는다.
+    /// EVM-002-toggle_directory_expansion_in_list: nonterminal partial 취소는 retained snapshot을 유지한다.
+    /// - 검증 내용: 미완료 source staging을 폐기해 기존 child subtree cache를 유지한다.
     /// - 사전 조건: coreFinished가 아닌 폴더에 일부 staged children이 있다.
-    /// - 기대 결과: staging은 cursor 정합을 위해 반영되고 기존 descendant cache는 유지된다.
+    /// - 기대 결과: 기존 children과 descendant cache가 유지되고 staging은 제거된다.
     func testNonterminalPartialCancellationCommitKeepsDescendantCache() {
         let folder = EntryModel.temporaryFolder(id: "/root/source", name: "source")
         let removedFolder = EntryModel.temporaryFolder(id: "/root/source/removed", name: "removed")
@@ -1940,7 +1940,8 @@ extension EVM002ManageEntriesViewPresentationTests {
 
         hierarchy.commitDeferredFolderReplacementsOnCancel()
 
-        XCTAssertEqual(hierarchy.nodesByID[folder.id]?.folder.children, [staged])
+        XCTAssertEqual(hierarchy.nodesByID[folder.id]?.folder.children, [removedFolder])
+        XCTAssertNil(hierarchy.deferredFolderReplacements[folder.id])
         XCTAssertNotNil(hierarchy.nodesByID[removedFolder.id])
         XCTAssertNotNil(hierarchy.nodesByID[removedDescendant.id])
     }

@@ -248,6 +248,11 @@ struct EntryListHierarchyReducer {
                         .standardizedFileURL.path
                     replacement.stagedChildren.append(contentsOf: items)
                     nodeState.folder.expectedBatchIndex &+= 1
+                    if replacement.holdsUntilMigration {
+                        state.hierarchy.deferredFolderReplacements[folderID] = replacement
+                        state.hierarchy.nodesByID[folderID] = nodeState
+                        return .none
+                    }
                     if !standardizedItems.contains(where: { $0.1 == standardizedDeferred }) {
                         state.hierarchy.deferredFolderReplacements[folderID] = replacement
                         state.hierarchy.nodesByID[folderID] = nodeState
@@ -265,11 +270,23 @@ struct EntryListHierarchyReducer {
                 {
                     guard batchCount == nodeState.folder.expectedBatchIndex else { return .none }
                     if replacement.holdsUntilMigration {
-                        // 보존(소스) 폴더: destination migration까지 retained projection을 유지한다.
-                        // coreFinished는 terminal만 기록하고 children·staging은 건드리지 않는다.
-                        // 실제 staging 커밋은 migrateSelection이 담당한다.
-                        nodeState.folder.coreFinished = true
-                        state.hierarchy.nodesByID[folderID] = nodeState
+                        if replacement.migrationCompleted {
+                            nodeState.folder.children = replacement.stagedChildren
+                            nodeState.folder.hasAppliedContentBatch = !replacement.stagedChildren.isEmpty
+                            nodeState.folder.retainsPreviousGenerationChildren = false
+                            nodeState.folder.coreFinished = true
+                            nodeState.loadPhase = .enriching
+                            state.hierarchy.deferredFolderReplacements[folderID] = nil
+                            state.hierarchy.nodesByID[folderID] = nodeState
+                            state.hierarchy.reconcileNodesAfterMigrationCommit(folderID: folderID)
+                        } else {
+                            // 보존(소스) 폴더: destination migration까지 retained projection을 유지한다.
+                            // coreFinished는 terminal만 기록하고 children·staging을 건드리지 않는다.
+                            // 실제 staging 커밋은 migrateSelection이 담당한다.
+                            nodeState.folder.coreFinished = true
+                            nodeState.loadPhase = .enriching
+                            state.hierarchy.nodesByID[folderID] = nodeState
+                        }
                         return .none
                     }
                     nodeState.folder.children = replacement.stagedChildren

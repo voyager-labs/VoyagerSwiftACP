@@ -73,15 +73,18 @@ public struct DeferredFolderReplacement: Equatable, Sendable {
     /// true면 해당 폴더의 coreFinished가 terminal만 기록하고 retained children과 staging을 유지하며,
     /// 실제 커밋은 destination migration(migrateSelection)이 담당한다.
     public let holdsUntilMigration: Bool
+    public var migrationCompleted: Bool
 
     public init(
         untilEntryID: EntryModel.ID,
         stagedChildren: [EntryModel] = [],
         holdsUntilMigration: Bool = false,
+        migrationCompleted: Bool = false,
     ) {
         self.untilEntryID = untilEntryID
         self.stagedChildren = stagedChildren
         self.holdsUntilMigration = holdsUntilMigration
+        self.migrationCompleted = migrationCompleted
     }
 }
 
@@ -162,7 +165,12 @@ public struct EntryListHierarchyState: Equatable, Sendable {
         deferredFolderReplacements[folderID] = .init(
             untilEntryID: replacement.untilEntryID,
             holdsUntilMigration: true,
+            migrationCompleted: replacement.migrationCompleted,
         )
+    }
+
+    public mutating func markDeferredFolderReplacementMigrationCompleted(folderID: EntryModel.ID) {
+        deferredFolderReplacements[folderID]?.migrationCompleted = true
     }
 
     public func deferredFolderReplacement(folderID: EntryModel.ID) -> DeferredFolderReplacement? {
@@ -178,12 +186,26 @@ public struct EntryListHierarchyState: Equatable, Sendable {
     /// 후속 batch가 generic 경로에서 cursor 어긋남 없이 처리되기 위해 누적 결과가 필요하다.
     /// 빈 staging은 authoritative 내용이 아니므로 retained children을 건드리지 않는다.
     public mutating func commitDeferredFolderReplacementsOnCancel() {
+        var remaining = deferredFolderReplacements
         for (folderID, replacement) in deferredFolderReplacements {
-            guard var node = nodesByID[folderID] else { continue }
-            // 실패한 스트림의 부분 staging은 불완전 목록이라 마지막 완전 snapshot을 덮지 않는다.
-            if case .failed = node.loadPhase { continue }
-            // terminal(coreFinished)이 검증한 빈 배열만 authoritative 비어있는 결과로 커밋한다.
-            if replacement.stagedChildren.isEmpty, !node.folder.coreFinished { continue }
+            guard var node = nodesByID[folderID] else {
+                remaining[folderID] = nil
+                continue
+            }
+            if case .failed = node.loadPhase {
+                remaining[folderID] = nil
+                continue
+            }
+            if replacement.holdsUntilMigration, !node.folder.coreFinished {
+                guard !replacement.stagedChildren.isEmpty, replacement.migrationCompleted else {
+                    remaining[folderID] = nil
+                    continue
+                }
+                continue
+            } else if replacement.stagedChildren.isEmpty, !node.folder.coreFinished {
+                remaining[folderID] = nil
+                continue
+            }
             node.folder.children = replacement.stagedChildren
             node.folder.hasAppliedContentBatch = !replacement.stagedChildren.isEmpty
             node.folder.retainsPreviousGenerationChildren = false
@@ -191,8 +213,9 @@ public struct EntryListHierarchyState: Equatable, Sendable {
             if node.folder.coreFinished {
                 reconcileNodesAfterMigrationCommit(folderID: folderID)
             }
+            remaining[folderID] = nil
         }
-        deferredFolderReplacements = [:]
+        deferredFolderReplacements = remaining
     }
 
     /// migration이 폴더 children을 교체한 뒤 남은 stale 로드 하위 node를 정리한다.
