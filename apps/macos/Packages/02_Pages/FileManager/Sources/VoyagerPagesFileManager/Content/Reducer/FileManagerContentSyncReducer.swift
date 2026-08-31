@@ -135,17 +135,21 @@ struct FileManagerContentSyncReducer {
     /// 명령 자체 활동이 FSEvents에 남기는 확정 신호. rename/move는 양쪽 경로에
     /// ItemRenamed를 보고하므로 이것만 중복 제거 대상이 된다.
     /// Helper gateway는 같은 경로의 이벤트 플래그를 `|`로 병합하므로, rename과
-    /// 후속 create/modify/remove가 한 delivery로 합쳐지면 해당 비트를 함께 보고한다.
-    /// 이 경우 독립 변경 신호(Created/Removed/Modified)를 보존해야 하므로 순수 rename
-    /// echo(ItemRenamed만)일 때만 병합 대상으로 간주한다.
+    /// 후속 변경이 한 delivery로 합쳐지면 해당 비트를 함께 보고한다. 파일 종류
+    /// 서술 비트를 제외한 ItemRenamed 이외의 의미 있는 비트가 하나라도 있으면
+    /// 독립 변경(xattr·권한·Finder 정보 포함)으로 보존한다.
     private func isCommandIdentityEcho(_ event: FileChangeGatewayEvent) -> Bool {
         let renamed = event.flags & UInt32(kFSEventStreamEventFlagItemRenamed) != 0
-        let independentChange = event.flags & UInt32(
-            kFSEventStreamEventFlagItemCreated
-                | kFSEventStreamEventFlagItemRemoved
-                | kFSEventStreamEventFlagItemModified,
-        ) != 0
-        return renamed && !independentChange
+        guard renamed else { return false }
+        let descriptorBits = UInt32(
+            kFSEventStreamEventFlagItemIsFile
+                | kFSEventStreamEventFlagItemIsDir
+                | kFSEventStreamEventFlagItemIsSymlink,
+        )
+        let meaningfulBits = event.flags
+            & ~descriptorBits
+            & ~UInt32(kFSEventStreamEventFlagItemRenamed)
+        return meaningfulBits == 0
     }
 
     private func logFileManagerReloadRequest(
