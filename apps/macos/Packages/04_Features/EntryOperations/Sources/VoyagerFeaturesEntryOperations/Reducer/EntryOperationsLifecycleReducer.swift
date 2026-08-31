@@ -65,7 +65,8 @@ struct EntryOperationsLifecycleReducer {
                 }
                 return .merge(effects)
 
-            case .loading(.itemsLoaded):
+            case let .loading(.itemsLoaded(generation, _)):
+                guard generation == state.loadingContext.generation else { return .none }
                 return refreshRestorableTrashPaths()
 
             case let .loading(.streamFinished(generation)):

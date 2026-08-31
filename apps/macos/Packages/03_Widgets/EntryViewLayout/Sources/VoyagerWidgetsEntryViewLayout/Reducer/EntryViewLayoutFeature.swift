@@ -475,8 +475,10 @@ public struct EntryViewLayoutFeature {
 
             case let .entryOperations(entryOperationsAction):
                 switch entryOperationsAction {
-                case .loading(.itemsLoaded),
-                     .loading(.itemsLoadFailed):
+                case let .loading(.itemsLoaded(generation, _)):
+                    guard generation == state.entryOperations.loadingContext.generation else { return .none }
+                    return Self.updateEntriesAndReapply(&state)
+                case .loading(.itemsLoadFailed):
                     return Self.updateEntriesAndReapply(&state)
                 default:
                     return .none

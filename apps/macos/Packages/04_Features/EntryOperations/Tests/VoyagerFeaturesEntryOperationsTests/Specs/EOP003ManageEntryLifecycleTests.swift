@@ -1936,6 +1936,28 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         XCTAssertEqual(store.state.renamingItem, oldEntry)
     }
 
+    /// EOP-003-load_entry_items: 이전 Computer 결과는 새 폴더 로딩 상태를 변경하지 않는다.
+    /// Computer A 뒤 시작된 폴더 B가 현재 세대를 소유할 때 늦은 A 결과를 무시하는 경쟁 상태를 검증한다.
+    /// - 검증 내용: stale Computer itemsLoaded가 현재 items, isLoading, generation을 변경하지 않는다.
+    /// - 사전 조건: generation 2의 폴더 B가 로딩 중이고 B의 기존 항목이 표시되어 있다.
+    /// - 기대 결과: B 항목과 로딩 상태가 유지되고 현재 B terminal만 이후 상태를 종료할 수 있다.
+    func testComputerItemsLoadedFromSupersededGenerationCannotMutateCurrentFolderLoad() async {
+        let currentEntry = EntryModelFixtures.makeFileEntry(id: "/tmp/folder-b.txt", name: "folder-b.txt")
+        let staleComputerEntry = EntryModelFixtures.makeFileEntry(id: "/tmp/computer-a", name: "computer-a")
+        var state = EntryOperationsState()
+        state.items = [currentEntry]
+        state.isLoading = true
+        state.loadingContext.generation = 2
+        state.loadingContext.sourceKind = .directory
+        let store = EntryOperationsTestSupport.makeStore(initialState: state)
+
+        await store.send(.loading(.itemsLoaded(generation: 1, items: [staleComputerEntry])))
+
+        XCTAssertEqual(store.state.items, [currentEntry])
+        XCTAssertTrue(store.state.isLoading)
+        XCTAssertEqual(store.state.loadingContext.generation, 2)
+    }
+
     /// EOP-003-load_entry_items: stale 또는 잘못된 root stream event는 현재 항목을 변경하지 않는다.
     /// 새 navigation이 이전 request를 대체한 뒤 늦은 batch, 순서가 틀린 batch, 종료 후 batch가 도착할 수 있다.
     /// - 검증 내용: generation, batch index, core completion, terminal guard가 허용되지 않은 event를 모두 무시한다.

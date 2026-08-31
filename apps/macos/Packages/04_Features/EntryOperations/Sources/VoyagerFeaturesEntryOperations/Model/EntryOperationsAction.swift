@@ -83,7 +83,7 @@ public enum EntryOperationsAction: CasePathable, Sendable {
         case loadTagItems(tagName: String, showHidden: Bool, priority: EntryMetadataPriority = .none)
         case loadComputerItems
         case cancelAndClearItems
-        case itemsLoaded([EntryModel])
+        case itemsLoaded(generation: Int, items: [EntryModel])
         case itemsLoadFailed
         case streamEvent(EntryLoadingStreamEvent)
         case streamFinished(generation: Int)

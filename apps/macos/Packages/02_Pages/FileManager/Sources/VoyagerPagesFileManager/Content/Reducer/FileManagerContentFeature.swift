@@ -365,7 +365,8 @@ public struct FileManagerContentFeature {
 
     static func isRootCompletion(_ action: Action, state: inout State) -> Bool {
         switch action {
-        case .entryViewLayout(.entryOperations(.loading(.itemsLoaded))):
+        case let .entryViewLayout(.entryOperations(.loading(.itemsLoaded(generation, _)))):
+            guard generation == state.entryViewLayout.entryOperations.loadingContext.generation else { return false }
             return true
         case let .entryViewLayout(.entryOperations(.loading(.streamEvent(streamEvent)))):
             guard case .coreFinished = streamEvent.event,

@@ -11,7 +11,8 @@ enum FileManagerContentEntryOpsCoordinator {
         state: inout FileManagerContentState,
     ) -> Effect<FileManagerContentAction> {
         switch action {
-        case let .loading(.itemsLoaded(entries)):
+        case let .loading(.itemsLoaded(generation, entries))
+            where generation == state.entryViewLayout.entryOperations.loadingContext.generation:
             handleItemsLoaded(entries: entries, state: &state)
 
         case let .lifecycle(.entryActionCompleted(record)):

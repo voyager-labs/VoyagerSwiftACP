@@ -269,7 +269,7 @@ final class EOP004EditEntryMetadataTests: XCTestCase {
             $0.entryThumbnailCacheClient = .testValue
         }
 
-        await store.send(.loading(.itemsLoaded([otherEntry]))) {
+        await store.send(.loading(.itemsLoaded(generation: 0, items: [otherEntry]))) {
             $0.items = IdentifiedArrayOf(uniqueElements: [otherEntry])
             $0.isLoading = false
             $0.isReloading = false
@@ -305,7 +305,7 @@ final class EOP004EditEntryMetadataTests: XCTestCase {
             $0.entryThumbnailCacheClient = .testValue
         }
 
-        await store.send(.loading(.itemsLoaded([entry]))) {
+        await store.send(.loading(.itemsLoaded(generation: 0, items: [entry]))) {
             $0.isLoading = false
             $0.isReloading = false
         }

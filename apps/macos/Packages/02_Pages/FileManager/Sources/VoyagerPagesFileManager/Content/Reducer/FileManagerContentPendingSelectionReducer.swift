@@ -125,7 +125,8 @@ struct FileManagerContentPendingSelectionReducer {
             state.pendingSelectEntryLoadGeneration = state.entryViewLayout.entryOperations.loadingContext
                 .generation
             return .none
-        case let .entryViewLayout(.entryOperations(.loading(.itemsLoaded(loadedEntries)))):
+        case let .entryViewLayout(.entryOperations(.loading(.itemsLoaded(generation, loadedEntries)))):
+            guard generation == state.entryViewLayout.entryOperations.loadingContext.generation else { return .none }
             return handleLegacyItemsLoaded(loadedEntries, state: &state)
         case .entryViewLayout(.entryOperations(.loading(.streamEvent))):
             return .none

@@ -332,7 +332,8 @@ struct FileManagerContentEntryOperationsBridgeReducer {
             return
         }
 
-        if case let .loading(.itemsLoaded(entries)) = action,
+        if case let .loading(.itemsLoaded(generation, entries)) = action,
+           generation == state.entryViewLayout.entryOperations.loadingContext.generation,
            let operationID = state.productBrowsingOperationID,
            let identity = state.productBrowsingIdentity,
            let source = state.productBrowsingSource,

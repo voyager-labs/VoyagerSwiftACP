@@ -344,7 +344,10 @@ extension EVM002FileManagerPagePresentationTests {
         store.exhaustivity = .off
 
         // itemsLoaded는 accepted root completion → projection → root snapshot 순서
-        await store.send(.entryViewLayout(.entryOperations(.loading(.itemsLoaded([rootFolder, rootFile])))))
+        await store.send(.entryViewLayout(.entryOperations(.loading(.itemsLoaded(
+            generation: 0,
+            items: [rootFolder, rootFile],
+        )))))
 
         // applyContentProjection이 먼저 발행된다
         await store.receive { action in

@@ -395,7 +395,10 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
 
         await store.send(.content(.internal(.requestNavigation(.view(.goBack)))))
         await store.send(.navigation(.internal(.unsavedNavigationAlertResponse(.back, .cancel))))
-        await store.send(.content(.entryViewLayout(.entryOperations(.loading(.itemsLoaded([]))))))
+        await store.send(.content(.entryViewLayout(.entryOperations(.loading(.itemsLoaded(
+            generation: store.state.content.entryViewLayout.entryOperations.loadingContext.generation,
+            items: [],
+        ))))))
 
         XCTAssertNil(store.state.content.pendingProductBrowsingSource)
         XCTAssertNil(store.state.content.productBrowsingOperationID)
@@ -496,9 +499,13 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         }
 
         await store.send(.navigation(.view(.navigateToPath(path))))
+        await store.skipReceivedActions()
 
         await store.send(.content(.entryViewLayout(.entryOperations(.loading(
-            .itemsLoaded([entry]),
+            .itemsLoaded(
+                generation: store.state.content.entryViewLayout.entryOperations.loadingContext.generation,
+                items: [entry],
+            ),
         )))))
 
         XCTAssertEqual(
@@ -527,8 +534,12 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         }
 
         await store.send(.navigation(.view(.navigateToPath(path))))
+        await store.skipReceivedActions()
 
-        await store.send(.content(.entryViewLayout(.entryOperations(.loading(.itemsLoaded([]))))))
+        await store.send(.content(.entryViewLayout(.entryOperations(.loading(.itemsLoaded(
+            generation: store.state.content.entryViewLayout.entryOperations.loadingContext.generation,
+            items: [],
+        ))))))
 
         XCTAssertEqual(
             metrics.value,
@@ -631,7 +642,11 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             }
 
             await store.send(.navigation(.view(action)))
-            await store.send(.content(.entryViewLayout(.entryOperations(.loading(.itemsLoaded([entry]))))))
+            await store.skipReceivedActions()
+            await store.send(.content(.entryViewLayout(.entryOperations(.loading(.itemsLoaded(
+                generation: store.state.content.entryViewLayout.entryOperations.loadingContext.generation,
+                items: [entry],
+            ))))))
 
             XCTAssertEqual(metrics.value.count, 1, "\(action) must emit one browsing terminal")
             guard case let .contentBrowsing(result, content, identity, source, operationID) = metrics.value.first else {
@@ -807,6 +822,50 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         XCTAssertNil(store.state.content.productBrowsingOperationID)
     }
 
+    /// EVM-001-content_browsing_correlation: 이전 Computer 결과는 새 폴더의 browsing correlation을 소비하지 않는다.
+    /// Computer A 뒤 시작된 폴더 B가 현재 operation을 소유할 때 늦은 A와 현재 B terminal을 순서대로 검증한다.
+    /// - 검증 내용: stale A는 metric/state no-op이고 current B는 typed terminal을 정확히 한 번 기록한다.
+    /// - 사전 조건: generation 2 폴더 B에 두 번째 operation ID와 sidebar browsing metadata가 설정돼 있다.
+    /// - 기대 결과: stale A 이후 B correlation이 유지되고 current B success metric만 한 건 기록된다.
+    func testStaleComputerItemsLoadedCannotConsumeNewerFolderBrowsingCorrelation() async {
+        let entryB = EntryModel.temporaryFolder(id: "/folder-b/child", name: "child")
+        let metrics = LockIsolated<[FileManagerProductMetric]>([])
+        var state = FileManagerFeature.State()
+        state.content.entryViewLayout.entryOperations.loadingContext.generation = 2
+        state.content.entryViewLayout.entryOperations.loadingContext.sourceKind = .directory
+        state.content.entryViewLayout.entryOperations.isLoading = true
+        state.content.productBrowsingOperationID = Self.typedBrowsingOperationIDs[1]
+        state.content.productBrowsingIdentity = .direct
+        state.content.productBrowsingSource = .fileManagerSidebar
+        state.content.productBrowsingContent = .folder
+        let store = makeTypedBrowsingStore(metrics: metrics, initialState: state)
+
+        await store.send(.content(.entryViewLayout(.entryOperations(.loading(.itemsLoaded(generation: 1, items: [
+            EntryModel.temporaryFolder(id: "/computer-a", name: "computer-a"),
+        ]))))))
+
+        XCTAssertTrue(metrics.value.isEmpty)
+        XCTAssertEqual(store.state.content.productBrowsingOperationID, Self.typedBrowsingOperationIDs[1])
+        XCTAssertTrue(store.state.content.entryViewLayout.entryOperations.isLoading)
+
+        await store.send(.content(.entryViewLayout(.entryOperations(.loading(.itemsLoaded(
+            generation: 2,
+            items: [entryB],
+        ))))))
+
+        XCTAssertEqual(
+            metrics.value,
+            [.contentBrowsing(
+                result: .success,
+                content: .folder,
+                identity: .direct,
+                source: .fileManagerSidebar,
+                operationID: Self.typedBrowsingOperationIDs[1],
+            )],
+        )
+        XCTAssertNil(store.state.content.productBrowsingOperationID)
+    }
+
     /// EVM-001-content_browsing_correlation: rejected history and parent navigation stay silent
     /// 수락되지 않은 history/parent 명령이 correlation을 남겨 후속 로딩을 오귀속하지 않는지 검증.
     /// - 검증 내용: empty back/forward, invalid history index, parent 없는 root 경로 처리
@@ -926,9 +985,13 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         XCTAssertEqual(store.state.content.pendingProductBrowsingSource, .fileManagerContent)
 
         await store.send(.navigation(.view(.navigateToPath(targetPath))))
+        await store.skipReceivedActions()
 
         await store.send(.content(.entryViewLayout(.entryOperations(.loading(
-            .itemsLoaded([entry]),
+            .itemsLoaded(
+                generation: store.state.content.entryViewLayout.entryOperations.loadingContext.generation,
+                items: [entry],
+            ),
         )))))
 
         XCTAssertEqual(
@@ -989,7 +1052,10 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
 
         XCTAssertNil(store.state.content.productBrowsingOperationID)
         await store.send(.content(.entryViewLayout(.entryOperations(.loading(
-            .itemsLoaded([entry]),
+            .itemsLoaded(
+                generation: store.state.content.entryViewLayout.entryOperations.loadingContext.generation,
+                items: [entry],
+            ),
         )))))
         XCTAssertTrue(metrics.value.isEmpty)
     }
@@ -2761,7 +2827,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         }
         store.exhaustivity = .off
 
-        await store.send(.bridge(.loading(.itemsLoaded([]))))
+        await store.send(.bridge(.loading(.itemsLoaded(generation: 0, items: []))))
         await store.finish()
     }
 

@@ -112,17 +112,18 @@ public struct EntryOperationsLoadingReducer {
 
             case .loading(.loadComputerItems):
                 state.loadingContext.invalidate()
+                let generation = state.loadingContext.generation
                 state.isLoading = true
                 return .run { [entryLoadingClient] send in
                     do {
                         let computerItems = try await entryLoadingClient.loadComputerItems()
                         try Task.checkCancellation()
-                        await send(.loading(.itemsLoaded(computerItems)))
+                        await send(.loading(.itemsLoaded(generation: generation, items: computerItems)))
                     } catch is CancellationError {
                         return
                     } catch {
                         guard !Task.isCancelled else { return }
-                        await send(.loading(.itemsLoaded([])))
+                        await send(.loading(.itemsLoaded(generation: generation, items: [])))
                     }
                 }
                 .cancellable(
@@ -149,7 +150,8 @@ public struct EntryOperationsLoadingReducer {
                     ),
                 )
 
-            case let .loading(.itemsLoaded(items)):
+            case let .loading(.itemsLoaded(generation, items)):
+                guard generation == state.loadingContext.generation else { return .none }
                 state.loadingContext.preservedDirectoryReloadItems = nil
                 state.loadingContext.items = IdentifiedArray(uniqueElements: items)
                 state.isLoading = false
