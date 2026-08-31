@@ -149,6 +149,59 @@ extension EVM002FileManagerPagePresentationTests {
         XCTAssertNil(store.state.entryViewLayout.rangeAnchorId)
     }
 
+    /// primary-only terminal discard에서도 stale primary 선택을 정산한다.
+    /// - 검증 내용: A 실패 후 discard 뒤 primary before가 선택·anchor에서 제거되는지 확인한다.
+    /// - 사전 조건: preservation folder staging이 커밋 가능하고 primary before만 선택돼 있다.
+    /// - 기대 결과: 존재하지 않는 before 경로가 선택 기준에 남지 않는다.
+    func testPrimaryTerminalDiscardSettlesStaleSelection() {
+        let before = EntryModel.temporaryFolder(id: "/root/S/before", name: "before")
+        let destination = EntryModel.temporaryFolder(id: "/root/A", name: "A")
+        let source = EntryModel.temporaryFolder(id: "/root/S", name: "S")
+        var state = bufferedRootSourceState(
+            rootPath: "/root",
+            entries: [before, destination],
+        )
+        state.entryViewLayout.hierarchy.nodesByID[source.id] = .init(
+            folder: .init(children: [before], coreFinished: true),
+            generation: 3,
+            loadPhase: .loadingCore,
+        )
+        state.entryViewLayout.hierarchy.nodesByID[destination.id] = .init(
+            children: [], loadPhase: .failed(.permissionDenied), generation: 3,
+        )
+        state.entryViewLayout.selectedIds = [before.id]
+        state.entryViewLayout.lastSelectedId = before.id
+        state.entryViewLayout.rangeAnchorId = before.id
+        state.pendingIdentityTransition = .init(
+            recordID: UUID(),
+            beforePath: before.id,
+            afterPath: "/root/A/after",
+            rootPath: "/root",
+            refreshGeneration: 1,
+            projectionOwner: .folder(id: destination.id, generation: 3),
+            preservationOwner: .folder(id: source.id, generation: 3),
+        )
+        state.entryViewLayout.hierarchy.beginDeferredFolderReplacement(
+            folderID: source.id,
+            untilEntryID: "/root/A/after",
+            holdsUntilMigration: true,
+        )
+        FileManagerContentIdentityTransitionCoordinator.resolveFolderTransition(
+            on: .entryViewLayout(.hierarchy(.folderChildrenResponse(
+                rootContextGeneration: 0,
+                folderID: destination.id,
+                folderGeneration: 3,
+                .failed(.permissionDenied),
+            ))),
+            state: &state,
+        )
+
+        XCTAssertNil(state.pendingIdentityTransition)
+        XCTAssertFalse(state.entryViewLayout.selectedIds.contains(before.id))
+        XCTAssertNil(state.entryViewLayout.lastSelectedId)
+        XCTAssertNil(state.entryViewLayout.rangeAnchorId)
+    }
+
     /// 완료된 primary의 collapse로 세대가 어긋나도 pending destination 소유자가 current면 전이를 유지한다.
     /// - 검증 내용: primary stale 상태에서 additional 경로 rename FSEvent가 와도 discard하지 않는다.
     /// - 사전 조건: primaryMigrated=true, primary node는 collapse로 세대 증가, pending B pair는 current.

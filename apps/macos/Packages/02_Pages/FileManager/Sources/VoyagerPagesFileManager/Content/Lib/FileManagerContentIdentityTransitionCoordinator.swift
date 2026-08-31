@@ -301,10 +301,42 @@ enum FileManagerContentIdentityTransitionCoordinator {
     }
 
     static func discard(state: inout FileManagerContentState) {
+        let transition = state.pendingIdentityTransition
         state.pendingIdentityTransition = nil
         // 취소된 전이의 folder staging은 버리지 않는다: staging 누적 동안 이미 증가한
         // batch cursor와 children 불일치가 남아 같은 세대 후속 batch가 어긋난다.
         state.entryViewLayout.hierarchy.commitDeferredFolderReplacementsOnCancel()
+        guard let transition else { return }
+        // staging 커밋으로 사라진 before 행의 선택·anchor를 폐기 경로에서도 정산한다.
+        var beforeSources: [(identity: String, sourceFolderID: EntryModel.ID?)] = []
+        if case let .folder(preservationID, _) = transition.preservationOwner {
+            beforeSources.append((
+                identity: transition.beforeLexicalPath.isEmpty
+                    ? transition.beforePath
+                    : transition.beforeLexicalPath,
+                sourceFolderID: preservationID,
+            ))
+        }
+        for move in transition.additionalMoves {
+            let sourceFolderID: EntryModel.ID? = if case let .folder(id, _) = move.sourceOwner ?? transition
+                .projectionOwner
+            {
+                id
+            } else {
+                nil
+            }
+            beforeSources.append((
+                identity: move.beforeLexicalPath.isEmpty ? move.beforePath : move.beforeLexicalPath,
+                sourceFolderID: sourceFolderID,
+            ))
+        }
+        for before in beforeSources {
+            settleStaleBeforeSelection(
+                beforeIdentity: before.identity,
+                sourceFolderID: before.sourceFolderID,
+                state: &state,
+            )
+        }
     }
 
     static func afterLexicalPath(
@@ -326,6 +358,28 @@ enum FileManagerContentIdentityTransitionCoordinator {
         state: inout FileManagerContentState,
     ) {
         commitMigratedSourceStagingsImpl(transition: transition, state: &state)
+    }
+
+    /// before identity가 source folder children에서 사라졌으면 선택과 anchor를 정산한다.
+    private static func settleStaleBeforeSelection(
+        beforeIdentity: String,
+        sourceFolderID: EntryModel.ID?,
+        state: inout FileManagerContentState,
+    ) {
+        guard let sourceFolderID,
+              let node = state.entryViewLayout.hierarchy.nodesByID[sourceFolderID]
+        else { return }
+        let remainingPaths = Set(node.folder.children.map(\.id).map(standardizedPath))
+        guard let staleID = state.entryViewLayout.selectedIds.first(where: {
+            standardizedPath($0) == standardizedPath(beforeIdentity)
+        }), !remainingPaths.contains(standardizedPath(staleID)) else { return }
+        state.entryViewLayout.selectedIds.remove(staleID)
+        if state.entryViewLayout.lastSelectedId == staleID {
+            state.entryViewLayout.lastSelectedId = nil
+        }
+        if state.entryViewLayout.rangeAnchorId == staleID {
+            state.entryViewLayout.rangeAnchorId = nil
+        }
     }
 
     /// record 완료 시점의 hierarchy snapshot으로 source folder hold를 미리 설치한다.

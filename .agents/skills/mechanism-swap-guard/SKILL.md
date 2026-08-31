@@ -64,7 +64,7 @@ Adding a parameter to a signature FIRST and its body references in a LATER edit 
 ## Hard rules
 
 - A swap that lands must carry a fallback for every checklist capability the old mechanism had (or a test proving the capability is unreachable).
-- If substitution is the only real fix: reply "deferred", create a follow-up issue, keep the PR green. Do not bundle a rewrite into a review-reply cycle.
+- If substitution is the only real fix: run the capability-parity checklist and add a RED-first regression test. When both prove equivalence, replace within the current change. Only reply "deferred" and create a follow-up issue when parity cannot be proven — never ship a known defect just to avoid a rewrite.
 - After any hardening fix, run the existing suite unchanged-green before push. A new failure means the guard broke the mechanism — revert the guard, not the tests.
 - If two attempts at the same substitution fail (crash or regressions), stop. Revert to the last green state and document the residual window instead of forcing the third attempt.
 
