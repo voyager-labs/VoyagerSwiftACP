@@ -198,8 +198,14 @@ extension FileManagerContentIdentityTransitionCoordinator {
             guard !selectedPaths.contains(beforePath), !selectedPaths.contains(afterPath) else { return }
             let restoredID = preservedLexicalBeforeID ?? transition.beforePath
             state.entryViewLayout.selectedIds.insert(restoredID)
-            state.entryViewLayout.lastSelectedId = restoredID
-            state.entryViewLayout.rangeAnchorId = restoredID
+            // anchor가 잠시 제거된 before 행을 가리킬 때만 복원 ID로 되돌린다. 다른
+            // 선택 행의 Quick Look·Shift 기준 identity는 migrateSelection과 동일하게 유지한다.
+            if !isSelectedPath(state.entryViewLayout.lastSelectedId, selectedPaths: selectedPaths) {
+                state.entryViewLayout.lastSelectedId = restoredID
+            }
+            if !isSelectedPath(state.entryViewLayout.rangeAnchorId, selectedPaths: selectedPaths) {
+                state.entryViewLayout.rangeAnchorId = restoredID
+            }
             return
         }
         if selectedPaths.contains(afterPath) {
@@ -217,6 +223,15 @@ extension FileManagerContentIdentityTransitionCoordinator {
         if !hasPendingDestinationPairs(state) {
             discard(state: &state)
         }
+    }
+
+    /// anchor ID가 현재 선택에 남아 있는지 판정한다. 선택에서 제거된 identity만 복원 대상이다.
+    private static func isSelectedPath(
+        _ anchorID: EntryModel.ID?,
+        selectedPaths: Set<String>,
+    ) -> Bool {
+        guard let anchorID else { return true }
+        return selectedPaths.contains(standardizedPath(anchorID))
     }
 
     static func rebaseFolderOwnersAfterRootSnapshot(

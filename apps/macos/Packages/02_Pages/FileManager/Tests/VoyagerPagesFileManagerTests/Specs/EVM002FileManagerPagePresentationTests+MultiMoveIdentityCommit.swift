@@ -217,6 +217,53 @@ extension EVM002FileManagerPagePresentationTests {
         XCTAssertNotNil(store.state.pendingIdentityTransition)
     }
 
+    /// 보존 복원 시 다른 선택 행의 anchor identity는 유지된다.
+    /// - 검증 내용: before 행만 잠시 선택에서 제거된 상태에서 복원하면 other 행 anchor가 유지된다.
+    /// - 사전 조건: rename 대상과 다른 파일이 함께 선택됐고 Quick Look/Shift 기준은 other 행이다.
+    /// - 기대 결과: lastSelectedId/rangeAnchorId가 무조건 primary before로 덮이지 않는다.
+    func testPreservationRestoreKeepsOtherSelectedAnchor() {
+        let beforePrimary = EntryModel.temporaryFolder(id: "/root/before", name: "before")
+        let otherSelected = EntryModel.temporaryFolder(id: "/root/other", name: "other")
+        var state = bufferedRootSourceState(
+            rootPath: "/root",
+            entries: [beforePrimary, otherSelected],
+        )
+        state.navigation.navigationState = .folder("/root")
+        state.entryViewLayout.selectedIds = [beforePrimary.id, otherSelected.id]
+        state.entryViewLayout.lastSelectedId = otherSelected.id
+        state.entryViewLayout.rangeAnchorId = otherSelected.id
+        state.pendingIdentityTransition = .init(
+            recordID: UUID(),
+            beforePath: beforePrimary.id,
+            afterPath: "/root/D/after",
+            rootPath: "/root",
+            refreshGeneration: 1,
+            projectionOwner: .root(generation: 1),
+            preservationOwner: nil,
+        )
+        let trigger = FileManagerContentAction.entryViewLayout(.entryOperations(.loading(.itemsLoaded([
+            beforePrimary,
+            otherSelected,
+        ]))))
+
+        FileManagerContentIdentityTransitionCoordinator.markReplacementSelection(
+            on: trigger,
+            state: &state,
+        )
+        XCTAssertEqual(state.pendingIdentityTransition?.preserveSelectionForReplacementBatch, true)
+
+        // 직접 호출 테스트는 projection reconcile을 생략하므로 before 행 제거 상태를 만든다.
+        state.entryViewLayout.selectedIds.remove(beforePrimary.id)
+        FileManagerContentIdentityTransitionCoordinator.resolveReplacementSelection(
+            on: trigger,
+            state: &state,
+        )
+
+        XCTAssertTrue(state.entryViewLayout.selectedIds.contains(beforePrimary.id), "before 행은 복원된다")
+        XCTAssertEqual(state.entryViewLayout.lastSelectedId, otherSelected.id)
+        XCTAssertEqual(state.entryViewLayout.rangeAnchorId, otherSelected.id)
+    }
+
     private func makeMultiMoveSourceStagingState() -> FileManagerContentState {
         let beforePrimary = EntryModel.temporaryFolder(id: "/root/before", name: "before")
         let s1 = EntryModel.temporaryFolder(id: "/root/S1", name: "S1")
