@@ -6876,6 +6876,145 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         )
     }
 
+    // MARK: - CTM-004-shortcut_presentation
+
+    /// CTM-004-shortcut_presentation: Content Tab context menu는 typed command별 approved shortcut을 표시한다.
+    /// 실제 AppKit 메뉴 항목의 key equivalent metadata와 shortcut-free 항목을 함께 검증한다.
+    /// - 검증 내용: single/bulk Duplicate, Pin/Unpin, 표시된 Close의 keyEquivalent와 modifier mask, Return/Move metadata
+    /// - 사전 조건: 실제 ContentTabSidebarButton에 single/bulk 및 pinned/unpinned presentation을 구성한다.
+    /// - 기대 결과: bulk Duplicate는 Cmd-D, single Duplicate는 Cmd-Shift-D, Pin/Unpin은 Cmd-P, Close는 Cmd-W이고 나머지는 비어 있다.
+    func testSidebarNativeMenuPresentsApprovedShortcutsAndPreservesUnassignedItems() throws {
+        _ = NSApplication.shared
+        let clickedID = ContentTabID(rawValue: "shortcut-clicked")
+        let peerID = ContentTabID(rawValue: "shortcut-peer")
+        let moveTarget = ContentTabMoveTarget(windowID: UUID(), displayTitle: "Target", availableSlots: 2)
+
+        let single = makeSingleSidebarMenuShortcutFixture(clickedID: clickedID)
+        guard case .duplicateContentTab = single.duplicate.command else {
+            return XCTFail("single row should project the single Duplicate command")
+        }
+
+        let bulk = makeBulkSidebarMenuShortcutFixture(
+            clickedID: clickedID,
+            peerID: peerID,
+            moveTarget: moveTarget,
+        )
+        guard case .duplicateSelectedContentTabs = bulk.duplicate.command else {
+            return XCTFail("selected row should project the bulk Duplicate command")
+        }
+
+        let pinned = makePinnedSidebarMenuShortcutFixture(
+            clickedID: clickedID,
+            moveTarget: moveTarget,
+        )
+        guard case .unpinContentTab = pinned.pin.command else {
+            return XCTFail("pinned row should project the single Unpin command")
+        }
+
+        for fixture in [single, bulk, pinned] {
+            try assertSidebarMenuShortcutPresentation(fixture: fixture)
+        }
+    }
+
+    private func makeSingleSidebarMenuShortcutFixture(
+        clickedID: ContentTabID,
+    ) -> SidebarMenuShortcutFixture {
+        SidebarMenuShortcutFixture(
+            duplicate: ContentTabDuplicatePresentation(
+                clickedTabID: clickedID,
+                selectedTabIDs: [],
+                currentTabIDs: [clickedID],
+                tabCount: 1,
+            ),
+            pin: ContentTabPinPresentation(
+                clickedTabID: clickedID,
+                isPinned: false,
+                validSelectedTabIDs: [],
+                isPinMutationEnabled: true,
+                isSingleUnpinEnabled: true,
+            ),
+            close: ContentTabClosePresentation(
+                clickedTabID: clickedID,
+                isPinned: false,
+                validSelectedTabIDs: [],
+                isEnabled: true,
+            ),
+            isPinned: false,
+            moveTargets: [],
+            expectedTitles: ["Duplicate", "Pin", "Close"],
+            expectedDuplicate: ("d", [.command, .shift]),
+            expectedPin: ("p", .command),
+            expectedClose: ("w", .command),
+        )
+    }
+
+    private func makeBulkSidebarMenuShortcutFixture(
+        clickedID: ContentTabID,
+        peerID: ContentTabID,
+        moveTarget: ContentTabMoveTarget,
+    ) -> SidebarMenuShortcutFixture {
+        SidebarMenuShortcutFixture(
+            duplicate: ContentTabDuplicatePresentation(
+                clickedTabID: clickedID,
+                selectedTabIDs: [clickedID, peerID],
+                currentTabIDs: [clickedID, peerID],
+                tabCount: 2,
+            ),
+            pin: ContentTabPinPresentation(
+                clickedTabID: clickedID,
+                isPinned: false,
+                validSelectedTabIDs: [clickedID, peerID],
+                isPinMutationEnabled: true,
+                isSingleUnpinEnabled: true,
+            ),
+            close: ContentTabClosePresentation(
+                clickedTabID: clickedID,
+                isPinned: false,
+                validSelectedTabIDs: [clickedID, peerID],
+                isEnabled: true,
+            ),
+            isPinned: false,
+            moveTargets: [moveTarget],
+            expectedTitles: ["Duplicate 2 Tabs", "Pin 2 Tabs", "Close 2 Tabs", "Move to Window"],
+            expectedDuplicate: ("d", .command),
+            expectedPin: ("p", .command),
+            expectedClose: ("w", .command),
+        )
+    }
+
+    private func makePinnedSidebarMenuShortcutFixture(
+        clickedID: ContentTabID,
+        moveTarget: ContentTabMoveTarget,
+    ) -> SidebarMenuShortcutFixture {
+        SidebarMenuShortcutFixture(
+            duplicate: ContentTabDuplicatePresentation(
+                clickedTabID: clickedID,
+                selectedTabIDs: [],
+                currentTabIDs: [clickedID],
+                tabCount: 1,
+            ),
+            pin: ContentTabPinPresentation(
+                clickedTabID: clickedID,
+                isPinned: true,
+                validSelectedTabIDs: [],
+                isPinMutationEnabled: true,
+                isSingleUnpinEnabled: true,
+            ),
+            close: ContentTabClosePresentation(
+                clickedTabID: clickedID,
+                isPinned: true,
+                validSelectedTabIDs: [],
+                isEnabled: true,
+            ),
+            isPinned: true,
+            moveTargets: [moveTarget],
+            expectedTitles: ["Duplicate", "Return to Pinned Location", "Unpin", "Move to Window"],
+            expectedDuplicate: ("d", [.command, .shift]),
+            expectedPin: ("p", .command),
+            expectedClose: nil,
+        )
+    }
+
     private func assertNativeMenuTitles(
         _ expectedTitles: [String],
         clickedID: ContentTabID,
@@ -6922,6 +7061,96 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         ))
 
         XCTAssertEqual(button.menu?.items.map(\.title), expectedTitles)
+    }
+
+    private struct SidebarMenuShortcutFixture {
+        let duplicate: ContentTabDuplicatePresentation
+        let pin: ContentTabPinPresentation
+        let close: ContentTabClosePresentation
+        let isPinned: Bool
+        let moveTargets: [ContentTabMoveTarget]
+        let expectedTitles: [String]
+        let expectedDuplicate: (String, NSEvent.ModifierFlags)
+        let expectedPin: (String, NSEvent.ModifierFlags)
+        let expectedClose: (String, NSEvent.ModifierFlags)?
+    }
+
+    private func makeSidebarMenuShortcutButton(
+        fixture: SidebarMenuShortcutFixture,
+    ) -> ContentTabSidebarButton {
+        let button = ContentTabSidebarButton(frame: .zero)
+        button.update(configuration: .init(
+            rootView: AnyView(EmptyView()),
+            accessibilityLabel: "Content Tab",
+            accessibilityValue: "Selected",
+            tabID: ContentTabID(rawValue: "shortcut-clicked"),
+            duplicateAccessibilityIdentifier: fixture.duplicate.accessibilityIdentifier,
+            isPinned: fixture.isPinned,
+            isEnabled: true,
+            reorderDragSource: nil,
+            moveTargets: fixture.moveTargets,
+            onActivate: {},
+            onToggleSelection: {},
+            onSelectRange: {},
+            onDuplicate: {},
+            onPin: {},
+            onUnpin: {},
+            onClose: {},
+            duplicateTitle: fixture.duplicate.title,
+            duplicateKeyEquivalent: fixture.duplicate.keyEquivalent,
+            duplicateKeyEquivalentModifierMask: fixture.duplicate.keyEquivalentModifierMask,
+            isDuplicateEnabled: fixture.duplicate.isEnabled,
+            pinTitle: fixture.pin.title,
+            pinKeyEquivalent: fixture.pin.keyEquivalent,
+            pinKeyEquivalentModifierMask: fixture.pin.keyEquivalentModifierMask,
+            pinAccessibilityIdentifier: fixture.pin.accessibilityIdentifier,
+            isPinEnabled: fixture.pin.isEnabled,
+            closeTitle: fixture.close.title,
+            closeKeyEquivalent: fixture.close.keyEquivalent,
+            closeKeyEquivalentModifierMask: fixture.close.keyEquivalentModifierMask,
+            closeAccessibilityIdentifier: fixture.close.accessibilityIdentifier,
+            isCloseEnabled: fixture.close.isEnabled,
+            usesUnpinCommand: fixture.pin.usesUnpinCommand,
+            showsCloseCommand: !fixture.close.usesUnpinCommand,
+        ))
+        return button
+    }
+
+    private func assertSidebarMenuShortcutPresentation(
+        fixture: SidebarMenuShortcutFixture,
+    ) throws {
+        let button = makeSidebarMenuShortcutButton(fixture: fixture)
+        let items = try XCTUnwrap(button.menu?.items)
+        XCTAssertEqual(items.map(\.title), fixture.expectedTitles)
+
+        let duplicateItem = try XCTUnwrap(items.first)
+        XCTAssertEqual(duplicateItem.keyEquivalent, fixture.expectedDuplicate.0)
+        XCTAssertEqual(duplicateItem.keyEquivalentModifierMask, fixture.expectedDuplicate.1)
+
+        let pinItem = try XCTUnwrap(items.first { $0.title == fixture.pin.title })
+        XCTAssertEqual(pinItem.keyEquivalent, fixture.expectedPin.0)
+        XCTAssertEqual(pinItem.keyEquivalentModifierMask, fixture.expectedPin.1)
+
+        if let expectedClose = fixture.expectedClose {
+            let closeItem = try XCTUnwrap(items.first { $0.title == fixture.close.title })
+            XCTAssertEqual(closeItem.keyEquivalent, expectedClose.0)
+            XCTAssertEqual(closeItem.keyEquivalentModifierMask, expectedClose.1)
+        }
+
+        if fixture.isPinned {
+            let returnItem = try XCTUnwrap(items.first { $0.title == "Return to Pinned Location" })
+            XCTAssertEqual(returnItem.keyEquivalent, "")
+            XCTAssertEqual(returnItem.keyEquivalentModifierMask, [])
+        }
+
+        if let moveItem = items.first(where: { $0.title == "Move to Window" }) {
+            XCTAssertEqual(moveItem.keyEquivalent, "")
+            XCTAssertEqual(moveItem.keyEquivalentModifierMask, [])
+            for targetItem in try XCTUnwrap(moveItem.submenu?.items) {
+                XCTAssertEqual(targetItem.keyEquivalent, "")
+                XCTAssertEqual(targetItem.keyEquivalentModifierMask, [])
+            }
+        }
     }
 
     /// CTM-004-sidebar_close_selected_content_tabs: unavailable close command는 native menu callback을 차단함

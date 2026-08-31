@@ -439,6 +439,41 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         }
     }
 
+    /// EVM-001-route_entry_selection_commands: Cmd-Return은 Rename을 시작하지 않고 plain Return만 시작한다.
+    /// Return의 responder-scoped rename과 modifier가 있는 Return의 no-op 경계를 함께 검증한다.
+    /// - 검증 내용: Cmd-Return에는 startRename action이 없고 plain Return에는 선택 entry의 startRename action이 한 번 방출된다.
+    /// - 사전 조건: /root Directory list에서 entry 하나가 선택돼 있다.
+    /// - 기대 결과: Cmd-Return은 no-op이고 plain Return은 선택 entry 이름을 가진 startRename action을 방출한다.
+    func testCommandReturnDoesNotStartRenameButPlainReturnDoes() async {
+        let entry = EntryModel.temporaryFolder(id: "/root/entry", name: "entry")
+        var state = FileManagerContentState()
+        state.navigation.navigationState = .folder("/root")
+        state.entryViewLayout.entries = [entry]
+        state.entryViewLayout.selectedIds = [entry.id]
+        let store = TestStore(initialState: state) {
+            FileManagerContentKeyCommandReducer()
+        }
+
+        await store.send(.view(.handleKeyCommand(.init(
+            keyCode: 36,
+            modifiers: [.command],
+            characters: nil,
+            charactersIgnoringModifiers: nil,
+        ))))
+        await store.send(.view(.handleKeyCommand(.init(
+            keyCode: 36,
+            modifiers: [],
+            characters: nil,
+            charactersIgnoringModifiers: nil,
+        ))))
+        await store.receive { action in
+            guard case let .entryViewLayout(.delegate(.startRename(item, text))) = action else {
+                return false
+            }
+            return item == entry && text == entry.name
+        }
+    }
+
     /// EVM-001-route_entry_selection_commands: directory symlink Open preserves lexical navigation identity.
     /// The open delegate must route the requested alias string without resolving it to its destination path.
     /// - 검증 내용: navigateToPath bridge payload가 lexical alias path와 동일하다.
