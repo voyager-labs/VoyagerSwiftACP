@@ -340,6 +340,32 @@ extension EVM002FileManagerPagePresentationTests {
         XCTAssertEqual(store.state.pendingIdentityTransition?.projectionOwner, .root(generation: 3))
     }
 
+    /// 같은 folder 재적용(탭 복원) reload도 전이 세대를 재기준화한다.
+    /// - 검증 내용: applyNavigationState(.folder 동일 경로) 뒤 root 소유자 세대가 함께 올라간다.
+    /// - 사전 조건: root 소유자 대기 전이와 gen 1 로딩 컨텍스트가 있다.
+    /// - 기대 결과: 탭 복원 reload 뒤에도 projectionOwner가 새 세대를 가리켜 전이가 생존한다.
+    func testSameFolderReapplyReloadRebasesTransitionGeneration() async {
+        let beforePrimary = EntryModel.temporaryFolder(id: "/root/before", name: "before")
+        var state = bufferedRootSourceState(
+            rootPath: "/root",
+            entries: [beforePrimary],
+        )
+        state.navigation.navigationState = .folder("/root")
+        state.pendingIdentityTransition = .init(
+            recordID: UUID(),
+            beforePath: beforePrimary.id,
+            afterPath: "/root/D/after",
+            rootPath: "/root",
+            refreshGeneration: 1,
+            projectionOwner: .root(generation: 1),
+            preservationOwner: nil,
+        )
+        let store = makeRootSourceCandidateStore(state)
+
+        await store.send(.internal(.applyNavigationState(.folder("/root"))))
+        XCTAssertEqual(store.state.pendingIdentityTransition?.projectionOwner, .root(generation: 2))
+    }
+
     private func makeMultiMoveSourceStagingState() -> FileManagerContentState {
         let beforePrimary = EntryModel.temporaryFolder(id: "/root/before", name: "before")
         let s1 = EntryModel.temporaryFolder(id: "/root/S1", name: "S1")
