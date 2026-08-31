@@ -1097,6 +1097,54 @@ extension EVM002ManageEntriesViewPresentationTests {
         XCTAssertEqual(try displayedNameOfItem(at: retainedIndexPath, in: view), "new")
     }
 
+    /// EVM-002-atomic_identity_swap: 그룹화된 Grid의 identity swap은 section 구조 변경으로 full rebuild된다.
+    /// - 검증 내용: 다중 section에서 두 번째 section 항목 교체 시 rebuild 판정과 최종 Grid IDs/selection을 확인한다.
+    /// - 사전 조건: groupKey .name으로 2개 section이 있고 뒤 section에서 단일 swap이 발생한다.
+    /// - 기대 결과: swap이 section entryIDs를 바꿔 structureChanged=true가 되고 incremental 경로는 차단된다.
+    func testGridGroupedIdentitySwapUsesFullRebuild() {
+        let unaffected = EntryModel.temporaryFolder(id: "/root/m-file", name: "m-file")
+        let before = EntryModel.temporaryFolder(id: "/root/z-before", name: "z-before")
+        let after = EntryModel.temporaryFolder(id: "/root/z-after", name: "z-after")
+        var previousState = EntryViewLayoutState()
+        previousState.entries = [unaffected, before]
+        previousState.entryArrangements.groupKey = .name
+        previousState.entryArrangements.groupedItems = [
+            .init(groupName: "m", items: [unaffected]),
+            .init(groupName: "z", items: [before]),
+        ]
+        var currentState = EntryViewLayoutState()
+        currentState.entries = [unaffected, after]
+        currentState.entryArrangements.groupKey = .name
+        currentState.entryArrangements.groupedItems = [
+            .init(groupName: "m", items: [unaffected]),
+            .init(groupName: "z", items: [after]),
+        ]
+        currentState.selectedIds = [after.id]
+        currentState.lastSelectedId = after.id
+
+        let store = Store(initialState: currentState) { EntryViewLayoutFeature() }
+        let view = EntryGridView(frame: NSRect(x: 0, y: 0, width: 320, height: 240))
+        let coordinator = EntryGridCoordinator(store: store)
+        coordinator.bind(to: view)
+        coordinator.isRenderObservationEnabled = false
+        let previous = EntryGridRenderSnapshot(state: previousState)
+        let current = EntryGridRenderSnapshot(state: currentState)
+        let changes = current.presentation.changes(from: previous.presentation)
+
+        XCTAssertGreaterThanOrEqual(previous.presentation.sections.count, 2)
+        // sectionStructure는 entryIDs를 포함하므로 단일 swap도 구조 변경으로 분류된다.
+        // 이 덕분에 다중 section에서 incremental 경로(section: 0 고정 index)가 차단된다.
+        XCTAssertTrue(changes.sectionStructureChanged, "swap은 속한 section의 entryIDs를 바꾼다")
+        XCTAssertTrue(
+            coordinator.shouldRebuildSections(previous: previous, snapshot: current, changes: changes),
+            "다중 section의 identity swap은 full rebuild로 처리돼야 한다",
+        )
+        coordinator.handleSnapshotChanges(previous: previous, snapshot: current)
+
+        XCTAssertEqual(coordinator.sections.flatMap(\.items).map(\.id), [unaffected.id, after.id])
+        XCTAssertEqual(view.collectionView.selectionIndexPaths, [IndexPath(item: 0, section: 1)])
+    }
+
     /// EVM-002-atomic_identity_swap: List flat rename/move는 한 row batch에서 교체하고 unaffected row identity를 유지한다.
     /// - 검증 내용: tryIncrementalFlatRowUpdate 결과와 retained OutlineItem object identity를 확인한다.
     /// - 사전 조건: 한 section에 before-path와 unaffected sibling이 있고 after-path로 교체된다.
