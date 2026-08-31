@@ -1,12 +1,14 @@
+import Dependencies
 import Foundation
 import VoyagerEntitiesEntry
+import VoyagerFeaturesEntryOperations
 @testable import VoyagerPagesFileManager
 import XCTest
 
 @MainActor
 extension FileManagerHostFixturePhaseNotificationTests {
     func testPresetAxesAndStateDataAreDeterministic() {
-        XCTAssertEqual(FileManagerHostPreset.allCases.count, 15)
+        XCTAssertEqual(FileManagerHostPreset.allCases.count, 19)
         XCTAssertEqual(FileManagerHostPreset.delayedRootNavigation.scenario.delayedNavigation, .rootNavigation)
         XCTAssertEqual(FileManagerHostPreset.delayedTabSwitch.scenario.delayedNavigation, .tabSwitch)
         XCTAssertEqual(FileManagerHostPreset.permissionDenied.scenario.permission, .denied)
@@ -25,6 +27,58 @@ extension FileManagerHostFixturePhaseNotificationTests {
 
         let largeState = FileManagerHostFixture.makeState(preset: .largeFolder1000, windowID: UUID())
         XCTAssertEqual(largeState.content.entryViewLayout.entries.map(\.name), ["Large Folder"])
+
+        let materialState = FileManagerHostFixture.makeState(preset: .materialTuning, windowID: UUID())
+        XCTAssertEqual(materialState.content.entryViewLayout.listVisibleColumns.count, 8)
+        XCTAssertEqual(
+            materialState.content.entryViewLayout.entryArrangements.groupedItems.map(\.groupName),
+            ["Folders", "Documents", "Spreadsheets", "Images", "Media", "Archives"],
+        )
+
+        let documentState = FileManagerHostFixture.makeState(preset: .fixtureDocuments, windowID: UUID())
+        XCTAssertEqual(
+            documentState.content.entryViewLayout.entryArrangements.groupedItems.map(\.groupName),
+            ["Documents", "Spreadsheets"],
+        )
+
+        let mediaState = FileManagerHostFixture.makeState(preset: .fixtureMedia, windowID: UUID())
+        XCTAssertEqual(
+            mediaState.content.entryViewLayout.entryArrangements.groupedItems.map(\.groupName),
+            ["Images", "Media"],
+        )
+
+        let stressState = FileManagerHostFixture.makeState(preset: .fixtureStress, windowID: UUID())
+        XCTAssertEqual(stressState.content.entryViewLayout.entries.count, 6)
+        XCTAssertEqual(
+            stressState.content.entryViewLayout.entryArrangements.groupedItems.map(\.groupName),
+            ["Long Names", "Edge Cases"],
+        )
+    }
+
+    func testHostDependenciesConfigureLegacyUndoManagerClient() async {
+        let windowID = UUID()
+        let scope = UndoManagerScope(windowID: windowID, contentTabID: "active-tab")
+        let registry = FileOperationUndoManagerRegistry()
+        _ = registry.activate(scope)
+        var dependencies = DependencyValues()
+        FileManagerHostFixtureDependencies.apply(
+            to: &dependencies,
+            context: .init(
+                scenario: .init(),
+                preset: FileManagerHostPreset.materialTuning.rawValue,
+                windowID: windowID,
+                fileOperationUndoManagerRegistry: registry,
+                workspaceClient: .previewValue,
+                resolveUndoManagerScope: { requestedWindowID in
+                    requestedWindowID == windowID ? scope : nil
+                },
+            ),
+        )
+
+        let availability = await dependencies.undoManagerClient.availability(windowID)
+
+        XCTAssertFalse(availability.canUndo)
+        XCTAssertFalse(availability.canRedo)
     }
 
     func testPhaseNotificationDecodesOptionalQAFieldsAndLegacyInitializer() {

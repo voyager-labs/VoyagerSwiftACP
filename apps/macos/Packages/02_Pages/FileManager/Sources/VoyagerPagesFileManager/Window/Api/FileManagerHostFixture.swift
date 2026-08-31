@@ -40,13 +40,26 @@ public struct FileManagerHostMaterialConfiguration {
 
     public var windowShell: FileManagerHostMaterialSurfaceConfiguration
     public var contentBackground: FileManagerHostMaterialSurfaceConfiguration
+    public var listHeader: FileManagerHostMaterialSurfaceConfiguration
+    public var groupRowLightOpacity: CGFloat
+    public var groupRowDarkOpacity: CGFloat
 
     public init(
         windowShell: FileManagerHostMaterialSurfaceConfiguration,
         contentBackground: FileManagerHostMaterialSurfaceConfiguration,
+        listHeader: FileManagerHostMaterialSurfaceConfiguration = FileManagerHostMaterialSurfaceConfiguration(
+            material: VoyagerDS.SurfaceMaterialRole.listHeaderSurface.material,
+            blendingMode: VoyagerDS.SurfaceMaterialRole.listHeaderSurface.blendingMode,
+            alphaValue: VoyagerDS.SurfaceMaterialRole.listHeaderSurface.alphaValue,
+        ),
+        groupRowLightOpacity: CGFloat = 0.035,
+        groupRowDarkOpacity: CGFloat = 0.065,
     ) {
         self.windowShell = windowShell
         self.contentBackground = contentBackground
+        self.listHeader = listHeader
+        self.groupRowLightOpacity = groupRowLightOpacity
+        self.groupRowDarkOpacity = groupRowDarkOpacity
     }
 
     public static var hostDefault: Self {
@@ -145,6 +158,7 @@ public enum FileManagerHostFixture {
         let fileOperationUndoManagerRegistry = FileOperationUndoManagerRegistry()
         let state = FileManagerHostFixtureStateFactory.makeState(preset: preset, windowID: windowID)
         let workspaceClient = WorkspaceClient.fileManagerHostFixture(oneDriveIcon: oneDriveIcon)
+        let undoScopeResolver = FileManagerHostUndoScopeResolver()
         let store = Store(initialState: state) {
             FileManagerFeature()
         } withDependencies: {
@@ -156,9 +170,11 @@ public enum FileManagerHostFixture {
                     windowID: windowID,
                     fileOperationUndoManagerRegistry: fileOperationUndoManagerRegistry,
                     workspaceClient: workspaceClient,
+                    resolveUndoManagerScope: undoScopeResolver.resolve,
                 ),
             )
         }
+        undoScopeResolver.store = store
 
         return FileManagerWindowCoordinator(
             windowID: windowID,
@@ -205,6 +221,8 @@ public enum FileManagerHostFixture {
         in coordinator: FileManagerWindowCoordinator,
     ) {
         coordinator.updateMaterialOverride(materialConfiguration?.materialOverride)
+        guard let contentView = coordinator.window?.contentView else { return }
+        updateEntryListMaterialConfiguration(materialConfiguration, in: contentView)
     }
 
     static func startCollectionScenarioIfNeeded(
@@ -261,8 +279,29 @@ public enum FileManagerHostFixture {
                 windowID: windowID,
                 fileOperationUndoManagerRegistry: fileOperationUndoManagerRegistry,
                 workspaceClient: workspaceClient,
+                resolveUndoManagerScope: { _ in nil },
             ),
         )
+    }
+
+    private static func updateEntryListMaterialConfiguration(
+        _ materialConfiguration: MaterialConfiguration?,
+        in view: NSView,
+    ) {
+        if let entryListView = view as? EntryListView {
+            let configuration = materialConfiguration ?? .hostDefault
+            entryListView.updateMaterialAppearance(
+                headerMaterial: configuration.listHeader.material,
+                headerBlendingMode: configuration.listHeader.blendingMode,
+                headerAlphaValue: configuration.listHeader.alphaValue,
+                groupRowLightOpacity: configuration.groupRowLightOpacity,
+                groupRowDarkOpacity: configuration.groupRowDarkOpacity,
+            )
+            return
+        }
+        for subview in view.subviews {
+            updateEntryListMaterialConfiguration(materialConfiguration, in: subview)
+        }
     }
 
     private static func runPostMountScenario(
@@ -321,6 +360,20 @@ public enum FileManagerHostFixture {
 }
 
 @MainActor
+private final class FileManagerHostUndoScopeResolver {
+    weak var store: StoreOf<FileManagerFeature>?
+
+    func resolve(windowID: UUID) -> UndoManagerScope? {
+        store?.withState { state in
+            guard state.windowID == windowID,
+                  let activeTabID = state.contentTabs.activeTabID
+            else { return nil }
+            return UndoManagerScope(windowID: windowID, contentTabID: activeTabID.rawValue)
+        }
+    }
+}
+
+@MainActor
 private enum FileManagerHostFixtureStateFactory {
     fileprivate static let delayedTabSwitchTargetID = ContentTabID(rawValue: "file-manager-host-delayed-tab-target")
     private static let aiChatSessionID = "00000000-0000-0000-0000-000000000001"
@@ -367,11 +420,7 @@ private enum FileManagerHostFixtureStateFactory {
         state.content.entryViewLayout.mode = .list
         state.content.entryViewLayout.hierarchy.replaceRoot(path: FileManagerHostFixtureSampleData.path)
         state.content.entryViewLayout.entryOperations.items = IdentifiedArrayOf(
-            uniqueElements: preset == .permissionDenied || preset == .permissionRetry
-                ? FileManagerHostFixtureSampleData.permissionEntries
-                : preset == .largeFolder1000 || preset == .concurrentLargeFolders
-                ? FileManagerHostFixtureSampleData.largeFolderRootEntries
-                : FileManagerHostFixtureSampleData.entries,
+            uniqueElements: FileManagerHostFixtureSampleData.rootEntries(for: preset),
         )
         state.content.entryViewLayout.entries = Array(state.content.entryViewLayout.entryOperations.items)
         if preset == .default {
@@ -392,7 +441,25 @@ private enum FileManagerHostFixtureStateFactory {
         if preset == .collectionDirectory {
             applyCollectionDirectoryScenario(to: &state)
         }
+        if preset.usesMaterialTuningFixture {
+            applyMaterialTuningScenario(to: &state)
+        }
         return state
+    }
+
+    private static func applyMaterialTuningScenario(to state: inout FileManagerFeature.State) {
+        let entries = state.content.entryViewLayout.entries
+        let groupNames = entries.reduce(into: [String]()) { names, entry in
+            if !names.contains(entry.facets.kind) {
+                names.append(entry.facets.kind)
+            }
+        }
+        state.content.entryViewLayout.listVisibleColumns = EntryListColumn.allCases
+        state.content.entryViewLayout.entryArrangements.groupKey = .kind
+        state.content.entryViewLayout.entryArrangements.groupedItems = groupNames.map { groupName in
+            .init(groupName: groupName, items: entries.filter { $0.facets.kind == groupName })
+        }
+        state.syncActiveTabContentState()
     }
 
     private static func applyCollectionDirectoryScenario(to state: inout FileManagerFeature.State) {
@@ -668,6 +735,7 @@ enum FileManagerHostFixtureDependencies {
         var windowID: UUID
         var fileOperationUndoManagerRegistry: FileOperationUndoManagerRegistry
         var workspaceClient: WorkspaceClient
+        var resolveUndoManagerScope: @MainActor @Sendable (UUID) -> UndoManagerScope?
     }
 
     static func apply(
@@ -692,6 +760,10 @@ enum FileManagerHostFixtureDependencies {
         dependencies.entryFileOpsClient = .previewValue
         dependencies.entryOperationsAlertClient = .previewValue
         dependencies.fileOperationUndoManagerClient = .live(registry: context.fileOperationUndoManagerRegistry)
+        dependencies.undoManagerClient = .live(
+            registry: context.fileOperationUndoManagerRegistry,
+            resolveScope: context.resolveUndoManagerScope,
+        )
         dependencies.registryClient = .testValue
         dependencies.collectionFileClient = .testValue
         dependencies.collectionAlertClient = .previewValue
