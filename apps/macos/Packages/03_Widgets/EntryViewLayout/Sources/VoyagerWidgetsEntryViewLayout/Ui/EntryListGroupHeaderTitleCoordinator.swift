@@ -2,7 +2,7 @@ import AppKit
 
 /// 뷰포트 상단이 속한 그룹을 추적해 Name 컬럼 헤더 제목을 그룹 제목으로 대체한다(Finder 리스트뷰 방식).
 @MainActor
-final class EntryListGroupHeaderTitleController {
+final class EntryListGroupHeaderTitleCoordinator {
     private let scrollView: NSScrollView
     private let tableView: NSOutlineView
     nonisolated(unsafe) private var scrollObserver: (any NSObjectProtocol)?

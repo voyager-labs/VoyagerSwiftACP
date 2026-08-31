@@ -431,7 +431,7 @@ public final class EntryListView: NSView {
 
     let scrollView = EntryListScrollView()
     let tableView = EntryListTableView()
-    private lazy var groupHeaderTitleController = EntryListGroupHeaderTitleController(
+    private lazy var groupHeaderTitleCoordinator = EntryListGroupHeaderTitleCoordinator(
         scrollView: scrollView,
         tableView: tableView,
     )
@@ -513,12 +513,12 @@ public final class EntryListView: NSView {
     }
 
     func updateGroupHeaderTitle() {
-        groupHeaderTitleController.update()
+        groupHeaderTitleCoordinator.update()
     }
 
     override public func layout() {
         super.layout()
-        groupHeaderTitleController.update()
+        groupHeaderTitleCoordinator.update()
     }
 
     func applyColumns(_ visibleColumns: [EntryListColumn]) {
