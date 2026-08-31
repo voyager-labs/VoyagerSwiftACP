@@ -271,6 +271,18 @@ enum FileManagerContentIdentityTransitionCoordinator {
         state.pendingIdentityTransition = transition
     }
 
+    /// primary migration이 완료된 뒤 남은 pending destination 소유자 중 현재 세대가 하나라도 있는지 판정한다.
+    static func hasCurrentPendingDestinationOwner(
+        _ transition: FileManagerContentState.EntryIdentityTransition,
+        state: FileManagerContentState,
+    ) -> Bool {
+        transition.additionalMoves.contains { move in
+            guard !move.migrated else { return false }
+            let owner = move.destinationOwner ?? transition.projectionOwner
+            return ownerIsCurrent(owner, state: state)
+        }
+    }
+
     static func transitionOverlaps(
         _ eventPath: String,
         _ transition: FileManagerContentState.EntryIdentityTransition,

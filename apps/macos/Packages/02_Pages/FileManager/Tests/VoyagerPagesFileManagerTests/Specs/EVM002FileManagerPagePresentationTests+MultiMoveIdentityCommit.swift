@@ -3,6 +3,7 @@ import Foundation
 import VoyagerEntitiesEntry
 @testable import VoyagerFeaturesEntryOperations
 @testable import VoyagerPagesFileManager
+import VoyagerShared
 import VoyagerWidgetsEntryViewLayout
 import XCTest
 
@@ -74,6 +75,50 @@ extension EVM002FileManagerPagePresentationTests {
 
         XCTAssertNil(store.state.entryViewLayout.hierarchy.deferredFolderReplacement(folderID: s1))
         XCTAssertNotNil(store.state.entryViewLayout.hierarchy.deferredFolderReplacement(folderID: s2))
+        XCTAssertNotNil(store.state.pendingIdentityTransition)
+    }
+
+    /// 완료된 primary의 collapse로 세대가 어긋나도 pending destination 소유자가 current면 전이를 유지한다.
+    /// - 검증 내용: primary stale 상태에서 additional 경로 rename FSEvent가 와도 discard하지 않는다.
+    /// - 사전 조건: primaryMigrated=true, primary node는 collapse로 세대 증가, pending B pair는 current.
+    /// - 기대 결과: 전이와 pending pair가 생존해 이후 destination batch의 selection migration을 보존한다.
+    func testStalePrimaryKeepsPendingDestinationTransitionOnOverlapEvent() async {
+        let primaryA = EntryModel.temporaryFolder(id: "/root/A", name: "A")
+        let destinationB = EntryModel.temporaryFolder(id: "/root/B", name: "B")
+        var state = bufferedRootSourceState(rootPath: "/root", entries: [primaryA, destinationB])
+        // collapse로 세대가 bump된 primary: owner 기록 세대 3, node는 4.
+        state.entryViewLayout.hierarchy.nodesByID[primaryA.id] = .init(
+            children: [], loadPhase: .loadingCore, generation: 4,
+        )
+        state.entryViewLayout.hierarchy.nodesByID[destinationB.id] = .init(
+            children: [], loadPhase: .loadingCore, generation: 3,
+        )
+        state.entryViewLayout.hierarchy.setExpandedIDs([primaryA.id, destinationB.id])
+        state.pendingIdentityTransition = .init(
+            recordID: UUID(),
+            beforePath: "/root/primary",
+            afterPath: "/root/A/primary",
+            rootPath: "/root",
+            refreshGeneration: 1,
+            projectionOwner: .folder(id: primaryA.id, generation: 3),
+            preservationOwner: .root(generation: 1),
+            additionalMoves: [
+                .init(
+                    beforePath: "/root/S/q",
+                    afterPath: "/root/B/q",
+                    sourceOwner: .folder(id: "/root/S", generation: 3),
+                    destinationOwner: .folder(id: destinationB.id, generation: 3),
+                ),
+            ],
+        )
+        state.pendingIdentityTransition?.primaryMigrated = true
+        let store = makeRootSourceCandidateStore(state)
+
+        await store.send(.externalFileSystemChanged([
+            FileChangeGatewayEvent(path: "/root/S/q", flags: 0, emittedAt: .distantPast),
+        ]))
+
+        XCTAssertEqual(store.state.pendingIdentityTransition?.additionalMoves.first?.migrated, false)
         XCTAssertNotNil(store.state.pendingIdentityTransition)
     }
 

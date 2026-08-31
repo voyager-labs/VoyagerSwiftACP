@@ -68,10 +68,17 @@ struct FileManagerContentSyncReducer {
            })
         {
             let rootMatches = transition.rootPath == normalizedPath(for: currentPath)
-            let generationMatches = FileManagerContentIdentityTransitionCoordinator.ownerIsCurrent(
-                transition.projectionOwner,
-                state: state,
-            )
+            // primary migration이 끝난 뒤에는 남은 pending destination 소유자의 세대로 판정한다.
+            // 완료된 primary가 collapse 등으로 세대가 올라가도 pending pair 전이를 stale로 폐기하지 않는다.
+            let generationMatches = transition.primaryMigrated
+                ? FileManagerContentIdentityTransitionCoordinator.hasCurrentPendingDestinationOwner(
+                    transition,
+                    state: state,
+                )
+                : FileManagerContentIdentityTransitionCoordinator.ownerIsCurrent(
+                    transition.projectionOwner,
+                    state: state,
+                )
             if rootMatches, generationMatches {
                 // 일치 이벤트는 명령이 이미 예약한 refresh로 병합한다(중복 refresh 억제).
                 // 병합 대상은 명령 자체 활동이 남기는 확정 신호(ItemRenamed)뿐이다. 독립적인
