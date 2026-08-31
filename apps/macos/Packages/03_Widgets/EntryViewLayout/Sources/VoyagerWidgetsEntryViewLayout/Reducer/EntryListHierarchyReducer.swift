@@ -279,6 +279,12 @@ struct EntryListHierarchyReducer {
                             state.hierarchy.deferredFolderReplacements[folderID] = nil
                             state.hierarchy.nodesByID[folderID] = nodeState
                             state.hierarchy.reconcileNodesAfterMigrationCommit(folderID: folderID)
+                            state.reconcileSelectionWithVisibleEntries()
+                            if state.outlineProjectionRevision == previousRevision {
+                                state.advanceOutlineProjectionRevision()
+                            }
+                            guard previousSelectedIds != state.selectedIds else { return .none }
+                            return .send(.delegate(.selectionChanged))
                         } else {
                             // 보존(소스) 폴더: destination migration까지 retained projection을 유지한다.
                             // coreFinished는 terminal만 기록하고 children·staging을 건드리지 않는다.

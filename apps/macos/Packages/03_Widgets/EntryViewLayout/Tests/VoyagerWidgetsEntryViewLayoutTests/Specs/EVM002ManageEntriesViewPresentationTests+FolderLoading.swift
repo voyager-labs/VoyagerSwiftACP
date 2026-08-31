@@ -1148,6 +1148,51 @@ extension EVM002ManageEntriesViewPresentationTests {
         )
     }
 
+    /// EVM-002-replacement_reload_snapshot_retention: migration 완료 후 지연된 source terminal은 stale selection을 정산한다.
+    /// destination migration이 먼저 끝난 뒤 source terminal이 deferred children을 커밋할 때 visible selection을 재조정하는지 검증한다.
+    /// - 검증 내용: deferred commit 뒤 사라진 before 선택에 대해 `.delegate(.selectionChanged)`가 발행된다.
+    /// - 사전 조건: retained before와 staged kept를 가진 holdsUntilMigration replacement가 migration 완료 상태다.
+    /// - 기대 결과: source children은 staged snapshot으로 교체되고 before selection과 anchor는 제거된다.
+    func testDeferredMigrationCommitReconcilesSelection() async {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let before = hierarchyFile(id: "/root/a/before", name: "before")
+        let kept = hierarchyFile(id: "/root/a/kept", name: "kept")
+        var state = hierarchyState(roots: [folder])
+        state.hierarchy.nodesByID[folder.id as String] = .init(
+            children: [before],
+            loadPhase: .enriching,
+            generation: 4,
+            expectedBatchIndex: 1,
+            coreFinished: false,
+            hasAppliedContentBatch: false,
+        )
+        state.hierarchy.setExpandedIDs([folder.id as String])
+        state.hierarchy.deferredFolderReplacements[folder.id as String] = .init(
+            untilEntryID: "/root/a/after",
+            stagedChildren: [kept],
+            holdsUntilMigration: true,
+            migrationCompleted: true,
+        )
+        state.selectedIds = [before.id]
+        state.lastSelectedId = before.id
+        state.rangeAnchorId = before.id
+        let store = TestStore(initialState: state) { EntryListHierarchyReducer() }
+        // store.exhaustivity = .off: deferred commit의 selection reconcile과 delegate만 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(folderResponse(
+            folder.id,
+            .event(.coreFinished(batchCount: 1)),
+            folderGeneration: 4,
+        ))
+        await store.receive(\.delegate.selectionChanged)
+
+        XCTAssertEqual(store.state.hierarchy.nodesByID[folder.id as String]?.folder.children, [kept])
+        XCTAssertTrue(store.state.selectedIds.isEmpty)
+        XCTAssertNil(store.state.lastSelectedId)
+        XCTAssertNil(store.state.rangeAnchorId)
+    }
+
     /// EVM-002-replacement_reload_snapshot_retention: 교체 스트림 실패는 보존된 children을 유지한다.
     /// - 검증 내용: failed 응답 뒤에도 retained children과 미완료 상태가 유지된다.
     /// - 사전 조건: 완료 스냅샷을 보존한 채 재로드가 시작된 loadingCore 폴더.
