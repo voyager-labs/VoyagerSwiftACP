@@ -225,12 +225,12 @@ extension FileManagerContentIdentityTransitionCoordinator {
         }
     }
 
-    /// anchor ID가 현재 선택에 남아 있는지 판정한다. 선택에서 제거된 identity만 복원 대상이다.
+    /// anchor ID가 현재 선택에 남아 있는지 판정한다. nil은 reconcile이 비운 상태이므로 복원 대상이다.
     private static func isSelectedPath(
         _ anchorID: EntryModel.ID?,
         selectedPaths: Set<String>,
     ) -> Bool {
-        guard let anchorID else { return true }
+        guard let anchorID else { return false }
         return selectedPaths.contains(standardizedPath(anchorID))
     }
 

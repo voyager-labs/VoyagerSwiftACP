@@ -264,6 +264,53 @@ extension EVM002FileManagerPagePresentationTests {
         XCTAssertEqual(state.entryViewLayout.rangeAnchorId, otherSelected.id)
     }
 
+    /// before가 유일한 선택이어서 reconcile이 anchor를 비웠으면 복원 시 anchor도 되돌린다.
+    /// - 검증 내용: nil anchor 상태에서 복원하면 lastSelectedId/rangeAnchorId가 restored ID로 설정된다.
+    /// - 사전 조건: before 단일 선택으로 mark·reconcile되어 anchor가 nil이 된 대기 전이.
+    /// - 기대 결과: selected ID뿐 아니라 두 anchor도 복원돼 Shift 기준과 Quick Look 동기화가 유지된다.
+    func testPreservationRestoreRestoresNilAnchors() {
+        let beforePrimary = EntryModel.temporaryFolder(id: "/root/before", name: "before")
+        var state = bufferedRootSourceState(
+            rootPath: "/root",
+            entries: [beforePrimary],
+        )
+        state.navigation.navigationState = .folder("/root")
+        state.entryViewLayout.selectedIds = [beforePrimary.id]
+        state.entryViewLayout.lastSelectedId = beforePrimary.id
+        state.entryViewLayout.rangeAnchorId = beforePrimary.id
+        state.pendingIdentityTransition = .init(
+            recordID: UUID(),
+            beforePath: beforePrimary.id,
+            afterPath: "/root/D/after",
+            rootPath: "/root",
+            refreshGeneration: 1,
+            projectionOwner: .root(generation: 1),
+            preservationOwner: nil,
+        )
+        let trigger = FileManagerContentAction.entryViewLayout(.entryOperations(.loading(.itemsLoaded([
+            beforePrimary,
+        ]))))
+
+        FileManagerContentIdentityTransitionCoordinator.markReplacementSelection(
+            on: trigger,
+            state: &state,
+        )
+        XCTAssertEqual(state.pendingIdentityTransition?.preserveSelectionForReplacementBatch, true)
+
+        // reconcile이 유일 선택이던 before 행과 anchor를 함께 비운 상태를 만든다.
+        state.entryViewLayout.selectedIds.remove(beforePrimary.id)
+        state.entryViewLayout.lastSelectedId = nil
+        state.entryViewLayout.rangeAnchorId = nil
+        FileManagerContentIdentityTransitionCoordinator.resolveReplacementSelection(
+            on: trigger,
+            state: &state,
+        )
+
+        XCTAssertTrue(state.entryViewLayout.selectedIds.contains(beforePrimary.id))
+        XCTAssertEqual(state.entryViewLayout.lastSelectedId, beforePrimary.id)
+        XCTAssertEqual(state.entryViewLayout.rangeAnchorId, beforePrimary.id)
+    }
+
     private func makeMultiMoveSourceStagingState() -> FileManagerContentState {
         let beforePrimary = EntryModel.temporaryFolder(id: "/root/before", name: "before")
         let s1 = EntryModel.temporaryFolder(id: "/root/S1", name: "S1")
