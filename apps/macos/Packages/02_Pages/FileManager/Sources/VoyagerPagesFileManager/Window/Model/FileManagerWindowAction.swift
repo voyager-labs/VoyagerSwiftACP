@@ -328,6 +328,7 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
         case newFolder
         case openSelectedItem
         case quickLookSelectedItem
+        case getInfo
         case saveCollection
         case saveCollectionAs
         case goBack

@@ -7030,7 +7030,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
     /// - 검증 내용: inactive tab 활성화, durable anchor 복귀, explicit selection 보존
     /// - 사전 조건: runtime /Runtime, durable /Pinned인 inactive pinned Directory tab과 2개 explicit selection
     /// - 기대 결과: pinned tab이 /Pinned에서 활성화되고 기존 selected IDs와 anchor는 유지됨
-    func testReturnInactivePinnedTabToPinnedLocationActivatesAndNavigates() async {
+    func testInactivePinnedDirectoryReturnRecordsRuntimeRouteOnceAndClearsForwardHistory() async {
         let pinnedID = ContentTabID(rawValue: "pinned-directory")
         let homeID = ContentTabID(rawValue: "home-tab")
         let durableAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/Pinned")
@@ -7056,6 +7056,16 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         state.contentTabs.selectionAnchorID = homeID
         state.content = .initialContent(for: .homeDefault)
         state.syncActiveTabContentState()
+        let runtimeRoute = ContentPageNavigationRoute.folder("/Users/test/Runtime")
+        let historyRoute = ContentPageNavigationRoute.folder("/Users/test/History")
+        let forwardRoute = ContentPageNavigationRoute.folder("/Users/test/StaleForward")
+        state.tabContentStates[pinnedID]?.navigation.navigationState = runtimeRoute
+        state.tabContentStates[pinnedID]?.navigation.backHistory = [
+            .init(navigationState: historyRoute),
+        ]
+        state.tabContentStates[pinnedID]?.navigation.forwardHistory = [
+            .init(navigationState: forwardRoute),
+        ]
         state.syncContentTabSidebarItems()
         let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
             $0.date = .constant(Self.pinnedAt)
@@ -7075,6 +7085,15 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         XCTAssertEqual(store.state.contentTabs.selectedTabIDs, [pinnedID, homeID])
         XCTAssertEqual(store.state.contentTabs.selectionAnchorID, homeID)
         XCTAssertEqual(store.state.contentTabs.pinnedRecords[pinnedID], record)
+        XCTAssertEqual(
+            store.state.tabContentStates[pinnedID]?.navigation.navigationState,
+            .folder("/Users/test/Pinned"),
+        )
+        XCTAssertEqual(
+            store.state.tabContentStates[pinnedID]?.navigation.backHistory.map(\.navigationState),
+            [historyRoute, runtimeRoute],
+        )
+        XCTAssertTrue(store.state.tabContentStates[pinnedID]?.navigation.forwardHistory.isEmpty == true)
     }
 
     /// CTM-003-go_to_anchored_path_of_pinned_tab: inactive broken pin command도 target을 먼저 활성화
@@ -7141,7 +7160,58 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
     /// - 검증 내용: active identity 유지, durable anchor 복귀, pinned record 불변
     /// - 사전 조건: runtime /Runtime, durable /Pinned인 active pinned Directory tab
     /// - 기대 결과: 현재 경로가 /Pinned로 복귀하고 record는 변경되지 않음
-    func testReturnActivePinnedTabToPinnedLocationNavigatesToDurableAnchor() async {
+    func testActivePinnedDirectoryReturnRecordsRuntimeRouteAndClearsForwardHistory() async {
+        let pinnedID = ContentTabID(rawValue: "pinned-directory")
+        let durableAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/Pinned")
+        let record = Self.pinnedRecord(id: pinnedID, anchor: durableAnchor, title: "Pinned", iconName: "folder")
+        var state = ContentTabTestStateBuilder.pinnedDirectoryWindowState(
+            tabID: pinnedID,
+            path: "/Users/test/Pinned",
+            record: record,
+        )
+        state.contentTabs.tabs[id: pinnedID]?.anchor = .directory(path: "/Users/test/Runtime")
+        state.content.navigation.seedInitialFolderPath("/Users/test/Runtime")
+        let runtimeRoute = ContentPageNavigationRoute.folder("/Users/test/Runtime")
+        let historyRoute = ContentPageNavigationRoute.folder("/Users/test/History")
+        let forwardRoute = ContentPageNavigationRoute.folder("/Users/test/StaleForward")
+        state.content.navigation.backHistory = [
+            .init(navigationState: historyRoute),
+        ]
+        state.content.navigation.forwardHistory = [
+            .init(navigationState: forwardRoute),
+        ]
+        state.syncActiveTabContentState()
+        state.syncContentTabSidebarItems()
+        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
+            $0.date = .constant(Self.pinnedAt)
+            $0.fileManagerClient.fileExistsWithIsDirectory = { _, isDirectory in
+                isDirectory?.pointee = true
+                return true
+            }
+        }
+        // store.exhaustivity = .off: directory load child action보다 explicit return 결과를 검증한다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.sidebar(.delegate(.returnContentTabToPinnedLocation(pinnedID))))
+        await store.skipReceivedActions(strict: false)
+
+        XCTAssertEqual(store.state.contentTabs.activeTabID, pinnedID)
+        XCTAssertEqual(store.state.content.navigation.currentPath, "/Users/test/Pinned")
+        XCTAssertEqual(store.state.contentTabs.pinnedRecords[pinnedID], record)
+        XCTAssertEqual(store.state.content.navigation.navigationState, .folder("/Users/test/Pinned"))
+        XCTAssertEqual(
+            store.state.content.navigation.backHistory.map(\.navigationState),
+            [historyRoute, runtimeRoute],
+        )
+        XCTAssertTrue(store.state.content.navigation.forwardHistory.isEmpty)
+    }
+
+    /// CTM-003-go_to_anchored_path_of_pinned_tab: active pinned Directory 복귀는 Back/Forward 왕복 가능
+    /// runtime 경로를 Back에 기록한 뒤 표준 history reducer가 원래 경로와 pinned 경로를 왕복하는지 검증한다.
+    /// - 검증 내용: `R -> P -> Back -> Forward`의 full route와 stack snapshot
+    /// - 사전 조건: runtime /Runtime, durable /Pinned인 active pinned Directory tab
+    /// - 기대 결과: Back에서 /Runtime, Forward에서 /Pinned로 복귀하고 각 stack이 정확히 교대됨
+    func testPinnedDirectoryReturnBackForwardRoundTrip() async {
         let pinnedID = ContentTabID(rawValue: "pinned-directory")
         let durableAnchor: ContentTabPageAnchor = .directory(path: "/Users/test/Pinned")
         let record = Self.pinnedRecord(id: pinnedID, anchor: durableAnchor, title: "Pinned", iconName: "folder")
@@ -7161,15 +7231,35 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 return true
             }
         }
-        // store.exhaustivity = .off: directory load child action보다 explicit return 결과를 검증한다.
+        // store.exhaustivity = .off: history reducer의 내부 delegate effect보다 왕복 stack 결과를 검증한다.
         store.exhaustivity = .off(showSkippedAssertions: false)
 
         await store.send(.sidebar(.delegate(.returnContentTabToPinnedLocation(pinnedID))))
         await store.skipReceivedActions(strict: false)
+        XCTAssertEqual(store.state.content.navigation.navigationState, .folder("/Users/test/Pinned"))
+        XCTAssertEqual(
+            store.state.content.navigation.backHistory.map(\.navigationState),
+            [.folder("/Users/test/Runtime")],
+        )
+        XCTAssertTrue(store.state.content.navigation.forwardHistory.isEmpty)
 
-        XCTAssertEqual(store.state.contentTabs.activeTabID, pinnedID)
-        XCTAssertEqual(store.state.content.navigation.currentPath, "/Users/test/Pinned")
-        XCTAssertEqual(store.state.contentTabs.pinnedRecords[pinnedID], record)
+        await store.send(.navigation(.view(.goBack)))
+        await store.skipReceivedActions(strict: false)
+        XCTAssertEqual(store.state.content.navigation.navigationState, .folder("/Users/test/Runtime"))
+        XCTAssertTrue(store.state.content.navigation.backHistory.isEmpty)
+        XCTAssertEqual(
+            store.state.content.navigation.forwardHistory.map(\.navigationState),
+            [.folder("/Users/test/Pinned")],
+        )
+
+        await store.send(.navigation(.view(.goForward)))
+        await store.skipReceivedActions(strict: false)
+        XCTAssertEqual(store.state.content.navigation.navigationState, .folder("/Users/test/Pinned"))
+        XCTAssertEqual(
+            store.state.content.navigation.backHistory.map(\.navigationState),
+            [.folder("/Users/test/Runtime")],
+        )
+        XCTAssertTrue(store.state.content.navigation.forwardHistory.isEmpty)
     }
 
     /// CTM-003-go_to_anchored_path_of_pinned_tab: active pinned Directory 재선택 시 durable anchor로 복귀

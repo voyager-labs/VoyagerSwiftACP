@@ -252,7 +252,7 @@ struct FileManagerWindowRoutingReducer {
         if shouldResetCollectionMode {
             contentState.resetComposerAndClearCollectionMode()
         }
-        contentState.navigation.navigationState = navigationState
+        contentState.navigation.applyPinnedPeerNavigationState(navigationState)
         switch navigationState {
         case let .aiChat(sessionID):
             let aiChatSessionID = AiChatSessionID(rawValue: UUID(uuidString: sessionID) ?? UUID())
