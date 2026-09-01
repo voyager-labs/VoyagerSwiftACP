@@ -241,6 +241,30 @@ extension EVM002ManageEntriesViewPresentationTests {
         ))
     }
 
+    /// EVM-002-update_entry_selection: native group row selection projects child entries.
+    /// custom event context 없이도 그룹 row 선택을 canonical selection으로 정규화한다.
+    /// VoiceOver 또는 다른 AppKit 경로가 그룹 row를 직접 선택해도 custom pointer path와 같은 canonical selection을 유지하는지 검증한다.
+    /// - 검증 내용: context 없는 `outlineViewSelectionDidChange`가 non-empty group row를 child Entry IDs, focus, anchor로 정규화한다.
+    /// - 사전 조건: 두 child Entry를 가진 expanded Alpha group과 group row 하나만 native selection으로 지정된 상태다.
+    /// - 기대 결과: group child가 canonical selection과 물리 row selection에 반영되고 updateSelection은 한 번 발생한다.
+    func testNativeGroupSelectionProjectsChildrenWithoutContext() throws {
+        let entries = [
+            makePresentationFile(id: "/root/a.txt", name: "a.txt"),
+            makePresentationFile(id: "/root/b.txt", name: "b.txt"),
+        ]
+        let fixture = Task4Fixture(entries: entries, groups: [("Alpha", entries)])
+        let groupItem = try XCTUnwrap(fixture.coordinator.groupItemByName["Alpha"])
+        let groupRow = try fixture.groupRow(named: "Alpha")
+        fixture.tableView.selectRowIndexes(IndexSet(integer: groupRow), byExtendingSelection: false)
+
+        fixture.coordinator.outlineViewSelectionDidChange(Notification(name: .init("native-group-selection")))
+
+        fixture.assertCanonical(Set(entries.map(\.id)), focus: entries[1].id, updates: 1)
+        XCTAssertTrue(try fixture.groupRowIsSelected(groupRow))
+        XCTAssertTrue(fixture.tableView.selectedRowIndexes.contains(groupRow))
+        XCTAssertIdentical(fixture.tableView.activeSelectionOccurrence, groupItem)
+    }
+
     /// EVM-002-update_entry_selection: native modifier click은 그룹의 canonical Entry 선택을 보존한다.
     /// 실제 AppKit Shift/Command mouseDown 경로에서 duplicate Entry와 그룹 header를 canonical ID로 정규화하는지 검증한다.
     /// - 검증 내용: modifier event마다 canonical Entry ID와 focus/anchor가 한 번 갱신된다.

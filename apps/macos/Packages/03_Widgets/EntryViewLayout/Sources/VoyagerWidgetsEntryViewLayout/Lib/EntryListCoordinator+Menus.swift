@@ -138,6 +138,16 @@ extension EntryListCoordinator {
             applyNativeCommandSelection(destination: destination, entry: entry)
             return
         }
+        if context == nil,
+           physicalRows.count == 1,
+           let row = physicalRows.first,
+           let group = tableView.item(atRow: row) as? OutlineItem,
+           case .group = group.kind,
+           !group.orderedDistinctEntries().isEmpty
+        {
+            _ = applyGroupSelection(group, commandPressed: false)
+            return
+        }
         let entries = orderedEntries(inPhysicalRows: physicalRows)
         let selectedIDs = Set(entries.map(\.id))
         let destination = context?.destinationOccurrence as? OutlineItem
