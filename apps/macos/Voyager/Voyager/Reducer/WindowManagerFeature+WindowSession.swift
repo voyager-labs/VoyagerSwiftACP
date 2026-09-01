@@ -29,6 +29,7 @@ extension WindowManagerFeature {
                 requestID: requestID,
                 path: nil,
                 selectEntryID: nil,
+                resolvedStartPage: nil,
                 state: &state,
             )
 
@@ -40,6 +41,7 @@ extension WindowManagerFeature {
                 requestID: requestID,
                 path: path,
                 selectEntryID: selectEntryID,
+                resolvedStartPage: nil,
                 state: &state,
             )
         }
@@ -48,13 +50,18 @@ extension WindowManagerFeature {
     func handleWindowCommand(_ action: Action, state: inout State) -> Effect<Action> {
         switch action {
         case let .file(.newWindow(path, selectEntryID)):
-            return openWindowSession(path: path, selectEntryID: selectEntryID, state: &state)
+            return openWindowSession(
+                path: path,
+                selectEntryID: selectEntryID,
+                resolvedStartPage: nil,
+                state: &state,
+            )
         case let .file(.openCollectionFile(url)):
             return openCollectionWindowSession(url: url, state: &state)
         case .file(.newTab):
             return sendContentTabCommandToFocusedWindow(
                 state,
-                .openNewContentTab,
+                .openNewContentTab(source: .menuCommand),
                 capability: \.canOpenNewContentTab,
             )
         case .window(.closeFocusedWindow):
@@ -112,7 +119,7 @@ extension WindowManagerFeature {
         requestID: UUID,
         path: String?,
         selectEntryID: String?,
-        resolvedStartPage: StartPage? = nil,
+        resolvedStartPage: StartPage?,
         state: inout State,
     ) -> Effect<Action> {
         guard state.authorizedTrackedSingletonRequestID == requestID else {
@@ -507,7 +514,7 @@ extension WindowManagerFeature {
     private func openWindowSession(
         path: String?,
         selectEntryID: String?,
-        resolvedStartPage: StartPage? = nil,
+        resolvedStartPage: StartPage?,
         state: inout State,
     ) -> Effect<Action> {
         if onboardingWindowClient.showIfNeeded() { return .none }

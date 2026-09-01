@@ -113,6 +113,27 @@ final class CTM001HandleContentTabTests: XCTestCase {
         )])
     }
 
+    /// CTM-001-content_tab_action_metrics: File menu New Content Tab은 menuCommand source terminal을 기록한다.
+    /// - 검증 내용: focused Window 새 tab 생성과 `.success/.open/.menuCommand` 메트릭 1건
+    /// - 사전 조건: 새 Content Tab을 열 수 있는 focused Window
+    /// - 기대 결과: 레코더에 menuCommand source의 open success 메트릭 1건만 기록됨
+    func testFileMenuNewContentTabPreservesMenuCommandMetricSource() async {
+        let fixture = makeFocusedAppState(selectedCount: 1)
+        let operationID = makeUUID("00000000-0000-0000-0000-000000000509")
+        let metrics = LockIsolated<[FileManagerProductMetric]>([])
+        let store = makeMetricStore(fixture: fixture, operationID: operationID, metrics: metrics)
+
+        await store.send(.file(.newTab))
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(metrics.value, [.contentTabAction(
+            result: .success,
+            identity: .openNewContentTab,
+            source: .menuCommand,
+            operationID: operationID,
+        )])
+    }
+
     /// CTM-001-content_tab_action_metrics: File menu duplicate는 menuCommand source terminal을 기록한다.
     /// app command에서 package synchronous wrapper까지 accepted source가 유지되는지 검증한다.
     /// - 검증 내용: duplicate tab 생성과 `.success/.duplicate/.menuCommand` 메트릭 1건
