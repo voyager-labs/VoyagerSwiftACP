@@ -8351,9 +8351,6 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         XCTAssertEqual(store.state.contentTabs.pinnedRecords[pinnedID], record)
     }
 
-    /// CTM-003-go_to_anchored_path_of_pinned_tab: empty durable Collection은 target draft로 commit한다.
-    /// active pinned row 재선택도 direct open과 같은 valid-empty Collection transaction을 사용한다.
-    /// - 검증 내용: target URL/anchor/session/baseline/route commit과 loading terminal, 검색 무호출
     /// CTM-003-go_to_anchored_path_of_pinned_tab: 일반 Collection 실패는 pinned 복귀 실패로 오인하지 않음
     /// 이미 durable route에 정착한 pinned tab에서 별도 Collection을 열다 실패해도 외부 복귀 terminal을 오염시키지 않는지 검증한다.
     /// - 검증 내용: 일반 Collection request 정리와 pinnedContentTabRuntimeNavigationFailed 미발행
@@ -8493,6 +8490,9 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         XCTAssertNil(store.state.pendingCollectionOpenRequest)
     }
 
+    /// CTM-003-go_to_anchored_path_of_pinned_tab: empty durable Collection은 target draft로 commit한다.
+    /// active pinned row 재선택도 direct open과 같은 valid-empty Collection transaction을 사용한다.
+    /// - 검증 내용: target URL/anchor/session/baseline/route commit과 loading terminal, 검색 무호출
     /// - 사전 조건: active pinned Collection A의 durable anchor B가 empty definition file을 반환함
     /// - 기대 결과: pinned record를 유지하면서 B가 clean file-backed Collection Page로 적용됨
     func testReselectActivePinnedEmptyCollectionCommitsTargetDraftWithoutSearch() async throws {
