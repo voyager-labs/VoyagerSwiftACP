@@ -115,10 +115,11 @@ extension FileManagerWindowCommandRoutingReducer {
     func handleHomePageAnchorSelected(
         _ anchor: ContentTabPageAnchor,
         activeTabID: ContentTabID,
-        state: State,
+        state: inout State,
     ) -> Effect<Action> {
         switch anchor {
         case let .directory(path):
+            state.content.pendingProductBrowsingSource = .fileManagerContent
             return .concatenate(
                 updateContentTabPageAnchorEffect(tabID: activeTabID, anchor: anchor, state: state),
                 .send(.navigation(.view(.navigateToPath(path)))),

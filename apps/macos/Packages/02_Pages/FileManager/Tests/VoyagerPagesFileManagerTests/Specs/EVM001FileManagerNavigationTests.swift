@@ -338,6 +338,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
 
     private func makeTypedBrowsingStore(
         metrics: LockIsolated<[FileManagerProductMetric]>,
+        allocations: LockIsolated<Int>? = nil,
         initialState: FileManagerFeature.State = .init(),
         configure: (inout DependencyValues) -> Void = { _ in },
     ) -> TestStore<FileManagerFeature.State, FileManagerFeature.Action> {
@@ -346,9 +347,11 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             FileManagerFeature()
         } withDependencies: { dependencies in
             dependencies.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            dependencies.uuid = .incrementing
             dependencies.fileManagerProductMetricsClient = FileManagerProductMetricsClient(
                 record: { metric in metrics.withValue { $0.append(metric) } },
                 makeOperationID: {
+                    allocations?.withValue { $0 += 1 }
                     let index = operationIDIndex.withValue { current -> Int in
                         defer { current += 1 }
                         return current
@@ -361,6 +364,202 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         // store.exhaustivity = .off: 전체 window routing의 부수 effect보다 typed terminal count를 검증한다.
         store.exhaustivity = .off
         return store
+    }
+
+    private func assertBrowsingSilent(
+        _ store: TestStore<FileManagerFeature.State, FileManagerFeature.Action>,
+        metrics: LockIsolated<[FileManagerProductMetric]>,
+        allocations: LockIsolated<Int>,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+    ) {
+        XCTAssertEqual(allocations.value, 0, file: file, line: line)
+        XCTAssertTrue(metrics.value.isEmpty, file: file, line: line)
+        XCTAssertNil(store.state.content.pendingProductBrowsingSource, file: file, line: line)
+        XCTAssertNil(store.state.content.productBrowsingOperationID, file: file, line: line)
+    }
+
+    private func assertHomeDirectoryBrowsing(
+        selection: FileManagerHomeSelection,
+        path: String,
+        configure: (inout DependencyValues) -> Void = { _ in },
+    ) async {
+        let metrics = LockIsolated<[FileManagerProductMetric]>([])
+        let allocations = LockIsolated(0)
+        let entry = EntryModel.temporaryFolder(id: path + "/child", name: "child")
+        let store = makeTypedBrowsingStore(metrics: metrics, allocations: allocations) { dependencies in
+            dependencies.entryLoadingClient.loadItems = Self.suspendedLoadItems
+            configure(&dependencies)
+        }
+
+        await store.sendTabContent(.view(.homeSelectionTapped(selection)))
+        await store.skipReceivedActions()
+        await store.send(.content(.entryViewLayout(.entryOperations(.loading(.itemsLoaded(
+            generation: store.state.content.entryViewLayout.entryOperations.loadingContext.generation,
+            items: [entry],
+        ))))))
+
+        XCTAssertEqual(allocations.value, 1)
+        XCTAssertEqual(metrics.value, [
+            .contentBrowsing(
+                result: .success,
+                content: .folder,
+                identity: .direct,
+                source: .fileManagerContent,
+                operationID: Self.typedBrowsingOperationIDs[0],
+            ),
+        ])
+    }
+
+    /// EVM-001-navigate_pages: Home Favorite preserves content browsing source.
+    /// Home Favorites의 directory pageAnchor가 content-origin browsing 계약으로 수렴하는지 검증한다.
+    /// - 검증 내용: 실제 FileManager composition에서 선택부터 loading terminal까지 source, operation ID, 단일 event를 검증한다.
+    /// - 사전 조건: active Home tab과 directory Favorite, deterministic operation ID가 있다.
+    /// - 기대 결과: fileManagerContent source의 success metric을 정확히 한 번 기록하고 ID를 한 번 할당한다.
+    func testHomeFavoritePreservesContentBrowsingSource() async {
+        let path = "/tmp/voyager-evm001-home-favorite"
+        await assertHomeDirectoryBrowsing(selection: .pageAnchor(.directory(path: path)), path: path)
+    }
+
+    /// EVM-001-navigate_pages: Home Location preserves content browsing source.
+    /// Home Locations의 fixedDirectory가 content-origin browsing 계약으로 수렴하는지 검증한다.
+    /// - 검증 내용: 실제 FileManager composition에서 선택부터 loading terminal까지 source, operation ID, 단일 event를 검증한다.
+    /// - 사전 조건: active Home tab과 deterministic Documents location, operation ID가 있다.
+    /// - 기대 결과: fileManagerContent source의 success metric을 정확히 한 번 기록하고 ID를 한 번 할당한다.
+    func testHomeLocationPreservesContentBrowsingSource() async {
+        let path = "/tmp/voyager-evm001-home-location"
+        await assertHomeDirectoryBrowsing(selection: .fixedDirectory(.documents), path: path) {
+            $0.fileManagerClient.urlsForDirectory = { _, _ in [URL(fileURLWithPath: path)] }
+        }
+    }
+
+    /// EVM-001-navigate_pages: Home Open Directory preserves content browsing source.
+    /// Home picker의 selected directory가 content-origin browsing 계약으로 수렴하는지 검증한다.
+    /// - 검증 내용: 실제 FileManager composition에서 선택부터 loading terminal까지 source, operation ID, 단일 event를 검증한다.
+    /// - 사전 조건: active Home tab과 selected picker result, deterministic operation ID가 있다.
+    /// - 기대 결과: fileManagerContent source의 success metric을 정확히 한 번 기록하고 ID를 한 번 할당한다.
+    func testHomeOpenDirectoryPreservesContentBrowsingSource() async {
+        let path = "/tmp/voyager-evm001-home-picker"
+        await assertHomeDirectoryBrowsing(selection: .openDirectory, path: path) {
+            $0.homePickerClient.pickDirectory = { .selected(path) }
+        }
+    }
+
+    /// EVM-001-navigate_pages: rejected Home directory routes stay browsing silent.
+    /// 누락 tab, non-Home tab, same route가 Home content browsing correlation을 만들지 않는지 검증한다.
+    /// - 검증 내용: 실제 FileManager composition에서 guard와 same-route 처리 후 allocation, pending source, metric을 검증한다.
+    /// - 사전 조건: 각 거부 조건에 맞는 tab 및 navigation state가 있다.
+    /// - 기대 결과: 모든 경로가 operation ID를 할당하지 않고 correlation과 metric을 남기지 않는다.
+    func testRejectedHomeDirectoryRoutesStayBrowsingSilent() async throws {
+        do {
+            let metrics = LockIsolated<[FileManagerProductMetric]>([])
+            let allocations = LockIsolated(0)
+            let store = makeTypedBrowsingStore(metrics: metrics, allocations: allocations)
+
+            await store.send(.tabContent(
+                tabID: ContentTabID(rawValue: "missing-home-tab"),
+                action: .delegate(.homePageAnchorSelected(.directory(path: "/tmp/missing"))),
+            ))
+
+            assertBrowsingSilent(store, metrics: metrics, allocations: allocations)
+        }
+
+        do {
+            var state = FileManagerFeature.State()
+            let activeTabID = try XCTUnwrap(state.contentTabs.activeTabID)
+            state.contentTabs.tabs[id: activeTabID]?.anchor = .directory(path: "/tmp/current")
+            state.contentTabs.tabs[id: activeTabID]?.page = .directory
+            state.content.navigation.navigationState = .folder("/tmp/current")
+            let metrics = LockIsolated<[FileManagerProductMetric]>([])
+            let allocations = LockIsolated(0)
+            let store = makeTypedBrowsingStore(
+                metrics: metrics,
+                allocations: allocations,
+                initialState: state,
+            )
+
+            await store.send(.tabContent(
+                tabID: activeTabID,
+                action: .delegate(.homePageAnchorSelected(.directory(path: "/tmp/other"))),
+            ))
+
+            assertBrowsingSilent(store, metrics: metrics, allocations: allocations)
+        }
+
+        do {
+            let path = "/tmp/voyager-evm001-home-same-route"
+            var state = FileManagerFeature.State()
+            state.content.navigation.navigationState = .folder(path)
+            let metrics = LockIsolated<[FileManagerProductMetric]>([])
+            let allocations = LockIsolated(0)
+            let store = makeTypedBrowsingStore(
+                metrics: metrics,
+                allocations: allocations,
+                initialState: state,
+            )
+
+            await store.sendTabContent(.view(.homeSelectionTapped(.pageAnchor(.directory(path: path)))))
+            await store.skipReceivedActions()
+
+            assertBrowsingSilent(store, metrics: metrics, allocations: allocations)
+        }
+    }
+
+    /// EVM-001-navigate_pages: non-directory Home outcomes stay browsing silent.
+    /// picker 취소·실패와 Collection·AI 선택이 directory browsing source나 operation을 만들지 않는지 검증한다.
+    /// - 검증 내용: 실제 FileManager composition의 각 완료 경로 뒤 allocation, pending source, metric을 검증한다.
+    /// - 사전 조건: active Home tab과 deterministic picker, collection, AI dependency 결과가 있다.
+    /// - 기대 결과: 모든 경로가 operation ID를 할당하지 않고 correlation과 metric을 남기지 않는다.
+    func testNonDirectoryHomeOutcomesStayBrowsingSilent() async {
+        for result in [
+            FileManagerHomePickerResult<String>.cancelled,
+            .failed("picker failed"),
+        ] {
+            let metrics = LockIsolated<[FileManagerProductMetric]>([])
+            let allocations = LockIsolated(0)
+            let store = makeTypedBrowsingStore(metrics: metrics, allocations: allocations) {
+                $0.homePickerClient.pickDirectory = { result }
+            }
+
+            await store.sendTabContent(.view(.homeSelectionTapped(.openDirectory)))
+            await store.skipReceivedActions()
+
+            assertBrowsingSilent(store, metrics: metrics, allocations: allocations)
+        }
+
+        do {
+            struct CollectionLoadFailure: Error {}
+            let metrics = LockIsolated<[FileManagerProductMetric]>([])
+            let allocations = LockIsolated(0)
+            let store = makeTypedBrowsingStore(metrics: metrics, allocations: allocations) {
+                $0.homePickerClient.pickCollectionFile = {
+                    .selected(URL(fileURLWithPath: "/tmp/voyager-evm001-home.voycoll"))
+                }
+                $0.collectionFileClient.load = { _ in throw CollectionLoadFailure() }
+                $0.collectionAlertClient.showCollectionOpenErrorAlert = { _, _ in }
+            }
+
+            await store.sendTabContent(.view(.homeSelectionTapped(.openCollection)))
+            await store.skipReceivedActions()
+
+            assertBrowsingSilent(store, metrics: metrics, allocations: allocations)
+        }
+
+        do {
+            let sessionID = "E0010000-0000-0000-0000-0000000000A1"
+            let metrics = LockIsolated<[FileManagerProductMetric]>([])
+            let allocations = LockIsolated(0)
+            let store = makeTypedBrowsingStore(metrics: metrics, allocations: allocations) {
+                $0.homeAiChatClient.createSession = { .selected(sessionID) }
+                $0.aiConnectionsFileClient.load = { .empty() }
+                $0.aiChatSessionPersistenceClient.loadSession = { _ in nil }
+            }
+
+            await store.sendTabContent(.view(.homeSelectionTapped(.startAiChat)))
+            await store.skipReceivedActions()
+
+            assertBrowsingSilent(store, metrics: metrics, allocations: allocations)
+        }
     }
 
     /// EVM-001-navigate_pages: 수락 전 content 탐색 intent는 operation을 만들지 않는다.

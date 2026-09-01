@@ -187,7 +187,7 @@ struct FileManagerWindowCommandRoutingReducer {
                 guard tabID == state.contentTabs.activeTabID,
                       state.contentTabs.tabs[id: tabID]?.anchor == .homeDefault
                 else { return .none }
-                return handleHomePageAnchorSelected(anchor, activeTabID: tabID, state: state)
+                return handleHomePageAnchorSelected(anchor, activeTabID: tabID, state: &state)
 
             case let .tabContent(tabID, .delegate(.homeChatHistorySessionSelected(sessionID))):
                 guard tabID == state.contentTabs.activeTabID,
