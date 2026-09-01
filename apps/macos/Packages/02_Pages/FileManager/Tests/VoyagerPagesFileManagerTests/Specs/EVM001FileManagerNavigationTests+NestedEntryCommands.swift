@@ -213,6 +213,70 @@ extension EVM001FileManagerNavigationTests {
         XCTAssertNil(store.state.entryViewLayout.entryOperations.renamingCommandSource)
     }
 
+    /// EVM-001-route_entry_selection_commands: no-op rename은 시작 surface별 취소 terminal로 종료된다.
+    /// - 검증 내용: 실제 start/commit route가 원래 ID/source의 cancelled record와 Product metric을 각각 한 건만 만든다.
+    /// - 사전 조건: context menu, keyboard shortcut, file-manager content에서 unchanged/blank rename을 수용한다.
+    /// - 기대 결과: 파일 작업, undo, reload 없이 각 명령의 empty-target cancelled terminal/metric이 정확히 한 건이다.
+    func testAcceptedNoOpRenameRecordsSingleCancelledTerminalForEverySource() async {
+        let entry = EntryModel.temporaryFolder(id: "/root/folder", name: "folder")
+        await assertAcceptedNoOpRename(entry: entry, source: .contextMenu, draft: entry.name, id: UUID(6))
+        await assertAcceptedNoOpRename(entry: entry, source: .keyboardShortcut, draft: "", id: UUID(7))
+        await assertAcceptedNoOpRename(entry: entry, source: .fileManagerContent, draft: "   ", id: UUID(8))
+    }
+
+    private func assertAcceptedNoOpRename(
+        entry: EntryModel,
+        source: EntryCommandSource,
+        draft: String,
+        id: UUID,
+    ) async {
+        var state = FileManagerFeature.State()
+        state.content.navigation.navigationState = .folder("/root")
+        state.content.entryViewLayout.entries = [entry]
+        state.content.entryViewLayout.entryOperations.items = [entry]
+        let recorder = FileManagerProductMetricRecorder(makeOperationID: { id })
+        let renameCallCount = LockIsolated(0)
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.fileManagerProductMetricsClient = recorder.client
+            $0.date = .constant(Date())
+            $0.entryFileOpsClient.renameFile = { _, _ in
+                renameCallCount.withValue { $0 += 1 }
+            }
+        }
+        // store.exhaustivity = .off: parent composition 부가 action은 생략하고 실제 rename terminal을 직접 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.content(.entryViewLayout(.view(.startRename(
+            item: entry,
+            text: entry.name,
+            source: source,
+        )))))
+        await store.send(.content(.entryViewLayout(.view(.commitRename(itemID: entry.id, newName: draft)))))
+        await store.receive { action in
+            guard case let .internal(.entryActionCompleted(_, record, _)) = action else { return false }
+            return record.id == id
+                && record.command?.source == source
+                && record.targets.isEmpty
+                && record.cancelledCount == 1
+        }
+        await store.finish()
+
+        XCTAssertEqual(renameCallCount.value, 0)
+        XCTAssertFalse(store.state.content.entryViewLayout.entryOperations.isReloading)
+        XCTAssertTrue(store.state.content.entryViewLayout.entryOperations.undoRecords.isEmpty)
+        XCTAssertEqual(recorder.metrics(), [
+            .entryAction(
+                result: .cancelled,
+                identity: .renameEntry,
+                source: source,
+                operationID: id,
+                aggregate: .init(attempted: 1, succeeded: 0, failed: 0, cancelled: 1),
+            ),
+        ])
+    }
+
     /// empty trash command는 계층 projection과 무관하게 기존 root snapshot만 사용하는지 검증한다.
     func testEmptyTrashCommandKeepsRootSnapshotContext() async {
         let root = EntryModel.temporaryFolder(id: "/trash/folder", name: "folder")
