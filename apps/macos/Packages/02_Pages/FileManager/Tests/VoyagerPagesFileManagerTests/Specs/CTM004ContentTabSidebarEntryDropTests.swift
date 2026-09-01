@@ -404,6 +404,55 @@ extension CTM004ContentTabSidebarTests {
         ])
     }
 
+    /// CTM-004-sidebar_entry_drop_routing: 수용된 검증 거절 terminal은 Window Product metric으로 정확히 한 번 귀환한다.
+    /// EntryOperations가 만든 metadata 보존 취소 terminal과 Window 중복 억제를 실제 reducer 연결로 검증한다.
+    /// - 검증 내용: operation ID, topmost 취소 수, cancelled metric 1회, duplicate terminal 억제
+    /// - 사전 조건: 부모와 하위 source를 같은 부모 destination으로 move하는 수용된 Sidebar 명령
+    /// - 기대 결과: 취소 terminal 하나가 기록되고 동일 terminal 재전달 뒤에도 metric은 하나뿐임
+    func testWindowAcceptedValidationRejectedDropRecordsCancelledMetricOnce() async throws {
+        let command = try makeEntryDropCommand(
+            "00000000-0000-0000-0000-000000000415",
+            .moveEntries,
+        )
+        let recorder = FileManagerProductMetricRecorder()
+        let terminal = LockIsolated<EntryActionRecord?>(nil)
+        let store = TestStore(initialState: FileManagerFeature.State()) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+
+        await store.send(.internal(.sidebarEntryDrop(.acceptedCommand(
+            metadata: command,
+            action: .routing(.dropItems(
+                sourcePaths: ["/tmp/folder/child.txt", "/tmp/peer.txt", "/tmp/folder"],
+                destinationPath: "/tmp",
+                isOptionDrag: false,
+            )),
+        ))))
+        await store.receive { action in
+            guard case let .internal(.sidebarEntryDrop(.lifecycle(.entryActionCompleted(record)))) = action,
+                  record.command == command,
+                  record.id == command.id,
+                  record.operationKind == .pasteFileMove,
+                  record.cancelledCount == 2,
+                  record.attemptedCount == 2,
+                  record.targets.isEmpty
+            else { return false }
+            terminal.setValue(record)
+            return true
+        } assert: {
+            $0.recordedSidebarEntryCommandIDs = [command.id]
+        }
+        let record = try XCTUnwrap(terminal.value)
+        await store.send(.internal(.sidebarEntryDrop(.lifecycle(.entryActionCompleted(record)))))
+        await store.finish()
+
+        XCTAssertEqual(recorder.metrics(), [
+            entryDropMetric(command, .cancelled, succeeded: 0, failed: 0, cancelled: 2),
+        ])
+    }
+
     private struct AcceptedEntryDropScenario {
         let target: FileManagerSidebarEntryDropTarget
         let isOptionDrag: Bool

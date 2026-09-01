@@ -33,7 +33,7 @@ struct EntryOperationsCommandRoutingReducer {
                         send(Self.cancelledDropTerminal(
                             metadata: metadata,
                             operationKind: isOptionDrag ? .pasteFileCopy : .pasteFileMove,
-                            providerCount: providers.count,
+                            cancelledCount: providers.count,
                         ))
                         return
                     }
@@ -55,7 +55,7 @@ struct EntryOperationsCommandRoutingReducer {
                         send(Self.cancelledDropTerminal(
                             metadata: metadata,
                             operationKind: .moveToTrash,
-                            providerCount: providers.count,
+                            cancelledCount: providers.count,
                         ))
                         return
                     }
@@ -64,6 +64,33 @@ struct EntryOperationsCommandRoutingReducer {
                         action: .trash(.moveToTrash(paths: paths)),
                     ))
                 }
+
+            case let .acceptedCommand(
+                metadata,
+                .routing(.dropItems(sourcePaths, destinationPath, isOptionDrag)),
+            ) where !sourcePaths.isEmpty:
+                let topmostSourcePaths = topmostPaths(sourcePaths)
+                let validation = EntryDropValidationResolver.resolve(.init(
+                    sourcePaths: topmostSourcePaths,
+                    destinationPath: destinationPath,
+                    allowedOperationsRawValue: NSDragOperation.copy.rawValue | NSDragOperation.move.rawValue,
+                    prefersCopy: isOptionDrag,
+                ))
+                guard validation.resolvedOperation != .none else {
+                    return .send(Self.cancelledDropTerminal(
+                        metadata: metadata,
+                        operationKind: isOptionDrag ? .pasteFileCopy : .pasteFileMove,
+                        cancelledCount: topmostSourcePaths.count,
+                    ))
+                }
+                return .send(.acceptedCommand(
+                    metadata: metadata,
+                    action: .clipboard(.performDrop(
+                        sourcePaths: topmostSourcePaths,
+                        destinationPath: destinationPath,
+                        isOptionDrag: isOptionDrag,
+                    )),
+                ))
 
             case let .acceptedCommand(metadata, nestedAction):
                 let effect = if case .routing = nestedAction {
@@ -170,13 +197,13 @@ struct EntryOperationsCommandRoutingReducer {
     private static func cancelledDropTerminal(
         metadata: EntryCommandMetadata,
         operationKind: OperationKind,
-        providerCount: Int,
+        cancelledCount: Int,
     ) -> Action {
         .lifecycle(.entryActionCompleted(EntryActionRecord(
             operationKind: operationKind,
             targets: [],
             failedCount: 0,
-            cancelledCount: providerCount,
+            cancelledCount: cancelledCount,
             succeededCount: 0,
             id: metadata.id,
             timestamp: Date(),
