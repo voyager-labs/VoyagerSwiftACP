@@ -11,8 +11,13 @@ public extension EntryListCoordinator {
 
         tableView.scrollRowToVisible(row)
         isUpdatingSelectionFromStore = true
-        tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
-        isUpdatingSelectionFromStore = false
+        defer { isUpdatingSelectionFromStore = false }
+        let occurrence = tableView.item(atRow: row) as AnyObject?
+        tableView.applyCanonicalSelection(
+            IndexSet(integer: row),
+            activeOccurrence: tableView.activeSelectionOccurrence ?? occurrence,
+            anchorOccurrence: tableView.rangeAnchorOccurrence ?? occurrence,
+        )
 
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
@@ -46,8 +51,17 @@ extension EntryListOutlineItem {
 }
 
 extension EntryListCoordinator: NSOutlineViewDelegate {
-    public func outlineView(_: NSOutlineView, rowViewForItem _: Any) -> NSTableRowView? {
-        EntryListSelectionRowView()
+    public func outlineView(_: NSOutlineView, rowViewForItem item: Any) -> NSTableRowView? {
+        let rowView = EntryListSelectionRowView()
+        let isGroupRow = if let outlineItem = item as? OutlineItem,
+                            case .group = outlineItem.kind
+        {
+            true
+        } else {
+            false
+        }
+        rowView.configure(isGroupRow: isGroupRow)
+        return rowView
     }
 
     public func outlineView(_: NSOutlineView, shouldEdit tableColumn: NSTableColumn?, item: Any) -> Bool {
@@ -125,20 +139,14 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
         }
     }
 
-    public func outlineView(_: NSOutlineView, isGroupItem item: Any) -> Bool {
-        guard let outlineItem = item as? OutlineItem else { return false }
-        if case .group = outlineItem.kind {
-            return true
-        }
-        return false
-    }
-
     public func outlineView(_: NSOutlineView, shouldSelectItem item: Any) -> Bool {
         guard let outlineItem = item as? OutlineItem else { return false }
         switch outlineItem.kind {
         case .entry:
             return true
-        case .group, .empty, .error:
+        case .group:
+            return !outlineItem.orderedDistinctEntries().isEmpty
+        case .empty, .error:
             return false
         }
     }
@@ -147,7 +155,7 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
         guard let outlineItem = item as? OutlineItem else { return outlineView.rowHeight }
         switch outlineItem.kind {
         case .group:
-            return 32
+            return 28
         case .entry:
             return max(24, state.listIconSize + 4)
         case .empty, .error:
@@ -219,37 +227,18 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
     }
 
     public func outlineViewSelectionDidChange(_: Notification) {
-        guard !isUpdatingSelectionFromStore, !projectionSession.isApplyingStoreProjection else { return }
-
         let selectedIndexes = tableView.selectedRowIndexes
-        let selectedEntries: [EntryModel] = selectedIndexes.compactMap { index in
-            guard let outlineItem = tableView.item(atRow: index) as? OutlineItem else { return nil }
-            guard case let .entry(entry) = outlineItem.kind else { return nil }
-            return entry
-        }
-        let clickedRow = tableView.clickedRow
-        let lastSelectedId: EntryModel.ID? = if selectedIndexes.contains(clickedRow),
-                                                let item = tableView.item(atRow: clickedRow) as? OutlineItem,
-                                                case let .entry(entry) = item.kind
-        {
-            entry.id
-        } else if let lastIndex = selectedIndexes.last,
-                  let item = tableView.item(atRow: lastIndex) as? OutlineItem,
-                  case let .entry(entry) = item.kind
-        {
-            entry.id
-        } else {
-            nil
-        }
-
-        let acceptedIDs = Set(selectedEntries.map(\.id))
-        preloadOpenWithApplications(selectedEntries: selectedEntries)
-        store.send(.view(.updateSelection(
-            ids: acceptedIDs,
-            lastSelectedId: lastSelectedId,
-            rangeAnchorId: lastSelectedId,
-            shouldScrollToSelection: false,
-        )))
+        guard !tableView.suppressesDisclosureSelectionCallback else { return }
+        guard !tableView.shouldIgnoreSelectionCallback(selectedIndexes) else { return }
+        guard !isUpdatingSelectionFromStore,
+              !isUpdatingGroupExpansion,
+              !tableView.isApplyingDisclosureSelectionTransaction,
+              !projectionSession.isApplyingStoreProjection
+        else { return }
+        normalizeNativeSelection(
+            physicalRows: selectedIndexes,
+            context: tableView.takeNativeSelectionContext(),
+        )
     }
 
     public func outlineViewItemDidExpand(_ notification: Notification) {
@@ -379,6 +368,7 @@ extension EntryListCoordinator {
     @discardableResult
     func rebuildRowsIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) -> Bool {
         guard previous.isHierarchyOutlineEnabled == snapshot.isHierarchyOutlineEnabled else {
+            tableView.invalidateSelectionProjection()
             projectionSession.reset()
             rebuildRowsAndReload()
             return true
@@ -386,6 +376,7 @@ extension EntryListCoordinator {
 
         if snapshot.isHierarchyOutlineEnabled {
             if !previous.outlineProjection.hasSameOutlineShape(as: snapshot.outlineProjection) {
+                tableView.invalidateSelectionProjection()
                 rebuildRowsAndReload()
                 return true
             } else if !previous.outlineProjection.hasSameStructure(as: snapshot.outlineProjection) {
@@ -411,9 +402,11 @@ extension EntryListCoordinator {
 
         let changes = snapshot.presentation.changes(from: previous.presentation)
         if changes.groupExpansionChanged {
+            tableView.invalidateSelectionProjection()
             rebuildRowsAndReload()
             return true
         } else if changes.sectionStructureChanged {
+            tableView.invalidateSelectionProjection()
             applyPostReloadPresentation(
                 pathChanged: pathChanged,
                 structureChanged: true,
@@ -696,17 +689,36 @@ extension EntryListCoordinator {
     }
 
     public func syncListSelectionFromStore() {
-        let selectedIds = state.selectedIds
-        let indexes = IndexSet(selectedIds.flatMap { id in
-            entryItemsByID[id, default: []].compactMap { item in
-                let row = tableView.row(forItem: item)
-                return row >= 0 ? row : nil
-            }
+        let preservedActiveOccurrence = tableView.activeSelectionOccurrence
+        let preservedAnchorOccurrence = tableView.rangeAnchorOccurrence
+        tableView.invalidateSelectionProjectionIfNeeded()
+        let activeOccurrence = selectionOccurrence(
+            for: state.lastSelectedId,
+            preserving: preservedSelectionOccurrence(preservedActiveOccurrence, focus: state.lastSelectedId),
+        )
+        let anchorOccurrence = selectionOccurrence(
+            for: state.rangeAnchorId,
+            preserving: preservedSelectionOccurrence(preservedAnchorOccurrence, focus: state.rangeAnchorId),
+        )
+        let explicitGroupRows = IndexSet([activeOccurrence, anchorOccurrence].compactMap { occurrence in
+            guard let occurrence, case .group = occurrence.kind else { return nil }
+            return tableView.liveRow(for: occurrence)
         })
-
+        let indexes = physicalSelectionRows(
+            for: state.selectedIds,
+            includingGroupRows: explicitGroupRows,
+            forcingGroupRows: explicitGroupRows,
+        )
         isUpdatingSelectionFromStore = true
-        tableView.selectRowIndexes(indexes, byExtendingSelection: false)
-        isUpdatingSelectionFromStore = false
+        defer {
+            isUpdatingSelectionFromStore = false
+            tableView.finishDisclosureSelectionSynchronization()
+        }
+        tableView.applyCanonicalSelection(
+            indexes,
+            activeOccurrence: activeOccurrence,
+            anchorOccurrence: anchorOccurrence,
+        )
     }
 
     public func syncListRenamingFromStore() {
