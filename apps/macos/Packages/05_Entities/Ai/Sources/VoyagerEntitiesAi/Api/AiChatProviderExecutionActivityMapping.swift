@@ -235,27 +235,6 @@ enum CodexAppServerEvent: Equatable {
     case error(turnID: String, willRetry: Bool, providerEventType: String)
 }
 
-enum CodexAppServerResourceLimit: Equatable {
-    case agentMessageItemCount
-    case itemIDUTF8Bytes
-    case storedTextUTF8Bytes
-    case rawJSONLineBytes
-    case retainedStandardErrorBytes
-}
-
-enum CodexAppServerProtocolLimits {
-    static let maximumAgentMessageItemCount = 128
-    static let maximumItemIDUTF8Bytes = 1024
-    static let maximumStoredTextUTF8Bytes = AiChatRequestContextBudget.totalAttachmentTextUTF8ByteBudget
-    static let maximumRawJSONLineBytes = maximumStoredTextUTF8Bytes * 8
-    static let maximumRetainedStandardErrorBytes = maximumStoredTextUTF8Bytes
-}
-
-enum CodexAppServerParsingError: Error, Equatable {
-    case malformedKnownEvent(String)
-    case resourceLimitExceeded(CodexAppServerResourceLimit)
-}
-
 struct CodexActivityState {
     private let requestScope: String
     private var retryActivity: (AiChatExecutionActivityID, String)?

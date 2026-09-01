@@ -550,12 +550,12 @@ extension CBW003ProviderExecutionRoutingTests {
         XCTAssertEqual(ProviderExecutionURLProtocol.requestCount, 0)
     }
 
-    /// CBW-003-prepare_contextual_chat_request: ChatGPT Codex OAuth 실행은 최종 응답 이벤트를 방출한다.
-    /// Codex executor 경로가 request context와 OAuth token을 실행 결과로 연결하는지 추적합니다.
+    /// CBW-003-prepare_contextual_chat_request: provider-managed Codex 실행은 최종 응답 이벤트를 방출한다.
+    /// Codex executor 경로가 request context와 provider-managed auth를 실행 결과로 연결하는지 추적합니다.
     /// - 검증 내용: Codex executor 입력값과 final assistant message를 확인합니다.
-    /// - 사전 조건: gpt-5-codex request와 OAuth access token credential을 사용합니다.
+    /// - 사전 조건: gpt-5-codex request와 provider-managed credential preflight를 사용합니다.
     /// - 기대 결과: started 이후 final response가 방출되고 Codex prompt가 context를 포함합니다.
-    func testExecute_chatgptCodexWithOAuthCredential_runsCodexExecAndEmitsFinal() throws {
+    func testExecute_chatgptCodexProviderManaged_runsCodexExecAndEmitsFinal() throws {
         let request = providerExecutionMakeRequest(
             provider: .chatgptCodex,
             rawModelID: "gpt-5-codex",
@@ -567,7 +567,6 @@ extension CBW003ProviderExecutionRoutingTests {
             codexExecutor: { request, onDelta in
                 XCTAssertEqual(request.model, "gpt-5-codex")
                 XCTAssertEqual(request.thinking, .effort(.high))
-                XCTAssertEqual(request.credential.accessToken, "codex-token")
                 XCTAssertTrue(request.prompt.contains("current_context:"))
                 XCTAssertTrue(request.prompt.contains("summary: locked workspace context"))
                 XCTAssertTrue(request.prompt.contains("added_attachments:"))
@@ -580,10 +579,7 @@ extension CBW003ProviderExecutionRoutingTests {
             },
         )
 
-        let events = try providerExecutionCollect(client.execute(
-            request,
-            .oauth(OAuthCredentialFile(accessToken: "codex-token")),
-        ))
+        let events = try providerExecutionCollect(client.execute(request, StoredCredentialPayload?.none))
 
         XCTAssertEqual(events, [
             .started(context: request.context),
@@ -597,6 +593,127 @@ extension CBW003ProviderExecutionRoutingTests {
         ])
         XCTAssertEqual(ProviderExecutionURLProtocol.requestCount, 0)
     }
+
+    /// CBW-003-prepare_contextual_chat_request: legacy Codex compatibility uses the shared process controller once.
+    /// Legacy execution must consume the same provider-internal receipt machinery as the runtime adapter.
+    /// - 검증 내용: composition controller identity와 fake provider process invocation count를 확인합니다.
+    /// - 사전 조건: provider-managed Codex request, canonical working directory, completed JSONL fixture가 있습니다.
+    /// - 기대 결과: legacy execution은 controller를 공유하고 process spawn을 정확히 한 번만 수행합니다.
+    func testExecute_legacyCodexCompatibilitySharesControllerAndSpawnsOnce() throws {
+        let root = URL(fileURLWithPath: "/tmp/workspace", isDirectory: true)
+        let rootExisted = FileManager.default.fileExists(atPath: root.path)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            if !rootExisted { try? FileManager.default.removeItem(at: root) }
+        }
+        let assistantStarted = #"{"type":"item.started","item":{"id":"message-legacy","type":"agent_message"}}"#
+        let assistantCompleted = "{\"type\":\"item.completed\",\"item_id\":\"message-legacy\","
+            + "\"item\":{\"type\":\"agent_message\",\"text\":\"Codex answer\"}}"
+        let process = CodexExecFakeProcess(
+            stdout: [
+                Data(#"{"type":"thread.started","thread_id":"legacy-thread"}"#.utf8),
+                Data(assistantStarted.utf8),
+                Data(assistantCompleted.utf8),
+                Data(#"{"type":"turn.completed","turn_id":"turn-1","status":"completed"}"#.utf8),
+            ],
+            stderr: [],
+            terminationStatus: 0,
+        )
+        let runner = CodexExecFakeRunner(process: process)
+        let controller = CodexExecProcessController(runner: runner.run)
+        let readinessProbe = CodexExecReadinessProbe { _, arguments, _ in
+            arguments == ["--version"]
+                ? CodexExecProbeResult(exitCode: 0, stdout: "codex-cli 0.148.0\n", stderr: "")
+                : CodexExecProbeResult(exitCode: 0, stdout: "", stderr: "")
+        }
+        let composition = CodexExecLiveComposition(
+            controller: controller,
+            executableURL: URL(fileURLWithPath: "/usr/bin/codex"),
+            codexHome: root,
+            readinessProbe: readinessProbe,
+        )
+        let client = AiChatProviderExecutionClient.live(now: { 30004 }, composition: composition)
+        let request = providerExecutionMakeCodexRequest(workingDirectory: root)
+
+        XCTAssertEqual(client.codexControllerIdentity, composition.controllerIdentity)
+        let events = try providerExecutionCollect(client.execute(request, StoredCredentialPayload?.none))
+
+        XCTAssertEqual(events, [
+            .started(context: request.context),
+            providerExecutionStatus(request.context, "message-legacy", .answerGeneration, .began, "item.started"),
+            providerExecutionStatus(request.context, "message-legacy", .answerGeneration, .ended, "item.completed"),
+            .final(response: AiChatResponse(
+                context: request.context,
+                assistantMessage: AiChatMessage(role: .assistant, content: "Codex answer"),
+                completedAtMs: 30004,
+            )),
+        ])
+        XCTAssertEqual(runner.runCount, 1)
+    }
+
+    /// CBW-003-prepare_contextual_chat_request: legacy consumer cancellation terminates the shared process once.
+    /// 실제 live client entrypoint에서 downstream 취소가 controller cleanup까지 도달하는지 검증합니다.
+    /// - 검증 내용: readiness, 단일 spawn/terminate/cleanup, continuation 종료, 중복 final/failure 부재와 registry eviction을 확인합니다.
+    /// - 사전 조건: handshake 후 controlled Codex process가 열린 상태에서 legacy stream consumer를 취소합니다.
+    /// - 기대 결과: process와 모든 continuation이 한 번만 정리되고 provider event에 terminal emission이 없습니다.
+    func testExecute_legacyCancellation_terminatesAndEvictsOnce() async throws {
+        let root = URL(fileURLWithPath: "/tmp/cbw003-legacy-cancel", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let process = CodexExecFakeProcess(stdout: [], stderr: [], terminationStatus: 0)
+        let cleanup = XCTestExpectation(description: "legacy cleanup")
+        process.onCleanup = { cleanup.fulfill() }
+        let runner = CodexExecControlledRunner(process: process)
+        runner.initialLines = [
+            #"{"type":"thread.started","thread_id":"legacy-cancel"}"#,
+            #"{"type":"item.started","item":{"id":"message-1","type":"agent_message"}}"#,
+        ]
+        nonisolated(unsafe) var readinessInvocations = [[String]]()
+        let readiness = CodexExecReadinessProbe { _, arguments, _ in
+            readinessInvocations.append(arguments)
+            return arguments == ["--version"]
+                ? CodexExecProbeResult(exitCode: 0, stdout: "codex-cli 0.148.0\n", stderr: "")
+                : CodexExecProbeResult(exitCode: 0, stdout: "", stderr: "")
+        }
+        let controller = CodexExecProcessController(runner: runner.run)
+        let composition = CodexExecLiveComposition(
+            controller: controller,
+            executableURL: URL(fileURLWithPath: "/tmp/codex"),
+            codexHome: root,
+            readinessProbe: readiness,
+        )
+        let client = AiChatProviderExecutionClient.live(composition: composition)
+        let request = providerExecutionMakeCodexRequest(workingDirectory: root)
+        let stream = try client.execute(request, nil)
+        let progressed = XCTestExpectation(description: "legacy handshake consumed")
+        let consumer = Task { () -> [AiChatProviderExecutionEvent] in
+            var events: [AiChatProviderExecutionEvent] = []
+            for try await event in stream {
+                events.append(event)
+                if case .status = event { progressed.fulfill() }
+            }
+            return events
+        }
+
+        await runner.waitUntilReady()
+        await fulfillment(of: [progressed], timeout: 1)
+        consumer.cancel()
+        let events = try await consumer.value
+        await fulfillment(of: [cleanup], timeout: 1)
+
+        XCTAssertEqual(readinessInvocations, [["--version"], ["login", "status"]])
+        XCTAssertEqual(runner.process.terminationCount, 1)
+        XCTAssertEqual(runner.process.cleanupCount, 1)
+        XCTAssertEqual(runner.runCount, 1)
+        XCTAssertFalse(events.contains { if case .final = $0 { return true }
+            return false
+        })
+        XCTAssertFalse(events.contains { if case .failed = $0 { return true }
+            return false
+        })
+        let registryCounts = await controller.debugRegistryCounts()
+        XCTAssertEqual(registryCounts.fresh, 0)
+    }
 }
 
 extension CBW003ProviderExecutionRoutingTests {
@@ -605,12 +722,12 @@ extension CBW003ProviderExecutionRoutingTests {
     /// - 검증 내용: registry executor의 quotaExceeded failure event를 그대로 수집합니다.
     /// - 사전 조건: OpenAI request와 실패 이벤트를 방출하는 registry executor를 사용합니다.
     /// - 기대 결과: started 이후 quotaExceeded failed event가 반환됩니다.
-    /// CBW-003-prepare_contextual_chat_request: Codex App Server typed notifications가 execution stream으로 라우팅된다.
-    /// injectable executor seam이 reasoning/search/tool/retry/answer lifecycle을 explicit notification으로 전달하는지 검증합니다.
+    /// CBW-003-prepare_contextual_chat_request: Codex exec JSONL events가 execution stream으로 라우팅된다.
+    /// injectable executor seam이 reasoning/search/tool/retry/answer lifecycle을 compatibility mapper로 전달하는지 검증합니다.
     /// - 검증 내용: activity ID, begin/end ordering, retry boundary evidence, text delta/final을 확인합니다.
-    /// - 사전 조건: App Server notification sequence를 방출하는 Codex executor fixture를 사용합니다.
+    /// - 사전 조건: Codex exec JSONL event sequence를 방출하는 Codex executor fixture를 사용합니다.
     /// - 기대 결과: status는 typed notification에서만 발생하고 retry는 다음 explicit item boundary에서 종료됩니다.
-    func testExecute_chatgptCodexAppServerNotifications_emitTypedActivities() throws {
+    func testExecute_chatgptCodexExecJSONLEvents_emitTypedActivities() throws {
         let request = providerExecutionMakeRequest(provider: .chatgptCodex, rawModelID: "gpt-5-codex")
         let client = AiChatProviderExecutionClient.live(
             now: { 30003 },
@@ -626,239 +743,6 @@ extension CBW003ProviderExecutionRoutingTests {
         ))
 
         XCTAssertEqual(events, codexTypedActivityExpectedEvents(context: request.context))
-    }
-
-    /// CBW-003-stream_contextual_chat_response: completed agent message만 수신해도 최종 응답을 보존한다.
-    /// Codex App Server가 delta 없이 completed item text만 전달하는 정상 경로를 검증합니다.
-    /// - 검증 내용: `item/completed.item.text`가 최종 assistant text의 authoritative source로 사용됩니다.
-    /// - 사전 조건: agentMessage completed notification과 completed turn만 수신합니다.
-    /// - 기대 결과: completed text가 비어 있지 않은 최종 응답으로 반환됩니다.
-    func testCodexAppServerFinalText_completedOnlyUsesAuthoritativeItemText() throws {
-        let finalText = try providerExecutionCodexAppServerFinalText([
-            #"""
-            {"method":"item/completed","params":{
-                "item":{"id":"message-1","type":"agentMessage","text":"Hello"}
-            }}
-            """#,
-            #"{"method":"turn/completed","params":{"turn":{"id":"turn-1","status":"completed"}}}"#,
-        ])
-
-        XCTAssertEqual(finalText, "Hello")
-    }
-
-    /// CBW-003-stream_contextual_chat_response: completed text는 같은 item의 delta 누적을 대체한다.
-    /// 부분 delta와 authoritative completed text가 함께 와도 응답이 중복되지 않는지 검증합니다.
-    /// - 검증 내용: completed text가 동일 item의 accumulated delta를 교체하고 새 delta로 방출되지 않습니다.
-    /// - 사전 조건: 한 agentMessage item에 delta와 completed text를 차례로 전달합니다.
-    /// - 기대 결과: 최종 응답은 completed text 한 번만 포함합니다.
-    func testCodexAppServerFinalText_completedTextReplacesSameItemDeltasWithoutDuplication() throws {
-        let finalText = try providerExecutionCodexAppServerFinalText([
-            #"{"method":"item/agentMessage/delta","params":{"itemId":"message-1","delta":"Hel"}}"#,
-            #"""
-            {"method":"item/completed","params":{
-                "item":{"id":"message-1","type":"agentMessage","text":"Hello"}
-            }}
-            """#,
-            #"{"method":"turn/completed","params":{"turn":{"id":"turn-1","status":"completed"}}}"#,
-        ])
-
-        XCTAssertEqual(finalText, "Hello")
-    }
-
-    /// CBW-003-stream_contextual_chat_response: 여러 agent message item의 최종 text 순서를 보존한다.
-    /// item 완료 순서가 뒤집혀도 시작 순서 기준으로 응답을 조립하는지 검증합니다.
-    /// - 검증 내용: item ID order와 item별 authoritative completed text를 독립적으로 유지합니다.
-    /// - 사전 조건: 두 item을 순서대로 시작한 뒤 역순으로 completed notification을 전달합니다.
-    /// - 기대 결과: 최종 응답은 item 시작 순서대로 결합됩니다.
-    func testCodexAppServerFinalText_multipleAgentMessageItemsPreserveItemOrder() throws {
-        let finalText = try providerExecutionCodexAppServerFinalText([
-            #"{"method":"item/started","params":{"item":{"id":"message-1","type":"agentMessage"}}}"#,
-            #"{"method":"item/started","params":{"item":{"id":"message-2","type":"agentMessage"}}}"#,
-            #"{"method":"item/completed","params":{"item":{"id":"message-2","type":"agentMessage","text":"Second"}}}"#,
-            #"{"method":"item/completed","params":{"item":{"id":"message-1","type":"agentMessage","text":"First"}}}"#,
-            #"{"method":"turn/completed","params":{"turn":{"id":"turn-1","status":"completed"}}}"#,
-        ])
-
-        XCTAssertEqual(finalText, "FirstSecond")
-    }
-
-    /// CBW-003-stream_contextual_chat_response: duplicate completed notification은 최종 응답에 한 번만 반영한다.
-    /// App Server가 동일 item completion을 재전송해도 응답이 증식하지 않는지 검증합니다.
-    /// - 검증 내용: item ID별 completed text assignment가 idempotent한지 확인합니다.
-    /// - 사전 조건: 같은 agentMessage completed notification을 두 번 전달합니다.
-    /// - 기대 결과: 최종 응답에는 completed text가 한 번만 포함됩니다.
-    func testCodexAppServerFinalText_duplicateCompletedItemIsIdempotent() throws {
-        let completed = #"""
-        {"method":"item/completed","params":{
-            "item":{"id":"message-1","type":"agentMessage","text":"Hello"}
-        }}
-        """#
-        let finalText = try providerExecutionCodexAppServerFinalText([
-            completed,
-            completed,
-            #"{"method":"turn/completed","params":{"turn":{"id":"turn-1","status":"completed"}}}"#,
-        ])
-
-        XCTAssertEqual(finalText, "Hello")
-    }
-
-    /// CBW-003-stream_contextual_chat_response: completed text가 없는 item은 accumulated delta를 사용한다.
-    /// 구버전 또는 부분 App Server payload에서도 기존 streaming 응답을 보존하는지 검증합니다.
-    /// - 검증 내용: nil completed text일 때만 동일 item의 delta fallback을 선택합니다.
-    /// - 사전 조건: agentMessage delta 뒤 text가 없는 completed notification을 전달합니다.
-    /// - 기대 결과: 최종 응답은 누적 delta와 일치합니다.
-    func testCodexAppServerFinalText_itemWithoutCompletedTextFallsBackToDeltas() throws {
-        let finalText = try providerExecutionCodexAppServerFinalText([
-            #"{"method":"item/agentMessage/delta","params":{"itemId":"message-1","delta":"Hel"}}"#,
-            #"{"method":"item/agentMessage/delta","params":{"itemId":"message-1","delta":"lo"}}"#,
-            #"{"method":"item/completed","params":{"item":{"id":"message-1","type":"agentMessage"}}}"#,
-            #"{"method":"turn/completed","params":{"turn":{"id":"turn-1","status":"completed"}}}"#,
-        ])
-
-        XCTAssertEqual(finalText, "Hello")
-    }
-
-    /// CBW-003-prepare_contextual_chat_request: Codex App Server parser는 unknown을 무시하고 malformed known을 실패시킨다.
-    /// protocol evolution과 손상된 known event를 구분해 forward compatibility와 classified failure를 함께 보장합니다.
-    /// - 검증 내용: unknown 처리, malformed validation, agentMessage 전용 completed text parsing을 확인합니다.
-    /// - 사전 조건: unknown notification, unknown item, agent/reasoning completed item, 손상된 known notification을 사용합니다.
-    /// - 기대 결과: agentMessage만 text를 보존하고 unknown은 무시되며 malformed known event는 실패합니다.
-    func testCodexAppServerParser_ignoresUnknownAndRejectsMalformedKnownEvents() throws {
-        XCTAssertNil(try AiChatProviderExecutionClient.codexAppServerEvent(
-            fromJSONLine: #"{"method":"future/event","params":{"secret":"must-not-log"}}"#,
-        ))
-        XCTAssertNil(try AiChatProviderExecutionClient.codexAppServerEvent(
-            fromJSONLine: #"""
-            {"method":"item/started","params":{
-                "threadId":"t","turnId":"u","startedAtMs":1,
-                "item":{"id":"future-1","type":"futureItem"}
-            }}
-            """#,
-        ))
-        XCTAssertEqual(try AiChatProviderExecutionClient.codexAppServerEvent(
-            fromJSONLine: #"""
-            {"method":"item/completed","params":{
-                "item":{"id":"message-1","type":"agentMessage","text":"Hello"}
-            }}
-            """#,
-        ), .itemCompleted(
-            id: "message-1",
-            kind: .agentMessage(phase: nil),
-            completedText: "Hello",
-            providerEventType: "item/completed",
-        ))
-        XCTAssertEqual(try AiChatProviderExecutionClient.codexAppServerEvent(
-            fromJSONLine: #"""
-            {"method":"item/completed","params":{
-                "item":{"id":"reason-1","type":"reasoning","text":"Ignored"}
-            }}
-            """#,
-        ), .itemCompleted(
-            id: "reason-1",
-            kind: .reasoning,
-            completedText: nil,
-            providerEventType: "item/completed",
-        ))
-        XCTAssertThrowsError(try AiChatProviderExecutionClient.codexAppServerEvent(
-            fromJSONLine: #"""
-            {"method":"item/started","params":{
-                "threadId":"t","turnId":"u","startedAtMs":1,
-                "item":{"type":"reasoning"}
-            }}
-            """#,
-        )) { error in
-            XCTAssertEqual(error as? CodexAppServerParsingError, .malformedKnownEvent("item/started"))
-        }
-    }
-
-    /// CBW-003-prepare_contextual_chat_request: Codex JSONL buffer는 split UTF-8 scalar를 보존한다.
-    /// Pipe chunk가 한글 byte 중간에서 나뉘어도 complete notification이 유실되지 않는지 검증합니다.
-    /// - 검증 내용: byte accumulator가 newline 전까지 Data를 보존하고 원문 JSON line을 복원하는지 확인합니다.
-    /// - 사전 조건: agent message delta의 한글 scalar 내부를 기준으로 두 chunk로 나눕니다.
-    /// - 기대 결과: 첫 chunk는 line을 만들지 않고 두 번째 chunk 뒤 정확한 한 줄을 반환합니다.
-    func testCodexJSONLineBuffer_preservesSplitUTF8Scalar() throws {
-        let line = #"""
-        {"method":"item/agentMessage/delta","params":{
-            "threadId":"t","turnId":"u","itemId":"i","delta":"한글"
-        }}
-        """#
-        let normalizedLine = line.split(whereSeparator: \.isNewline).joined()
-        let bytes = Data((normalizedLine + "\n").utf8)
-        let scalarStart = try XCTUnwrap(bytes.firstRange(of: Data("한".utf8)))
-        let splitIndex = scalarStart.lowerBound + 1
-        let buffer = CodexJSONLineBuffer()
-
-        XCTAssertTrue(try buffer.append(Data(bytes[..<splitIndex])).isEmpty)
-        let lines = try buffer.append(Data(bytes[splitIndex...]))
-
-        XCTAssertEqual(lines, [Data(normalizedLine.utf8)])
-        XCTAssertNil(buffer.finish())
-    }
-
-    /// CBW-003-prepare_contextual_chat_request: Codex completed notification은 terminal status만 허용한다.
-    /// known terminal method의 invalid/in-progress status가 무한 대기로 이어지지 않고 malformed로 분류되는지 검증합니다.
-    /// - 검증 내용: `turn/completed`의 inProgress status가 malformed known error인지 확인합니다.
-    /// - 사전 조건: schema에는 존재하지만 completed notification에는 부적절한 inProgress status를 사용합니다.
-    /// - 기대 결과: parser가 `malformedKnownEvent("turn/completed")`를 던집니다.
-    func testCodexAppServerParser_rejectsNonterminalCompletedStatus() {
-        XCTAssertThrowsError(try AiChatProviderExecutionClient.codexAppServerEvent(
-            fromJSONLine: #"""
-            {"method":"turn/completed","params":{
-                "threadId":"t","turn":{"id":"u","items":[],"status":"inProgress"}
-            }}
-            """#,
-        )) { error in
-            XCTAssertEqual(error as? CodexAppServerParsingError, .malformedKnownEvent("turn/completed"))
-        }
-    }
-
-    /// CBW-003-prepare_contextual_chat_request: Codex process는 공식 App Server stdio 명령을 사용한다.
-    /// transport migration이 legacy `exec --json` argument로 회귀하지 않는지 검증합니다.
-    /// - 검증 내용: command argument가 app-server stdio이고 exec/json/output-last-message가 없는지 확인합니다.
-    /// - 사전 조건: 설치된 Codex 0.144.5가 제공하는 app-server CLI 계약을 사용합니다.
-    /// - 기대 결과: arguments는 `app-server --listen stdio://`만 포함합니다.
-    func testCodexArguments_useOfficialAppServerStdioInterface() {
-        let arguments = AiChatProviderExecutionClient.codexArguments()
-
-        XCTAssertEqual(arguments, ["app-server", "--listen", "stdio://"])
-        XCTAssertFalse(arguments.contains("exec"))
-        XCTAssertFalse(arguments.contains("--json"))
-        XCTAssertFalse(arguments.contains("--output-last-message"))
-    }
-
-    /// CBW-003-prepare_contextual_chat_request: reference-only Codex chat은 선택 경로 profile만 사용한다.
-    /// approval prompt가 없는 실행에서도 비선택 workspace 파일을 읽지 못하도록 thread 권한을 검증합니다.
-    func testCodexAppServerDriver_startsReferenceChatWithSelectedPermissionProfile() throws {
-        let inputPipe = Pipe()
-        let driver = CodexAppServerProtocolDriver(
-            input: inputPipe.fileHandleForWriting,
-            model: "gpt-5-codex",
-            prompt: "Summarize this project",
-            thinking: nil,
-            workingDirectory: URL(fileURLWithPath: "/tmp/VoyagerCodexSession"),
-            onEvent: { _ in },
-            onComplete: { _ in },
-        )
-
-        try driver.start()
-        let initialization = try providerExecutionReadJSONRequests(
-            from: inputPipe.fileHandleForReading,
-            expectedCount: 1,
-        )
-        driver.append(Data("{\"id\":1,\"result\":{}}\n".utf8))
-        let requests = try providerExecutionReadJSONRequests(
-            from: inputPipe.fileHandleForReading,
-            expectedCount: 2,
-        )
-        let threadStart = try XCTUnwrap(requests.first { $0["method"] as? String == "thread/start" })
-        let params = try XCTUnwrap(threadStart["params"] as? [String: Any])
-        let initializeParams = try XCTUnwrap(initialization.first?["params"] as? [String: Any])
-        let capabilities = try XCTUnwrap(initializeParams["capabilities"] as? [String: Any])
-        XCTAssertEqual(capabilities["experimentalApi"] as? Bool, true)
-        XCTAssertEqual(params["approvalPolicy"] as? String, "never")
-        XCTAssertEqual(params["permissions"] as? String, "voyager-reference")
-        XCTAssertEqual(params["cwd"] as? String, "/tmp/VoyagerCodexSession")
-        XCTAssertNil(params["sandbox"])
     }
 
     func testExecute_registryExecutorFailureEvent_preservesFailureSurface() throws {
