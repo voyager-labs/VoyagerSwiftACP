@@ -32,6 +32,55 @@ extension EVM002ManageEntriesViewPresentationTests {
         XCTAssertEqual(node?.generation, 4)
     }
 
+    /// EVM-002-toggle_directory_expansion_in_list: identity replacement action owns source staging inside
+    /// EntryViewLayout.
+    /// FileManager supplies only an immutable before/after plan; the widget installs/cancels the source hold
+    /// without exposing hierarchy mutators to the page reducer.
+    /// - 검증 내용: begin action이 source folder hold를 만들고 cancel action이 orphan 없이 정리하는지 확인한다.
+    /// - 사전 조건: source/destination expanded folder와 source child identity pair가 있다.
+    /// - 기대 결과: action 경계 뒤 source deferred replacement가 생성·정리되고 hierarchy snapshot은 유지된다.
+    func testIdentityReplacementActionOwnsSourceHoldLifecycle() async {
+        let source = EntryModel.temporaryFolder(id: "/root/source", name: "source")
+        let destination = EntryModel.temporaryFolder(id: "/root/destination", name: "destination")
+        let before = replacementReloadFile(id: "/root/source/before.txt", name: "before.txt")
+        var state = EntryViewLayoutState()
+        state.entries = [source, destination]
+        state.hierarchy = .init(rootPath: "/root")
+        state.hierarchy.nodesByID[source.id] = .init(
+            folder: .init(children: [before]),
+            expansionIntent: true,
+            generation: 2,
+            loadPhase: .loadingCore,
+        )
+        state.hierarchy.nodesByID[destination.id] = .init(
+            expansionIntent: true,
+            generation: 2,
+            loadPhase: .loadingCore,
+        )
+        state.hierarchy.setExpandedIDs([source.id, destination.id])
+        let transactionID = UUID()
+        let plan = EntryIdentityReplacementPlan(
+            transactionID: transactionID,
+            rootPath: "/root",
+            pairs: [
+                .init(
+                    beforePath: before.id,
+                    afterPath: "/root/destination/after.txt",
+                ),
+            ],
+        )
+        let store = TestStore(initialState: state) { EntryViewLayoutFeature() }
+        store.exhaustivity = .off
+
+        await store.send(.identityReplacement(.begin(plan)))
+        XCTAssertNotNil(store.state.hierarchy.deferredFolderReplacement(folderID: source.id))
+        XCTAssertEqual(store.state.identityReplacement?.plan.transactionID, transactionID)
+
+        await store.send(.identityReplacement(.cancel(id: transactionID, reason: .superseded)))
+        XCTAssertNil(store.state.hierarchy.deferredFolderReplacement(folderID: source.id))
+        XCTAssertNil(store.state.identityReplacement)
+    }
+
     /// EVM-002-replacement_reload_snapshot_retention: 대체 재로드 재진입도 마지막 완전 스냅샷을 유지한다.
     /// - 검증 내용: 첫 재로드 뒤 같은 폴더를 다시 무효화해도 retained children과 선택을 보존한다.
     /// - 사전 조건: 선택된 child를 가진 완료 폴더가 첫 대체 재로드로 loadingCore 상태에 진입했다.

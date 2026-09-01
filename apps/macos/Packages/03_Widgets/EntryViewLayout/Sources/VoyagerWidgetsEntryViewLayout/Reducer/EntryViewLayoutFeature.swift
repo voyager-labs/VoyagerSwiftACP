@@ -41,6 +41,13 @@ public struct EntryViewLayoutFeature {
     }
 
     public var body: some Reducer<State, Action> {
+        Reduce { state, action in
+            guard case let .entryOperations(.lifecycle(.entryActionCompleted(record))) = action else {
+                return .none
+            }
+            return beginIdentityReplacementFromRecord(record, state: &state)
+        }
+
         Scope(state: \.entryOperations, action: \.entryOperations) {
             EntryOperationsFeature()
         }
@@ -57,6 +64,9 @@ public struct EntryViewLayoutFeature {
 
         Reduce { state, action in
             switch action {
+            case let .identityReplacement(identityAction):
+                return handleIdentityReplacementAction(identityAction, state: &state)
+
             case let .internal(.setSelectionState(ids, lastSelectedId, rangeAnchorId, shouldScrollToSelection)):
                 return setSelectionState(
                     ids: ids,
@@ -279,6 +289,8 @@ public struct EntryViewLayoutFeature {
 
             case let .view(.applyContentProjection(projection)):
                 let previousSelectedIds = state.selectedIds
+                let replacementEffect = applyIdentityReplacementEntries(projection.entries, state: &state)
+                let replacementChangedSelection = state.selectedIds != previousSelectedIds
                 state.entries = projection.entries
                 state.trashDirectoryPath = projection.trashDirectoryPath
                 state.entryOperations.isLoading = projection.isLoading
@@ -294,10 +306,10 @@ public struct EntryViewLayoutFeature {
                 {
                     reconcileEffects.append(.send(.delegate(.renameCanceled)))
                 }
-                if previousSelectedIds != state.selectedIds {
+                if previousSelectedIds != state.selectedIds, !replacementChangedSelection {
                     reconcileEffects.append(.send(.delegate(.selectionChanged)))
                 }
-                return .merge(reconcileEffects)
+                return .merge(reconcileEffects + [replacementEffect])
 
             case let .internal(.setCollectionMode(isCollectionMode)):
                 state.isCollectionMode = isCollectionMode
@@ -467,12 +479,19 @@ public struct EntryViewLayoutFeature {
                 return .none
 
             case let .entryOperations(entryOperationsAction):
+                let replacementEffect = handleIdentityReplacementEntryOperationsAction(
+                    entryOperationsAction,
+                    state: &state,
+                )
                 switch entryOperationsAction {
                 case .loading(.itemsLoaded),
                      .loading(.itemsLoadFailed):
-                    return Self.updateEntriesAndReapply(&state)
+                    return .merge(
+                        Self.updateEntriesAndReapply(&state),
+                        replacementEffect,
+                    )
                 default:
-                    return .none
+                    return replacementEffect
                 }
 
             case let .entryArrangements(entryArrangementsAction):
@@ -489,8 +508,8 @@ public struct EntryViewLayoutFeature {
                     return .none
                 }
 
-            case .hierarchy:
-                return .none
+            case let .hierarchy(hierarchyAction):
+                return handleIdentityReplacementHierarchyAction(hierarchyAction, state: &state)
             }
         }
     }
@@ -515,4 +534,197 @@ public struct EntryViewLayoutFeature {
     }
 
     // MARK: - Helpers
+
+    private func beginIdentityReplacementFromRecord(
+        _ record: EntryActionRecord,
+        state: inout State,
+    ) -> Effect<Action> {
+        guard !state.isCollectionMode,
+              !state.hierarchy.rootPath.isEmpty,
+              record.operationKind == .rename || record.operationKind == .pasteFileMove
+        else {
+            return .none
+        }
+        let rootPath = canonicalizedPath(state.hierarchy.rootPath)
+        let selectedPaths = Set(state.selectedIds.map(canonicalizedPath))
+        let pairs = record.targets.compactMap { target -> EntryIdentityReplacementPair? in
+            guard let beforePath = target.beforePath,
+                  let afterPath = target.afterPath,
+                  selectedPaths.contains(canonicalizedPath(beforePath)),
+                  isSameOrDescendant(path: canonicalizedPath(beforePath), of: rootPath),
+                  record.targets.count(where: {
+                      guard let candidate = $0.beforePath else { return false }
+                      return canonicalizedPath(candidate) == canonicalizedPath(beforePath)
+                  }) == 1,
+                  canonicalizedPath(beforePath) != canonicalizedPath(afterPath)
+            else { return nil }
+            return .init(
+                beforePath: canonicalizedPath(beforePath),
+                afterPath: canonicalizedPath(afterPath),
+                beforeLexicalPath: beforePath,
+                afterLexicalPath: afterPath,
+            )
+        }
+        guard !pairs.isEmpty else { return .none }
+        return handleIdentityReplacementAction(
+            .begin(.init(
+                transactionID: record.id,
+                rootPath: canonicalizedPath(rootPath),
+                pairs: pairs,
+            )),
+            state: &state,
+        )
+    }
+
+    private func handleIdentityReplacementAction(
+        _ action: EntryIdentityReplacementAction,
+        state: inout State,
+    ) -> Effect<Action> {
+        switch action {
+        case let .begin(plan):
+            guard !plan.pairs.isEmpty,
+                  !state.hierarchy.rootPath.isEmpty,
+                  canonicalizedPath(plan.rootPath) == canonicalizedPath(state.hierarchy.rootPath)
+            else { return .none }
+            if state.identityReplacement != nil {
+                state.hierarchy.commitDeferredFolderReplacementsOnCancel()
+            }
+            state.identityReplacement = .init(plan: plan)
+            for pair in plan.pairs {
+                let beforePath = pair.beforeLexicalPath.isEmpty ? pair.beforePath : pair.beforeLexicalPath
+                guard let sourceID = state.hierarchy.nodesByID.keys.first(where: {
+                    standardizedPath(parentPath(for: beforePath)) == standardizedPath($0)
+                }) else { continue }
+                let afterPath = pair.afterLexicalPath.isEmpty ? pair.afterPath : pair.afterLexicalPath
+                let destinationPath = standardizedPath(parentPath(for: afterPath))
+                guard standardizedPath(sourceID) != destinationPath else { continue }
+                state.identityReplacement?.sourceFolderIDs.insert(sourceID)
+                state.hierarchy.beginDeferredFolderReplacement(
+                    folderID: sourceID,
+                    untilEntryID: afterPath,
+                    holdsUntilMigration: true,
+                )
+            }
+            return .none
+
+        case let .cancel(id, _):
+            guard state.identityReplacement?.plan.transactionID == id else { return .none }
+            let previousSelection = state.selectedIds
+            state.identityReplacement = nil
+            state.hierarchy.commitDeferredFolderReplacementsOnCancel()
+            state.reconcileSelectionWithVisibleEntries()
+            guard previousSelection != state.selectedIds else { return .none }
+            return .send(.delegate(.selectionChanged))
+
+        case let .settle(id, _):
+            guard state.identityReplacement?.plan.transactionID == id else { return .none }
+            let previousSelection = state.selectedIds
+            state.identityReplacement = nil
+            state.hierarchy.commitDeferredFolderReplacementsOnCancel()
+            state.reconcileSelectionWithVisibleEntries()
+            guard previousSelection != state.selectedIds else { return .none }
+            return .send(.delegate(.selectionChanged))
+        }
+    }
+
+    private func handleIdentityReplacementEntryOperationsAction(
+        _ action: EntryOperationsFeature.Action,
+        state: inout State,
+    ) -> Effect<Action> {
+        switch action {
+        case let .loading(.itemsLoaded(items)):
+            applyIdentityReplacementEntries(items, state: &state)
+        default:
+            .none
+        }
+    }
+
+    private func handleIdentityReplacementHierarchyAction(
+        _ action: EntryListHierarchyAction,
+        state: inout State,
+    ) -> Effect<Action> {
+        guard case let .folderChildrenResponse(_, _, _, response) = action,
+              case let .event(.coreBatch(items, _)) = response
+        else { return .none }
+        return applyIdentityReplacementEntries(items, state: &state)
+    }
+
+    private func applyIdentityReplacementEntries(
+        _ entries: [EntryModel],
+        state: inout State,
+    ) -> Effect<Action> {
+        guard var replacement = state.identityReplacement else { return .none }
+        let previousSelection = state.selectedIds
+        let previousLastSelectedID = state.lastSelectedId
+        let previousRangeAnchorID = state.rangeAnchorId
+
+        for (index, pair) in replacement.plan.pairs.enumerated() {
+            let afterPath = pair.afterLexicalPath.isEmpty ? pair.afterPath : pair.afterLexicalPath
+            guard entries.contains(where: { standardizedPath($0.id) == standardizedPath(afterPath) }) else {
+                continue
+            }
+            replacement.projectedPairIndexes.insert(index)
+
+            let beforePath = pair.beforeLexicalPath.isEmpty ? pair.beforePath : pair.beforeLexicalPath
+            guard let beforeID = state.selectedIds.first(where: {
+                standardizedPath($0) == standardizedPath(beforePath)
+            }),
+                let afterID = entries.first(where: {
+                    standardizedPath($0.id) == standardizedPath(afterPath)
+                })?.id
+            else { continue }
+            state.selectedIds.remove(beforeID)
+            state.selectedIds.insert(afterID)
+            if state.lastSelectedId == beforeID {
+                state.lastSelectedId = afterID
+            }
+            if state.rangeAnchorId == beforeID {
+                state.rangeAnchorId = afterID
+            }
+        }
+
+        state.identityReplacement = replacement
+        let allProjected = replacement.projectedPairIndexes.count == replacement.plan.pairs.count
+        let hasOwnedDeferredReplacement = replacement.sourceFolderIDs.contains {
+            state.hierarchy.deferredFolderReplacement(folderID: $0) != nil
+        }
+        guard allProjected, !hasOwnedDeferredReplacement else {
+            guard previousSelection != state.selectedIds
+                || previousLastSelectedID != state.lastSelectedId
+                || previousRangeAnchorID != state.rangeAnchorId
+            else { return .none }
+            return .send(.delegate(.selectionChanged))
+        }
+
+        let transactionID = replacement.plan.transactionID
+        state.identityReplacement = nil
+        var effects: [Effect<Action>] = [
+            .send(.delegate(.identityReplacementSettled(id: transactionID, outcome: .completed))),
+        ]
+        if previousSelection != state.selectedIds
+            || previousLastSelectedID != state.lastSelectedId
+            || previousRangeAnchorID != state.rangeAnchorId
+        {
+            effects.insert(.send(.delegate(.selectionChanged)), at: 0)
+        }
+        return .merge(effects)
+    }
+
+    private func standardizedPath(_ path: String) -> String {
+        URL(fileURLWithPath: path).standardizedFileURL.path
+    }
+
+    private func canonicalizedPath(_ path: String) -> String {
+        URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath().path
+    }
+
+    private func parentPath(for path: String) -> String {
+        URL(fileURLWithPath: path).standardizedFileURL.deletingLastPathComponent().path
+    }
+
+    private func isSameOrDescendant(path: String, of ancestor: String) -> Bool {
+        let pathComponents = URL(fileURLWithPath: path).pathComponents
+        let ancestorComponents = URL(fileURLWithPath: ancestor).pathComponents
+        return pathComponents.starts(with: ancestorComponents)
+    }
 }

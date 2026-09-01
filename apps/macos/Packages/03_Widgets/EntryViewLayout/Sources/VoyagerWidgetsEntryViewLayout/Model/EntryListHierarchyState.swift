@@ -192,16 +192,36 @@ public struct EntryListHierarchyState: Equatable, Sendable {
                 remaining[folderID] = nil
                 continue
             }
+            if replacement.holdsUntilMigration,
+               node.folder.hasAppliedContentBatch,
+               replacement.stagedChildren.isEmpty
+            {
+                // A source that was already complete may have received a migration hold
+                // before any replacement batch arrived. Do not overwrite its authoritative
+                // children with an empty staging snapshot when the identity transition ends.
+                remaining[folderID] = nil
+                continue
+            }
             if case .failed = node.loadPhase {
                 remaining[folderID] = nil
                 continue
             }
             if replacement.holdsUntilMigration, !node.folder.coreFinished {
-                // 전이가 취소되어도 source stream은 계속될 수 있다. migration hold만
-                // 해제하고 staging과 소비한 cursor는 유지해 후속 batch를 누적한다.
-                var releasedReplacement = replacement
-                releasedReplacement.migrationCompleted = true
-                remaining[folderID] = releasedReplacement
+                // identity transition이 취소되어도 이미 소비한 cursor는 되돌릴 수 없다.
+                // 아직 아무 batch도 소비하지 않았다면 hold를 제거하고, 소비한 batch가
+                // 있으면 migration 전용 owner만 generic replacement로 넘긴다. transition이
+                // 사라진 뒤 holdsUntilMigration=true가 남으면 다음 terminal의 owner 없는
+                // staging이 되어 영구적으로 child projection을 가로막는다.
+                guard !replacement.stagedChildren.isEmpty || node.folder.expectedBatchIndex > 0 else {
+                    remaining[folderID] = nil
+                    continue
+                }
+                remaining[folderID] = .init(
+                    untilEntryID: replacement.untilEntryID,
+                    stagedChildren: replacement.stagedChildren,
+                    holdsUntilMigration: false,
+                    migrationCompleted: true,
+                )
                 continue
             } else if replacement.stagedChildren.isEmpty, !node.folder.coreFinished {
                 remaining[folderID] = nil
