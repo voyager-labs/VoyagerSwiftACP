@@ -191,6 +191,24 @@ extension EVM002ManageEntriesViewPresentationTests {
         XCTAssertFalse(titles.contains("Select Group"))
     }
 
+    /// EVM-002-update_entry_selection: collapsed single-entry group context menu disables Rename.
+    /// 접힌 그룹의 hidden child를 일반 Entry rename target처럼 노출하지 않는지 검증한다.
+    /// - 검증 내용: 단일 child를 가진 collapsed group의 Rename menu item이 비활성화된다.
+    /// - 사전 조건: Alpha group이 child 하나를 가지고 collapsed 상태이며 group row를 우클릭한다.
+    /// - 기대 결과: 그룹 context menu의 Rename은 disabled이고 일반 Entry 메뉴 계약은 유지된다.
+    func testCollapsedSingleEntryGroupDisablesRenameInContextMenu() throws {
+        let entry = makePresentationFile(id: "/root/child.txt", name: "child.txt")
+        let fixture = Task4Fixture(entries: [entry], groups: [("Alpha", [entry])])
+        let groupItem = try XCTUnwrap(fixture.coordinator.groupItemByName["Alpha"])
+        fixture.tableView.collapseItem(groupItem)
+        let groupRow = try fixture.groupRow(named: "Alpha")
+        let event = try fixture.event(row: groupRow, type: .rightMouseDown)
+        let menu = fixture.coordinator.contextMenu(forRow: groupRow, event: event)
+
+        let renameItem = try XCTUnwrap(menu.item(withTitle: "Rename"))
+        XCTAssertFalse(renameItem.isEnabled)
+    }
+
     /// EVM-002-update_entry_selection: ordinary Entry 입력은 native toggle/range와 기존 action/data-source 경로를 보존한다.
     func testGroupedSelectionPathPreservesNativeEntryClickDoubleClickDragAndRename() throws {
         let entries = ["a", "b", "c", "d"].map {

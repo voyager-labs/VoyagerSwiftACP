@@ -583,7 +583,12 @@ extension EntryListCoordinator: EntryListView.EntryListTableViewContextMenuProvi
         )
         contextMenuCoordinator = coordinator
         return coordinator.observeOpenWithMenu(EntryContextMenuBuilder.makeMenu(
-            configuration: makeMenuConfiguration(target: target, menuSpec: menuSpec, coordinator: coordinator),
+            configuration: makeMenuConfiguration(
+                target: target,
+                menuSpec: menuSpec,
+                coordinator: coordinator,
+                canRename: rowEntry != nil,
+            ),
         ))
     }
 
@@ -615,6 +620,7 @@ extension EntryListCoordinator: EntryListView.EntryListTableViewContextMenuProvi
         target: EntryContextMenuTarget,
         menuSpec: EntryContextMenuSpec,
         coordinator: EntryContextMenuCoordinator,
+        canRename: Bool,
     ) -> EntryContextMenuBuilder.Configuration {
         .init(
             target: coordinator,
@@ -636,6 +642,7 @@ extension EntryListCoordinator: EntryListView.EntryListTableViewContextMenuProvi
                     busyEntryPaths: Set(state.entryOperations.itemStates.filter(\.value.isBusy).map(\.key)),
                 ),
             isOpenWithApplicationsLoading: menuSpec.isOpenWithApplicationsLoading,
+            canRename: canRename,
         )
     }
 

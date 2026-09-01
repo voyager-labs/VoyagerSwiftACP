@@ -22,6 +22,7 @@ enum EntryContextMenuBuilder {
         let knownTags: [EntryContextMenuTagSpec]
         let canPerformEntryCommands: Bool
         let isOpenWithApplicationsLoading: Bool
+        let canRename: Bool
 
         init(
             target: EntryContextMenuCoordinator,
@@ -40,6 +41,7 @@ enum EntryContextMenuBuilder {
             knownTags: [EntryContextMenuTagSpec],
             canPerformEntryCommands: Bool,
             isOpenWithApplicationsLoading: Bool = false,
+            canRename: Bool = true,
         ) {
             self.target = target
             self.selectedCount = selectedCount
@@ -57,6 +59,7 @@ enum EntryContextMenuBuilder {
             self.knownTags = knownTags
             self.canPerformEntryCommands = canPerformEntryCommands
             self.isOpenWithApplicationsLoading = isOpenWithApplicationsLoading
+            self.canRename = canRename
         }
     }
 
@@ -273,7 +276,7 @@ enum EntryContextMenuBuilder {
             target: configuration.target,
         )
         renameItem.keyEquivalent = "\r"
-        renameItem.isEnabled = configuration.selectedCount == 1
+        renameItem.isEnabled = configuration.canRename && configuration.selectedCount == 1
         menu.addItem(renameItem)
     }
 
