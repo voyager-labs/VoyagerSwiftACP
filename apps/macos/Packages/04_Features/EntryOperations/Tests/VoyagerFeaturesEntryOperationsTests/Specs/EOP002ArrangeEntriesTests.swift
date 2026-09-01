@@ -461,6 +461,67 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
     }
 
+    /// EOP-002-paste_entries: 수용된 metadata-bearing same-parent Cut Paste가 취소 terminal 하나로 끝나는지 검증한다.
+    /// 같은 부모의 두 source를 붙여넣을 때 command metadata와 aggregate terminal을 보존한다.
+    /// - 검증 내용: operation ID/source, pasteFileMove, attempted/cancelled 2, 빈 target과 zero mutation을 확인한다.
+    /// - 사전 조건: 비어 있지 않은 두 source가 destination과 같은 부모에 있고 accepted Cut Paste command를 보낸다.
+    /// - 기대 결과: entryActionCompleted terminal 정확히 한 건, operationFinished/mutation/filesystem/undo/reload 없음, source 유지.
+    func testAcceptedCutPaste_sameParentEmitsCancelledCommandTerminal() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+        let secondSource = sandbox.root.appendingPathComponent("second.txt")
+        try FileManager.default.copyItem(at: sandbox.fileURL, to: secondSource)
+        let sources = [sandbox.fileURL.path, secondSource.path]
+        let metadata = try EntryCommandMetadata(
+            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000223")),
+            interaction: .moveEntries,
+            source: .keyboardShortcut,
+        )
+        let actionRecorder = CallRecorder<EntryOperationsAction>()
+        let mutationCalls = LockIsolated(0)
+        let reloadRecorder = CallRecorder<[String]>()
+        var fileOps = EntryFileOpsClient.previewValue
+        fileOps.moveFile = { _, _ in mutationCalls.withValue { $0 += 1 } }
+        fileOps.pasteFile = { _, _ in mutationCalls.withValue { $0 += 1 } }
+        fileOps.postFileSystemChanged = reloadRecorder.record
+        let store = EntryOperationsTestSupport.makeObservedStore(
+            observeAction: actionRecorder.record,
+        ) { $0.entryFileOpsClient = fileOps }
+        // store.exhaustivity = .off: accepted command 전파의 내부 lifecycle은 recorder로 terminal 개수를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.acceptedCommand(metadata: metadata, action: .clipboard(.pasteItems(
+            sourcePaths: sources,
+            destinationPath: sandbox.root.path,
+            operation: .cut,
+            operationKind: .pasteFileMove,
+        ))))
+        await store.receive { action in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return false }
+            return record.command == metadata
+                && record.id == metadata.id
+                && record.operationKind == .pasteFileMove
+                && record.attemptedCount == 2
+                && record.cancelledCount == 2
+                && record.succeededCount == 0
+                && record.failedCount == 0
+                && record.targets.isEmpty
+        }
+        await store.finish()
+
+        XCTAssertEqual(actionRecorder.recorded.count(where: {
+            if case .lifecycle(.entryActionCompleted) = $0 { return true }
+            return false
+        }), 1)
+        XCTAssertFalse(actionRecorder.recorded.contains {
+            if case .lifecycle(.operationFinished) = $0 { return true }
+            return false
+        })
+        XCTAssertTrue(mutationCalls.value == 0 && reloadRecorder.recorded.isEmpty && store.state.undoRecords.isEmpty)
+        XCTAssertTrue(sources.allSatisfy { FileManager.default.fileExists(atPath: $0) })
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
+    }
+
     // MARK: - EOP-002-duplicate_entries
 
     /// EOP-002-duplicate_entries: 같은 디렉터리에서 중복 이름이 없는 복제본이 생성되는지 검증한다.

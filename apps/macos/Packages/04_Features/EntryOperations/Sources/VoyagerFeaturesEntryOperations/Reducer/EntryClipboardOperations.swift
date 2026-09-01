@@ -394,9 +394,16 @@ struct EntryClipboardOperationsReducer {
             entryFileOpsClient: entryFileOpsClient,
         )
         guard !destinations.isEmpty else {
-            return operation == .cut
-                ? .send(.lifecycle(.operationFinished(destinationPath, operationKind, .success(()))))
-                : .none
+            guard operation == .cut, !sourcePaths.isEmpty else { return .none }
+            return pasteDestinationsEffect(
+                [],
+                operation: operation,
+                operationKind: operationKind,
+                mutationImpactDestinationPath: mutationImpactDestinationPath,
+                cancelledCount: sourcePaths.count,
+                onCancelCleanup: onCancelCleanup,
+                secureCopy: secureCopy,
+            )
         }
 
         return pasteDestinationsEffect(
@@ -404,6 +411,7 @@ struct EntryClipboardOperationsReducer {
             operation: operation,
             operationKind: operationKind,
             mutationImpactDestinationPath: mutationImpactDestinationPath,
+            cancelledCount: 0,
             onCancelCleanup: onCancelCleanup,
             secureCopy: secureCopy,
         )
@@ -414,6 +422,7 @@ struct EntryClipboardOperationsReducer {
         operation: ClipboardOperation,
         operationKind: OperationKind,
         mutationImpactDestinationPath: String?,
+        cancelledCount initialCancelledCount: Int = 0,
         onCancelCleanup: (@MainActor @Sendable () -> Void)? = nil,
         secureCopy: SecurePlacementCopy? = nil,
     ) -> Effect<Action> {
@@ -426,7 +435,7 @@ struct EntryClipboardOperationsReducer {
         let copyLoop: @Sendable (Send<Action>) async throws -> Void = { send in
             var targets: [EntryActionRecord.Target] = []
             var failedCount = 0
-            var cancelledCount = 0
+            var cancelledCount = initialCancelledCount
             for (index, (sourceURL, destinationURL)) in destinations.enumerated() {
                 // resetForDuplicate가 effect task를 취소한 뒤에도 live pasteFile(동기 copyItem)은
                 // CancellationError를 던지지 않으므로 미시작 항목을 취소로 집계하고 중단한다.
