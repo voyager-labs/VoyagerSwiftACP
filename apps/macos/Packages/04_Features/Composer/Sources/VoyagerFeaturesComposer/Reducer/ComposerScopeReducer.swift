@@ -210,7 +210,7 @@ private func reexecuteCurrentCollectionSearch(
         return .send(.applyFilters)
     }
 
-    state.text = trimmedQuery
+    state.replaceTextAndDiscardQueryRecovery(trimmedQuery)
     state.pendingSearchQuery = trimmedQuery
     return .send(.submit)
 }
