@@ -96,6 +96,7 @@ final class ONB003ConfigureRequiredPermissionsDuringOnboardingTests: XCTestCase 
         }
 
         await store.send(.onDisappear)
+        await store.send(.onDisappear)
         await store.send(.fullDiskAccessRefreshResponse(6, .granted))
 
         XCTAssertNil(store.state.pendingFullDiskAccessOperationID)
@@ -150,6 +151,78 @@ final class ONB003ConfigureRequiredPermissionsDuringOnboardingTests: XCTestCase 
         await store.send(.onDisappear)
 
         XCTAssertTrue(metrics.value.isEmpty)
+    }
+
+    /// ONB-003-request_onboarding_permission_access: stale 또는 duplicate FDA 설정 열기 결과는 현재 요청을 소비하지 않는다.
+    /// 결과 correlation ID가 pending operation과 일치할 때만 실패 terminal을 기록하는지 검증합니다.
+    /// - 검증 내용: stale 결과는 상태와 metric을 바꾸지 않고, matching failure는 unavailable metric을 한 번만 기록합니다.
+    /// - 사전 조건: FDA operation 하나가 pending입니다.
+    /// - 기대 결과: stale/duplicate 결과는 no-op이고 matching failure 이후 pending ID가 nil입니다.
+    func testSystemSettingsOpenResultRequiresMatchingOperationAndTerminalizesFailureOnce() async throws {
+        let operationID = try XCTUnwrap(UUID(uuidString: "66666666-6666-6666-6666-666666666666"))
+        let staleOperationID = try XCTUnwrap(UUID(uuidString: "77777777-7777-7777-7777-777777777777"))
+        var initialState = PermissionsFeature.State()
+        initialState.pendingFullDiskAccessOperationID = operationID
+        let metrics = LockIsolated<[OnboardingProductMetric]>([])
+        let store = TestStore(initialState: initialState) {
+            PermissionsFeature()
+        } withDependencies: {
+            $0.onboardingProductMetricsClient = Self.metricsClient(metrics)
+        }
+
+        await store.send(.systemSettingsOpenResult(staleOperationID, false))
+        XCTAssertNil(store.state.systemSettingsError)
+        XCTAssertEqual(store.state.pendingFullDiskAccessOperationID, operationID)
+        XCTAssertTrue(metrics.value.isEmpty)
+
+        await store.send(.systemSettingsOpenResult(operationID, false)) { state in
+            state.systemSettingsError = "We couldn't open System Settings. Please open it manually."
+        }
+        await store.send(.systemSettingsOpenResult(operationID, false))
+
+        XCTAssertNil(store.state.pendingFullDiskAccessOperationID)
+        XCTAssertEqual(metrics.value, [
+            .fullDiskAccess(operationID: operationID, result: .unavailable),
+        ])
+    }
+
+    /// ONB-003-request_onboarding_permission_access: FDA 설정 열기 성공 결과는 app-active refresh 전까지 pending으로 남는다.
+    /// 성공 callback과 실제 권한 확인 refresh를 분리해 terminalization이 한 번만 일어나는지 검증합니다.
+    /// - 검증 내용: matching success 직후 pending을 유지하고, appDidBecomeActive의 granted refresh에서만 success metric을 기록합니다.
+    /// - 사전 조건: FDA operation이 pending이고 FDA/helper refresh가 granted를 반환합니다.
+    /// - 기대 결과: 성공 callback 직후 pending 유지, matching refresh 후 pending 해제와 success 1회입니다.
+    func testMatchingSystemSettingsOpenSuccessWaitsForAppActiveRefresh() async throws {
+        let operationID = try XCTUnwrap(UUID(uuidString: "88888888-8888-8888-8888-888888888888"))
+        var initialState = PermissionsFeature.State()
+        initialState.pendingFullDiskAccessOperationID = operationID
+        let metrics = LockIsolated<[OnboardingProductMetric]>([])
+        let store = TestStore(initialState: initialState) {
+            PermissionsFeature()
+        } withDependencies: {
+            $0.onboardingProductMetricsClient = Self.metricsClient(metrics)
+            $0.fullDiskAccessClient = PermissionClients.grantedFDA
+            $0.helperFolderAccessClient = PermissionClients.grantedHelper
+        }
+        // store.exhaustivity = .off: app-active의 두 병렬 refresh 결과 순서는 구현 세부사항입니다.
+        store.exhaustivity = .off
+
+        await store.send(.systemSettingsOpenResult(operationID, true)) { state in
+            state.hasAttemptedFullDiskAccessEnable = true
+        }
+        XCTAssertEqual(store.state.pendingFullDiskAccessOperationID, operationID)
+        XCTAssertTrue(metrics.value.isEmpty)
+
+        await store.send(.appDidBecomeActive) { state in
+            state.latestAppActiveRefreshGeneration = 1
+            state.pendingFullDiskAccessGeneration = 1
+        }
+        await store.receive(\.fullDiskAccessRefreshResponse)
+        await store.receive(\.helperFolderAccessRefreshLoaded)
+
+        XCTAssertEqual(metrics.value, [
+            .fullDiskAccess(operationID: operationID, result: .success),
+        ])
+        await store.finish()
     }
 
     // MARK: - ONB-003-show_onboarding_permission_status

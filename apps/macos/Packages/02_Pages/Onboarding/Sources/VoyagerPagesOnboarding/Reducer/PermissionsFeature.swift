@@ -23,6 +23,8 @@ struct PermissionsFeature {
     var systemSettingsClient
     @Dependency(\.onboardingProductMetricsClient)
     var metricsClient
+    @Dependency(\.uuid)
+    var uuid
 
     private enum CancelID {
         case appDidBecomeActiveObserver
@@ -155,14 +157,17 @@ struct PermissionsFeature {
                 return .none
 
             case .openSystemSettingsTapped:
+                guard state.pendingFullDiskAccessOperationID == nil else { return .none }
                 state.systemSettingsError = nil
-                state.pendingFullDiskAccessOperationID = UUID()
+                let operationID = uuid()
+                state.pendingFullDiskAccessOperationID = operationID
                 return .run { [systemSettingsClient] send in
                     let opened = systemSettingsClient.openFullDiskAccess()
-                    await send(.systemSettingsOpenResult(opened))
+                    await send(.systemSettingsOpenResult(operationID, opened))
                 }
 
-            case let .systemSettingsOpenResult(opened):
+            case let .systemSettingsOpenResult(operationID, opened):
+                guard state.pendingFullDiskAccessOperationID == operationID else { return .none }
                 if !opened {
                     state.systemSettingsError = "We couldn't open System Settings. Please open it manually."
                     if let operationID = state.pendingFullDiskAccessOperationID {
