@@ -123,7 +123,7 @@ public struct EntryOperationsLoadingReducer {
                         return
                     } catch {
                         guard !Task.isCancelled else { return }
-                        await send(.loading(.itemsLoaded(generation: generation, items: [])))
+                        await send(.loading(.computerItemsLoadFailed(generation: generation)))
                     }
                 }
                 .cancellable(
@@ -270,7 +270,8 @@ public struct EntryOperationsLoadingReducer {
                 }
                 return .none
 
-            case .loading(.itemsLoadFailed):
+            case let .loading(.computerItemsLoadFailed(generation)):
+                guard generation == state.loadingContext.generation else { return .none }
                 state.loadingContext.preservedDirectoryReloadItems = nil
                 state.loadingContext.items = []
                 state.isLoading = false

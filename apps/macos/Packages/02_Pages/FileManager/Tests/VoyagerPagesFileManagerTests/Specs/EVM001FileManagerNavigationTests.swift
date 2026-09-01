@@ -2959,6 +2959,81 @@ extension EVM001FileManagerNavigationTests {
         ))
     }
 
+    /// EVM-001-product_terminal_metrics: 현재 Computer 실패는 unavailable terminal을 정확히 한 번 기록한다.
+    /// 실제 Computer 로드 오류가 empty 성공으로 축소되지 않고 browsing 실패로 종결되는 경로를 검증한다.
+    /// - 검증 내용: 동일 current 실패를 두 번 전달해도 unavailable metric과 correlation 소비는 한 번뿐이다.
+    /// - 사전 조건: generation 7의 Computer load와 완전한 browsing correlation이 활성 상태다.
+    /// - 기대 결과: unavailable metric 한 건만 기록되고 correlation 필드는 모두 nil이다.
+    func testCurrentComputerItemsLoadFailureRecordsUnavailableExactlyOnce() async {
+        let operationID = UUID()
+        let recorder = FileManagerProductMetricRecorder()
+        var state = FileManagerContentState()
+        state.entryViewLayout.entryOperations.loadingContext.generation = 7
+        state.entryViewLayout.entryOperations.isLoading = true
+        state.productBrowsingOperationID = operationID
+        state.productBrowsingIdentity = .direct
+        state.productBrowsingSource = .fileManagerContent
+        state.productBrowsingContent = .folder
+        let store = TestStore(initialState: state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.fileManagerProductMetricsClient = recorder.client
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        // store.exhaustivity = .off: 통합 projection보다 browsing terminal exactly-once 계약을 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.entryViewLayout(.entryOperations(.loading(.computerItemsLoadFailed(generation: 7)))))
+        await store.send(.entryViewLayout(.entryOperations(.loading(.computerItemsLoadFailed(generation: 7)))))
+
+        XCTAssertEqual(recorder.metrics(), [
+            .contentBrowsing(
+                result: .unavailable,
+                content: .folder,
+                identity: .direct,
+                source: .fileManagerContent,
+                operationID: operationID,
+            ),
+        ])
+        XCTAssertNil(store.state.productBrowsingOperationID)
+        XCTAssertNil(store.state.productBrowsingIdentity)
+        XCTAssertNil(store.state.productBrowsingSource)
+        XCTAssertNil(store.state.productBrowsingContent)
+    }
+
+    /// EVM-001-product_terminal_metrics: stale Computer 실패는 browsing B 상태 전체에서 no-op이다.
+    /// 이전 Computer 요청의 오류가 새 폴더 상태나 현재 browsing correlation을 소비하지 않는지 검증한다.
+    /// - 검증 내용: stale 실패 전후 FileManagerContentState 동등성과 metric 미기록을 비교한다.
+    /// - 사전 조건: generation 8의 폴더 항목, 선택, pending selection, browsing correlation이 유지 중이다.
+    /// - 기대 결과: 모든 상태와 correlation이 보존되고 metric은 0건이다.
+    func testStaleComputerItemsLoadFailurePreservesBrowsingStateAndCorrelation() async {
+        let preservedEntry = EntryModel.temporaryFolder(id: "/folder-b", name: "folder-b")
+        var state = FileManagerContentState()
+        state.entryViewLayout.entryOperations.loadingContext.generation = 8
+        state.entryViewLayout.entryOperations.loadingContext.items = [preservedEntry]
+        state.entryViewLayout.entries = [preservedEntry]
+        state.entryViewLayout.selectedIds = [preservedEntry.id]
+        state.setPendingEntrySelection(entryID: "/folder-b/target", destinationPath: "/folder-b", generation: 8)
+        state.productBrowsingOperationID = UUID()
+        state.productBrowsingIdentity = .direct
+        state.productBrowsingSource = .fileManagerContent
+        state.productBrowsingContent = .folder
+        let originalState = state
+        let recorder = FileManagerProductMetricRecorder()
+        let store = TestStore(initialState: state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: stale terminal이 통합 B 상태 전체를 보존하는지만 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.entryViewLayout(.entryOperations(.loading(.computerItemsLoadFailed(generation: 7)))))
+
+        XCTAssertEqual(store.state, originalState)
+        XCTAssertTrue(recorder.metrics().isEmpty)
+    }
+
     /// EVM-001-reload_directory_page_on_external_change: dot-segment watch root의 canonical event 보존
     /// 표준화되지 않은 route root도 Shared canonical seam을 통해 FSEvent path와 같은 scope로 비교되는지 검증한다.
     /// - 검증 내용: `/var/tmp/../tmp` interest에 대한 `/private/var/tmp` child event relevance

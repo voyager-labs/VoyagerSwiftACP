@@ -444,18 +444,18 @@ final class FMW003PendingSelectionTests: XCTestCase {
         await store.finish()
     }
 
-    /// FMW-003-handle_external_file_open_requests: itemsLoadFailed ends navigation-origin selection.
-    /// - Verification: the unversioned load failure clears both pending-selection fields when the
-    ///   pending pair is bound to the current loading generation.
+    /// FMW-003-handle_external_file_open_requests: Computer load failure ends navigation-origin selection.
+    /// - Verification: the generation-bearing load failure clears both pending-selection fields when the
+    ///   pending pair is bound to the same current loading generation.
     /// - Preconditions: the guarded destination route is current and the pair is bound to generation 4.
     /// - Expected result: both pending-selection fields are nil.
-    func test_contentFeature_navigationItemsLoadFailedClearsPendingPair() async {
+    func test_contentFeature_navigationComputerItemsLoadFailureClearsPendingPair() async {
         var state = makeNavigationSelectionState(loadGeneration: 4)
         state.entryViewLayout.entryOperations.loadingContext.generation = 4
         let store = makeFileManagerContentFeatureStore(initialState: state)
         store.exhaustivity = .off
 
-        await store.send(.entryViewLayout(.entryOperations(.loading(.itemsLoadFailed)))) {
+        await store.send(.entryViewLayout(.entryOperations(.loading(.computerItemsLoadFailed(generation: 4))))) {
             $0.pendingSelectEntryID = nil
             $0.pendingSelectEntryDestinationPath = nil
         }
@@ -504,6 +504,29 @@ final class FMW003PendingSelectionTests: XCTestCase {
         XCTAssertEqual(store.state.pendingSelectEntryDestinationPath, "/folder-b")
         XCTAssertEqual(store.state.pendingSelectEntryLoadGeneration, 2)
         XCTAssertTrue(store.state.entryViewLayout.selectedIds.isEmpty)
+    }
+
+    /// FMW-003-handle_external_file_open_requests: stale Computer 실패는 현재 폴더 pending selection을 보존한다.
+    /// 이전 Computer 요청의 실패가 새 폴더 reveal 상관관계를 소비하지 않는 경쟁 상태를 검증한다.
+    /// - 검증 내용: stale computerItemsLoadFailed 전후 pending selection과 전체 content state 동등성을 비교한다.
+    /// - 사전 조건: 폴더 B와 pending selection은 generation 2에 바인딩되고 실패는 이전 요청에서 도착한다.
+    /// - 기대 결과: pending pair, generation, selection을 포함한 전체 state가 변경되지 않는다.
+    func test_contentFeature_staleComputerItemsLoadFailurePreservesCurrentFolderPendingSelection() async {
+        var state = makeNavigationSelectionState(
+            entryID: "/folder-b/target.txt",
+            destinationPath: "/folder-b",
+            loadGeneration: 2,
+        )
+        state.entryViewLayout.entryOperations.loadingContext.generation = 2
+        state.entryViewLayout.entryOperations.loadingContext.sourceKind = .directory
+        let originalState = state
+        let store = makeFileManagerContentFeatureStore(initialState: state)
+        // store.exhaustivity = .off: stale terminal의 pending selection 전체 no-op 계약을 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.entryViewLayout(.entryOperations(.loading(.computerItemsLoadFailed(generation: 1)))))
+
+        XCTAssertEqual(store.state, originalState)
     }
 
     /// FMW-003: pendingSelectEntryID가 nil인 경우 기존 동작 유지 (no-op).

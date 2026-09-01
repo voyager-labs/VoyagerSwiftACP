@@ -84,7 +84,7 @@ public enum EntryOperationsAction: CasePathable, Sendable {
         case loadComputerItems
         case cancelAndClearItems
         case itemsLoaded(generation: Int, items: [EntryModel])
-        case itemsLoadFailed
+        case computerItemsLoadFailed(generation: Int)
         case streamEvent(EntryLoadingStreamEvent)
         case streamFinished(generation: Int)
         case streamFailed(generation: Int)

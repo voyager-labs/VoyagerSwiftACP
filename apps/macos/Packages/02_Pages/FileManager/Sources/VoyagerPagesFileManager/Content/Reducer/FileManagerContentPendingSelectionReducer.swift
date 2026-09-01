@@ -89,10 +89,10 @@ struct FileManagerContentPendingSelectionReducer {
             state.setPendingEntrySelection(entryID: nil, destinationPath: nil)
             return .none
 
-        case .entryViewLayout(.entryOperations(.loading(.itemsLoadFailed))):
-            // itemsLoadFailed는 바인딩된 pending 세대가 현재 로딩 세대와 일치할 때만 pending을 정리한다.
-            guard state.pendingSelectEntryLoadGeneration == state.entryViewLayout.entryOperations.loadingContext
-                .generation
+        case let .entryViewLayout(.entryOperations(.loading(.computerItemsLoadFailed(generation)))):
+            // Computer 실패는 바인딩된 pending 세대와 현재 로딩 세대가 모두 일치할 때만 pending을 정리한다.
+            guard generation == state.entryViewLayout.entryOperations.loadingContext.generation,
+                  state.pendingSelectEntryLoadGeneration == generation
             else {
                 return .none
             }

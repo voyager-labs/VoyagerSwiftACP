@@ -322,6 +322,8 @@ public struct FileManagerContentFeature {
             }
         }
         switch action {
+        case let .entryViewLayout(.entryOperations(.loading(.computerItemsLoadFailed(generation)))):
+            return generation == state.entryViewLayout.entryOperations.loadingContext.generation
         case .entryViewLayout(.entryOperations(.loading(.loadItems))),
              .entryViewLayout(.entryOperations(.loading(.loadRecentItems))),
              .entryViewLayout(.entryOperations(.loading(.loadTagItems))),
@@ -331,7 +333,6 @@ public struct FileManagerContentFeature {
              .entryViewLayout(.entryOperations(.loading(.streamEvent))),
              .entryViewLayout(.entryOperations(.loading(.streamFinished))),
              .entryViewLayout(.entryOperations(.loading(.streamFailed))),
-             .entryViewLayout(.entryOperations(.loading(.itemsLoadFailed))),
              .entryViewLayout(.entryOperations(.lifecycle(.operationStarted))),
              .entryViewLayout(.entryOperations(.lifecycle(.operationFinished))),
              .entryViewLayout(.entryOperations(.lifecycle(.entryActionCompleted))),

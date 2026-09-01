@@ -352,7 +352,8 @@ struct FileManagerContentEntryOperationsBridgeReducer {
             state.productBrowsingIdentity = nil
             state.productBrowsingSource = nil
             state.productBrowsingContent = nil
-        } else if case .loading(.itemsLoadFailed) = action,
+        } else if case let .loading(.computerItemsLoadFailed(generation)) = action,
+                  generation == state.entryViewLayout.entryOperations.loadingContext.generation,
                   let operationID = state.productBrowsingOperationID,
                   let identity = state.productBrowsingIdentity,
                   let source = state.productBrowsingSource,

@@ -220,7 +220,7 @@ final class EOP004EditEntryMetadataTests: XCTestCase {
     }
 
     /// EOP-004-rename_entry: reset과 terminal loading cleanup은 stale source를 남기지 않는다.
-    /// - 검증 내용: duplicate reset과 itemsLoadFailed의 source cleanup
+    /// - 검증 내용: duplicate reset과 computerItemsLoadFailed의 source cleanup
     /// - 사전 조건: context-menu rename source가 pending 상태다.
     /// - 기대 결과: 두 lifecycle 경로 모두 source를 nil로 만든다.
     func testRenameEntry_resetAndLoadingFailureClearSource() async {
@@ -236,7 +236,7 @@ final class EOP004EditEntryMetadataTests: XCTestCase {
         var loadingState = EntryOperationsState()
         loadingState.renamingCommandSource = .keyboardShortcut
         let store = EntryOperationsTestSupport.makeStore(initialState: loadingState)
-        await store.send(.loading(.itemsLoadFailed)) {
+        await store.send(.loading(.computerItemsLoadFailed(generation: 0))) {
             $0.loadingContext.streamTerminal = false
             $0.renamingCommandSource = nil
         }

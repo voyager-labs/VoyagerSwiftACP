@@ -478,7 +478,8 @@ public struct EntryViewLayoutFeature {
                 case let .loading(.itemsLoaded(generation, _)):
                     guard generation == state.entryOperations.loadingContext.generation else { return .none }
                     return Self.updateEntriesAndReapply(&state)
-                case .loading(.itemsLoadFailed):
+                case let .loading(.computerItemsLoadFailed(generation)):
+                    guard generation == state.entryOperations.loadingContext.generation else { return .none }
                     return Self.updateEntriesAndReapply(&state)
                 default:
                     return .none

@@ -2144,6 +2144,27 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         XCTAssertTrue(preservedLatest)
     }
 
+    /// EOP-003-load_entry_items: 실제 Computer 로드 오류는 성공 빈 결과가 아닌 실패 terminal을 방출한다.
+    /// Computer 소스 오류를 browsing 실패로 구분할 수 있는 reducer action 계약을 검증한다.
+    /// - 검증 내용: loadComputerItems 오류가 computerItemsLoadFailed를 한 번 방출하고 loading 상태를 종료한다.
+    /// - 사전 조건: Computer loader가 일반 오류를 던지고 초기 loading generation은 0이다.
+    /// - 기대 결과: generation 1의 실패 terminal이 수신되고 항목은 비어 있으며 isLoading은 false다.
+    func testComputerItemsLoadErrorEmitsFailureTerminal() async {
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryLoadingClient.loadComputerItems = {
+                throw NSError(domain: "EOP003ComputerLoad", code: 1)
+            }
+        }
+
+        await store.send(.loading(.loadComputerItems)) {
+            $0.loadingContext.generation = 1
+            $0.isLoading = true
+        }
+        await store.receive(\.loading.computerItemsLoadFailed, 1) {
+            $0.isLoading = false
+        }
+    }
+
     // MARK: - EOP-003-load_folder_items
 
     /// EOP-003-load_folder_items: canonical ancestor 재방문은 enumeration 없이 unavailable failure로 종료된다.
