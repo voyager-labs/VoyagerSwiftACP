@@ -304,22 +304,25 @@ extension FileManagerContentIdentityTransitionCoordinator {
               folderGeneration == expectedGeneration,
               let node = state.entryViewLayout.hierarchy.nodesByID[folderID]
         else { return }
-        switch response {
+        let isTerminal = switch response {
         case .event(.coreFinished):
-            guard node.folder.coreFinished else { return }
-            guard !hasPendingDestinationPairs(state) else { return }
-            discard(state: &state)
+            node.folder.coreFinished
         case .streamCompleted:
-            guard node.loadPhase == .loaded else { return }
-            guard !hasPendingDestinationPairs(state) else { return }
-            discard(state: &state)
+            node.loadPhase == .loaded
         case .failed:
-            guard case .failed = node.loadPhase else { return }
-            guard !hasPendingDestinationPairs(state) else { return }
-            discard(state: &state)
+            if case .failed = node.loadPhase { true } else { false }
         case .event(.coreBatch), .event(.metadataPatches):
-            break
+            false
         }
+        guard isTerminal else { return }
+        if !transition.primaryMigrated {
+            var terminalTransition = transition
+            terminalTransition.primaryMigrated = true
+            state.pendingIdentityTransition = terminalTransition
+            commitMigratedSourceStagings(transition: terminalTransition, state: &state)
+        }
+        guard !hasPendingDestinationPairs(state) else { return }
+        discard(state: &state)
     }
 
     /// collapsed folder가 소유한 destination을 response 없는 cancellation terminal로 종결한다.
