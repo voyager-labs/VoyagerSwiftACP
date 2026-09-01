@@ -3668,6 +3668,108 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         )
     }
 
+    /// EVM-001-command_external_refresh_correlation: 부분 변경 operation reload 전 pending owner를 재기준화한다.
+    /// 대기 중인 rename 전이가 있을 때 extract의 부분 실패 reload가 새 root 세대에서도 selection migration을 유지하는지 검증한다.
+    /// - 검증 내용: operationFinished reload 직전 root projection owner를 다음 세대로 올리고 after 선택을 적용한다.
+    /// - 사전 조건: root 세대 1의 before 선택과 pending identity transition, extract system 실패가 있다.
+    /// - 기대 결과: reload는 세대 2를 사용하고 after 경로 선택과 transition 소비가 완료된다.
+    @MainActor
+    func testOperationFailureRebasesPendingIdentityTransitionBeforeReload() {
+        let folderPath = "/tmp/voyager-operation-rebase"
+        let oldPath = "\(folderPath)/old.txt"
+        let newPath = "\(folderPath)/new.txt"
+        var state = makeCorrelationState(folderPath: folderPath).content
+        state.entryViewLayout.entryOperations.loadingContext.generation = 1
+        state.entryViewLayout.selectedIds = [oldPath]
+        state.entryViewLayout.lastSelectedId = oldPath
+        state.entryViewLayout.rangeAnchorId = oldPath
+        state.pendingIdentityTransition = .init(
+            recordID: UUID(),
+            beforePath: oldPath,
+            afterPath: newPath,
+            rootPath: Self.canonicalPath(folderPath),
+            refreshGeneration: 1,
+            projectionOwner: .root(generation: 1),
+            afterLexicalPath: newPath,
+            beforeLexicalPath: oldPath,
+        )
+        _ = FileManagerContentEntryOpsCoordinator.handleEntryOperationsAction(
+            .lifecycle(.operationFinished(
+                "\(folderPath)/archive.zip",
+                .extract,
+                .failure(.system(message: "partial extract failure")),
+            )),
+            state: &state,
+        )
+        XCTAssertEqual(
+            state.pendingIdentityTransition?.projectionOwner,
+            .root(generation: 2),
+        )
+
+        state.entryViewLayout.entryOperations.loadingContext.generation = 2
+        _ = FileManagerContentEntryOpsCoordinator.handleEntryOperationsAction(
+            .loading(.itemsLoaded([
+                makeCorrelationEntry(id: newPath, name: "new.txt"),
+            ])),
+            state: &state,
+        )
+        XCTAssertEqual(state.entryViewLayout.selectedIds, [newPath])
+        XCTAssertEqual(state.entryViewLayout.lastSelectedId, newPath)
+        XCTAssertEqual(state.entryViewLayout.rangeAnchorId, newPath)
+        XCTAssertNil(state.pendingIdentityTransition)
+    }
+
+    /// EVM-001-command_external_refresh_correlation: drop 부분 실패 reload 전 pending owner를 재기준화한다.
+    /// 대기 중인 rename 전이가 있을 때 drop copy의 선삭제 후 실패 reload가 selection migration을 보존하는지 검증한다.
+    /// - 검증 내용: dropOperationFinished reload 직전 root projection owner를 다음 세대로 올리고 after 선택을 적용한다.
+    /// - 사전 조건: root 세대 1의 before 선택과 pending identity transition, pasteFileCopy system 실패가 있다.
+    /// - 기대 결과: reload는 세대 2를 사용하고 after 경로 선택과 transition 소비가 완료된다.
+    @MainActor
+    func testDropFailureRebasesPendingIdentityTransitionBeforeReload() {
+        let folderPath = "/tmp/voyager-drop-rebase"
+        let oldPath = "\(folderPath)/old.txt"
+        let newPath = "\(folderPath)/new.txt"
+        var state = makeCorrelationState(folderPath: folderPath).content
+        state.entryViewLayout.entryOperations.loadingContext.generation = 1
+        state.entryViewLayout.selectedIds = [oldPath]
+        state.entryViewLayout.lastSelectedId = oldPath
+        state.entryViewLayout.rangeAnchorId = oldPath
+        state.pendingIdentityTransition = .init(
+            recordID: UUID(),
+            beforePath: oldPath,
+            afterPath: newPath,
+            rootPath: Self.canonicalPath(folderPath),
+            refreshGeneration: 1,
+            projectionOwner: .root(generation: 1),
+            afterLexicalPath: newPath,
+            beforeLexicalPath: oldPath,
+        )
+        _ = FileManagerContentEntryOpsCoordinator.handleEntryOperationsAction(
+            .lifecycle(.dropOperationFinished(
+                "\(folderPath)/source.txt",
+                .pasteFileCopy,
+                .failure(.system(message: "post-delete copy failure")),
+            )),
+            state: &state,
+        )
+        XCTAssertEqual(
+            state.pendingIdentityTransition?.projectionOwner,
+            .root(generation: 2),
+        )
+
+        state.entryViewLayout.entryOperations.loadingContext.generation = 2
+        _ = FileManagerContentEntryOpsCoordinator.handleEntryOperationsAction(
+            .loading(.itemsLoaded([
+                makeCorrelationEntry(id: newPath, name: "new.txt"),
+            ])),
+            state: &state,
+        )
+        XCTAssertEqual(state.entryViewLayout.selectedIds, [newPath])
+        XCTAssertEqual(state.entryViewLayout.lastSelectedId, newPath)
+        XCTAssertEqual(state.entryViewLayout.rangeAnchorId, newPath)
+        XCTAssertNil(state.pendingIdentityTransition)
+    }
+
     /// EVM-001-command_external_refresh_correlation: 취소된 rename은 완료된 대기 전이를 만료하지 않는다.
     /// cancelRename은 이미 성공해 기록된 identity 연산과 무관한 편집 취소이므로
     /// 대기 전이를 파괴하지 않는지 검증한다.

@@ -33,14 +33,14 @@ enum FileManagerContentEntryOpsCoordinator {
             // 않으면 종료(accepted) projection의 소비 경로가 정리한다.
             kind == .externalObjectImportItem
                 ? .none
-                : handleOperationFinished(path: path, kind: kind, result: result, state: state)
+                : handleOperationFinished(path: path, kind: kind, result: result, state: &state)
 
         case .edit(.cancelRename):
             // 편집 취소는 이미 완료된 identity 연산과 무관하므로 대기 전이를 만료하지 않는다.
             .none
 
         case let .lifecycle(.dropOperationFinished(path, kind, result)):
-            handleDropOperationFinished(path: path, kind: kind, result: result, state: state)
+            handleDropOperationFinished(path: path, kind: kind, result: result, state: &state)
 
         case let .externalDrop(.importFinished(result)):
             handleExternalImportFinished(result: result, state: state)
@@ -334,7 +334,7 @@ enum FileManagerContentEntryOpsCoordinator {
         path: String,
         kind: OperationKind,
         result: Result<Void, FileOpError>,
-        state: FileManagerContentState,
+        state: inout FileManagerContentState,
     ) -> Effect<FileManagerContentAction> {
         let removedPathEffect: Effect<FileManagerContentAction> = if kind == .deleteImmediately,
                                                                      case .success = result
@@ -362,6 +362,12 @@ enum FileManagerContentEntryOpsCoordinator {
         case let .failure(error):
             shouldReloadOnFailure(kind: kind, error: error)
         }
+        if shouldReload {
+            FileManagerContentIdentityTransitionCoordinator.rebaseForSameRootReload(
+                navigationState: state.navigation.navigationState,
+                state: &state,
+            )
+        }
         return .merge(
             removedPathEffect,
             shouldReload ? reloadEntryItemsEffect(state: state) : .none,
@@ -375,11 +381,15 @@ enum FileManagerContentEntryOpsCoordinator {
         path _: String,
         kind: OperationKind,
         result: Result<Void, FileOpError>,
-        state: FileManagerContentState,
+        state: inout FileManagerContentState,
     ) -> Effect<FileManagerContentAction> {
         guard case let .failure(error) = result,
               shouldReloadOnFailure(kind: kind, error: error)
         else { return .none }
+        FileManagerContentIdentityTransitionCoordinator.rebaseForSameRootReload(
+            navigationState: state.navigation.navigationState,
+            state: &state,
+        )
         return reloadEntryItemsEffect(state: state)
     }
 
