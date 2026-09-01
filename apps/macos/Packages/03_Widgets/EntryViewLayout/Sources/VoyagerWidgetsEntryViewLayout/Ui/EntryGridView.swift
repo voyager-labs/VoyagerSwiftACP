@@ -6,13 +6,22 @@ import SwiftUI
 public struct EntryGridViewRepresentable: NSViewRepresentable {
     public let store: StoreOf<EntryViewLayoutFeature>
     public let blankSpaceMenuProvider: (() -> NSMenu)?
+    public let onGoBack: () -> Void
+    public let onGoForward: () -> Void
+    public let onSwipeProgress: (EntryHistorySwipeProgress?) -> Void
 
     public init(
         store: StoreOf<EntryViewLayoutFeature>,
         blankSpaceMenuProvider: (() -> NSMenu)?,
+        onGoBack: @escaping () -> Void = {},
+        onGoForward: @escaping () -> Void = {},
+        onSwipeProgress: @escaping (EntryHistorySwipeProgress?) -> Void = { _ in },
     ) {
         self.store = store
         self.blankSpaceMenuProvider = blankSpaceMenuProvider
+        self.onGoBack = onGoBack
+        self.onGoForward = onGoForward
+        self.onSwipeProgress = onSwipeProgress
     }
 
     public func makeCoordinator() -> EntryGridCoordinator {
@@ -23,15 +32,25 @@ public struct EntryGridViewRepresentable: NSViewRepresentable {
         let view = EntryGridView()
         context.coordinator.bind(to: view)
         view.collectionView.blankSpaceContextMenuProvider = blankSpaceMenuProvider
+        view.scrollView.onGoBack = onGoBack
+        view.scrollView.onGoForward = onGoForward
+        view.scrollView.onSwipeProgress = onSwipeProgress
         return view
     }
 
     public func updateNSView(_ view: EntryGridView, context: Context) {
         context.coordinator.updateView(view)
         view.collectionView.blankSpaceContextMenuProvider = blankSpaceMenuProvider
+        view.scrollView.onGoBack = onGoBack
+        view.scrollView.onGoForward = onGoForward
+        view.scrollView.onSwipeProgress = onSwipeProgress
     }
 
-    public static func dismantleNSView(_: EntryGridView, coordinator: EntryGridCoordinator) {
+    public static func dismantleNSView(_ view: EntryGridView, coordinator: EntryGridCoordinator) {
+        view.scrollView.onSwipeProgress(nil)
+        view.scrollView.onGoBack = {}
+        view.scrollView.onGoForward = {}
+        view.scrollView.onSwipeProgress = { _ in }
         coordinator.externalDropSessionController.cancel()
     }
 }
@@ -179,7 +198,7 @@ public final class EntryGridView: NSView {
         }
     }
 
-    let scrollView = NSScrollView()
+    let scrollView = EntryHistorySwipeScrollView()
     let collectionView = EntryGridCollectionView()
     let flowLayout = NSCollectionViewFlowLayout()
 
