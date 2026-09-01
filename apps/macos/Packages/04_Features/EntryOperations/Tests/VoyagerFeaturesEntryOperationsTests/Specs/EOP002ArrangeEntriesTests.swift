@@ -1626,6 +1626,96 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: failedSandbox.originalFixture.path))
     }
 
+    /// EOP-002-provider_drop_impact: 일부 성공 뒤 취소된 copy drop도 단일 terminal로 수렴한다.
+    /// - 검증 내용: accepted metadata, 성공 target, 나머지 cancelled aggregate, undo와 mutation impact를 보존한다.
+    /// - 사전 조건: 실제 fixture 3개 중 첫 복사가 성공한 직후 effect task가 취소된다.
+    /// - 기대 결과: attempted 3, succeeded 1, cancelled 2인 terminal 한 건과 성공 항목만의 undo/impact가 남는다.
+    func testAcceptedProviderDrop_cancelAfterFirstSuccessPreservesTerminalAndImpact() async throws {
+        let sandbox = try FixtureSandbox.copyingDirectory(from: "fixtures/fixtures/images/jpeg")
+        defer { sandbox.cleanup() }
+        let names = try FileManager.default.contentsOfDirectory(atPath: sandbox.fileURL.path).sorted()
+        let sourceURLs = try names.prefix(3).map { name in
+            try XCTUnwrap(URL(string: name, relativeTo: sandbox.fileURL)?.standardizedFileURL)
+        }
+        XCTAssertEqual(sourceURLs.count, 3)
+        let destinationFolder = sandbox.root.appendingPathComponent("CancelledCopyTarget")
+        try FileManager.default.createDirectory(at: destinationFolder, withIntermediateDirectories: true)
+        let metadata = try makeCancelledDropMetadata()
+        let startedCopies = CallRecorder<String>()
+        let actionRecorder = CallRecorder<EntryOperationsAction>()
+        var fileOps = EntryFileOpsClient.previewValue
+        fileOps.pasteFile = { sourceURL, destinationURL in
+            startedCopies.record(sourceURL.path)
+            try await EntryFileOpsClient.liveValue.pasteFile(sourceURL, destinationURL)
+            if startedCopies.recorded.count == 1 {
+                withUnsafeCurrentTask { $0?.cancel() }
+            }
+        }
+        let store = EntryOperationsTestSupport.makeObservedStore(observeAction: actionRecorder.record) {
+            $0.entryFileOpsClient = fileOps
+        }
+        // store.exhaustivity = .off: 취소된 effect의 terminal과 최종 aggregate만 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.acceptedCommand(
+            metadata: metadata,
+            action: .clipboard(.performDrop(
+                sourcePaths: sourceURLs.map(\.path),
+                destinationPath: destinationFolder.path,
+                isOptionDrag: true,
+            )),
+        ))
+        await store.finish()
+        await store.skipReceivedActions()
+
+        try assertCancelledProviderDropRecord(
+            in: actionRecorder.recorded,
+            metadata: metadata,
+            sourceURLs: sourceURLs,
+            destinationFolder: destinationFolder,
+        )
+        XCTAssertEqual(store.state.undoRecords.count, 1)
+        XCTAssertEqual(mutationImpacts(in: actionRecorder.recorded), [
+            EntryOperationsMutationImpact(
+                sourceParentPaths: [sandbox.fileURL.path],
+                destinationPath: destinationFolder.path,
+            ),
+        ])
+        XCTAssertEqual(startedCopies.recorded, [sourceURLs[0].path])
+    }
+
+    private func assertCancelledProviderDropRecord(
+        in actions: [EntryOperationsAction],
+        metadata: EntryCommandMetadata,
+        sourceURLs: [URL],
+        destinationFolder: URL,
+    ) throws {
+        let records = actions.compactMap { action -> EntryActionRecord? in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return nil }
+            return record
+        }
+        XCTAssertEqual(records.count, 1)
+        let record = try XCTUnwrap(records.first)
+        XCTAssertEqual(record.command, metadata)
+        XCTAssertEqual(record.operationKind, .pasteFileCopy)
+        XCTAssertEqual(record.attemptedCount, 3)
+        XCTAssertEqual(record.succeededCount, 1)
+        XCTAssertEqual(record.failedCount, 0)
+        XCTAssertEqual(record.cancelledCount, 2)
+        XCTAssertEqual(record.targets.map(\.beforePath), [sourceURLs[0].path])
+        XCTAssertEqual(record.targets.map(\.afterPath), [
+            destinationFolder.appendingPathComponent(sourceURLs[0].lastPathComponent).path,
+        ])
+    }
+
+    private func makeCancelledDropMetadata() throws -> EntryCommandMetadata {
+        try EntryCommandMetadata(
+            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000522")),
+            interaction: .copyEntries,
+            source: .dragAndDrop,
+        )
+    }
+
     /// 모든 provider mutation이 실패하면 outward success outcome을 내보내지 않는다.
     func testProviderDrop_allFailureEmitsNoMutationImpact() async throws {
         let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")

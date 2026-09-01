@@ -427,11 +427,13 @@ struct EntryClipboardOperationsReducer {
             var targets: [EntryActionRecord.Target] = []
             var failedCount = 0
             var cancelledCount = 0
-            for (sourceURL, destinationURL) in destinations {
+            for (index, (sourceURL, destinationURL)) in destinations.enumerated() {
                 // resetForDuplicate가 effect task를 취소한 뒤에도 live pasteFile(동기 copyItem)은
-                // CancellationError를 던지지 않아 루프가 남은 항목까지 계속 진행할 수 있다.
-                // 각 항목 복사 전에 명시적으로 취소를 확인해 즉시 중단한다.
-                try Task.checkCancellation()
+                // CancellationError를 던지지 않으므로 미시작 항목을 취소로 집계하고 중단한다.
+                guard !Task.isCancelled else {
+                    cancelledCount += destinations.count - index
+                    break
+                }
                 await send(.lifecycle(.operationStarted(sourceURL.path, operationKind)))
                 let result = await executor.execute(
                     sourceURL: sourceURL,
@@ -451,13 +453,17 @@ struct EntryClipboardOperationsReducer {
                     }
                 }
             }
-            await executor.finishBatch(
-                targets,
-                failedCount: failedCount,
-                cancelledCount: cancelledCount,
-                operationKind: operationKind,
-                send: send,
-            )
+            // 마지막 취소 확인과 terminal 전송 사이의 race에서도 action이 유실되지 않도록
+            // 정상·취소 경로 모두 fresh task에서 batch를 마무리한다.
+            await Task {
+                await executor.finishBatch(
+                    targets,
+                    failedCount: failedCount,
+                    cancelledCount: cancelledCount,
+                    operationKind: operationKind,
+                    send: send,
+                )
+            }.value
         }
         guard let onCancelCleanup else {
             return .run { send in
