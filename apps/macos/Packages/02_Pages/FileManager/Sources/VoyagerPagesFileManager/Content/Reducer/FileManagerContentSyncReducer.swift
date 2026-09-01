@@ -143,18 +143,54 @@ struct FileManagerContentSyncReducer {
         _ events: [FileChangeGatewayEvent],
         transition: FileManagerContentState.EntryIdentityTransition,
     ) -> [FileChangeGatewayEvent] {
-        events.filter {
+        let provenEchoPaths = commandIdentityEchoPaths(events: events, transition: transition)
+        return events.filter {
             requiresCoarseHierarchyReload($0)
                 || !isCommandIdentityEcho($0)
                 || !FileManagerContentIdentityTransitionCoordinator.transitionOverlaps(
                     $0.path,
                     transition,
                 )
+                || !provenEchoPaths.contains(
+                    FileManagerContentIdentityTransitionCoordinator.standardizedPath($0.path),
+                )
         }
     }
 
-    /// 명령 자체 활동이 FSEvents에 남기는 확정 신호. rename/move는 양쪽 경로에
-    /// ItemRenamed를 보고하므로 이것만 중복 제거 대상이 된다.
+    private func commandIdentityEchoPaths(
+        events: [FileChangeGatewayEvent],
+        transition: FileManagerContentState.EntryIdentityTransition,
+    ) -> Set<String> {
+        let pureRenamePaths: Set<String> = Set(events.compactMap { event in
+            guard isCommandIdentityEcho(event) else { return nil }
+            return FileManagerContentIdentityTransitionCoordinator.standardizedPath(event.path)
+        })
+        let primaryBefore = transition.beforeLexicalPath.isEmpty
+            ? transition.beforePath
+            : transition.beforeLexicalPath
+        let primaryAfter = transition.afterLexicalPath.isEmpty
+            ? transition.afterPath
+            : transition.afterLexicalPath
+        let identityPairs = [(primaryBefore, primaryAfter)] + transition.additionalMoves.map { move in
+            (
+                move.beforeLexicalPath.isEmpty ? move.beforePath : move.beforeLexicalPath,
+                move.afterLexicalPath.isEmpty ? move.afterPath : move.afterLexicalPath,
+            )
+        }
+        return identityPairs.reduce(into: Set<String>()) { provenPaths, pair in
+            let before = FileManagerContentIdentityTransitionCoordinator.standardizedPath(pair.0)
+            let after = FileManagerContentIdentityTransitionCoordinator.standardizedPath(pair.1)
+            guard before != after,
+                  pureRenamePaths.contains(before),
+                  pureRenamePaths.contains(after)
+            else { return }
+            provenPaths.insert(before)
+            provenPaths.insert(after)
+        }
+    }
+
+    /// 명령 자체 활동이 FSEvents에 남기는 후보 신호. command correlation ID가 없는
+    /// gateway event는 동일 delivery의 before/after 쌍이 확인될 때만 echo로 확정한다.
     /// Helper gateway는 같은 경로의 이벤트 플래그를 `|`로 병합하므로, rename과
     /// 후속 변경이 한 delivery로 합쳐지면 해당 비트를 함께 보고한다. 파일 종류
     /// 서술 비트를 제외한 ItemRenamed 이외의 의미 있는 비트가 하나라도 있으면
