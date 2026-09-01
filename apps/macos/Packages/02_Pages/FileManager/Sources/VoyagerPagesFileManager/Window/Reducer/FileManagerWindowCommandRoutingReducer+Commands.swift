@@ -277,6 +277,7 @@ extension FileManagerWindowCommandRoutingReducer {
         case .newFolder,
              .openSelectedItem,
              .quickLookSelectedItem,
+             .getInfo,
              .cut,
              .copy,
              .paste,
@@ -512,6 +513,26 @@ extension FileManagerWindowCommandRoutingReducer {
                   !state.content.entryViewLayout.selectedIds.isEmpty
             else { return .none }
             return .send(.content(.entryViewLayout(.delegate(.executeCommand("navigation.quickLookSelectedItem")))))
+
+        case .getInfo:
+            let selectableItemIds = state.content.entryViewLayout.hierarchyProjectionIsActive
+                ? state.content.entryViewLayout.visibleSelectableEntries(isNormalDirectoryPage: true).map(\.id)
+                : state.content.entryViewLayout.displayItems.map(\.id)
+            let validSelectedIds = state.content.entryViewLayout.selectedIds
+                .intersection(selectableItemIds)
+            if !validSelectedIds.isEmpty {
+                guard !validSelectedIds.contains(where: {
+                    state.content.entryViewLayout.entryOperations.itemStates[$0]?.isBusy == true
+                }) else { return .none }
+                return .send(.content(.entryViewLayout(.delegate(.executeCommand(
+                    "navigation.getInfoForSelectedItems",
+                )))))
+            }
+            guard case let .folder(path) = state.content.navigation.navigationState,
+                  !path.isEmpty,
+                  !state.content.entryViewLayout.entryOperations.itemStates[path, default: .init()].isBusy
+            else { return .none }
+            return .send(.content(.entryViewLayout(.delegate(.executeCommand("navigation.getInfoForPath")))))
 
         case .selectAll:
             return .send(.content(.view(.selectAllEntries)))

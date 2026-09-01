@@ -44,6 +44,19 @@ struct ContentTabDuplicatePresentation: Equatable {
             .duplicateSelectedContentTabs
         }
     }
+
+    var keyEquivalent: String {
+        "d"
+    }
+
+    var keyEquivalentModifierMask: NSEvent.ModifierFlags {
+        switch command {
+        case .duplicateSelectedContentTabs:
+            .command
+        case .duplicateContentTab:
+            [.command, .shift]
+        }
+    }
 }
 
 struct ContentTabPinPresentation: Equatable {
@@ -109,6 +122,14 @@ struct ContentTabPinPresentation: Equatable {
             .setSelectedContentTabsPinned(target: target)
         }
     }
+
+    var keyEquivalent: String {
+        "p"
+    }
+
+    var keyEquivalentModifierMask: NSEvent.ModifierFlags {
+        .command
+    }
 }
 
 struct ContentTabClosePresentation: Equatable {
@@ -158,6 +179,24 @@ struct ContentTabClosePresentation: Equatable {
             .closeSelectedContentTabs
         case let .unpinContentTab(tabID):
             .unpinContentTab(tabID)
+        }
+    }
+
+    var keyEquivalent: String {
+        switch command {
+        case .closeContentTab, .closeSelectedContentTabs:
+            "w"
+        case .unpinContentTab:
+            ""
+        }
+    }
+
+    var keyEquivalentModifierMask: NSEvent.ModifierFlags {
+        switch command {
+        case .closeContentTab, .closeSelectedContentTabs:
+            .command
+        case .unpinContentTab:
+            []
         }
     }
 }
@@ -322,12 +361,18 @@ final class ContentTabSidebarButton: NSButton {
     private var onClose: () -> Void = {}
     private var onTrailingAction: () -> Void = {}
     private var duplicateTitle = "Duplicate"
+    private var duplicateKeyEquivalent = ""
+    private var duplicateKeyEquivalentModifierMask: NSEvent.ModifierFlags = []
     private var duplicateAccessibilityIdentifier = ""
     private var isDuplicateEnabled = true
     private var pinTitle = "Pin"
+    private var pinKeyEquivalent = ""
+    private var pinKeyEquivalentModifierMask: NSEvent.ModifierFlags = []
     private var pinAccessibilityIdentifier = ""
     private var isPinEnabled = true
     private var closeTitle = "Close"
+    private var closeKeyEquivalent = ""
+    private var closeKeyEquivalentModifierMask: NSEvent.ModifierFlags = []
     private var closeAccessibilityIdentifier = ""
     private var isCloseEnabled = true
     private var usesUnpinCommand = false
@@ -372,11 +417,17 @@ final class ContentTabSidebarButton: NSButton {
         let onClose: () -> Void
         let onMove: (UUID) -> Void
         let duplicateTitle: String
+        let duplicateKeyEquivalent: String
+        let duplicateKeyEquivalentModifierMask: NSEvent.ModifierFlags
         let isDuplicateEnabled: Bool
         let pinTitle: String?
+        let pinKeyEquivalent: String
+        let pinKeyEquivalentModifierMask: NSEvent.ModifierFlags
         let pinAccessibilityIdentifier: String
         let isPinEnabled: Bool?
         let closeTitle: String?
+        let closeKeyEquivalent: String
+        let closeKeyEquivalentModifierMask: NSEvent.ModifierFlags
         let closeAccessibilityIdentifier: String
         let isCloseEnabled: Bool?
         let usesUnpinCommand: Bool?
@@ -408,11 +459,17 @@ final class ContentTabSidebarButton: NSButton {
             onClose: @escaping () -> Void = {},
             onMove: @escaping (UUID) -> Void = { _ in },
             duplicateTitle: String = "Duplicate",
+            duplicateKeyEquivalent: String = "",
+            duplicateKeyEquivalentModifierMask: NSEvent.ModifierFlags = [],
             isDuplicateEnabled: Bool = true,
             pinTitle: String? = nil,
+            pinKeyEquivalent: String = "",
+            pinKeyEquivalentModifierMask: NSEvent.ModifierFlags = [],
             pinAccessibilityIdentifier: String = "",
             isPinEnabled: Bool? = nil,
             closeTitle: String? = nil,
+            closeKeyEquivalent: String = "",
+            closeKeyEquivalentModifierMask: NSEvent.ModifierFlags = [],
             closeAccessibilityIdentifier: String = "",
             isCloseEnabled: Bool? = nil,
             usesUnpinCommand: Bool? = nil,
@@ -444,11 +501,17 @@ final class ContentTabSidebarButton: NSButton {
             self.onClose = onClose
             self.onMove = onMove
             self.duplicateTitle = duplicateTitle
+            self.duplicateKeyEquivalent = duplicateKeyEquivalent
+            self.duplicateKeyEquivalentModifierMask = duplicateKeyEquivalentModifierMask
             self.isDuplicateEnabled = isDuplicateEnabled
             self.pinTitle = pinTitle
+            self.pinKeyEquivalent = pinKeyEquivalent
+            self.pinKeyEquivalentModifierMask = pinKeyEquivalentModifierMask
             self.pinAccessibilityIdentifier = pinAccessibilityIdentifier
             self.isPinEnabled = isPinEnabled
             self.closeTitle = closeTitle
+            self.closeKeyEquivalent = closeKeyEquivalent
+            self.closeKeyEquivalentModifierMask = closeKeyEquivalentModifierMask
             self.closeAccessibilityIdentifier = closeAccessibilityIdentifier
             self.isCloseEnabled = isCloseEnabled
             self.usesUnpinCommand = usesUnpinCommand
@@ -477,12 +540,18 @@ final class ContentTabSidebarButton: NSButton {
         onClose = configuration.onClose
         onTrailingAction = configuration.onTrailingAction
         duplicateTitle = configuration.duplicateTitle
+        duplicateKeyEquivalent = configuration.duplicateKeyEquivalent
+        duplicateKeyEquivalentModifierMask = configuration.duplicateKeyEquivalentModifierMask
         duplicateAccessibilityIdentifier = configuration.duplicateAccessibilityIdentifier
         isDuplicateEnabled = configuration.isDuplicateEnabled
         pinTitle = configuration.pinTitle ?? (configuration.isPinned ? "Unpin" : "Pin")
+        pinKeyEquivalent = configuration.pinKeyEquivalent
+        pinKeyEquivalentModifierMask = configuration.pinKeyEquivalentModifierMask
         pinAccessibilityIdentifier = configuration.pinAccessibilityIdentifier
         isPinEnabled = configuration.isPinEnabled ?? configuration.isEnabled
         closeTitle = configuration.closeTitle ?? (configuration.isPinned ? "Unpin" : "Close")
+        closeKeyEquivalent = configuration.closeKeyEquivalent
+        closeKeyEquivalentModifierMask = configuration.closeKeyEquivalentModifierMask
         closeAccessibilityIdentifier = configuration.closeAccessibilityIdentifier
         isCloseEnabled = configuration.isCloseEnabled ?? configuration.isEnabled
         usesUnpinCommand = configuration.usesUnpinCommand ?? configuration.isPinned
@@ -790,7 +859,12 @@ extension ContentTabSidebarButton {
     private func makeContextMenu() -> NSMenu {
         let menu = NSMenu()
         menu.autoenablesItems = false
-        let duplicateItem = menuItem(title: duplicateTitle, action: #selector(duplicate))
+        let duplicateItem = menuItem(
+            title: duplicateTitle,
+            action: #selector(duplicate),
+            keyEquivalent: duplicateKeyEquivalent,
+            keyEquivalentModifierMask: duplicateKeyEquivalentModifierMask,
+        )
         duplicateItem.identifier = NSUserInterfaceItemIdentifier(duplicateAccessibilityIdentifier)
         duplicateItem.isEnabled = isDuplicateEnabled && onDuplicate != nil
         menu.addItem(duplicateItem)
@@ -805,18 +879,26 @@ extension ContentTabSidebarButton {
         let pinItem = menuItem(
             title: pinTitle,
             action: usesUnpinCommand ? #selector(unpin) : #selector(pin),
+            keyEquivalent: pinKeyEquivalent,
+            keyEquivalentModifierMask: pinKeyEquivalentModifierMask,
         )
         pinItem.identifier = NSUserInterfaceItemIdentifier(pinAccessibilityIdentifier)
         pinItem.isEnabled = isPinEnabled && (usesUnpinCommand ? onUnpin != nil : onPin != nil)
         menu.addItem(pinItem)
         if showsCloseCommand {
-            let closeItem = menuItem(title: closeTitle, action: #selector(close))
+            let closeItem = menuItem(
+                title: closeTitle,
+                action: #selector(close),
+                keyEquivalent: closeKeyEquivalent,
+                keyEquivalentModifierMask: closeKeyEquivalentModifierMask,
+            )
             closeItem.identifier = NSUserInterfaceItemIdentifier(closeAccessibilityIdentifier)
             closeItem.isEnabled = isCloseEnabled
             menu.addItem(closeItem)
         }
         if !moveTargets.isEmpty {
             let moveItem = NSMenuItem(title: moveTitle, action: nil, keyEquivalent: "")
+            moveItem.keyEquivalentModifierMask = []
             moveItem.identifier = NSUserInterfaceItemIdentifier(
                 ContentTabMoveProjection.menuIdentifier(tabID: moveTargetsTabID),
             )
@@ -844,8 +926,14 @@ extension ContentTabSidebarButton {
         return menu
     }
 
-    private func menuItem(title: String, action: Selector) -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+    private func menuItem(
+        title: String,
+        action: Selector,
+        keyEquivalent: String = "",
+        keyEquivalentModifierMask: NSEvent.ModifierFlags = [],
+    ) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: keyEquivalent)
+        item.keyEquivalentModifierMask = keyEquivalentModifierMask
         item.target = self
         return item
     }

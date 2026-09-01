@@ -214,6 +214,12 @@ func activeTabHandoffEffect(
     } else {
         .none
     }
+    let failedPinnedReturnTabID = state.pendingPinnedCollectionReturnTabID(
+        for: state.contentTabs.previousActiveTabID,
+    )
+    let failedPinnedReturnEffect: Effect<FileManagerWindowAction> = failedPinnedReturnTabID.map { tabID in
+        .send(.delegate(.pinnedContentTabRuntimeNavigationFailed(tabID: tabID)))
+    } ?? .none
     state.pendingCollectionOpenRequest = nil
     let navigationEffect = resyncContentNavigationEffect(state: state)
     // navigation/content 복원 이후에만 포커스된 활성 탭의 selectionChanged를 발행해
@@ -232,6 +238,7 @@ func activeTabHandoffEffect(
     return .concatenate(
         cancelInFlightContentEffectsOnTabSwitch(state: state, skipAiChatCancel: skipAiChatCancel),
         restoreHistoryEffect,
+        failedPinnedReturnEffect,
         .merge(
             navigationEffect,
             restartAiChatProviderLoadOnTabRestoreEffect(

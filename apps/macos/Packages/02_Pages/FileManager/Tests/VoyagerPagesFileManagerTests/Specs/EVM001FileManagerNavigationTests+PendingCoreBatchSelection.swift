@@ -120,6 +120,8 @@ extension EVM001FileManagerNavigationTests {
                 AsyncThrowingStream { _ in }
             }
         }
+        // store.exhaustivity = .off: internal directoryPath materialization보다 pending-selection generation 결속을 검증한다.
+        store.exhaustivity = .off
 
         await store.send(.entryViewLayout(.entryOperations(.loading(.streamEvent(.init(
             generation: 7,
