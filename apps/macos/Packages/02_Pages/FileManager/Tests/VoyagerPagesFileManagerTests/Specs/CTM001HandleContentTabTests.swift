@@ -55,6 +55,14 @@ private struct ConfiguredDirectoryHandoffRecorders {
     let loadPaths = LockIsolated<[String]>([])
 }
 
+private struct TopNavigationTeardownMetricFixture {
+    let state: FileManagerFeature.State
+    let tabIDs: [ContentTabID]
+    let operationIDs: [UUID]
+    let tokens: [FileManagerTopNavigationOperationToken]
+    let initialOrder: FileManagerTopNavigationOrder
+}
+
 @MainActor
 private func makeBatchDirectorySourceContent() -> FileManagerContentFeature.State {
     var content = FileManagerContentFeature.State.initialContent(
@@ -1145,6 +1153,74 @@ final class CTM001HandleContentTabTests: XCTestCase {
             iconName: tab.iconName,
             pinnedAt: Date(timeIntervalSince1970: pinnedAt),
         )
+    }
+
+    private func makeTopNavigationTeardownMetricFixture() -> TopNavigationTeardownMetricFixture {
+        let tabs = ["teardown-a", "teardown-b", "teardown-c", "teardown-d"].map {
+            makeReorderDirectoryTab($0, isPinned: true)
+        }
+        let operationIDs = [
+            UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 21)),
+            UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 22)),
+        ]
+        let tokens = [23, 24].map { byte in
+            FileManagerTopNavigationOperationToken(value: UUID(uuid: (
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, UInt8(byte),
+            )))
+        }
+        let initialOrder = FileManagerTopNavigationOrder(items: tabs.map { .contentTab($0.id) })
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: IdentifiedArrayOf(uniqueElements: tabs),
+            activeTabID: tabs[0].id,
+            pinnedRecords: Dictionary(uniqueKeysWithValues: tabs.enumerated().map { index, tab in
+                (tab.id, makePinnedRecord(tab, pinnedAt: TimeInterval(index + 1)))
+            }),
+        )
+        state.lastConfirmedTopNavigationOrder = initialOrder
+        state.optimisticTopNavigationOrder = initialOrder
+        state.sidebar.contentTabDragSnapshot = ContentTabDragSnapshot(
+            operationID: operationIDs[1],
+            sourceWindowID: UUID(),
+            initiatingTabID: tabs[2].id,
+            orderedTabIDs: [tabs[2].id, tabs[3].id],
+            lifecycle: .inFlight,
+        )
+        return .init(
+            state: state,
+            tabIDs: tabs.map(\.id),
+            operationIDs: operationIDs,
+            tokens: tokens,
+            initialOrder: initialOrder,
+        )
+    }
+
+    private func exerciseTopNavigationTeardown(
+        _ store: TestStoreOf<FileManagerFeature>,
+        fixture: TopNavigationTeardownMetricFixture,
+    ) async {
+        await store.send(.topNavigationMoveRequested(
+            source: .contentTab(fixture.tabIDs[0]),
+            destination: .after(.contentTab(fixture.tabIDs[1])),
+            actionSource: .keyboardShortcut,
+        ))
+        await store.skipReceivedActions(strict: false)
+        await store.send(.topNavigationMoveRequested(
+            source: .contentTab(fixture.tabIDs[2]),
+            destination: .before(.contentTab(fixture.tabIDs[1])),
+            actionSource: .dragAndDrop,
+        ))
+        await store.skipReceivedActions(strict: false)
+        await store.send(.onDisappear)
+        await store.send(.onDisappear)
+        await store.send(.internal(.topNavigationIntentCompleted(
+            token: fixture.tokens[0],
+            terminal: .failed(.save),
+        )))
+        await store.send(.internal(.topNavigationIntentCompleted(
+            token: fixture.tokens[1],
+            terminal: .committed(.init(order: fixture.initialOrder, revision: 1)),
+        )))
     }
 
     // MARK: - CTM-001-open_new_content_tab
@@ -6479,6 +6555,49 @@ final class CTM001HandleContentTabTests: XCTestCase {
                 identity: .reorderContentTab,
                 source: .dragAndDrop,
                 operationID: operationIDA,
+            ),
+        ])
+    }
+
+    /// CTM-001-content_tab_action_metrics: window teardown은 수용된 singleton/group reorder를 취소로 종료한다.
+    /// 실제 move acceptance가 만든 intent와 correlation을 teardown이 원래 source/operation ID로 한 번만 소비하는지 검증한다.
+    /// - 검증 내용: singleton/group cancelled terminal 각 1건, pending/context 정리, 반복 teardown과 late terminal 무이벤트
+    /// - 사전 조건: pinned Content Tab 4개와 in-flight selected-group drag snapshot
+    /// - 기대 결과: reorderContentTab/reorderSelectedContentTabs 취소 메트릭만 기록되고 correlation은 비워짐
+    func testWindowDisappearCancelsAcceptedTopNavigationReordersExactlyOnce() async {
+        let fixture = makeTopNavigationTeardownMetricFixture()
+        let fixtureOperationIDs = fixture.operationIDs
+        let fixtureTokens = fixture.tokens
+        let operationIDs = LockIsolated(fixtureOperationIDs)
+        let tokens = LockIsolated(fixtureTokens)
+        let recorder = FileManagerProductMetricRecorder(
+            makeOperationID: { operationIDs.withValue { $0.removeFirst() } },
+        )
+        let store = TestStore(initialState: fixture.state) { FileManagerFeature() } withDependencies: {
+            $0.contentTabPinnedRecordClient.reserveTopNavigationOperationToken = {
+                tokens.withValue { $0.removeFirst() }
+            }
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: persistence delegate보다 teardown terminal과 exactly-once correlation에 집중함
+        store.exhaustivity = .off
+
+        await exerciseTopNavigationTeardown(store, fixture: fixture)
+
+        XCTAssertTrue(store.state.pendingTopNavigationIntents.isEmpty)
+        XCTAssertTrue(store.state.productContentTabMoveMetricContexts.isEmpty)
+        XCTAssertEqual(recorder.metrics(), [
+            .contentTabAction(
+                result: .cancelled,
+                identity: .reorderContentTab,
+                source: .keyboardShortcut,
+                operationID: fixture.operationIDs[0],
+            ),
+            .contentTabAction(
+                result: .cancelled,
+                identity: .reorderSelectedContentTabs,
+                source: .dragAndDrop,
+                operationID: fixture.operationIDs[1],
             ),
         ])
     }

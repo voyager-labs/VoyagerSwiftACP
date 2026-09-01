@@ -520,7 +520,13 @@ extension FileManagerFeature {
         }
         state.pendingTopNavigationIntents.removeAll { $0.token == token }
         if isMoveMetricPending {
-            recordContentTabMoveMetric(token: token, terminal: terminal, intent: moveMetricIntent, state: &state)
+            Self.recordContentTabMoveMetric(
+                token: token,
+                terminal: terminal,
+                intent: moveMetricIntent,
+                state: &state,
+                productMetricsClient: productMetricsClient,
+            )
         }
         state.replayTopNavigationOverlays()
         return .none
@@ -536,11 +542,12 @@ extension FileManagerFeature {
     /// move persistence terminal을 operation ID와 상관해 정확히 한 번 기록하고 상관 키를 함께 제거한다.
     /// intent가 이미 제거된 지연/중복 terminal은 이벤트를 만들지 않는다.
     /// 같은 창 top-navigation 이동은 inter-window move가 아니므로 reorder family identity로 보고한다.
-    private func recordContentTabMoveMetric(
+    static func recordContentTabMoveMetric(
         token: FileManagerTopNavigationOperationToken,
         terminal: FileManagerTopNavigationIntentTerminal,
         intent: FileManagerTopNavigationIntent?,
         state: inout State,
+        productMetricsClient: FileManagerProductMetricsClient,
     ) {
         guard let context = state.productContentTabMoveMetricContexts.removeValue(forKey: token) else {
             return
@@ -558,7 +565,7 @@ extension FileManagerFeature {
         ))
     }
 
-    private func contentTabActionResult(
+    private static func contentTabActionResult(
         from terminal: FileManagerTopNavigationIntentTerminal,
     ) -> ContentTabActionResult {
         switch terminal {
@@ -566,7 +573,7 @@ extension FileManagerFeature {
             .success
         case .failed(.save):
             .failure
-        case let .failed(.storeUnavailable):
+        case .failed(.storeUnavailable):
             .unavailable
         case .failed(.superseded):
             .failure

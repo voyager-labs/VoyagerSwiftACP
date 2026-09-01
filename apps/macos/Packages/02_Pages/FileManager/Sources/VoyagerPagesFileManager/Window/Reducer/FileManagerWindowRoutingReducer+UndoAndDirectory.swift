@@ -12,6 +12,7 @@ import VoyagerShared
 
 extension FileManagerWindowRoutingReducer {
     func handleWindowDisappear(state: inout State) -> Effect<Action> {
+        recordPendingContentTabMoveCancellations(state: &state)
         let closeOperationID = state.pendingSelectedContentTabClose?.operationID
             ?? state.pendingContentTabClose?.batchOperationID
         let pinMutationOperationID = recordPendingPinMutationCancellation(state: &state)
@@ -49,6 +50,30 @@ extension FileManagerWindowRoutingReducer {
             ))
         }
         return .merge(cancellationEffects)
+    }
+
+    private func recordPendingContentTabMoveCancellations(state: inout State) {
+        let pendingMoves = state.pendingTopNavigationIntents.filter { pending in
+            switch pending.intent {
+            case .move, .movePinnedGroup:
+                true
+            case .pin, .unpin, .close, .update:
+                false
+            }
+        }
+        let tokens = Set(pendingMoves.map(\.token))
+        for pending in pendingMoves {
+            FileManagerFeature.recordContentTabMoveMetric(
+                token: pending.token,
+                terminal: .failed(.cancelled),
+                intent: pending.intent,
+                state: &state,
+                productMetricsClient: productMetricsClient,
+            )
+        }
+        state.pendingTopNavigationIntents.removeAll { tokens.contains($0.token) }
+        state.productContentTabMoveMetricContexts.removeAll()
+        state.replayTopNavigationOverlays()
     }
 
     private func recordPendingPinMutationCancellation(state: inout State) -> UUID? {
