@@ -38,13 +38,16 @@ final class ATI004ManageExternalAgentRuntimesTests: XCTestCase {
                 primaryWritableRoot: root,
                 additionalWritableRoots: [],
                 codexHome: URL(fileURLWithPath: "/Users/me/.codex", isDirectory: true),
+                reasoningEffort: "high",
             ),
             executableURL: URL(fileURLWithPath: "/tmp/codex", isDirectory: false),
         )
         XCTAssertEqual(
             command.arguments,
             [
-                "exec", "--json", "--color", "never", "--strict-config", "--ignore-user-config",
+                "exec", "--model", "gpt-5-codex", "-c", "model_reasoning_effort=\"high\"",
+                "--json", "--color", "never", "--strict-config",
+                "--ignore-user-config",
                 "--sandbox",
                 "read-only", "-C", root.path, "-",
             ],
@@ -78,7 +81,7 @@ final class ATI004ManageExternalAgentRuntimesTests: XCTestCase {
         XCTAssertEqual(
             command.arguments,
             [
-                "exec", "--json", "--color", "never", "--strict-config", "--ignore-user-config",
+                "exec", "--model", "model", "--json", "--color", "never", "--strict-config", "--ignore-user-config",
                 "--sandbox",
                 "workspace-write",
                 "-C", root.path, "--add-dir", root.appendingPathComponent("a").path, "--add-dir",
@@ -87,6 +90,7 @@ final class ATI004ManageExternalAgentRuntimesTests: XCTestCase {
             ],
         )
         XCTAssertEqual(command.arguments.count(where: { $0 == "--add-dir" }), 2)
+        XCTAssertFalse(command.arguments.contains("-c"))
     }
 
     func testWorkspaceWriteRoots_useDistinctPrimaryAndAdditionalSemantics() throws {
@@ -110,7 +114,7 @@ final class ATI004ManageExternalAgentRuntimesTests: XCTestCase {
         XCTAssertEqual(
             command.arguments,
             [
-                "exec", "--json", "--color", "never", "--strict-config", "--ignore-user-config",
+                "exec", "--model", "model", "--json", "--color", "never", "--strict-config", "--ignore-user-config",
                 "--sandbox",
                 "workspace-write", "-C", working.path, "--add-dir", external.path, "-",
             ],
@@ -172,13 +176,15 @@ final class ATI004ManageExternalAgentRuntimesTests: XCTestCase {
                 additionalWritableRoots: [],
                 codexHome: URL(fileURLWithPath: "/Users/me/.codex"),
                 threadID: "opaque/provider/thread-id",
+                reasoningEffort: "low",
             ),
             executableURL: URL(fileURLWithPath: "/tmp/codex"),
         )
         XCTAssertEqual(
             command.arguments,
             [
-                "exec", "resume", "--json", "--strict-config", "--ignore-user-config",
+                "exec", "resume", "--model", "model", "-c", "model_reasoning_effort=\"low\"",
+                "--json", "--strict-config", "--ignore-user-config",
                 "opaque/provider/thread-id", "-",
             ],
         )
@@ -780,7 +786,8 @@ final class ATI004ManageExternalAgentRuntimesTests: XCTestCase {
         XCTAssertEqual(
             command.arguments,
             [
-                "exec", "--json", "--color", "never", "--strict-config", "--ignore-user-config",
+                "exec", "--model", "gpt-5-codex", "--json", "--color", "never", "--strict-config",
+                "--ignore-user-config",
                 "--sandbox",
                 "workspace-write", "-C", nested.path, "--add-dir", extra.path, "-",
             ],

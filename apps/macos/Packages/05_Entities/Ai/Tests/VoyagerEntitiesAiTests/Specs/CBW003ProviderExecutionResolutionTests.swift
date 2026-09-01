@@ -592,7 +592,7 @@ extension CBW003ProviderExecutionResolutionTests {
         let events = CodexExecAppServerEventRecorder()
         let result = try await composition.executeLegacy(
             request: CodexExecutionRequest(
-                runID: "legacy-no-folder", model: "gpt-5-codex", prompt: "prompt", thinking: nil,
+                runID: "legacy-no-folder", model: "gpt-5-codex", prompt: "prompt", thinking: .effort(.high),
             ),
             onEvent: { events.append($0) },
         )
@@ -616,7 +616,8 @@ extension CBW003ProviderExecutionResolutionTests {
         let recordedCommands = await recorder.commands
         let command = try XCTUnwrap(recordedCommands.last)
         XCTAssertEqual(command.arguments, [
-            "exec", "--json", "--color", "never", "--strict-config", "--ignore-user-config",
+            "exec", "--model", "gpt-5-codex", "-c", "model_reasoning_effort=\"high\"",
+            "--json", "--color", "never", "--strict-config", "--ignore-user-config",
             "--sandbox",
             "read-only", "-C", codexHome.appendingPathComponent("session").path, "-",
         ])

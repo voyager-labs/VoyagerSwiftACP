@@ -14,6 +14,7 @@ struct CodexExecCommandRequest {
     let additionalWritableRoots: [URL]
     let codexHome: URL
     let threadID: String?
+    let reasoningEffort: String?
 
     init(
         model: String,
@@ -24,6 +25,7 @@ struct CodexExecCommandRequest {
         additionalWritableRoots: [URL],
         codexHome: URL,
         threadID: String? = nil,
+        reasoningEffort: String? = nil,
     ) {
         self.model = model
         self.prompt = prompt
@@ -33,6 +35,7 @@ struct CodexExecCommandRequest {
         self.additionalWritableRoots = additionalWritableRoots
         self.codexHome = codexHome
         self.threadID = threadID
+        self.reasoningEffort = reasoningEffort
     }
 }
 
@@ -74,15 +77,18 @@ enum CodexExecCommandBuilder {
 
         var arguments = ["exec"]
         if let threadID = request.threadID {
+            arguments.append(contentsOf: ["resume", "--model", request.model])
+            if let reasoningEffort = request.reasoningEffort {
+                arguments.append(contentsOf: ["-c", "model_reasoning_effort=\"\(reasoningEffort)\""])
+            }
             arguments.append(contentsOf: [
-                "resume",
-                "--json",
-                "--strict-config",
-                "--ignore-user-config",
-                threadID,
-                "-",
+                "--json", "--strict-config", "--ignore-user-config", threadID, "-",
             ])
         } else {
+            arguments.append(contentsOf: ["--model", request.model])
+            if let reasoningEffort = request.reasoningEffort {
+                arguments.append(contentsOf: ["-c", "model_reasoning_effort=\"\(reasoningEffort)\""])
+            }
             arguments.append(contentsOf: [
                 "--json", "--color", "never", "--strict-config", "--ignore-user-config",
                 "--sandbox",

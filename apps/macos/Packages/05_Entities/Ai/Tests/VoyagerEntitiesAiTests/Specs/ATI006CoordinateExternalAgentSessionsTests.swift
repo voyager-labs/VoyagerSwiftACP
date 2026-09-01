@@ -1521,7 +1521,8 @@ final class ATI006CoordinateExternalAgentSessionsTests: XCTestCase {
                 XCTAssertEqual(
                     command.arguments,
                     [
-                        "exec", "resume", "--json", "--strict-config", "--ignore-user-config",
+                        "exec", "resume", "--model", "gpt-5-codex", "--json", "--strict-config",
+                        "--ignore-user-config",
                         "thread-0",
                         "-",
                     ],
@@ -1533,7 +1534,8 @@ final class ATI006CoordinateExternalAgentSessionsTests: XCTestCase {
             XCTAssertEqual(
                 command.arguments,
                 [
-                    "exec", "resume", "--json", "--strict-config", "--ignore-user-config",
+                    "exec", "resume", "--model", "gpt-5-codex", "--json", "--strict-config",
+                    "--ignore-user-config",
                     "thread-b",
                     "-",
                 ],
