@@ -1,11 +1,11 @@
 ---
 name: mechanism-swap-guard
-description: Guards review-driven fixes against replacing proven working mechanisms (file copy/move, parsing, locking, streaming primitives) when adding detection or a guard on top would suffice. Use when implementing reviewer or bot findings, security hardening (TOCTOU, symlink swap, race, memory safety), P1/P2 fixes whose suggested direction is "replace X with Y", or any fix touching a mechanism that already has passing tests and production history. Triggers on: security hardening, replace moveItem/renameat/fcopyfile/copyfile callback, reviewer suggested replacement, regression after security fix, mechanism substitution, EXDEV cross-volume fallback, chunked copy rewrite.
+description: "Guards review-driven fixes against replacing proven working mechanisms (file copy/move, parsing, locking, streaming primitives) when adding detection or a guard on top would suffice. Use when implementing reviewer or bot findings, security hardening (TOCTOU, symlink swap, race, memory safety), P1/P2 fixes whose suggested direction is 'replace X with Y', or any fix touching a mechanism that already has passing tests and production history. Triggers on: security hardening, replace moveItem/renameat/fcopyfile/copyfile callback, reviewer suggested replacement, regression after security fix, mechanism substitution, EXDEV cross-volume fallback, chunked copy rewrite."
 ---
 
 # Mechanism Swap Guard
 
-Core rule: **never replace a proven working mechanism to satisfy a review finding. Add detection or a guard around it.** Replacement introduces a fresh, untested failure surface exactly where the old code was known-good.
+Core rule: **prefer keeping a proven working mechanism and add detection or a guard when that closes the review finding.** If the mechanism is itself the confirmed root cause, or no guard can close the finding, replacement is allowed only with the capability-parity checklist and RED-first evidence below.
 
 ## When to use this skill
 
@@ -32,7 +32,7 @@ Core rule: **never replace a proven working mechanism to satisfy a review findin
 1. **Detection only** — verify/pin/lstat-compare around the existing call (identity check before and after the untrusted window).
 2. **Pin beside the path** — keep the path-based operation, pin what it operates on with an fd (`O_NOFOLLOW`, `O_DIRECTORY`) and apply metadata via `fchmod`/`futimes` on the fd.
 3. **Atomic reserve** — `O_CREAT | O_EXCL` name reservation plus verified `renameat`, only when detection cannot close the hole.
-4. **Full mechanism replacement** — forbidden inside a review-fix cycle. Requires its own plan, RED-first tests, and an explicit capability-parity checklist.
+4. **Full mechanism replacement** — allowed inside a review-fix cycle only when detection, pinning, or atomic reservation cannot close the finding. Complete the capability-parity checklist and RED-first regression evidence before landing it.
 
 ## Capability-parity checklist (mandatory before ANY rung-3+ change lands)
 
