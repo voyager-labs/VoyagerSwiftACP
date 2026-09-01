@@ -691,7 +691,6 @@ private enum FileManagerHostFixtureProgressiveLoading {
                 lastOpenedDate: nil,
             )
         }))
-        context.continuation.finish()
         FileManagerHostFixturePhase.streamFinished.log(
             preset: context.preset,
             windowID: context.windowID,
@@ -699,6 +698,7 @@ private enum FileManagerHostFixtureProgressiveLoading {
             rowCount: children.count,
             count: children.count,
         )
+        context.continuation.finish()
     }
 
     private static func requestUUID(scenario: FileManagerHostScenario, requestID: Int, windowID: UUID) -> UUID {

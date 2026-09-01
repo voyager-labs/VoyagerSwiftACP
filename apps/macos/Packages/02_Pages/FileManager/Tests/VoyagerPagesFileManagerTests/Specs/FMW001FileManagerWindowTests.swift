@@ -49,6 +49,7 @@ final class FMW001FileManagerWindowTests: XCTestCase {
             .selectAll,
             .copyAbsolutePaths,
             .copyURLs,
+            .getInfo,
         ]
     }
 
@@ -103,7 +104,7 @@ final class FMW001FileManagerWindowTests: XCTestCase {
 
     /// VOY-578-entry_commands: 일반 Directory loading 중 모든 전역 entry 명령 차단
     /// stale 선택이 유지되어도 menu capability와 최종 routing이 함께 명령 실행을 막는지 검증한다.
-    /// - 검증 내용: capability false 및 11개 entry command의 하위 action 미방출
+    /// - 검증 내용: capability false 및 12개 entry command의 하위 action 미방출
     /// - 사전 조건: 일반 Directory mode, entry loading 중, stale 선택 ID 유지
     /// - 기대 결과: 모든 entry command가 no-op으로 종료
     func testOrdinaryDirectoryLoadingDisablesAndBlocksAllEntryCommands() async {
@@ -119,11 +120,14 @@ final class FMW001FileManagerWindowTests: XCTestCase {
 
     /// VOY-578-entry_commands: 일반 Directory 정상 상태의 전역 entry 명령 유지
     /// loading이 아닐 때 기존 entry 명령 routing이 모두 보존되는지 검증한다.
-    /// - 검증 내용: capability true 및 11개 entry command의 기존 하위 action 전달
+    /// - 검증 내용: capability true 및 12개 entry command의 기존 하위 action 전달
     /// - 사전 조건: 일반 Directory mode, entry loading 아님, 선택 ID 존재
     /// - 기대 결과: 모든 entry command가 대응하는 하위 reducer로 전달
     func testNormalDirectoryAllowsAllEntryCommands() async {
-        let state = makeSelectedState(isLoading: false, isCollectionMode: false)
+        var state = makeSelectedState(isLoading: false, isCollectionMode: false)
+        let selectedEntry = EntryModel.temporaryFolder(id: "/tmp/selected-entry", name: "selected-entry")
+        state.content.entryViewLayout.selectedIds = [selectedEntry.id]
+        state.content.entryViewLayout.entryOperations.items = [selectedEntry]
         XCTAssertTrue(state.menuCommandProjection.canPerformEntryCommands)
 
         for command in entryCommands {
@@ -133,16 +137,184 @@ final class FMW001FileManagerWindowTests: XCTestCase {
 
     /// VOY-578-entry_commands: Collection loading의 전역 entry 명령 정책 유지
     /// Collection loading은 ordinary Directory loading guard에 포함되지 않는지 검증한다.
-    /// - 검증 내용: capability true 및 11개 entry command의 기존 하위 action 전달
+    /// - 검증 내용: capability true 및 12개 entry command의 기존 하위 action 전달
     /// - 사전 조건: Collection mode, entry loading 중, 선택 ID 존재
     /// - 기대 결과: 모든 entry command가 대응하는 하위 reducer로 전달
     func testCollectionLoadingAllowsAllEntryCommands() async {
-        let state = makeSelectedState(isLoading: true, isCollectionMode: true)
+        var state = makeSelectedState(isLoading: true, isCollectionMode: true)
+        let selectedEntry = EntryModel.temporaryFolder(id: "/tmp/selected-entry", name: "selected-entry")
+        state.content.entryViewLayout.selectedIds = [selectedEntry.id]
+        state.content.entryViewLayout.collectionItems = [selectedEntry]
         XCTAssertTrue(state.menuCommandProjection.canPerformEntryCommands)
 
         for command in entryCommands {
             await assertEntryCommand(command, routesFrom: state)
         }
+    }
+
+    // MARK: - FMW-001-get_info
+
+    /// FMW-001-get_info: 선택 항목이 없으면 현재 폴더를 Get Info 대상으로 라우팅한다.
+    /// App menu Get Info가 focused FileManager window의 active folder를 기존 navigation command로 전달하는지 검증한다.
+    /// - 검증 내용: request(.getInfo)가 navigation.getInfoForPath delegate command를 한 번 방출한다.
+    /// - 사전 조건: 일반 Directory 상태이며 선택 항목이 없고 현재 경로가 /tmp다.
+    /// - 기대 결과: navigation.getInfoForPath가 한 번 수신되고 추가 action은 없다.
+    func testGetInfoWithoutSelectionRoutesActiveFolderPath() async {
+        var state = FileManagerWindowState()
+        state.content.navigation.navigationState = .folder("/tmp")
+        let store = makeStore(initialState: state)
+
+        await store.send(.request(.getInfo))
+        await store.receive {
+            guard case .content(.entryViewLayout(.delegate(.executeCommand("navigation.getInfoForPath")))) = $0
+            else { return false }
+            return true
+        }
+        await store.finish()
+    }
+
+    /// FMW-001-get_info: stale selectedIds만 있으면 현재 폴더를 Get Info 대상으로 라우팅한다.
+    /// 표시 항목과 일치하지 않는 선택 상태가 남아도 유효한 active folder fallback을 사용하는지 검증한다.
+    /// - 검증 내용: stale selectedIds에서 navigation.getInfoForPath delegate command를 정확히 한 번 방출한다.
+    /// - 사전 조건: /tmp folder route에 표시 entry는 있지만 선택 ID는 표시 목록에 없는 stale ID다.
+    /// - 기대 결과: navigation.getInfoForPath가 한 번 수신되고 추가 action은 없다.
+    func testGetInfoWithOnlyStaleSelectionRoutesActiveFolderPath() async {
+        var state = FileManagerWindowState()
+        state.content.navigation.navigationState = .folder("/tmp")
+        state.content.entryViewLayout.entryOperations.items = [
+            EntryModel.temporaryFolder(id: "/tmp/displayed", name: "displayed"),
+        ]
+        state.content.entryViewLayout.selectedIds = ["/tmp/stale"]
+        let store = makeStore(initialState: state)
+
+        await store.send(.request(.getInfo))
+        await store.receive {
+            guard case .content(.entryViewLayout(.delegate(.executeCommand("navigation.getInfoForPath")))) = $0
+            else { return false }
+            return true
+        }
+        await store.finish()
+    }
+
+    /// FMW-001-get_info: expanded hierarchy의 visible child만 선택해도 selected-items Get Info를 실행한다.
+    /// Entry bridge와 동일한 visible selection projection이 child entry를 selected-items 대상으로 포함하는지 검증한다.
+    /// - 검증 내용: visible child 선택에서 navigation.getInfoForSelectedItems delegate command를 정확히 한 번 방출한다.
+    /// - 사전 조건: list/non-collection/no-grouping 상태에서 /root/root가 expanded되고 visible child가 존재한다.
+    /// - 기대 결과: navigation.getInfoForSelectedItems가 한 번 수신되고 추가 action은 없다.
+    func testGetInfoWithVisibleHierarchyChildSelectionRoutesSelectedItems() async {
+        let rootEntry = EntryModel.temporaryFolder(id: "/root/root", name: "root")
+        let childEntry = EntryModel.temporaryFolder(id: "/root/root/child", name: "child")
+        var state = FileManagerWindowState()
+        state.content.navigation.navigationState = .folder("/root")
+        state.content.entryViewLayout.mode = .list
+        state.content.entryViewLayout.isCollectionMode = false
+        state.content.entryViewLayout.entryArrangements.groupKey = .none
+        state.content.entryViewLayout.entries = [rootEntry]
+        state.content.entryViewLayout.entryOperations.items = [rootEntry]
+        state.content.entryViewLayout.hierarchy = .init(rootPath: "/root")
+        state.content.entryViewLayout.hierarchy.nodesByID[rootEntry.id] = .init(
+            children: [childEntry],
+            loadPhase: .loaded,
+            generation: 0,
+        )
+        state.content.entryViewLayout.hierarchy.setExpandedIDs([rootEntry.id])
+        state.content.entryViewLayout.selectedIds = [childEntry.id]
+        XCTAssertTrue(state.content.entryViewLayout.hierarchyProjectionIsActive)
+        XCTAssertEqual(
+            state.content.entryViewLayout.visibleSelectableEntries(isNormalDirectoryPage: true).map(\.id),
+            [rootEntry.id, childEntry.id],
+        )
+        let store = makeStore(initialState: state)
+
+        await store.send(.request(.getInfo))
+        await store.receive {
+            guard case .content(.entryViewLayout(.delegate(.executeCommand(
+                "navigation.getInfoForSelectedItems",
+            )))) = $0 else { return false }
+            return true
+        }
+        await store.finish()
+    }
+
+    /// FMW-001-get_info: root와 visible busy child를 함께 선택하면 Get Info를 실행하지 않는다.
+    /// 계층 projection에 포함된 child의 busy 상태가 전체 selected-items 요청을 차단하는지 검증한다.
+    /// - 검증 내용: root와 busy child mixed selection에서 navigation.getInfoForSelectedItems를 방출하지 않는 no-op 경로.
+    /// - 사전 조건: list/non-collection/no-grouping 상태에서 /root/root가 expanded되고 child만 busy다.
+    /// - 기대 결과: Get Info delegate action 없이 종료한다.
+    func testGetInfoWithVisibleHierarchyBusyChildSelectionIsNoOp() async {
+        let rootEntry = EntryModel.temporaryFolder(id: "/root/root", name: "root")
+        let childEntry = EntryModel.temporaryFolder(id: "/root/root/child", name: "child")
+        var state = FileManagerWindowState()
+        state.content.navigation.navigationState = .folder("/root")
+        state.content.entryViewLayout.mode = .list
+        state.content.entryViewLayout.isCollectionMode = false
+        state.content.entryViewLayout.entryArrangements.groupKey = .none
+        state.content.entryViewLayout.entries = [rootEntry]
+        state.content.entryViewLayout.entryOperations.items = [rootEntry]
+        state.content.entryViewLayout.hierarchy = .init(rootPath: "/root")
+        state.content.entryViewLayout.hierarchy.nodesByID[rootEntry.id] = .init(
+            children: [childEntry],
+            loadPhase: .loaded,
+            generation: 0,
+        )
+        state.content.entryViewLayout.hierarchy.setExpandedIDs([rootEntry.id])
+        state.content.entryViewLayout.selectedIds = [rootEntry.id, childEntry.id]
+        state.content.entryViewLayout.entryOperations.itemStates[childEntry.id] = .init(isBusy: true)
+        XCTAssertTrue(state.content.entryViewLayout.hierarchyProjectionIsActive)
+        XCTAssertEqual(
+            state.content.entryViewLayout.visibleSelectableEntries(isNormalDirectoryPage: true).map(\.id),
+            [rootEntry.id, childEntry.id],
+        )
+        let store = makeStore(initialState: state)
+
+        await store.send(.request(.getInfo))
+        await store.finish()
+    }
+
+    /// FMW-001-get_info: 선택 항목 중 하나라도 busy이면 Get Info를 실행하지 않는다.
+    /// Entry context menu와 동일하게 mixed selection의 busy entry가 전체 Finder 정보 요청을 차단하는지 검증한다.
+    /// - 검증 내용: 선택된 두 ID 중 하나가 busy일 때 request(.getInfo)가 navigation.getInfoForSelectedItems를 방출하지 않는 no-op 경로.
+    /// - 사전 조건: /tmp/selected와 /tmp/busy가 선택되고 /tmp/busy의 itemStates가 busy다.
+    /// - 기대 결과: navigation.getInfoForSelectedItems action 없이 종료한다.
+    func testGetInfoWithAnySelectedBusyEntryIsNoOp() async {
+        let selectedEntry = EntryModel.temporaryFolder(id: "/tmp/selected", name: "selected")
+        let busyEntry = EntryModel.temporaryFolder(id: "/tmp/busy", name: "busy")
+        var state = FileManagerWindowState()
+        state.content.navigation.navigationState = .folder("/tmp")
+        state.content.entryViewLayout.entryOperations.items = [selectedEntry, busyEntry]
+        state.content.entryViewLayout.selectedIds = [selectedEntry.id, busyEntry.id]
+        state.content.entryViewLayout.entryOperations.itemStates[busyEntry.id] = .init(isBusy: true)
+        let store = makeStore(initialState: state)
+
+        await store.send(.request(.getInfo))
+        await store.finish()
+    }
+
+    /// FMW-001-get_info: 현재 폴더가 busy이면 선택 항목 없는 Get Info를 실행하지 않는다.
+    /// Entry context menu와 동일하게 current-path operation busy 상태가 Finder 정보 요청을 차단하는지 검증한다.
+    /// - 검증 내용: busy current path에서 request(.getInfo)가 navigation.getInfoForPath를 방출하지 않는 no-op 경로.
+    /// - 사전 조건: 선택 항목이 없고 /tmp Directory route의 itemStates["/tmp"].isBusy가 true다.
+    /// - 기대 결과: navigation.getInfoForPath action 없이 종료한다.
+    func testGetInfoWithoutSelectionIsNoOpWhenCurrentPathIsBusy() async {
+        var state = FileManagerWindowState()
+        state.content.navigation.navigationState = .folder("/tmp")
+        state.content.entryViewLayout.entryOperations.itemStates["/tmp"] = .init(isBusy: true)
+        let store = makeStore(initialState: state)
+
+        await store.send(.request(.getInfo))
+        await store.finish()
+    }
+
+    /// FMW-001-get_info: 유효한 active folder가 없으면 무선택 Get Info를 실행하지 않는다.
+    /// Home과 같은 비파일시스템 route에서 Cmd-I가 Finder 정보 effect를 만들지 않는지 검증한다.
+    /// - 검증 내용: request(.getInfo)가 navigation command를 방출하지 않는 no-op 경로.
+    /// - 사전 조건: focused FileManager window가 기본 Home route이고 선택 항목이 없다.
+    /// - 기대 결과: 하위 navigation action 없이 종료한다.
+    func testGetInfoWithoutSelectionIsNoOpOutsideActiveFolder() async {
+        let store = makeStore()
+
+        await store.send(.request(.getInfo))
+        await store.finish()
     }
 
     /// VOY-578-entry_commands: 일반 Directory loading 중 비-entry 명령 보존
@@ -1699,7 +1871,8 @@ final class FMW001FileManagerWindowTests: XCTestCase {
                  .copyAbsolutePaths,
                  .content(.entryViewLayout(.delegate(.executeCommand("clipboard.copySelectedAbsolutePaths")))),
              ),
-             (.copyURLs, .content(.entryViewLayout(.delegate(.executeCommand("clipboard.copySelectedURLs"))))):
+             (.copyURLs, .content(.entryViewLayout(.delegate(.executeCommand("clipboard.copySelectedURLs"))))),
+             (.getInfo, .content(.entryViewLayout(.delegate(.executeCommand("navigation.getInfoForSelectedItems"))))):
             true
 
         default:
@@ -1857,6 +2030,91 @@ extension FMW001FileManagerWindowTests {
         FileManagerWindowChrome.configureWindowStyle(window)
 
         XCTAssertTrue(window.isMovableByWindowBackground)
+    }
+}
+
+extension FMW001FileManagerWindowTests {
+    // MARK: - FMW-001-toolbar_shortcuts
+
+    /// FMW-001-toolbar_shortcuts: New Chat toolbar context menu는 Show Chat History shortcut을 표시한다.
+    /// 실제 ToolbarView를 AppKit hosting surface에 올려 context menu의 presentation metadata를 검증한다.
+    /// - 검증 내용: Show Chat History NSMenuItem의 keyEquivalent와 keyEquivalentModifierMask
+    /// - 사전 조건: contextual AI chat이 표시되지 않는 실제 ToolbarView와 New Chat toolbar button
+    /// - 기대 결과: Show Chat History가 Cmd-Shift-L을 표시하고 다른 toolbar 동작은 변경하지 않는다.
+    func testNewChatToolbarContextMenuPresentsShowChatHistoryShortcut() throws {
+        let fixture = makeNewChatToolbarFixture()
+        let menu = try XCTUnwrap(findHistoryMenu(in: fixture.hostingView, window: fixture.window))
+        let historyItem = try XCTUnwrap(menu.items.first { $0.title == "Show Chat History" })
+
+        XCTAssertEqual(historyItem.keyEquivalent, "l")
+        XCTAssertEqual(historyItem.keyEquivalentModifierMask, [.command, .shift])
+    }
+
+    private func makeNewChatToolbarFixture() -> (
+        window: NSWindow,
+        hostingView: NSHostingView<AnyView>,
+    ) {
+        _ = NSApplication.shared
+        let store = Store(initialState: FileManagerContentState()) {
+            FileManagerContentFeature()
+        }
+        let chromeProps = FileManagerContentChromeProps(
+            computerName: "Computer",
+            breadcrumbRoots: FileManagerBreadcrumbRoots(homePath: NSHomeDirectory(), trashPath: nil),
+            pathDisplayNames: [:],
+            specialDirectoryIconNames: [:],
+            isContextualAiChatPresented: false,
+            activeTabID: nil,
+            activePageAnchor: .directory(path: "/tmp"),
+        )
+        let hostingView = NSHostingView(rootView: AnyView(ToolbarView(
+            store: store,
+            chromeProps: chromeProps,
+            onNavigationAction: { _ in },
+        ).frame(width: 400, height: 40)))
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 400, height: 40),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false,
+        )
+        window.contentView = hostingView
+        hostingView.frame = window.contentView?.bounds ?? .zero
+        hostingView.layoutSubtreeIfNeeded()
+        return (window: window, hostingView: hostingView)
+    }
+
+    private func findHistoryMenu(in view: NSView, window: NSWindow) -> NSMenu? {
+        if view.window != nil,
+           let eventLocation = view.window.map({ _ in
+               view.convert(
+                   NSPoint(x: view.bounds.midX, y: view.bounds.midY),
+                   to: nil,
+               )
+           }),
+           let event = NSEvent.mouseEvent(
+               with: .rightMouseDown,
+               location: eventLocation,
+               modifierFlags: [],
+               timestamp: 0,
+               windowNumber: window.windowNumber,
+               context: nil,
+               eventNumber: 1,
+               clickCount: 1,
+               pressure: 1,
+           ),
+           let menu = view.menu(for: event),
+           menu.items.contains(where: { $0.title == "Show Chat History" })
+        {
+            return menu
+        }
+
+        for subview in view.subviews {
+            if let menu = findHistoryMenu(in: subview, window: window) {
+                return menu
+            }
+        }
+        return nil
     }
 }
 
@@ -2087,9 +2345,7 @@ extension FMW001FileManagerWindowTests {
         }
 
         host.insertText("가", replacementRange: NSRange(location: 0, length: 0))
-        await drainMountedFocusUpdates()
-
-        XCTAssertEqual(fixture.store.state.entryViewLayout.pendingTypeScrollTargetId, target.id)
+        await waitForMountedTypeScrollTarget(target.id, in: fixture.store)
     }
 
     private func makeMountedTypeScrollContentPageFixture(
@@ -2103,7 +2359,7 @@ extension FMW001FileManagerWindowTests {
         ) {
             Reduce<FileManagerContentState, FileManagerContentAction> { state, action in
                 guard case .view(.selectAllEntries) = action else { return .none }
-                state.entryViewLayout.selectedIds = ["mounted-focus-trigger"]
+                state.entryViewLayout.selectedIds = Set(entries.map(\.id))
                 return .none
             }
             FileManagerContentKeyCommandReducer()
@@ -2125,6 +2381,23 @@ extension FMW001FileManagerWindowTests {
         window.makeKey()
         await drainMountedFocusUpdates()
         return (window, store)
+    }
+
+    private func waitForMountedTypeScrollTarget(
+        _ expectedTargetID: EntryModel.ID,
+        in store: Store<FileManagerContentState, FileManagerContentAction>,
+    ) async {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(1))
+
+        while store.state.entryViewLayout.pendingTypeScrollTargetId != expectedTargetID,
+              clock.now < deadline
+        {
+            await drainMountedFocusUpdates()
+            try? await clock.sleep(for: .milliseconds(10))
+        }
+
+        XCTAssertEqual(store.state.entryViewLayout.pendingTypeScrollTargetId, expectedTargetID)
     }
 
     private func disablePerceptionChecking() -> Bool {

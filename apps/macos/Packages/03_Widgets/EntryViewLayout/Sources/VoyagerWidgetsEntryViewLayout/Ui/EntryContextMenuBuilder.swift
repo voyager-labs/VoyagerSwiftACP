@@ -276,6 +276,7 @@ enum EntryContextMenuBuilder {
             target: configuration.target,
         )
         renameItem.keyEquivalent = "\r"
+        renameItem.keyEquivalentModifierMask = []
         renameItem.isEnabled = configuration.canRename && configuration.selectedCount == 1
         menu.addItem(renameItem)
     }

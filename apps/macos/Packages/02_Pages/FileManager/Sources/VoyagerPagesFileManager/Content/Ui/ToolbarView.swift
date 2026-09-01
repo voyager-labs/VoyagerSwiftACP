@@ -316,6 +316,7 @@ struct ToolbarView: View {
             primaryAction: { store.send(.view(.newChatTapped)) },
             contextMenuTitle: "Show Chat History",
             contextMenuAction: { store.send(.view(.showChatHistoryTapped)) },
+            contextMenuShortcut: KeyboardShortcut("l", modifiers: [.command, .shift]),
         )
         .zIndex(2)
     }

@@ -120,6 +120,8 @@ extension EVM001FileManagerNavigationTests {
                 AsyncThrowingStream { _ in }
             }
         }
+        // store.exhaustivity = .off: internal directoryPath materialization보다 pending-selection generation 결속을 검증한다.
+        store.exhaustivity = .off
 
         await store.send(.entryViewLayout(.entryOperations(.loading(.streamEvent(.init(
             generation: 7,
@@ -149,14 +151,13 @@ extension EVM001FileManagerNavigationTests {
             path: parentPath,
             showHidden: false,
             priority: .none,
-        ))))) {
-            $0.entryViewLayout.entryOperations.loadingContext.items = []
-            $0.entryViewLayout.entryOperations.loadingContext.generation = 8
-            $0.entryViewLayout.entryOperations.loadingContext.expectedCoreBatchIndex = 0
-            $0.entryViewLayout.entryOperations.loadingContext.sourceKind = .directory
-            $0.entryViewLayout.entryOperations.isLoading = true
-            $0.pendingSelectEntryLoadGeneration = 8
-        }
+        )))))
+        XCTAssertEqual(store.state.entryViewLayout.entryOperations.loadingContext.items, [])
+        XCTAssertEqual(store.state.entryViewLayout.entryOperations.loadingContext.generation, 8)
+        XCTAssertEqual(store.state.entryViewLayout.entryOperations.loadingContext.expectedCoreBatchIndex, 0)
+        XCTAssertEqual(store.state.entryViewLayout.entryOperations.loadingContext.sourceKind, .directory)
+        XCTAssertTrue(store.state.entryViewLayout.entryOperations.isLoading)
+        XCTAssertEqual(store.state.pendingSelectEntryLoadGeneration, 8)
 
         await store.send(.entryViewLayout(.entryOperations(.loading(.streamEvent(.init(
             generation: 8,
