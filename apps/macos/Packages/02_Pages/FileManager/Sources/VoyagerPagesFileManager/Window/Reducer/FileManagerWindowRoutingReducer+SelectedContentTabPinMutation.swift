@@ -182,7 +182,7 @@ extension FileManagerWindowRoutingReducer {
         guard result.totalCount > 0 else { return }
         let outcome: ContentTabActionResult = if result.failureCount > 0 {
             .failure
-        } else if result.successCount > 0 {
+        } else if result.successCount == result.totalCount {
             .success
         } else {
             .cancelled

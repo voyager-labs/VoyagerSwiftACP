@@ -14,7 +14,7 @@ extension FileManagerWindowRoutingReducer {
     func handleWindowDisappear(state: inout State) -> Effect<Action> {
         let closeOperationID = state.pendingSelectedContentTabClose?.operationID
             ?? state.pendingContentTabClose?.batchOperationID
-        let pinMutationOperationID = state.pendingSelectedContentTabPinMutation?.operationID
+        let pinMutationOperationID = recordPendingPinMutationCancellation(state: &state)
         if let pendingClose = state.pendingContentTabClose {
             restorePreviousActiveContentIfNeeded(pendingClose, state: &state)
             normalizeCloseTriggeredSaveState(pendingClose, state: &state)
@@ -32,7 +32,6 @@ extension FileManagerWindowRoutingReducer {
         }
         state.isClosing = true
         state.pendingSelectedContentTabClose = nil
-        state.pendingSelectedContentTabPinMutation = nil
         state.pendingContentTabClose = nil
         state.deferredPinnedContentTabs = nil
         state.deferredPinnedContentTabsMode = nil
@@ -50,6 +49,35 @@ extension FileManagerWindowRoutingReducer {
             ))
         }
         return .merge(cancellationEffects)
+    }
+
+    private func recordPendingPinMutationCancellation(state: inout State) -> UUID? {
+        let pendingPinMutation = state.pendingSelectedContentTabPinMutation
+        let directPinMutationMetrics = Array(state.productContentTabPinMutationMetrics.values)
+        for metric in directPinMutationMetrics {
+            productMetricsClient.record(FileManagerProductMetricsProducer.contentTabTerminal(
+                operationID: metric.operationID,
+                identity: metric.identity,
+                source: metric.source,
+                result: .cancelled,
+            ))
+        }
+        if let pendingPinMutation {
+            recordSelectedPinMutationBatchMetric(.init(
+                operationID: pendingPinMutation.operationID,
+                target: pendingPinMutation.target,
+                totalCount: pendingPinMutation.totalCount,
+                successCount: pendingPinMutation.successCount,
+                failureCount: pendingPinMutation.failureCount,
+                remainingCount: pendingPinMutation.totalCount
+                    - pendingPinMutation.successCount
+                    - pendingPinMutation.failureCount,
+                origin: pendingPinMutation.origin,
+            ))
+        }
+        state.pendingSelectedContentTabPinMutation = nil
+        state.productContentTabPinMutationMetrics.removeAll()
+        return pendingPinMutation?.operationID
     }
 
     func normalizeCloseTriggeredSaveState(

@@ -359,6 +359,105 @@ extension CTM003ManagePinnedContentTabsTests {
             ),
         ])
     }
+
+    /// CTM-003-product_terminal_metrics: window teardown은 모든 direct pin/unpin 상관을 cancelled로 종결한다.
+    /// 반복 teardown과 늦은 persistence terminal이 이미 소비한 상관을 다시 기록하지 않는지 검증한다.
+    /// - 검증 내용: 원래 operation ID/identity/source별 cancelled terminal 1건과 correlation 완전 소비
+    /// - 사전 조건: 서로 다른 탭의 direct pin/unpin persistence가 동시에 pending인 상태
+    /// - 기대 결과: cancelled terminal 총 2건이며 반복/late action 뒤에도 정확한 건수가 유지됨
+    func testOnDisappearCancelsEveryDirectPinMutationCorrelationExactlyOnce() async throws {
+        let pinOperationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 54))
+        let unpinOperationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 55))
+        let operationIDs = LockIsolated([pinOperationID, unpinOperationID])
+        let fixture = selectedPinMutationFixture()
+        let pinTabID = fixture.unpinnedID
+        let unpinTabID = fixture.pinnedID
+        let recorder = FileManagerProductMetricRecorder(makeOperationID: {
+            operationIDs.withValue { $0.removeFirst() }
+        })
+        var initialState = fixture.state
+        initialState.lastConfirmedTopNavigationOrder = .init(items: [.contentTab(unpinTabID)])
+        initialState.optimisticTopNavigationOrder = initialState.lastConfirmedTopNavigationOrder
+        let store = TestStore(initialState: initialState) {
+            CTM003FileManagerPersistenceHarness()
+        } withDependencies: {
+            $0.date = .constant(Self.pinnedAt)
+            $0.fileManagerProductMetricsClient = recorder.client
+            $0.fileManagerPinnedRecordOwner = .windowManager
+        }
+        // store.exhaustivity = .off: teardown의 다중 상태 정리보다 terminal correlation 계약에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.contentTabActionRequested(
+            .pin(pinTabID, placement: nil),
+            source: .contextMenu,
+        ))
+        XCTAssertEqual(store.state.productContentTabPinMutationMetrics[pinTabID], .init(
+            operationID: pinOperationID,
+            identity: .pinContentTabs,
+            source: .contextMenu,
+        ))
+        await store.receive { action in
+            guard case let .contentTabs(.delegate(.persistPinnedRecord(request))) = action else { return false }
+            return request.tabID == pinTabID
+        }
+        let pinContext = try XCTUnwrap(store.state.pendingTopNavigationIntents.last?.persistenceContext)
+        await store.skipReceivedActions()
+
+        await store.send(.contentTabActionRequested(
+            .unpin(unpinTabID, placement: nil),
+            source: .keyboardShortcut,
+        ))
+        XCTAssertEqual(store.state.productContentTabPinMutationMetrics[unpinTabID], .init(
+            operationID: unpinOperationID,
+            identity: .unpinContentTabs,
+            source: .keyboardShortcut,
+        ))
+        await store.receive { action in
+            guard case let .contentTabs(.delegate(.persistPinnedRecord(request))) = action else { return false }
+            return request.tabID == unpinTabID
+        }
+        let unpinContext = try XCTUnwrap(store.state.pendingTopNavigationIntents.last?.persistenceContext)
+        await store.skipReceivedActions()
+
+        await store.send(.onDisappear)
+        await store.finish()
+
+        let expectedMetrics: [FileManagerProductMetric] = [
+            .contentTabAction(
+                result: .cancelled,
+                identity: .pinContentTabs,
+                source: .contextMenu,
+                operationID: pinOperationID,
+            ),
+            .contentTabAction(
+                result: .cancelled,
+                identity: .unpinContentTabs,
+                source: .keyboardShortcut,
+                operationID: unpinOperationID,
+            ),
+        ]
+        XCTAssertTrue(store.state.productContentTabPinMutationMetrics.isEmpty)
+        XCTAssertEqual(recorder.metrics().count, expectedMetrics.count)
+        for metric in expectedMetrics {
+            XCTAssertTrue(recorder.metrics().contains(metric))
+        }
+        XCTAssertTrue(store.state.isClosing)
+
+        await store.send(.onDisappear)
+        await store.send(.contentTabs(.pinnedRecordSaveSucceeded(tabID: pinTabID, context: pinContext)))
+        await store.send(.contentTabs(.pinnedRecordSaveNotApplied(
+            tabID: unpinTabID,
+            context: unpinContext,
+            reason: .cancelled,
+            rollback: .init(previousIsPinned: true, previousPinnedRecord: nil, previousTabIndex: nil),
+        )))
+
+        XCTAssertEqual(recorder.metrics().count, expectedMetrics.count)
+        for metric in expectedMetrics {
+            XCTAssertTrue(recorder.metrics().contains(metric))
+        }
+    }
 }
 
 extension CTM003ManagePinnedContentTabsTests {
@@ -577,6 +676,121 @@ extension CTM003ManagePinnedContentTabsTests {
 
         XCTAssertNil(store.state.pendingSelectedContentTabPinMutation)
         XCTAssertTrue(recorder.metrics().isEmpty)
+    }
+
+    /// CTM-003-product_action_metrics: window teardown은 pending 선택 배치를 aggregate terminal 한 건으로 종결한다.
+    /// 부분 성공 중단은 cancelled이며 실패가 하나라도 있으면 failure가 우선하고 origin source를 보존한다.
+    /// - 검증 내용: operation ID/target/origin별 terminal 결과와 반복 teardown·late terminal 멱등성
+    /// - 사전 조건: menu pin 부분 성공 배치와 drag pin 실패 포함 배치가 각각 pending인 상태
+    /// - 기대 결과: 각 배치에 aggregate terminal 정확히 1건, 이후 action은 추가 메트릭을 만들지 않음
+    func testOnDisappearTerminatesPendingSelectedPinBatchExactlyOnceWithFailurePrecedence() async {
+        await assertSelectedPinBatchTeardown(
+            label: "partial success interruption",
+            operationID: UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 56)),
+            origin: .menu,
+            firstItemFails: false,
+        )
+        await assertSelectedPinBatchTeardown(
+            label: "failure precedence interruption",
+            operationID: UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 57)),
+            origin: .drag,
+            firstItemFails: true,
+        )
+    }
+
+    private func assertSelectedPinBatchTeardown(
+        label: String,
+        operationID: UUID,
+        origin: SelectedContentTabPinMutationOrigin,
+        firstItemFails: Bool,
+    ) async {
+        let fixture = allUnpinnedSelectedPinMutationFixture()
+        let tabIDs = fixture.orderedIDs
+        let sourceWindowID = UUID()
+        var initialState = fixture.state
+        initialState.windowID = sourceWindowID
+        initialState.sidebar.currentWindowID = sourceWindowID
+        let recorder = FileManagerProductMetricRecorder()
+        let store = TestStore(initialState: initialState) {
+            FileManagerWindowRoutingReducer()
+        } withDependencies: {
+            $0.uuid = .constant(operationID)
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: cancellation effect보다 aggregate terminal과 late no-op을 검증함
+        store.exhaustivity = .off
+
+        if origin == .drag {
+            await store.send(.requestContentTabDomainTransition(.init(
+                operationID: UUID(),
+                sourceWindowID: sourceWindowID,
+                sourceDomain: .unpinned,
+                targetDomain: .pinned,
+                initiatingTabID: tabIDs[0],
+                orderedTabIDs: tabIDs,
+                placement: .empty,
+            )))
+        } else {
+            await store.send(.requestSelectedContentTabPinMutation(target: .pinned))
+        }
+        XCTAssertEqual(store.state.pendingSelectedContentTabPinMutation?.operationID, operationID)
+        XCTAssertEqual(store.state.pendingSelectedContentTabPinMutation?.origin, origin)
+        await store.receive(\.processNextSelectedContentTabPinMutation, operationID)
+        await receiveSelectedPin(tabID: tabIDs[0], operationID: operationID, store: store)
+        await store.send(.selectedPinMutationItemCompleted(
+            operationID: operationID,
+            tabID: tabIDs[0],
+            outcome: firstItemFails ? .failure : .success,
+        ))
+        await store.receive(\.processNextSelectedContentTabPinMutation, operationID)
+        await receiveSelectedPin(tabID: tabIDs[1], operationID: operationID, store: store)
+        XCTAssertEqual(store.state.pendingSelectedContentTabPinMutation?.currentTabID, tabIDs[1])
+        XCTAssertNotNil(store.state.pendingSelectedContentTabPinMutation?.currentItemRollbackSnapshot)
+        XCTAssertEqual(store.state.pendingSelectedContentTabPinMutation?.successCount, firstItemFails ? 0 : 1)
+        XCTAssertEqual(store.state.pendingSelectedContentTabPinMutation?.failureCount, firstItemFails ? 1 : 0)
+
+        await store.send(.onDisappear)
+
+        let expectedMetric = FileManagerProductMetric.contentTabAction(
+            result: firstItemFails ? .failure : .cancelled,
+            identity: .pinContentTabs,
+            source: origin == .drag ? .dragAndDrop : .contentTabBar,
+            operationID: operationID,
+        )
+        XCTAssertNil(store.state.pendingSelectedContentTabPinMutation, label)
+        XCTAssertTrue(store.state.isClosing, label)
+        XCTAssertEqual(recorder.metrics(), [expectedMetric], label)
+
+        await store.send(.onDisappear)
+        await store.send(.performSelectedContentTabPinMutation(
+            operationID: operationID,
+            tabID: tabIDs[1],
+            action: .pinnedRecordSaveSucceeded(
+                tabID: tabIDs[1],
+                context: .init(
+                    intentID: UUID(),
+                    generation: .init(tabID: tabIDs[1], value: UUID()),
+                ),
+            ),
+        ))
+        XCTAssertEqual(recorder.metrics(), [expectedMetric], label)
+    }
+
+    private func receiveSelectedPin(
+        tabID: ContentTabID,
+        operationID: UUID,
+        store: TestStoreOf<FileManagerWindowRoutingReducer>,
+    ) async {
+        await store.receive { action in
+            guard case let .performSelectedContentTabPinMutation(
+                receivedOperationID,
+                receivedTabID,
+                .pin(requestedTabID, _),
+            ) = action else { return false }
+            return receivedOperationID == operationID
+                && receivedTabID == tabID
+                && requestedTabID == tabID
+        }
     }
 }
 
