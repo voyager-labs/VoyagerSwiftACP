@@ -314,7 +314,12 @@ extension EVM002FileManagerPagePresentationTests {
             .event(.coreBatch(items: [r1], batchIndex: 0)),
         ))))
         XCTAssertEqual(store.state.entryViewLayout.selectedIds, [r1.id, beforeY.id])
-        XCTAssertNil(store.state.entryViewLayout.hierarchy.deferredFolderReplacement(folderID: sourceD.id))
+        XCTAssertNotNil(store.state.pendingIdentityTransition)
+        XCTAssertEqual(
+            store.state.entryViewLayout.hierarchy.deferredFolderReplacement(folderID: sourceD.id)?
+                .migrationCompleted,
+            true,
+        )
         await store.receive(\.entryViewLayout.delegate.selectionChanged)
 
         await store.send(.entryViewLayout(.hierarchy(.folderChildrenResponse(

@@ -538,6 +538,70 @@ extension EVM002FileManagerPagePresentationTests {
         XCTAssertNotNil(store.state.pendingIdentityTransition)
     }
 
+    /// EVM-002-command_external_refresh_correlation: root failure에서도 primary source를 즉시 정산한다.
+    /// primary root pair의 reload가 실패해도 별도 folder destination pair가 primary source hold를 무기한 연장하지 않는지 검증한다.
+    /// - 검증 내용: root streamFailed에서 primaryMigrated와 source staging을 정산하고 folder pair만 유지한다.
+    /// - 사전 조건: expanded primary source의 terminal snapshot, root primary pair, pending folder additional pair가 있다.
+    /// - 기대 결과: primary before 선택·source hold는 제거되고 additional folder pair와 transition은 유지된다.
+    func testRootFailureSettlesPrimarySourceWithPendingFolderPair() async {
+        let source = EntryModel.temporaryFolder(id: "/root/S", name: "S")
+        let destination = EntryModel.temporaryFolder(id: "/root/B", name: "B")
+        let primaryBefore = EntryModel.temporaryFolder(id: "/root/S/primary", name: "primary")
+        let additionalBefore = EntryModel.temporaryFolder(id: "/root/T/additional", name: "additional")
+        var state = bufferedRootSourceState(rootPath: "/root", entries: [source, destination])
+        state.entryViewLayout.hierarchy.nodesByID[source.id] = .init(
+            children: [primaryBefore],
+            loadPhase: .enriching,
+            generation: 3,
+            coreFinished: true,
+            hasAppliedContentBatch: false,
+        )
+        state.entryViewLayout.hierarchy.nodesByID[destination.id] = .init(
+            children: [],
+            loadPhase: .loadingCore,
+            generation: 3,
+        )
+        state.entryViewLayout.hierarchy.beginDeferredFolderReplacement(
+            folderID: source.id,
+            untilEntryID: "/root/primary-after",
+            holdsUntilMigration: true,
+        )
+        state.entryViewLayout.hierarchy.setExpandedIDs([source.id, destination.id])
+        state.entryViewLayout.selectedIds = [primaryBefore.id, additionalBefore.id]
+        state.entryViewLayout.lastSelectedId = primaryBefore.id
+        state.entryViewLayout.rangeAnchorId = primaryBefore.id
+        state.entryViewLayout.entryOperations.loadingContext.streamTerminal = true
+        state.entryViewLayout.entryOperations.loadingContext.isIncomplete = true
+        state.pendingIdentityTransition = .init(
+            recordID: UUID(),
+            beforePath: primaryBefore.id,
+            afterPath: "/root/primary-after",
+            rootPath: "/root",
+            refreshGeneration: 1,
+            projectionOwner: .root(generation: 1),
+            preservationOwner: .folder(id: source.id, generation: 3),
+            additionalMoves: [
+                .init(
+                    beforePath: additionalBefore.id,
+                    afterPath: "/root/B/additional",
+                    sourceOwner: .folder(id: "/root/T", generation: 3),
+                    destinationOwner: .folder(id: destination.id, generation: 3),
+                ),
+            ],
+        )
+        let store = makeRootSourceCandidateStore(state)
+
+        await store.send(.entryViewLayout(.entryOperations(.loading(.streamFailed(generation: 1)))))
+
+        XCTAssertEqual(store.state.pendingIdentityTransition?.primaryMigrated, true)
+        XCTAssertEqual(store.state.pendingIdentityTransition?.additionalMoves.first?.migrated, false)
+        XCTAssertEqual(store.state.entryViewLayout.hierarchy.nodesByID[source.id]?.folder.children, [])
+        XCTAssertNil(store.state.entryViewLayout.hierarchy.deferredFolderReplacement(folderID: source.id))
+        XCTAssertFalse(store.state.entryViewLayout.selectedIds.contains(primaryBefore.id))
+        XCTAssertTrue(store.state.entryViewLayout.selectedIds.contains(additionalBefore.id))
+        XCTAssertNotNil(store.state.pendingIdentityTransition)
+    }
+
     /// 보존 복원 시 다른 선택 행의 anchor identity는 유지된다.
     /// - 검증 내용: before 행만 잠시 선택에서 제거된 상태에서 복원하면 other 행 anchor가 유지된다.
     /// - 사전 조건: rename 대상과 다른 파일이 함께 선택됐고 Quick Look/Shift 기준은 other 행이다.

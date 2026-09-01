@@ -576,17 +576,21 @@ public struct FileManagerContentFeature {
                   state.entryViewLayout.entryOperations.loadingContext.streamTerminal,
                   state.entryViewLayout.entryOperations.loadingContext.isIncomplete
             else { return false }
-            // primary destination이 폴더면 폴더 batch의 migration 기회가 남아 있으므로
-            // root 스트림 실패만으로 전이를 폐기하지 않는다(폴더 pair뿐 아니라 primary도 보호).
+            // root failure도 success terminal과 같은 primary 정산 경계를 사용한다.
+            // folder additional pair가 남아 있으면 primary source만 정산하고 전이는 유지한다.
             guard case .root = transition.projectionOwner else { return false }
-            let hasFolderPairs = transition.additionalMoves.contains { move in
+            let terminalized = FileManagerContentIdentityTransitionCoordinator.resolveRootDestinationSuccess(
+                generation: streamGeneration,
+                state: &state,
+            )
+            let hasFolderPairs = state.pendingIdentityTransition?.additionalMoves.contains { move in
                 guard case .folder = move.destinationOwner else { return false }
                 return !move.migrated
-            }
+            } == true
             if !hasFolderPairs {
                 FileManagerContentIdentityTransitionCoordinator.discard(state: &state)
             }
-            return false
+            return terminalized
 
         default:
             return false

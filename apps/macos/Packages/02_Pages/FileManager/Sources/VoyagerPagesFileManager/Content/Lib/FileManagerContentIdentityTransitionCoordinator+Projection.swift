@@ -216,8 +216,12 @@ extension FileManagerContentIdentityTransitionCoordinator {
             return
         }
         if selectedPaths.contains(afterPath) {
-            // 다중 이동: 다른 destination의 pending pair가 남아 있으면 전이를 유지한다.
-            if !hasPendingDestinationPairs(state) {
+            // after 행은 destination folder의 첫 batch에서 먼저 보일 수 있다.
+            // source staging을 커밋할 terminal까지 전이를 유지하고, 실제 owner가
+            // terminal이 된 뒤에만 pending pair가 없으면 폐기한다.
+            if !hasPendingDestinationPairs(state),
+               primaryOwnerIsTerminal(transition, state: state)
+            {
                 discard(state: &state)
             }
             return
