@@ -128,6 +128,9 @@ extension FileManagerWindowRoutingReducer {
         let activeTabIDBeforeSync = state.contentTabs.activeTabID
         let activeAnchorBeforeSync = activeTabIDBeforeSync.flatMap { state.contentTabs.tabs[id: $0]?.anchor }
         let tabAnchorsBeforeSync = state.contentTabs.tabs.map { (id: $0.id, anchor: $0.anchor) }
+        let pendingPinnedReturnTabID = mode == .authoritative
+            ? state.pendingPinnedCollectionReturnTabID
+            : nil
         let runtimePreservingTabIDs: Set<ContentTabID> = mode == .authoritative
             ? Set(state.pendingRuntimePreservationRecords.compactMap { tabID, record in
                 contentTabs.pinnedRecords[tabID] == record ? tabID : nil
@@ -148,21 +151,51 @@ extension FileManagerWindowRoutingReducer {
         let shouldResyncContentNavigation = state.contentTabs.activeTabID == activeTabIDBeforeSync
             && activeAnchorAfterSync != activeAnchorBeforeSync
             && activeAnchorAfterSync?.isCollectionFileAnchor == true
+        return pinnedContentTabsAppliedEffects(
+            pendingPinnedReturnTabID: pendingPinnedReturnTabID,
+            shouldResyncContentNavigation: shouldResyncContentNavigation,
+            restorePendingCollectionHistory: mode == .authoritative,
+            tabAnchorsBeforeSync: tabAnchorsBeforeSync,
+            state: &state,
+        )
+    }
+
+    func pinnedContentTabsAppliedEffects(
+        pendingPinnedReturnTabID: ContentTabID?,
+        shouldResyncContentNavigation: Bool,
+        restorePendingCollectionHistory: Bool,
+        tabAnchorsBeforeSync: [(id: ContentTabID, anchor: ContentTabPageAnchor)],
+        state: inout State,
+    ) -> Effect<Action> {
         let handoffCleanupEffect = shouldResyncContentNavigation
             ? prepareContentForActiveTabHandoff(state: &state.content)
             : .none
-        return .merge(
-            handoffCleanupEffect,
-            activeTabHandoffEffect(
-                shouldResyncContentNavigation,
+        let invalidatedPinnedReturnEffect: Effect<Action> = if let pendingPinnedReturnTabID,
+                                                               state.pendingPinnedCollectionReturnTabID
+                                                               != pendingPinnedReturnTabID
+        {
+            cancelPendingCollectionOpen(
                 state: &state,
-                aiConnectionsFileClient: aiConnectionsFileClient,
-                restorePendingCollectionHistory: mode == .authoritative,
-            ),
-            closeInspectorForActiveAiChatEffect(state: state),
-            reconcileUndoManagerScopesEffect(
-                tabAnchorsBeforeSync: tabAnchorsBeforeSync,
-                state: state,
+                failedPinnedReturnTabID: pendingPinnedReturnTabID,
+            )
+        } else {
+            .none
+        }
+        return .concatenate(
+            invalidatedPinnedReturnEffect,
+            .merge(
+                handoffCleanupEffect,
+                activeTabHandoffEffect(
+                    shouldResyncContentNavigation,
+                    state: &state,
+                    aiConnectionsFileClient: aiConnectionsFileClient,
+                    restorePendingCollectionHistory: restorePendingCollectionHistory,
+                ),
+                closeInspectorForActiveAiChatEffect(state: state),
+                reconcileUndoManagerScopesEffect(
+                    tabAnchorsBeforeSync: tabAnchorsBeforeSync,
+                    state: state,
+                ),
             ),
         )
     }
@@ -175,6 +208,9 @@ extension FileManagerWindowRoutingReducer {
             return .none
         }
         let disposition = contentTabCloseDisposition(tabID: tabID, state: state)
+        let cancelCollectionOpenEffect = disposition.shouldResyncContentNavigation
+            ? cancelPendingCollectionOpen(state: &state, failedPinnedReturnTabID: tabID)
+            : .none
         state.pendingDirectoryReloadTabIDs.remove(tabID)
         let closedTabLoadingCancellationEffect = makeContentTabLoadingCancellationEffect(
             tabID: tabID,
@@ -205,14 +241,17 @@ extension FileManagerWindowRoutingReducer {
             disposition: disposition,
             state: state,
         )
-        return makeContentTabCloseEffects(
-            ContentTabCloseEffectInputs(
-                handoffCleanup: handoffCleanupEffect,
-                undoManagerLifecycle: undoManagerLifecycleEffect,
-                loadingCancellation: closedTabLoadingCancellationEffect,
+        return .concatenate(
+            cancelCollectionOpenEffect,
+            makeContentTabCloseEffects(
+                ContentTabCloseEffectInputs(
+                    handoffCleanup: handoffCleanupEffect,
+                    undoManagerLifecycle: undoManagerLifecycleEffect,
+                    loadingCancellation: closedTabLoadingCancellationEffect,
+                ),
+                disposition: disposition,
+                state: &state,
             ),
-            disposition: disposition,
-            state: &state,
         )
     }
 
@@ -454,7 +493,7 @@ extension FileManagerWindowRoutingReducer {
     ) -> Effect<Action>? {
         guard targetState.isCollectionMode, targetState.hasUnsavedCollectionChanges else { return nil }
         let cancelCollectionOpenEffect = isActiveTarget
-            ? cancelPendingCollectionOpen(state: &state)
+            ? cancelPendingCollectionOpen(state: &state, failedPinnedReturnTabID: tabID)
             : Effect<Action>.none
         return .concatenate(
             cancelCollectionOpenEffect,

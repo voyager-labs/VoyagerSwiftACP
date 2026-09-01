@@ -17,6 +17,48 @@ public struct ExternalContentTabReservation: Equatable, Sendable {
 }
 
 public extension FileManagerWindowState {
+    func canReturnContentTabToPinnedLocation(
+        _ tabID: ContentTabID,
+        matching anchor: ContentTabPageAnchor,
+    ) -> Bool {
+        guard let tab = contentTabs.tabs[id: tabID],
+              tab.isPinned,
+              let record = contentTabs.pinnedRecords[tabID],
+              record.isSupportedPinnedContentTab,
+              record.anchor == anchor
+        else { return false }
+
+        guard tab.anchor != anchor else { return true }
+        let tabContent = contentTabs.activeTabID == tabID ? content : tabContentStates[tabID]
+        return tabContent?.hasUnsavedCollectionChanges == false
+    }
+
+    mutating func applyExternalPendingSelection(
+        _ pendingSelectEntryID: String?,
+        tabID: ContentTabID,
+        anchor: ContentTabPageAnchor,
+    ) -> Bool {
+        let request = ExternalContentTabReservation(
+            id: tabID,
+            anchor: anchor,
+            pendingSelectEntryID: pendingSelectEntryID,
+        )
+        guard request.isValidExternalReservation,
+              contentTabs.tabs[id: tabID]?.anchor == anchor
+        else { return false }
+
+        if contentTabs.activeTabID == tabID {
+            content.pendingSelectEntryID = pendingSelectEntryID
+            content.consumeExternalPendingSelectionIfAlreadyLoaded()
+            syncActiveTabContentState()
+        } else {
+            guard tabContentStates[tabID] != nil else { return false }
+            tabContentStates[tabID]?.pendingSelectEntryID = pendingSelectEntryID
+            tabContentStates[tabID]?.consumeExternalPendingSelectionIfAlreadyLoaded()
+        }
+        return true
+    }
+
     @discardableResult
     mutating func reserveExternalContentTabs(
         _ reservations: [ExternalContentTabReservation],

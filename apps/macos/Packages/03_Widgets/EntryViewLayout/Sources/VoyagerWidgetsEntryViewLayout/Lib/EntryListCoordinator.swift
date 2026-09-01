@@ -402,6 +402,7 @@ public final class EntryListCoordinator: NSObject {
         if structureChanged {
             syncListRenamingFromStore()
         }
+        view?.updateGroupHeaderTitle()
         requestThumbnailsForVisibleRows()
     }
 

@@ -85,7 +85,7 @@ private extension ComposerTopRowView {
                 },
             )
 
-            textField(viewStore: viewStore, isLocked: isLocked)
+            textField(viewStore: viewStore)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             ComposerChromeButton(
@@ -106,12 +106,9 @@ private extension ComposerTopRowView {
         .accessibilityIdentifier("composer.inputRow")
     }
 
-    func textField(
-        viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>,
-        isLocked: Bool,
-    ) -> some View {
+    func textField(viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>) -> some View {
         ZStack(alignment: .trailing) {
-            queryInputField(viewStore: viewStore, isLocked: isLocked)
+            queryInputField(viewStore: viewStore)
 
             if viewStore.isLoadingSearch || viewStore.isFilteringInFlight {
                 stopButton(viewStore: viewStore)
@@ -148,10 +145,7 @@ private extension ComposerTopRowView {
         }
     }
 
-    func queryInputField(
-        viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>,
-        isLocked: Bool,
-    ) -> some View {
+    func queryInputField(viewStore: ViewStore<ComposerFeature.State, ComposerFeature.Action>) -> some View {
         let placeholderText = "Describe the collection you want..."
 
         return ZStack(alignment: .leading) {
@@ -178,7 +172,6 @@ private extension ComposerTopRowView {
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
             .padding(.trailing, 28)
-            .disabled(isLocked)
         }
         .onSubmit {
             let trimmed = viewStore.text.trimmingCharacters(in: .whitespacesAndNewlines)

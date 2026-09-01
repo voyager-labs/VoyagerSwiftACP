@@ -24,9 +24,12 @@ struct ContentPageNavigationStateReducer {
             case .internal(.clearForwardHistory):
                 return clearForwardHistory(state: &state)
 
-            case let .internal(.setNavigationState(navigationState)),
-                 let .internal(.applyPinnedPeerNavigationState(navigationState)):
+            case let .internal(.setNavigationState(navigationState)):
                 return setNavigationState(navigationState, state: &state)
+
+            case let .internal(.applyPinnedPeerNavigationState(navigationState)):
+                state.applyPinnedPeerNavigationState(navigationState)
+                return .none
 
             case let .internal(.setPendingNavigation(pending)):
                 return setPendingNavigation(pending, state: &state)

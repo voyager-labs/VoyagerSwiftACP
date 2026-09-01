@@ -4,7 +4,7 @@ import IdentifiedCollections
 import VoyagerEntitiesAppPreferences
 import VoyagerEntitiesEntry
 @testable import VoyagerPagesFileManager
-import VoyagerWidgetsEntryViewLayout
+@testable import VoyagerWidgetsEntryViewLayout
 import XCTest
 
 @MainActor
@@ -543,6 +543,75 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
         XCTAssertTrue(children.contains { ($0 as? NSView) === retainedView })
         XCTAssertTrue(children.contains { ($0 as? NSView) === currentList })
         XCTAssertFalse(children.contains { ($0 as? NSView) === staleList })
+    }
+
+    /// EVM-002-set_entries_view_as_list_table: stored material override applies to every remounted list.
+    /// List→Icon→List 전환으로 새 EntryListView가 발견되어도 Host tuning 값을 재적용하는지 검증한다.
+    /// - 검증 내용: 저장된 list header material과 group row opacity가 모든 mounted list에 동일하게 적용된다.
+    /// - 사전 조건: custom FileManagerHostMaterialConfiguration과 두 개의 EntryListView
+    /// - 기대 결과: 두 list가 모두 custom material 설정을 사용한다.
+    func testStoredEntryListMaterialOverrideAppliesToEveryMountedList() {
+        let entryListViews = [EntryListView(), EntryListView()]
+        let materialConfiguration = FileManagerHostMaterialConfiguration(
+            windowShell: .init(material: .windowBackground, blendingMode: .behindWindow, alphaValue: 0.81),
+            contentBackground: .init(material: .underWindowBackground, blendingMode: .withinWindow, alphaValue: 0.72),
+            listHeader: .init(material: .hudWindow, blendingMode: .behindWindow, alphaValue: 0.63),
+            groupRowLightOpacity: 0.14,
+            groupRowDarkOpacity: 0.27,
+        )
+        let materialOverride = materialConfiguration.materialOverride
+
+        MainContainerSplitCoordinator.applyEntryListMaterialOverride(materialOverride, to: entryListViews)
+
+        for entryListView in entryListViews {
+            XCTAssertEqual(entryListView.scrollView.headerMaterial, .hudWindow)
+            XCTAssertEqual(entryListView.scrollView.headerBlendingMode, .behindWindow)
+            XCTAssertEqual(entryListView.scrollView.headerAlphaValue, 0.63)
+            XCTAssertEqual(entryListView.tableView.groupRowLightOpacity, 0.14)
+            XCTAssertEqual(entryListView.tableView.groupRowDarkOpacity, 0.27)
+        }
+    }
+
+    /// EVM-002-update_entry_selection: FileManager key bridge routes arrows to the mounted list.
+    /// key-command focus가 overlay에 있어도 수정자 없는 화살표가 EntryListView의 visible outline 경로를 사용하는지 검증한다.
+    /// - 검증 내용: mounted list에 등록된 focus coordinator가 Down arrow를 list coordinator로 전달한다.
+    /// - 사전 조건: 두 Entry 중 첫 번째가 선택된 EntryListView와 key-command focus coordinator
+    /// - 기대 결과: bridge가 소비되고 두 번째 Entry가 선택된다.
+    func testKeyCommandFocusCoordinatorRoutesArrowToMountedEntryList() throws {
+        let first = EntryModel.temporaryFolder(id: "/root/first", name: "first")
+        let second = EntryModel.temporaryFolder(id: "/root/second", name: "second")
+        var state = FileManagerContentState()
+        state.entryViewLayout.entries = [first, second]
+        state.entryViewLayout.selectedIds = [first.id]
+        state.entryViewLayout.lastSelectedId = first.id
+        state.entryViewLayout.rangeAnchorId = first.id
+        let store = Store(initialState: state) {
+            FileManagerContentFeature()
+        }
+        let listCoordinator = EntryListCoordinator(store: store.scope(
+            state: \.entryViewLayout,
+            action: \.entryViewLayout,
+        ))
+        let listView = EntryListView()
+        listCoordinator.bind(to: listView)
+        let focusCoordinator = FileManagerKeyCommandFocusCoordinator()
+        focusCoordinator.registerEntryListView(listView)
+        let event = try XCTUnwrap(NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: [],
+            timestamp: 1,
+            windowNumber: 0,
+            context: nil,
+            characters: "\u{f701}",
+            charactersIgnoringModifiers: "\u{f701}",
+            isARepeat: false,
+            keyCode: 125,
+        ))
+
+        XCTAssertTrue(focusCoordinator.routeEntryListKeyDown(event))
+        XCTAssertEqual(listView.tableView.selectedRowIndexes, IndexSet(integer: 1))
+        XCTAssertEqual(store.state.entryViewLayout.selectedIds, [second.id])
     }
 
     // MARK: - VOY-578-ordinary_directory_loading

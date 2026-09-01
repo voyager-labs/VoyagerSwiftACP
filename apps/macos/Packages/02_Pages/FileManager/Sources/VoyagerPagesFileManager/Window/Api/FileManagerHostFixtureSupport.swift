@@ -15,6 +15,9 @@ extension EntryLoadingClient {
         preset: String?,
         windowID: UUID,
     ) -> EntryLoadingClient {
+        let rootEntries = FileManagerHostFixtureSampleData.rootEntries(
+            for: preset.flatMap(FileManagerHostPreset.init(rawValue:)),
+        )
         let progressiveLoadingCoordinator = FileManagerHostFixtureProgressiveLoadingCoordinator()
         let stagedLoadItems = stagedEntryLoader(
             scenario: scenario,
@@ -25,11 +28,11 @@ extension EntryLoadingClient {
 
         return EntryLoadingClient(
             loadItems: { directoryURL, _ in
-                fixtureEntries(for: directoryURL, scenario: scenario)
+                fixtureEntries(for: directoryURL, scenario: scenario, rootEntries: rootEntries)
             },
-            loadComputerItems: { FileManagerHostFixtureSampleData.entries },
-            loadRecentItems: { _, _ in FileManagerHostFixtureSampleData.entries },
-            loadFilesWithTag: { _, _, _ in FileManagerHostFixtureSampleData.entries },
+            loadComputerItems: { rootEntries },
+            loadRecentItems: { _, _ in rootEntries },
+            loadFilesWithTag: { _, _, _ in rootEntries },
             fileExists: { _ in false },
             fileExistsAtPath: { _, _ in false },
             contentsOfDirectory: { _, _, _ in [] },
@@ -62,6 +65,9 @@ extension EntryLoadingClient {
         windowID: UUID,
         coordinator: FileManagerHostFixtureProgressiveLoadingCoordinator,
     ) -> FileManagerHostStagedEntryLoader? {
+        let rootEntries = FileManagerHostFixtureSampleData.rootEntries(
+            for: preset.flatMap(FileManagerHostPreset.init(rawValue:)),
+        )
         guard scenario.progressiveEntryLoading != .none
             || scenario.delayedNavigation != .none
             || scenario.permission != .none
@@ -69,7 +75,11 @@ extension EntryLoadingClient {
         else { return nil }
         return { directoryURL, _, _ in
             guard isScenarioFolder(directoryURL, scenario: scenario) else {
-                return immediateStream(entries: fixtureEntries(for: directoryURL, scenario: scenario))
+                return immediateStream(entries: fixtureEntries(
+                    for: directoryURL,
+                    scenario: scenario,
+                    rootEntries: rootEntries,
+                ))
             }
             let request = coordinator.beginRequest()
             let shouldDenyPermission = directoryURL.path == FileManagerHostFixtureSampleData.restrictedFolder.fullPath
@@ -88,6 +98,7 @@ extension EntryLoadingClient {
     private static func fixtureEntries(
         for directoryURL: URL,
         scenario: FileManagerHostScenario,
+        rootEntries: [EntryModel],
     ) -> [EntryModel] {
         switch directoryURL.path {
         case FileManagerHostFixtureSampleData.restrictedFolder.fullPath:
@@ -96,16 +107,20 @@ extension EntryLoadingClient {
             FileManagerHostFixtureSampleData.largeFolderEntries
         case FileManagerHostFixtureSampleData.projects.fullPath:
             FileManagerHostFixtureSampleData.progressiveChildren
+        case FileManagerHostFixtureSampleData.materialDesignAssets.fullPath:
+            FileManagerHostFixtureSampleData.materialDesignAssetEntries
+        case FileManagerHostFixtureSampleData.siblingFolder.fullPath:
+            []
         case FileManagerHostFixtureSampleData.path:
             if scenario.permission != .none {
                 FileManagerHostFixtureSampleData.permissionEntries
             } else if scenario.largeFolder != .none {
                 FileManagerHostFixtureSampleData.largeFolderRootEntries
             } else {
-                FileManagerHostFixtureSampleData.entries
+                rootEntries
             }
         default:
-            FileManagerHostFixtureSampleData.entries
+            rootEntries
         }
     }
 
@@ -170,6 +185,102 @@ enum FileManagerHostFixtureSampleData {
         ),
     ]
 
+    static let materialCatalogEntries: [EntryModel] = [
+        makeEntry(name: "Projects", isFolder: true, size: 0, kind: "Folders"),
+        materialDesignAssets,
+        makeEntry(
+            name: "Portable Document.pdf",
+            isFolder: false,
+            size: 842_752,
+            kind: "Documents",
+            fileExtension: "pdf",
+        ),
+        makeEntry(name: "Word Document.docx", isFolder: false, size: 61440, kind: "Documents", fileExtension: "docx"),
+        makeEntry(name: "Rich Text.rtf", isFolder: false, size: 18432, kind: "Documents", fileExtension: "rtf"),
+        makeEntry(name: "Hangul Document.hwp", isFolder: false, size: 132_096, kind: "Documents", fileExtension: "hwp"),
+        makeEntry(name: "Workbook.xlsx", isFolder: false, size: 95232, kind: "Spreadsheets", fileExtension: "xlsx"),
+        makeEntry(
+            name: "Legacy Workbook.xls",
+            isFolder: false,
+            size: 73728,
+            kind: "Spreadsheets",
+            fileExtension: "xls",
+        ),
+        makeEntry(
+            name: "Comma-Separated.csv",
+            isFolder: false,
+            size: 12288,
+            kind: "Spreadsheets",
+            fileExtension: "csv",
+        ),
+        makeEntry(
+            name: "Macro Workbook.xlsm",
+            isFolder: false,
+            size: 108_544,
+            kind: "Spreadsheets",
+            fileExtension: "xlsm",
+        ),
+        makeEntry(name: "Reference.png", isFolder: false, size: 1_572_864, kind: "Images", fileExtension: "png"),
+        makeEntry(name: "Photograph.jpg", isFolder: false, size: 2_621_440, kind: "Images", fileExtension: "jpg"),
+        makeEntry(name: "Animation.gif", isFolder: false, size: 786_432, kind: "Images", fileExtension: "gif"),
+        makeEntry(name: "Scanned.tiff", isFolder: false, size: 4_194_304, kind: "Images", fileExtension: "tiff"),
+        makeEntry(name: "Interview.mp3", isFolder: false, size: 8_388_608, kind: "Media", fileExtension: "mp3"),
+        makeEntry(name: "Lossless Audio.wav", isFolder: false, size: 25_165_824, kind: "Media", fileExtension: "wav"),
+        makeEntry(name: "Product Demo.mp4", isFolder: false, size: 67_108_864, kind: "Media", fileExtension: "mp4"),
+        makeEntry(name: "Screen Recording.mov", isFolder: false, size: 92_274_688, kind: "Media", fileExtension: "mov"),
+        makeEntry(name: "Release.zip", isFolder: false, size: 5_242_880, kind: "Archives", fileExtension: "zip"),
+        makeEntry(name: "Backup.7z", isFolder: false, size: 12_582_912, kind: "Archives", fileExtension: "7z"),
+        makeEntry(name: "Source.tar.gz", isFolder: false, size: 3_145_728, kind: "Archives", fileExtension: "gz"),
+    ]
+
+    static let materialDesignAssets = makeEntry(name: "Design Assets", isFolder: true, size: 0, kind: "Folders")
+
+    static let materialDesignAssetEntries = [
+        makeEntry(
+            name: "Design Asset Preview.png",
+            isFolder: false,
+            size: 1_572_864,
+            kind: "Images",
+            fileExtension: "png",
+            parentPath: materialDesignAssets.fullPath,
+        ),
+    ]
+
+    static let materialDocumentEntries = materialCatalogEntries.filter {
+        ["Documents", "Spreadsheets"].contains($0.facets.kind)
+    }
+
+    static let materialMediaEntries = materialCatalogEntries.filter {
+        ["Images", "Media"].contains($0.facets.kind)
+    }
+
+    static let materialStressEntries: [EntryModel] = [
+        makeEntry(
+            name: "매우 긴 한국어 파일 이름과 여러 단어가 포함된 최종 검토 문서.pdf",
+            isFolder: false,
+            size: 524_288,
+            kind: "Long Names",
+            fileExtension: "pdf",
+        ),
+        makeEntry(
+            name: "Résumé final avec caractères accentués.docx",
+            isFolder: false,
+            size: 81920,
+            kind: "Long Names",
+            fileExtension: "docx",
+        ),
+        makeEntry(
+            name: "2026-08-31T23-59-59Z-production-export-with-a-very-long-suffix.json",
+            isFolder: false,
+            size: 16384,
+            kind: "Long Names",
+            fileExtension: "json",
+        ),
+        makeEntry(name: ".voyager-fixture", isFolder: false, size: 256, kind: "Edge Cases"),
+        makeEntry(name: "README", isFolder: false, size: 4096, kind: "Edge Cases"),
+        makeEntry(name: "Empty File.txt", isFolder: false, size: 0, kind: "Edge Cases", fileExtension: "txt"),
+    ]
+
     static let projects = makeEntry(name: "Projects", isFolder: true, size: 0, kind: "Folder")
 
     static let restrictedFolder = makeEntry(name: "Restricted", isFolder: true, size: 0, kind: "Restricted Folder")
@@ -223,6 +334,25 @@ enum FileManagerHostFixtureSampleData {
     }
 
     private static let referenceDate = Date(timeIntervalSince1970: 1_735_689_600)
+
+    static func rootEntries(for preset: FileManagerHostPreset?) -> [EntryModel] {
+        switch preset {
+        case .permissionDenied, .permissionRetry:
+            permissionEntries
+        case .largeFolder1000, .concurrentLargeFolders:
+            largeFolderRootEntries
+        case .materialTuning:
+            materialCatalogEntries
+        case .fixtureDocuments:
+            materialDocumentEntries
+        case .fixtureMedia:
+            materialMediaEntries
+        case .fixtureStress:
+            materialStressEntries
+        default:
+            entries
+        }
+    }
 
     private static func makeEntry(
         name: String,
@@ -561,7 +691,6 @@ private enum FileManagerHostFixtureProgressiveLoading {
                 lastOpenedDate: nil,
             )
         }))
-        context.continuation.finish()
         FileManagerHostFixturePhase.streamFinished.log(
             preset: context.preset,
             windowID: context.windowID,
@@ -569,6 +698,7 @@ private enum FileManagerHostFixtureProgressiveLoading {
             rowCount: children.count,
             count: children.count,
         )
+        context.continuation.finish()
     }
 
     private static func requestUUID(scenario: FileManagerHostScenario, requestID: Int, windowID: UUID) -> UUID {

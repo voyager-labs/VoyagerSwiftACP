@@ -69,7 +69,7 @@ public struct ComposerFeature {
                 return handleSetPresented(state: &state, isPresented: isPresented)
 
             case let .view(.setText(text)):
-                state.text = text
+                state.setTextFromUserIntent(text)
                 state.transientFeedback = nil
                 return .cancel(id: CancelID.feedbackDismiss(ownerID: state.cancellationOwnerID))
 
@@ -130,6 +130,7 @@ public struct ComposerFeature {
                 state.searchStartedAt = nil
                 state.filtersStartedAt = nil
                 state.activeFiltersMetricSource = nil
+                state.discardQueryRecovery()
                 applyQueryPhaseTransition(.reset, state: &state)
                 return .merge(
                     .cancel(id: CancelID.search(ownerID: state.cancellationOwnerID)),
@@ -233,6 +234,12 @@ private func handleSetPresented(
             || state.isLoadingFilters
         let shouldKeepFiltersAlive = shouldPreserveFilterLifecycle || hasActiveFilterLifecycle
         let shouldCloseScopeEditorWithoutCommit = state.scopeEditor.isPresented && !shouldPreserveFilterLifecycle
+        let shouldRetainQueryRecovery = shouldKeepFiltersAlive
+            && state.activeFiltersRequestID.map { state.queryRecoveryContext?.stage == .filters($0) } == true
+
+        if !shouldRetainQueryRecovery {
+            state.discardQueryRecovery()
+        }
 
         state.hasSubmittedInSession = false
         state.searchStartedAt = nil
@@ -300,6 +307,7 @@ func applyAppliedFilters(
     state: inout ComposerFeature.State,
     registryClient: RegistryClient,
     uuid: () -> UUID = UUID.init,
+    preserveLocalMultiScope: Bool = true,
 ) {
     if let includeSubfolders = appliedFilters?.includeSubfolders {
         state.scopeEditor.includeSubfolders = includeSubfolders
@@ -316,7 +324,8 @@ func applyAppliedFilters(
         exceptions: resolved.excludedScopes,
         includeSubfolders: state.scopeEditor.includeSubfolders,
     )
-    let shouldPreserveLocalMultiScope = state.scopeEditor.selection.explicitBases.count > 1
+    let shouldPreserveLocalMultiScope = preserveLocalMultiScope
+        && state.scopeEditor.selection.explicitBases.count > 1
         && resolved.excludedScopes.isEmpty
         && selection.legacyScopePaths != state.scopeEditor.selection.legacyScopePaths
     if !shouldPreserveLocalMultiScope {

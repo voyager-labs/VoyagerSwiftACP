@@ -7,6 +7,24 @@ import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
 import VoyagerShared
 
+extension FileManagerWindowState {
+    var pendingPinnedCollectionReturnTabID: ContentTabID? {
+        pendingPinnedCollectionReturnTabID(for: contentTabs.activeTabID)
+    }
+
+    func pendingPinnedCollectionReturnTabID(for tabID: ContentTabID?) -> ContentTabID? {
+        guard let tabID,
+              let tab = contentTabs.tabs[id: tabID],
+              tab.isPinned,
+              let record = contentTabs.pinnedRecords[tabID],
+              case let .collectionFile(durableURL) = record.anchor,
+              pendingCollectionOpenRequest?.url.standardizedFileURL == durableURL.standardizedFileURL,
+              tab.anchor != record.anchor
+        else { return nil }
+        return tabID
+    }
+}
+
 @Reducer
 struct FileManagerNavigationActionReducer {
     typealias State = FileManagerWindowState
@@ -72,8 +90,12 @@ struct FileManagerNavigationActionReducer {
              .showTag,
              .showAiChat,
              .showAiChatSessions:
-            .concatenate(
-                cancelPendingCollectionOpen(state: &state),
+            let failedPinnedReturnTabID = state.pendingPinnedCollectionReturnTabID
+            return .concatenate(
+                cancelPendingCollectionOpen(
+                    state: &state,
+                    failedPinnedReturnTabID: failedPinnedReturnTabID,
+                ),
                 handleDirectNavigationAction(action, state: &state),
             )
 
@@ -81,13 +103,17 @@ struct FileManagerNavigationActionReducer {
              .goForward,
              .goToHistoryIndex,
              .goToEnclosingDirectory:
-            .concatenate(
-                cancelPendingCollectionOpen(state: &state),
+            let failedPinnedReturnTabID = state.pendingPinnedCollectionReturnTabID
+            return .concatenate(
+                cancelPendingCollectionOpen(
+                    state: &state,
+                    failedPinnedReturnTabID: failedPinnedReturnTabID,
+                ),
                 handleHistoryNavigationAction(action, state: &state),
             )
 
         case let .openCollectionFile(url):
-            handleOpenCollectionFile(
+            return handleOpenCollectionFile(
                 url: url,
                 state: &state,
                 collectionFileClient: collectionFileClient,
@@ -284,12 +310,12 @@ private func handleOpenCollectionFile(
         guard pendingRequest.url.standardizedFileURL != url.standardizedFileURL else {
             return .none
         }
-        state.pendingCollectionOpenRequest = nil
+        let failedPinnedReturnTabID = state.pendingPinnedCollectionReturnTabID
         return .concatenate(
-            .cancel(id: OpenCollectionFileCancelID(
-                windowID: state.content.entryViewLayout.entryOperations.windowID,
-            )),
-            restoreCollectionOpenHistoryEffect(pendingRequest),
+            cancelPendingCollectionOpen(
+                state: &state,
+                failedPinnedReturnTabID: failedPinnedReturnTabID,
+            ),
             .send(.navigation(.view(.openCollectionFile(url)))),
         )
     }
@@ -385,6 +411,7 @@ private func handleCollectionFileLoaded(
           state.pendingCollectionOpenRequest?.url == request.url,
           state.content.navigation.navigationState == request.sourceRoute
     else { return .none }
+    let pinnedReturnTabID = state.pendingPinnedCollectionReturnTabID
     state.pendingCollectionOpenRequest = nil
 
     switch result {
@@ -408,7 +435,7 @@ private func handleCollectionFileLoaded(
         return handleCollectionFileLoadedFailure(
             error,
             request: request,
-            state: &state,
+            tabID: pinnedReturnTabID,
             collectionAlertClient: environment.collectionAlertClient,
             metricsClient: environment.metricsClient,
         )
@@ -587,10 +614,13 @@ nonisolated private func collectionScopeRootModified(
 private func handleCollectionFileLoadedFailure(
     _ error: ContentPageNavigationErrorFingerprint,
     request: ContentPageCollectionOpenRequest,
-    state _: inout FileManagerWindowState,
+    tabID: ContentTabID?,
     collectionAlertClient: CollectionAlertClient,
     metricsClient: MetricsClient,
 ) -> Effect<FileManagerWindowAction> {
+    let failureDelegateEffect: Effect<FileManagerWindowAction> = tabID.map {
+        .send(.delegate(.pinnedContentTabRuntimeNavigationFailed(tabID: $0)))
+    } ?? .none
     let metricEffect = collectionOpenMetricEffect(
         metricsClient: metricsClient,
         resultStatus: .loadFailure,
@@ -598,6 +628,7 @@ private func handleCollectionFileLoadedFailure(
     )
     if case .collection = request.sourceRoute {
         return .concatenate(
+            failureDelegateEffect,
             .send(.content(.entryViewLayout(.internal(.setCollectionContentLoading(false))))),
             restoreCollectionOpenHistoryEffect(request),
             .run { _ in
@@ -626,7 +657,7 @@ private func handleCollectionFileLoadedFailure(
         await collectionAlertClient.showCollectionOpenErrorAlert("Unable to Open Collection", error.message)
     })
     effects.append(metricEffect)
-    return .concatenate(effects)
+    return .concatenate([failureDelegateEffect] + effects)
 }
 
 private func collectionOpenErrorCategory(_ error: Error) -> ContentPageNavigationErrorCategory {
@@ -670,6 +701,7 @@ private func restoreCollectionOpenHistoryEffect(
 
 func cancelPendingCollectionOpen(
     state: inout FileManagerWindowState,
+    failedPinnedReturnTabID: ContentTabID? = nil,
 ) -> Effect<FileManagerWindowAction> {
     guard let request = state.pendingCollectionOpenRequest else { return .none }
     state.pendingCollectionOpenRequest = nil
@@ -681,13 +713,19 @@ func cancelPendingCollectionOpen(
     } else {
         .none
     }
-    return .concatenate(
+    var effects: [Effect<FileManagerWindowAction>] = [
         .cancel(id: OpenCollectionFileCancelID(
             windowID: state.content.entryViewLayout.entryOperations.windowID,
         )),
         clearLoadingEffect,
         restoreCollectionOpenHistoryEffect(request),
-    )
+    ]
+    if let failedPinnedReturnTabID {
+        effects.append(.send(.delegate(.pinnedContentTabRuntimeNavigationFailed(
+            tabID: failedPinnedReturnTabID,
+        ))))
+    }
+    return .concatenate(effects)
 }
 
 private func isUserNavigationRequest(_ action: ContentPageNavigationAction) -> Bool {
