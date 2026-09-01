@@ -214,6 +214,61 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
         XCTAssertEqual(nameColumn.title, originalTitle)
     }
 
+    /// EVM-002-set_entries_view_as_list_table: projection reload은 scroll bounds 변화 없이도 현재 그룹 제목을 갱신한다.
+    /// 같은 viewport에서 group section이 재구성되면 bounds observer에 의존하지 않고 Name header를 다시 계산하는지 검증한다.
+    /// - 검증 내용: G1을 G1-renamed로 교체한 뒤 동일한 scroll offset에서 Name 컬럼 제목이 새 그룹명으로 바뀐다.
+    /// - 사전 조건: 스크롤된 grouped list와 동일한 row shape를 가진 새 group projection
+    /// - 기대 결과: reload 완료 후 scroll event 없이 Name 컬럼 제목이 G1-renamed가 된다.
+    func testGroupTitleUpdatesAfterProjectionReloadWithoutScrollChange() throws {
+        var state = EntryViewLayoutState()
+        state.listIconSize = 30
+        func folder(_ id: String) -> EntryModel {
+            EntryModel.temporaryFolder(id: "/" + id, name: id)
+        }
+        let entries = ["a", "b", "c", "d", "e"].map(folder)
+        state.entryArrangements.groupedItems = [
+            .init(groupName: "G1", items: Array(entries[0 ... 2]), colorCode: nil),
+            .init(groupName: "G2", items: [entries[3]], colorCode: nil),
+            .init(groupName: "G3", items: [entries[4]], colorCode: nil),
+        ]
+        let store = Store(initialState: state) { EntryViewLayoutFeature() }
+        let coordinator = EntryListCoordinator(store: store)
+        let view = EntryListView(frame: NSRect(x: 0, y: 0, width: 800, height: 150))
+        coordinator.bind(to: view)
+        view.layoutSubtreeIfNeeded()
+
+        let clip = view.scrollView.contentView
+        let nameColumn = try XCTUnwrap(
+            view.tableView.tableColumns.first { $0.identifier.rawValue == EntryListColumn.name.rawValue },
+        )
+        let firstGroupRow = view.tableView.rect(ofRow: 0)
+        clip.scroll(to: NSPoint(x: 0, y: firstGroupRow.minY + 1))
+        view.scrollView.reflectScrolledClipView(clip)
+        view.layoutSubtreeIfNeeded()
+        XCTAssertEqual(nameColumn.title, "G1")
+
+        var updatedState = state
+        updatedState.entryArrangements.groupedItems[0] = .init(
+            groupName: "G1-renamed",
+            items: Array(entries[0 ... 2]),
+            colorCode: nil,
+        )
+        let updatedItems = coordinator.makeOutlineItems(presentation: updatedState.presentation)
+        coordinator.applyPostReloadPresentation(
+            pathChanged: false,
+            structureChanged: true,
+            updateKind: .fullReload,
+            selectionChanged: false,
+        ) {
+            coordinator.outlineItems = updatedItems
+            coordinator.rebuildItemIndexes()
+            view.tableView.reloadData()
+            coordinator.applyGroupExpansionState()
+        }
+
+        XCTAssertEqual(nameColumn.title, "G1-renamed")
+    }
+
     /// EVM-002-set_entries_view_as_list_table: 그룹 행은 상태와 appearance에 맞는 반투명 오버레이 배경과 28pt 높이를 사용한다.
     /// 사용자가 그룹화된 목록을 펼치거나 접어도 일반 행의 줄무늬가 보존되는지 검증한다.
     /// - 검증 내용: Aqua와 Dark Aqua의 그룹 배경(material 투과 유지), 재사용 초기화, 행 높이와 인접 간격을 실제 AppKit 행으로 확인한다.
