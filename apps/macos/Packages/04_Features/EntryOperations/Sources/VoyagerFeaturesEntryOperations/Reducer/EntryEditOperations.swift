@@ -163,7 +163,15 @@ struct EntryEditOperationsReducer {
                     state.renamingItemId = nil
                     state.renamingText = ""
                     state.renamingItem = nil
-                    return .none
+                    return .send(.lifecycle(.entryActionCompleted(EntryActionRecord(
+                        operationKind: .rename,
+                        targets: [],
+                        failedCount: 0,
+                        cancelledCount: 1,
+                        succeededCount: 0,
+                        id: UUID(),
+                        timestamp: Date(),
+                    ))))
                 }
 
                 state.renamingText = trimmed

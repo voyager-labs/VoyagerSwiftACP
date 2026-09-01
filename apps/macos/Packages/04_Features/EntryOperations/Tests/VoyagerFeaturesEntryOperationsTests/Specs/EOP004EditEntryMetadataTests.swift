@@ -180,6 +180,60 @@ final class EOP004EditEntryMetadataTests: XCTestCase {
             $0.renamingItem = nil
             $0.renamingCommandSource = nil
         }
+        await store.receive(\.lifecycle.entryActionCompleted)
+    }
+
+    /// EOP-004-rename_entry: 수용된 unchanged/blank rename은 취소 terminal 한 건으로 종료된다.
+    /// - 검증 내용: accepted command의 ID/source를 보존한 빈-target cancelled record와 파일 작업 미호출을 확인한다.
+    /// - 사전 조건: context-menu unchanged rename과 keyboard blank rename이 각각 수용된다.
+    /// - 기대 결과: 각 명령은 cancelledCount 1인 terminal 정확히 한 건을 내고 undo record를 만들지 않는다.
+    func testRenameEntry_acceptedNoOpEmitsMetadataPreservingCancelledTerminal() async {
+        let entry = EntryModelFixtures.makeFileEntry(
+            id: "/tmp/source.txt",
+            name: "source.txt",
+            fileExtension: "txt",
+        )
+        let renameCallCount = LockIsolated(0)
+        let scenarios: [(String, EntryCommandMetadata)] = [
+            (entry.name, .init(id: UUID(4), interaction: .renameEntry, source: .contextMenu)),
+            ("   ", .init(id: UUID(5), interaction: .renameEntry, source: .keyboardShortcut)),
+        ]
+
+        for (draft, metadata) in scenarios {
+            let store = EntryOperationsTestSupport.makeStore {
+                $0.entryFileOpsClient.renameFile = { _, _ in
+                    renameCallCount.withValue { $0 += 1 }
+                }
+            }
+
+            await store.send(.edit(.startRename(item: entry, text: draft, source: metadata.source))) {
+                $0.renamingItemId = entry.id
+                $0.renamingText = draft
+                $0.renamingItem = entry
+                $0.renamingCommandSource = metadata.source
+            }
+            await store.send(.acceptedCommand(metadata: metadata, action: .edit(.commitRename))) {
+                $0.renamingItemId = nil
+                $0.renamingText = ""
+                $0.renamingItem = nil
+                $0.renamingCommandSource = nil
+            }
+            await store.receive { action in
+                guard case let .lifecycle(.entryActionCompleted(record)) = action else { return false }
+                return record.id == metadata.id
+                    && record.command == metadata
+                    && record.operationKind == .rename
+                    && record.targets.isEmpty
+                    && record.failedCount == 0
+                    && record.cancelledCount == 1
+                    && record.succeededCount == 0
+            }
+            await store.finish()
+
+            XCTAssertTrue(store.state.undoRecords.isEmpty)
+        }
+
+        XCTAssertEqual(renameCallCount.value, 0)
     }
 
     /// EOP-004-rename_entry: accepted rename의 terminal record는 시작 source를 보존한다.
