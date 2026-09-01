@@ -20,31 +20,6 @@ final class ProviderExecutionResultRecorder<Value>: @unchecked Sendable {
     }
 }
 
-func providerExecutionCodexAppServerFinalText(_ lines: [String]) throws -> String {
-    let recorder = ProviderExecutionResultRecorder<String>()
-    let driver = providerExecutionMakeCodexAppServerDriver(onComplete: recorder.record)
-    let jsonLines = lines.map { $0.split(whereSeparator: \.isNewline).joined() }
-
-    driver.append(Data((jsonLines.joined(separator: "\n") + "\n").utf8))
-
-    return try XCTUnwrap(recorder.snapshot()).get()
-}
-
-func providerExecutionMakeCodexAppServerDriver(
-    onEvent: @escaping @Sendable (CodexAppServerEvent) -> Void = { _ in },
-    onComplete: @escaping @Sendable (Result<String, Error>) -> Void,
-) -> CodexAppServerProtocolDriver {
-    CodexAppServerProtocolDriver(
-        input: Pipe().fileHandleForWriting,
-        model: "gpt-5-codex",
-        prompt: "Hello",
-        thinking: nil,
-        workingDirectory: nil,
-        onEvent: onEvent,
-        onComplete: onComplete,
-    )
-}
-
 func providerExecutionCodexJSONLine(
     method: String,
     params: [String: Any],
@@ -149,7 +124,6 @@ func makeCancellableCodexClient(
         codexExecutor: { request, _ in
             XCTAssertEqual(request.model, "gpt-5-codex")
             XCTAssertEqual(request.thinking, .effort(.high))
-            XCTAssertEqual(request.credential.accessToken, "codex-token")
             XCTAssertTrue(request.prompt.contains("current_context:"))
             executorEntered.fulfill()
             return try await providerExecutionWaitForCancellation(onCancel: executorCancelled.fulfill)
@@ -230,6 +204,56 @@ func providerExecutionMakeRequest(
         ),
         messages: [AiChatMessage(role: .user, content: "Ping")],
     )
+}
+
+func providerExecutionMakeCodexRequest(workingDirectory: URL) -> AiChatRequest {
+    let request = providerExecutionMakeRequest(provider: .chatgptCodex, rawModelID: "gpt-5-codex")
+    let currentContext = request.context.currentContext
+    let lockedContext = request.context.requestContext.currentContext
+    let references = currentContext.references + [
+        AiChatContextReference(
+            kind: .folder,
+            identifier: workingDirectory.path,
+            metadata: ["route": "folder", "path": workingDirectory.path],
+        ),
+    ]
+    let lockedRequestContext = AiChatLockedRequestContextSnapshot(
+        currentContext: AiChatCurrentContextSnapshot(
+            summary: lockedContext.summary,
+            references: lockedContext.references + [
+                AiChatContextReference(
+                    kind: .folder,
+                    identifier: workingDirectory.path,
+                    metadata: ["route": "folder", "path": workingDirectory.path],
+                ),
+            ],
+            items: lockedContext.items,
+            attachments: lockedContext.attachments,
+        ),
+        addedAttachments: request.context.requestContext.addedAttachments,
+        parts: request.context.requestContext.parts,
+        status: request.context.requestContext.status,
+    )
+    let context = AiChatRequestContextSnapshot(
+        sessionID: request.context.sessionID,
+        requestID: request.context.requestID,
+        runID: request.context.runID,
+        provider: request.context.provider,
+        model: request.context.model,
+        selectedModel: request.context.selectedModel,
+        selectedThinking: request.context.selectedThinking,
+        sessionStatus: request.context.sessionStatus,
+        currentContext: AiChatCurrentContextSnapshot(
+            summary: currentContext.summary,
+            references: references,
+            items: currentContext.items,
+            attachments: currentContext.attachments,
+        ),
+        requestContext: lockedRequestContext,
+        promptSummary: request.context.promptSummary,
+        submittedAtMs: request.context.submittedAtMs,
+    )
+    return AiChatRequest(context: context, messages: request.messages)
 }
 
 func providerExecutionAssertOpenAIThinkingLoweringMatrix() throws {
