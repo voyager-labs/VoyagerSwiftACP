@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAi
+import VoyagerEntitiesAppPreferences
 import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
 import VoyagerFeaturesAiChat
@@ -164,6 +165,7 @@ public extension FileManagerTopNavigationArrangementPresentation {
 
 @ObservableState
 public struct FileManagerWindowState: Equatable {
+    public var defaultStartPage: StartPage
     public var content: FileManagerContentFeature.State
     public var tabContentStates: [ContentTabID: FileManagerContentFeature.State]
     public var tabInspectorStates: [ContentTabID: FileManagerInspectorFeature.State]
@@ -214,6 +216,7 @@ public struct FileManagerWindowState: Equatable {
     var homeFavoriteItems: [FileManagerHomeFavoriteItem] = []
 
     public init() {
+        defaultStartPage = .home
         content = .init()
         sidebar = .init()
         inspector = .init()
@@ -275,7 +278,7 @@ public struct FileManagerWindowState: Equatable {
                 inheritingWindowContextFrom: state.content,
             )
         }
-        state.content.pendingSelectEntryID = selectEntryID
+        state.content.setPendingEntrySelection(entryID: selectEntryID, destinationPath: nil)
 
         state.syncActiveTabContentState()
         state.restoreInspectorStateForActiveTab()
@@ -312,7 +315,7 @@ public struct FileManagerWindowState: Equatable {
             )
         }
 
-        state.content.pendingSelectEntryID = selectEntryID
+        state.content.setPendingEntrySelection(entryID: selectEntryID, destinationPath: nil)
 
         state.syncActiveTabContentState()
         state.restoreInspectorStateForActiveTab()
@@ -323,6 +326,7 @@ public struct FileManagerWindowState: Equatable {
     public static func makeExternalInitial(
         reservations: [ExternalContentTabReservation],
         windowID: UUID? = nil,
+        activeTabID: ContentTabID? = nil,
     ) -> Self? {
         guard canReserveExternalContentTabs(
             reservations,
@@ -338,8 +342,10 @@ public struct FileManagerWindowState: Equatable {
             for: reservations,
             inheritingWindowContextFrom: windowContext,
         )
-        guard let activeReservation = reservations.last,
-              let activeContent = snapshots.content[activeReservation.id]
+        guard let activeReservation = activeTabID
+            .flatMap({ activeTabID in reservations.first(where: { $0.id == activeTabID }) })
+            ?? reservations.last,
+            let activeContent = snapshots.content[activeReservation.id]
         else { return nil }
 
         var tabs = ContentTabState().tabs
@@ -349,7 +355,9 @@ public struct FileManagerWindowState: Equatable {
                 anchor: reservation.anchor,
             ))
         }
-        let previousActiveTabID = reservations.dropLast().last?.id
+        let recentTabIDs = [activeReservation.id]
+            + reservations.reversed().map(\.id).filter { $0 != activeReservation.id }
+        let previousActiveTabID = recentTabIDs.dropFirst().first
         var state = Self(
             externalContent: activeContent,
             externalContentStates: snapshots.content,
@@ -358,7 +366,7 @@ public struct FileManagerWindowState: Equatable {
                 tabs: tabs,
                 activeTabID: activeReservation.id,
                 previousActiveTabID: previousActiveTabID,
-                recentlyUsedTabIDs: reservations.reversed().map(\.id),
+                recentlyUsedTabIDs: recentTabIDs,
             ),
             externalInspector: snapshots.inspector[activeReservation.id] ?? .init(),
             windowID: windowID,
@@ -375,6 +383,7 @@ public struct FileManagerWindowState: Equatable {
         externalInspector: FileManagerInspectorFeature.State,
         windowID initialWindowID: UUID?,
     ) {
+        defaultStartPage = .home
         content = externalContent
         tabContentStates = externalContentStates
         tabInspectorStates = externalInspectorStates

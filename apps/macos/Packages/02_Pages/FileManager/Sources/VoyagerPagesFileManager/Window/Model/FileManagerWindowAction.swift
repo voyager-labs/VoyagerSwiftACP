@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAi
+import VoyagerEntitiesAppPreferences
 import VoyagerEntitiesCollection
 import VoyagerFeaturesAiChat
 import VoyagerFeaturesComposer
@@ -169,13 +170,19 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
     case applyPinnedContentTabRuntimeNavigation(
         tabID: ContentTabID,
         navigationState: ContentPageNavigationRoute,
+        pendingSelectEntryID: String? = nil,
     )
     case selectContentTab(ContentTabID)
-    case returnContentTabToPinnedLocation(ContentTabID)
+    case returnContentTabToPinnedLocation(
+        ContentTabID,
+        pendingSelectEntryID: String? = nil,
+        activateIfNeeded: Bool = true,
+    )
     case applyHiddenFixedLocationIDs(Set<FileManagerFixedLocationItem.ID>)
     case aiConnectionsFileUpdated(AIConnectionsFile)
     case reserveExternalContentTabs([ExternalContentTabReservation])
     case activateExternalContentTabUndoScopes([ContentTabID])
+    case cancelPendingPinnedCollectionReturn(ContentTabID)
     case resyncActiveCollectionNavigation
 
     case requestSelectedContentTabPinMutation(target: SelectedContentTabPinMutationTargetState)
@@ -234,7 +241,7 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
 
     @CasePathable
     public enum View: Sendable {
-        case contentTabSwitcherFocusChanged(ContentTabID)
+        case activateContentTabSwitcherCandidate(ContentTabID)
         case dismissContentTabMoveFailure(requestID: UUID)
         case dismissContentTabSwitcher
     }
@@ -312,6 +319,7 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
         case homeAiChatNewChatSeedRequested(sessionID: AiChatSessionID)
         case applyContentNewChatSeed(FileManagerContentNewChatSeedApplication)
         case applyInspectorNewChatSeed(FileManagerInspectorNewChatSeedApplication)
+        case defaultStartPageResolved(StartPage)
     }
 
     @CasePathable
@@ -319,6 +327,7 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
         case newFolder
         case openSelectedItem
         case quickLookSelectedItem
+        case getInfo
         case saveCollection
         case saveCollectionAs
         case goBack
@@ -348,6 +357,7 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
         case openNewContentTab
         case selectContentTab(position: Int)
         case selectMostRecentlyUsedContentTab
+        case activateContentTabSwitcherSelection
         case moveContentTabSwitcherFocus(direction: ContentTabSwitcherFocusDirection)
         case presentContentTabSwitcher(source: FileManagerContentTabSwitcherPresentation.Source)
         case dismissContentTabSwitcher
@@ -397,6 +407,8 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
             tabID: ContentTabID,
             navigationState: ContentPageNavigationRoute,
         )
+        /// pinned tab의 durable route 복귀가 실제 navigation commit 없이 실패했음을 window manager에 알린다.
+        case pinnedContentTabRuntimeNavigationFailed(tabID: ContentTabID)
     }
 }
 

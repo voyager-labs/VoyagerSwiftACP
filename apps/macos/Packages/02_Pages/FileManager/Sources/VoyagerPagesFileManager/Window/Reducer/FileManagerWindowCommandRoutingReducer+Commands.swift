@@ -247,6 +247,14 @@ extension FileManagerWindowCommandRoutingReducer {
         case .selectMostRecentlyUsedContentTab:
             handleSelectMostRecentlyUsedContentTab(state: &state)
 
+        case .activateContentTabSwitcherSelection:
+            // focused window command는 소유 presentation의 focusedCandidateID를 해석해 canonical helper로 보낸다.
+            if let focusedID = state.contentTabSwitcherPresentation?.focusedCandidateID {
+                handleActivateContentTabSwitcherCandidate(focusedID, state: &state)
+            } else {
+                Effect<Action>.none
+            }
+
         case let .presentContentTabSwitcher(source):
             handlePresentContentTabSwitcher(source: source, state: &state)
 
@@ -269,6 +277,7 @@ extension FileManagerWindowCommandRoutingReducer {
         case .newFolder,
              .openSelectedItem,
              .quickLookSelectedItem,
+             .getInfo,
              .cut,
              .copy,
              .paste,
@@ -361,7 +370,16 @@ extension FileManagerWindowCommandRoutingReducer {
         switch command {
         case .openNewContentTab:
             guard state.contentTabs.tabs.count < ContentTabConstants.maxTabs else { return .none }
-            return .send(.contentTabs(.open(.homeDefault)))
+            let startPageSnapshot = state.defaultStartPage
+            if case .home = startPageSnapshot {
+                // home 선호는 IO가 없으므로 동기 fast path로 즉시 생성한다.
+                return .send(.contentTabs(.open(.homeDefault)))
+            }
+            // 클라우드 placeholder stat이 메인 스레드를 막지 않도록 프로브를 effect로 미룬다.
+            return Effect.run { send in
+                let resolution = StartPageResolver.resolve(startPageSnapshot)
+                await send(.internal(.defaultStartPageResolved(resolution.effectiveStartPage)))
+            }
 
         case let .selectContentTab(position):
             guard state.pendingSelectedContentTabClose == nil,
@@ -495,6 +513,26 @@ extension FileManagerWindowCommandRoutingReducer {
                   !state.content.entryViewLayout.selectedIds.isEmpty
             else { return .none }
             return .send(.content(.entryViewLayout(.delegate(.executeCommand("navigation.quickLookSelectedItem")))))
+
+        case .getInfo:
+            let selectableItemIds = state.content.entryViewLayout.hierarchyProjectionIsActive
+                ? state.content.entryViewLayout.visibleSelectableEntries(isNormalDirectoryPage: true).map(\.id)
+                : state.content.entryViewLayout.displayItems.map(\.id)
+            let validSelectedIds = state.content.entryViewLayout.selectedIds
+                .intersection(selectableItemIds)
+            if !validSelectedIds.isEmpty {
+                guard !validSelectedIds.contains(where: {
+                    state.content.entryViewLayout.entryOperations.itemStates[$0]?.isBusy == true
+                }) else { return .none }
+                return .send(.content(.entryViewLayout(.delegate(.executeCommand(
+                    "navigation.getInfoForSelectedItems",
+                )))))
+            }
+            guard case let .folder(path) = state.content.navigation.navigationState,
+                  !path.isEmpty,
+                  !state.content.entryViewLayout.entryOperations.itemStates[path, default: .init()].isBusy
+            else { return .none }
+            return .send(.content(.entryViewLayout(.delegate(.executeCommand("navigation.getInfoForPath")))))
 
         case .selectAll:
             return .send(.content(.view(.selectAllEntries)))

@@ -23,5 +23,9 @@ let kPackage = Package(
                 .product(name: "Dependencies", package: "swift-dependencies"),
             ],
         ),
+        .testTarget(
+            name: "VoyagerEntitiesAppPreferencesTests",
+            dependencies: ["VoyagerEntitiesAppPreferences"],
+        ),
     ],
 )

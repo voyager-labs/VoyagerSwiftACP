@@ -542,6 +542,10 @@ extension FileManagerFeature {
         _ action: ContentTabAction,
         state: inout State,
     ) -> Effect<Action> {
+        let pendingCollectionOpenCancellationEffect = pendingCollectionOpenCancellationEffect(
+            for: action,
+            state: &state,
+        )
         let reducedAction: ContentTabAction = if case let .pin(tabID, placement) = action, placement == nil {
             .pinUsingDormantSlot(
                 tabID,
@@ -577,7 +581,28 @@ extension FileManagerFeature {
         }
         .map { Action.contentTabs($0) }
         let closeCancellationEffect = contentTabCloseCancellationEffect(for: action, state: &state)
-        return .merge(preReductionEffect, closeCancellationEffect, childEffect)
+        return .merge(
+            preReductionEffect,
+            pendingCollectionOpenCancellationEffect,
+            closeCancellationEffect,
+            childEffect,
+        )
+    }
+
+    func pendingCollectionOpenCancellationEffect(
+        for action: ContentTabAction,
+        state: inout State,
+    ) -> Effect<Action> {
+        let tabID: ContentTabID? = switch action {
+        case let .close(tabID), let .commitClose(tabID): tabID
+        default: nil
+        }
+        guard let tabID, state.contentTabs.activeTabID == tabID else { return .none }
+        let failedPinnedReturnTabID = state.pendingPinnedCollectionReturnTabID(for: tabID)
+        return cancelPendingCollectionOpen(
+            state: &state,
+            failedPinnedReturnTabID: failedPinnedReturnTabID,
+        )
     }
 
     func contentTabCloseCancellationEffect(

@@ -164,8 +164,8 @@ struct FileManagerWindowCommandRoutingReducer {
                 state.contentTabSwitcherPresentation = nil
                 return .none
 
-            case let .view(.contentTabSwitcherFocusChanged(id)):
-                return handleContentTabSwitcherFocusChanged(id, state: &state)
+            case let .view(.activateContentTabSwitcherCandidate(id)):
+                return handleActivateContentTabSwitcherCandidate(id, state: &state)
 
             case let .request(command):
                 return handleRequestedCommand(command, state: &state)
@@ -351,6 +351,15 @@ struct FileManagerWindowCommandRoutingReducer {
 
             case let .internal(.applyInspectorNewChatSeed(application)):
                 return applyInspectorNewChatSeed(application, state: &state)
+
+            case let .internal(.defaultStartPageResolved(startPage)):
+                let anchor: ContentTabPageAnchor = switch startPage {
+                case .home:
+                    .homeDefault
+                case let .directory(path):
+                    .directory(path: path)
+                }
+                return .send(.contentTabs(.open(anchor)))
 
             case .inspector(.aiChat(.providerConnectionsUpdated)):
                 if state.pendingAiChatInspectorOpen?.destination == .newChat {

@@ -22,6 +22,7 @@ struct WindowManagerFeature {
 
     nonisolated enum CancelID: Hashable {
         case defaultWindowBootstrap
+        case defaultStartPageResolution(UUID)
         case windowOpen(State.WindowID)
         case externalOpenBatch(UUID)
         case trackedSingletonNativeOpen(UUID)
@@ -69,6 +70,9 @@ struct WindowManagerFeature {
     var metricsClient
     @Dependency(\.workspaceClient)
     var workspaceClient
+
+    @Dependency(\.startPageAvailabilityClient)
+    var startPageAvailabilityClient
 
     @Dependency(\.date)
     var date
@@ -123,6 +127,15 @@ struct WindowManagerFeature {
             case .file(.selectMostRecentlyUsedContentTab):
                 guard let id = state.focusedWindowID, isWindowReady(id, state: state) else { return .none }
                 return sendCommandToFocusedWindow(state, .selectMostRecentlyUsedContentTab)
+
+            case let .file(.activateContentTabSwitcherInWindow(windowID: id, source: source)):
+                guard isWindowReady(id, state: state) else { return .none }
+                return sendCommandToWindowIfPresentationMatches(
+                    state,
+                    id: id,
+                    source: source,
+                    command: .activateContentTabSwitcherSelection,
+                )
 
             case .file(.moveNextContentTabSwitcher):
                 guard let id = state.focusedWindowID, isWindowReady(id, state: state) else { return .none }
@@ -180,6 +193,9 @@ struct WindowManagerFeature {
 
             case .file(.quickLook):
                 return sendCommandToFocusedWindow(state, .quickLookSelectedItem)
+
+            case .file(.getInfo):
+                return sendCommandToFocusedWindow(state, .getInfo)
 
             case .file(.saveCollection):
                 return sendCommandToFocusedWindow(state, .saveCollection)
@@ -301,6 +317,29 @@ struct WindowManagerFeature {
                 )
                 .cancellable(id: CancelID.externalOpenBatch(plan.batchID), cancelInFlight: true)
 
+            case let .placement(.commit(plan, application, transactionID)):
+                guard state.authorizedExternalOpenBatchID == plan.batchID,
+                      state.externalOpenRegistrationTransactionID == transactionID
+                else { return .none }
+                return commitExternalOpenPlacement(
+                    plan: plan,
+                    application: application,
+                    transactionID: transactionID,
+                    state: &state,
+                )
+
+            case let .placement(.registrationFailed(batchID, transactionID)):
+                guard state.authorizedExternalOpenBatchID == batchID,
+                      state.externalOpenRegistrationTransactionID == transactionID
+                else { return .none }
+                return .concatenate(
+                    cancelExternalOpenPlacement(batchID: batchID, state: &state),
+                    .send(.delegate(.externalOpenApplyCompleted(.init(
+                        batchID: batchID,
+                        result: .failure(.validationFailed),
+                    )))),
+                )
+
             case let .placement(.activate(plan)):
                 guard state.authorizedExternalOpenBatchID == plan.batchID else { return .none }
                 return startExternalOpenActivation(
@@ -309,29 +348,30 @@ struct WindowManagerFeature {
                     state: &state,
                 )
 
+            case let .placement(.replan(request)):
+                return replanExternalOpenPlacement(request, state: &state)
+
             case let .placement(.cancel(batchID)):
                 return cancelExternalOpenPlacement(batchID: batchID, state: &state)
 
+            case let .delegate(.externalOpenApplyCompleted(completion)):
+                return handleExternalOpenApplyCompletion(completion, state: &state)
+
             case let .externalOpenActivationResult(attempt, result):
                 guard state.authorizedExternalOpenBatchID == attempt.batchID,
-                      state.externalOpenActivationAttempt == attempt
+                      let currentAttempt = state.externalOpenActivationAttempt,
+                      currentAttempt.batchID == attempt.batchID,
+                      currentAttempt.plan == attempt.plan,
+                      currentAttempt.windowID == attempt.windowID,
+                      currentAttempt.excludedWindowIDs == attempt.excludedWindowIDs
                 else { return .none }
                 switch result {
                 case .discarded:
-                    return retryExternalOpenActivation(after: attempt, state: &state)
+                    return retryExternalOpenActivation(after: currentAttempt, state: &state)
 
                 case .becameKey:
-                    let survivingWindowID = ExternalOpenPlacementApplication.lastSurvivingWindowID(
-                        for: attempt.plan,
-                        state: state,
-                        excluding: attempt.excludedWindowIDs,
-                    )
-                    guard survivingWindowID == attempt.windowID else {
-                        return retryExternalOpenActivation(after: attempt, state: &state)
-                    }
-                    state.authorizedExternalOpenBatchID = nil
-                    state.externalOpenActivationAttempt = nil
-                    return .send(.delegate(.externalOpenActivationCompleted(batchID: attempt.batchID)))
+                    state.externalOpenActivationBecameKey = true
+                    return completeExternalOpenActivationIfSettled(state: &state)
                 }
 
             case let .contentTabMoveRequest(request):
@@ -529,6 +569,26 @@ struct WindowManagerFeature {
             case .windows(.element(id: _, action: .window(.delegate(.openAISettings)))):
                 return .send(.delegate(.openAISettings))
 
+            case let .windows(.element(
+                id: windowID,
+                action: .window(.delegate(.pinnedContentTabRuntimeNavigationChanged(tabID, _))),
+            )):
+                return handlePinnedContentTabRuntimeNavigationChanged(
+                    windowID: windowID,
+                    tabID: tabID,
+                    state: &state,
+                )
+
+            case let .windows(.element(
+                id: windowID,
+                action: .window(.delegate(.pinnedContentTabRuntimeNavigationFailed(tabID))),
+            )):
+                return handlePinnedContentTabRuntimeNavigationFailed(
+                    windowID: windowID,
+                    tabID: tabID,
+                    state: &state,
+                )
+
             case let .windows(.element(id: _, action: action)):
                 switch action {
                 case .window(.contentTabs),
@@ -539,6 +599,15 @@ struct WindowManagerFeature {
                 default:
                     return .none
                 }
+
+            case let .defaultStartPageResolved(resolutionID, requestID, selectEntryID, startPage):
+                return resumeDefaultStartPageResolution(
+                    resolutionID: resolutionID,
+                    requestID: requestID,
+                    selectEntryID: selectEntryID,
+                    startPage: startPage,
+                    state: &state,
+                )
 
             case .delegate, .windows:
                 return .none
@@ -551,6 +620,33 @@ struct WindowManagerFeature {
 }
 
 private extension WindowManagerFeature {
+    func handlePinnedContentTabRuntimeNavigationChanged(
+        windowID: State.WindowID,
+        tabID: ContentTabID,
+        state: inout State,
+    ) -> Effect<Action> {
+        guard var attempt = state.externalOpenActivationAttempt,
+              state.authorizedExternalOpenBatchID == attempt.batchID,
+              let item = attempt.plan.windows.first(where: { $0.windowID == windowID })?.items.first(where: {
+                  $0.tabID == tabID && $0.requiresPinnedAnchorReturn
+              })
+        else { return completeExternalOpenActivationIfSettled(state: &state) }
+        guard state.windows[id: windowID]?.window.contentTabs.tabs[id: tabID]?.anchor == item.anchor else {
+            return replanExternalOpenActivationExcluding(windowID: windowID, tabID: tabID, state: &state)
+        }
+        attempt.settledPinnedReturnTabIDs.insert(tabID)
+        state.externalOpenActivationAttempt = attempt
+        return completeExternalOpenActivationIfSettled(state: &state)
+    }
+
+    func handlePinnedContentTabRuntimeNavigationFailed(
+        windowID: State.WindowID,
+        tabID: ContentTabID,
+        state: inout State,
+    ) -> Effect<Action> {
+        replanExternalOpenActivationExcluding(windowID: windowID, tabID: tabID, state: &state)
+    }
+
     func requestAttachmentPicker(
         for windowID: WindowManagerState.WindowID,
         originSessionID: AiChatSessionID,

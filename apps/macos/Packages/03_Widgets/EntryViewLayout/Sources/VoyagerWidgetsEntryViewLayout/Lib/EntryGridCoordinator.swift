@@ -102,7 +102,8 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
         }
         didBind = true
         observeStore()
-        rebuildSectionsAndReload()
+        // 초기 bind에서는 selection scroll과 saved offset 복원의 기존 순서를 그대로 둔다.
+        _ = rebuildSectionsAndReload()
         updateDropTargetBorder(isTargeted: state.isDropTargeted)
     }
 
@@ -142,7 +143,9 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
         collectionView.addGestureRecognizer(doubleClick)
     }
 
-    func rebuildSectionsAndReload() {
+    /// snapshot rebuild 뒤 section을 재구성하고 reload한다.
+    /// selection scroll이 성공하면 saved offset 복원보다 우선하므로 복원을 건너뛴다.
+    func rebuildSectionsAndReload() -> Bool {
         updateSectionsFromState()
         let hadDropTarget = dropTargetEntryId != nil || validatedDropDestinationPath != nil || state.isDropTargeted
         clearDropTargetState()
@@ -154,14 +157,21 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
         }
         collectionView.reloadData()
         syncSelectionFromStore()
-        scrollToSelectionIfNeeded()
-        restoreScrollPositionIfNeeded()
+        let scrolledToSelection = scrollToSelectionIfNeeded()
+        if scrolledToSelection {
+            // List 계약과 동일하게 selection scroll 성공 시 복원 기회를 소비한다.
+            // 소비하지 않으면 이후 선택 의도 없는 entry 수 변화에서 stale saved offset으로 점프한다.
+            hasRestoredScrollPosition = true
+        } else {
+            restoreScrollPositionIfNeeded()
+        }
         if let width = view?.bounds.width { updateGridColumnCountIfNeeded(for: width) }
         DispatchQueue.main.async { [weak self] in
             self?.syncSelectionFromStore()
             self?.syncRenamingFromStore()
             self?.requestThumbnailsForVisibleArea()
         }
+        return scrolledToSelection
     }
 
     func updateSectionsFromState() {
@@ -268,15 +278,18 @@ extension EntryGridCoordinator {
         hasRestoredScrollPosition = true
     }
 
-    func scrollToSelectionIfNeeded() {
-        guard state.shouldScrollToSelection else { return }
+    /// selection scroll을 시도하고 실제 스크롤 성공 여부를 반환한다.
+    /// flag가 없거나 대상이 매핑되지 않으면 false를 반환하며, 매핑 실패 시에도 reset은 유지한다.
+    func scrollToSelectionIfNeeded() -> Bool {
+        guard state.shouldScrollToSelection else { return false }
         let targetId = state.lastSelectedId ?? state.selectedIds.first
         guard let targetId, let indexPath = indexPathByEntryId[targetId] else {
             store.send(.view(.resetScrollFlag))
-            return
+            return false
         }
         collectionView.scrollToItems(at: [indexPath], scrollPosition: .centeredVertically)
         store.send(.view(.resetScrollFlag))
+        return true
     }
 
     /// 타자 검색으로 설정된 pending target을 centered 스크롤하고 reset한다.

@@ -115,6 +115,23 @@ struct ToolbarContextMenuButton: View {
     let primaryAction: () -> Void
     let contextMenuTitle: String
     let contextMenuAction: () -> Void
+    let contextMenuShortcut: KeyboardShortcut?
+
+    init(
+        systemName: String,
+        help: String,
+        primaryAction: @escaping () -> Void,
+        contextMenuTitle: String,
+        contextMenuAction: @escaping () -> Void,
+        contextMenuShortcut: KeyboardShortcut? = nil,
+    ) {
+        self.systemName = systemName
+        self.help = help
+        self.primaryAction = primaryAction
+        self.contextMenuTitle = contextMenuTitle
+        self.contextMenuAction = contextMenuAction
+        self.contextMenuShortcut = contextMenuShortcut
+    }
 
     var body: some View {
         Button(action: primaryAction) {
@@ -128,7 +145,12 @@ struct ToolbarContextMenuButton: View {
         }
         .buttonStyle(.borderless)
         .contextMenu {
-            Button(contextMenuTitle, action: contextMenuAction)
+            if let contextMenuShortcut {
+                Button(contextMenuTitle, action: contextMenuAction)
+                    .keyboardShortcut(contextMenuShortcut)
+            } else {
+                Button(contextMenuTitle, action: contextMenuAction)
+            }
         }
         .help(help)
         .accessibilityLabel(help)

@@ -7,6 +7,7 @@ import VoyagerShared
 import VoyagerWidgetsEntryViewLayout
 
 struct AppPreferencesState: Equatable {
+    var defaultStartPage: StartPage = .home
     var showHiddenFiles: Bool = false
     var viewLayout: EntryViewLayoutState.Mode = .list
     var sortKey: SortKey = .name
@@ -24,6 +25,7 @@ struct AppPreferencesState: Equatable {
 
     static func load(from userDefaultsClient: UserDefaultsClient) -> Self {
         var state = AppPreferencesState()
+        state.defaultStartPage = SettingsDefaults.defaultStartPage(userDefaultsClient: userDefaultsClient)
         state.showHiddenFiles = userDefaultsClient.bool(SettingsKeys.showHiddenFiles)
         state.viewLayout = EntryViewLayoutState.Mode(
             rawValue: userDefaultsClient.string(SettingsKeys.viewLayout) ?? "",
@@ -64,6 +66,7 @@ struct AppPreferencesState: Equatable {
 
     func toPackageState() -> VoyagerPagesFileManager.AppPreferencesState {
         var result = VoyagerPagesFileManager.AppPreferencesState()
+        result.defaultStartPage = defaultStartPage
         result.showHiddenFiles = showHiddenFiles
         result.viewLayoutMode = .init(rawValue: viewLayout.rawValue) ?? .list
         result.sortKey = sortKey

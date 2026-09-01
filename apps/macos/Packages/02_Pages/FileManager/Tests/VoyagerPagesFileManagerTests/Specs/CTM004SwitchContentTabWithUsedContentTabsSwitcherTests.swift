@@ -2,7 +2,9 @@ import AppKit
 import ComposableArchitecture
 import Foundation
 import PerceptionCore
+import SwiftUI
 @testable import VoyagerPagesFileManager
+import VoyagerShared
 import XCTest
 
 final class CTM004SwitchContentTabWithUsedContentTabsSwitcherTests: XCTestCase {
@@ -242,13 +244,13 @@ final class CTM004SwitchContentTabWithUsedContentTabsSwitcherTests: XCTestCase {
         print("VIEW_STATE_MATRIX \(evidence.joined(separator: " ")) PASS")
     }
 
-    /// CTM-004-switch_content_tab_via_used_content_tabs_switcher: 전환기 화면은 row 활성화 입력 없이 렌더링한다.
-    /// 사용자가 전환기 내용을 탐색해도 화면 생성과 렌더링만으로 해제나 탭 활성화가 발생하지 않는 계약을 검증한다.
-    /// - 검증 내용: immutable view state와 dismiss closure만 받는 화면 API, 네 화면 상태의 body 렌더링, dismiss 무호출
-    /// - 사전 조건: content/loading/empty/error view state와 호출 횟수를 기록하는 dismiss closure
-    /// - 기대 결과: 모든 상태의 화면 body가 생성되고 dismiss closure 호출 횟수는 0이다.
+    /// CTM-004-switch_content_tab_via_used_content_tabs_switcher: 전환기 화면 생성 자체는 후보를 활성화하지 않는다.
+    /// 사용자의 명시적 후보 선택 없이 화면 렌더링만으로 해제나 탭 활성화가 발생하지 않는 계약을 검증한다.
+    /// - 검증 내용: immutable view state와 explicit-ID activation callback, 네 화면 상태의 body 렌더링, activation·dismiss 무호출
+    /// - 사전 조건: content/loading/empty/error view state와 호출 횟수를 기록하는 activation/dismiss closure
+    /// - 기대 결과: 모든 상태의 화면 body가 생성되고 activation과 dismiss closure 호출 횟수는 0이다.
     @MainActor
-    func testSwitcherScreenUsesNonActivatingRowContract() {
+    func testSwitcherScreenRenderingDoesNotActivateCandidate() {
         let contentTabs = makeState(tabs: [tab("current")], active: "current", mru: ["current"])
         let viewStates = [
             ContentTabSwitcherViewState.make(source: .automatic, contentTabs: contentTabs),
@@ -259,16 +261,19 @@ final class CTM004SwitchContentTabWithUsedContentTabsSwitcherTests: XCTestCase {
             ),
             ContentTabSwitcherViewState.make(source: .error(message: "Host failure"), contentTabs: contentTabs),
         ]
+        var activationCallCount = 0
         var dismissCallCount = 0
 
         for viewState in viewStates {
             let view = FileManagerContentTabSwitcherView(
                 viewState: viewState,
+                onActivate: { _ in activationCallCount += 1 },
                 onDismiss: { dismissCallCount += 1 },
             )
             _ = view.body
         }
 
+        XCTAssertEqual(activationCallCount, 0)
         XCTAssertEqual(dismissCallCount, 0)
     }
 
@@ -278,7 +283,7 @@ final class CTM004SwitchContentTabWithUsedContentTabsSwitcherTests: XCTestCase {
     /// - 사전 조건: `.contentTabSwitcherContent` preset으로 생성한 FileManagerHost coordinator
     /// - 기대 결과: helper 전 presentation은 nil이고 helper 후 automatic presentation이다.
     @MainActor
-    func testFileManagerHostContentScenarioPresentsSwitcher() {
+    func testFileManagerHostContentScenarioPresentsSwitcher() async {
         let perceptionCheckingWasEnabled = PerceptionCore.isPerceptionCheckingEnabled
         PerceptionCore.isPerceptionCheckingEnabled = false
         defer { PerceptionCore.isPerceptionCheckingEnabled = perceptionCheckingWasEnabled }
@@ -289,8 +294,6 @@ final class CTM004SwitchContentTabWithUsedContentTabsSwitcherTests: XCTestCase {
         } operation: {
             FileManagerHostFixture.makeWindowController(preset: .contentTabSwitcherContent)
         }
-        defer { coordinator.close() }
-
         XCTAssertEqual(coordinator.store.contentTabs.tabs.count, 10)
         XCTAssertEqual(
             try? candidates(projecting: coordinator.store.contentTabs).count,
@@ -307,6 +310,7 @@ final class CTM004SwitchContentTabWithUsedContentTabsSwitcherTests: XCTestCase {
             coordinator.store.contentTabSwitcherPresentation,
             .init(source: .automatic, contentTabs: coordinator.store.contentTabs),
         )
+        await tearDownHostFixture(coordinator)
     }
 
     /// CTM-004-host_scenario_fixture_matrix: FileManagerHost의 모든 전환기 fixture와 appearance 입력을 결정적으로 해석한다.
@@ -316,7 +320,7 @@ final class CTM004SwitchContentTabWithUsedContentTabsSwitcherTests: XCTestCase {
     /// - 사전 조건: deterministic UUID/date dependency와 각 FileManagerHost preset
     /// - 기대 결과: helper 전 presentation nil, helper 후 exact source, invalid appearance는 명시적 invalid 결과이다.
     @MainActor
-    func testFileManagerHostAdditionalScenarioFixtures() {
+    func testFileManagerHostAdditionalScenarioFixtures() async {
         let perceptionCheckingWasEnabled = PerceptionCore.isPerceptionCheckingEnabled
         PerceptionCore.isPerceptionCheckingEnabled = false
         defer { PerceptionCore.isPerceptionCheckingEnabled = perceptionCheckingWasEnabled }
@@ -366,8 +370,6 @@ final class CTM004SwitchContentTabWithUsedContentTabsSwitcherTests: XCTestCase {
                 } operation: {
                     FileManagerHostFixture.makeWindowController(preset: scenario.preset)
                 }
-                defer { coordinator.close() }
-
                 XCTAssertEqual(coordinator.windowID, expectedWindowID)
                 XCTAssertEqual(coordinator.store.contentTabs.tabs.count, scenario.expectedTabCount)
                 XCTAssertNil(coordinator.store.contentTabSwitcherPresentation)
@@ -389,6 +391,7 @@ final class CTM004SwitchContentTabWithUsedContentTabsSwitcherTests: XCTestCase {
                 )
                 XCTAssertEqual(coordinator.store.contentTabSwitcherPresentation?.source, scenario.expectedSource)
                 print("SCENARIO_SUBCASE \(scenario.preset.rawValue) PASS")
+                await tearDownHostFixture(coordinator)
             }
         }
 
@@ -408,633 +411,6 @@ final class CTM004SwitchContentTabWithUsedContentTabsSwitcherTests: XCTestCase {
         }
     }
 
-    /// CTM-004-dismiss_content_tab_switcher_without_mutation: mounted overlay의 dismiss wiring이 Content Tab을 보존한다.
-    /// package에서 검증 가능한 reducer action과 whole-window source wiring이 같은 view dismiss 경로를 사용하는지 고정한다.
-    /// - 검증 내용: switcher shell 중앙 배치와 focus 확보, Escape dismiss action, semantic snapshot
-    /// - 사전 조건: two-tab window에 presentation을 표시한 상태와 canonical main-container source
-    /// - 기대 결과: overlay dismiss 후 presentation만 nil이 되고 Content Tab semantic snapshot은 byte-equivalent이다.
-    @MainActor
-    func testMountedSwitcherFocusAndDismissPreserveContentTabs() async throws {
-        let packageRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let switcherSource = try String(
-            contentsOf: packageRoot.appendingPathComponent(
-                "Sources/VoyagerPagesFileManager/Window/Ui/FileManagerContentTabSwitcherView.swift",
-            ),
-            encoding: .utf8,
-        )
-
-        XCTAssertTrue(switcherSource.contains(".focusSection()"))
-        XCTAssertFalse(switcherSource.contains("@FocusState private var isSwitcherFocused"))
-        XCTAssertFalse(switcherSource.contains(".focused($isSwitcherFocused)"))
-        XCTAssertTrue(switcherSource.contains(".onAppear(perform: synchronizeFocus)"))
-        XCTAssertTrue(switcherSource.contains(".onChange(of: focusedRowID, perform: handleNativeFocusChange)"))
-        XCTAssertTrue(switcherSource.contains(".onExitCommand(perform: onDismiss)"))
-        XCTAssertTrue(switcherSource.contains(".frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)"))
-
-        let initialState = makeSwitcherWindowState(prefix: "mounted")
-        let snapshot = ContentTabSemanticSnapshot(initialState)
-        let store = TestStore(initialState: initialState) {
-            FileManagerFeature()
-        }
-
-        await store.send(.request(.presentContentTabSwitcher(source: .automatic))) {
-            $0.contentTabSwitcherPresentation = .init(source: .automatic, contentTabs: $0.contentTabs)
-        }
-        await store.send(.view(.dismissContentTabSwitcher)) {
-            $0.contentTabSwitcherPresentation = nil
-        }
-
-        XCTAssertEqual(ContentTabSemanticSnapshot(store.state), snapshot)
-        XCTAssertNil(store.state.contentTabSwitcherPresentation)
-    }
-
-    // MARK: - CTM-004-present_focused_candidate
-
-    /// CTM-004-present_focused_candidate: focus된 non-current card가 Current와 독립된 시각·접근성 상태를 유지한다.
-    /// reducer가 선택한 ContentTabID가 실제 SwiftUI row focus와 분리된 Current metadata를 구동하는 계약을 검증한다.
-    /// - 검증 내용: reducer focus identity 매핑, row focus ring, native FocusState, 기존 accessibility metadata 보존
-    /// - 사전 조건: current card와 별도의 focused candidate가 있는 automatic switcher, deterministic FileManagerHost fixture
-    /// - 기대 결과: focused non-current와 Current가 동시에 구분되고 activation/tap callback 없이 동일한 row identifier/label/value를 사용한다.
-    @MainActor
-    func testFocusedCandidateVisualAndAccessibilityRemainDistinctFromCurrent() throws {
-        let packageRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let presentationSource = try String(
-            contentsOf: packageRoot.appendingPathComponent(
-                "Sources/VoyagerPagesFileManager/Window/Model/FileManagerContentTabSwitcherPresentation.swift",
-            ),
-            encoding: .utf8,
-        )
-        let viewSource = try String(
-            contentsOf: packageRoot.appendingPathComponent(
-                "Sources/VoyagerPagesFileManager/Window/Ui/FileManagerContentTabSwitcherView.swift",
-            ),
-            encoding: .utf8,
-        )
-        let state = makeState(
-            tabs: [
-                tab("current", title: "Current Tab", icon: "house"),
-                tab("candidate", title: "Focused Candidate", icon: "folder"),
-            ],
-            active: "current",
-            mru: ["candidate", "current"],
-        )
-        let contentTabsBeforeFocus = state
-        guard case let .content(rows) = ContentTabSwitcherViewState.make(
-            source: .automatic,
-            contentTabs: state,
-            focusedCandidateID: id("candidate"),
-        ) else {
-            return XCTFail("Expected focused candidate content rows")
-        }
-        guard case let .content(focusedCurrentRows) = ContentTabSwitcherViewState.make(
-            source: .automatic,
-            contentTabs: state,
-            focusedCandidateID: id("current"),
-        ) else {
-            return XCTFail("Expected focused-current content rows")
-        }
-        try assertFocusedCandidateViewContract(
-            presentationSource: presentationSource,
-            viewSource: viewSource,
-            rows: rows,
-            focusedCurrentRows: focusedCurrentRows,
-            contentTabs: state,
-            contentTabsBeforeFocus: contentTabsBeforeFocus,
-        )
-    }
-
-    /// CTM-004-present_focused_candidate: native focus traversal은 reducer presentation focus와 동기화한다.
-    /// 메뉴로 표시한 전환기에서 Tab 이동이 시각 focus와 semantic candidate identity를 분리하지 않는지 검증한다.
-    /// - 검증 내용: exact candidate focus action, live candidate snapshot, Content Tab 의미 상태 불변
-    /// - 사전 조건: current와 별도의 focus 후보가 있는 automatic switcher
-    /// - 기대 결과: presentation focus만 요청한 live candidate로 이동하고 active/MRU/selection은 유지된다.
-    @MainActor
-    func testNativeFocusTraversalUpdatesPresentationWithoutActivatingTab() async throws {
-        let initialState = makeSwitcherWindowState(prefix: "native-focus")
-        let semanticSnapshot = ContentTabSemanticSnapshot(initialState)
-        let store = TestStore(initialState: initialState) {
-            FileManagerFeature()
-        }
-
-        await store.send(.request(.presentContentTabSwitcher(source: .automatic))) {
-            $0.contentTabSwitcherPresentation = .init(source: .automatic, contentTabs: $0.contentTabs)
-        }
-        let requestedID = try XCTUnwrap(
-            store.state.contentTabSwitcherPresentation?.candidateIDs.first(where: {
-                $0 != store.state.contentTabSwitcherPresentation?.focusedCandidateID
-            }),
-        )
-
-        await store.send(.view(.contentTabSwitcherFocusChanged(requestedID))) {
-            $0.contentTabSwitcherPresentation = .init(
-                source: .automatic,
-                candidateIDs: $0.contentTabSwitcherPresentation?.candidateIDs ?? [],
-                focusedCandidateID: requestedID,
-            )
-        }
-
-        XCTAssertEqual(ContentTabSemanticSnapshot(store.state), semanticSnapshot)
-    }
-
-    /// CTM-004-present_focused_candidate: FileManagerHost content fixture가 1·5·6·10 card focus layout을 결정적으로 노출한다.
-    /// 실제 host state를 후보 수별로 축약해 adaptive row geometry와 reducer focus의 manual observable을 검증한다.
-    /// - 검증 내용: host fixture source/state, 1·5·6·10 후보 수, 균형 행 수, 단일 focused ContentTabID
-    /// - 사전 조건: deterministic UUID/date dependency와 `.contentTabSwitcherContent` FileManagerHost fixture
-    /// - 기대 결과: 각 card 수가 projection/view state에 그대로 반영되고 하나의 focus identity가 metadata를 바꾸지 않는다.
-    @MainActor
-    func testFileManagerHostContentFixtureExposesFocusCardLayoutCases() {
-        let perceptionCheckingWasEnabled = PerceptionCore.isPerceptionCheckingEnabled
-        PerceptionCore.isPerceptionCheckingEnabled = false
-        defer { PerceptionCore.isPerceptionCheckingEnabled = perceptionCheckingWasEnabled }
-        _ = NSApplication.shared
-
-        let coordinator = withDependencies {
-            $0.uuid = .constant(UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 1)))
-            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
-        } operation: {
-            FileManagerHostFixture.makeWindowController(preset: .contentTabSwitcherContent)
-        }
-        defer { coordinator.close() }
-
-        for cardCount in [1, 5, 6, 10] {
-            var fixtureState = coordinator.store.contentTabs
-            fixtureState.recentlyUsedTabIDs = Array(fixtureState.recentlyUsedTabIDs.prefix(cardCount))
-            let presentation = FileManagerContentTabSwitcherPresentation(
-                source: .automatic,
-                contentTabs: fixtureState,
-            )
-
-            guard case let .content(rows) = ContentTabSwitcherViewState.make(
-                source: presentation.source,
-                contentTabs: fixtureState,
-                focusedCandidateID: presentation.focusedCandidateID,
-            ) else {
-                return XCTFail("Expected content rows for card count \(cardCount)")
-            }
-
-            XCTAssertEqual(rows.count, cardCount)
-            let expectedRowCounts = ContentTabSwitcherLayout.rowCounts(for: cardCount)
-            XCTAssertEqual(
-                ContentTabSwitcherLayout.rowCounts(for: rows.count),
-                expectedRowCounts,
-            )
-            let balancedRows = ContentTabSwitcherLayout.balancedRows(from: rows)
-            XCTAssertEqual(balancedRows.map(\.count), expectedRowCounts)
-            XCTAssertEqual(balancedRows.flatMap(\.self).map(\.id), rows.map(\.id))
-            let geometry = ContentTabSwitcherLayout.constrainedGeometry(
-                candidateCount: cardCount,
-                availableWidth: 960,
-            )
-            XCTAssertEqual(geometry.cardWidth, ContentTabSwitcherLayout.idealCardWidth)
-            XCTAssertEqual(rows.filter(\.isFocused).count, 1)
-            print(
-                "FOCUS_FIXTURE_SUBCASE cards=\(cardCount) rows=\(ContentTabSwitcherLayout.rowCounts(for: rows.count)) "
-                    + "focused=\(rows.first(where: { $0.isFocused })?.id.rawValue ?? "nil") PASS",
-            )
-        }
-    }
-
-    /// CTM-004-switch_content_tab_via_used_content_tabs_switcher: 전환기 표시와 해제가 Content Tab 의미 상태를 보존한다.
-    /// window-local 표시 수명주기와 Escape·backdrop 공용 해제 action의 멱등성을 검증한다.
-    /// - 검증 내용: 표시 source, 명시적 해제, 반복 표시/해제, Escape/backdrop 해제, 다른 window 불변성
-    /// - 사전 조건: 선택과 MRU가 있는 독립된 두 개의 two-tab window
-    /// - 기대 결과: 대상 window의 presentation만 변경되고 두 window의 Content Tab 의미 상태는 유지된다.
-    @MainActor
-    func testPresentationLifecyclePreservesContentTabState() async {
-        let initialState = makeSwitcherWindowState(prefix: "focused")
-        let unfocusedState = makeSwitcherWindowState(prefix: "unfocused")
-        let initialSnapshot = ContentTabSemanticSnapshot(initialState)
-        let unfocusedSnapshot = ContentTabSemanticSnapshot(unfocusedState)
-        let store = TestStore(initialState: initialState) {
-            FileManagerFeature()
-        }
-
-        await store.send(.request(.presentContentTabSwitcher(source: .automatic))) {
-            $0.contentTabSwitcherPresentation = .init(source: .automatic, contentTabs: $0.contentTabs)
-        }
-        XCTAssertEqual(ContentTabSemanticSnapshot(store.state), initialSnapshot)
-        XCTAssertEqual(ContentTabSemanticSnapshot(unfocusedState), unfocusedSnapshot)
-        print("LIFECYCLE_SUBCASE present PASS")
-
-        await store.send(.request(.presentContentTabSwitcher(source: .automatic)))
-        XCTAssertEqual(ContentTabSemanticSnapshot(store.state), initialSnapshot)
-        print("LIFECYCLE_SUBCASE repeated-present PASS")
-
-        await store.send(.view(.dismissContentTabSwitcher)) {
-            $0.contentTabSwitcherPresentation = nil
-        }
-        XCTAssertEqual(ContentTabSemanticSnapshot(store.state), initialSnapshot)
-        print("LIFECYCLE_SUBCASE explicit-dismiss PASS")
-
-        await store.send(.view(.dismissContentTabSwitcher))
-        XCTAssertEqual(ContentTabSemanticSnapshot(store.state), initialSnapshot)
-        print("LIFECYCLE_SUBCASE repeated-dismiss PASS")
-
-        await store.send(.request(.presentContentTabSwitcher(source: .loading))) {
-            $0.contentTabSwitcherPresentation = .init(source: .loading)
-        }
-        await store.send(.view(.dismissContentTabSwitcher)) {
-            $0.contentTabSwitcherPresentation = nil
-        }
-        XCTAssertEqual(ContentTabSemanticSnapshot(store.state), initialSnapshot)
-        print("LIFECYCLE_SUBCASE escape-equivalent-dismiss PASS")
-
-        await store.send(.request(.presentContentTabSwitcher(source: .error(message: "Unable to load recent tabs.")))) {
-            $0.contentTabSwitcherPresentation = .init(source: .error(message: "Unable to load recent tabs."))
-        }
-        await store.send(.view(.dismissContentTabSwitcher)) {
-            $0.contentTabSwitcherPresentation = nil
-        }
-        XCTAssertEqual(ContentTabSemanticSnapshot(store.state), initialSnapshot)
-        XCTAssertEqual(ContentTabSemanticSnapshot(unfocusedState), unfocusedSnapshot)
-        print("LIFECYCLE_SUBCASE backdrop-equivalent-dismiss PASS")
-        print("LIFECYCLE_SUBCASE focused-window-locality PASS")
-    }
-
-    /// CTM-004-switch_content_tab_via_used_content_tabs_switcher: 전환기 focus는 current와 독립적으로 후보를 wrap한다.
-    /// next가 stable ContentTabID만 변경하고 Content Tab 의미 상태를 변경하지 않는지 검증한다.
-    /// - 검증 내용: initial current focus, forward wrap, Current/focus 분리
-    /// - 사전 조건: active B와 MRU `[B, A]`인 two-tab window
-    /// - 기대 결과: focus만 B↔A로 이동하고 active/MRU/selection/page/pane snapshot은 완전히 동일하다.
-    @MainActor
-    func testFocusNavigationWrapsWithoutMutatingContentTabState() async {
-        let initialState = makeSwitcherWindowState(prefix: "focus")
-        let semanticSnapshot = ContentTabSemanticSnapshot(initialState)
-        let store = TestStore(initialState: initialState) {
-            FileManagerFeature()
-        }
-
-        await store.send(.request(.presentContentTabSwitcher(source: .automatic))) {
-            $0.contentTabSwitcherPresentation = .init(
-                source: .automatic,
-                contentTabs: $0.contentTabs,
-            )
-        }
-        XCTAssertEqual(
-            store.state.contentTabSwitcherPresentation?.candidateIDs,
-            ids("focus-B", "focus-A"),
-        )
-        XCTAssertEqual(store.state.contentTabSwitcherPresentation?.focusedCandidateID, id("focus-B"))
-        guard case let .content(rows) = ContentTabSwitcherViewState.make(
-            source: .automatic,
-            contentTabs: store.state.contentTabs,
-        ) else {
-            return XCTFail("Expected content rows")
-        }
-        XCTAssertEqual(rows.first(where: { $0.isCurrent })?.id, id("focus-B"))
-
-        await store.send(.request(.moveContentTabSwitcherFocus(direction: .next))) {
-            $0.contentTabSwitcherPresentation = .init(
-                source: .automatic,
-                candidateIDs: ids("focus-B", "focus-A"),
-                focusedCandidateID: id("focus-A"),
-            )
-        }
-        XCTAssertEqual(ContentTabSemanticSnapshot(store.state), semanticSnapshot)
-
-        await store.send(.request(.moveContentTabSwitcherFocus(direction: .next))) {
-            $0.contentTabSwitcherPresentation = .init(
-                source: .automatic,
-                candidateIDs: ids("focus-B", "focus-A"),
-                focusedCandidateID: id("focus-B"),
-            )
-        }
-        XCTAssertEqual(ContentTabSemanticSnapshot(store.state), semanticSnapshot)
-    }
-
-    /// CTM-004-switch_content_tab_via_used_content_tabs_switcher: 이전 방향 focus도 후보 ID 기준으로 wrap한다.
-    /// previous가 첫 후보에서 마지막 후보로 이동하고 Content Tab 의미 상태를 보존하는지 검증한다.
-    /// - 검증 내용: reverse wrap과 Current/focus 분리
-    /// - 사전 조건: active B와 MRU `[B, A]`인 two-tab window
-    /// - 기대 결과: focus만 B↔A로 이동하고 active/MRU/selection/page/pane snapshot은 동일하다.
-    @MainActor
-    func testPreviousFocusNavigationWrapsWithoutMutatingContentTabState() async {
-        let initialState = makeSwitcherWindowState(prefix: "reverse")
-        let semanticSnapshot = ContentTabSemanticSnapshot(initialState)
-        let store = TestStore(initialState: initialState) {
-            FileManagerFeature()
-        }
-
-        await store.send(.request(.presentContentTabSwitcher(source: .automatic))) {
-            $0.contentTabSwitcherPresentation = .init(source: .automatic, contentTabs: $0.contentTabs)
-        }
-        await store.send(.request(.moveContentTabSwitcherFocus(direction: .previous))) {
-            $0.contentTabSwitcherPresentation = .init(
-                source: .automatic,
-                candidateIDs: ids("reverse-B", "reverse-A"),
-                focusedCandidateID: id("reverse-A"),
-            )
-        }
-        await store.send(.request(.moveContentTabSwitcherFocus(direction: .previous))) {
-            $0.contentTabSwitcherPresentation = .init(
-                source: .automatic,
-                candidateIDs: ids("reverse-B", "reverse-A"),
-                focusedCandidateID: id("reverse-B"),
-            )
-        }
-        XCTAssertEqual(ContentTabSemanticSnapshot(store.state), semanticSnapshot)
-    }
-
-    /// CTM-004-switch_content_tab_via_used_content_tabs_switcher: 단일 후보와 status presentation은 focus를 이동하지 않는다.
-    /// zero/one 후보와 loading/error presentation이 안정적인 no-op 경계를 지키는지 검증한다.
-    /// - 검증 내용: single candidate, loading, error focus nil
-    /// - 사전 조건: one live candidate 또는 status presentation
-    /// - 기대 결과: presentation이 바뀌지 않고 focus가 nil로 유지된다.
-    @MainActor
-    func testFocusNavigationNoOpForSingleAndStatusPresentations() async throws {
-        let emptyPresentation = FileManagerContentTabSwitcherPresentation(
-            source: .automatic,
-            contentTabs: makeState(tabs: [], active: nil, mru: ["stale"]),
-        )
-        XCTAssertEqual(emptyPresentation.candidateIDs, [])
-        XCTAssertNil(emptyPresentation.focusedCandidateID)
-
-        var singleWindowState = makeSwitcherWindowState(prefix: "single-window")
-        singleWindowState.contentTabs = makeState(
-            tabs: [tab("single")],
-            active: "single",
-            mru: ["single"],
-        )
-        let singleStore = TestStore(initialState: singleWindowState) {
-            FileManagerFeature()
-        }
-        await singleStore.send(.request(.presentContentTabSwitcher(source: .automatic))) {
-            $0.contentTabSwitcherPresentation = .init(
-                source: .automatic,
-                contentTabs: $0.contentTabs,
-            )
-        }
-        let singlePresentation = try XCTUnwrap(singleStore.state.contentTabSwitcherPresentation)
-        await singleStore.send(.request(.moveContentTabSwitcherFocus(direction: .next)))
-        XCTAssertEqual(singleStore.state.contentTabSwitcherPresentation, singlePresentation)
-
-        await singleStore.send(.request(.presentContentTabSwitcher(source: .error(message: "Failure")))) {
-            $0.contentTabSwitcherPresentation = .init(source: .error(message: "Failure"))
-        }
-        XCTAssertNil(singleStore.state.contentTabSwitcherPresentation?.focusedCandidateID)
-
-        let loadingWindowState = makeSwitcherWindowState(prefix: "loading")
-        let loadingStore = TestStore(initialState: loadingWindowState) {
-            FileManagerFeature()
-        }
-        await loadingStore.send(.request(.presentContentTabSwitcher(source: .loading))) {
-            $0.contentTabSwitcherPresentation = .init(source: .loading)
-        }
-        let loadingPresentation = try XCTUnwrap(loadingStore.state.contentTabSwitcherPresentation)
-        await loadingStore.send(.request(.moveContentTabSwitcherFocus(direction: .next)))
-        XCTAssertEqual(loadingStore.state.contentTabSwitcherPresentation, loadingPresentation)
-    }
-
-    /// CTM-004-switch_content_tab_via_used_content_tabs_switcher: live 후보 갱신은 삭제된 focus를 이전 위치로 복구한다.
-    /// child close가 presentation snapshot과 focus를 함께 최신 projection으로 수렴시키는지 검증한다.
-    /// - 검증 내용: 중간 삭제 successor, 끝 삭제 last candidate, empty projection, semantic snapshot 불변
-    /// - 사전 조건: `[A, B, C]` candidate snapshot에서 B 또는 C를 닫는 두 개의 독립 window
-    /// - 기대 결과: B 삭제는 C, C 삭제는 B, 마지막 후보 삭제는 nil focus와 empty surface이다.
-    @MainActor
-    func testLiveCandidateRefreshRepairsRemovedFocusByPriorPosition() async {
-        var middleState = makeSwitcherWindowState(prefix: "repair-middle")
-        let middleC = id("repair-middle-C")
-        middleState.contentTabs.activeTabID = id("repair-middle-A")
-        middleState.contentTabs.tabs.append(tab(middleC.rawValue))
-        middleState.contentTabs.recentlyUsedTabIDs = ids("repair-middle-A", "repair-middle-B", "repair-middle-C")
-        middleState.contentTabSwitcherPresentation = .init(
-            source: .automatic,
-            candidateIDs: ids("repair-middle-A", "repair-middle-B", "repair-middle-C"),
-            focusedCandidateID: id("repair-middle-B"),
-        )
-        let middleStore = TestStore(initialState: middleState) { FileManagerFeature() } withDependencies: {
-            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
-        }
-        middleStore.exhaustivity = .off // child close lifecycle action은 focus reconciliation 범위 밖이다.
-
-        await middleStore.send(.contentTabs(.commitClose(id("repair-middle-B"))))
-        await middleStore.finish()
-
-        XCTAssertEqual(
-            middleStore.state.contentTabSwitcherPresentation,
-            .init(
-                source: .automatic,
-                candidateIDs: ids("repair-middle-A", "repair-middle-C"),
-                focusedCandidateID: middleC,
-            ),
-        )
-        XCTAssertEqual(middleStore.state.contentTabs.activeTabID, id("repair-middle-A"))
-        XCTAssertEqual(
-            middleStore.state.contentTabs.recentlyUsedTabIDs,
-            ids("repair-middle-A", "repair-middle-B", "repair-middle-C"),
-        )
-        let middleSemanticBeforeReconciliation = ContentTabSemanticSnapshot(middleStore.state)
-        await middleStore.send(.request(.presentContentTabSwitcher(source: .automatic)))
-        XCTAssertEqual(
-            ContentTabSemanticSnapshot(middleStore.state),
-            middleSemanticBeforeReconciliation,
-        )
-
-        var endState = makeSwitcherWindowState(prefix: "repair-end")
-        let endC = id("repair-end-C")
-        endState.contentTabs.tabs.append(tab(endC.rawValue))
-        endState.contentTabs.recentlyUsedTabIDs = ids("repair-end-A", "repair-end-B", "repair-end-C")
-        endState.contentTabSwitcherPresentation = .init(
-            source: .automatic,
-            candidateIDs: ids("repair-end-A", "repair-end-B", "repair-end-C"),
-            focusedCandidateID: endC,
-        )
-        let endStore = TestStore(initialState: endState) { FileManagerFeature() } withDependencies: {
-            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
-        }
-        endStore.exhaustivity = .off // child close lifecycle action은 focus reconciliation 범위 밖이다.
-
-        await endStore.send(.contentTabs(.commitClose(endC)))
-        await endStore.finish()
-
-        XCTAssertEqual(
-            endStore.state.contentTabSwitcherPresentation,
-            .init(
-                source: .automatic,
-                candidateIDs: ids("repair-end-A", "repair-end-B"),
-                focusedCandidateID: id("repair-end-B"),
-            ),
-        )
-        let endSemanticBeforeReconciliation = ContentTabSemanticSnapshot(endStore.state)
-        await endStore.send(.request(.presentContentTabSwitcher(source: .automatic)))
-        XCTAssertEqual(ContentTabSemanticSnapshot(endStore.state), endSemanticBeforeReconciliation)
-
-        var emptyWindowState = FileManagerWindowState()
-        emptyWindowState.contentTabs = makeState(tabs: [], active: nil, mru: ["stale"])
-        emptyWindowState.contentTabSwitcherPresentation = .init(
-            source: .automatic,
-            candidateIDs: ids("repair-empty-A"),
-            focusedCandidateID: id("repair-empty-A"),
-        )
-        let emptyStore = TestStore(initialState: emptyWindowState) {
-            FileManagerFeature()
-        }
-        await emptyStore.send(.contentTabs(.toggleSelection(id("repair-empty-A")))) {
-            $0.contentTabSwitcherPresentation = .init(source: .automatic)
-        }
-        XCTAssertEqual(emptyStore.state.contentTabSwitcherPresentation, .init(source: .automatic))
-        XCTAssertEqual(
-            ContentTabSwitcherViewState.make(source: .automatic, contentTabs: emptyStore.state.contentTabs),
-            .empty(.init(message: "No recent tabs", accessibilityLabel: "No recent tabs")),
-        )
-    }
-
-    /// CTM-004-switch_content_tab_via_used_content_tabs_switcher: live identity와 metadata/MRU 변화가 focus를 점프시키지 않는다.
-    /// 최신 projection 순서가 바뀌어도 살아 있는 focused ID와 전체 semantic snapshot을 보존하는지 검증한다.
-    /// - 검증 내용: metadata update, MRU reorder, focus identity retention
-    /// - 사전 조건: focus C인 `[A, B, C]` snapshot과 active A
-    /// - 기대 결과: metadata/MRU 변경 후에도 focus C가 유지되고 reconciliation이 semantic state를 추가 변경하지 않는다.
-    @MainActor
-    func testLiveCandidateRefreshRetainsIdentityAcrossMetadataAndMRUReorder() async {
-        var state = makeSwitcherWindowState(prefix: "retain")
-        let tabC = id("retain-C")
-        state.contentTabs.tabs.append(tab(tabC.rawValue))
-        state.contentTabs.recentlyUsedTabIDs = ids("retain-A", "retain-B", "retain-C")
-        state.contentTabSwitcherPresentation = .init(
-            source: .automatic,
-            candidateIDs: ids("retain-A", "retain-B", "retain-C"),
-            focusedCandidateID: tabC,
-        )
-        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
-            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
-        }
-        store.exhaustivity = .off // anchor 변경의 부수 effect는 focus reconciliation 범위 밖이다.
-
-        await store.send(.contentTabs(.updateRuntimePageAnchor(
-            id("retain-B"),
-            .directory(path: "/retain/updated"),
-        )))
-        await store.finish()
-
-        XCTAssertEqual(store.state.contentTabSwitcherPresentation?.focusedCandidateID, tabC)
-        XCTAssertEqual(
-            store.state.contentTabSwitcherPresentation?.candidateIDs,
-            ids("retain-A", "retain-B", "retain-C"),
-        )
-        XCTAssertEqual(store.state.contentTabs.activeTabID, id("retain-B"))
-        XCTAssertEqual(store.state.contentTabs.recentlyUsedTabIDs, ids("retain-A", "retain-B", "retain-C"))
-        XCTAssertEqual(store.state.contentTabSwitcherPresentation?.candidateIDs.contains(tabC), true)
-        let semanticBeforeReconciliation = ContentTabSemanticSnapshot(store.state)
-        await store.send(.request(.presentContentTabSwitcher(source: .automatic)))
-        XCTAssertEqual(ContentTabSemanticSnapshot(store.state), semanticBeforeReconciliation)
-    }
-
-    /// CTM-004-switch_content_tab_via_used_content_tabs_switcher: stale focus navigation은 old snapshot 방향의 live
-    /// neighbor를 고른다.
-    /// 제거된 B가 남은 `[A, C]` 사이에서 next는 C, previous는 A를 선택하는지 검증한다.
-    /// - 검증 내용: stale focus next/previous, wrong-neighbor adversarial distinction, atomic snapshot update
-    /// - 사전 조건: old `[A, B, C]`, stale focus B, live `[A, C]`
-    /// - 기대 결과: next/previous가 각각 방향에 맞는 neighbor를 선택하고 focus는 live IDs 안에 있다.
-    @MainActor
-    func testStaleFocusNavigationUsesDirectionCorrectLiveNeighbor() async {
-        for (direction, expectedFocus) in [
-            (ContentTabSwitcherFocusDirection.next, id("stale-C")),
-            (.previous, id("stale-D")),
-        ] {
-            var state = makeSwitcherWindowState(prefix: "stale")
-            state.contentTabs.tabs.append(contentsOf: [tab("stale-D"), tab("stale-C")])
-            state.contentTabs.recentlyUsedTabIDs = ids("stale-A", "stale-D", "stale-C")
-            state.contentTabSwitcherPresentation = .init(
-                source: .automatic,
-                candidateIDs: ids("stale-A", "stale-D", "stale-B", "stale-C"),
-                focusedCandidateID: id("stale-B"),
-            )
-            let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
-                $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
-            }
-            store.exhaustivity = .off // focus command는 semantic effect를 내지 않는다.
-
-            await store.send(.request(.moveContentTabSwitcherFocus(direction: direction)))
-
-            XCTAssertEqual(
-                store.state.contentTabSwitcherPresentation?.candidateIDs,
-                ids("stale-A", "stale-D", "stale-C"),
-            )
-            XCTAssertEqual(store.state.contentTabSwitcherPresentation?.focusedCandidateID, expectedFocus)
-            XCTAssertEqual(store.state.contentTabSwitcherPresentation?.candidateIDs.contains(expectedFocus), true)
-        }
-    }
-
-    /// CTM-004-switch_content_tab_via_used_content_tabs_switcher: rapid close/reorder/navigation은 focus를 항상 live 범위로
-    /// 유지한다.
-    /// 연속 child mutation과 양방향 navigation 사이에서 presentation snapshot과 focus의 원자적 수렴을 검증한다.
-    /// - 검증 내용: close, reorder, next, previous, close-to-empty sequence
-    /// - 사전 조건: 네 개의 live candidate와 첫 후보 focus
-    /// - 기대 결과: 각 transition 뒤 focus가 nil 또는 최신 candidateIDs 내부이며 sequence가 deterministic이다.
-    @MainActor
-    func testRapidCandidateRefreshSequenceRemainsDeterministicAndInBounds() async {
-        var state = makeSwitcherWindowState(prefix: "rapid")
-        state.contentTabs.tabs.append(contentsOf: [tab("rapid-C"), tab("rapid-D")])
-        state.contentTabs.recentlyUsedTabIDs = ids("rapid-A", "rapid-B", "rapid-C", "rapid-D")
-        state.contentTabSwitcherPresentation = .init(
-            source: .automatic,
-            candidateIDs: ids("rapid-A", "rapid-B", "rapid-C", "rapid-D"),
-            focusedCandidateID: id("rapid-B"),
-        )
-        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
-            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
-        }
-        store.exhaustivity = .off // sequence의 close lifecycle effect는 focus 범위 밖이다.
-
-        await store.send(.contentTabs(.close(id("rapid-B"))))
-        await store.send(.contentTabs(.reorder(
-            sourceID: id("rapid-D"),
-            targetID: id("rapid-A"),
-            placement: .before,
-        )))
-        await store.send(.request(.moveContentTabSwitcherFocus(direction: .next)))
-        await store.send(.request(.moveContentTabSwitcherFocus(direction: .previous)))
-        await store.finish()
-
-        let presentation = store.state.contentTabSwitcherPresentation
-        XCTAssertEqual(presentation?.candidateIDs, ids("rapid-C", "rapid-A", "rapid-D"))
-        XCTAssertEqual(presentation.map { $0.candidateIDs.contains($0.focusedCandidateID ?? id("missing")) }, true)
-        let semanticBeforeReconciliation = ContentTabSemanticSnapshot(store.state)
-        await store.send(.request(.presentContentTabSwitcher(source: .automatic)))
-        XCTAssertEqual(ContentTabSemanticSnapshot(store.state), semanticBeforeReconciliation)
-    }
-
-    /// CTM-004-switch_content_tab_via_used_content_tabs_switcher: 모든 recent-tab transaction busy 상태에서 표시를 차단한다.
-    /// VOY-464 admission 경계를 공유해 topology transaction 중 presentation도 끼어들지 않는지 검증한다.
-    /// - 검증 내용: 열한 busy guard 각각의 whole-window no-op과 action/effect/feedback 부재
-    /// - 사전 조건: two-tab window에 각 busy sentinel을 하나씩 독립 적용
-    /// - 기대 결과: 모든 subcase에서 presentation을 포함한 전체 window state가 동일하다.
-    @MainActor
-    func testPresentationIsBlockedByEveryRecentTabTransaction() async {
-        let tabID = ContentTabID(rawValue: "busy-B")
-        let requestID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 66))
-        let ownerID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 67))
-        let subcases = busyCloseAndPinSubcases(tabID: tabID, requestID: requestID, ownerID: ownerID)
-            + busyTopologySubcases(tabID: tabID, requestID: requestID, ownerID: ownerID)
-
-        for (name, applyBusyState) in subcases {
-            var state = makeSwitcherWindowState(prefix: "busy")
-            applyBusyState(&state)
-            let alerts = LockIsolated(0)
-            let store = TestStore(initialState: state) {
-                FileManagerFeature()
-            } withDependencies: {
-                $0.collectionAlertClient.showCollectionOpenErrorAlert = { _, _ in
-                    alerts.withValue { $0 += 1 }
-                }
-            }
-
-            await store.send(.request(.presentContentTabSwitcher(source: .automatic)))
-
-            XCTAssertEqual(store.state, state, name)
-            XCTAssertEqual(alerts.value, 0, name)
-            print("BUSY_SUBCASE \(name) PASS")
-        }
-    }
-
     private func candidates(projecting state: ContentTabState) throws -> [ContentTabSwitcherProjection.Candidate] {
         let tabsBefore = state.tabs
         let mruBefore = state.recentlyUsedTabIDs
@@ -1047,85 +423,26 @@ final class CTM004SwitchContentTabWithUsedContentTabsSwitcherTests: XCTestCase {
         }
         return candidates
     }
-}
 
-private func assertFocusedCandidateViewContract(
-    presentationSource: String,
-    viewSource: String,
-    rows: [ContentTabSwitcherViewState.Row],
-    focusedCurrentRows: [ContentTabSwitcherViewState.Row],
-    contentTabs: ContentTabState,
-    contentTabsBeforeFocus: ContentTabState,
-) throws {
-    let focusedRow = try XCTUnwrap(rows.first(where: { $0.id == id("candidate") }))
-    let currentRow = try XCTUnwrap(rows.first(where: { $0.id == id("current") }))
-    let focusedCurrentRow = try XCTUnwrap(focusedCurrentRows.first(where: { $0.id == id("current") }))
-    let nonCurrentRow = try XCTUnwrap(focusedCurrentRows.first(where: { $0.id == id("candidate") }))
-
-    XCTAssertTrue(presentationSource.contains("let isFocused: Bool"))
-    XCTAssertTrue(viewSource.contains("@FocusState private var focusedRowID: ContentTabID?"))
-    XCTAssertTrue(viewSource.contains(".focused(focusedRowID, equals: row.id)"))
-    XCTAssertTrue(viewSource.contains("focusEffectDisabled()"))
-    XCTAssertTrue(viewSource.contains(".focusSection()"))
-    XCTAssertTrue(viewSource.contains("VStack(alignment: .center"))
-    XCTAssertTrue(viewSource.contains("multilineTextAlignment(.center)"))
-    XCTAssertFalse(viewSource.contains("row.pageLabel"))
-    XCTAssertFalse(viewSource.contains("row.anchorSummary"))
-    XCTAssertTrue(viewSource.contains(".onChange(of: focusRenderState)"))
-    XCTAssertTrue(viewSource.contains("rowIDs: rowIDs"))
-    XCTAssertTrue(viewSource.contains(".onChange(of: focusedRowID, perform: handleNativeFocusChange)"))
-    XCTAssertFalse(viewSource.contains("@FocusState private var isSwitcherFocused"))
-    XCTAssertTrue(viewSource.contains("row.isFocused"))
-    XCTAssertTrue(viewSource.contains("VoyagerDS.BrandPrimaryColor.c500"))
-    XCTAssertTrue(focusedRow.isFocused && !focusedRow.isCurrent)
-    XCTAssertTrue(!currentRow.isFocused && currentRow.isCurrent)
-    XCTAssertEqual(focusedRow.accessibilityIdentifier, "file-manager.content-tab-switcher.row.candidate")
-    XCTAssertEqual(focusedRow.accessibilityLabel, "Focused Candidate")
-    XCTAssertEqual(focusedRow.accessibilityValue, "Home; Home")
-    XCTAssertEqual(currentRow.accessibilityIdentifier, "file-manager.content-tab-switcher.row.current")
-    XCTAssertEqual(currentRow.accessibilityLabel, "Current Tab")
-    XCTAssertEqual(currentRow.accessibilityValue, "Home; Home; Current")
-    XCTAssertTrue(rows.allSatisfy(\.isIconAccessibilityHidden))
-
-    XCTAssertTrue(focusedCurrentRow.isFocused && focusedCurrentRow.isCurrent)
-    XCTAssertFalse(nonCurrentRow.isFocused || nonCurrentRow.isCurrent)
-    XCTAssertEqual(
-        [focusedCurrentRow.accessibilityIdentifier, focusedCurrentRow.accessibilityLabel,
-         focusedCurrentRow.accessibilityValue],
-        [currentRow.accessibilityIdentifier, currentRow.accessibilityLabel, currentRow.accessibilityValue],
-    )
-    XCTAssertNotEqual(rows.map(\.isFocused), focusedCurrentRows.map(\.isFocused))
-    XCTAssertEqual(rows.map(\.id), focusedCurrentRows.map(\.id))
-    XCTAssertEqual(rows.map(\.title), focusedCurrentRows.map(\.title))
-    XCTAssertEqual(rows.map(\.accessibilityValue), focusedCurrentRows.map(\.accessibilityValue))
-    XCTAssertEqual(contentTabs.tabs, contentTabsBeforeFocus.tabs)
-    XCTAssertEqual(contentTabs.activeTabID, contentTabsBeforeFocus.activeTabID)
-    XCTAssertEqual(contentTabs.recentlyUsedTabIDs, contentTabsBeforeFocus.recentlyUsedTabIDs)
-    XCTAssertEqual(contentTabs.selectedTabIDs, contentTabsBeforeFocus.selectedTabIDs)
-
-    let statusStates = [
-        ContentTabSwitcherViewState.make(source: .loading, contentTabs: contentTabs),
-        ContentTabSwitcherViewState.make(source: .error(message: "Host failure"), contentTabs: contentTabs),
-        ContentTabSwitcherViewState.make(
-            source: .automatic,
-            contentTabs: makeState(tabs: [], active: nil, mru: []),
-        ),
-    ]
-    XCTAssertFalse(statusStates.contains { state in
-        if case .content = state { return true }
-        return false
-    })
-
-    let rowSource = viewSource.components(separatedBy: "private struct SwitcherRow: View").last ?? ""
-    for forbiddenToken in ["Button(", ".onTapGesture", ".onHover", "onActivate", "selection"] {
-        XCTAssertFalse(rowSource.contains(forbiddenToken), forbiddenToken)
+    @MainActor
+    func tearDownHostFixture(_ coordinator: FileManagerWindowCoordinator) async {
+        coordinator.window?.contentViewController = nil
+        coordinator.close()
+        await drainMainQueue()
+        await drainMainQueue()
     }
-    for forbiddenToken in ["setCurrent", "moveContentTabSwitcherFocus", ".send("] {
-        XCTAssertFalse(viewSource.contains(forbiddenToken), forbiddenToken)
+
+    @MainActor
+    func drainMainQueue() async {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async {
+                continuation.resume()
+            }
+        }
     }
 }
 
-private struct ContentTabSemanticSnapshot: Equatable {
+struct ContentTabSemanticSnapshot: Equatable {
     let content: FileManagerContentFeature.State
     let tabContentStates: [ContentTabID: FileManagerContentFeature.State]
     let activeTabID: ContentTabID?
@@ -1287,9 +604,9 @@ private func assertExplicitStatusViewStates() {
     )
 }
 
-private typealias BusyPresentationSubcase = (String, (inout FileManagerWindowState) -> Void)
+typealias BusyPresentationSubcase = (String, (inout FileManagerWindowState) -> Void)
 
-private func busyCloseAndPinSubcases(
+func busyCloseAndPinSubcases(
     tabID: ContentTabID,
     requestID: UUID,
     ownerID: UUID,
@@ -1325,7 +642,7 @@ private struct FileManagerHostScenario {
     let expectsUnresolvedMetadata: Bool
 }
 
-private func busyTopologySubcases(
+func busyTopologySubcases(
     tabID: ContentTabID,
     requestID: UUID,
     ownerID: UUID,
@@ -1356,15 +673,15 @@ private func busyTopologySubcases(
     ]
 }
 
-private func id(_ rawValue: String) -> ContentTabID {
+func id(_ rawValue: String) -> ContentTabID {
     ContentTabID(rawValue: rawValue)
 }
 
-private func ids(_ rawValues: String...) -> [ContentTabID] {
+func ids(_ rawValues: String...) -> [ContentTabID] {
     rawValues.map(id)
 }
 
-private func tab(
+func tab(
     _ rawID: String,
     page: ContentTabPage = .home,
     anchor: ContentTabPageAnchor = .homeDefault,
@@ -1381,7 +698,7 @@ private func tab(
     )
 }
 
-private func makeState(
+func makeState(
     tabs: [ContentTabItem],
     active: String?,
     mru: [String],
@@ -1393,7 +710,7 @@ private func makeState(
     )
 }
 
-private func makeSwitcherWindowState(prefix: String) -> FileManagerWindowState {
+func makeSwitcherWindowState(prefix: String) -> FileManagerWindowState {
     let firstID = ContentTabID(rawValue: "\(prefix)-A")
     let secondID = ContentTabID(rawValue: "\(prefix)-B")
     var state = FileManagerWindowState()

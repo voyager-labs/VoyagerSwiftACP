@@ -113,7 +113,7 @@ private extension FileManagerFeature {
                         outcome: .remaining,
                     ))
                 }
-                return .none
+                return pinnedReturnInvalidationEffect(tabID: tabID, state: &state)
 
             case let .performSelectedContentTabPinMutation(
                 operationID, tabID, .delegate(.persistPinnedRecord(request)),
@@ -209,7 +209,7 @@ private extension FileManagerFeature {
                       state.pendingSelectedContentTabPinMutation == nil
                 else { return .none }
                 _ = prepareTopNavigationUnpin(tabID: tabID, placement: placement, state: &state)
-                return .none
+                return pinnedReturnInvalidationEffect(tabID: tabID, state: &state)
 
             case let .contentTabs(.updateActivePageAnchor(tabID, anchor)):
                 guard state.contentTabMoveParticipantRequestID == nil else { return .none }
@@ -301,6 +301,10 @@ private extension FileManagerFeature {
                 state.topNavigationArrangementAvailability = .unavailable(failure)
                 state.topNavigationArrangementPresentation = .loadUnavailable
                 return .none
+
+            case let .cancelPendingPinnedCollectionReturn(tabID):
+                guard state.pendingPinnedCollectionReturnTabID == tabID else { return .none }
+                return cancelPendingCollectionOpen(state: &state)
 
             case let .internal(.entryActionCompleted(tabID, record, expectedGeneration)):
                 guard record.operationKind.isUndoable,
@@ -497,6 +501,9 @@ private extension FileManagerFeature {
         Reduce { state, action in
             if case .request(.moveContentTabSwitcherFocus) = action {
                 // stale focus의 방향 정보는 command reducer에서 처리한다.
+            } else if case .request(.activateContentTabSwitcherSelection) = action {
+                // focused window command는 stale focus 보존을 위해 command reducer가 직접 처리한다.
+            } else if case .view(.activateContentTabSwitcherCandidate) = action {
             } else {
                 reconcileContentTabSwitcherPresentation(state: &state)
             }
@@ -511,6 +518,17 @@ private extension FileManagerFeature {
             }
             return .none
         }
+    }
+
+    private func pinnedReturnInvalidationEffect(
+        tabID: ContentTabID,
+        state: inout State,
+    ) -> Effect<Action> {
+        guard state.pendingPinnedCollectionReturnTabID == tabID else { return .none }
+        return cancelPendingCollectionOpen(
+            state: &state,
+            failedPinnedReturnTabID: tabID,
+        )
     }
 
     private func isContentTabMoveParticipantActionAllowed(_ action: Action) -> Bool {

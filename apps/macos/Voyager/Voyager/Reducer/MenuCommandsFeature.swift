@@ -112,6 +112,7 @@ struct MenuCommandsFeature {
         case .newFolder: .send(.delegate(.windowManager(.file(.newFolder))))
         case .open: .send(.delegate(.windowManager(.file(.open))))
         case .quickLook: .send(.delegate(.windowManager(.file(.quickLook))))
+        case .getInfo: .send(.delegate(.windowManager(.file(.getInfo))))
         case .saveCollection: .send(.delegate(.windowManager(.file(.saveCollection))))
         case .saveCollectionAs: .send(.delegate(.windowManager(.file(.saveCollectionAs))))
         default: nil

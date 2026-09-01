@@ -61,47 +61,58 @@ extension WindowManagerFeature {
             guard let id = state.focusedWindowID else { return .none }
             return closeWindow(id, state: &state)
         case .window(.closeAllWindows):
-            let openWindowIDs = state.windows.ids.filter { !state.closingWindowIDs.contains($0) }
-            guard !openWindowIDs.isEmpty else { return .none }
-            let pendingWindowOpenIDs = openWindowIDs.filter { state.pendingWindowOpenIDs.contains($0) }
-            let externalBatchIDs = Set(openWindowIDs.compactMap { state.externalWindowBatchIDs[$0] })
-            let trackedRequestIDs: Set<UUID> = Set(openWindowIDs.compactMap { windowID -> UUID? in
-                guard state.trackedSingletonWindow?.windowID == windowID else { return nil }
-                return state.trackedSingletonWindow?.requestID
-            })
-            state.closingWindowIDs.formUnion(openWindowIDs)
-            clearAllWindowFocus(openWindowIDs, state: &state)
-            state.lastUsedWindowIDs.removeAll()
-            state.refreshContentTabMoveTargets()
-            state.defaultWindowBootstrapRequestID = nil
-            state.defaultWindowBootstrapWindowIDs.removeAll()
-            state.authorizedExternalOpenBatchID = nil
-            state.externalOpenActivationAttempt = nil
-            state.retainedExternalOpenPlacementOwnership = nil
-            var cancellationEffects: [Effect<Action>] = [.cancel(id: CancelID.defaultWindowBootstrap)]
-            cancellationEffects.append(contentsOf: pendingWindowOpenIDs.map { .cancel(id: CancelID.windowOpen($0)) })
-            cancellationEffects.append(contentsOf: externalBatchIDs.map { .cancel(id: CancelID.externalOpenBatch($0)) })
-            cancellationEffects.append(contentsOf: trackedRequestIDs.map { requestID in
-                Effect<Action>.cancel(id: CancelID.trackedSingletonNativeOpen(requestID))
-            })
-            let closeAllEffect = Effect<Action>.run { [fileManagerWindowClient] send in
-                await fileManagerWindowClient.closeAll()
-                let registeredWindowIDs = await fileManagerWindowClient.registeredWindowIDs()
-                for id in pendingWindowOpenIDs where !registeredWindowIDs.contains(id) {
-                    await fileManagerWindowClient.finalizeClose(id)
-                    await send(.pendingWindowCloseFinalized(id: id))
-                }
-            }
-            return .concatenate(.merge(cancellationEffects), closeAllEffect)
+            return closeAllWindows(state: &state)
         default:
             return .none
         }
+    }
+
+    private func closeAllWindows(state: inout State) -> Effect<Action> {
+        let openWindowIDs = state.windows.ids.filter { !state.closingWindowIDs.contains($0) }
+        let pendingResolutions = state.pendingDefaultStartPageResolutions
+        guard !openWindowIDs.isEmpty || !pendingResolutions.isEmpty else { return .none }
+        let pendingWindowOpenIDs = openWindowIDs.filter { state.pendingWindowOpenIDs.contains($0) }
+        let externalBatchIDs = Set(openWindowIDs.compactMap { state.externalWindowBatchIDs[$0] })
+        let trackedRequestIDs = Set(openWindowIDs.compactMap { windowID in
+            state.trackedSingletonWindow?.windowID == windowID ? state.trackedSingletonWindow?.requestID : nil
+        })
+        state.closingWindowIDs.formUnion(openWindowIDs)
+        clearAllWindowFocus(openWindowIDs, state: &state)
+        state.lastUsedWindowIDs.removeAll()
+        state.refreshContentTabMoveTargets()
+        state.defaultWindowBootstrapRequestID = nil
+        state.defaultWindowBootstrapWindowIDs.removeAll()
+        state.pendingDefaultStartPageResolutions.removeAll()
+        state.authorizedExternalOpenBatchID = nil
+        state.externalOpenActivationAttempt = nil
+        state.retainedExternalOpenPlacementOwnership = nil
+        var cancellationEffects: [Effect<Action>] = [.cancel(id: CancelID.defaultWindowBootstrap)]
+        cancellationEffects += pendingResolutions.keys.map { .cancel(id: CancelID.defaultStartPageResolution($0)) }
+        cancellationEffects += pendingWindowOpenIDs.map { .cancel(id: CancelID.windowOpen($0)) }
+        cancellationEffects += externalBatchIDs.map { .cancel(id: CancelID.externalOpenBatch($0)) }
+        cancellationEffects += trackedRequestIDs.map { .cancel(id: CancelID.trackedSingletonNativeOpen($0)) }
+        let pendingTrackedRequestIDs = Set(pendingResolutions.values.compactMap(\.trackedRequestID))
+        for requestID in pendingTrackedRequestIDs where state.authorizedTrackedSingletonRequestID == requestID {
+            state.authorizedTrackedSingletonRequestID = nil
+            cancellationEffects.append(trackedSingletonCompletionEffect(requestID))
+        }
+        guard !openWindowIDs.isEmpty else { return .merge(cancellationEffects) }
+        let closeAllEffect = Effect<Action>.run { [fileManagerWindowClient] send in
+            await fileManagerWindowClient.closeAll()
+            let registeredWindowIDs = await fileManagerWindowClient.registeredWindowIDs()
+            for id in pendingWindowOpenIDs where !registeredWindowIDs.contains(id) {
+                await fileManagerWindowClient.finalizeClose(id)
+                await send(.pendingWindowCloseFinalized(id: id))
+            }
+        }
+        return .concatenate(.merge(cancellationEffects), closeAllEffect)
     }
 
     private func openTrackedWindowSession(
         requestID: UUID,
         path: String?,
         selectEntryID: String?,
+        resolvedStartPage: StartPage? = nil,
         state: inout State,
     ) -> Effect<Action> {
         guard state.authorizedTrackedSingletonRequestID == requestID else {
@@ -111,7 +122,35 @@ extension WindowManagerFeature {
             state.authorizedTrackedSingletonRequestID = nil
             return trackedSingletonCompletionEffect(requestID)
         }
-        let windowSession = makeWindowSession(path: path, selectEntryID: selectEntryID)
+        var startPage: StartPage?
+        if path == nil {
+            if let resolvedStartPage {
+                startPage = resolvedStartPage
+            } else {
+                let snapshot = state.appPreferences.defaultStartPage
+                if case .home = snapshot {
+                    // home 선호는 IO가 없으므로 동기 fast path로 즉시 생성한다.
+                    startPage = .home
+                } else {
+                    // 클라우드 placeholder stat이 메인 스레드를 막지 않도록 프로브를 effect로 미룬다.
+                    let resolutionID = uuid()
+                    state.pendingDefaultStartPageResolutions[resolutionID] = .init(trackedRequestID: requestID)
+                    return resolveDefaultStartPageEffect(resolutionID: resolutionID, snapshot: snapshot) { resolved in
+                        .defaultStartPageResolved(
+                            resolutionID: resolutionID,
+                            requestID: requestID,
+                            selectEntryID: selectEntryID,
+                            startPage: resolved,
+                        )
+                    }
+                }
+            }
+        }
+        let windowSession = makeWindowSession(
+            path: path,
+            startPage: startPage,
+            selectEntryID: selectEntryID,
+        )
         state.windows.append(windowSession)
         state.focusedWindowID = windowSession.id
         state.moveWindowToMRUFront(windowSession.id)
@@ -137,10 +176,19 @@ extension WindowManagerFeature {
         let wasAuthorized = state.authorizedTrackedSingletonRequestID == requestID
         if wasAuthorized { state.authorizedTrackedSingletonRequestID = nil }
         var effects: [Effect<Action>] = [.cancel(id: CancelID.trackedSingletonNativeOpen(requestID))]
+        let pendingResolutionIDs = state.pendingDefaultStartPageResolutions.compactMap { resolutionID, pending in
+            pending.trackedRequestID == requestID ? resolutionID : nil
+        }
+        for resolutionID in pendingResolutionIDs {
+            state.pendingDefaultStartPageResolutions[resolutionID] = nil
+            effects.append(.cancel(id: CancelID.defaultStartPageResolution(resolutionID)))
+        }
         guard let trackedWindow = state.trackedSingletonWindow,
               trackedWindow.requestID == requestID
         else {
-            if wasAuthorized { effects.append(trackedSingletonCompletionEffect(requestID)) }
+            if wasAuthorized || !pendingResolutionIDs.isEmpty {
+                effects.append(trackedSingletonCompletionEffect(requestID))
+            }
             return .concatenate(effects)
         }
         state.trackedSingletonWindow = nil
@@ -160,17 +208,28 @@ extension WindowManagerFeature {
         shouldBootstrapDefaultWindow: Bool,
     ) -> Effect<Action> {
         .run { [fileManagerWindowClient] send in
-            await fileManagerWindowClient.open(id)
-            guard !Task.isCancelled else { return }
-            let registeredWindowIDs = await fileManagerWindowClient.registeredWindowIDs()
-            guard !Task.isCancelled else { return }
+            guard let isRegistered = await Self.openAndVerifyWindowRegistration(
+                id,
+                client: fileManagerWindowClient,
+            ) else { return }
             await send(.windowOpenCompleted(
                 id: id,
                 shouldBootstrapDefaultWindow: shouldBootstrapDefaultWindow,
-                isRegistered: registeredWindowIDs.contains(id),
+                isRegistered: isRegistered,
             ))
         }
         .cancellable(id: CancelID.windowOpen(id))
+    }
+
+    static func openAndVerifyWindowRegistration(
+        _ id: State.WindowID,
+        client: FileManagerWindowClient,
+    ) async -> Bool? {
+        await client.open(id)
+        guard !Task.isCancelled else { return nil }
+        let registeredWindowIDs = await client.registeredWindowIDs()
+        guard !Task.isCancelled else { return nil }
+        return registeredWindowIDs.contains(id)
     }
 
     func readyToOpenWindow(_ id: State.WindowID, state: inout State) -> Effect<Action> {
@@ -200,14 +259,14 @@ extension WindowManagerFeature {
         shouldBootstrapDefaultWindow: Bool,
     ) -> Effect<Action> {
         .run { [fileManagerWindowClient] send in
-            await fileManagerWindowClient.open(id)
-            guard !Task.isCancelled else { return }
-            let registeredWindowIDs = await fileManagerWindowClient.registeredWindowIDs()
-            guard !Task.isCancelled else { return }
+            guard let isRegistered = await Self.openAndVerifyWindowRegistration(
+                id,
+                client: fileManagerWindowClient,
+            ) else { return }
             await send(.windowOpenCompleted(
                 id: id,
                 shouldBootstrapDefaultWindow: shouldBootstrapDefaultWindow,
-                isRegistered: registeredWindowIDs.contains(id),
+                isRegistered: isRegistered,
             ))
             guard !Task.isCancelled else { return }
             await send(.trackedSingletonNativeOpenCompleted(requestID: requestID))
@@ -265,7 +324,8 @@ extension WindowManagerFeature {
         state.externalWindowBatchIDs[id] = nil
         if var ownership = state.retainedExternalOpenPlacementOwnership {
             ownership.newWindowIDs.removeAll { $0 == id }
-            state.retainedExternalOpenPlacementOwnership = ownership.newWindowIDs.isEmpty ? nil : ownership
+            let isEmpty = ownership.newWindowIDs.isEmpty
+            state.retainedExternalOpenPlacementOwnership = isEmpty ? nil : ownership
         }
         if state.focusedWindowID == id {
             state.focusedWindowID = state.lastUsedWindowIDs.first(where: { isWindowReady($0, state: state) })
@@ -345,7 +405,6 @@ extension WindowManagerFeature {
     ) -> Effect<Action> {
         let wasFocused = state.focusedWindowID == id
         let trackedWindow = state.trackedSingletonWindow.flatMap { $0.windowID == id ? $0 : nil }
-        let activationAttempt = state.externalOpenActivationAttempt.flatMap { $0.windowID == id ? $0 : nil }
         state.windows.remove(id: id)
         state.pendingWindowOpenIDs.remove(id)
         state.closingWindowIDs.remove(id)
@@ -356,7 +415,8 @@ extension WindowManagerFeature {
         state.externalWindowBatchIDs[id] = nil
         if var ownership = state.retainedExternalOpenPlacementOwnership {
             ownership.newWindowIDs.removeAll { $0 == id }
-            state.retainedExternalOpenPlacementOwnership = ownership.newWindowIDs.isEmpty ? nil : ownership
+            let isEmpty = ownership.newWindowIDs.isEmpty
+            state.retainedExternalOpenPlacementOwnership = isEmpty ? nil : ownership
         }
         if wasFocused {
             state.focusedWindowID = state.lastUsedWindowIDs.first(where: { isWindowReady($0, state: state) })
@@ -373,9 +433,8 @@ extension WindowManagerFeature {
                 effects.append(trackedSingletonCompletionEffect(trackedWindow.requestID))
             }
         }
-        if let activationAttempt, state.authorizedExternalOpenBatchID == activationAttempt.batchID {
-            state.externalOpenActivationAttempt = nil
-            effects.append(retryExternalOpenActivation(after: activationAttempt, state: &state))
+        if let effect = externalOpenWindowRemovalEffect(id, state: &state) {
+            effects.append(effect)
         }
         if state.defaultWindowBootstrapWindowIDs.isEmpty, state.defaultWindowBootstrapRequestID != nil {
             state.defaultWindowBootstrapRequestID = nil
@@ -383,6 +442,60 @@ extension WindowManagerFeature {
         }
         state.refreshContentTabMoveTargets()
         return effects.isEmpty ? .none : .merge(effects)
+    }
+
+    func externalOpenWindowRemovalEffect(
+        _ id: State.WindowID,
+        state: inout State,
+    ) -> Effect<Action>? {
+        guard let attempt = state.externalOpenActivationAttempt,
+              state.authorizedExternalOpenBatchID == attempt.batchID,
+              let removedPlanWindow = attempt.plan.windows.first(where: { $0.windowID == id })
+        else { return nil }
+        let unsettledPinnedTabID = removedPlanWindow.items.last(where: {
+            $0.requiresPinnedAnchorReturn
+                && !attempt.settledPinnedReturnTabIDs.contains($0.tabID)
+        })?.tabID
+        if let unsettledPinnedTabID {
+            return replanExternalOpenActivationExcluding(
+                windowID: id,
+                tabID: unsettledPinnedTabID,
+                state: &state,
+            )
+        }
+        if let request = attempt.plan.request {
+            let cancellationEffects = externalOpenPinnedReturnCancellationEffects(
+                attempt,
+                excludingWindowID: id,
+                excludingTabID: nil,
+                state: state,
+            )
+            state.externalOpenActivationAttempt = nil
+            state.externalOpenActivationBecameKey = false
+            guard let retryRequest = request.retryRequest,
+                  case let .success(replacementPlan) = ExternalOpenPlacementPlanner.make(
+                      retryRequest,
+                      state: state,
+                      generateUUID: uuid(),
+                  )
+            else {
+                state.authorizedExternalOpenBatchID = nil
+                return .concatenate(cancellationEffects + [
+                    .send(.delegate(.externalOpenActivationFailed(
+                        batchID: attempt.batchID,
+                        failure: .recoveryExhausted,
+                    ))),
+                ])
+            }
+            return .concatenate(cancellationEffects + [
+                .send(.placement(.apply(
+                    plan: replacementPlan,
+                    reservationsByItemID: replacementPlan.reservationsByItemID,
+                ))),
+            ])
+        }
+        guard attempt.windowID == id else { return nil }
+        return retryExternalOpenActivation(after: attempt, state: &state)
     }
 
     func isWindowReady(_ id: State.WindowID, state: State) -> Bool {
@@ -394,13 +507,71 @@ extension WindowManagerFeature {
     private func openWindowSession(
         path: String?,
         selectEntryID: String?,
+        resolvedStartPage: StartPage? = nil,
         state: inout State,
     ) -> Effect<Action> {
         if onboardingWindowClient.showIfNeeded() { return .none }
-        let windowSession = makeWindowSession(path: path, selectEntryID: selectEntryID)
+        var startPage: StartPage?
+        if path == nil {
+            if let resolvedStartPage {
+                startPage = resolvedStartPage
+            } else {
+                let snapshot = state.appPreferences.defaultStartPage
+                if case .home = snapshot {
+                    // home 선호는 IO가 없으므로 동기 fast path로 즉시 생성한다.
+                    startPage = .home
+                } else {
+                    // 클라우드 placeholder stat이 메인 스레드를 막지 않도록 프로브를 effect로 미룬다.
+                    let resolutionID = uuid()
+                    state.pendingDefaultStartPageResolutions[resolutionID] = .init(trackedRequestID: nil)
+                    return resolveDefaultStartPageEffect(resolutionID: resolutionID, snapshot: snapshot) { resolved in
+                        .defaultStartPageResolved(
+                            resolutionID: resolutionID,
+                            requestID: nil,
+                            selectEntryID: selectEntryID,
+                            startPage: resolved,
+                        )
+                    }
+                }
+            }
+        }
+        let windowSession = makeWindowSession(
+            path: path,
+            startPage: startPage,
+            selectEntryID: selectEntryID,
+        )
         return openWindowSession(
             windowSession,
             startsDefaultBootstrap: path == nil,
+            state: &state,
+        )
+    }
+
+    /// 비동기 시작 페이지 프로브 완료 후 원래 요청 경로로 창 생성을 재개한다.
+    func resumeDefaultStartPageResolution(
+        resolutionID: UUID,
+        requestID: UUID?,
+        selectEntryID: String?,
+        startPage: StartPage,
+        state: inout State,
+    ) -> Effect<Action> {
+        guard let pending = state.pendingDefaultStartPageResolutions[resolutionID],
+              pending.trackedRequestID == requestID
+        else { return .none }
+        state.pendingDefaultStartPageResolutions[resolutionID] = nil
+        if let requestID {
+            return openTrackedWindowSession(
+                requestID: requestID,
+                path: nil,
+                selectEntryID: selectEntryID,
+                resolvedStartPage: startPage,
+                state: &state,
+            )
+        }
+        return openWindowSession(
+            path: nil,
+            selectEntryID: selectEntryID,
+            resolvedStartPage: startPage,
             state: &state,
         )
     }
