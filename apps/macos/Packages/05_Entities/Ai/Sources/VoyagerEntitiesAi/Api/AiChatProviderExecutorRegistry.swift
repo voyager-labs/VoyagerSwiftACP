@@ -1,11 +1,11 @@
 import Foundation
 
 struct CodexExecutionRequest {
+    var runID: String
     var model: String
     var prompt: String
     var thinking: AiChatProviderThinkingPayload?
-    var readablePaths: [URL]
-    var credential: OAuthCredentialFile
+    var workingDirectory: URL?
 }
 
 typealias AiChatProviderCodexExecutor = @Sendable (

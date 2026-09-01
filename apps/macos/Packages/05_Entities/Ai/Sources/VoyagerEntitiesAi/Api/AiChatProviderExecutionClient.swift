@@ -20,12 +20,23 @@ public enum AiChatProviderExecutionEvent: Equatable, Sendable {
 public struct AiChatProviderExecutionClient: Sendable {
     public var execute: @Sendable (AiChatRequest, StoredCredentialPayload?) throws
         -> AsyncThrowingStream<AiChatProviderExecutionEvent, Error>
+    let codexControllerIdentity: ObjectIdentifier?
 
     nonisolated public init(
         execute: @escaping @Sendable (AiChatRequest, StoredCredentialPayload?) throws
             -> AsyncThrowingStream<AiChatProviderExecutionEvent, Error>,
     ) {
         self.execute = execute
+        codexControllerIdentity = nil
+    }
+
+    init(
+        execute: @escaping @Sendable (AiChatRequest, StoredCredentialPayload?) throws
+            -> AsyncThrowingStream<AiChatProviderExecutionEvent, Error>,
+        codexControllerIdentity: ObjectIdentifier,
+    ) {
+        self.execute = execute
+        self.codexControllerIdentity = codexControllerIdentity
     }
 }
 
@@ -60,17 +71,20 @@ public extension AiChatProviderExecutionClient {
         session: URLSession = .shared,
         now: @escaping @Sendable () -> Int64 = { Int64((Date().timeIntervalSince1970 * 1000.0).rounded()) },
     ) -> AiChatProviderExecutionClient {
-        live(session: session, now: now, codexExecutor: executeCodexCLI)
+        live(session: session, now: now, codexExecutor: nil, composition: .live)
     }
 
     nonisolated internal static func live(
         session: URLSession = .shared,
         now: @escaping @Sendable () -> Int64 = { Int64((Date().timeIntervalSince1970 * 1000.0).rounded()) },
-        codexExecutor: @escaping AiChatProviderCodexExecutor = executeCodexCLI,
+        codexExecutor: AiChatProviderCodexExecutor? = nil,
         registry: AiChatProviderExecutorRegistry? = nil,
+        composition: CodexExecLiveComposition? = nil,
     ) -> AiChatProviderExecutionClient {
+        let liveComposition = composition ?? .live
+        let codexExecution = codexExecutor ?? liveComposition.executeLegacy
         let executorRegistry = registry ?? .default()
-        return AiChatProviderExecutionClient(
+        let client = AiChatProviderExecutionClient(
             execute: { request, credential in
                 NSLog(
                     "[AiChatProviderExecution] Preparing provider request provider=%@ model=%@ "
@@ -111,9 +125,14 @@ public extension AiChatProviderExecutionClient {
                     preflight: result,
                     session: session,
                     now: now,
-                    codexExecutor: codexExecutor,
+                    codexExecutor: codexExecution,
                 ))
             },
+        )
+        guard let composition else { return client }
+        return AiChatProviderExecutionClient(
+            execute: client.execute,
+            codexControllerIdentity: composition.controllerIdentity,
         )
     }
 }
