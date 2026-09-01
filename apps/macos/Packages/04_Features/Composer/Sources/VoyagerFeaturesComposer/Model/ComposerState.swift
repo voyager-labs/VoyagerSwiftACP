@@ -101,6 +101,7 @@ public struct ComposerState: Equatable {
     public var activeFiltersRequestID: UUID?
     public var lastAcceptedSearchRequestID: UUID?
     public var lastAcceptedFiltersRequestID: UUID?
+    public var lastFailedFiltersRequestID: UUID?
 
     public var lastSearchResponse: VoyagerShared.SearchResponsePayload?
     public var lastFiltersResponse: VoyagerShared.SearchResponsePayload?
@@ -128,6 +129,11 @@ public struct ComposerState: Equatable {
             includeDirectories: includeDirectories,
             conditions: conditions,
         )
+    }
+
+    public mutating func commitCurrentScopeDraft() {
+        scopeEditor.committedSelection = scopeEditor.selection
+        scopeEditor.committedIncludeSubfolders = scopeEditor.includeSubfolders
     }
 
     public var isSemanticallyRootOnly: Bool {
@@ -276,6 +282,13 @@ public struct ComposerState: Equatable {
         registryClient: RegistryClient,
         uuid: () -> UUID = UUID.init,
     ) {
+        collectionContext = payload.context
+        openedCollectionURL = payload.navigation.flatMap { navigation in
+            if case let .file(url, _) = navigation.kind { return url }
+            return nil
+        }
+        openedCollectionCompatibility = payload.compatibility
+        isCollectionMode = true
         pendingSearchQuery = payload.context.query.isEmpty ? nil : payload.context.query
         text = payload.context.query
         let selection = ComposerScopeSelection.fromCanonicalScopes(
@@ -285,11 +298,18 @@ public struct ComposerState: Equatable {
         )
         scopeEditor.selection = selection
         scopeEditor.includeSubfolders = payload.context.includeSubfolders
+        scopeEditor.committedSelection = selection
+        scopeEditor.committedIncludeSubfolders = payload.context.includeSubfolders
+        scopeEditor.isPresented = false
+        resetScopeEditorInteractionState(clearQuery: true)
+        scopeEditor.listState = .defaultCandidates
+        scopeEditor.candidateItems = []
         includeDirectories = payload.context.includeDirectories
         replaceConditions(payload.context.conditions, uuid: uuid)
         propertyPicker = ConditionPropertyPickerFeature.State()
         valuePicker = ValuePickerFeature.State()
         clearHistory()
+        resetCollectionOpenLifecycleState()
         let filters = buildFilters(from: self)
         applyAppliedFilters(
             .init(
@@ -304,6 +324,25 @@ public struct ComposerState: Equatable {
         )
         lastFiltersResponse = nil
         lastSearchResponse = nil
+    }
+
+    private mutating func resetCollectionOpenLifecycleState() {
+        lastScopeChangeFeedback = nil
+        isLoadingSearch = false
+        isLoadingFilters = false
+        isFilteringInFlight = false
+        queryRenderPhase = .idle
+        transientFeedback = nil
+        submittedSearchFilters = nil
+        activeSearchRequestID = nil
+        activeFiltersRequestID = nil
+        lastAcceptedSearchRequestID = nil
+        lastAcceptedFiltersRequestID = nil
+        lastFailedFiltersRequestID = nil
+        searchStartedAt = nil
+        filtersStartedAt = nil
+        activeFiltersMetricSource = nil
+        hasSubmittedInSession = false
     }
 
     mutating func replaceConditions(_ conditions: [Condition], uuid: () -> UUID) {

@@ -175,6 +175,7 @@ struct FileManagerNavigationActionReducer {
                     collectionAlertClient: collectionAlertClient,
                     registryClient: registryClient,
                     collectionStalenessClient: collectionStalenessClient,
+                    metricsClient: metricsClient,
                 ),
             )
 
@@ -364,9 +365,10 @@ private func collectionFileLoadEffect(
         } catch is CancellationError {
             return
         } catch {
+            let category = collectionOpenErrorCategory(error)
             await send(.navigation(.internal(.collectionFileLoaded(
                 request: request,
-                result: .failure(ContentPageNavigationErrorFingerprint(error: error)),
+                result: .failure(ContentPageNavigationErrorFingerprint(error: error, category: category)),
             ))))
         }
     }
@@ -389,13 +391,6 @@ private func handleCollectionFileLoaded(
     case let .success(loadResult):
         let file = loadResult.file
         let resolved = file.resolveCollectionFilters(registryClient: environment.registryClient)
-        if file.isEmptyDefinition(resolvedFilters: resolved) {
-            return handleEmptyCollectionFile(
-                request: request,
-                state: &state,
-                collectionAlertClient: environment.collectionAlertClient,
-            )
-        }
         let isStale = prepareLoadedCollectionOpenStaleness(
             request: request,
             file: file,
@@ -403,8 +398,7 @@ private func handleCollectionFileLoaded(
             environment: environment,
         )
         return handleCollectionFileLoadedSuccess(
-            file,
-            compatibility: loadResult.compatibility,
+            loadResult,
             isStale: isStale,
             resolved: resolved,
             state: &state,
@@ -416,6 +410,7 @@ private func handleCollectionFileLoaded(
             request: request,
             state: &state,
             collectionAlertClient: environment.collectionAlertClient,
+            metricsClient: environment.metricsClient,
         )
     }
 }
@@ -507,19 +502,17 @@ private func handleNavigateToCollection(
 }
 
 private func handleCollectionFileLoadedSuccess(
-    _ file: VoyagerCollectionFile,
-    compatibility: CollectionFileCompatibilityMetadata,
+    _ loadResult: CollectionFileLoadResult,
     isStale: Bool,
     resolved: AppliedFilterResolver.ResolutionResult,
     state: inout FileManagerWindowState,
     environment: CollectionOpenEnvironment,
 ) -> Effect<FileManagerWindowAction> {
-    state.content.composer.isPresented = false
     let openPayload = state.content.collection.makeOpenRestorationPayload(
-        file: file,
+        file: loadResult.file,
         resolved: resolved,
         isStale: isStale,
-        compatibility: compatibility,
+        compatibility: loadResult.compatibility,
     )
 
     let dismissComposerEffect: Effect<FileManagerWindowAction> = .send(.content(.composer(.setPresented(false))))
@@ -529,6 +522,7 @@ private func handleCollectionFileLoadedSuccess(
         registryClient: environment.registryClient,
         state: &state,
     )
+    state.content.composer.isPresented = false
 
     if let effects = makeHydratedCollectionOpenEffects(
         payload: openPayload,
@@ -546,6 +540,10 @@ private func handleCollectionFileLoadedSuccess(
 
     if openPayload.queryTrigger == nil {
         effects.append(.send(.content(.entryViewLayout(.internal(.setCollectionContentLoading(false))))))
+        effects.append(collectionOpenMetricEffect(
+            metricsClient: environment.metricsClient,
+            resultStatus: .validEmpty,
+        ))
     }
 
     if effects.isEmpty {
@@ -558,6 +556,7 @@ private struct CollectionOpenEnvironment {
     let collectionAlertClient: CollectionAlertClient
     let registryClient: RegistryClient
     let collectionStalenessClient: CollectionStalenessClient
+    let metricsClient: MetricsClient
 }
 
 nonisolated func collectionScopeRootsChangedSinceSnapshot(
@@ -590,7 +589,13 @@ private func handleCollectionFileLoadedFailure(
     request: ContentPageCollectionOpenRequest,
     state _: inout FileManagerWindowState,
     collectionAlertClient: CollectionAlertClient,
+    metricsClient: MetricsClient,
 ) -> Effect<FileManagerWindowAction> {
+    let metricEffect = collectionOpenMetricEffect(
+        metricsClient: metricsClient,
+        resultStatus: .loadFailure,
+        errorCategory: error.category,
+    )
     if case .collection = request.sourceRoute {
         return .concatenate(
             .send(.content(.entryViewLayout(.internal(.setCollectionContentLoading(false))))),
@@ -601,6 +606,7 @@ private func handleCollectionFileLoadedFailure(
                     error.message,
                 )
             },
+            metricEffect,
         )
     }
 
@@ -619,35 +625,38 @@ private func handleCollectionFileLoadedFailure(
     effects.append(.run { _ in
         await collectionAlertClient.showCollectionOpenErrorAlert("Unable to Open Collection", error.message)
     })
+    effects.append(metricEffect)
     return .concatenate(effects)
 }
 
-private func handleEmptyCollectionFile(
-    request: ContentPageCollectionOpenRequest,
-    state _: inout FileManagerWindowState,
-    collectionAlertClient: CollectionAlertClient,
-) -> Effect<FileManagerWindowAction> {
-    var effects: [Effect<FileManagerWindowAction>] = [
-        .send(.content(.entryViewLayout(.internal(.setCollectionContentLoading(false))))),
-        restoreCollectionOpenHistoryEffect(request),
-    ]
-    if !request.sourceRoute.isCollection {
-        effects.append(.send(.content(.collection(.sessionResetRequested))))
-        effects.append(.send(.content(.internal(.exitCollectionMode))))
-        effects.append(.send(.content(.composer(.resetComposerAndSync(
-            context: nil,
-            url: nil,
-            compatibility: nil,
-            isCollectionMode: false,
-        )))))
+private func collectionOpenErrorCategory(_ error: Error) -> ContentPageNavigationErrorCategory {
+    if let compatibilityError = error as? CollectionFileCompatibilityError {
+        return switch compatibilityError {
+        case .unsupportedFutureSchemaVersion:
+            .unsupportedSchema
+        case .invalidDefinitionPayload:
+            .invalidDefinition
+        case .missingSchemaVersion,
+             .invalidSchemaVersionType,
+             .missingPackagePayload,
+             .unrecoverableDocumentCorruption,
+             .invalidPropertyListPayload:
+            .malformed
+        }
     }
-    effects.append(.run { _ in
-        await collectionAlertClient.showCollectionOpenErrorAlert(
-            "Empty Collection",
-            "This collection file has no query, scope, or filters.",
-        )
-    })
-    return .concatenate(effects)
+    if let cocoaError = error as? CocoaError {
+        return switch cocoaError.code {
+        case .fileReadNoPermission,
+             .fileReadNoSuchFile,
+             .fileReadInvalidFileName,
+             .fileReadCorruptFile,
+             .fileReadUnknown:
+            .access
+        default:
+            .unknown
+        }
+    }
+    return .unknown
 }
 
 private func restoreCollectionOpenHistoryEffect(

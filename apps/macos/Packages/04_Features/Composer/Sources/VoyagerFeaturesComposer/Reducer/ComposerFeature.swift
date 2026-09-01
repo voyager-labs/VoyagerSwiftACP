@@ -125,6 +125,7 @@ public struct ComposerFeature {
                 state.activeFiltersRequestID = nil
                 state.lastAcceptedSearchRequestID = nil
                 state.lastAcceptedFiltersRequestID = nil
+                state.lastFailedFiltersRequestID = nil
                 state.pendingSearchQuery = nil
                 state.searchStartedAt = nil
                 state.filtersStartedAt = nil
@@ -187,12 +188,15 @@ public struct ComposerFeature {
                 state.isCollectionMode = isCollectionMode
                 return .none
 
+            case .view(.clearAll):
+                state.lastFailedFiltersRequestID = nil
+                return .none
+
             case .view(.applyFilters),
                  .view(.addCondition),
                  .view(.removeCondition),
                  .view(.candidateScope),
                  .view(.currentScope),
-                 .view(.clearAll),
                  .view(.saveCollection),
                  .view(.saveCollectionAs),
                  .view(.scopeEditorOpen),
@@ -245,11 +249,13 @@ private func handleSetPresented(
             state.isFilteringInFlight = false
             state.activeFiltersRequestID = nil
             state.lastAcceptedFiltersRequestID = nil
+            state.lastFailedFiltersRequestID = nil
             state.lastScopeChangeFeedback = nil
         }
 
         var effects: [Effect<ComposerFeature.Action>] = [
             .cancel(id: ComposerFeature.CancelID.search(ownerID: state.cancellationOwnerID)),
+            .cancel(id: ComposerFeature.CancelID.scopeEditorSearch),
             .cancel(id: ComposerFeature.CancelID.feedbackDismiss(ownerID: state.cancellationOwnerID)),
         ]
         if shouldPreserveFilterLifecycle {
@@ -422,6 +428,7 @@ func applyFiltersIfNeeded(
     state.isLoadingFilters = true
     state.isFilteringInFlight = true
     state.activeFiltersRequestID = requestID
+    state.lastFailedFiltersRequestID = nil
     state.activeFiltersMetricSource = metricSource
     let filters = buildFilters(from: state)
     guard !filters.conditions.isEmpty else {

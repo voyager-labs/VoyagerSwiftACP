@@ -43,6 +43,9 @@ enum FileManagerContentComposerCoordinator {
         case let .view(.setPresented(isPresented)):
             return handleSetPresented(isPresented, state: &state, dependencies: dependencies)
 
+        case .view(.scopeEditorSetPresented(false)):
+            return handleScopeEditorDismissed(state: &state)
+
         case .view(.applyFilters):
             guard state.composer.conditions.contains(where: \.isExecutionReady) else {
                 return .none
@@ -71,6 +74,30 @@ enum FileManagerContentComposerCoordinator {
         default:
             return nil
         }
+    }
+
+    private static func handleScopeEditorDismissed(
+        state: inout FileManagerContentState,
+    ) -> Effect<FileManagerContentAction> {
+        guard state.isCollectionMode,
+              state.collection.collectionSession.document?.url != nil,
+              state.composer.scopeEditor.hasPendingScopeRuleChanges
+        else {
+            return .none
+        }
+        let query = state.composer.pendingSearchQuery
+            ?? state.composer.collectionContext?.query
+            ?? state.composer.text
+        guard query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !state.composer.conditions.contains(where: \.isExecutionReady)
+        else {
+            return .none
+        }
+        let context = state.composer.collectionContext(query: query)
+        state.collection.collectionContext = context
+        state.composer.collectionContext = context
+        state.composer.commitCurrentScopeDraft()
+        return .none
     }
 
     private static func handleComposerDelegateAction(

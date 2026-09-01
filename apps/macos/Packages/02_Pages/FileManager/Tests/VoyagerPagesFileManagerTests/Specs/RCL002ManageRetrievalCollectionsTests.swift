@@ -3,7 +3,7 @@ import Foundation
 @_spi(Testing)
 @testable import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
-import VoyagerFeaturesComposer
+@testable import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 @testable import VoyagerPagesFileManager
 import VoyagerShared
@@ -48,9 +48,293 @@ private actor CollectionFileLoadSuspensionGate {
     }
 }
 
+private enum CollectionOpenCharacterizationFailure {
+    case malformed
+    case unsupportedSchema
+    case invalidDefinition
+    case access
+    case unknown
+
+    var error: any Error {
+        switch self {
+        case .malformed:
+            CollectionFileCompatibilityError.invalidPropertyListPayload
+        case .unsupportedSchema:
+            CollectionFileCompatibilityError.unsupportedFutureSchemaVersion(
+                found: SchemaVersion(major: 99, minor: 0),
+                current: CollectionFileSchemaVersion.current,
+            )
+        case .invalidDefinition:
+            CollectionFileCompatibilityError.invalidDefinitionPayload
+        case .access:
+            CocoaError(.fileReadNoPermission)
+        case .unknown:
+            NSError(domain: "CollectionOpenUnknown", code: 1)
+        }
+    }
+}
+
+private struct CollectionOpenMetricRecord: Equatable {
+    let name: String
+    let value: Double
+    let tags: [String: String]?
+}
+
 @MainActor
 final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
     // MARK: - RCL-002-save_collection_filter_changes
+
+    /// RCL-002-save_collection_filter_changes: empty Collection의 query edit은 기존 submit 검색을 유지한다.
+    /// scope-only draft 동기화 추가 전에 query-bearing edit의 retrieval 동작을 characterization 한다.
+    /// - 검증 내용: trimmed query submit은 SearchClient.search만 정확히 한 번 호출한다.
+    /// - 사전 조건: file-backed semantic-empty Collection과 새 query text
+    /// - 기대 결과: query search 1회, filter search 0회로 기존 실행 경계가 유지됨
+    func testEditEmptyCollection_queryStillRequestsOnce() async {
+        let targetURL = URL(fileURLWithPath: "/VoyagerFixtures/Collections/query-edit.voycoll")
+        let requests = LockIsolated<[String]>([])
+        let store = makeCollectionEditStore(
+            targetURL: targetURL,
+            requests: requests,
+        )
+
+        await store.send(.composer(.setText("  invoice  ")))
+        await store.skipReceivedActions(strict: false)
+        await store.send(.composer(.submit))
+        await store.skipReceivedActions(strict: false)
+        await store.finish()
+
+        XCTAssertEqual(requests.value, ["submit"])
+        XCTAssertEqual(store.state.collection.collectionSession.document?.url, targetURL)
+    }
+
+    /// RCL-002-save_collection_filter_changes: execution-ready condition edit은 기존 filter 검색을 유지한다.
+    /// scope-only request-free branch가 실행 가능한 condition의 applyFilters 경로를 가로채지 않는지 characterization 한다.
+    /// - 검증 내용: execution-ready condition은 SearchClient.applyFilters만 정확히 한 번 호출한다.
+    /// - 사전 조건: file-backed semantic-empty Collection에 값까지 완성된 condition이 있음
+    /// - 기대 결과: filter search 1회, query search 0회로 기존 실행 경계가 유지됨
+    func testEditEmptyCollection_executionReadyConditionStillRequestsOnce() async {
+        let targetURL = URL(fileURLWithPath: "/VoyagerFixtures/Collections/condition-edit.voycoll")
+        let requests = LockIsolated<[String]>([])
+        var state = makeFileBackedEmptyCollectionContentState(targetURL: targetURL)
+        state.composer.conditionEditors = [
+            ConditionEditorState(
+                id: UUID(950),
+                condition: makeEditCondition(values: ["pdf"]),
+            ),
+        ]
+        let store = makeCollectionEditStore(
+            initialState: state,
+            requests: requests,
+        )
+
+        await store.send(.composer(.applyFilters))
+        await store.skipReceivedActions(strict: false)
+        await store.finish()
+
+        XCTAssertEqual(requests.value, ["applyFilters"])
+        XCTAssertEqual(store.state.collection.collectionSession.document?.url, targetURL)
+    }
+
+    /// RCL-002-save_collection_filter_changes: 첫 scope-only edit은 retrieval 없이 Collection draft를 dirty로 만든다.
+    /// Composer child가 scope editor를 닫은 뒤 FileManager가 현재 scope rule을 Collection ownership에 동기화한다.
+    /// - 검증 내용: scope/exclusion context, committed scope, dirty, URL, accepted response, request cardinality
+    /// - 사전 조건: copied semantic-empty package의 file-backed Collection과 첫 scope editor transaction
+    /// - 기대 결과: pending scope change가 해제되고 원본 URL을 유지한 dirty request-free draft가 됨
+    func testEditEmptyCollection_scopeOnlyDraftBecomesDirtyWithoutSearch() async throws {
+        let sandbox = try FileManagerFixtureSandbox.copyingDirectory(
+            from: "fixtures/fixtures/collections/empty_definition_collection.voycoll",
+        )
+        defer { sandbox.cleanup() }
+        let sourcePayload = try Data(contentsOf: sandbox.originalFixture.appendingPathComponent("collection.plist"))
+        let requests = LockIsolated<[String]>([])
+        let acceptedRequestID = UUID(951)
+        let acceptedResponse = SearchResponsePayload(itemCount: 0, items: [])
+        var state = makeFileBackedEmptyCollectionContentState(targetURL: sandbox.fileURL)
+        state.composer.lastAcceptedFiltersRequestID = acceptedRequestID
+        state.composer.lastFiltersResponse = acceptedResponse
+        let store = makeCollectionEditStore(initialState: state, requests: requests)
+
+        await store.send(.composer(.scopeEditorSetPresented(true)))
+        await store.send(.composer(.candidateScope(.add(path: "/VoyagerFixtures/Documents"))))
+        await store.send(.composer(.exceptionScope(.exclude(path: "/VoyagerFixtures/Documents/Archive"))))
+        XCTAssertTrue(store.state.composer.scopeEditor.hasPendingScopeRuleChanges)
+        await store.send(.composer(.scopeEditorSetPresented(false)))
+        await store.skipReceivedActions(strict: false)
+        await store.finish()
+
+        let expectedContext = CollectionContext(
+            query: "",
+            scopes: ["/VoyagerFixtures/Documents"],
+            excludedScopes: ["/VoyagerFixtures/Documents/Archive"],
+            includeSubfolders: true,
+            includeDirectories: false,
+            conditions: [],
+        )
+        XCTAssertEqual(store.state.collection.collectionContext, expectedContext)
+        XCTAssertEqual(store.state.composer.collectionContext, expectedContext)
+        XCTAssertFalse(store.state.composer.scopeEditor.hasPendingScopeRuleChanges)
+        XCTAssertTrue(store.state.collection.isDirty)
+        XCTAssertEqual(store.state.collection.collectionSession.document?.url, sandbox.fileURL)
+        XCTAssertEqual(store.state.composer.openedCollectionURL, sandbox.fileURL)
+        XCTAssertEqual(store.state.composer.lastAcceptedFiltersRequestID, acceptedRequestID)
+        XCTAssertEqual(store.state.composer.lastFiltersResponse, acceptedResponse)
+        XCTAssertTrue(requests.value.isEmpty)
+        XCTAssertEqual(
+            try Data(contentsOf: sandbox.originalFixture.appendingPathComponent("collection.plist")),
+            sourcePayload,
+        )
+    }
+
+    /// RCL-002-save_collection_filter_changes: copied empty package는 scope edit 후 같은 URL에 저장하고 clean reopen된다.
+    /// FileManager open/edit/Composer save/open chain을 live Collection file client로 구동하는 data-surface QA다.
+    /// - 검증 내용: exact scope persistence, same-file URL, clean reopened baseline, source bytes, retrieval cardinality
+    /// - 사전 조건: canonical semantic-empty package의 isolated directory copy
+    /// - 기대 결과: copied package만 변경되고 scope-only journey 전체에서 retrieval 요청이 발생하지 않음
+    func testEditEmptyCollection_copiedPackageScopeSaveReopenRestoresCleanDraft() async throws {
+        let sandbox = try FileManagerFixtureSandbox.copyingDirectory(
+            from: "fixtures/fixtures/collections/empty_definition_collection.voycoll",
+        )
+        defer { sandbox.cleanup() }
+        let sourcePayloadURL = sandbox.originalFixture.appendingPathComponent("collection.plist")
+        let sourcePayload = try Data(contentsOf: sourcePayloadURL)
+        let requests = LockIsolated<[String]>([])
+        let store = TestStore(initialState: FileManagerWindowState()) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.collectionFileClient = .liveValue
+            $0.collectionAlertClient = .testValue
+            $0.collectionStalenessClient = .testValue
+            $0.registryClient = makeRegistryClient()
+            $0.searchClient.search = { _ in
+                requests.withValue { $0.append("submit") }
+                return .init(itemCount: 0)
+            }
+            $0.searchClient.applyFilters = { _ in
+                requests.withValue { $0.append("applyFilters") }
+                return .init(itemCount: 0)
+            }
+            $0.entryLoadingClient = .testValue
+            $0.userDefaultsClient = .testValue
+            $0.date = .constant(Date(timeIntervalSince1970: 1_700_000_200))
+            $0.uuid = .incrementing
+            $0.continuousClock = ImmediateClock()
+        }
+        // store.exhaustivity = .off: cross-package journey는 child action 열거보다 persisted terminal state를 검증한다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.navigation(.view(.openCollectionFile(sandbox.fileURL))))
+        await store.skipReceivedActions(strict: false)
+        XCTAssertFalse(store.state.content.collection.isDirty)
+
+        await store.send(.content(.composer(.scopeEditorSetPresented(true))))
+        await store.send(.content(.composer(.candidateScope(.add(path: "/VoyagerFixtures/Documents")))))
+        await store.send(.content(.composer(.scopeEditorSetIncludeSubfolders(false))))
+        await store.send(.content(.composer(.scopeEditorSetPresented(false))))
+        XCTAssertTrue(store.state.content.collection.isDirty)
+
+        await store.send(.content(.composer(.saveCollection)))
+        await store.skipReceivedActions(strict: false)
+        XCTAssertFalse(store.state.content.collection.isDirty)
+        XCTAssertEqual(store.state.content.collection.collectionSession.document?.url, sandbox.fileURL)
+
+        await store.send(.navigation(.view(.openCollectionFile(sandbox.fileURL))))
+        await store.skipReceivedActions(strict: false)
+        await store.finish()
+
+        let expectedContext = CollectionContext(
+            query: "",
+            scopes: ["/VoyagerFixtures/Documents"],
+            excludedScopes: [],
+            includeSubfolders: false,
+            includeDirectories: false,
+            conditions: [],
+        )
+        XCTAssertEqual(store.state.content.collection.collectionContext, expectedContext)
+        XCTAssertEqual(store.state.content.collection.collectionSession.metadata.baseline?.context, expectedContext)
+        XCTAssertFalse(store.state.content.collection.isDirty)
+        XCTAssertEqual(store.state.content.collection.collectionSession.document?.url, sandbox.fileURL)
+        XCTAssertEqual(store.state.content.composer.openedCollectionURL, sandbox.fileURL)
+        XCTAssertTrue(requests.value.isEmpty)
+        XCTAssertEqual(try Data(contentsOf: sourcePayloadURL), sourcePayload)
+    }
+
+    /// RCL-002-save_collection_filter_changes: repeated scope dismissal preserves add/remove/include semantics.
+    /// scope-only transaction을 두 번 닫아 committed draft가 다음 transaction의 baseline으로 사용되는지 검증한다.
+    /// - 검증 내용: exact-folder includeSubfolders false 반영과 이후 scope 제거 동기화
+    /// - 사전 조건: file-backed semantic-empty Collection에서 add 후 remove를 별도 transaction으로 수행
+    /// - 기대 결과: 첫 dismissal은 exact-folder context, 두 번째는 Composer의 root-only scope context가 됨
+    func testEditEmptyCollection_scopeDraftSynchronizationCoversRemoveAndIncludeRule() async {
+        let targetURL = URL(fileURLWithPath: "/VoyagerFixtures/Collections/repeated-scope-edit.voycoll")
+        let requests = LockIsolated<[String]>([])
+        let store = makeCollectionEditStore(targetURL: targetURL, requests: requests)
+
+        await store.send(.composer(.scopeEditorSetPresented(true)))
+        await store.send(.composer(.candidateScope(.add(path: "/VoyagerFixtures/Documents"))))
+        await store.send(.composer(.scopeEditorSetIncludeSubfolders(false)))
+        await store.send(.composer(.scopeEditorSetPresented(false)))
+        XCTAssertEqual(store.state.collection.collectionContext?.scopes, ["/VoyagerFixtures/Documents"])
+        XCTAssertEqual(store.state.collection.collectionContext?.includeSubfolders, false)
+        XCTAssertFalse(store.state.composer.scopeEditor.hasPendingScopeRuleChanges)
+
+        await store.send(.composer(.scopeEditorSetPresented(true)))
+        await store.send(.composer(.currentScope(.remove(path: "/VoyagerFixtures/Documents"))))
+        await store.send(.composer(.scopeEditorSetPresented(false)))
+        await store.skipReceivedActions(strict: false)
+        await store.finish()
+
+        XCTAssertEqual(
+            store.state.collection.collectionContext,
+            CollectionContext(query: "", scopes: ["/"], conditions: []),
+        )
+        XCTAssertTrue(store.state.collection.isDirty)
+        XCTAssertFalse(store.state.composer.scopeEditor.hasPendingScopeRuleChanges)
+        XCTAssertTrue(requests.value.isEmpty)
+    }
+
+    /// RCL-002-save_collection_filter_changes: incomplete condition은 request-free이고 기존 save validation에 차단된다.
+    /// scope-only branch 추가가 incomplete condition을 execution-ready 또는 saveable condition으로 승격하지 않는지 검증한다.
+    /// - 검증 내용: search/filter/save client 무호출과 incompleteCondition feedback
+    /// - 사전 조건: file-backed semantic-empty Collection에 operation/value가 없는 available condition이 있음
+    /// - 기대 결과: retrieval 없이 save가 차단되고 document URL과 dirty draft가 유지됨
+    func testEditEmptyCollection_incompleteConditionRemainsRequestFreeAndSaveBlocked() async {
+        let targetURL = URL(fileURLWithPath: "/VoyagerFixtures/Collections/incomplete-edit.voycoll")
+        let requests = LockIsolated<[String]>([])
+        let saveURLs = LockIsolated<[URL]>([])
+        let incompleteCondition = makeEditCondition(values: nil)
+        let incompleteContext = CollectionContext(
+            query: "",
+            scopes: [],
+            conditions: [incompleteCondition],
+        )
+        var state = makeFileBackedEmptyCollectionContentState(targetURL: targetURL)
+        state.composer.conditionEditors = [
+            ConditionEditorState(id: UUID(952), condition: incompleteCondition),
+        ]
+        state.composer.collectionContext = incompleteContext
+        state.collection.collectionContext = incompleteContext
+        let store = makeCollectionEditStore(
+            initialState: state,
+            requests: requests,
+            saveURLs: saveURLs,
+        )
+
+        await store.send(.composer(.applyFilters))
+        await store.skipReceivedActions(strict: false)
+        await store.send(.collection(.saveToExisting(
+            makeEditSavePayload(context: incompleteContext),
+            targetURL,
+        )))
+        await store.receive(\.collection.delegate.saveFeedback)
+        XCTAssertEqual(store.state.composer.transientFeedback?.category, .saveBlocked)
+        await store.skipReceivedActions(strict: false)
+        await store.finish()
+
+        XCTAssertTrue(requests.value.isEmpty)
+        XCTAssertTrue(saveURLs.value.isEmpty)
+        XCTAssertTrue(store.state.collection.isDirty)
+        XCTAssertEqual(store.state.collection.collectionSession.document?.url, targetURL)
+        XCTAssertEqual(store.state.composer.openedCollectionURL, targetURL)
+    }
 
     /// RCL-002-save_collection_filter_changes: save_ready 상태에서 Save 시 .voycoll 갱신 및 dirty baseline 갱신
     /// 임시 collection을 저장하면 file-backed collection으로 승격되고 unsaved/stale indicator가 해제되는지 검증.
@@ -483,6 +767,16 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
             operatorDefinition: Self.registryOperatorDefinition(for:),
             resolvePropertyKey: { .canonical($0) },
             resolveCondition: { propertyKey, operatorCode, values, sourcePayload in
+                if propertyKey == "removed_property" {
+                    return RegistryClient.opaqueCondition(
+                        key: propertyKey,
+                        source: sourcePayload ?? .init(
+                            propertyKey: propertyKey,
+                            operatorCode: operatorCode ?? "",
+                        ),
+                        availability: .unsupportedProperty,
+                    )
+                }
                 let type = SystemPropertyTypeKey(rawType: Self.registryType(for: propertyKey))
                 let input: Condition.ValueInputKind = switch (propertyKey, operatorCode) {
                 case ("tag_names", "any"): .listText
@@ -587,6 +881,774 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
     }
 
     // MARK: - RCL-002-open_saved_collection
+
+    /// RCL-002-open_saved_collection: accepted zero와 failure provenance는 draft와 구분 가능한 상태를 유지한다.
+    /// editable draft presentation 추가 전 Task 2/4가 제공하는 response와 failure state 경계를 고정한다.
+    /// - 검증 내용: file-backed identity, accepted zero provenance, preserved failure response, active loading correlation
+    /// - 사전 조건: empty file-backed Collection state에서 accepted, failed, loading 변형을 각각 구성함
+    /// - 기대 결과: accepted/failure/loading 변형은 draft 판정에서 사용할 distinct provenance를 보유한다.
+    func testOpenSavedCollection_presentationBaselineKeepsAcceptedFailureAndLoadingProvenanceDistinct() {
+        let targetURL = URL(fileURLWithPath: "/VoyagerFixtures/Collections/presentation-baseline.voycoll")
+        let acceptedRequestID = UUID(960)
+        let acceptedResponse = SearchResponsePayload(itemCount: 0, items: [])
+        var acceptedZero = makeFileBackedEmptyCollectionContentState(targetURL: targetURL)
+        acceptedZero.composer.lastAcceptedFiltersRequestID = acceptedRequestID
+        acceptedZero.composer.lastFiltersResponse = acceptedResponse
+
+        var failed = acceptedZero
+        failed.composer.transientFeedback = .init(
+            id: UUID(961),
+            kind: .error,
+            message: "Unable to Apply Collection Filters",
+            stage: .queryExecution,
+            category: .executionFailure,
+        )
+
+        var loading = makeFileBackedEmptyCollectionContentState(targetURL: targetURL)
+        loading.composer.isLoadingFilters = true
+        loading.composer.isFilteringInFlight = true
+        loading.composer.activeFiltersRequestID = UUID(962)
+
+        XCTAssertEqual(acceptedZero.openedCollectionURL, targetURL)
+        XCTAssertEqual(acceptedZero.composer.lastAcceptedFiltersRequestID, acceptedRequestID)
+        XCTAssertEqual(acceptedZero.composer.lastFiltersResponse, acceptedResponse)
+        XCTAssertEqual(failed.composer.lastFiltersResponse, acceptedResponse)
+        XCTAssertEqual(failed.composer.transientFeedback?.kind, .error)
+        XCTAssertTrue(loading.composer.isCollectionSearching)
+        XCTAssertNotNil(loading.composer.activeFiltersRequestID)
+    }
+
+    /// RCL-002-open_saved_collection: empty draft guidance를 accepted zero와 failure에서 구분한다.
+    /// 저장 Collection state의 execution 및 response provenance가 content presentation으로 정확히 분류되는지 검증한다.
+    /// - 검증 내용: file-backed draft, accepted zero, preserved failure response의 presentation policy
+    /// - 사전 조건: 동일한 empty Collection context에 response/failure provenance만 다르게 구성함
+    /// - 기대 결과: draft만 collectionEmptyDraft이고 accepted zero와 failure는 entries를 유지한다.
+    func testOpenSavedCollection_emptyDraftPresentationDistinguishesAcceptedZeroAndFailures() async throws {
+        let targetURL = URL(fileURLWithPath: "/VoyagerFixtures/Collections/presentation.voycoll")
+        let draft = makeFileBackedEmptyCollectionContentState(targetURL: targetURL)
+        var whitespaceQuery = draft
+        whitespaceQuery.collection.collectionContext = .init(query: "  \n ", scopes: [], conditions: [])
+        whitespaceQuery.composer.collectionContext = whitespaceQuery.collection.collectionContext
+        var scopeOnly = draft
+        scopeOnly.collection.collectionContext = .init(query: "", scopes: ["/scope"], conditions: [])
+        scopeOnly.composer.collectionContext = scopeOnly.collection.collectionContext
+        var unsupportedOnly = draft
+        unsupportedOnly.collection.collectionContext = .init(
+            query: "",
+            scopes: [],
+            conditions: [makePresentationCondition(availability: .unsupportedProperty, values: ["old"])],
+        )
+        unsupportedOnly.composer.collectionContext = unsupportedOnly.collection.collectionContext
+        var incompleteCondition = draft
+        incompleteCondition.collection.collectionContext = .init(
+            query: "",
+            scopes: [],
+            conditions: [makePresentationCondition(availability: .available, values: nil)],
+        )
+        incompleteCondition.composer.collectionContext = incompleteCondition.collection.collectionContext
+        var acceptedZero = draft
+        acceptedZero.composer.lastAcceptedFiltersRequestID = UUID(963)
+        acceptedZero.composer.lastFiltersResponse = .init(itemCount: 0, items: [])
+        var failed = draft
+        failed.composer.transientFeedback = .init(
+            id: UUID(964),
+            kind: .error,
+            message: "Unable to Apply Collection Filters",
+            stage: .queryExecution,
+            category: .executionFailure,
+        )
+        var loading = draft
+        loading.composer.isLoadingFilters = true
+        loading.composer.isFilteringInFlight = true
+        loading.composer.activeFiltersRequestID = UUID(965)
+        var entries = draft
+        entries.entryViewLayout.collectionItems = [makeEntry(path: "/results/entry.txt")]
+        var staleResponse = draft
+        staleResponse.composer.lastFiltersResponse = .init(itemCount: 0, items: [])
+        var executableQuery = draft
+        executableQuery.collection.collectionContext = .init(query: "invoice", scopes: [], conditions: [])
+        executableQuery.composer.collectionContext = executableQuery.collection.collectionContext
+        var executableCondition = draft
+        executableCondition.collection.collectionContext = .init(
+            query: "",
+            scopes: [],
+            conditions: [makePresentationCondition(availability: .available, values: ["pdf"])],
+        )
+        executableCondition.composer.collectionContext = executableCondition.collection.collectionContext
+        let directory = FileManagerContentState()
+        var temporary = draft
+        temporary.collection.collectionSession.document = nil
+        temporary.composer.openedCollectionURL = nil
+        temporary.navigation.navigationState = .collection(.init(
+            kind: .temporary,
+            context: .init(),
+            sortKey: .name,
+            sortOrder: .ascending,
+            viewLayout: .list,
+        ))
+
+        let draftPolicies = [draft, whitespaceQuery, scopeOnly, unsupportedOnly, incompleteCondition].map {
+            ContentPagePresentationPolicy.resolve(state: $0)
+        }
+        let excludedPolicies = [
+            acceptedZero,
+            failed,
+            loading,
+            entries,
+            staleResponse,
+            executableQuery,
+            executableCondition,
+            directory,
+            temporary,
+        ].map { ContentPagePresentationPolicy.resolve(state: $0) }
+
+        XCTAssertEqual(draftPolicies, Array(repeating: .collectionEmptyDraft, count: 5))
+        XCTAssertEqual(excludedPolicies[2], .collectionReplacementLoading)
+        for policy in excludedPolicies.enumerated() where policy.offset != 2 {
+            XCTAssertEqual(policy.element, .entries)
+        }
+
+        let fixtureDirectory = try FileManagerFixtureSandbox.readOnlyDirectory(
+            from: "fixtures/fixtures/collections",
+        )
+        let acceptedZeroFixtureURL = fixtureDirectory
+            .appendingPathComponent("empty_snapshot_collection.voycoll")
+        let fixtureStore = TestStore(initialState: FileManagerWindowState()) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.collectionFileClient = .liveValue
+            $0.collectionAlertClient = .testValue
+            $0.collectionStalenessClient = .testValue
+            $0.registryClient = makeRegistryClient()
+            $0.searchClient = .testValue
+            $0.entryLoadingClient = .testValue
+            $0.userDefaultsClient = .testValue
+            $0.date = .constant(Date(timeIntervalSince1970: 1_700_000_200))
+            $0.uuid = .incrementing
+            $0.continuousClock = ImmediateClock()
+        }
+        // store.exhaustivity = .off: fixture open의 child action보다 accepted-zero presentation을 검증한다.
+        fixtureStore.exhaustivity = .off(showSkippedAssertions: false)
+
+        await fixtureStore.send(.navigation(.view(.openCollectionFile(acceptedZeroFixtureURL))))
+        await fixtureStore.skipReceivedActions(strict: false)
+        await fixtureStore.finish()
+
+        XCTAssertEqual(fixtureStore.state.content.composer.lastFiltersResponse?.itemCount, 0)
+        XCTAssertEqual(ContentPagePresentationPolicy.resolve(state: fixtureStore.state.content), .entries)
+    }
+
+    /// RCL-002-open_saved_collection: executable definition open은 기존 submit 검색 경로를 한 번 유지한다.
+    /// no-trigger 복원 변경 전에 실행 가능한 저장 Collection의 검색 동작을 characterization 한다.
+    /// - 검증 내용: query-bearing file open이 SearchClient.search를 정확히 한 번 호출한다.
+    /// - 사전 조건: snapshot이 없고 trimmed query가 있는 저장 Collection load result
+    /// - 기대 결과: 저장 URL의 Collection route가 적용되고 search 요청이 한 번 기록된다.
+    func testOpenSavedCollection_executableDefinitionKeepsExistingSearchDispatch() async {
+        let targetURL = URL(fileURLWithPath: "/VoyagerFixtures/Collections/executable.voycoll")
+        let targetFile = VoyagerCollectionFile(
+            id: "executable-baseline",
+            name: "Executable",
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+            updatedAt: Date(timeIntervalSince1970: 1_700_000_100),
+            query: "invoice",
+            scopes: ["/VoyagerFixtures/Documents"],
+            conditions: [],
+            snapshot: nil,
+            snapshotMeta: nil,
+            appVersion: "test",
+        )
+        let searchRequests = LockIsolated<[SearchRequestPayload]>([])
+        let loadResult = makeSnapshotLoadResult(file: targetFile)
+        let store = TestStore(initialState: FileManagerWindowState()) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.collectionFileClient.load = { _ in loadResult }
+            $0.collectionAlertClient = .testValue
+            $0.collectionStalenessClient = .testValue
+            $0.registryClient = .testValue
+            $0.searchClient.search = { request in
+                searchRequests.withValue { $0.append(request) }
+                return .init(itemCount: 0)
+            }
+            $0.date = .constant(Date(timeIntervalSince1970: 1_700_000_200))
+            $0.uuid = .incrementing
+            $0.continuousClock = ImmediateClock()
+        }
+        // store.exhaustivity = .off: canonical open의 child action보다 기존 executable 검색 경계를 검증한다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.navigation(.view(.openCollectionFile(targetURL))))
+        await store.skipReceivedActions(strict: false)
+        await store.finish()
+
+        XCTAssertEqual(searchRequests.value.count, 1)
+        XCTAssertEqual(store.state.content.collection.collectionSession.document?.url, targetURL)
+        XCTAssertFalse(store.state.content.entryViewLayout.isCollectionContentLoading)
+    }
+
+    /// RCL-002-open_saved_collection: malformed, future-major, access failure는 기존 Page를 rollback 보존한다.
+    /// valid no-trigger 복원과 구분되는 실제 load failure의 기존 alert/rollback 동작을 characterization 한다.
+    /// - 검증 내용: 세 오류군 각각 pending/loading 정리, source route 보존, alert 1회 발생을 확인한다.
+    /// - 사전 조건: folder source에서 malformed, unsupported future schema, file read no-permission 오류가 각각 발생함
+    /// - 기대 결과: source Page와 history가 유지되고 부분 Collection session이 남지 않는다.
+    func testOpenSavedCollection_trueLoadFailuresKeepExistingRollbackAndAlertBehavior() async {
+        let failures: [CollectionOpenCharacterizationFailure] = [.malformed, .unsupportedSchema, .access]
+
+        for (index, failure) in failures.enumerated() {
+            let sourceRoute = ContentPageNavigationRoute.folder("/VoyagerFixtures/Source/\(index)")
+            let targetURL = URL(fileURLWithPath: "/VoyagerFixtures/Collections/failure-\(index).voycoll")
+            let alerts = LockIsolated<[String]>([])
+            var state = FileManagerWindowState()
+            state.content.navigation.navigationState = sourceRoute
+            let store = TestStore(initialState: state) {
+                FileManagerFeature()
+            } withDependencies: {
+                $0.collectionFileClient.load = { _ in throw failure.error }
+                $0.collectionAlertClient.showCollectionOpenErrorAlert = { title, _ in
+                    alerts.withValue { $0.append(title) }
+                }
+                $0.collectionStalenessClient = .testValue
+                $0.registryClient = .testValue
+                $0.date = .constant(Date(timeIntervalSince1970: 1_700_000_200))
+                $0.uuid = .constant(UUID(index + 800))
+                $0.continuousClock = ImmediateClock()
+            }
+            // store.exhaustivity = .off: failure rollback의 child cleanup보다 최종 source 보존을 검증한다.
+            store.exhaustivity = .off(showSkippedAssertions: false)
+
+            await store.send(.navigation(.view(.openCollectionFile(targetURL))))
+            await store.skipReceivedActions(strict: false)
+            await store.finish()
+
+            XCTAssertEqual(store.state.content.navigation.navigationState, sourceRoute)
+            XCTAssertNil(store.state.pendingCollectionOpenRequest)
+            XCTAssertFalse(store.state.content.entryViewLayout.isCollectionContentLoading)
+            XCTAssertNil(store.state.content.collection.collectionSession.document)
+            XCTAssertEqual(alerts.value, ["Unable to Open Collection"])
+        }
+    }
+
+    /// RCL-002-open_saved_collection: valid semantic-empty definition은 검색 없이 원본 file-backed Page로 commit한다.
+    /// 사용자가 비어 있지만 유효한 저장 Collection을 직접 열 때 editable draft 복원 transaction을 검증한다.
+    /// - 검증 내용: URL/session/baseline/Collection mode/loading terminal과 SearchClient 무호출을 확인한다.
+    /// - 사전 조건: identity가 있고 query, scope, condition, snapshot이 없는 package load result
+    /// - 기대 결과: 원본 URL의 clean Collection Page가 적용되고 submit/applyFilters 요청은 없다.
+    func testOpenSavedCollection_validEmptyDefinitionCommitsDraftWithoutSearch() async throws {
+        let fixtureDirectory = try FileManagerFixtureSandbox.readOnlyDirectory(
+            from: "fixtures/fixtures/collections",
+        )
+        let fixtureURL = fixtureDirectory.appendingPathComponent("empty_definition_collection.voycoll")
+        let sandboxRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("VoyagerRCL002Open-\(UUID().uuidString)", isDirectory: true)
+        let targetURL = sandboxRoot.appendingPathComponent(fixtureURL.lastPathComponent, isDirectory: true)
+        try FileManager.default.createDirectory(at: sandboxRoot, withIntermediateDirectories: true)
+        try FileManager.default.copyItem(at: fixtureURL, to: targetURL)
+        defer { try? FileManager.default.removeItem(at: sandboxRoot) }
+        let requests = LockIsolated<[String]>([])
+        let alerts = LockIsolated<[String]>([])
+        let store = TestStore(initialState: FileManagerWindowState()) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.collectionFileClient = .liveValue
+            $0.collectionAlertClient.showCollectionOpenErrorAlert = { title, _ in
+                alerts.withValue { $0.append(title) }
+            }
+            $0.collectionStalenessClient = .testValue
+            $0.registryClient = .testValue
+            $0.searchClient.search = { _ in
+                requests.withValue { $0.append("submit") }
+                return .init(itemCount: 0)
+            }
+            $0.searchClient.applyFilters = { _ in
+                requests.withValue { $0.append("applyFilters") }
+                return .init(itemCount: 0)
+            }
+            $0.date = .constant(Date(timeIntervalSince1970: 1_700_000_200))
+            $0.uuid = .incrementing
+            $0.continuousClock = ImmediateClock()
+        }
+        // store.exhaustivity = .off: canonical open child action보다 최종 file-backed draft transaction을 검증한다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.navigation(.view(.openCollectionFile(targetURL))))
+        await store.skipReceivedActions(strict: false)
+        await store.finish()
+
+        XCTAssertTrue(requests.value.isEmpty)
+        XCTAssertTrue(alerts.value.isEmpty)
+        XCTAssertNil(store.state.pendingCollectionOpenRequest)
+        XCTAssertFalse(store.state.content.entryViewLayout.isCollectionContentLoading)
+        XCTAssertTrue(store.state.content.entryViewLayout.isCollectionMode)
+        XCTAssertEqual(store.state.content.collection.collectionSession.document?.url, targetURL)
+        XCTAssertEqual(store.state.content.collection.collectionContext, .init())
+        XCTAssertEqual(store.state.content.collection.collectionSession.metadata.baseline, .init(context: .init()))
+        XCTAssertFalse(store.state.content.isOpenedCollectionDirty)
+        guard case let .collection(navigation) = store.state.content.navigation.navigationState else {
+            return XCTFail("Expected valid empty file-backed Collection navigation")
+        }
+        guard case let .file(openedURL, _) = navigation.kind else {
+            return XCTFail("Expected file-backed Collection navigation")
+        }
+        XCTAssertEqual(openedURL, targetURL)
+        XCTAssertEqual(navigation.context, .init())
+    }
+
+    /// RCL-002-open_saved_collection: 모든 valid no-trigger definition을 file-backed draft로 복원한다.
+    /// semantic-empty, whitespace query, scope-only, unsupported-only, incomplete-condition 경계를 한 matrix로 검증한다.
+    /// - 검증 내용: 각 payload의 URL/session/clean baseline/loading terminal과 search/filter 무호출
+    /// - 사전 조건: snapshot과 execution-ready query/condition이 없는 다섯 저장 definition
+    /// - 기대 결과: 각 원본 URL의 Collection Page가 commit되고 정확히 하나의 valid_empty metric이 기록된다.
+    func testOpenSavedCollection_validNoTriggerDefinitionMatrixCommitsWithoutSearch() async {
+        let definitions = [
+            makeNoTriggerFile(id: "semantic-empty", name: "Semantic Empty"),
+            makeNoTriggerFile(id: "whitespace-query", name: "Whitespace Query", query: "  \n "),
+            makeNoTriggerFile(id: "scope-only", name: "Scope Only", scopes: ["/VoyagerFixtures/Scope"]),
+            makeNoTriggerFile(
+                id: "unsupported-only",
+                name: "Unsupported Only",
+                conditions: [.init(propertyKey: "removed_property", operatorCode: "eq", value: .string("old"))],
+            ),
+            makeNoTriggerFile(
+                id: "incomplete-condition",
+                name: "Incomplete Condition",
+                conditions: [.init(propertyKey: "tag_names", operatorCode: "any")],
+            ),
+        ]
+
+        for (index, definition) in definitions.enumerated() {
+            let targetURL = URL(fileURLWithPath: "/VoyagerFixtures/Collections/\(definition.id).voycoll")
+            let requests = LockIsolated<[String]>([])
+            let metrics = LockIsolated<[CollectionOpenMetricRecord]>([])
+            var registry = makeRegistryClient()
+            registry.resolvePropertyKey = { key in
+                key == "removed_property" ? .unknown(key) : .canonical(key)
+            }
+            let loadResult = makeSnapshotLoadResult(file: definition)
+            let store = TestStore(initialState: FileManagerWindowState()) {
+                FileManagerFeature()
+            } withDependencies: {
+                $0.collectionFileClient.load = { _ in loadResult }
+                $0.collectionAlertClient = .testValue
+                $0.collectionStalenessClient = .testValue
+                $0.registryClient = registry
+                $0.searchClient.search = { _ in
+                    requests.withValue { $0.append("submit") }
+                    return .init(itemCount: 0)
+                }
+                $0.searchClient.applyFilters = { _ in
+                    requests.withValue { $0.append("applyFilters") }
+                    return .init(itemCount: 0)
+                }
+                $0.metricsClient = MetricsClient(
+                    logMetric: { name, value, tags in
+                        metrics.withValue { $0.append(.init(name: name, value: value, tags: tags)) }
+                    },
+                    logDAUNavigation: { _ in },
+                    logDAUEntryAction: { _, _ in },
+                )
+                $0.date = .constant(Date(timeIntervalSince1970: 1_700_000_200))
+                $0.uuid = .constant(UUID(index + 900))
+                $0.continuousClock = ImmediateClock()
+            }
+            // store.exhaustivity = .off: matrix는 canonical child action보다 terminal draft 계약을 검증한다.
+            store.exhaustivity = .off(showSkippedAssertions: false)
+
+            await store.send(.navigation(.view(.openCollectionFile(targetURL))))
+            await store.skipReceivedActions(strict: false)
+            await store.finish()
+
+            XCTAssertTrue(requests.value.isEmpty)
+            XCTAssertEqual(store.state.content.collection.collectionSession.document?.url, targetURL)
+            XCTAssertEqual(
+                store.state.content.collection.collectionSession.metadata.baseline?.context,
+                store.state.content.collection.collectionContext,
+            )
+            XCTAssertFalse(store.state.content.isOpenedCollectionDirty)
+            XCTAssertFalse(store.state.content.entryViewLayout.isCollectionContentLoading)
+            XCTAssertEqual(metrics.value, [
+                .init(name: "collection.open", value: 1, tags: ["result_status": "valid_empty"]),
+            ])
+        }
+    }
+
+    /// RCL-002-open_saved_collection: no-trigger open은 reused tab의 이전 결과와 failure provenance를 제거한다.
+    /// 새 저장 draft가 이전 executable Collection의 검색/필터 결과나 scope transaction을 상속하지 않는지 검증한다.
+    /// - 검증 내용: entries, selection, response/request IDs, pending query, feedback, dirty scope editor, old context
+    /// reset
+    /// - 사전 조건: accepted zero와 이전 entries 및 active requests가 함께 남은 file-backed Collection tab
+    /// - 기대 결과: 새 target context만 남고 scope dismissal이 submit/applyFilters를 발생시키지 않는다.
+    func testOpenSavedCollection_noTriggerOpenClearsReusedTabResponseAndFailureProvenance() async {
+        let sourceURL = URL(fileURLWithPath: "/VoyagerFixtures/Collections/old.voycoll")
+        let targetURL = URL(fileURLWithPath: "/VoyagerFixtures/Collections/new-empty.voycoll")
+        let targetFile = makeNoTriggerFile(id: "reused-target", name: "Reused Target")
+        let oldContext = CollectionContext(query: "old executable", scopes: ["/old"], conditions: [])
+        let oldEntry = makeEntry(path: "/old/result.txt")
+        let requests = LockIsolated<[String]>([])
+        var state = makeOpenedCollectionState(url: sourceURL, context: oldContext)
+        state.content.entryViewLayout.collectionItems = [oldEntry]
+        state.content.entryViewLayout.entries = [oldEntry]
+        state.content.entryViewLayout.selectedIds = [oldEntry.id]
+        state.content.entryViewLayout.lastSelectedId = oldEntry.id
+        state.content.entryViewLayout.rangeAnchorId = oldEntry.id
+        state.content.composer.collectionContext = oldContext
+        state.content.composer.pendingSearchQuery = "pending old query"
+        state.content.composer.activeSearchRequestID = UUID(920)
+        state.content.composer.activeFiltersRequestID = UUID(921)
+        state.content.composer.lastAcceptedSearchRequestID = UUID(922)
+        state.content.composer.lastAcceptedFiltersRequestID = UUID(923)
+        state.content.composer.lastSearchResponse = .init(itemCount: 1, items: [.string(oldEntry.fullPath)])
+        state.content.composer.lastFiltersResponse = .init(itemCount: 0, items: [])
+        state.content.composer.transientFeedback = .init(
+            id: UUID(924),
+            kind: .error,
+            message: "old failure",
+            stage: .queryExecution,
+            category: .executionFailure,
+        )
+        state.content.composer.scopes = ["/dirty-scope"]
+        state.content.composer.beginScopeEditing(path: nil)
+        state.content.composer.isPresented = true
+        let loadResult = makeSnapshotLoadResult(file: targetFile)
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.collectionFileClient.load = { _ in loadResult }
+            $0.collectionAlertClient = .testValue
+            $0.collectionStalenessClient = .testValue
+            $0.registryClient = self.makeRegistryClient()
+            $0.searchClient.search = { _ in
+                requests.withValue { $0.append("submit") }
+                return .init(itemCount: 0)
+            }
+            $0.searchClient.applyFilters = { _ in
+                requests.withValue { $0.append("applyFilters") }
+                return .init(itemCount: 0)
+            }
+            $0.date = .constant(Date(timeIntervalSince1970: 1_700_000_200))
+            $0.uuid = .incrementing
+            $0.continuousClock = ImmediateClock()
+        }
+        // store.exhaustivity = .off: reused tab의 여러 child reset보다 atomic terminal state를 검증한다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.navigation(.view(.openCollectionFile(targetURL))))
+        await store.skipReceivedActions(strict: false)
+        await store.finish()
+
+        XCTAssertTrue(requests.value.isEmpty)
+        XCTAssertTrue(store.state.content.entryViewLayout.collectionItems.isEmpty)
+        XCTAssertTrue(store.state.content.entryViewLayout.entries.isEmpty)
+        XCTAssertTrue(store.state.content.entryViewLayout.selectedIds.isEmpty)
+        XCTAssertNil(store.state.content.entryViewLayout.lastSelectedId)
+        XCTAssertNil(store.state.content.entryViewLayout.rangeAnchorId)
+        XCTAssertEqual(store.state.content.composer.collectionContext, .init(includeDirectories: true))
+        XCTAssertNil(store.state.content.composer.pendingSearchQuery)
+        XCTAssertNil(store.state.content.composer.activeSearchRequestID)
+        XCTAssertNil(store.state.content.composer.activeFiltersRequestID)
+        XCTAssertNil(store.state.content.composer.lastAcceptedSearchRequestID)
+        XCTAssertNil(store.state.content.composer.lastAcceptedFiltersRequestID)
+        XCTAssertNil(store.state.content.composer.lastSearchResponse)
+        XCTAssertNil(store.state.content.composer.lastFiltersResponse)
+        XCTAssertNil(store.state.content.composer.transientFeedback)
+        XCTAssertFalse(store.state.content.composer.scopeEditor.isPresented)
+        XCTAssertFalse(store.state.content.composer.scopeEditor.hasPendingScopeRuleChanges)
+    }
+
+    /// RCL-002-open_saved_collection: restoration dismissal은 dirty old scope editor를 자동 실행하지 않는다.
+    /// Composer presentation 종료가 동기 restoration reset 이후 관찰되는 ordering을 검증한다.
+    /// - 검증 내용: scope transaction 정리와 submit/applyFilters request cardinality 0
+    /// - 사전 조건: open scope editor에 pending scope change가 있고 이전 query search가 committed 된 reused tab
+    /// - 기대 결과: target draft가 terminal 상태로 열리고 어떤 retrieval request도 발생하지 않는다.
+    func testOpenSavedCollection_dirtyOldScopeEditorCannotAutoExecuteDuringRestorationDismissal() async {
+        let sourceURL = URL(fileURLWithPath: "/VoyagerFixtures/Collections/old-scope.voycoll")
+        let targetURL = URL(fileURLWithPath: "/VoyagerFixtures/Collections/new-scope-empty.voycoll")
+        let targetFile = makeNoTriggerFile(id: "scope-dismissal-target", name: "Scope Dismissal Target")
+        let oldContext = CollectionContext(query: "old executable", scopes: ["/old"], conditions: [])
+        let requests = LockIsolated<[String]>([])
+        var state = makeOpenedCollectionState(url: sourceURL, context: oldContext)
+        state.content.composer.collectionContext = oldContext
+        state.content.composer.scopes = ["/dirty-scope"]
+        state.content.composer.beginScopeEditing(path: nil)
+        state.content.composer.isPresented = true
+        let loadResult = makeSnapshotLoadResult(file: targetFile)
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.collectionFileClient.load = { _ in loadResult }
+            $0.collectionAlertClient = .testValue
+            $0.collectionStalenessClient = .testValue
+            $0.registryClient = self.makeRegistryClient()
+            $0.searchClient.search = { _ in
+                requests.withValue { $0.append("submit") }
+                return .init(itemCount: 0)
+            }
+            $0.searchClient.applyFilters = { _ in
+                requests.withValue { $0.append("applyFilters") }
+                return .init(itemCount: 0)
+            }
+            $0.date = .constant(Date(timeIntervalSince1970: 1_700_000_200))
+            $0.uuid = .incrementing
+            $0.continuousClock = ImmediateClock()
+        }
+        // store.exhaustivity = .off: dismissal ordering의 child action보다 request-free terminal state를 검증한다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.navigation(.view(.openCollectionFile(targetURL))))
+        await store.skipReceivedActions(strict: false)
+        await store.finish()
+
+        XCTAssertTrue(requests.value.isEmpty)
+        XCTAssertFalse(store.state.content.composer.scopeEditor.isPresented)
+        XCTAssertFalse(store.state.content.composer.scopeEditor.hasPendingScopeRuleChanges)
+        XCTAssertEqual(store.state.content.collection.collectionSession.document?.url, targetURL)
+    }
+
+    /// RCL-002-open_saved_collection: restoration은 stale scope projection과 in-flight directory search를 폐기한다.
+    /// 이전 문서의 scope 검색 결과가 새 valid-empty Collection draft에 늦게 반영되지 않는지 검증한다.
+    /// - 검증 내용: list/candidate reset, scopeEditorSearch cancellation, late response 무시, retrieval request 0
+    /// - 사전 조건: old search projection과 candidate가 있고 같은 query의 scope directory search가 진행 중임
+    /// - 기대 결과: target draft는 fresh default projection을 유지하고 late candidate를 수용하지 않는다.
+    func testOpenSavedCollection_restorationCancelsStaleScopeSearchAndClearsProjection() async {
+        let sourceURL = URL(fileURLWithPath: "/VoyagerFixtures/Collections/old-scope-search.voycoll")
+        let targetURL = URL(fileURLWithPath: "/VoyagerFixtures/Collections/new-scope-search-empty.voycoll")
+        let targetFile = makeNoTriggerFile(id: "scope-search-target", name: "Scope Search Target")
+        let oldContext = CollectionContext(query: "old executable", scopes: ["/old"], conditions: [])
+        let oldItem = ComposerScopeUtils.DirectoryItem(
+            id: "/old/candidate",
+            path: "/old/candidate",
+            name: "Old Candidate",
+            iconName: "folder",
+        )
+        let lateItem = ComposerScopeUtils.DirectoryItem(
+            id: "/late/candidate",
+            path: "/late/candidate",
+            name: "Late Candidate",
+            iconName: "folder",
+        )
+        let requests = LockIsolated<[String]>([])
+        var state = makeOpenedCollectionState(url: sourceURL, context: oldContext)
+        state.content.composer.collectionContext = oldContext
+        state.content.composer.scopeEditor.isPresented = true
+        state.content.composer.scopeEditor.queryText = "old"
+        state.content.composer.scopeEditor.listState = .searchResults(query: "old")
+        state.content.composer.scopeEditor.candidateItems = [
+            .init(path: oldItem.path, name: oldItem.name, iconName: oldItem.iconName),
+        ]
+        let loadResult = makeSnapshotLoadResult(file: targetFile)
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.collectionFileClient.load = { _ in loadResult }
+            $0.collectionAlertClient = .testValue
+            $0.collectionStalenessClient = .testValue
+            $0.registryClient = self.makeRegistryClient()
+            $0.searchClient.search = { _ in
+                requests.withValue { $0.append("submit") }
+                return .init(itemCount: 0)
+            }
+            $0.searchClient.applyFilters = { _ in
+                requests.withValue { $0.append("applyFilters") }
+                return .init(itemCount: 0)
+            }
+            $0.entryLoadingClient = .testValue
+            $0.date = .constant(Date(timeIntervalSince1970: 1_700_000_200))
+            $0.uuid = .incrementing
+            $0.continuousClock = ImmediateClock()
+        }
+        // store.exhaustivity = .off: cancellation chain보다 새 document projection과 late-response 불변을 검증한다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.content(.composer(.scopeEditorSetQueryText("old"))))
+        await store.send(.content(.composer(.scopeEditorSearchResponse("old", .success([oldItem])))))
+        await store.send(.navigation(.view(.openCollectionFile(targetURL))))
+        await store.skipReceivedActions(strict: false)
+        await store.finish()
+
+        XCTAssertTrue(requests.value.isEmpty)
+        XCTAssertEqual(store.state.content.composer.scopeEditor.listState, .defaultCandidates)
+        XCTAssertTrue(store.state.content.composer.scopeEditor.candidateItems.isEmpty)
+        XCTAssertEqual(store.state.content.collection.collectionSession.document?.url, targetURL)
+
+        await store.send(.content(.composer(.scopeEditorSearchResponse("old", .success([lateItem])))))
+        XCTAssertEqual(store.state.content.composer.scopeEditor.listState, .defaultCandidates)
+        XCTAssertTrue(store.state.content.composer.scopeEditor.candidateItems.isEmpty)
+        XCTAssertEqual(store.state.content.collection.collectionSession.document?.url, targetURL)
+    }
+
+    /// RCL-002-open_saved_collection: valid-empty metric은 result_status 이외 metadata를 포함하지 않는다.
+    /// 저장 draft open의 analytics producer가 민감한 file/query/scope/error 값을 노출하지 않는지 검증한다.
+    /// - 검증 내용: collection.open cardinality 1과 exact metadata-only tags
+    /// - 사전 조건: semantic-empty definition의 accepted direct open
+    /// - 기대 결과: `result_status=valid_empty` 한 필드만 기록된다.
+    func testOpenSavedCollection_validEmptyMetricContainsOnlyResultStatus() async {
+        let targetURL = URL(fileURLWithPath: "/private/secret/empty.voycoll")
+        let file = makeNoTriggerFile(id: "private-id", name: "Private Name")
+        let metrics = LockIsolated<[CollectionOpenMetricRecord]>([])
+        let loadResult = makeSnapshotLoadResult(file: file)
+        let store = TestStore(initialState: FileManagerWindowState()) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.collectionFileClient.load = { _ in loadResult }
+            $0.collectionAlertClient = .testValue
+            $0.collectionStalenessClient = .testValue
+            $0.registryClient = .testValue
+            $0.metricsClient = MetricsClient(
+                logMetric: { name, value, tags in
+                    metrics.withValue { $0.append(.init(name: name, value: value, tags: tags)) }
+                },
+                logDAUNavigation: { _ in },
+                logDAUEntryAction: { _, _ in },
+            )
+            $0.date = .constant(Date(timeIntervalSince1970: 1_700_000_200))
+            $0.uuid = .incrementing
+            $0.continuousClock = ImmediateClock()
+        }
+        // store.exhaustivity = .off: analytics assertion은 canonical open child action을 열거하지 않는다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.navigation(.view(.openCollectionFile(targetURL))))
+        await store.skipReceivedActions(strict: false)
+        await store.finish()
+
+        XCTAssertEqual(metrics.value, [
+            .init(name: "collection.open", value: 1, tags: ["result_status": "valid_empty"]),
+        ])
+    }
+
+    /// RCL-002-open_saved_collection: terminal load failure는 original error의 typed category를 기록한다.
+    /// fingerprint 문자열에 의존하지 않고 모든 private outcome category가 bounded tag로 생산되는지 검증한다.
+    /// - 검증 내용: unsupportedSchema, invalidDefinition, malformed, access, unknown 각각 exact metric 1회
+    /// - 사전 조건: accepted direct open load가 각 원본 error type으로 종료됨
+    /// - 기대 결과: load_failure와 typed raw category만 기록되고 rollback/alert가 유지된다.
+    func testOpenSavedCollection_loadFailureMetricsUseExhaustiveTypedCategories() async {
+        let cases: [(CollectionOpenCharacterizationFailure, String)] = [
+            (.unsupportedSchema, "unsupportedSchema"),
+            (.invalidDefinition, "invalidDefinition"),
+            (.malformed, "malformed"),
+            (.access, "access"),
+            (.unknown, "unknown"),
+        ]
+
+        for (index, testCase) in cases.enumerated() {
+            let metrics = LockIsolated<[CollectionOpenMetricRecord]>([])
+            let targetURL = URL(fileURLWithPath: "/private/secret/failure-\(index).voycoll")
+            let store = TestStore(initialState: FileManagerWindowState()) {
+                FileManagerFeature()
+            } withDependencies: {
+                $0.collectionFileClient.load = { _ in throw testCase.0.error }
+                $0.collectionAlertClient.showCollectionOpenErrorAlert = { _, _ in }
+                $0.collectionStalenessClient = .testValue
+                $0.registryClient = .testValue
+                $0.metricsClient = MetricsClient(
+                    logMetric: { name, value, tags in
+                        metrics.withValue { $0.append(.init(name: name, value: value, tags: tags)) }
+                    },
+                    logDAUNavigation: { _ in },
+                    logDAUEntryAction: { _, _ in },
+                )
+                $0.date = .constant(Date(timeIntervalSince1970: 1_700_000_200))
+                $0.uuid = .constant(UUID(index + 930))
+                $0.continuousClock = ImmediateClock()
+            }
+            // store.exhaustivity = .off: category matrix는 failure cleanup child action보다 metric 경계를 검증한다.
+            store.exhaustivity = .off(showSkippedAssertions: false)
+
+            await store.send(.navigation(.view(.openCollectionFile(targetURL))))
+            await store.skipReceivedActions(strict: false)
+            await store.finish()
+
+            XCTAssertEqual(metrics.value, [
+                .init(
+                    name: "collection.open",
+                    value: 1,
+                    tags: ["result_status": "load_failure", "error_category": testCase.1],
+                ),
+            ])
+        }
+    }
+
+    /// RCL-002-open_saved_collection: executable과 superseded completion은 VOY-590 outcome metric을 내지 않는다.
+    /// terminal class가 아닌 open attempt가 valid_empty/load_failure로 오분류되지 않는지 검증한다.
+    /// - 검증 내용: executable success와 correlation이 제거된 stale success/failure의 metric cardinality 0
+    /// - 사전 조건: query-bearing accepted open 이후 별도 request의 pending correlation이 취소됨
+    /// - 기대 결과: 두 경로 모두 collection.open event가 없다.
+    func testOpenSavedCollection_supersededOrExecutableAttemptsEmitNoVoy590OutcomeMetric() async {
+        let executableURL = URL(fileURLWithPath: "/VoyagerFixtures/Collections/executable-no-metric.voycoll")
+        let executable = makeNoTriggerFile(id: "executable-no-metric", name: "Executable", query: "invoice")
+        let metrics = LockIsolated<[CollectionOpenMetricRecord]>([])
+        let executableLoadResult = makeSnapshotLoadResult(file: executable)
+        let store = TestStore(initialState: FileManagerWindowState()) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.collectionFileClient.load = { _ in executableLoadResult }
+            $0.collectionAlertClient = .testValue
+            $0.collectionStalenessClient = .testValue
+            $0.registryClient = .testValue
+            $0.searchClient = .testValue
+            $0.metricsClient = MetricsClient(
+                logMetric: { name, value, tags in
+                    metrics.withValue { $0.append(.init(name: name, value: value, tags: tags)) }
+                },
+                logDAUNavigation: { _ in },
+                logDAUEntryAction: { _, _ in },
+            )
+            $0.uuid = .incrementing
+            $0.continuousClock = ImmediateClock()
+        }
+        // store.exhaustivity = .off: executable chain과 stale terminal 무시의 metric 결과만 검증한다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.navigation(.view(.openCollectionFile(executableURL))))
+        await store.skipReceivedActions(strict: false)
+        await store.finish()
+        XCTAssertTrue(metrics.value.isEmpty)
+
+        let sourceRoute = ContentPageNavigationRoute.folder("/VoyagerFixtures/Source")
+        let supersededRequest = ContentPageCollectionOpenRequest(
+            id: UUID(940),
+            url: URL(fileURLWithPath: "/VoyagerFixtures/Collections/superseded.voycoll"),
+            sourceRoute: sourceRoute,
+            prePrepareBackHistory: [.init(navigationState: .home)],
+            prePrepareForwardHistory: [.init(navigationState: .computer)],
+        )
+        let replacementURL = URL(fileURLWithPath: "/VoyagerFixtures/Collections/replacement.voycoll")
+        var supersessionState = FileManagerWindowState()
+        supersessionState.content.navigation.navigationState = sourceRoute
+        supersessionState.pendingCollectionOpenRequest = supersededRequest
+        supersessionState.content.entryViewLayout.isCollectionContentLoading = true
+        let supersessionStore = TestStore(initialState: supersessionState) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.collectionFileClient.load = { _ in executableLoadResult }
+            $0.collectionAlertClient = .testValue
+            $0.collectionStalenessClient = .testValue
+            $0.registryClient = .testValue
+            $0.searchClient = .testValue
+            $0.metricsClient = MetricsClient(
+                logMetric: { name, value, tags in
+                    metrics.withValue { $0.append(.init(name: name, value: value, tags: tags)) }
+                },
+                logDAUNavigation: { _ in },
+                logDAUEntryAction: { _, _ in },
+            )
+            $0.uuid = .incrementing
+            $0.continuousClock = ImmediateClock()
+        }
+        // store.exhaustivity = .off: replacement open의 child chain보다 superseded correlation과 metric을 검증한다.
+        supersessionStore.exhaustivity = .off(showSkippedAssertions: false)
+
+        await supersessionStore.send(.navigation(.view(.openCollectionFile(replacementURL))))
+        await supersessionStore.skipReceivedActions(strict: false)
+        await supersessionStore.finish()
+        await supersessionStore.send(.navigation(.internal(.collectionFileLoaded(
+            request: supersededRequest,
+            result: .failure(.init(
+                error: CollectionFileCompatibilityError.invalidPropertyListPayload,
+                category: .malformed,
+            )),
+        ))))
+        XCTAssertTrue(metrics.value.isEmpty)
+    }
 
     /// RCL-002-open_saved_collection: 저장 Collection에서 다른 저장 Collection 열기 완료 적용
     /// 기존 Collection 정리 action이 실행된 뒤에도 동일 요청의 load 완료가 새 Collection으로 전환되는지 검증한다.
@@ -770,6 +1832,8 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
     /// - 기대 결과: snapshot-first display를 위해 `applyCollectionSearchPaths`가 저장된 snapshot path로 호출됨
     func testShowRestoredCollectionSnapshot_withHydratedLoadResult_appliesSnapshotPaths() async {
         let file = makeSnapshotFile()
+        let searchRequests = LockIsolated<Int>(0)
+        let filterRequests = LockIsolated<Int>(0)
         let loadResult = CollectionFileLoadResult(
             file: file,
             containerFormat: .package,
@@ -797,6 +1861,14 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
             $0.collectionAlertClient = .testValue
             $0.collectionStalenessClient = .testValue
             $0.registryClient = .testValue
+            $0.searchClient.search = { _ in
+                searchRequests.withValue { $0 += 1 }
+                return .init(itemCount: 0)
+            }
+            $0.searchClient.applyFilters = { _ in
+                filterRequests.withValue { $0 += 1 }
+                return .init(itemCount: 0)
+            }
         }
         // 이 suite는 window open effect의 라우팅을 검증하므로 composer/content child 내부 state diff는 제외한다.
         store.exhaustivity = .off
@@ -833,6 +1905,8 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
             return true
         }
         await store.finish()
+        XCTAssertEqual(searchRequests.value, 0)
+        XCTAssertEqual(filterRequests.value, 0)
     }
 
     // MARK: - RCL-002-alert_unsaved_collection_filter_changes
@@ -937,6 +2011,51 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
                 relevanceRoots: ["/VoyagerFixtures/Projects"],
             ),
             appVersion: base.appVersion,
+        )
+    }
+
+    private func makeNoTriggerFile(
+        id: String,
+        name: String,
+        query: String = "",
+        scopes: [String] = [],
+        conditions: [CollectionCondition] = [],
+    ) -> VoyagerCollectionFile {
+        VoyagerCollectionFile(
+            id: id,
+            name: name,
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+            updatedAt: Date(timeIntervalSince1970: 1_700_000_100),
+            query: query,
+            scopes: scopes,
+            excludedScopes: [],
+            includeSubfolders: true,
+            includeDirectories: true,
+            conditions: conditions,
+            snapshot: nil,
+            snapshotMeta: nil,
+            appVersion: "test",
+        )
+    }
+
+    private func makeEntry(path: String) -> EntryModel {
+        EntryModel(
+            name: URL(fileURLWithPath: path).lastPathComponent,
+            fullPath: path,
+            isFolder: false,
+            isHidden: false,
+            size: 1,
+            modifiedDate: Date(timeIntervalSince1970: 1_700_000_000),
+            fileExtension: URL(fileURLWithPath: path).pathExtension,
+            facets: EntryFacets(
+                createdDate: Date(timeIntervalSince1970: 1_700_000_000),
+                addedDate: Date(timeIntervalSince1970: 1_700_000_000),
+                lastOpenedDate: nil,
+                kind: "Text",
+                creatorApplication: nil,
+                tags: nil,
+                supplementaryMetadata: nil,
+            ),
         )
     }
 
@@ -1100,6 +2219,136 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
             usedDefinitionFallback: false,
             writeBackAllowed: true,
             writeBackReason: .allowed,
+        )
+    }
+
+    private func makeFileBackedEmptyCollectionContentState(
+        targetURL: URL,
+    ) -> FileManagerContentState {
+        let context = CollectionContext()
+        let compatibility = makeSnapshotAllowedCompatibility()
+        var state = FileManagerContentState()
+        state.navigation.navigationState = .collection(.init(
+            kind: .file(url: targetURL, name: targetURL.deletingPathExtension().lastPathComponent),
+            context: context,
+            sortKey: .name,
+            sortOrder: .ascending,
+            viewLayout: .list,
+            compatibility: compatibility,
+        ))
+        state.entryViewLayout.isCollectionMode = true
+        state.collection.collectionContext = context
+        state.collection.collectionSession.document = .init(
+            url: targetURL,
+            name: targetURL.deletingPathExtension().lastPathComponent,
+            compatibility: compatibility,
+        )
+        state.collection.collectionSession.metadata.baseline = .init(context: context)
+        state.collection.collectionSession.phase = .opened(kind: .definition, base: .ready, inflight: .none)
+        state.composer.collectionContext = context
+        state.composer.openedCollectionURL = targetURL
+        state.composer.openedCollectionCompatibility = compatibility
+        state.composer.isCollectionMode = true
+        return state
+    }
+
+    private func makeCollectionEditStore(
+        targetURL: URL,
+        requests: LockIsolated<[String]>,
+    ) -> TestStore<FileManagerContentState, FileManagerContentAction> {
+        makeCollectionEditStore(
+            initialState: makeFileBackedEmptyCollectionContentState(targetURL: targetURL),
+            requests: requests,
+        )
+    }
+
+    private func makeCollectionEditStore(
+        initialState: FileManagerContentState,
+        requests: LockIsolated<[String]>,
+        saveURLs: LockIsolated<[URL]>? = nil,
+    ) -> TestStore<FileManagerContentState, FileManagerContentAction> {
+        let store = TestStore(initialState: initialState) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.collectionAlertClient = .testValue
+            $0.collectionFileClient = .testValue
+            $0.collectionFileClient.save = { _, url in
+                saveURLs?.withValue { $0.append(url) }
+            }
+            $0.collectionStalenessClient = .testValue
+            $0.registryClient = makeRegistryClient()
+            $0.searchClient.search = { _ in
+                requests.withValue { $0.append("submit") }
+                return .init(itemCount: 0)
+            }
+            $0.searchClient.applyFilters = { _ in
+                requests.withValue { $0.append("applyFilters") }
+                return .init(itemCount: 0)
+            }
+            $0.entryLoadingClient = .testValue
+            $0.userDefaultsClient = .testValue
+            $0.date = .constant(Date(timeIntervalSince1970: 1_700_000_200))
+            $0.uuid = .incrementing
+            $0.continuousClock = ImmediateClock()
+        }
+        // store.exhaustivity = .off: composed child response보다 retrieval request cardinality와 terminal state를 검증한다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+        return store
+    }
+
+    private func makeEditCondition(values: [String]?) -> Condition {
+        Condition(
+            property: .init(
+                key: "kind",
+                label: "Kind",
+                type: .string,
+                unitContract: nil,
+                operatorOptions: [.init(code: "eq", label: "Equals")],
+            ),
+            operation: values == nil ? nil : .init(
+                code: "eq",
+                label: "Equals",
+                valueContract: .init(shape: .single, count: .fixed(1), input: .singleText),
+            ),
+            values: values,
+            availability: .available,
+            opaqueSource: nil,
+        )
+    }
+
+    private func makePresentationCondition(
+        availability: Condition.Availability,
+        values: [String]?,
+    ) -> Condition {
+        Condition(
+            property: .init(
+                key: "kind",
+                label: "Kind",
+                type: .string,
+                unitContract: nil,
+                operatorOptions: [.init(code: "eq", label: "Equals")],
+            ),
+            operation: values == nil ? nil : .init(
+                code: "eq",
+                label: "Equals",
+                valueContract: .init(shape: .single, count: .fixed(1), input: .singleText),
+            ),
+            values: values,
+            availability: availability,
+            opaqueSource: nil,
+        )
+    }
+
+    private func makeEditSavePayload(context: CollectionContext) -> SaveRequestPayload {
+        SaveRequestPayload(
+            context: context,
+            isSearchLoading: false,
+            isFiltersLoading: false,
+            snapshotItems: nil,
+            definitionFingerprint: "rcl-002-edit",
+            capturedAt: Date(timeIntervalSince1970: 1_700_000_200),
+            relevanceRoots: context.scopes,
+            openedCompatibility: nil,
         )
     }
 }

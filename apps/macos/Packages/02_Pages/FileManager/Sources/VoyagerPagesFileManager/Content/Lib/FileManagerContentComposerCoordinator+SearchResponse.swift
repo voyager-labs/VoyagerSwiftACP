@@ -14,7 +14,7 @@ extension FileManagerContentComposerCoordinator {
     ) -> Effect<FileManagerContentAction>? {
         switch action {
         case let .internal(.searchResponse(requestID, .success(response))):
-            handleSearchResponseSuccess(
+            return handleSearchResponseSuccess(
                 requestID: requestID,
                 response: response,
                 state: &state,
@@ -22,14 +22,22 @@ extension FileManagerContentComposerCoordinator {
             )
 
         case let .internal(.filtersResponse(requestID, .success(response))):
-            handleFiltersResponseSuccess(
+            if let error = response.error {
+                return handleFiltersResponseFailure(
+                    requestID: requestID,
+                    error: SearchResponsePayloadError(payload: error),
+                    state: &state,
+                    dependencies: dependencies,
+                )
+            }
+            return handleFiltersResponseSuccess(
                 requestID: requestID,
                 response: response,
                 state: &state,
             )
 
         case let .internal(.searchResponse(requestID, .failure(error))):
-            handleSearchResponseFailure(
+            return handleSearchResponseFailure(
                 requestID: requestID,
                 error: error,
                 state: &state,
@@ -37,7 +45,7 @@ extension FileManagerContentComposerCoordinator {
             )
 
         case let .internal(.filtersResponse(requestID, .failure(error))):
-            handleFiltersResponseFailure(
+            return handleFiltersResponseFailure(
                 requestID: requestID,
                 error: error,
                 state: &state,
@@ -45,7 +53,7 @@ extension FileManagerContentComposerCoordinator {
             )
 
         default:
-            nil
+            return nil
         }
     }
 
@@ -102,9 +110,10 @@ extension FileManagerContentComposerCoordinator {
         state: inout FileManagerContentState,
         dependencies: Dependencies,
     ) -> Effect<FileManagerContentAction>? {
-        guard state.composer.lastAcceptedFiltersRequestID == requestID else {
+        guard state.composer.lastFailedFiltersRequestID == requestID else {
             return .none
         }
+        state.composer.lastFailedFiltersRequestID = nil
         let title = state.composer.pendingSearchQuery == nil
             ? "Unable to Apply Collection Filters"
             : "Unable to Run Collection Search"

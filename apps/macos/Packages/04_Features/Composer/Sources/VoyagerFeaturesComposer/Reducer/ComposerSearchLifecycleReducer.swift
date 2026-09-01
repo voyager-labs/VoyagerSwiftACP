@@ -214,9 +214,19 @@ struct ComposerSearchLifecycleReducer {
                 guard state.activeFiltersRequestID == requestID else {
                     return .none
                 }
-                state.lastAcceptedFiltersRequestID = requestID
                 switch response {
                 case let .success(response):
+                    if let error = response.error {
+                        return handleFiltersFailure(
+                            requestID: requestID,
+                            message: ComposerQueryFeedbackPolicy.failureMessage(for: error),
+                            state: &state,
+                            clock: clock,
+                            composerMetricClient: composerMetricClient,
+                        )
+                    }
+                    state.lastAcceptedFiltersRequestID = requestID
+                    state.lastFailedFiltersRequestID = nil
                     state.isLoadingFilters = false
                     state.isFilteringInFlight = false
                     state.activeFiltersRequestID = nil
@@ -249,40 +259,13 @@ struct ComposerSearchLifecycleReducer {
                     return .none
 
                 case let .failure(error):
-                    state.isLoadingFilters = false
-                    state.isFilteringInFlight = false
-                    state.activeFiltersRequestID = nil
-                    let metricSource = state.activeFiltersMetricSource ?? ComposerCollectionFilterMetrics
-                        .sourceManualApply
-                    state.activeFiltersMetricSource = nil
-                    let failedFilters = buildFilters(from: state)
-                    logFiltersDurationIfNeeded(state.filtersStartedAt, composerMetricClient: composerMetricClient)
-                    composerMetricClient.logMetric(
-                        ComposerCollectionFilterMetrics.applyResult,
-                        value: 1,
-                        tags: ComposerCollectionFilterMetrics.applyResultTags(
-                            outcome: "execution_failure",
-                            source: metricSource,
-                            openedCollectionURL: state.openedCollectionURL,
-                            filters: failedFilters,
-                            itemCount: nil,
-                            reason: "execution_error",
-                        ),
-                        level: .warn,
-                    )
-                    state.filtersStartedAt = nil
-                    state.resolveScopeChangeFeedback(.filters(requestID), phase: .failed)
-                    applyQueryPhaseTransition(.reset, state: &state)
-                    let feedbackEffect = presentTransientFeedback(
-                        kind: .error,
+                    return handleFiltersFailure(
+                        requestID: requestID,
                         message: feedbackFailureMessage(for: error),
                         state: &state,
                         clock: clock,
+                        composerMetricClient: composerMetricClient,
                     )
-                    kComposerSearchLifecycleLogger.warning(
-                        "Composer filter application failed: \(feedbackFailureMessage(for: error))",
-                    )
-                    return feedbackEffect
                 }
 
             case .internal(.searchListApplied):
@@ -318,6 +301,7 @@ private func handleSubmit(
     state.activeSearchRequestID = searchRequestID
     state.activeFiltersRequestID = nil
     state.activeFiltersMetricSource = nil
+    state.lastFailedFiltersRequestID = nil
     state.lastAcceptedSearchRequestID = nil
     state.lastAcceptedFiltersRequestID = nil
     state.lastFiltersResponse = nil
@@ -402,6 +386,7 @@ private func handleCancelFilters(
     state.isFilteringInFlight = false
     state.activeFiltersRequestID = nil
     state.activeFiltersMetricSource = nil
+    state.lastFailedFiltersRequestID = nil
     state.pendingSearchQuery = nil
     if let requestID {
         state.resolveScopeChangeFeedback(.filters(requestID), phase: .visible)
@@ -434,10 +419,51 @@ private func handleApplyFilters(
     state.isFilteringInFlight = true
     state.activeFiltersRequestID = filtersRequestID
     state.lastAcceptedFiltersRequestID = nil
+    state.lastFailedFiltersRequestID = nil
     applyQueryPhaseTransition(.reset, state: &state)
     state.filtersStartedAt = Date()
     return .concatenate(
         .cancel(id: ComposerFeature.CancelID.search(ownerID: state.cancellationOwnerID)),
         applyFiltersIfNeeded(state: &state, searchClient: searchClient, requestID: filtersRequestID),
+    )
+}
+
+private func handleFiltersFailure(
+    requestID: UUID,
+    message: String,
+    state: inout ComposerSearchLifecycleReducer.State,
+    clock: any Clock<Duration>,
+    composerMetricClient: ComposerMetricClient,
+) -> Effect<ComposerSearchLifecycleReducer.Action> {
+    let metricSource = state.activeFiltersMetricSource ?? ComposerCollectionFilterMetrics.sourceManualApply
+    let failedFilters = buildFilters(from: state)
+    state.isLoadingFilters = false
+    state.isFilteringInFlight = false
+    state.activeFiltersRequestID = nil
+    state.lastFailedFiltersRequestID = requestID
+    state.activeFiltersMetricSource = nil
+    logFiltersDurationIfNeeded(state.filtersStartedAt, composerMetricClient: composerMetricClient)
+    composerMetricClient.logMetric(
+        ComposerCollectionFilterMetrics.applyResult,
+        value: 1,
+        tags: ComposerCollectionFilterMetrics.applyResultTags(
+            outcome: "execution_failure",
+            source: metricSource,
+            openedCollectionURL: state.openedCollectionURL,
+            filters: failedFilters,
+            itemCount: nil,
+            reason: "execution_error",
+        ),
+        level: .warn,
+    )
+    state.filtersStartedAt = nil
+    state.resolveScopeChangeFeedback(.filters(requestID), phase: .failed)
+    applyQueryPhaseTransition(.reset, state: &state)
+    kComposerSearchLifecycleLogger.warning("Composer filter application failed: \(message)")
+    return presentTransientFeedback(
+        kind: .error,
+        message: message,
+        state: &state,
+        clock: clock,
     )
 }
