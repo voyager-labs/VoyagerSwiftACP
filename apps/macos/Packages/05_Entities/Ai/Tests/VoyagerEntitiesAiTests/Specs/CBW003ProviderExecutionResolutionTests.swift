@@ -733,6 +733,52 @@ extension CBW003ProviderExecutionResolutionTests {
         XCTAssertEqual(counts.fresh, 0)
     }
 
+    /// CBW-003-stream_contextual_chat_response: completed terminal with non-zero exit maps to CLI unavailability.
+    /// processFailed terminal result가 legacy execution에서 invalidRequest로 축소되지 않는지 검증합니다.
+    /// - 검증 내용: completed JSONL 뒤 status 17 종료가 `.protocolFailure(.cliUnavailable)`로 매핑되는지 확인합니다.
+    /// - 사전 조건: controlled fake Codex process가 thread.started와 turn.completed를 보낸 뒤 non-zero로 종료합니다.
+    /// - 기대 결과: legacy execution은 성공 text나 invalidRequest가 아닌 typed cliUnavailable failure를 반환합니다.
+    func testCodexLegacy_completedNonzeroExit_mapsProcessFailureToCLIUnavailable() async throws {
+        let codexHome = URL(fileURLWithPath: "/tmp/voyager-cbw003-legacy-completed-nonzero", isDirectory: true)
+        try? FileManager.default.removeItem(at: codexHome)
+        defer { try? FileManager.default.removeItem(at: codexHome) }
+        let process = CodexExecFakeProcess(stdout: [], stderr: [], terminationStatus: 17)
+        let runner = CodexExecControlledRunner(process: process)
+        let composition = CodexExecLiveComposition(
+            controller: CodexExecProcessController(runner: runner.run),
+            executableURL: URL(fileURLWithPath: "/tmp/codex"),
+            codexHome: codexHome,
+            readinessProbe: CodexExecReadinessProbe { _, arguments, _ in
+                arguments == ["--version"]
+                    ? .init(exitCode: 0, stdout: "codex-cli 0.148.0\n", stderr: "")
+                    : .init(exitCode: 0, stdout: "", stderr: "")
+            },
+            legacySessionPreparer: makeFakeLegacySessionPreparer(codexHome: codexHome),
+        )
+
+        let execution = Task {
+            try await composition.executeLegacy(
+                request: CodexExecutionRequest(
+                    runID: "legacy-completed-nonzero", model: "gpt-5-codex", prompt: "prompt", thinking: nil,
+                ),
+                onEvent: { _ in },
+            )
+        }
+        await runner.waitUntilReady()
+        runner.send(#"{"type":"thread.started","thread_id":"legacy-completed-nonzero"}"#)
+        runner.send(#"{"type":"turn.completed","turn_id":"turn","status":"completed"}"#)
+        runner.finishStreams()
+
+        do {
+            _ = try await execution.value
+            XCTFail("completed terminal with non-zero exit must fail legacy execution")
+        } catch let error as CodexCLIExecutionError {
+            XCTAssertEqual(error, .protocolFailure(.cliUnavailable))
+        }
+        XCTAssertEqual(process.terminationCount, 1)
+        XCTAssertEqual(process.cleanupCount, 1)
+    }
+
     /// CBW-003-stream_contextual_chat_response: legacy failed terminal diagnostics use the existing Codex classifier.
     /// failed provider event의 내부 diagnostics가 legacy execution에서 typed failure reason으로 분류되는지 검증합니다.
     /// - 검증 내용: auth, network, rate-limit, quota, model-unavailable marker가 각각 기존 분류기로 매핑되는지 확인합니다.

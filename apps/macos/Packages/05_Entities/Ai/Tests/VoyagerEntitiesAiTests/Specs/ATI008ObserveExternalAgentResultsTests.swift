@@ -6,6 +6,14 @@ import XCTest
 // MARK: - ATI-008-observe_external_agent_results
 
 final class ATI008ObserveExternalAgentResultsTests: XCTestCase {
+    private struct ProcessExitCase {
+        let name: String
+        let terminal: String
+        let status: Int32
+        let failure: CodexExecProcessFailure
+        let diagnostic: String?
+    }
+
     /// ATI-008-observe_external_agent_results: completed one-sided sessions evict oldest at capacity.
     /// 한쪽 public consumer만 완료된 session retention이 oldest-first로 제한되는지 검증합니다.
     /// - 검증 내용: exact capacity, capacity+1 eviction, active entry preservation, single cleanup을 확인합니다.
@@ -963,6 +971,109 @@ final class ATI008ObserveExternalAgentResultsTests: XCTestCase {
         XCTAssertEqual(events.map(\.rawType), ["turn.started", "item.completed", "turn.completed"])
         XCTAssertEqual(events[0].providerEventID, "codex.exec/thread-1/turn.started/1")
         XCTAssertEqual(events[2].idempotencyKey, "codex.exec/run-1/3")
+        XCTAssertEqual(process.cleanupCount, 1)
+    }
+
+    /// ATI-008-observe_external_agent_results: process exit precedence preserves explicit provider failure.
+    /// completed terminal 뒤 non-zero process exit만 process failure로 대체하고 explicit failed terminal은 보존하는지 검증합니다.
+    /// - 검증 내용: completed/non-zero는 exact processFailed status를 내고, failed/non-zero는 terminalError와 provider
+    /// diagnostics를 유지하는지 확인합니다.
+    /// - 사전 조건: 각 fake process가 thread.started 뒤 하나의 terminal JSONL을 방출하고 서로 다른 non-zero status로 종료합니다.
+    /// - 기대 결과: 두 결과 모두 failed이며 각 process가 terminate와 cleanup을 한 번씩 수행합니다.
+    func testObserve_processExitPrecedence_matrix() async throws {
+        let cases = [
+            ProcessExitCase(
+                name: "completed terminal",
+                terminal: #"{"type":"turn.completed","turn_id":"turn-completed"}"#,
+                status: 17,
+                failure: .processFailed(17),
+                diagnostic: nil,
+            ),
+            ProcessExitCase(
+                name: "explicit failed terminal",
+                terminal: #"{"type":"turn.failed","turn_id":"turn-failed","message":"provider failure"}"#,
+                status: 29,
+                failure: .terminalError,
+                diagnostic: "provider failure",
+            ),
+        ]
+
+        for (index, testCase) in cases.enumerated() {
+            try await assertProcessExitCase(testCase, index: index)
+        }
+    }
+
+    private func assertProcessExitCase(_ testCase: ProcessExitCase, index: Int) async throws {
+        let process = CodexExecFakeProcess(
+            stdout: [
+                Data("{\"type\":\"thread.started\",\"thread_id\":\"thread-\(index)\"}".utf8),
+                Data(testCase.terminal.utf8),
+            ],
+            stderr: [],
+            terminationStatus: testCase.status,
+        )
+        let receipt = try await CodexExecProcessController(
+            runner: CodexExecFakeRunner(process: process).run,
+        ).acquire(
+            runID: "run-\(index)",
+            command: makeCommand(),
+        )
+
+        let result = try await receipt.terminalResult()
+        XCTAssertEqual(result.outcome, CodexExecLifecycleKind.failed, testCase.name)
+        XCTAssertEqual(result.failure, testCase.failure, testCase.name)
+        if let diagnostic = testCase.diagnostic {
+            XCTAssertTrue(result.diagnostics.stderr.contains(diagnostic), testCase.name)
+        }
+
+        await receipt.cancel()
+        XCTAssertEqual(process.terminationCount, 1, testCase.name)
+        XCTAssertEqual(process.cleanupCount, 1, testCase.name)
+    }
+
+    private func makeCommand() -> CodexExecCommand {
+        CodexExecCommand(
+            executableURL: URL(fileURLWithPath: "/usr/bin/codex"),
+            arguments: [],
+            environment: [:],
+            stdin: "prompt",
+        )
+    }
+
+    /// ATI-008-observe_external_agent_results: completed process failure keeps lifecycle and result outcomes aligned.
+    /// completed event가 process.wait 전에 노출되지 않아 non-zero 결과와 lifecycle이 divergence하지 않는지 검증합니다.
+    /// - 검증 내용: completed/non-zero process의 terminal result가 processFailed이고 lifecycle에 completed event가 없는지 확인합니다.
+    /// - 사전 조건: fake process가 thread.started와 turn.completed를 보낸 뒤 status 17로 종료합니다.
+    /// - 기대 결과: lifecycle 소비는 processFailed로 종료되고 이벤트는 비어 있으며 result도 동일한 processFailed를 가집니다.
+    func testObserve_completedNonzeroExit_doesNotDivergeLifecycleAndResult() async throws {
+        let process = CodexExecFakeProcess(
+            stdout: [
+                Data(#"{"type":"thread.started","thread_id":"thread-deferred-completion"}"#.utf8),
+                Data(#"{"type":"turn.completed","turn_id":"turn-deferred-completion"}"#.utf8),
+            ],
+            stderr: [],
+            terminationStatus: 17,
+        )
+        let receipt = try await CodexExecProcessController(
+            runner: CodexExecFakeRunner(process: process).run,
+        ).acquire(runID: "run-deferred-completion", command: makeCommand())
+        let lifecycleStream = try await receipt.eventStream()
+
+        let result = try await receipt.terminalResult()
+        XCTAssertEqual(result.outcome, CodexExecLifecycleKind.failed)
+        XCTAssertEqual(result.failure, .processFailed(17))
+
+        var lifecycleEvents: [CodexExecLifecycleEvent] = []
+        do {
+            for try await event in lifecycleStream {
+                lifecycleEvents.append(event)
+            }
+            XCTFail("non-zero completed process should fail lifecycle stream")
+        } catch let error as CodexExecProcessFailure {
+            XCTAssertEqual(error, .processFailed(17))
+        }
+        XCTAssertTrue(lifecycleEvents.isEmpty, "completed lifecycle must wait for process status")
+        XCTAssertEqual(process.terminationCount, 1)
         XCTAssertEqual(process.cleanupCount, 1)
     }
 

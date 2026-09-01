@@ -711,7 +711,7 @@ struct CodexExecProcessController {
         state.decoder.retainStderr(stderr.collector.value)
         guard let threadID = state.threadID else { throw CodexExecProcessFailure.eofBeforeHandshake }
         await context.onEventStreamFinished()
-        if status != 0, state.terminal == nil {
+        if status != 0, state.terminal != .failed {
             let failure = CodexExecProcessFailure.processFailed(status)
             context.lifecycle.finish(throwing: failure)
             guard case .enqueued = context.result.yield(CodexExecTerminalResult(
@@ -723,6 +723,11 @@ struct CodexExecProcessController {
             throw failure
         }
         context.events.finish()
+        if let terminalEvent = state.terminalEvent {
+            guard case .enqueued = context.lifecycle.yield(terminalEvent) else {
+                throw CodexExecProcessFailure.eventBufferOverflow
+            }
+        }
         if let terminal = state.terminal {
             context.lifecycle.finish()
             guard case .enqueued = context.result.yield(CodexExecTerminalResult(
@@ -746,11 +751,16 @@ struct CodexExecProcessController {
     ) async throws -> String {
         context.terminate()
         context.events.finish(throwing: error)
-        context.lifecycle.finish(throwing: error)
         if let processFailure = error as? CodexExecProcessFailure,
            case .duplicateTerminal = processFailure,
            let terminal = state.terminal
         {
+            if let terminalEvent = state.terminalEvent {
+                guard case .enqueued = context.lifecycle.yield(terminalEvent) else {
+                    throw CodexExecProcessFailure.eventBufferOverflow
+                }
+            }
+            context.lifecycle.finish(throwing: error)
             guard case .enqueued = context.result.yield(CodexExecTerminalResult(
                 outcome: terminal,
                 finalAssistantText: state.decoder.finalAssistantText,
@@ -759,6 +769,7 @@ struct CodexExecProcessController {
             )) else { throw CodexExecProcessFailure.eventBufferOverflow }
             context.result.finish(throwing: error)
         } else {
+            context.lifecycle.finish(throwing: error)
             context.result.finish(throwing: error)
         }
         if state.handshakeResumed {
@@ -840,13 +851,20 @@ struct CodexExecProcessController {
         default: .progress
         }
         if kind != .progress || event.type != .threadStarted {
-            guard case .enqueued = output.lifecycle.yield(CodexExecLifecycleEvent(
+            let lifecycleEvent = CodexExecLifecycleEvent(
                 providerEventID: "codex.exec/\(state.threadID ?? "")/\(event.type.rawValue)/\(state.ordinal)",
                 idempotencyKey: "codex.exec/\(output.runID)/\(state.ordinal)",
                 ordinal: state.ordinal,
                 rawType: event.type.rawValue,
                 kind: kind,
-            )) else { throw CodexExecProcessFailure.eventBufferOverflow }
+            )
+            if kind == .completed {
+                state.terminalEvent = lifecycleEvent
+            } else {
+                guard case .enqueued = output.lifecycle.yield(lifecycleEvent) else {
+                    throw CodexExecProcessFailure.eventBufferOverflow
+                }
+            }
         }
         if kind != .progress {
             state.terminal = kind
@@ -891,6 +909,7 @@ struct CodexExecProcessController {
         var handshakeResumed = false
         var ordinal: UInt64 = 0
         var terminal: CodexExecLifecycleKind?
+        var terminalEvent: CodexExecLifecycleEvent?
         var terminalFailure: CodexExecProcessFailure?
     }
 
