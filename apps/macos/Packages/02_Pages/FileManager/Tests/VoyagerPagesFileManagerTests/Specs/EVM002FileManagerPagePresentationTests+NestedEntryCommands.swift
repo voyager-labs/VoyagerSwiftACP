@@ -260,7 +260,10 @@ extension EVM002FileManagerPagePresentationTests {
         }
         // Planner가 package 디렉터리를 openFiles(Launch Services)로 변환
         await store.receive {
-            guard case let .entryViewLayout(.entryOperations(.open(.openFiles(paths)))) = $0 else {
+            guard case let .entryViewLayout(.entryOperations(.acceptedCommand(
+                _,
+                .open(.openFiles(paths)),
+            ))) = $0 else {
                 return false
             }
             return paths == [appPath]
@@ -316,7 +319,10 @@ extension EVM002FileManagerPagePresentationTests {
         await store.receive(\.entryViewLayout.entryOperations.routing.executeCommand)
         // Planner가 일반 파일을 openFiles로 변환
         await store.receive {
-            guard case let .entryViewLayout(.entryOperations(.open(.openFiles(paths)))) = $0 else {
+            guard case let .entryViewLayout(.entryOperations(.acceptedCommand(
+                _,
+                .open(.openFiles(paths)),
+            ))) = $0 else {
                 return false
             }
             return paths == [fileURL.path]

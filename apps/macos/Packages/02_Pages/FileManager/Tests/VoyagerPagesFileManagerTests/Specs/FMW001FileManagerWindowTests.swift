@@ -2095,8 +2095,6 @@ extension FMW001FileManagerWindowTests {
     /// - 기대 결과: Show Chat History가 Cmd-Shift-L을 표시하고 다른 toolbar 동작은 변경하지 않는다.
     func testNewChatToolbarContextMenuPresentsShowChatHistoryShortcut() throws {
         let fixture = makeNewChatToolbarFixture()
-        defer { fixture.window.orderOut(nil) }
-
         let menu = try XCTUnwrap(findHistoryMenu(in: fixture.hostingView, window: fixture.window))
         let historyItem = try XCTUnwrap(menu.items.first { $0.title == "Show Chat History" })
 
@@ -2134,7 +2132,6 @@ extension FMW001FileManagerWindowTests {
         )
         window.contentView = hostingView
         hostingView.frame = window.contentView?.bounds ?? .zero
-        window.makeKeyAndOrderFront(nil)
         hostingView.layoutSubtreeIfNeeded()
         return (window: window, hostingView: hostingView)
     }
@@ -2400,9 +2397,7 @@ extension FMW001FileManagerWindowTests {
         }
 
         host.insertText("가", replacementRange: NSRange(location: 0, length: 0))
-        await drainMountedFocusUpdates()
-
-        XCTAssertEqual(fixture.store.state.entryViewLayout.pendingTypeScrollTargetId, target.id)
+        await waitForMountedTypeScrollTarget(target.id, in: fixture.store)
     }
 
     private func makeMountedTypeScrollContentPageFixture(
@@ -2416,7 +2411,7 @@ extension FMW001FileManagerWindowTests {
         ) {
             Reduce<FileManagerContentState, FileManagerContentAction> { state, action in
                 guard case .view(.selectAllEntries) = action else { return .none }
-                state.entryViewLayout.selectedIds = ["mounted-focus-trigger"]
+                state.entryViewLayout.selectedIds = Set(entries.map(\.id))
                 return .none
             }
             FileManagerContentKeyCommandReducer()
@@ -2438,6 +2433,23 @@ extension FMW001FileManagerWindowTests {
         window.makeKey()
         await drainMountedFocusUpdates()
         return (window, store)
+    }
+
+    private func waitForMountedTypeScrollTarget(
+        _ expectedTargetID: EntryModel.ID,
+        in store: Store<FileManagerContentState, FileManagerContentAction>,
+    ) async {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(1))
+
+        while store.state.entryViewLayout.pendingTypeScrollTargetId != expectedTargetID,
+              clock.now < deadline
+        {
+            await drainMountedFocusUpdates()
+            try? await clock.sleep(for: .milliseconds(10))
+        }
+
+        XCTAssertEqual(store.state.entryViewLayout.pendingTypeScrollTargetId, expectedTargetID)
     }
 
     private func disablePerceptionChecking() -> Bool {
