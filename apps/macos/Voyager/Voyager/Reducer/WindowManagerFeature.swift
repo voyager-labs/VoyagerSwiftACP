@@ -389,9 +389,27 @@ struct WindowManagerFeature {
                 return finalizeDeferredWindowClosuresWithoutPendingPersistence(state: &state)
 
             case let .contentTabMoveWindowActionRequested(request, windowID, action):
-                guard state.contentTabMoveTransactions[request.requestID]?.request == request,
-                      isWindowReady(windowID, state: state)
-                else { return .none }
+                guard state.contentTabMoveTransactions[request.requestID]?.request == request else {
+                    return .none
+                }
+                let isRetainedSourceTerminal = if windowID == request.sourceWindowID,
+                                                  let source = state.windows[id: windowID]?.window,
+                                                  source.contentTabMoveParticipantRequestID == request.requestID,
+                                                  state.closingWindowIDs.contains(windowID),
+                                                  state.deferredClosedWindowIDs.contains(windowID)
+                {
+                    switch action {
+                    case let .contentTabMoveSucceeded(terminalRequest):
+                        terminalRequest == request
+                    case let .contentTabMoveRejected(terminalRequest, _):
+                        terminalRequest == request
+                    default:
+                        false
+                    }
+                } else {
+                    false
+                }
+                guard isWindowReady(windowID, state: state) || isRetainedSourceTerminal else { return .none }
                 return .send(.windows(.element(id: windowID, action: .window(action))))
 
             case let .contentTabMoveNativeEffectsRequested(request):

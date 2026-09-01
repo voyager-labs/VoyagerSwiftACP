@@ -5976,13 +5976,14 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             targetDomain: .pinned,
             placement: .empty,
         )
-        let source = try Self.makeContentTabMoveWindow(
+        var source = try Self.makeContentTabMoveWindow(
             id: sourceID,
             tabs: [
                 (request.initiatingTabID, "/correlated/source"),
                 (remainderID, "/correlated/remainder"),
             ],
         )
+        Self.prepareContentTabMoveRequest(request, in: &source)
         var target = WindowSessionState(
             id: targetID,
             window: .makeInitial(path: "/correlated/target", windowID: targetID),
@@ -6047,6 +6048,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             terminal: committedResult.terminal,
             authoritativePinnedContentTabs: committedResult.authoritativePinnedContentTabs,
         )
+        let metrics = LockIsolated<[FileManagerProductMetric]>([])
         var initialState = WindowManagerFeature.State()
         initialState.windows = [source, target, .init(id: peerID, window: peer)]
         initialState.topNavigationPersistenceQueue = [exactRequest]
@@ -6067,6 +6069,9 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         )
         let store = TestStore(initialState: initialState) { WindowManagerFeature() } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 401))
+            $0.fileManagerProductMetricsClient.record = { metric in
+                metrics.withValue { $0.append(metric) }
+            }
             $0.fileManagerWindowClient.activate = { _ in .discarded }
             $0.fileManagerWindowClient.close = { _ in }
             $0.notificationCenterClient.notifications = { _, _ in AsyncStream { $0.finish() } }
@@ -6097,6 +6102,15 @@ final class WindowManagerFeatureContractTests: XCTestCase {
 
         await store.send(.topNavigationPersistenceCompleted(committedResult))
         XCTAssertEqual(store.state, stateAfterExact)
+        XCTAssertEqual(
+            metrics.value,
+            [.contentTabAction(
+                result: .success,
+                identity: .moveContentTabToAnotherWindow,
+                source: .contextMenu,
+                operationID: request.operationID,
+            )],
+        )
     }
 
     /// CTM-001-move_content_tab_to_another_window: source close after enqueue는 app-owned persistence를 취소하지 않는다.
@@ -6143,11 +6157,15 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         let peer = FileManagerWindowFeature.State.makeInitial(path: "/close-after-enqueue/peer")
         let writeGate = PinnedRecordMutationGate()
         let teardownCalls = LockIsolated<[String]>([])
+        let metrics = LockIsolated<[FileManagerProductMetric]>([])
         let pinnedRecord = try XCTUnwrap(target.window.contentTabs.pinnedRecords[targetPinnedID])
         var initialState = WindowManagerFeature.State()
         initialState.windows = [source, target, .init(id: peerID, window: peer)]
         let store = TestStore(initialState: initialState) { WindowManagerFeature() } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 602))
+            $0.fileManagerProductMetricsClient.record = { metric in
+                metrics.withValue { $0.append(metric) }
+            }
             $0.contentTabPinnedRecordClient.reserveTopNavigationOperationToken = { .init(value: UUID(46946)) }
             $0.fileOperationUndoManagerClient.moveScopes = { _ in .moved }
             $0.contentTabPinnedRecordClient.applyDurablePinnedBatchMutationCommitted = { _, _, _ in
@@ -6206,6 +6224,15 @@ final class WindowManagerFeatureContractTests: XCTestCase {
         XCTAssertEqual(
             store.state.windows[id: peerID]?.window.contentTabs.tabs.filter(\.isPinned).map(\.id),
             [targetPinnedID, movedID],
+        )
+        XCTAssertEqual(
+            metrics.value,
+            [.contentTabAction(
+                result: .success,
+                identity: .moveContentTabToAnotherWindow,
+                source: .contextMenu,
+                operationID: request.operationID,
+            )],
         )
     }
 
