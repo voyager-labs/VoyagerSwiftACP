@@ -3,17 +3,43 @@ import ComposableArchitecture
 import SwiftUI
 import VoyagerShared
 
+public struct EntryHistorySwipeProgress: Equatable, Sendable {
+    public enum Direction: Equatable, Sendable {
+        case back
+        case forward
+    }
+
+    public let direction: Direction
+    public let progress: CGFloat
+    public let isArmed: Bool
+
+    public init(direction: Direction, progress: CGFloat, isArmed: Bool) {
+        self.direction = direction
+        self.progress = min(max(progress, 0), 1)
+        self.isArmed = isArmed
+    }
+}
+
 @MainActor
 public struct EntryListViewRepresentable: NSViewRepresentable {
     public let store: StoreOf<EntryViewLayoutFeature>
     public let blankSpaceMenuProvider: (() -> NSMenu)?
+    public let onGoBack: () -> Void
+    public let onGoForward: () -> Void
+    public let onSwipeProgress: (EntryHistorySwipeProgress?) -> Void
 
     public init(
         store: StoreOf<EntryViewLayoutFeature>,
         blankSpaceMenuProvider: (() -> NSMenu)?,
+        onGoBack: @escaping () -> Void = {},
+        onGoForward: @escaping () -> Void = {},
+        onSwipeProgress: @escaping (EntryHistorySwipeProgress?) -> Void = { _ in },
     ) {
         self.store = store
         self.blankSpaceMenuProvider = blankSpaceMenuProvider
+        self.onGoBack = onGoBack
+        self.onGoForward = onGoForward
+        self.onSwipeProgress = onSwipeProgress
     }
 
     public func makeCoordinator() -> EntryListCoordinator {
@@ -24,16 +50,130 @@ public struct EntryListViewRepresentable: NSViewRepresentable {
         let view = EntryListView()
         context.coordinator.bind(to: view)
         view.tableView.blankSpaceContextMenuProvider = blankSpaceMenuProvider
+        view.scrollView.onGoBack = onGoBack
+        view.scrollView.onGoForward = onGoForward
+        view.scrollView.onSwipeProgress = onSwipeProgress
         return view
     }
 
     public func updateNSView(_ view: EntryListView, context: Context) {
         context.coordinator.updateRootView(view)
         view.tableView.blankSpaceContextMenuProvider = blankSpaceMenuProvider
+        view.scrollView.onGoBack = onGoBack
+        view.scrollView.onGoForward = onGoForward
+        view.scrollView.onSwipeProgress = onSwipeProgress
     }
 
-    public static func dismantleNSView(_: EntryListView, coordinator: EntryListCoordinator) {
+    public static func dismantleNSView(_ view: EntryListView, coordinator: EntryListCoordinator) {
+        view.scrollView.onSwipeProgress(nil)
+        view.scrollView.onGoBack = {}
+        view.scrollView.onGoForward = {}
+        view.scrollView.onSwipeProgress = { _ in }
         coordinator.externalDropSessionController.cancel()
+    }
+}
+
+@MainActor
+class EntryHistorySwipeScrollView: NSScrollView {
+    private static let acceptanceGestureAmount: CGFloat = 0.25
+
+    var onGoBack: () -> Void = {}
+    var onGoForward: () -> Void = {}
+    var onSwipeProgress: (EntryHistorySwipeProgress?) -> Void = { _ in }
+
+    private var isTrackingSwipe = false
+    private var hasCommittedNavigation = false
+    private var swipeDirection: EntryHistorySwipeProgress.Direction?
+
+    override func wantsScrollEventsForSwipeTracking(on axis: NSEvent.GestureAxis) -> Bool {
+        axis == .horizontal
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        let deltaX = event.isDirectionInvertedFromDevice ? -event.scrollingDeltaX : event.scrollingDeltaX
+        guard event.phase == .began,
+              event.hasPreciseScrollingDeltas,
+              abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY),
+              deltaX != 0,
+              isAtHorizontalEdge(for: deltaX),
+              NSEvent.isSwipeTrackingFromScrollEventsEnabled,
+              !isTrackingSwipe
+        else {
+            super.scrollWheel(with: event)
+            return
+        }
+
+        isTrackingSwipe = true
+        hasCommittedNavigation = false
+        swipeDirection = deltaX > 0 ? .forward : .back
+        let isDirectionInverted = event.isDirectionInvertedFromDevice
+        event.trackSwipeEvent(
+            options: [.lockDirection],
+            dampenAmountThresholdMin: -1,
+            max: 1,
+        ) { [weak self] amount, phase, isComplete, _ in
+            self?.handleSwipeUpdate(
+                amount: amount,
+                phase: phase,
+                isComplete: isComplete,
+                isDirectionInverted: isDirectionInverted,
+            )
+        }
+    }
+
+    private func handleSwipeUpdate(
+        amount: CGFloat,
+        phase: NSEvent.Phase,
+        isComplete: Bool,
+        isDirectionInverted: Bool,
+    ) {
+        let normalizedAmount = isDirectionInverted ? -amount : amount
+        let progress = min(abs(normalizedAmount) / Self.acceptanceGestureAmount, 1)
+        let isArmed = progress >= 1
+
+        if let swipeDirection, !isComplete {
+            onSwipeProgress(
+                EntryHistorySwipeProgress(
+                    direction: swipeDirection,
+                    progress: progress,
+                    isArmed: isArmed,
+                ),
+            )
+        }
+
+        if phase == .ended,
+           isArmed,
+           !hasCommittedNavigation,
+           let swipeDirection
+        {
+            hasCommittedNavigation = true
+            switch swipeDirection {
+            case .back:
+                onGoBack()
+            case .forward:
+                onGoForward()
+            }
+        }
+
+        if isComplete {
+            guard isTrackingSwipe else { return }
+            isTrackingSwipe = false
+            hasCommittedNavigation = false
+            swipeDirection = nil
+            onSwipeProgress(nil)
+        }
+    }
+
+    private func isAtHorizontalEdge(for deltaX: CGFloat) -> Bool {
+        let documentRect = contentView.documentRect
+        let minimumX = documentRect.minX
+        let maximumX = max(minimumX, documentRect.maxX - contentView.bounds.width)
+        let currentX = contentView.bounds.minX
+        let tolerance: CGFloat = 1
+
+        return deltaX > 0
+            ? currentX >= maximumX - tolerance
+            : currentX <= minimumX + tolerance
     }
 }
 
@@ -106,7 +246,7 @@ struct EntryListNativeSelectionContext {
     let modifierFlags: NSEvent.ModifierFlags
 }
 
-final class EntryListScrollView: NSScrollView {
+final class EntryListScrollView: EntryHistorySwipeScrollView {
     private let headerBackdrop = VoyagerDS.SurfaceMaterialRole.listHeaderSurface.makeBackgroundView()
     var headerMaterial = VoyagerDS.SurfaceMaterialRole.listHeaderSurface.material
     var headerBlendingMode = VoyagerDS.SurfaceMaterialRole.listHeaderSurface.blendingMode
