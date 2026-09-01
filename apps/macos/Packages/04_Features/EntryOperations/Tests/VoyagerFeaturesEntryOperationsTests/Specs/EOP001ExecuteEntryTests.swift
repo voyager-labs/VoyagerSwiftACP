@@ -1380,6 +1380,98 @@ extension EOP001ExecuteEntryTests {
         await store.finish()
     }
 
+    /// EOP-001-entry_command_terminal: fallback Open은 성공·실패·취소를 분리해 집계한다.
+    /// 기본 앱을 찾지 못해 파일별로 여는 경로에서도 사용자 취소가 일반 실패로 합쳐지지 않는지 검증한다.
+    /// - 검증 내용: 각 operationFinished의 정확한 결과와 단일 terminal의 성공·실패·취소 수를 확인한다.
+    /// - 사전 조건: `fixtures/fixtures/texts/plain/11.txt` 기반 세 경로가 각각 성공, system 실패, 사용자 취소를 반환한다.
+    /// - 기대 결과: attempted 3, succeeded 1, failed 1, cancelled 1인 terminal이 정확히 한 번 발생한다.
+    func testOpenFilesFallbackSeparatesMixedSuccessFailureAndCancellation() async throws {
+        let firstSandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        let secondSandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer {
+            [firstSandbox, secondSandbox].forEach { $0.cleanup() }
+        }
+        let succeededPath = firstSandbox.fileURL.path
+        let failedPath = secondSandbox.fileURL.path
+        let cancelledPath = firstSandbox.originalFixture.path
+        let failure = FileOpError.system(message: "open unavailable")
+        let cancellation = NSError(domain: NSCocoaErrorDomain, code: CocoaError.Code.userCancelled.rawValue)
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.workspaceClient.urlForApplicationToOpen = { _ in nil }
+            $0.entryOpenClient.open = { url, _ in
+                if url.path == failedPath { throw failure }
+                if url.path == cancelledPath { throw cancellation }
+            }
+        }
+
+        await store.send(.open(.openFiles(paths: [succeededPath, failedPath, cancelledPath])))
+        await store.receive(\.lifecycle.operationStarted) {
+            $0.itemStates[succeededPath] = ItemOperationState(isBusy: true)
+        }
+        await store.receive(\.lifecycle.operationFinished) {
+            $0.itemStates[succeededPath] = ItemOperationState(isBusy: false)
+        }
+        await store.receive(\.lifecycle.operationStarted) {
+            $0.itemStates[failedPath] = ItemOperationState(isBusy: true)
+        }
+        await store.receive(\.lifecycle.operationFinished) {
+            $0.itemStates[failedPath] = ItemOperationState(isBusy: false, lastError: failure)
+        }
+        await store.receive(\.lifecycle.operationStarted) {
+            $0.itemStates[cancelledPath] = ItemOperationState(isBusy: true)
+        }
+        await store.receive(\.lifecycle.operationFinished) {
+            $0.itemStates[cancelledPath] = ItemOperationState(isBusy: false, lastError: .cancelled)
+        }
+        await store.receive { action in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return false }
+            return record.operationKind == .openDefault
+                && record.attemptedCount == 3
+                && record.succeededCount == 1
+                && record.failedCount == 1
+                && record.cancelledCount == 1
+        }
+        await store.finish()
+    }
+
+    /// EOP-001-entry_command_terminal: grouped workspace Open의 사용자 취소는 전체 그룹을 취소로 집계한다.
+    /// 앱별 일괄 열기가 NSUserCancelledError로 끝날 때 실패가 아니라 각 파일의 취소로 보존되는지 검증한다.
+    /// - 검증 내용: 모든 operationFinished가 cancelled이고 단일 terminal의 cancelledCount가 그룹 크기인지 확인한다.
+    /// - 사전 조건: 같은 txt 그룹 두 경로와 NSUserCancelledError를 던지는 workspace Open mock이 있다.
+    /// - 기대 결과: attempted 2, succeeded 0, failed 0, cancelled 2인 terminal이 정확히 한 번 발생한다.
+    func testOpenFilesGroupedWorkspaceCancellationCountsEntireGroupAsCancelled() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+        let paths = [sandbox.fileURL.path, sandbox.originalFixture.path]
+        let appURL = URL(fileURLWithPath: "/Applications/TextEdit.app")
+        let cancellation = NSError(domain: NSCocoaErrorDomain, code: CocoaError.Code.userCancelled.rawValue)
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.workspaceClient.urlForApplicationToOpen = { _ in appURL }
+            $0.workspaceClient.openURLsWithApplication = { _, _, _, _ in throw cancellation }
+        }
+
+        await store.send(.open(.openFiles(paths: paths)))
+        for path in paths {
+            await store.receive(\.lifecycle.operationStarted) {
+                $0.itemStates[path] = ItemOperationState(isBusy: true)
+            }
+        }
+        for path in paths {
+            await store.receive(\.lifecycle.operationFinished) {
+                $0.itemStates[path] = ItemOperationState(isBusy: false, lastError: .cancelled)
+            }
+        }
+        await store.receive { action in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return false }
+            return record.operationKind == .openDefault
+                && record.attemptedCount == paths.count
+                && record.succeededCount == 0
+                && record.failedCount == 0
+                && record.cancelledCount == paths.count
+        }
+        await store.finish()
+    }
+
     /// EOP-001-entry_command_terminal: open 전체 실패도 failedCount를 담은 한 건의 terminal을 낸다.
     /// 모든 파일 열기가 실패하면 targets 없이 시도 수만큼 failedCount를 가진 record로 마무리되는지 검증한다.
     /// - 검증 내용: terminal record의 operationKind는 .openDefault이고 failedCount는 시도 수와 같다.

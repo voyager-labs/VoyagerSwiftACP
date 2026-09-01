@@ -64,6 +64,7 @@ struct EntryOpenOperationsReducer {
                     }
 
                     var failedCount = 0
+                    var cancelledCount = 0
                     for (_, groupPaths) in groupedPaths {
                         let urls = groupPaths.map { URL(fileURLWithPath: $0) }
                         guard let firstURL = urls.first else { continue }
@@ -77,11 +78,16 @@ struct EntryOpenOperationsReducer {
                                     try await entryOpenClient.open(url, .defaultApp)
                                     await send(.lifecycle(.operationFinished(filePath, .openDefault, .success(()))))
                                 } catch {
-                                    failedCount += 1
+                                    let failure = error.fileOpError
+                                    if failure == .cancelled {
+                                        cancelledCount += 1
+                                    } else {
+                                        failedCount += 1
+                                    }
                                     await send(.lifecycle(.operationFinished(
                                         filePath,
                                         .openDefault,
-                                        .failure(error.fileOpError),
+                                        .failure(failure),
                                     )))
                                 }
                             }
@@ -106,12 +112,17 @@ struct EntryOpenOperationsReducer {
                                 )
                             }
                         } catch {
-                            failedCount += groupPaths.count
+                            let failure = error.fileOpError
+                            if failure == .cancelled {
+                                cancelledCount += groupPaths.count
+                            } else {
+                                failedCount += groupPaths.count
+                            }
                             for filePath in groupPaths {
                                 await send(.lifecycle(.operationFinished(
                                     filePath,
                                     .openDefault,
-                                    .failure(error.fileOpError),
+                                    .failure(failure),
                                 )))
                             }
                         }
@@ -122,7 +133,10 @@ struct EntryOpenOperationsReducer {
                             operationKind: .openDefault,
                             targets: [],
                             failedCount: failedCount,
-                            succeededCount: paths.count - failedCount,
+                            cancelledCount: cancelledCount,
+                            succeededCount: paths.count - failedCount - cancelledCount,
+                            id: UUID(),
+                            timestamp: Date(),
                         ),
                     )))
                 }
