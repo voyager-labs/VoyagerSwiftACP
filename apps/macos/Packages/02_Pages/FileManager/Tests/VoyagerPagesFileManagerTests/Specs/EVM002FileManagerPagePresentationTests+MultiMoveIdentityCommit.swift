@@ -93,6 +93,62 @@ extension EVM002FileManagerPagePresentationTests {
         XCTAssertNotNil(store.state.pendingIdentityTransition)
     }
 
+    /// EVM-002-command_external_refresh_correlation: primary folder terminal은 lexical destination owner만 소비한다.
+    /// 서로 다른 symlink 경로가 같은 canonical folder를 가리켜도 다른 expanded folder terminal이 primary 전이를 닫지 않는지 검증한다.
+    /// - 검증 내용: canonical alias folder의 terminal response가 primary-only transition을 migrated/discard하지 않는다.
+    /// - 사전 조건: 실제 fixture 기반 두 directory symlink와 각각의 동일 generation folder node가 있고 primary owner는 alias A다.
+    /// - 기대 결과: alias B의 failure terminal 뒤에도 primary transition이 유지된다.
+    func testPrimaryTerminalIgnoresCanonicalAliasForDifferentFolder() throws {
+        let sandbox = try FileManagerFixtureSandbox.copyingFileWithDirectorySymlink(
+            from: "fixtures/fixtures/texts/plain/11.txt",
+        )
+        defer { sandbox.cleanup() }
+
+        let targetDirectory = sandbox.fileURL.deletingLastPathComponent()
+        let primaryDirectory = sandbox.symlinkedFileURL.deletingLastPathComponent()
+        let unrelatedDirectory = sandbox.root.appendingPathComponent("link-b", isDirectory: true)
+        try FileManager.default.createSymbolicLink(at: unrelatedDirectory, withDestinationURL: targetDirectory)
+        XCTAssertNotEqual(primaryDirectory.path, unrelatedDirectory.path)
+        XCTAssertEqual(
+            primaryDirectory.standardizedFileURL.resolvingSymlinksInPath().path,
+            unrelatedDirectory.standardizedFileURL.resolvingSymlinksInPath().path,
+        )
+
+        var state = FileManagerContentState()
+        state.navigation.seedInitialFolderPath(sandbox.root.path)
+        state.entryViewLayout.hierarchy = .init(rootPath: sandbox.root.path)
+        state.entryViewLayout.hierarchy.nodesByID[primaryDirectory.path] = .init(
+            generation: 3,
+            loadPhase: .loadingCore,
+        )
+        state.entryViewLayout.hierarchy.nodesByID[unrelatedDirectory.path] = .init(
+            generation: 3,
+            loadPhase: .failed(.permissionDenied),
+        )
+        state.entryViewLayout.hierarchy.setExpandedIDs([primaryDirectory.path, unrelatedDirectory.path])
+        state.pendingIdentityTransition = .init(
+            recordID: UUID(),
+            beforePath: "\(sandbox.root.path)/before",
+            afterPath: "\(primaryDirectory.path)/after",
+            rootPath: sandbox.root.path,
+            refreshGeneration: 1,
+            projectionOwner: .folder(id: primaryDirectory.path, generation: 3),
+        )
+
+        FileManagerContentIdentityTransitionCoordinator.resolveFolderTransition(
+            on: .entryViewLayout(.hierarchy(.folderChildrenResponse(
+                rootContextGeneration: 0,
+                folderID: unrelatedDirectory.path,
+                folderGeneration: 3,
+                .failed(.permissionDenied),
+            ))),
+            state: &state,
+        )
+
+        XCTAssertNotNil(state.pendingIdentityTransition)
+        XCTAssertEqual(state.pendingIdentityTransition?.primaryMigrated, false)
+    }
+
     /// EVM-002-command_external_refresh_correlation: source staging은 source terminal까지 보류된다.
     /// - 검증 내용: destination migration 뒤에도 source staging은 커밋되지 않고 source terminal에서만 반영된다.
     /// - 사전 조건: 서로 다른 source/destination pair 2건이 모두 staging 보류 중이다.

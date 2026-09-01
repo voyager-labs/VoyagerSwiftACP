@@ -126,6 +126,13 @@ extension FileManagerContentIdentityTransitionCoordinator {
     ) -> Bool {
         guard var transition = state.pendingIdentityTransition else { return false }
         var resolved = false
+        if !transition.primaryMigrated,
+           case let .root(ownerGeneration) = transition.projectionOwner,
+           ownerGeneration == generation
+        {
+            transition.primaryMigrated = true
+            resolved = true
+        }
         for index in transition.additionalMoves.indices where !transition.additionalMoves[index].migrated {
             let owner = transition.additionalMoves[index].destinationOwner ?? transition.projectionOwner
             guard case let .root(ownerGeneration) = owner, ownerGeneration == generation else { continue }
@@ -300,7 +307,7 @@ extension FileManagerContentIdentityTransitionCoordinator {
             discard(state: &state)
             return
         }
-        guard canonicalizedPath(folderID) == canonicalizedPath(expectedID),
+        guard standardizedPath(folderID) == standardizedPath(expectedID),
               folderGeneration == expectedGeneration,
               let node = state.entryViewLayout.hierarchy.nodesByID[folderID]
         else { return }

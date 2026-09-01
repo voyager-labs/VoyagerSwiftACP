@@ -94,6 +94,83 @@ extension EVM002FileManagerPagePresentationTests {
         XCTAssertFalse(migrationStore.state.entryViewLayout.entries.contains(where: { $0.id == beforeRoot.id }))
     }
 
+    /// EVM-002-replacement_reload_snapshot_retention: root 성공 terminal도 primary pair를 정산한다.
+    /// primary after가 root projection에서 필터링되어도 pending additional destination까지 primary staging을 붙잡지 않는지 검증한다.
+    /// - 검증 내용: root terminal에서 primaryMigrated와 primary source staging을 정산하고 additional pair는 유지한다.
+    /// - 사전 조건: root primary pair와 별도 expanded destination additional pair, primary source의 staged snapshot이 있다.
+    /// - 기대 결과: primary source children과 stale selection은 즉시 정산되고 additional pair만 pending으로 남는다.
+    func testRootSuccessSettlesPrimaryPairWithPendingAdditionalDestination() {
+        let rootPath = "/root"
+        let primarySource = EntryModel.temporaryFolder(id: "/root/S1", name: "S1")
+        let additionalSource = EntryModel.temporaryFolder(id: "/root/S2", name: "S2")
+        let additionalDestination = EntryModel.temporaryFolder(id: "/root/C", name: "C")
+        let primaryBefore = EntryModel.temporaryFolder(id: "/root/S1/a", name: "a")
+        let additionalBefore = EntryModel.temporaryFolder(id: "/root/S2/b", name: "b")
+        var state = bufferedRootSourceState(
+            rootPath: rootPath,
+            entries: [primaryBefore, additionalBefore, additionalDestination],
+        )
+        state.entryViewLayout.hierarchy.nodesByID[primarySource.id] = .init(
+            children: [primaryBefore],
+            loadPhase: .enriching,
+            generation: 3,
+            coreFinished: true,
+            hasAppliedContentBatch: false,
+        )
+        state.entryViewLayout.hierarchy.nodesByID[additionalSource.id] = .init(
+            children: [additionalBefore],
+            loadPhase: .loadingCore,
+            generation: 3,
+        )
+        state.entryViewLayout.hierarchy.nodesByID[additionalDestination.id] = .init(
+            generation: 3,
+            loadPhase: .loadingCore,
+        )
+        state.entryViewLayout.hierarchy.beginDeferredFolderReplacement(
+            folderID: primarySource.id,
+            untilEntryID: "/root/primary-after",
+            holdsUntilMigration: true,
+        )
+        state.entryViewLayout.hierarchy.setExpandedIDs([
+            primarySource.id,
+            additionalSource.id,
+            additionalDestination.id,
+        ])
+        state.entryViewLayout.selectedIds = [primaryBefore.id, additionalBefore.id]
+        state.entryViewLayout.lastSelectedId = primaryBefore.id
+        state.entryViewLayout.rangeAnchorId = primaryBefore.id
+        state.pendingIdentityTransition = .init(
+            recordID: UUID(),
+            beforePath: primaryBefore.id,
+            afterPath: "/root/primary-after",
+            rootPath: rootPath,
+            refreshGeneration: 1,
+            projectionOwner: .root(generation: 1),
+            preservationOwner: .folder(id: primarySource.id, generation: 3),
+            additionalMoves: [
+                .init(
+                    beforePath: additionalBefore.id,
+                    afterPath: "/root/C/b",
+                    sourceOwner: .folder(id: additionalSource.id, generation: 3),
+                    destinationOwner: .folder(id: additionalDestination.id, generation: 3),
+                ),
+            ],
+        )
+
+        let terminalized = FileManagerContentIdentityTransitionCoordinator.resolveRootDestinationSuccess(
+            generation: 1,
+            state: &state,
+        )
+
+        XCTAssertTrue(terminalized)
+        XCTAssertEqual(state.pendingIdentityTransition?.primaryMigrated, true)
+        XCTAssertEqual(state.pendingIdentityTransition?.additionalMoves.first?.migrated, false)
+        XCTAssertEqual(state.entryViewLayout.hierarchy.nodesByID[primarySource.id]?.folder.children, [])
+        XCTAssertNil(state.entryViewLayout.hierarchy.deferredFolderReplacement(folderID: primarySource.id))
+        XCTAssertFalse(state.entryViewLayout.selectedIds.contains(primaryBefore.id))
+        XCTAssertTrue(state.entryViewLayout.selectedIds.contains(additionalBefore.id))
+    }
+
     /// EVM-002-replacement_reload_snapshot_retention: stale destination migration은 root candidate를 commit하지 않는다.
     /// - 검증 내용: stale generation after batch를 거부한 뒤 current generation batch에서만 candidate를 적용한다.
     /// - 사전 조건: buffered streamFinished 뒤 visible entries에는 before, authoritative items에는 destination만 있다.
