@@ -1148,6 +1148,75 @@ extension EVM002ManageEntriesViewPresentationTests {
         )
     }
 
+    /// EVM-002-replacement_reload_snapshot_retention: 취소된 partial source staging은 후속 batch까지 누적한다.
+    /// 사용자가 before 선택을 해제해 identity 전이가 취소되어도 이미 소비한 source batch를 잃지 않는지 검증한다.
+    /// - 검증 내용: nonterminal holdsUntilMigration staging을 취소 시 migration 완료로 해제하고 후속 batch와 coreFinished까지 누적한다.
+    /// - 사전 조건: retained before children, batch 0 staging, 아직 완료되지 않은 generation 4 folder stream이다.
+    /// - 기대 결과: staging이 유지되고 batch 1이 기존 staging에 추가된 뒤 coreFinished에서 전체 snapshot으로 커밋된다.
+    func testNonterminalPartialCancellationKeepsStagingForSubsequentBatches() {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let before = hierarchyFile(id: "/root/a/before", name: "before")
+        let first = hierarchyFile(id: "/root/a/first", name: "first")
+        let second = hierarchyFile(id: "/root/a/second", name: "second")
+        var state = hierarchyState(roots: [folder])
+        state.hierarchy.nodesByID[folder.id as String] = .init(
+            children: [before],
+            loadPhase: .loadingCore,
+            generation: 4,
+            expectedBatchIndex: 1,
+            coreFinished: false,
+            hasAppliedContentBatch: false,
+        )
+        state.hierarchy.setExpandedIDs([folder.id as String])
+        state.hierarchy.deferredFolderReplacements[folder.id as String] = .init(
+            untilEntryID: "/root/destination/moved",
+            stagedChildren: [first],
+            holdsUntilMigration: true,
+        )
+        let reducer = EntryListHierarchyReducer()
+
+        state.hierarchy.commitDeferredFolderReplacementsOnCancel()
+
+        XCTAssertEqual(
+            state.hierarchy.deferredFolderReplacements[folder.id as String]?.stagedChildren,
+            [first],
+            "취소 시 이미 수신한 partial staging을 유지한다",
+        )
+        XCTAssertEqual(
+            state.hierarchy.deferredFolderReplacements[folder.id as String]?.migrationCompleted,
+            true,
+            "취소 시 source staging을 terminal commit 가능한 상태로 해제한다",
+        )
+
+        _ = reducer.reduce(
+            into: &state,
+            action: folderResponse(
+                folder.id,
+                .event(.coreBatch(items: [second], batchIndex: 1)),
+                folderGeneration: 4,
+            ),
+        )
+        XCTAssertEqual(
+            state.hierarchy.deferredFolderReplacements[folder.id as String]?.stagedChildren,
+            [first, second],
+            "후속 batch는 기존 staging 뒤에 누적된다",
+        )
+        XCTAssertEqual(state.hierarchy.nodesByID[folder.id as String]?.folder.children, [before])
+
+        _ = reducer.reduce(
+            into: &state,
+            action: folderResponse(
+                folder.id,
+                .event(.coreFinished(batchCount: 2)),
+                folderGeneration: 4,
+            ),
+        )
+
+        XCTAssertEqual(state.hierarchy.nodesByID[folder.id as String]?.folder.children, [first, second])
+        XCTAssertTrue(state.hierarchy.nodesByID[folder.id as String]?.folder.coreFinished ?? false)
+        XCTAssertNil(state.hierarchy.deferredFolderReplacements[folder.id as String])
+    }
+
     /// EVM-002-replacement_reload_snapshot_retention: migration 완료 후 지연된 source terminal은 stale selection을 정산한다.
     /// destination migration이 먼저 끝난 뒤 source terminal이 deferred children을 커밋할 때 visible selection을 재조정하는지 검증한다.
     /// - 검증 내용: deferred commit 뒤 사라진 before 선택에 대해 `.delegate(.selectionChanged)`가 발행된다.

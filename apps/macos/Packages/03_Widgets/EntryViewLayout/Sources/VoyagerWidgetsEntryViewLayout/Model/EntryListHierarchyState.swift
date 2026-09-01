@@ -184,7 +184,7 @@ public struct EntryListHierarchyState: Equatable, Sendable {
     /// 전이 취소 시 staging을 그대로 버리지 않고 폴더에 반영한다.
     /// staging 누적 동안 expectedBatchIndex가 증가했으므로 이를 폐기하면 같은 세대의
     /// 후속 batch가 generic 경로에서 cursor 어긋남 없이 처리되기 위해 누적 결과가 필요하다.
-    /// 빈 staging은 authoritative 내용이 아니므로 retained children을 건드리지 않는다.
+    /// nonterminal staging은 retained children을 건드리지 않고 terminal까지 보존한다.
     public mutating func commitDeferredFolderReplacementsOnCancel() {
         var remaining = deferredFolderReplacements
         for (folderID, replacement) in deferredFolderReplacements {
@@ -197,10 +197,11 @@ public struct EntryListHierarchyState: Equatable, Sendable {
                 continue
             }
             if replacement.holdsUntilMigration, !node.folder.coreFinished {
-                guard !replacement.stagedChildren.isEmpty, replacement.migrationCompleted else {
-                    remaining[folderID] = nil
-                    continue
-                }
+                // 전이가 취소되어도 source stream은 계속될 수 있다. migration hold만
+                // 해제하고 staging과 소비한 cursor는 유지해 후속 batch를 누적한다.
+                var releasedReplacement = replacement
+                releasedReplacement.migrationCompleted = true
+                remaining[folderID] = releasedReplacement
                 continue
             } else if replacement.stagedChildren.isEmpty, !node.folder.coreFinished {
                 remaining[folderID] = nil

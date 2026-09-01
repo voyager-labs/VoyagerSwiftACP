@@ -1906,10 +1906,10 @@ extension EVM002ManageEntriesViewPresentationTests {
         XCTAssertNil(hierarchy.nodesByID[removedDescendant.id])
     }
 
-    /// EVM-002-toggle_directory_expansion_in_list: nonterminal partial 취소는 retained snapshot을 유지한다.
-    /// - 검증 내용: 미완료 source staging을 폐기해 기존 child subtree cache를 유지한다.
+    /// EVM-002-toggle_directory_expansion_in_list: nonterminal partial 취소는 staging과 retained snapshot을 유지한다.
+    /// - 검증 내용: 미완료 source staging을 terminal까지 보존하고 기존 child subtree cache를 유지한다.
     /// - 사전 조건: coreFinished가 아닌 폴더에 일부 staged children이 있다.
-    /// - 기대 결과: 기존 children과 descendant cache가 유지되고 staging은 제거된다.
+    /// - 기대 결과: 기존 children과 descendant cache가 유지되고 staging은 terminal commit 대기 상태로 남는다.
     func testNonterminalPartialCancellationCommitKeepsDescendantCache() {
         let folder = EntryModel.temporaryFolder(id: "/root/source", name: "source")
         let removedFolder = EntryModel.temporaryFolder(id: "/root/source/removed", name: "removed")
@@ -1941,7 +1941,8 @@ extension EVM002ManageEntriesViewPresentationTests {
         hierarchy.commitDeferredFolderReplacementsOnCancel()
 
         XCTAssertEqual(hierarchy.nodesByID[folder.id]?.folder.children, [removedFolder])
-        XCTAssertNil(hierarchy.deferredFolderReplacements[folder.id])
+        XCTAssertEqual(hierarchy.deferredFolderReplacements[folder.id]?.stagedChildren, [staged])
+        XCTAssertTrue(hierarchy.deferredFolderReplacements[folder.id]?.migrationCompleted ?? false)
         XCTAssertNotNil(hierarchy.nodesByID[removedFolder.id])
         XCTAssertNotNil(hierarchy.nodesByID[removedDescendant.id])
     }
