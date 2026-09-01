@@ -48,11 +48,11 @@ extension FileManagerWindowRoutingReducer {
         sourceID: FileManagerTopNavigationItemID,
         anchorID: FileManagerTopNavigationItemID,
         placement: FileManagerTopNavigationReorderPlacement,
+        actionSource: ContentTabActionSource,
         state: inout State,
     ) -> Effect<Action> {
         guard state.pendingSelectedContentTabClose == nil,
-              state.pendingSelectedContentTabPinMutation == nil
-        else { return .none }
+              state.pendingSelectedContentTabPinMutation == nil else { return .none }
         if case let .contentTab(sourceTabID) = sourceID,
            state.contentTabs.tabs[id: sourceTabID]?.isPinned == false
         {
@@ -96,10 +96,11 @@ extension FileManagerWindowRoutingReducer {
                 placement: placement,
             )))
         }
-        let destination: FileManagerTopNavigationMoveDestination = placement == .before
-            ? .before(anchorID)
-            : .after(anchorID)
-        return .send(.topNavigationMoveRequested(source: sourceID, destination: destination))
+        return .send(.topNavigationMoveRequested(
+            source: sourceID,
+            destination: placement == .before ? .before(anchorID) : .after(anchorID),
+            actionSource: actionSource,
+        ))
     }
 
     func contentTabsSetCurrent(targetID: ContentTabID, state: inout State) -> Effect<Action> {

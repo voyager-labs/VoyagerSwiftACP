@@ -257,11 +257,12 @@ private extension FileManagerFeature {
                     state: &state,
                 )
 
-            case let .topNavigationMoveRequested(source, destination):
+            case let .topNavigationMoveRequested(source, destination, actionSource):
                 guard state.contentTabMoveParticipantRequestID == nil else { return .none }
                 return requestTopNavigationMove(
                     source: source,
                     destination: destination,
+                    actionSource: actionSource,
                     state: &state,
                 )
 

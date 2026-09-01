@@ -250,11 +250,17 @@ extension FileManagerWindowRoutingReducer {
                 state.sidebar.topNavigationArrangementPresentation = nil
                 return .none
 
-            case let .sidebar(.delegate(.fileManagerTopNavigationReorderRequested(sourceID, anchorID, placement))):
+            case let .sidebar(.delegate(.fileManagerTopNavigationReorderRequested(
+                sourceID,
+                anchorID,
+                placement,
+                actionSource,
+            ))):
                 return sidebarReorderRequested(
                     sourceID: sourceID,
                     anchorID: anchorID,
                     placement: placement,
+                    actionSource: actionSource,
                     state: &state,
                 )
 

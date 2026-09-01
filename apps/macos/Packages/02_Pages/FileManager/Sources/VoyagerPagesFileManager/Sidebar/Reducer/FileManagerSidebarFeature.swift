@@ -152,7 +152,12 @@ struct FileManagerSidebarTopNavigationReorderRoutingReducer {
 
     var body: some Reducer<State, Action> {
         Reduce { _, action in
-            guard case let .view(.fileManagerTopNavigationReorderRequested(sourceID, anchorID, placement)) = action
+            guard case let .view(.fileManagerTopNavigationReorderRequested(
+                sourceID,
+                anchorID,
+                placement,
+                actionSource,
+            )) = action
             else {
                 return .none
             }
@@ -160,6 +165,7 @@ struct FileManagerSidebarTopNavigationReorderRoutingReducer {
                 sourceID: sourceID,
                 anchorID: anchorID,
                 placement: placement,
+                actionSource: actionSource,
             )))
         }
     }

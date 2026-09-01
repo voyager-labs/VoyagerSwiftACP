@@ -546,6 +546,7 @@ private extension SidebarView {
                     sourceID: result.sourceID,
                     anchorID: result.anchorID,
                     placement: result.placement,
+                    actionSource: .dragAndDrop,
                 )))
             },
             targetWindowID: sidebarStore.currentWindowID,
@@ -666,6 +667,7 @@ private extension SidebarView {
     private func sendTopNavigationMoveRequest(
         sourceID: FileManagerTopNavigationItemID,
         direction: FileManagerSidebarTopNavigationMoveDirection,
+        actionSource: ContentTabActionSource,
     ) {
         let visibleItemIDs: [FileManagerTopNavigationItemID] = switch sourceID {
         case .location:
@@ -683,6 +685,7 @@ private extension SidebarView {
             sourceID: request.sourceID,
             anchorID: request.anchorID,
             placement: request.placement,
+            actionSource: actionSource,
         )))
     }
 }
@@ -693,6 +696,7 @@ extension View {
         onMove: @escaping (
             FileManagerTopNavigationItemID,
             FileManagerSidebarTopNavigationMoveDirection,
+            ContentTabActionSource,
         ) -> Void,
     ) -> some View {
         modifier(FileManagerSidebarTopNavigationMoveCommandsModifier(

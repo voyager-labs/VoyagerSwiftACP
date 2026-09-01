@@ -392,6 +392,7 @@ extension FileManagerFeature {
     func requestTopNavigationMove(
         source: FileManagerTopNavigationItemID,
         destination: FileManagerTopNavigationMoveDestination,
+        actionSource: ContentTabActionSource,
         state: inout State,
     ) -> Effect<Action> {
         if case let .contentTab(sourceTabID) = source,
@@ -404,6 +405,7 @@ extension FileManagerFeature {
             return requestTopNavigationPinnedGroupMove(
                 orderedIDs: snapshot.orderedTabIDs,
                 destination: destination,
+                actionSource: actionSource,
                 state: &state,
             )
         }
@@ -416,7 +418,10 @@ extension FileManagerFeature {
         guard movedOrder != state.optimisticTopNavigationOrder else { return .none }
 
         let token = contentTabPinnedRecordClient.reserveTopNavigationOperationToken()
-        state.productContentTabMoveOperationIDs[token] = productMetricsClient.makeOperationID()
+        state.productContentTabMoveMetricContexts[token] = ProductContentTabActionMetricContext(
+            operationID: productMetricsClient.makeOperationID(),
+            source: actionSource,
+        )
         state.pendingTopNavigationIntents.append(.init(
             token: token,
             intent: .move(source: source, destination: destination),
@@ -435,6 +440,7 @@ extension FileManagerFeature {
     func requestTopNavigationPinnedGroupMove(
         orderedIDs: [ContentTabID],
         destination: FileManagerTopNavigationMoveDestination,
+        actionSource: ContentTabActionSource,
         state: inout State,
     ) -> Effect<Action> {
         guard Set(orderedIDs).count == orderedIDs.count,
@@ -450,7 +456,10 @@ extension FileManagerFeature {
 
         state.sidebar.contentTabDragSnapshot = nil
         let token = contentTabPinnedRecordClient.reserveTopNavigationOperationToken()
-        state.productContentTabMoveOperationIDs[token] = productMetricsClient.makeOperationID()
+        state.productContentTabMoveMetricContexts[token] = ProductContentTabActionMetricContext(
+            operationID: productMetricsClient.makeOperationID(),
+            source: actionSource,
+        )
         state.pendingTopNavigationIntents.append(.init(
             token: token,
             intent: .movePinnedGroup(orderedIDs: orderedIDs, destination: destination),
@@ -533,7 +542,7 @@ extension FileManagerFeature {
         intent: FileManagerTopNavigationIntent?,
         state: inout State,
     ) {
-        guard let operationID = state.productContentTabMoveOperationIDs.removeValue(forKey: token) else {
+        guard let context = state.productContentTabMoveMetricContexts.removeValue(forKey: token) else {
             return
         }
         let identity: ContentTabInteractionIdentity = if case .movePinnedGroup = intent {
@@ -542,9 +551,9 @@ extension FileManagerFeature {
             .reorderContentTab
         }
         productMetricsClient.record(FileManagerProductMetricsProducer.contentTabTerminal(
-            operationID: operationID,
+            operationID: context.operationID,
             identity: identity,
-            source: .contentTabBar,
+            source: context.source,
             result: contentTabActionResult(from: terminal),
         ))
     }

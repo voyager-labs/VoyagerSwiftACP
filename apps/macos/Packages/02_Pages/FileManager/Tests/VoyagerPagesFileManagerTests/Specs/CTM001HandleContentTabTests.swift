@@ -738,6 +738,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
                 sourceID: .contentTab(fixture.tabA),
                 anchorID: .contentTab(fixture.tabD),
                 placement: .after,
+                actionSource: .contentTabBar,
             ))),
             .request(.openNewContentTab),
             .request(.restoreLastClosedContentTab),
@@ -5300,6 +5301,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
                 sourceID: .contentTab(tabD),
                 anchorID: .contentTab(testCase.anchorID),
                 placement: testCase.placement,
+                actionSource: .dragAndDrop,
             ))))
             await store.skipReceivedActions(strict: false)
 
@@ -5347,6 +5349,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
             sourceID: .contentTab(tabD),
             anchorID: .contentTab(tabE),
             placement: .after,
+            actionSource: .contentTabBar,
         ))))
         await store.skipReceivedActions(strict: false)
 
@@ -5405,6 +5408,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
                 sourceID: .contentTab(initiatingID),
                 anchorID: .contentTab(testCase.anchorID),
                 placement: testCase.placement,
+                actionSource: .dragAndDrop,
             ))))
 
             XCTAssertEqual(store.state, testCase.state)
@@ -6393,100 +6397,90 @@ final class CTM001HandleContentTabTests: XCTestCase {
         XCTAssertTrue(recorder.metrics().isEmpty)
     }
 
-    /// CTM-001-content_tab_action_metrics: commit된 top navigation move는 move 메트릭 한 건을 기록하고
-    /// 지연/중복 terminal은 추가 이벤트를 만들지 않는다.
-    /// - 검증 내용: committed terminal의 `.success/.reorderContentTab` 1건, intent·상관 키 제거, late terminal 무이벤트
-    /// - 사전 조건: pinned Directory 2개와 optimistic order [first, second]
-    /// - 기대 결과: 레코더에 move success 메트릭 정확히 1건 유지
-    func testTopNavigationMoveCommitEmitsSingleMoveMetricOnce() async throws {
-        let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 7))
-        let firstID = ContentTabID(rawValue: "metric-move-first")
-        let secondID = ContentTabID(rawValue: "metric-move-second")
+    /// CTM-001-content_tab_action_metrics: 동시 reorder terminal은 token별 source와 operation ID를 보존함
+    /// persistence 완료 순서가 요청 순서와 달라도 각 제품 메트릭 상관이 섞이지 않는지 검증한다.
+    /// - 검증 내용: drag/keyboard 두 context의 역순 완료와 token별 중복 terminal no-op
+    /// - 사전 조건: pinned tab 3개, 고유 token·operation ID 두 개, 서로 다른 action source
+    /// - 기대 결과: terminal 순서대로 keyboard와 drag 메트릭 두 건만 기록되고 상관 map이 비워짐
+    func testTopNavigationMoveTerminalsPreserveTokenCorrelatedSourcesInReverseOrder() async {
+        let operationIDA = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 7))
+        let operationIDB = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 8))
+        let tokenA = FileManagerTopNavigationOperationToken(value: UUID(uuid: (
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 9,
+        )))
+        let tokenB = FileManagerTopNavigationOperationToken(value: UUID(uuid: (
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 10,
+        )))
+        let tabA = ContentTabID(rawValue: "metric-move-a")
+        let tabB = ContentTabID(rawValue: "metric-move-b")
+        let tabC = ContentTabID(rawValue: "metric-move-c")
         var state = FileManagerFeature.State()
-        state.contentTabs = ContentTabState(
-            tabs: [
-                ContentTabItem(
-                    id: firstID,
-                    page: .directory,
-                    anchor: .directory(path: "/metric-move/first"),
-                    isPinned: true,
-                    title: nil,
-                    iconName: nil,
-                ),
-                ContentTabItem(
-                    id: secondID,
-                    page: .directory,
-                    anchor: .directory(path: "/metric-move/second"),
-                    isPinned: true,
-                    title: nil,
-                    iconName: nil,
-                ),
-            ],
-            activeTabID: firstID,
-            pinnedRecords: [
-                firstID: ContentTabPinnedRecord(
-                    id: firstID.rawValue,
-                    page: .directory,
-                    anchor: .directory(path: "/metric-move/first"),
-                    title: nil,
-                    iconName: nil,
-                    pinnedAt: Date(timeIntervalSince1970: 443),
-                ),
-                secondID: ContentTabPinnedRecord(
-                    id: secondID.rawValue,
-                    page: .directory,
-                    anchor: .directory(path: "/metric-move/second"),
-                    title: nil,
-                    iconName: nil,
-                    pinnedAt: Date(timeIntervalSince1970: 443),
-                ),
-            ],
-        )
-        state.lastConfirmedTopNavigationOrder = .init(items: [.contentTab(firstID), .contentTab(secondID)])
+        state.lastConfirmedTopNavigationOrder = .init(items: [
+            .contentTab(tabA), .contentTab(tabB), .contentTab(tabC),
+        ])
         state.optimisticTopNavigationOrder = state.lastConfirmedTopNavigationOrder
-        let recorder = FileManagerProductMetricRecorder(makeOperationID: { operationID })
+        let operationIDs = LockIsolated([operationIDA, operationIDB])
+        let tokens = LockIsolated([tokenA, tokenB])
+        let recorder = FileManagerProductMetricRecorder(
+            makeOperationID: { operationIDs.withValue { $0.removeFirst() } },
+        )
         let store = TestStore(initialState: state) {
             FileManagerFeature()
         } withDependencies: {
-            $0.date = .constant(Date(timeIntervalSince1970: 443))
+            $0.contentTabPinnedRecordClient.reserveTopNavigationOperationToken = {
+                tokens.withValue { $0.removeFirst() }
+            }
             $0.fileManagerProductMetricsClient = recorder.client
         }
-        // store.exhaustivity = .off: delegate persistence routing보다 move terminal 메트릭 계약에 집중함
+        // store.exhaustivity = .off: delegate persistence routing보다 token별 terminal 메트릭 계약에 집중함
         store.exhaustivity = .off
 
         await store.send(.topNavigationMoveRequested(
-            source: .contentTab(firstID),
-            destination: .after(.contentTab(secondID)),
+            source: .contentTab(tabA),
+            destination: .after(.contentTab(tabB)),
+            actionSource: .dragAndDrop,
         ))
-
-        let token = try XCTUnwrap(store.state.pendingTopNavigationIntents.first?.token)
         await store.skipReceivedActions()
+        await store.send(.topNavigationMoveRequested(
+            source: .contentTab(tabC),
+            destination: .before(.contentTab(tabB)),
+            actionSource: .keyboardShortcut,
+        ))
+        await store.skipReceivedActions()
+
+        let committedOrder = store.state.optimisticTopNavigationOrder
         await store.send(.internal(.topNavigationIntentCompleted(
-            token: token,
-            terminal: .committed(FileManagerTopNavigationCommit(
-                order: store.state.optimisticTopNavigationOrder,
-                revision: 1,
-            )),
+            token: tokenB,
+            terminal: .committed(.init(order: committedOrder, revision: 2)),
+        )))
+        await store.send(.internal(.topNavigationIntentCompleted(
+            token: tokenB,
+            terminal: .committed(.init(order: committedOrder, revision: 3)),
+        )))
+        await store.send(.internal(.topNavigationIntentCompleted(
+            token: tokenA,
+            terminal: .committed(.init(order: committedOrder, revision: 1)),
+        )))
+        await store.send(.internal(.topNavigationIntentCompleted(
+            token: tokenA,
+            terminal: .committed(.init(order: committedOrder, revision: 4)),
         )))
 
-        XCTAssertFalse(store.state.pendingTopNavigationIntents.contains { $0.token == token })
+        XCTAssertTrue(store.state.productContentTabMoveMetricContexts.isEmpty)
         XCTAssertEqual(recorder.metrics(), [
             .contentTabAction(
                 result: .success,
                 identity: .reorderContentTab,
-                source: .contentTabBar,
-                operationID: operationID,
+                source: .keyboardShortcut,
+                operationID: operationIDB,
+            ),
+            .contentTabAction(
+                result: .success,
+                identity: .reorderContentTab,
+                source: .dragAndDrop,
+                operationID: operationIDA,
             ),
         ])
-
-        await store.send(.internal(.topNavigationIntentCompleted(
-            token: token,
-            terminal: .committed(FileManagerTopNavigationCommit(
-                order: store.state.optimisticTopNavigationOrder,
-                revision: 2,
-            )),
-        )))
-        XCTAssertEqual(recorder.metrics().count, 1)
     }
 
     /// CTM-001-content_tab_action_metrics: 순서 변화가 없는 move 요청은 intent와 메트릭을 만들지 않는다.

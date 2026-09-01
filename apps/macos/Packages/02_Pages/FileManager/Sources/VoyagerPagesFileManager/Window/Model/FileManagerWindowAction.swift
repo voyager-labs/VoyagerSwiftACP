@@ -159,6 +159,7 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
     case topNavigationMoveRequested(
         source: FileManagerTopNavigationItemID,
         destination: FileManagerTopNavigationMoveDestination,
+        actionSource: ContentTabActionSource = .contentTabBar,
     )
     case applyExternalCommittedTopNavigationOrder(
         FileManagerTopNavigationOrder,

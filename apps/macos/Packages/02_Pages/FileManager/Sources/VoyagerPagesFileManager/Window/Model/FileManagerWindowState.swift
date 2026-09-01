@@ -219,7 +219,9 @@ public struct FileManagerWindowState: Equatable {
     public var pendingContentTabClose: PendingContentTabClose?
     public var pendingSelectedContentTabClose: PendingSelectedContentTabClose?
     public var pendingSelectedContentTabPinMutation: PendingSelectedContentTabPinMutation?
-    var productContentTabMoveOperationIDs: [FileManagerTopNavigationOperationToken: UUID] = [:]
+    var productContentTabMoveMetricContexts: [
+        FileManagerTopNavigationOperationToken: ProductContentTabActionMetricContext
+    ] = [:]
     var productContentTabPinMutationMetrics: [ContentTabID: ProductContentTabPinMutationMetric] = [:]
     var productContentTabCloseMetric: ProductContentTabCloseMetric?
     public var deferredPinnedContentTabs: ContentTabState?

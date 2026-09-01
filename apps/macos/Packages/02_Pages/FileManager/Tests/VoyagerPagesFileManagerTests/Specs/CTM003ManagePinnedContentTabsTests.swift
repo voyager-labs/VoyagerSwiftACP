@@ -2671,6 +2671,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             sourceID: .contentTab(fixture.tabC),
             anchorID: .location("Downloads"),
             placement: .before,
+            actionSource: .dragAndDrop,
         ))))
         await store.receive(\.topNavigationMoveRequested) {
             $0.sidebar.contentTabDragSnapshot = nil
@@ -2684,7 +2685,10 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 ),
             ]
             $0.optimisticTopNavigationOrder = fixture.optimisticOrder
-            $0.productContentTabMoveOperationIDs = [fixture.token: moveMetricOperationID]
+            $0.productContentTabMoveMetricContexts = [fixture.token: .init(
+                operationID: moveMetricOperationID,
+                source: .dragAndDrop,
+            )]
         }
         await store.receive { action in
             guard case let .delegate(.persistTopNavigationPinnedGroupMove(
@@ -2705,7 +2709,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             $0.optimisticTopNavigationOrder = fixture.initialOrder
             $0.topNavigationArrangementAvailability = expectation.availability
             $0.topNavigationArrangementPresentation = expectation.presentation
-            $0.productContentTabMoveOperationIDs = [:]
+            $0.productContentTabMoveMetricContexts = [:]
         }
         XCTAssertEqual(store.state.lastConfirmedTopNavigationOrder, fixture.initialOrder)
         XCTAssertTrue(store.state.pendingTopNavigationIntents.isEmpty)
@@ -2809,7 +2813,10 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 destination: .after(.contentTab(tabB)),
             ))]
             $0.optimisticTopNavigationOrder = committed
-            $0.productContentTabMoveOperationIDs = [token: moveMetricOperationID]
+            $0.productContentTabMoveMetricContexts = [token: .init(
+                operationID: moveMetricOperationID,
+                source: .contentTabBar,
+            )]
         }
         await store.receive { action in
             guard case let .delegate(.persistTopNavigationMove(
@@ -2830,7 +2837,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             $0.lastConfirmedTopNavigationOrder = committed
             $0.lastConfirmedTopNavigationCommitRevision = 1
             $0.pendingTopNavigationIntents.removeAll()
-            $0.productContentTabMoveOperationIDs = [:]
+            $0.productContentTabMoveMetricContexts = [:]
         }
 
         XCTAssertEqual(store.state.optimisticTopNavigationOrder, committed)

@@ -55,7 +55,11 @@ struct SidebarFixedLocationsSection<MenuContent: View>: View {
     let reorderDropDestination: (FileManagerTopNavigationReorderDropBoundary)
         -> FileManagerTopNavigationReorderDropDestination
     let entryDropDelegate: (FileManagerSidebarEntryDropTarget, Bool) -> FileManagerSidebarEntryDropDelegate
-    let onMove: (FileManagerTopNavigationItemID, FileManagerSidebarTopNavigationMoveDirection) -> Void
+    let onMove: (
+        FileManagerTopNavigationItemID,
+        FileManagerSidebarTopNavigationMoveDirection,
+        ContentTabActionSource,
+    ) -> Void
     let onSelect: (FileManagerFixedLocationItem.ID) -> Void
     let onHover: (FileManagerFixedLocationItem.ID?) -> Void
 
@@ -223,7 +227,11 @@ enum FileManagerSidebarTopNavigationMoveKeyCommandClassifier {
 
 struct FileManagerSidebarTopNavigationMoveCommandsModifier: ViewModifier {
     let sourceID: FileManagerTopNavigationItemID
-    let onMove: (FileManagerTopNavigationItemID, FileManagerSidebarTopNavigationMoveDirection) -> Void
+    let onMove: (
+        FileManagerTopNavigationItemID,
+        FileManagerSidebarTopNavigationMoveDirection,
+        ContentTabActionSource,
+    ) -> Void
 
     func body(content: Content) -> some View {
         content
@@ -234,9 +242,9 @@ struct FileManagerSidebarTopNavigationMoveCommandsModifier: ViewModifier {
 
                 switch direction {
                 case .up:
-                    onMove(sourceID, .previous)
+                    onMove(sourceID, .previous, .keyboardShortcut)
                 case .down:
-                    onMove(sourceID, .next)
+                    onMove(sourceID, .next, .keyboardShortcut)
                 case .left, .right:
                     break
                 @unknown default:
@@ -244,10 +252,10 @@ struct FileManagerSidebarTopNavigationMoveCommandsModifier: ViewModifier {
                 }
             }
             .accessibilityAction(named: Text("Move Up")) {
-                onMove(sourceID, .previous)
+                onMove(sourceID, .previous, .contentTabBar)
             }
             .accessibilityAction(named: Text("Move Down")) {
-                onMove(sourceID, .next)
+                onMove(sourceID, .next, .contentTabBar)
             }
     }
 }

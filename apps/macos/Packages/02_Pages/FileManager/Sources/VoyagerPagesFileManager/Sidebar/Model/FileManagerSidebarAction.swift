@@ -32,6 +32,7 @@ public enum FileManagerSidebarAction: CasePathable, Sendable {
             sourceID: FileManagerTopNavigationItemID,
             anchorID: FileManagerTopNavigationItemID,
             placement: FileManagerTopNavigationReorderPlacement,
+            actionSource: ContentTabActionSource = .contentTabBar,
         )
         case contentTabDomainTransitionRequested(ContentTabDomainTransitionRequest)
         case moveContentTab(tabID: ContentTabID, targetWindowID: UUID)
@@ -84,6 +85,7 @@ public enum FileManagerSidebarAction: CasePathable, Sendable {
             sourceID: FileManagerTopNavigationItemID,
             anchorID: FileManagerTopNavigationItemID,
             placement: FileManagerTopNavigationReorderPlacement,
+            actionSource: ContentTabActionSource,
         )
         case contentTabDomainTransitionRequested(ContentTabDomainTransitionRequest)
         case requestContentTabMove(ContentTabMoveRequest)
