@@ -3,6 +3,7 @@ import Foundation
 import VoyagerEntitiesEntry
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
+import VoyagerWidgetsEntryViewLayout
 
 enum FileManagerContentIdentityTransitionCoordinator {
     private struct RecordedMoveTarget {
@@ -77,7 +78,9 @@ enum FileManagerContentIdentityTransitionCoordinator {
             }
         // 새 전이로 덮기 전에 이전 staging을 폴더에 반영한다: cursor는 이미 증가했으므로
         // 버리면 후속 generic batch에서 누락 항목이 생긴다.
-        state.entryViewLayout.hierarchy.commitDeferredFolderReplacementsOnCancel()
+        if !state.entryViewLayout.isIdentityReplacementActive {
+            state.entryViewLayout.hierarchy.commitDeferredFolderReplacementsOnCancel()
+        }
         state.pendingIdentityTransition = .init(
             recordID: record.id,
             beforePath: move.before,
@@ -90,7 +93,12 @@ enum FileManagerContentIdentityTransitionCoordinator {
             beforeLexicalPath: move.rawBefore,
             additionalMoves: additionalMoves,
         )
-        prepareSourceProjectionHolds(state: &state)
+        // EntryViewLayout installs the source hold in its pre-child reducer when the full
+        // feature receives the operation action. Keep the direct preparation only for narrow
+        // coordinator-only harnesses that intentionally bypass that child reducer.
+        if !state.entryViewLayout.isIdentityReplacementActive {
+            prepareSourceProjectionHolds(state: &state)
+        }
         return .none
     }
 
@@ -337,6 +345,11 @@ enum FileManagerContentIdentityTransitionCoordinator {
                 state: &state,
             )
         }
+        reconcileRemovedSourceSelections(
+            sourceFolderIDs: Set(beforeSources.compactMap(\.sourceFolderID)),
+            preservedAfterPaths: transitionAfterPaths(transition),
+            state: &state,
+        )
     }
 
     static func afterLexicalPath(
@@ -520,7 +533,14 @@ enum FileManagerContentIdentityTransitionCoordinator {
         }
         for sourceID in sourceFolderIDsToCommit {
             state.entryViewLayout.hierarchy.markDeferredFolderReplacementMigrationCompleted(folderID: sourceID)
-            commitPreservationStaging(sourceID, state: &state)
+            if state.entryViewLayout.hierarchy.nodesByID[sourceID]?.folder.hasAppliedContentBatch == true,
+               state.entryViewLayout.hierarchy.deferredFolderReplacement(folderID: sourceID)?.stagedChildren.isEmpty
+               == true
+            {
+                _ = state.entryViewLayout.hierarchy.takeDeferredFolderReplacement(folderID: sourceID)
+            } else {
+                commitPreservationStaging(sourceID, state: &state)
+            }
             // staging 커밋 뒤 사라진 before 행은 선택·anchor에도 stale로 남는다.
             // 배치 migration은 swap이 먼저 일어나 이 정산의 대상이 아니다(자동 no-op).
             let remainingChildPaths = Set(
@@ -553,6 +573,55 @@ enum FileManagerContentIdentityTransitionCoordinator {
                 if state.entryViewLayout.rangeAnchorId == staleID {
                     state.entryViewLayout.rangeAnchorId = nil
                 }
+            }
+        }
+        let committedSourceFolderIDs = sourceFolderIDsToCommit
+        reconcileRemovedSourceSelections(
+            sourceFolderIDs: committedSourceFolderIDs,
+            preservedAfterPaths: transitionAfterPaths(transition),
+            state: &state,
+        )
+    }
+
+    private static func transitionAfterPaths(
+        _ transition: FileManagerContentState.EntryIdentityTransition,
+    ) -> Set<String> {
+        var afterPaths: Set<String> = [standardizedPath(afterLexicalPath(transition))]
+        afterPaths.formUnion(transition.additionalMoves.map { move in
+            standardizedPath(move.afterLexicalPath.isEmpty ? move.afterPath : move.afterLexicalPath)
+        })
+        return afterPaths
+    }
+
+    /// Source staging can remove a selected sibling that is unrelated to the moved pair.
+    /// Reconcile only direct children of the committed source and retain after identities that
+    /// are still waiting for their destination projection; do not run the broad visible
+    /// projection reconcile here because the destination row may not be materialized yet.
+    private static func reconcileRemovedSourceSelections(
+        sourceFolderIDs: Set<EntryModel.ID>,
+        preservedAfterPaths: Set<String>,
+        state: inout FileManagerContentState,
+    ) {
+        for sourceID in sourceFolderIDs {
+            guard let node = state.entryViewLayout.hierarchy.nodesByID[sourceID] else { continue }
+            let remainingChildren = Set(node.folder.children.map(\.id).map(standardizedPath))
+            let staleIDs = state.entryViewLayout.selectedIds.filter { selectedID in
+                guard standardizedPath(parentPath(for: selectedID)) == standardizedPath(sourceID),
+                      !remainingChildren.contains(standardizedPath(selectedID))
+                else { return false }
+                return !preservedAfterPaths.contains(standardizedPath(selectedID))
+            }
+            guard !staleIDs.isEmpty else { continue }
+            state.entryViewLayout.selectedIds.subtract(staleIDs)
+            if let lastSelectedID = state.entryViewLayout.lastSelectedId,
+               staleIDs.contains(lastSelectedID)
+            {
+                state.entryViewLayout.lastSelectedId = nil
+            }
+            if let rangeAnchorID = state.entryViewLayout.rangeAnchorId,
+               staleIDs.contains(rangeAnchorID)
+            {
+                state.entryViewLayout.rangeAnchorId = nil
             }
         }
     }

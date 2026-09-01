@@ -26,6 +26,18 @@ public struct FileManagerContentState: Equatable {
     /// 중복 예약하는지 판정하는 데만 쓰인다. 벽시계 만료는 없으며 소비·대체·불일치로만 사라진다.
     var pendingIdentityTransition: EntryIdentityTransition?
 
+    /// An overlapping external delivery that cannot be proven to be the command echo.
+    /// Keep its invalidation scope until the identity transition settles instead of dropping
+    /// the event; one trailing refresh then converges the page with the filesystem.
+    struct PendingExternalRefresh: Equatable {
+        let rootPath: String
+        var affectedPaths: [String]
+        var removedPrefixes: [String]
+        var requiresCoarseHierarchyReload: Bool
+    }
+
+    var pendingExternalRefresh: PendingExternalRefresh?
+
     /// 하나의 성공한 명령이 만드는 단발성 경로 전이 (package-local).
     enum EntryIdentityTransitionProjectionOwner: Equatable {
         case root(generation: Int)

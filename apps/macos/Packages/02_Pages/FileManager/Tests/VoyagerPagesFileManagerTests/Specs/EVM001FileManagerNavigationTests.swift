@@ -2786,11 +2786,11 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
     }
 
     /// EVM-001-command_external_refresh_correlation: 일치하는 외부 rename 이벤트는 명령 refresh에 병합된다.
-    /// consume-once 경로 전이가 있으면 동일 identity 변경의 외부 이벤트가 중복 계층 무효화와
-    /// 중복 root reload를 예약하지 않는지 검증한다. 뒤이은 무관한 이벤트로 큐를 배출해 결정적으로 관측한다.
+    /// consume-once 경로 전이가 있으면 동일 identity 변경의 외부 이벤트를 보류 scope로 저장하고,
+    /// 뒤이은 무관한 이벤트의 refresh 경계에 함께 병합하는지 검증한다.
     /// - 검증 내용: 무관한 후속 이벤트 처리까지 마친 뒤 hierarchyInvalidation 총 2회, loadItems 총 1회
     /// - 사전 조건: folder 라우트에서 선택된 old.txt의 rename 완료 기록으로 생성된 대기 전이
-    /// - 기대 결과: 일치 이벤트는 추가 refresh 의도를 만들지 않고 무관한 이벤트만 정상 예약된다
+    /// - 기대 결과: 일치 이벤트는 즉시 refresh하지 않지만 scope를 잃지 않고 무관한 refresh에 병합된다
     func testCorrelatedExternalRenameMergesIntoCommandRefreshWithoutDuplicate() async {
         let folderPath = "/tmp/voyager-correlation"
         let oldPath = "\(folderPath)/old.txt"
@@ -2845,8 +2845,13 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
                 affectedPaths,
                 removedPrefixes,
             )))) = action else { return false }
-            return affectedPaths == [Self.canonicalPath(unrelatedPath), Self.canonicalPath(folderPath)]
-                && removedPrefixes.isEmpty
+            return Set(affectedPaths) == Set([
+                Self.canonicalPath(unrelatedPath),
+                Self.canonicalPath(folderPath),
+                Self.canonicalPath(oldPath),
+                Self.canonicalPath(newPath),
+            ])
+                && removedPrefixes == [Self.canonicalPath(oldPath)]
         }
         await store.receive { action in
             guard case .content(.entryViewLayout(.entryOperations(.loading(.loadItems)))) = action else {
@@ -3347,6 +3352,15 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             store.state.content.pendingIdentityTransition,
             "일치 이벤트는 전이를 소비하지 않고 보존한다",
         )
+        XCTAssertNotNil(
+            store.state.content.pendingExternalRefresh,
+            "원인을 증명할 수 없는 rename pair는 trailing refresh scope로 보존한다",
+        )
+        XCTAssertEqual(
+            store.state.content.pendingExternalRefresh?.removedPrefixes,
+            [Self.canonicalPath(oldPath)],
+            "after identity는 최종 reload 전까지 제거 힌트에서 제외한다",
+        )
         XCTAssertEqual(store.state.hierarchyInvalidations.count, 1, "일치 이벤트는 계층 무효화를 추가하지 않는다")
         XCTAssertEqual(store.state.rootReloadCount, 1, "명령 완료가 예약한 reload만 남는다")
 
@@ -3355,6 +3369,53 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         await store.send(.bridge(.loading(.itemsLoaded([renamedEntry]))))
         XCTAssertEqual(store.state.content.entryViewLayout.selectedIds, [newPath])
         XCTAssertNil(store.state.content.pendingIdentityTransition, "after-path projection이 전이를 소비한다")
+    }
+
+    /// EVM-001-reload_directory_page_on_external_change: 억제된 외부 rename도 transition 종료 뒤 trailing refresh로 수렴한다.
+    /// command echo와 구분할 correlation 정보가 없는 동안 외부 scope를 저장했다가, identity transition이 종료되면
+    /// 동일 root의 hierarchy와 entries를 한 번 다시 읽어 최신 filesystem 상태를 반영해야 한다.
+    /// - 검증 내용: pending external scope를 비우고 hierarchy invalidation 및 root load action을 순서대로 발행한다.
+    /// - 사전 조건: current folder에 외부 rename scope가 보류된 상태.
+    /// - 기대 결과: flush 후 pending scope가 없고, 기존 external refresh 경로가 재사용된다.
+    func testSuppressedExternalRenameFlushesTrailingRefresh() async {
+        let folderPath = "/tmp/voyager-correlation"
+        var initialState = FileManagerContentState()
+        initialState.navigation.seedInitialFolderPath(folderPath)
+        initialState.navigation.navigationState = .folder(folderPath)
+        initialState.pendingExternalRefresh = .init(
+            rootPath: folderPath,
+            affectedPaths: ["\(folderPath)/new.txt", folderPath],
+            removedPrefixes: ["\(folderPath)/old.txt"],
+            requiresCoarseHierarchyReload: false,
+        )
+        let store = TestStore(initialState: initialState) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.entryOpenClient = .testValue
+            $0.entryQuickLookClient = .previewValue
+            $0.entryLoadingClient.stagedLoadItems = { _, _, _ in
+                AsyncThrowingStream { continuation in
+                    continuation.finish()
+                }
+            }
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+        }
+        store.exhaustivity = .off
+
+        await store.send(.internal(.flushPendingExternalRefresh))
+        XCTAssertNil(store.state.pendingExternalRefresh)
+        await store.receive { action in
+            guard case let .entryViewLayout(.hierarchy(.hierarchyInvalidated(affectedPaths, removedPrefixes))) = action
+            else { return false }
+            return affectedPaths == ["\(folderPath)/new.txt", folderPath]
+                && removedPrefixes == ["\(folderPath)/old.txt"]
+        }
+        await store.receive { action in
+            guard case let .entryViewLayout(.entryOperations(.loading(.loadItems(path, _, _)))) = action else {
+                return false
+            }
+            return path == folderPath
+        }
     }
 
     /// EVM-001-command_external_refresh_correlation: 단독 순수 rename은 command echo로 확정하지 않는다.
@@ -4234,7 +4295,40 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         ))))
 
         XCTAssertEqual(store.state.entryViewLayout.selectedIds, [fixture.after.id])
-        XCTAssertNil(store.state.pendingIdentityTransition, "owning folder 응답이 전이를 한 번 소비한다")
+        XCTAssertNotNil(store.state.pendingIdentityTransition, "after projection 뒤 folder terminal까지 전이를 유지한다")
+
+        await store.send(.entryViewLayout(.hierarchy(.folderChildrenResponse(
+            rootContextGeneration: store.state.entryViewLayout.hierarchy.rootContextGeneration,
+            folderID: fixture.folder.id,
+            folderGeneration: 3,
+            .event(.coreFinished(batchCount: 1)),
+        ))))
+        XCTAssertNil(store.state.pendingIdentityTransition, "owning folder terminal이 전이를 소비한다")
+    }
+
+    /// EVM-001-reload_directory_page_on_external_change: content-tab transfer의 folder restart가 pending owner를 재기준화한다.
+    /// transfer가 unfinished expanded folder의 generation을 올릴 때 identity transition도 같은 경계에서 다음 generation을 소유해야 한다.
+    /// - 검증 내용: restart 전후 folder node와 transition projection owner generation의 일치.
+    /// - 사전 조건: generation 2 folder owner를 가진 expanded child identity transition.
+    /// - 기대 결과: restart 후 node와 transition owner가 모두 generation 3이 된다.
+    func testIdentityTransitionRebasesBeforeUnfinishedFolderRestart() {
+        let fixture = makeExpandedChildTransitionFixture()
+        var state = fixture.state
+        let feature = FileManagerContentFeature()
+
+        _ = feature.reduce(
+            into: &state,
+            action: .entryViewLayout(.hierarchy(.restartUnfinishedExpandedFolderLoads)),
+        )
+
+        XCTAssertEqual(
+            state.entryViewLayout.hierarchy.nodesByID[fixture.folder.id]?.generation,
+            3,
+        )
+        XCTAssertEqual(
+            state.pendingIdentityTransition?.projectionOwner,
+            .folder(id: fixture.folder.id, generation: 3),
+        )
     }
 
     /// EVM-001-command_external_refresh_correlation: owning folder 중간 batch가 before 선택을 보존한다.
@@ -4278,7 +4372,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             .event(.coreBatch(items: [fixture.after], batchIndex: 1)),
         ))))
         XCTAssertEqual(store.state.entryViewLayout.selectedIds, [fixture.after.id])
-        XCTAssertNil(store.state.pendingIdentityTransition)
+        XCTAssertNotNil(store.state.pendingIdentityTransition, "after projection 뒤 terminal까지 전이를 유지한다")
 
         await store.send(.entryViewLayout(.hierarchy(.folderChildrenResponse(
             rootContextGeneration: store.state.entryViewLayout.hierarchy.rootContextGeneration,
@@ -4406,7 +4500,10 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             .event(.coreBatch(items: [fixture.after], batchIndex: 0)),
         ))))
         XCTAssertEqual(store.state.entryViewLayout.selectedIds, [fixture.after.id])
-        XCTAssertNil(store.state.pendingIdentityTransition)
+        XCTAssertNotNil(
+            store.state.pendingIdentityTransition,
+            "destination after projection 뒤 source terminal까지 전이를 유지한다",
+        )
 
         await store.send(.entryViewLayout(.hierarchy(.folderChildrenResponse(
             rootContextGeneration: rootContextGeneration,
@@ -4415,7 +4512,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             .event(.coreBatch(items: [fixture.after], batchIndex: 0)),
         ))))
         XCTAssertEqual(store.state.entryViewLayout.selectedIds, [fixture.after.id])
-        XCTAssertNil(store.state.pendingIdentityTransition)
+        XCTAssertNotNil(store.state.pendingIdentityTransition)
 
         // migration이 소스 staging을 커밋했으므로 소스 terminal은 정상 항목을 유지한다.
         XCTAssertEqual(

@@ -80,7 +80,15 @@ struct FileManagerContentSyncReducer {
                 // 유지되어야 selection migration이 완료된다.
                 scheduledEvents = eventsForCommandIdentityRefresh(events, transition: transition)
                 if scheduledEvents.isEmpty {
-                    // 모든 경로가 명령 refresh에 병합됨. 중복 refresh를 예약하지 않는다.
+                    // command echo인지 증명할 correlation 정보가 없는 pure rename pair는
+                    // 버리지 않는다. 현재 command snapshot 뒤의 외부 역-rename일 수 있으므로
+                    // scope를 저장하고 transition이 정산된 뒤 trailing refresh를 예약한다.
+                    accumulatePendingExternalRefresh(
+                        events,
+                        currentPath: currentPath,
+                        transition: transition,
+                        state: &state,
+                    )
                     return .none
                 }
             } else {
@@ -91,19 +99,34 @@ struct FileManagerContentSyncReducer {
 
         logFileManagerReloadRequest(scheduledEvents, deliveryChainToken: deliveryChainToken)
         let normalizedPaths = scheduledEvents.map { normalizedPath(for: $0.path) }
-        let affectedPaths = hierarchyAffectedPaths(for: normalizedPaths)
-        let removedPrefixes = removedPrefixes(for: scheduledEvents)
+        var affectedPaths = hierarchyAffectedPaths(for: normalizedPaths)
+        var removedPrefixes = removedPrefixes(for: scheduledEvents)
+        var shouldCoarseReload = scheduledEvents.contains(where: requiresCoarseHierarchyReload)
+        if let pending = state.pendingExternalRefresh,
+           pending.rootPath == normalizedPath(for: currentPath)
+        {
+            for path in pending.affectedPaths where !affectedPaths.contains(path) {
+                affectedPaths.append(path)
+            }
+            for path in pending.removedPrefixes where !removedPrefixes.contains(path) {
+                removedPrefixes.append(path)
+            }
+            shouldCoarseReload = shouldCoarseReload || pending.requiresCoarseHierarchyReload
+            // This delivery is already a refresh boundary for the same root; consume the
+            // deferred scope so a later identity settlement cannot schedule the same reload
+            // twice.
+            state.pendingExternalRefresh = nil
+        }
         FileManagerContentIdentityTransitionCoordinator.rebaseForNextRootReload(state: &state)
         // invalidation이 확장 폴더 node를 재시작하면 그 세대도 올라가므로 폴더 소유자를 재기준화한다.
         // coarse 재스캔은 모든 확장 폴더를 되감는다.
         FileManagerContentIdentityTransitionCoordinator.rebaseForHierarchyInvalidation(
-            affectedPaths: scheduledEvents.contains(where: requiresCoarseHierarchyReload)
+            affectedPaths: shouldCoarseReload
                 ? Array(state.entryViewLayout.hierarchy.expandedFolderIDs)
                 : affectedPaths,
             state: &state,
         )
-        let hierarchyAction: EntryListHierarchyAction = scheduledEvents
-            .contains(where: requiresCoarseHierarchyReload)
+        let hierarchyAction: EntryListHierarchyAction = shouldCoarseReload
             ? .coarseHierarchyInvalidated(
                 removedPrefixes: removedPrefixes,
                 retainsCompleteSnapshots: true,
@@ -116,6 +139,53 @@ struct FileManagerContentSyncReducer {
             .send(.entryViewLayout(.hierarchy(hierarchyAction))),
             FileManagerContentEntryOpsCoordinator.reloadEntryItemsEffect(state: state),
         )
+    }
+
+    private func accumulatePendingExternalRefresh(
+        _ events: [FileChangeGatewayEvent],
+        currentPath: String,
+        transition: State.EntryIdentityTransition,
+        state: inout State,
+    ) {
+        let rootPath = normalizedPath(for: currentPath)
+        let eventPaths = events.map { normalizedPath(for: $0.path) }
+        let affectedPaths = hierarchyAffectedPaths(for: eventPaths)
+        let identityAfterPaths = Set(
+            ([transition.afterLexicalPath.isEmpty ? transition.afterPath : transition.afterLexicalPath]
+                + transition.additionalMoves.map {
+                    $0.afterLexicalPath.isEmpty ? $0.afterPath : $0.afterLexicalPath
+                })
+                .map(normalizedPath(for:)),
+        )
+        // A pure rename echo has no direction/provenance. Keep the before path as a
+        // removal hint, but retain every after path until the trailing root reload so
+        // the newly selected identity is not pruned before the final snapshot arrives.
+        let removed = removedPrefixes(for: events).filter { !identityAfterPaths.contains($0) }
+        var pending = state.pendingExternalRefresh
+            ?? .init(
+                rootPath: rootPath,
+                affectedPaths: [],
+                removedPrefixes: [],
+                requiresCoarseHierarchyReload: false,
+            )
+        guard pending.rootPath == rootPath else {
+            state.pendingExternalRefresh = .init(
+                rootPath: rootPath,
+                affectedPaths: affectedPaths,
+                removedPrefixes: removed,
+                requiresCoarseHierarchyReload: events.contains(where: requiresCoarseHierarchyReload),
+            )
+            return
+        }
+        for path in affectedPaths where !pending.affectedPaths.contains(path) {
+            pending.affectedPaths.append(path)
+        }
+        for path in removed where !pending.removedPrefixes.contains(path) {
+            pending.removedPrefixes.append(path)
+        }
+        pending.requiresCoarseHierarchyReload = pending.requiresCoarseHierarchyReload
+            || events.contains(where: requiresCoarseHierarchyReload)
+        state.pendingExternalRefresh = pending
     }
 
     private func transitionGenerationMatches(

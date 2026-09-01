@@ -67,15 +67,37 @@ public struct FileManagerContentFeature {
                 // 재기준화된 전이 소유자를 어기게 된다.
                 if FileManagerContentFeature.identityReloadOwnsActiveDirectory(state: state) { return .none }
                 return FileManagerContentEntryOpsCoordinator.reloadEntryItemsEffect(state: state)
+            case .internal(.flushPendingExternalRefresh):
+                return Self.flushPendingExternalRefresh(state: &state)
             case let .internal(.applyNavigationState(navigationState)):
                 // 실제 네비게이션·root 변경 시 대기 중인 identity 전이를 즉시 만료한다.
                 // 같은 root로의 재적용은 유지하고, 다른 root·비폴더 라우트로 이동하면
                 // stale 전이가 되살아나 선택을 잘못 옮기지 않게 한다.
+                let expiredIdentityTransitionID = state.pendingIdentityTransition?.recordID
+                let keepsExternalRefreshScope: Bool = switch (
+                    state.navigation.navigationState,
+                    navigationState,
+                ) {
+                case let (.folder(current), .folder(next)):
+                    FileManagerContentIdentityTransitionCoordinator.canonicalizedPath(current)
+                        == FileManagerContentIdentityTransitionCoordinator.canonicalizedPath(next)
+                default:
+                    false
+                }
+                if !keepsExternalRefreshScope {
+                    state.pendingExternalRefresh = nil
+                }
                 FileManagerContentIdentityTransitionCoordinator.expireOnNavigation(
                     navigationState,
                     state: &state,
                 )
-                return .none
+                guard let expiredIdentityTransitionID,
+                      state.pendingIdentityTransition == nil
+                else { return .none }
+                return .send(.entryViewLayout(.identityReplacement(.cancel(
+                    id: expiredIdentityTransitionID,
+                    reason: .navigationChanged,
+                ))))
             default:
                 return .none
             }
@@ -93,6 +115,21 @@ public struct FileManagerContentFeature {
 
         Reduce { state, action in
             let effect = handleIdentityTransitionBeforeEntryLayoutLoaded(action, state: &state)
+            if case .entryViewLayout(.hierarchy(.restartUnfinishedExpandedFolderLoads)) = action {
+                // Content-tab transfer restarts unfinished hierarchy folders in the child
+                // reducer and advances their generations. Rebase the page transition before
+                // that child action so a pending identity migration follows the restart.
+                let restartedFolderIDs = state.entryViewLayout.hierarchy.nodesByID
+                    .filter { _, node in
+                        node.expansionIntent
+                            && (node.loadPhase == .loadingCore || node.loadPhase == .enriching)
+                    }
+                    .map(\.key)
+                FileManagerContentIdentityTransitionCoordinator.rebaseForHierarchyInvalidation(
+                    affectedPaths: restartedFolderIDs,
+                    state: &state,
+                )
+            }
             FileManagerContentIdentityTransitionCoordinator.markReplacementSelection(
                 on: action,
                 state: &state,
@@ -111,9 +148,17 @@ public struct FileManagerContentFeature {
         FileManagerContentPendingSelectionReducer(phase: .afterEntryViewLayout)
 
         Reduce { state, action in
+            if case let .entryViewLayout(.delegate(.identityReplacementSettled(id, _))) = action {
+                guard state.pendingIdentityTransition?.recordID == id else { return .none }
+                state.pendingIdentityTransition = nil
+                guard state.pendingExternalRefresh != nil else { return .none }
+                return .send(.internal(.flushPendingExternalRefresh))
+            }
             let selectionBefore = state.entryViewLayout.selectedIds
             let lastSelectedBefore = state.entryViewLayout.lastSelectedId
             let anchorBefore = state.entryViewLayout.rangeAnchorId
+            let hadPendingIdentityTransition = state.pendingIdentityTransition != nil
+            let settledIdentityTransitionID = state.pendingIdentityTransition?.recordID
             let identityMigrated = resolveRootIdentityTransitionAfterEntryLayoutLoaded(
                 action,
                 state: &state,
@@ -135,10 +180,22 @@ public struct FileManagerContentFeature {
             let selectionSettled = state.entryViewLayout.selectedIds != selectionBefore
                 || state.entryViewLayout.lastSelectedId != lastSelectedBefore
                 || state.entryViewLayout.rangeAnchorId != anchorBefore
+            let identityTransitionSettled = hadPendingIdentityTransition
+                && state.pendingIdentityTransition == nil
+            var effects: [Effect<Action>] = []
             if identityMigrated || selectionSettled {
-                return .send(.entryViewLayout(.delegate(.selectionChanged)))
+                effects.append(.send(.entryViewLayout(.delegate(.selectionChanged))))
             }
-            return .none
+            if identityTransitionSettled, let settledIdentityTransitionID {
+                effects.append(.send(.entryViewLayout(.identityReplacement(.settle(
+                    id: settledIdentityTransitionID,
+                    outcome: .completed,
+                )))))
+                if state.pendingExternalRefresh != nil {
+                    effects.append(.send(.internal(.flushPendingExternalRefresh)))
+                }
+            }
+            return .merge(effects)
         }
 
         FileManagerContentComposerReducer()
@@ -393,6 +450,38 @@ public struct FileManagerContentFeature {
         return .concatenate(
             rootReloadEffect,
             .send(.entryViewLayout(.hierarchy(.arrangementMetadataPriorityChanged))),
+        )
+    }
+
+    static func flushPendingExternalRefresh(
+        state: inout State,
+    ) -> Effect<Action> {
+        guard let pending = state.pendingExternalRefresh else { return .none }
+        state.pendingExternalRefresh = nil
+        guard case let .folder(currentPath) = state.navigation.navigationState,
+              FileManagerContentIdentityTransitionCoordinator.canonicalizedPath(currentPath)
+              == FileManagerContentIdentityTransitionCoordinator.canonicalizedPath(pending.rootPath)
+        else { return .none }
+
+        FileManagerContentIdentityTransitionCoordinator.rebaseForNextRootReload(state: &state)
+        FileManagerContentIdentityTransitionCoordinator.rebaseForHierarchyInvalidation(
+            affectedPaths: pending.requiresCoarseHierarchyReload
+                ? Array(state.entryViewLayout.hierarchy.expandedFolderIDs)
+                : pending.affectedPaths,
+            state: &state,
+        )
+        let hierarchyAction: EntryListHierarchyAction = pending.requiresCoarseHierarchyReload
+            ? .coarseHierarchyInvalidated(
+                removedPrefixes: pending.removedPrefixes,
+                retainsCompleteSnapshots: true,
+            )
+            : .hierarchyInvalidated(
+                affectedPaths: pending.affectedPaths,
+                removedPrefixes: pending.removedPrefixes,
+            )
+        return .concatenate(
+            .send(.entryViewLayout(.hierarchy(hierarchyAction))),
+            FileManagerContentEntryOpsCoordinator.reloadEntryItemsEffect(state: state),
         )
     }
 

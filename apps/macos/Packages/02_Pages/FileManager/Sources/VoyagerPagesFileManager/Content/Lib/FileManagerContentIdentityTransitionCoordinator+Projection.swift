@@ -301,6 +301,9 @@ extension FileManagerContentIdentityTransitionCoordinator {
         if resolveAdditionalDestinationTerminal(on: action, state: &state) {
             return
         }
+        if resolvePreservationOwnerTerminal(on: action, state: &state) {
+            return
+        }
         guard case let .entryViewLayout(.hierarchy(.folderChildrenResponse(
             _, folderID, folderGeneration, response,
         ))) = action,
@@ -334,6 +337,68 @@ extension FileManagerContentIdentityTransitionCoordinator {
         }
         guard !hasPendingDestinationPairs(state) else { return }
         discard(state: &state)
+    }
+
+    /// A destination batch may migrate the selection before the source folder finishes.
+    /// When that source owner reaches its terminal, release its held staging as well; otherwise
+    /// the identity transition survives forever because the generic destination path is no
+    /// longer the action's folder owner.
+    private static func resolvePreservationOwnerTerminal(
+        on action: FileManagerContentAction,
+        state: inout FileManagerContentState,
+    ) -> Bool {
+        guard case let .entryViewLayout(.hierarchy(.folderChildrenResponse(
+            rootContextGeneration,
+            folderID,
+            folderGeneration,
+            response,
+        ))) = action,
+            rootContextGeneration == state.entryViewLayout.hierarchy.rootContextGeneration,
+            let transition = state.pendingIdentityTransition,
+            let node = state.entryViewLayout.hierarchy.nodesByID[folderID],
+            node.generation == folderGeneration,
+            sourceFolderIDs(transition: transition).contains(folderID)
+        else { return false }
+        let isTerminal = switch response {
+        case .event(.coreFinished):
+            node.folder.coreFinished
+        case .streamCompleted:
+            node.loadPhase == .loaded
+        case .failed:
+            if case .failed = node.loadPhase { true } else { false }
+        case .event(.coreBatch), .event(.metadataPatches):
+            false
+        }
+        guard isTerminal else { return false }
+
+        // The source hold is only meaningful while a destination pair still waits for its
+        // after row. Once all destinations have projected, this terminal owns the final source
+        // commit. Failed source loads release the hold without replacing the retained snapshot.
+        state.pendingIdentityTransition = transition
+        commitMigratedSourceStagings(transition: transition, state: &state)
+        if case .failed = node.loadPhase {
+            state.entryViewLayout.hierarchy.commitDeferredFolderReplacementsOnCancel()
+        }
+        guard !hasPendingDestinationPairs(state) else { return true }
+        // Any source hold that is still loading is now generic reload state; discard converts
+        // migration-specific holds before removing the page transition.
+        discard(state: &state)
+        return true
+    }
+
+    private static func sourceFolderIDs(
+        transition: FileManagerContentState.EntryIdentityTransition,
+    ) -> Set<EntryModel.ID> {
+        var sourceIDs: Set<EntryModel.ID> = []
+        if case let .folder(ownerID, _) = transition.preservationOwner {
+            sourceIDs.insert(ownerID)
+        }
+        for move in transition.additionalMoves {
+            if case let .folder(ownerID, _) = move.sourceOwner ?? transition.projectionOwner {
+                sourceIDs.insert(ownerID)
+            }
+        }
+        return sourceIDs
     }
 
     /// collapsed folder가 소유한 destination을 response 없는 cancellation terminal로 종결한다.
