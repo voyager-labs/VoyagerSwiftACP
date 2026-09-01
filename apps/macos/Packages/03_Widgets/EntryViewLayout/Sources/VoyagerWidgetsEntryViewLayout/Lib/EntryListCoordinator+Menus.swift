@@ -309,7 +309,7 @@ extension EntryListCoordinator {
     }
 
     private func applyReplacementSelection(destination: OutlineItem, destinationRow: Int) {
-        let entries = destination.orderedDistinctEntries()
+        let entries = selectionEntries(for: destination)
         guard !entries.isEmpty else { return }
         let selectedIDs = Set(entries.map(\.id))
         let physicalRows: IndexSet = if case .group = destination.kind {
@@ -383,7 +383,18 @@ extension EntryListCoordinator {
     }
 
     private func focusIdentifier(for item: OutlineItem) -> EntryModel.ID? {
-        item.orderedDistinctEntries().last?.id
+        selectionEntries(for: item).last?.id
+    }
+
+    private func selectionEntries(for item: OutlineItem) -> [EntryModel] {
+        switch item.kind {
+        case let .entry(entry):
+            [entry]
+        case .group:
+            item.orderedDistinctEntries()
+        case .empty, .error:
+            []
+        }
     }
 
     private func isSelectable(_ item: OutlineItem) -> Bool {
