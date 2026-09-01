@@ -301,6 +301,7 @@ func applyAppliedFilters(
     state: inout ComposerFeature.State,
     registryClient: RegistryClient,
     uuid: () -> UUID = UUID.init,
+    preserveLocalMultiScope: Bool = true,
 ) {
     if let includeSubfolders = appliedFilters?.includeSubfolders {
         state.scopeEditor.includeSubfolders = includeSubfolders
@@ -317,7 +318,8 @@ func applyAppliedFilters(
         exceptions: resolved.excludedScopes,
         includeSubfolders: state.scopeEditor.includeSubfolders,
     )
-    let shouldPreserveLocalMultiScope = state.scopeEditor.selection.explicitBases.count > 1
+    let shouldPreserveLocalMultiScope = preserveLocalMultiScope
+        && state.scopeEditor.selection.explicitBases.count > 1
         && resolved.excludedScopes.isEmpty
         && selection.legacyScopePaths != state.scopeEditor.selection.legacyScopePaths
     if !shouldPreserveLocalMultiScope {

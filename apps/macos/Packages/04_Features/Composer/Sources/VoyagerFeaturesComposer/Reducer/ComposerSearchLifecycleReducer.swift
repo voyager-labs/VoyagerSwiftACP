@@ -488,6 +488,7 @@ private func restoreSubmittedSearchFilters(
         state: &state,
         registryClient: registryClient,
         uuid: uuid,
+        preserveLocalMultiScope: false,
     )
 }
 

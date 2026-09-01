@@ -802,6 +802,32 @@ extension RCL004ComposeCollectionFilterTests {
         XCTAssertNil(state.queryRecoveryContext)
     }
 
+    /// RCL-004-show_query_execution_failure_feedback: generated multi-scope failure는 제출 baseline으로 복원함
+    /// rollback 시 일반 applied-filter의 local multi-scope 보존 정책이 baseline 복원을 막지 않는지 검증한다.
+    /// - 검증 내용: generated multi-scope 적용 후 execution failure의 direct scope rollback
+    /// - 사전 조건: 제출 전 root-only state에서 두 scope가 생성되고 filter execution이 실패함
+    /// - 기대 결과: generated scope/condition이 모두 제출 전 baseline으로 돌아감
+    func testShowQueryExecutionFailureFeedback_withGeneratedMultiScopeFailure_restoresSubmittedBaseline() {
+        var state = makeGeneratedFilterStageState(
+            rawText: "VOY589_SYNTHETIC_MULTI_SCOPE_FAILURE",
+            response: makeGeneratedConditionResponse(
+                scopes: ["/VoyagerFixtures/Documents", "/VoyagerFixtures/Notes"],
+            ),
+        )
+        guard let requestID = state.activeFiltersRequestID else {
+            return XCTFail("generated response must create an active filters request")
+        }
+        XCTAssertEqual(state.scopeEditor.selection.explicitBases.count, 2)
+
+        _ = ComposerFeature().reduce(
+            into: &state,
+            action: .filtersResponse(requestID, .failure(MockLocalizedError("synthetic"))),
+        )
+
+        XCTAssertTrue(state.scopeEditor.selection.isRootOnly)
+        XCTAssertTrue(state.conditions.isEmpty)
+    }
+
     /// RCL-004-show_query_execution_failure_feedback: execution failure 복원문은 즉시 재제출할 수 있음
     /// generated filter failure 직후 별도 edit 없이 같은 원문을 retry하는 public lifecycle을 검증한다.
     /// - 검증 내용: 원문 복원, 새 search request ID, retry 성공 뒤 terminal cleanup
@@ -1358,11 +1384,13 @@ extension RCL004ComposeCollectionFilterTests {
         )
     }
 
-    private func makeGeneratedConditionResponse() -> SearchResponsePayload {
+    private func makeGeneratedConditionResponse(
+        scopes: [String] = ["/VoyagerFixtures/Documents"],
+    ) -> SearchResponsePayload {
         SearchResponsePayload(
             itemCount: 0,
             appliedFilters: AppliedFiltersPayload(
-                scopes: ["/VoyagerFixtures/Documents"],
+                scopes: scopes,
                 conditions: [
                     SearchConditionPayload(propertyKey: "kind", operator: "eq", value: .string("pdf")),
                 ],
@@ -1670,7 +1698,10 @@ extension RCL004ComposeCollectionFilterTests {
         XCTAssertNil(state.queryRecoveryContext)
     }
 
-    private func makeGeneratedFilterStageState(rawText: String) -> ComposerState {
+    private func makeGeneratedFilterStageState(
+        rawText: String,
+        response: SearchResponsePayload? = nil,
+    ) -> ComposerState {
         var state = ComposerState()
         state.text = rawText
         _ = ComposerFeature().reduce(into: &state, action: .submit)
@@ -1683,7 +1714,7 @@ extension RCL004ComposeCollectionFilterTests {
         } operation: {
             _ = ComposerFeature().reduce(
                 into: &state,
-                action: .searchResponse(requestID, .success(makeGeneratedConditionResponse())),
+                action: .searchResponse(requestID, .success(response ?? makeGeneratedConditionResponse())),
             )
         }
         return state
