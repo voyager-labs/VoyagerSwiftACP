@@ -522,6 +522,92 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
     }
 
+    // MARK: - EOP-002-paste_entries
+
+    /// EOP-002-paste_entries: 수용된 metadata-bearing 빈 Paste가 취소 terminal 하나로 끝나는지 검증한다.
+    /// accepted command의 clipboard snapshot이 비어 있어도 operation metadata와 aggregate terminal을 보존한다.
+    /// - 검증 내용: copy metadata, pasteFileCopy, attempted/cancelled 1, zero success/failure, 빈 target을 확인한다.
+    /// - 사전 조건: 빈 clipboard snapshot을 반환하는 accepted Paste command를 보낸다.
+    /// - 기대 결과: entryActionCompleted terminal 정확히 한 건, clipboard snapshot 1회, mutation/undo/reload 없음.
+    func testAcceptedEmptyPaste_emitsMetadataPreservingCancelledTerminal() async throws {
+        let metadata = try EntryCommandMetadata(
+            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000224")),
+            interaction: .pasteEntries,
+            source: .menuCommand,
+        )
+        let loadCount = LockIsolated(0)
+        let actionRecorder = CallRecorder<EntryOperationsAction>()
+        let mutationCalls = LockIsolated(0)
+        let reloadRecorder = CallRecorder<[String]>()
+        var fileOps = EntryFileOpsClient.previewValue
+        fileOps.loadClipboardPaths = {
+            loadCount.withValue { $0 += 1 }
+            return ([], .copy)
+        }
+        fileOps.pasteFile = { _, _ in mutationCalls.withValue { $0 += 1 } }
+        fileOps.moveFile = { _, _ in mutationCalls.withValue { $0 += 1 } }
+        fileOps.postFileSystemChanged = reloadRecorder.record
+        let store = EntryOperationsTestSupport.makeObservedStore(observeAction: actionRecorder.record) {
+            $0.entryFileOpsClient = fileOps
+        }
+        // store.exhaustivity = .off: accepted command의 terminal과 외부 mutation 부재만 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.acceptedCommand(
+            metadata: metadata,
+            action: .clipboard(.pasteItemsFromClipboard(destinationPath: "/destination")),
+        ))
+        await store.receive { action in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return false }
+            return record.command == metadata
+                && record.operationKind == .pasteFileCopy
+                && record.attemptedCount == 1
+                && record.cancelledCount == 1
+                && record.succeededCount == 0
+                && record.failedCount == 0
+                && record.targets.isEmpty
+        }
+        await store.finish()
+
+        XCTAssertEqual(loadCount.value, 1)
+        XCTAssertEqual(actionRecorder.recorded.count(where: {
+            if case .lifecycle(.entryActionCompleted) = $0 { return true }
+            return false
+        }), 1)
+        XCTAssertEqual(mutationCalls.value, 0)
+        XCTAssertTrue(reloadRecorder.recorded.isEmpty)
+        XCTAssertTrue(store.state.undoRecords.isEmpty)
+    }
+
+    /// EOP-002-paste_entries: 직접 전달된 빈 Paste는 조용히 종료되는지 검증한다.
+    /// metadata가 없는 raw/direct command는 accepted command terminal 정책을 적용하지 않는다.
+    /// - 검증 내용: 빈 clipboard snapshot 1회와 terminal/계정 가능한 부수효과 0회를 확인한다.
+    /// - 사전 조건: 빈 clipboard snapshot을 반환하는 unwrapped Paste command를 보낸다.
+    /// - 기대 결과: entryActionCompleted, mutation, undo, reload가 발생하지 않는다.
+    func testDirectEmptyPaste_remainsSilent() async {
+        let loadCount = LockIsolated(0)
+        let actionRecorder = CallRecorder<EntryOperationsAction>()
+        var fileOps = EntryFileOpsClient.previewValue
+        fileOps.loadClipboardPaths = {
+            loadCount.withValue { $0 += 1 }
+            return ([], .cut)
+        }
+        let store = EntryOperationsTestSupport.makeObservedStore(observeAction: actionRecorder.record) {
+            $0.entryFileOpsClient = fileOps
+        }
+        store.exhaustivity = .off
+
+        await store.send(.clipboard(.pasteItemsFromClipboard(destinationPath: "/destination")))
+        await store.finish()
+
+        XCTAssertEqual(loadCount.value, 1)
+        XCTAssertFalse(actionRecorder.recorded.contains {
+            if case .lifecycle(.entryActionCompleted) = $0 { return true }
+            return false
+        })
+        XCTAssertTrue(store.state.undoRecords.isEmpty)
+    }
+
     // MARK: - EOP-002-duplicate_entries
 
     /// EOP-002-duplicate_entries: 같은 디렉터리에서 중복 이름이 없는 복제본이 생성되는지 검증한다.

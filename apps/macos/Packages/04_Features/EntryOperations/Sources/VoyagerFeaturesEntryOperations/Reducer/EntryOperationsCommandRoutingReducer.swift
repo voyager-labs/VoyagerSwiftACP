@@ -65,6 +65,29 @@ struct EntryOperationsCommandRoutingReducer {
                     ))
                 }
 
+            case let .acceptedCommand(metadata, .clipboard(.pasteItemsFromClipboard(destinationPath))):
+                let (clipboardPaths, clipboardOperation) = entryFileOpsClient.loadClipboardPaths()
+                let operationKind: OperationKind = clipboardOperation == .cut ? .pasteFileMove : .pasteFileCopy
+                guard !clipboardPaths.isEmpty else {
+                    return .send(Self.cancelledDropTerminal(
+                        metadata: metadata,
+                        operationKind: operationKind,
+                        cancelledCount: 1,
+                    ))
+                }
+                return .concatenate(
+                    .send(.lifecycle(.syncClipboardState(paths: clipboardPaths, operation: clipboardOperation))),
+                    .send(.acceptedCommand(
+                        metadata: metadata,
+                        action: .clipboard(.pasteItems(
+                            sourcePaths: clipboardPaths,
+                            destinationPath: destinationPath,
+                            operation: clipboardOperation,
+                            operationKind: operationKind,
+                        )),
+                    )),
+                )
+
             case let .acceptedCommand(
                 metadata,
                 .routing(.dropItems(sourcePaths, destinationPath, isOptionDrag)),
