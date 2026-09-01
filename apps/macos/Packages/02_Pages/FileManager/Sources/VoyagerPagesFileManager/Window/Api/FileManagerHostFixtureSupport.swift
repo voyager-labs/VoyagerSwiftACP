@@ -109,6 +109,8 @@ extension EntryLoadingClient {
             FileManagerHostFixtureSampleData.progressiveChildren
         case FileManagerHostFixtureSampleData.materialDesignAssets.fullPath:
             FileManagerHostFixtureSampleData.materialDesignAssetEntries
+        case FileManagerHostFixtureSampleData.siblingFolder.fullPath:
+            []
         case FileManagerHostFixtureSampleData.path:
             if scenario.permission != .none {
                 FileManagerHostFixtureSampleData.permissionEntries

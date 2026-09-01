@@ -179,6 +179,30 @@ extension FileManagerHostFixturePhaseNotificationTests {
         }
     }
 
+    /// VOY-598: permission fixture Sibling folder does not return itself.
+    /// Permission preset에서 Sibling 폴더를 펼쳐도 fixture projection이 자기 자신을 하위 Entry로 만들지 않는지 검증한다.
+    /// - 검증 내용: Sibling loader가 root permission entries 대신 빈 deterministic child 목록을 반환한다.
+    /// - 사전 조건: `permissionDenied` EntryLoadingClient와 Sibling folder path가 준비되어 있다.
+    /// - 기대 결과: Sibling 하위 로딩 결과가 비어 있고 self-edge가 생성되지 않는다.
+    func testPermissionFixtureSiblingFolderDoesNotReturnItself() async throws {
+        let folderPath = "/Fixture/FileManager/Sibling"
+        let client = FileManagerHostFixture.makeEntryLoadingClient(
+            preset: .permissionDenied,
+            windowID: UUID(),
+        )
+        let events = try await Self.collect(client.loadItems(
+            URL(fileURLWithPath: folderPath),
+            false,
+            .none,
+        ))
+        let children = events.flatMap { event -> [EntryModel] in
+            guard case let .coreBatch(items, _) = event else { return [] }
+            return items
+        }
+
+        XCTAssertTrue(children.isEmpty)
+    }
+
     func testPermissionDeniedFixtureEmitsCocoaPermissionErrorAndRetrySucceeds() async throws {
         let client = FileManagerHostFixture.makeEntryLoadingClient(preset: .permissionRetry, windowID: UUID())
         let folderURL = URL(fileURLWithPath: "/Fixture/FileManager/Restricted")
