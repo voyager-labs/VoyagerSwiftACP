@@ -785,6 +785,56 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         XCTAssertNil(store.state.content.productBrowsingOperationID)
     }
 
+    /// EVM-001-content_browsing_correlation: window teardown terminates accepted browsing exactly once.
+    /// 수락된 탐색의 로딩 중 window가 사라지면 원래 상관 정보로 unavailable 단말을 기록하고 늦은 단말을 무시한다.
+    /// - 검증 내용: 첫 onDisappear의 typed terminal과 상관 해제, 반복 teardown 및 late stream terminal 무이벤트
+    /// - 사전 조건: 응답 없는 directory loader로 실제 folder navigation이 수락되어 correlation이 성립돼 있다.
+    /// - 기대 결과: 원 operation ID·content·identity·source의 unavailable 1회와 모든 browsing correlation nil
+    func testWindowDisappearTerminatesAcceptedBrowsingExactlyOnce() async {
+        let path = "/tmp/voyager-evm001-window-teardown"
+        let metrics = LockIsolated<[FileManagerProductMetric]>([])
+        let store = makeTypedBrowsingStore(metrics: metrics) {
+            $0.entryLoadingClient.loadItems = Self.suspendedLoadItems
+        }
+
+        await store.send(.navigation(.view(.navigateToPath(path))))
+        await store.skipReceivedActions()
+        let generation = store.state.content.entryViewLayout.entryOperations.loadingContext.generation
+
+        await store.send(.onDisappear)
+
+        let expectedMetrics: [FileManagerProductMetric] = [
+            .contentBrowsing(
+                result: .unavailable,
+                content: .folder,
+                identity: .direct,
+                source: .fileManagerSidebar,
+                operationID: Self.typedBrowsingOperationIDs[0],
+            ),
+        ]
+        XCTAssertEqual(metrics.value, expectedMetrics)
+        XCTAssertNil(store.state.content.productBrowsingOperationID)
+        XCTAssertNil(store.state.content.productBrowsingIdentity)
+        XCTAssertNil(store.state.content.productBrowsingSource)
+        XCTAssertNil(store.state.content.productBrowsingContent)
+        XCTAssertNil(store.state.content.pendingProductBrowsingSource)
+
+        await store.send(.onDisappear)
+        await store.send(.content(.entryViewLayout(.entryOperations(.loading(
+            .streamFailed(generation: generation),
+        )))))
+        await store.send(.content(.entryViewLayout(.entryOperations(.loading(
+            .streamFinished(generation: generation),
+        )))))
+
+        XCTAssertEqual(metrics.value, expectedMetrics)
+        XCTAssertNil(store.state.content.productBrowsingOperationID)
+        XCTAssertNil(store.state.content.productBrowsingIdentity)
+        XCTAssertNil(store.state.content.productBrowsingSource)
+        XCTAssertNil(store.state.content.productBrowsingContent)
+        XCTAssertNil(store.state.content.pendingProductBrowsingSource)
+    }
+
     /// EVM-001-content_browsing_correlation: stale stream terminal does not consume browsing correlation
     /// 구 generation 터미널은 correlation을 소비하지 않고, 이후 현재 generation 터미널이 정확히 한 번 기록하는지 검증.
     /// - 검증 내용: 미래 generation streamFinished 무음·상관 유지, 이어진 현재 streamFailed 1회
