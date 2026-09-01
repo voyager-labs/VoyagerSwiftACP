@@ -402,6 +402,7 @@ public final class EntryListView: NSView {
             let row = row(at: location)
 
             if row == -1 {
+                deselectAll(nil)
                 if let menu = blankSpaceContextMenuProvider?() {
                     NSMenu.popUpContextMenu(menu, with: event, for: self)
                 }

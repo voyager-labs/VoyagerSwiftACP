@@ -336,6 +336,22 @@ extension EVM002ManageEntriesViewPresentationTests {
         XCTAssertTrue(fixture.tableView.selectedRowIndexes.isEmpty)
     }
 
+    /// EVM-002-update_entry_selection: blank-space right-click clears the current selection before its menu opens.
+    /// 행 아래 빈 영역에서 context menu를 열어도 이전 Entry가 후속 command target으로 남지 않는지 검증한다.
+    /// - 검증 내용: modifier 없는 blank-space rightMouseDown이 canonical/physical selection을 비운다.
+    /// - 사전 조건: 하나의 Entry가 선택된 EntryListTableView와 빈 영역 우클릭 이벤트
+    /// - 기대 결과: 선택이 비고 기존 blank-space menu 경로로 계속 진행할 수 있다.
+    func testBlankSpaceRightMouseDownClearsSelection() throws {
+        let entry = makePresentationFile(id: "/root/a.txt", name: "a.txt")
+        let fixture = Task4Fixture(entries: [entry], groups: [("Alpha", [entry])])
+        fixture.setSelection([entry.id], focus: entry.id)
+
+        try fixture.tableView.rightMouseDown(with: fixture.event(row: nil, type: .rightMouseDown))
+
+        fixture.assertCanonical([], focus: nil, updates: 2)
+        XCTAssertTrue(fixture.tableView.selectedRowIndexes.isEmpty)
+    }
+
     /// EVM-002-update_entry_selection: native modifier click은 그룹의 canonical Entry 선택을 보존한다.
     /// 실제 AppKit Shift/Command mouseDown 경로에서 duplicate Entry와 그룹 header를 canonical ID로 정규화하는지 검증한다.
     /// - 검증 내용: modifier event마다 canonical Entry ID와 focus/anchor가 한 번 갱신된다.
