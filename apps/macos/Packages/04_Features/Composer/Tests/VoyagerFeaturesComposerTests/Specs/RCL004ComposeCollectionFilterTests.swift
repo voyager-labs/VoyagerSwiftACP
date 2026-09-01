@@ -692,6 +692,114 @@ final class RCL004ComposeCollectionFilterTests: XCTestCase {
         XCTAssertFalse(state.isCollectionMode)
     }
 
+    /// RCL-004-apply_generated_filter_changes: reset은 활성 query와 apply terminal을 각각 한 번 기록함
+    /// Composer reset이 동시에 진행 중인 query와 filter apply를 각각 cancellation handler로 종료하는지 검증한다.
+    /// - 검증 내용: query/apply cancelled event 각 1건, reset 반복과 늦은 response의 무시
+    /// - 사전 조건: active search/filter request와 각 시작 시각이 있는 Composer
+    /// - 기대 결과: 두 canonical terminal만 기록되고 reset 후 두 request가 모두 해제됨
+    func testResetComposerAndSync_withActiveQueryAndApply_recordsBothCancelledTerminals() throws {
+        let recorder = RCL004MetricRecorder()
+        let searchID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000027"))
+        let filtersID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000028"))
+        var state = ComposerState()
+        state.isLoadingSearch = true
+        state.isLoadingFilters = true
+        state.isFilteringInFlight = true
+        state.activeSearchRequestID = searchID
+        state.activeFiltersRequestID = filtersID
+        state.searchStartedAt = Date(timeIntervalSinceNow: -0.2)
+        state.filtersStartedAt = Date(timeIntervalSinceNow: -0.1)
+
+        withDependencies {
+            $0.composerMetricClient = ComposerMetricClient(recordProductMetric: recorder.record)
+        } operation: {
+            let feature = ComposerFeature()
+            _ = feature.reduce(
+                into: &state,
+                action: .internal(.resetComposerAndSync(
+                    context: nil,
+                    url: nil,
+                    compatibility: nil,
+                    isCollectionMode: false,
+                )),
+            )
+            _ = feature.reduce(
+                into: &state,
+                action: .internal(.resetComposerAndSync(
+                    context: nil,
+                    url: nil,
+                    compatibility: nil,
+                    isCollectionMode: false,
+                )),
+            )
+            _ = feature.reduce(
+                into: &state,
+                action: .internal(.searchResponse(searchID, .success(SearchResponsePayload(itemCount: 1)))),
+            )
+            _ = feature.reduce(
+                into: &state,
+                action: .internal(.filtersResponse(filtersID, .success(SearchResponsePayload(itemCount: 1)))),
+            )
+        }
+
+        XCTAssertEqual(recorder.calls.map(\.name), [
+            ComposerCollectionFilterMetrics.queryResult,
+            ComposerCollectionFilterMetrics.applyResult,
+        ])
+        XCTAssertEqual(recorder.calls.count(where: { $0.tags?["result_status"] == "cancelled" }), 2)
+        XCTAssertNil(state.activeSearchRequestID)
+        XCTAssertNil(state.activeFiltersRequestID)
+    }
+
+    /// RCL-004-apply_generated_filter_changes: 비활성 reset은 incoming context와 owner를 보존함
+    /// active operation이 없는 reset이 metric 없이 새 collection context만 반영하는지 검증한다.
+    /// - 검증 내용: query/apply metric 0건, context/url/compatibility/mode와 cancellation owner 보존
+    /// - 사전 조건: owner가 지정되고 active request가 없는 Composer에 incoming sync payload가 전달됨
+    /// - 기대 결과: reset은 event를 기록하지 않고 모든 incoming sync 필드를 정확히 보존함
+    func testResetComposerAndSync_withoutActiveOperations_preservesIncomingState() throws {
+        let recorder = RCL004MetricRecorder()
+        let ownerID = try XCTUnwrap(UUID(uuidString: "FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF"))
+        let context = CollectionContext(
+            query: "find reports",
+            scopes: ["/VoyagerFixtures/Documents"],
+            excludedScopes: ["/VoyagerFixtures/Trash"],
+            includeSubfolders: false,
+            includeDirectories: true,
+        )
+        let url = URL(fileURLWithPath: "/VoyagerFixtures/reports.voycoll")
+        let compatibility = CollectionFileCompatibilityMetadata(
+            sourceSchemaVersion: SchemaVersion(major: 1, minor: 0),
+            migrationPath: [.definitionOnlyV1],
+            warnings: [],
+            usedDefinitionFallback: false,
+            writeBackAllowed: true,
+            writeBackReason: .allowed,
+        )
+        var state = ComposerState()
+        state.cancellationOwnerID = ownerID
+
+        withDependencies {
+            $0.composerMetricClient = ComposerMetricClient(recordProductMetric: recorder.record)
+        } operation: {
+            _ = ComposerFeature().reduce(
+                into: &state,
+                action: .internal(.resetComposerAndSync(
+                    context: context,
+                    url: url,
+                    compatibility: compatibility,
+                    isCollectionMode: true,
+                )),
+            )
+        }
+
+        XCTAssertTrue(recorder.calls.isEmpty)
+        XCTAssertEqual(state.cancellationOwnerID, ownerID)
+        XCTAssertEqual(state.collectionContext, context)
+        XCTAssertEqual(state.openedCollectionURL, url)
+        XCTAssertEqual(state.openedCollectionCompatibility, compatibility)
+        XCTAssertTrue(state.isCollectionMode)
+    }
+
     // MARK: - RCL-004-show_query_conversion_failure_feedback
 
     // MARK: - RCL-004-apply_generated_filter_changes

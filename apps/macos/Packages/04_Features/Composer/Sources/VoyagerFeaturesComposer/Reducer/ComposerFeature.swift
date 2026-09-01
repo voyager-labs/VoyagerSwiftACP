@@ -187,13 +187,21 @@ public struct ComposerFeature {
 
             case let .internal(.resetComposerAndSync(context, url, compatibility, isCollectionMode)):
                 let cancellationOwnerID = state.cancellationOwnerID
+                let searchCancellation = handleCancelSearch(
+                    state: &state,
+                    composerMetricClient: composerMetricClient,
+                )
+                let filtersCancellation = handleCancelFilters(
+                    state: &state,
+                    composerMetricClient: composerMetricClient,
+                )
                 state = .init()
                 state.cancellationOwnerID = cancellationOwnerID
                 state.collectionContext = context
                 state.openedCollectionURL = url
                 state.openedCollectionCompatibility = compatibility
                 state.isCollectionMode = isCollectionMode
-                return .none
+                return .merge(searchCancellation, filtersCancellation)
 
             case .view(.applyFilters),
                  .view(.addCondition),
