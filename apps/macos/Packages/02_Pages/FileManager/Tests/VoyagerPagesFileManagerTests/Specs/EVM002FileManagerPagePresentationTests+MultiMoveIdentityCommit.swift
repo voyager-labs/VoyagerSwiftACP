@@ -350,6 +350,43 @@ extension EVM002FileManagerPagePresentationTests {
         XCTAssertNotNil(store.state.pendingIdentityTransition)
     }
 
+    /// EVM-002-command_external_refresh_correlation: primary migration 뒤 terminal 전에는 현재 owner를 유지한다.
+    /// primary after batch가 먼저 도착한 뒤 rename echo가 와도 destination folder terminal 전까지 전이를 보존하는지 검증한다.
+    /// - 검증 내용: primary-only transition의 overlapping `ItemRenamed` event가 pending identity transition을 폐기하지 않는다.
+    /// - 사전 조건: primaryMigrated=true, expanded destination owner generation 3, destination은 아직 loadingCore다.
+    /// - 기대 결과: 순수 command echo는 중복 refresh로 제거되고 pending identity transition은 유지된다.
+    func testPrimaryOnlyMigrationKeepsCurrentOwnerUntilTerminal() async {
+        let destination = EntryModel.temporaryFolder(id: "/root/A", name: "A")
+        var state = bufferedRootSourceState(rootPath: "/root", entries: [destination])
+        state.entryViewLayout.hierarchy.nodesByID[destination.id] = .init(
+            children: [],
+            loadPhase: .loadingCore,
+            generation: 3,
+        )
+        state.entryViewLayout.hierarchy.setExpandedIDs([destination.id])
+        state.pendingIdentityTransition = .init(
+            recordID: UUID(),
+            beforePath: "/root/before",
+            afterPath: "/root/A/after",
+            rootPath: "/root",
+            refreshGeneration: 1,
+            projectionOwner: .folder(id: destination.id, generation: 3),
+            preservationOwner: .root(generation: 1),
+        )
+        state.pendingIdentityTransition?.primaryMigrated = true
+        let store = makeRootSourceCandidateStore(state)
+
+        await store.send(.externalFileSystemChanged([
+            FileChangeGatewayEvent(
+                path: "/root/A/after",
+                flags: UInt32(kFSEventStreamEventFlagItemRenamed),
+                emittedAt: .distantPast,
+            ),
+        ]))
+
+        XCTAssertNotNil(store.state.pendingIdentityTransition)
+    }
+
     /// owner-scoped additional pair가 anchor identity를 가리킬 때 root batch migration이 anchor를 함께 이전한다.
     /// - 검증 내용: root 소유자 batch migration 뒤 lastSelectedId/rangeAnchorId가 pair after로 교체된다.
     /// - 사전 조건: anchor가 root destination pair의 before를 가리고 batch에 after 행만 도착한다.

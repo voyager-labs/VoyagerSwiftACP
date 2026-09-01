@@ -302,7 +302,12 @@ struct EntryListHierarchyReducer {
                     state.hierarchy.deferredFolderReplacements[folderID] = nil
                     state.hierarchy.nodesByID[folderID] = nodeState
                     state.hierarchy.reconcileNodesAfterMigrationCommit(folderID: folderID)
-                    return .none
+                    state.reconcileSelectionWithVisibleEntries()
+                    if state.outlineProjectionRevision == previousRevision {
+                        state.advanceOutlineProjectionRevision()
+                    }
+                    guard previousSelectedIds != state.selectedIds else { return .none }
+                    return .send(.delegate(.selectionChanged))
                 }
                 if case let .event(.metadataPatches(patches)) = response,
                    var replacement = state.hierarchy.deferredFolderReplacements[folderID]

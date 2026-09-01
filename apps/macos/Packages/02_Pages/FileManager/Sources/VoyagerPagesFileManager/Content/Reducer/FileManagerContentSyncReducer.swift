@@ -68,31 +68,17 @@ struct FileManagerContentSyncReducer {
            })
         {
             let rootMatches = transition.rootPath == normalizedPath(for: currentPath)
-            // primary migration이 끝난 뒤에는 남은 pending destination 소유자의 세대로 판정한다.
-            // 완료된 primary가 collapse 등으로 세대가 올라가도 pending pair 전이를 stale로 폐기하지 않는다.
-            let generationMatches = transition.primaryMigrated
-                ? FileManagerContentIdentityTransitionCoordinator.hasCurrentPendingDestinationOwner(
-                    transition,
-                    state: state,
-                )
-                : FileManagerContentIdentityTransitionCoordinator.ownerIsCurrent(
-                    transition.projectionOwner,
-                    state: state,
-                )
+            // primary migration 뒤에도 primary가 현재 세대이고 terminal이 아니면 primary owner가
+            // 전이를 소유한다. primary owner가 stale하거나 terminal인 경우에만 남은 pending
+            // destination 소유자의 세대로 전환한다.
+            let generationMatches = transitionGenerationMatches(transition, state: state)
             if rootMatches, generationMatches {
                 // 일치 이벤트는 명령이 이미 예약한 refresh로 병합한다(중복 refresh 억제).
                 // 병합 대상은 명령 자체 활동이 남기는 확정 신호(ItemRenamed)뿐이다. 독립적인
                 // ItemModified 등은 명령 snapshot 이후 변경일 수 있어 기존 refresh로 통과한다.
                 // 전이는 소비하지 않는다: after-path projection이 도착해 선택을 옮길 때까지
                 // 유지되어야 selection migration이 완료된다.
-                scheduledEvents = events.filter {
-                    requiresCoarseHierarchyReload($0)
-                        || !isCommandIdentityEcho($0)
-                        || !FileManagerContentIdentityTransitionCoordinator.transitionOverlaps(
-                            $0.path,
-                            transition,
-                        )
-                }
+                scheduledEvents = eventsForCommandIdentityRefresh(events, transition: transition)
                 if scheduledEvents.isEmpty {
                     // 모든 경로가 명령 refresh에 병합됨. 중복 refresh를 예약하지 않는다.
                     return .none
@@ -130,6 +116,41 @@ struct FileManagerContentSyncReducer {
             .send(.entryViewLayout(.hierarchy(hierarchyAction))),
             FileManagerContentEntryOpsCoordinator.reloadEntryItemsEffect(state: state),
         )
+    }
+
+    private func transitionGenerationMatches(
+        _ transition: FileManagerContentState.EntryIdentityTransition,
+        state: FileManagerContentState,
+    ) -> Bool {
+        let primaryOwnerIsCurrent = FileManagerContentIdentityTransitionCoordinator.ownerIsCurrent(
+            transition.projectionOwner,
+            state: state,
+        )
+        let primaryIsTerminal = FileManagerContentIdentityTransitionCoordinator.primaryOwnerIsTerminal(
+            transition,
+            state: state,
+        )
+        return transition.primaryMigrated
+            && (primaryIsTerminal || !primaryOwnerIsCurrent)
+            ? FileManagerContentIdentityTransitionCoordinator.hasCurrentPendingDestinationOwner(
+                transition,
+                state: state,
+            )
+            : primaryOwnerIsCurrent
+    }
+
+    private func eventsForCommandIdentityRefresh(
+        _ events: [FileChangeGatewayEvent],
+        transition: FileManagerContentState.EntryIdentityTransition,
+    ) -> [FileChangeGatewayEvent] {
+        events.filter {
+            requiresCoarseHierarchyReload($0)
+                || !isCommandIdentityEcho($0)
+                || !FileManagerContentIdentityTransitionCoordinator.transitionOverlaps(
+                    $0.path,
+                    transition,
+                )
+        }
     }
 
     /// 명령 자체 활동이 FSEvents에 남기는 확정 신호. rename/move는 양쪽 경로에
