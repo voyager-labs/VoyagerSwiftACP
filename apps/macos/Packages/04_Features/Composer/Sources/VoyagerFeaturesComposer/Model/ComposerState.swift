@@ -147,6 +147,15 @@ public struct ComposerState: Equatable {
         )
     }
 
+    func queryRecoveryRawText(for stage: ComposerQueryRecoveryContext.Stage) -> String? {
+        guard let queryRecoveryContext,
+              queryRecoveryContext.stage == stage
+        else {
+            return nil
+        }
+        return queryRecoveryContext.rawText
+    }
+
     mutating func retargetQueryRecovery(from searchRequestID: UUID, to filtersRequestID: UUID) {
         guard queryRecoveryContext?.stage == .search(searchRequestID) else { return }
         queryRecoveryContext?.stage = .filters(filtersRequestID)

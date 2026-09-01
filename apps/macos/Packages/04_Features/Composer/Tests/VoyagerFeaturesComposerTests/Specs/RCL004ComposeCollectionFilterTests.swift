@@ -442,6 +442,36 @@ final class RCL004ComposeCollectionFilterTests: XCTestCase {
         XCTAssertFalse(state.isLoadingFilters)
     }
 
+    /// RCL-004-apply_generated_filter_changes: filter 성공 handoff는 visible draft가 아닌 제출 query를 사용함
+    /// A 처리 중 B를 입력해도 FileManager collection context에는 A가 전달되는지 검증한다.
+    /// - 검증 내용: query-owned filter response success 전 request-bound pending query projection
+    /// - 사전 조건: A의 generated filter request 중 B가 visible draft와 pending query를 대체함
+    /// - 기대 결과: visible B는 유지되고 handoff query만 제출된 A로 복원됨
+    func testApplyGeneratedFilterChanges_whenVisibleDraftChanges_usesSubmittedQueryForHandoff() {
+        let submittedQuery = "VOY589_SYNTHETIC_SUBMITTED"
+        let visibleDraft = "VOY589_SYNTHETIC_DRAFT"
+        var state = makeGeneratedFilterStageState(rawText: submittedQuery)
+        guard let requestID = state.activeFiltersRequestID else {
+            return XCTFail("generated response must create an active filters request")
+        }
+
+        _ = ComposerFeature().reduce(into: &state, action: .setText(visibleDraft))
+        state.pendingSearchQuery = visibleDraft
+
+        withDependencies {
+            $0.registryClient = makeRegistryClient()
+            $0.uuid = .constant(UUID())
+        } operation: {
+            _ = ComposerFeature().reduce(
+                into: &state,
+                action: .filtersResponse(requestID, .success(SearchResponsePayload(itemCount: 1))),
+            )
+        }
+
+        XCTAssertEqual(state.text, visibleDraft)
+        XCTAssertEqual(state.pendingSearchQuery, submittedQuery)
+    }
+
     /// RCL-004-apply_generated_filter_changes: manual apply는 query 복원 context보다 우선함
     /// 사용자가 명시적으로 현재 filter를 적용하면 이전 자연어 submit context가 폐기되는지 검증한다.
     /// - 검증 내용: applyFilters action의 internal recovery context supersession
@@ -603,6 +633,8 @@ extension RCL004ComposeCollectionFilterTests {
 
         _ = ComposerFeature().reduce(into: &state, action: .setText(queryB))
         _ = ComposerFeature().reduce(into: &state, action: .submit)
+        XCTAssertTrue(state.scopeEditor.selection.isRootOnly)
+        XCTAssertTrue(state.conditions.isEmpty)
         guard let searchRequestB = state.activeSearchRequestID else {
             return XCTFail("submit B must create an active search request")
         }
@@ -800,6 +832,8 @@ extension RCL004ComposeCollectionFilterTests {
             action: .filtersResponse(firstFiltersRequestID, .failure(MockLocalizedError("synthetic"))),
         )
         XCTAssertEqual(state.text, rawQuery)
+        XCTAssertTrue(state.scopeEditor.selection.isRootOnly)
+        XCTAssertTrue(state.conditions.isEmpty)
 
         _ = ComposerFeature().reduce(into: &state, action: .submit)
         guard let retrySearchRequestID = state.activeSearchRequestID else {
@@ -813,13 +847,22 @@ extension RCL004ComposeCollectionFilterTests {
         } operation: {
             _ = ComposerFeature().reduce(
                 into: &state,
-                action: .searchResponse(
-                    retrySearchRequestID,
-                    .success(SearchResponsePayload(
-                        itemCount: 0,
-                        queryConversion: SearchQueryConversionMetadataPayload(outcome: .unchangedResult),
-                    )),
-                ),
+                action: .searchResponse(retrySearchRequestID, .success(makeGeneratedConditionResponse())),
+            )
+        }
+
+        guard let retryFiltersRequestID = state.activeFiltersRequestID else {
+            return XCTFail("retry must re-execute generated filters")
+        }
+        XCTAssertTrue(state.isFilteringInFlight)
+
+        withDependencies {
+            $0.registryClient = makeRegistryClient()
+            $0.uuid = .constant(UUID())
+        } operation: {
+            _ = ComposerFeature().reduce(
+                into: &state,
+                action: .filtersResponse(retryFiltersRequestID, .success(SearchResponsePayload(itemCount: 0))),
             )
         }
 
@@ -858,6 +901,8 @@ extension RCL004ComposeCollectionFilterTests {
         XCTAssertNil(state.activeFiltersRequestID)
         XCTAssertFalse(state.isLoadingFilters)
         XCTAssertFalse(state.isFilteringInFlight)
+        XCTAssertTrue(state.scopeEditor.selection.isRootOnly)
+        XCTAssertTrue(state.conditions.isEmpty)
         XCTAssertEqual(state.queryRenderPhase, .idle)
         XCTAssertNil(state.queryRecoveryContext)
     }

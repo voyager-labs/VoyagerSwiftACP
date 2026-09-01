@@ -32,6 +32,15 @@ struct ComposerSearchLifecycleReducer {
                     state: &state,
                     searchClient: searchClient,
                     collectionSearchAISettingsClient: collectionSearchAISettingsClient,
+                    restoreQueryOwnedFilters: { state in
+                        guard state.activeFiltersMetricSource == ComposerCollectionFilterMetrics.sourcePostQueryApply
+                        else { return }
+                        restoreSubmittedSearchFilters(
+                            state: &state,
+                            registryClient: registryClient,
+                            uuid: { uuid() },
+                        )
+                    },
                     composerMetricClient: composerMetricClient,
                 )
 
@@ -39,7 +48,12 @@ struct ComposerSearchLifecycleReducer {
                 return handleCancelSearch(state: &state, composerMetricClient: composerMetricClient)
 
             case .view(.cancelFilters):
-                return handleCancelFilters(state: &state, composerMetricClient: composerMetricClient)
+                return handleCancelFilters(
+                    state: &state,
+                    registryClient: registryClient,
+                    uuid: { uuid() },
+                    composerMetricClient: composerMetricClient,
+                )
 
             case .view(.applyFilters):
                 return handleApplyFilters(
@@ -221,6 +235,10 @@ struct ComposerSearchLifecycleReducer {
                 state.lastAcceptedFiltersRequestID = requestID
                 switch response {
                 case let .success(response):
+                    if let submittedQuery = state.queryRecoveryRawText(for: .filters(requestID)) {
+                        let trimmedQuery = submittedQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+                        state.pendingSearchQuery = trimmedQuery.isEmpty ? nil : trimmedQuery
+                    }
                     state.discardQueryRecovery()
                     state.isLoadingFilters = false
                     state.isFilteringInFlight = false
@@ -254,14 +272,21 @@ struct ComposerSearchLifecycleReducer {
                     return .none
 
                 case let .failure(error):
+                    let metricSource = state.activeFiltersMetricSource ?? ComposerCollectionFilterMetrics
+                        .sourceManualApply
+                    let failedFilters = buildFilters(from: state)
+                    if metricSource == ComposerCollectionFilterMetrics.sourcePostQueryApply {
+                        restoreSubmittedSearchFilters(
+                            state: &state,
+                            registryClient: registryClient,
+                            uuid: { uuid() },
+                        )
+                    }
                     state.restoreQueryRecoveryIfEligible(for: .filters(requestID))
                     state.isLoadingFilters = false
                     state.isFilteringInFlight = false
                     state.activeFiltersRequestID = nil
-                    let metricSource = state.activeFiltersMetricSource ?? ComposerCollectionFilterMetrics
-                        .sourceManualApply
                     state.activeFiltersMetricSource = nil
-                    let failedFilters = buildFilters(from: state)
                     logFiltersDurationIfNeeded(state.filtersStartedAt, composerMetricClient: composerMetricClient)
                     composerMetricClient.logMetric(
                         ComposerCollectionFilterMetrics.applyResult,
@@ -306,10 +331,12 @@ private func handleSubmit(
     state: inout ComposerFeature.State,
     searchClient: SearchClient,
     collectionSearchAISettingsClient: CollectionSearchAISettingsClient,
+    restoreQueryOwnedFilters: (inout ComposerFeature.State) -> Void,
     composerMetricClient: ComposerMetricClient,
 ) -> Effect<ComposerFeature.Action> {
     let query = state.text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !query.isEmpty else { return .none }
+    restoreQueryOwnedFilters(&state)
     let filters = buildFilters(from: state)
     let searchRequestID = UUID()
     state.captureQueryRecovery(rawText: state.text, requestID: searchRequestID)
@@ -403,11 +430,20 @@ private func handleCancelSearch(
 
 private func handleCancelFilters(
     state: inout ComposerFeature.State,
+    registryClient: RegistryClient,
+    uuid: () -> UUID,
     composerMetricClient: ComposerMetricClient,
 ) -> Effect<ComposerFeature.Action> {
     let requestID = state.activeFiltersRequestID
     let metricSource = state.activeFiltersMetricSource ?? ComposerCollectionFilterMetrics.sourceManualApply
     let filters = buildFilters(from: state)
+    if metricSource == ComposerCollectionFilterMetrics.sourcePostQueryApply {
+        restoreSubmittedSearchFilters(
+            state: &state,
+            registryClient: registryClient,
+            uuid: uuid,
+        )
+    }
     state.isLoadingFilters = false
     state.isFilteringInFlight = false
     state.activeFiltersRequestID = nil
@@ -434,6 +470,25 @@ private func handleCancelFilters(
         ),
     )
     return .cancel(id: ComposerFeature.CancelID.filters(ownerID: state.cancellationOwnerID))
+}
+
+private func restoreSubmittedSearchFilters(
+    state: inout ComposerFeature.State,
+    registryClient: RegistryClient,
+    uuid: () -> UUID,
+) {
+    guard let submittedSearchFilters = state.submittedSearchFilters else { return }
+    applyAppliedFilters(
+        .init(
+            scopes: submittedSearchFilters.scopes,
+            excludedScopes: submittedSearchFilters.excludedScopes,
+            includeSubfolders: submittedSearchFilters.includeSubfolders,
+            conditions: submittedSearchFilters.conditions,
+        ),
+        state: &state,
+        registryClient: registryClient,
+        uuid: uuid,
+    )
 }
 
 private func handleApplyFilters(
