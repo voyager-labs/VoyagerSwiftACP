@@ -324,6 +324,28 @@ final class ProductAnalyticsRegistryTests: XCTestCase {
         XCTAssertEqual(request.event.properties["source_surface"], .string("composer"))
     }
 
+    func testBundledCutEntriesCapturesCanonicalActionEnvelope() {
+        let registry = ProductAnalyticsRegistry.load(bundle: VoyagerTestSupport.hostApplicationBundle())
+
+        let result = registry.resolve(
+            metricKey: "voy_691_eop_002_cut_entries",
+            identity: .device("test-device-id"),
+            properties: [
+                "result_status": .string("success"),
+                "action_type": .string("cut"),
+                "source_surface": .string("file_manager_content"),
+            ],
+            eventVersion: .init(rawValue: "1"),
+        )
+
+        guard case let .capture(request) = result else {
+            return XCTFail("expected bundled cut-entries capture, got: \(result)")
+        }
+        XCTAssertEqual(request.event.eventName.rawValue, "voyager_entry_action_result")
+        XCTAssertEqual(request.event.eventVersion.rawValue, "1")
+        XCTAssertEqual(request.event.properties["action_type"], .string("cut"))
+    }
+
     func testBundledQueryResultCapturesEveryCanonicalConversionOutcome() {
         let registry = ProductAnalyticsRegistry.load(bundle: VoyagerTestSupport.hostApplicationBundle())
         guard let metricKey = registry.records.first(where: {

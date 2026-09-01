@@ -3232,7 +3232,7 @@
       "legacy_aliases": [],
       "identity_policy": "device",
       "property_allowlist": ["result_status", "action_type", "source_surface"],
-      "property_value_allowlist": {"result_status": ["success", "failure", "cancelled", "partial", "unavailable"], "action_type": ["open", "quick_look", "share", "reveal_in_finder", "copy_path", "create", "rename", "move", "copy", "trash", "restore", "tag"], "source_surface": ["file_manager_content", "context_menu", "toolbar", "keyboard_shortcut", "menu_command", "drag_and_drop"]},
+      "property_value_allowlist": {"result_status": ["success", "failure", "cancelled", "partial", "unavailable"], "action_type": ["open", "quick_look", "share", "reveal_in_finder", "copy_path", "create", "rename", "move", "copy", "trash", "restore", "tag", "cut"], "source_surface": ["file_manager_content", "context_menu", "toolbar", "keyboard_shortcut", "menu_command", "drag_and_drop"]},
       "related_issues": ["VOY-691"]
     },
     {
