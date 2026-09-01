@@ -231,6 +231,7 @@ final class MainContainerSplitCoordinator: NSViewController, NSSplitViewDelegate
         guard let hostingView = contentHosting?.view else { return }
 
         let entryListViews = descendantViews(of: hostingView).compactMap { $0 as? EntryListView }
+        keyCommandFocusCoordinator.registerEntryListView(entryListViews.first)
         let existingChildren = hostingView.accessibilityChildren() ?? []
         let updatedChildren = Self.entryListAccessibilityChildren(
             existingChildren: existingChildren,

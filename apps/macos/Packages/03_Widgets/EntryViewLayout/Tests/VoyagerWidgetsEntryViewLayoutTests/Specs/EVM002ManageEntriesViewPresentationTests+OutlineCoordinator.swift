@@ -88,8 +88,8 @@ extension EVM002ManageEntriesViewPresentationTests {
 
     // MARK: - EVM-002-update_entry_selection
 
-    /// EVM-002-update_entry_selection: 그룹 본문 Plain/Command 입력은 자식 Entry ID만 정규 선택에 투영한다.
-    func testGroupedRowsProjectCanonicalSelectionForPlainAndCommandGestures() throws {
+    /// EVM-002-update_entry_selection: group header 본문은 child Entry 선택과 분리된 cursor만 갱신한다.
+    func testGroupedRowsKeepHeaderCursorSeparateFromEntrySelection() throws {
         let first = makePresentationFile(id: "/root/a.txt", name: "a.txt")
         let second = makePresentationFile(id: "/root/b.txt", name: "b.txt")
         let third = makePresentationFile(id: "/root/c.txt", name: "c.txt")
@@ -102,32 +102,31 @@ extension EVM002ManageEntriesViewPresentationTests {
         fixture.coordinator.isRenderObservationEnabled = false
         let alphaRow = try fixture.groupRow(named: "Alpha")
         try fixture.mouseDownAndFlush(row: alphaRow)
-        let alphaRows = IndexSet(integersIn: alphaRow ... alphaRow + 3)
-        fixture.assertSelection([first.id, second.id], focus: second.id, rows: alphaRows, updates: 1)
+        fixture.assertSelection([], focus: nil, rows: [alphaRow], updates: 1)
         try fixture.assertSelectedGroupRow(alphaRow)
         fixture.coordinator.processRender(EntryListCoordinatorRenderSnapshot(state: fixture.store.state))
-        fixture.assertCanonical([first.id, second.id], focus: second.id, updates: 1)
-        XCTAssertEqual(fixture.tableView.selectedRowIndexes, alphaRows)
+        fixture.assertCanonical([], focus: nil, updates: 1)
+        XCTAssertEqual(fixture.tableView.selectedRowIndexes, [alphaRow])
         XCTAssertTrue(try fixture.groupRowIsSelected(alphaRow))
+
         let betaRow = try fixture.groupRow(named: "Beta")
         XCTAssertTrue(try fixture.routeBody(row: betaRow, modifiers: .command))
-        let allRows = IndexSet(integersIn: alphaRow ... betaRow + 1)
-        fixture.assertSelection([first.id, second.id, third.id], focus: third.id, rows: allRows, updates: 2)
+        fixture.assertSelection([], focus: nil, rows: [betaRow], updates: 1)
         XCTAssertTrue(try fixture.routeBody(row: alphaRow, modifiers: .command))
-        let betaRows = IndexSet(integersIn: betaRow ... betaRow + 1)
-        fixture.assertSelection([third.id], focus: third.id, rows: betaRows, updates: 3)
+        fixture.assertSelection([], focus: nil, rows: [alphaRow], updates: 1)
         XCTAssertTrue(try fixture.routeBody(row: betaRow, modifiers: .command))
-        fixture.assertSelection([], focus: nil, rows: [], updates: 4)
+        fixture.assertSelection([], focus: nil, rows: [betaRow], updates: 1)
+
         let alphaItem = try XCTUnwrap(fixture.coordinator.groupItemByName["Alpha"])
         fixture.tableView.collapseItem(alphaItem)
         XCTAssertTrue(try fixture.routeBody(row: alphaRow))
-        fixture.assertSelection([first.id, second.id], focus: second.id, rows: IndexSet(integer: alphaRow), updates: 5)
+        fixture.assertSelection([], focus: nil, rows: [alphaRow], updates: 1)
         XCTAssertTrue(try fixture.routeBody(row: alphaRow))
         XCTAssertTrue(try fixture.routeBlank())
         let emptyItem = try XCTUnwrap(fixture.coordinator.groupItemByName["Empty"])
         XCTAssertFalse(fixture.coordinator.outlineView(fixture.tableView, shouldSelectItem: emptyItem))
         XCTAssertTrue(try fixture.routeBody(row: fixture.groupRow(named: "Empty")))
-        fixture.assertCanonical([first.id, second.id], focus: second.id, updates: 5)
+        fixture.assertCanonical([], focus: nil, updates: 1)
 
         let entrySelection = Task4Fixture(
             entries: [third, second, first],
@@ -203,7 +202,7 @@ extension EVM002ManageEntriesViewPresentationTests {
             renaming: entries[3].id,
         )
         fixture.prependRootEntry(entries[0])
-        XCTAssertTrue(try fixture.routeBody(row: fixture.groupRow(named: "Alpha")))
+        try fixture.selectGroup(named: "Alpha")
         XCTAssertTrue(try fixture.tableView.beginNativeSelection(
             atRow: fixture.entryRow(id: entries[1].id),
             modifierFlags: .command,
@@ -211,7 +210,7 @@ extension EVM002ManageEntriesViewPresentationTests {
         fixture.tableView.selectRowIndexes(IndexSet(integersIn: 3 ... 4), byExtendingSelection: false)
         fixture.coordinator.outlineViewSelectionDidChange(Notification(name: .init("native-command-remove")))
         fixture.assertCanonical(Set(entries[2 ... 3].map(\.id)), focus: entries[3].id, updates: 2)
-        XCTAssertTrue(try fixture.routeBody(row: fixture.groupRow(named: "Alpha")))
+        try fixture.selectGroup(named: "Alpha")
         try fixture.mouseDownAndFlush(row: fixture.groupRow(named: "Alpha"), disclosure: true)
         try fixture.mouseDownAndFlush(row: fixture.entryRow(id: entries[0].id), modifiers: .command)
         fixture.assertCanonical(Set(entries.map(\.id)), focus: entries[0].id, updates: 4)
@@ -266,6 +265,42 @@ extension EVM002ManageEntriesViewPresentationTests {
         XCTAssertIdentical(fixture.tableView.activeSelectionOccurrence, groupItem)
     }
 
+    /// EVM-002-update_entry_selection: native multi-group selection projects every selected group.
+    /// context 없는 VoiceOver/AppKit 다중 선택에서도 각 group row의 child Entry를 canonical selection에 병합한다.
+    /// - 검증 내용: 두 group row를 native selection으로 지정하면 두 그룹의 distinct child ID를 모두 투영한다.
+    /// - 사전 조건: 각각 두 child Entry를 가진 Alpha/Beta group row가 함께 선택되어 있다.
+    /// - 기대 결과: canonical selection은 네 Entry이고 native group row 선택은 유지된다.
+    func testNativeMultipleGroupSelectionProjectsChildrenWithoutContext() throws {
+        let entries = [
+            makePresentationFile(id: "/root/a.txt", name: "a.txt"),
+            makePresentationFile(id: "/root/b.txt", name: "b.txt"),
+            makePresentationFile(id: "/root/c.txt", name: "c.txt"),
+            makePresentationFile(id: "/root/d.txt", name: "d.txt"),
+        ]
+        let fixture = Task4Fixture(
+            entries: entries,
+            groups: [
+                ("Alpha", Array(entries[0 ... 1])),
+                ("Beta", Array(entries[2 ... 3])),
+            ],
+        )
+        let alphaItem = try XCTUnwrap(fixture.coordinator.groupItemByName["Alpha"])
+        let betaItem = try XCTUnwrap(fixture.coordinator.groupItemByName["Beta"])
+        let alphaRow = try fixture.groupRow(named: "Alpha")
+        let betaRow = try fixture.groupRow(named: "Beta")
+        XCTAssertTrue(fixture.coordinator.outlineView(fixture.tableView, shouldSelectItem: alphaItem))
+        XCTAssertTrue(fixture.coordinator.outlineView(fixture.tableView, shouldSelectItem: betaItem))
+        fixture.tableView.selectRowIndexes(
+            IndexSet([alphaRow, betaRow]),
+            byExtendingSelection: false,
+        )
+
+        fixture.coordinator.outlineViewSelectionDidChange(Notification(name: .init("native-multi-group-selection")))
+
+        fixture.assertCanonical(Set(entries.map(\.id)), focus: entries[3].id, updates: 1)
+        XCTAssertEqual(fixture.tableView.selectedRowIndexes, IndexSet([alphaRow, betaRow]))
+    }
+
     /// EVM-002-update_entry_selection: blank-space mouse down clears the current selection.
     /// 목록의 행 바깥 빈 영역을 클릭해도 visible selection contract와 native focus 경로를 유지하는지 검증한다.
     /// - 검증 내용: modifier 없는 빈 공간 mouseDown이 canonical selection과 물리 row selection을 비운다.
@@ -312,7 +347,7 @@ extension EVM002ManageEntriesViewPresentationTests {
             let fixture = makeFixture()
             try fixture.appendDuplicate(entries[1], toGroupNamed: "G1")
             let groupRow = try fixture.groupRow(named: "G1")
-            XCTAssertTrue(try fixture.routeBody(row: groupRow))
+            try fixture.selectGroup(named: "G1")
             fixture.assertSelection(
                 Set(entries[1 ... 3].map(\.id)), focus: entries[3].id,
                 rows: IndexSet(integersIn: groupRow ... groupRow + 4), updates: 1,
@@ -326,7 +361,7 @@ extension EVM002ManageEntriesViewPresentationTests {
         do {
             let fixture = makeFixture()
             let groupRow = try fixture.groupRow(named: "G1")
-            XCTAssertTrue(try fixture.routeBody(row: groupRow))
+            try fixture.selectGroup(named: "G1")
             try fixture.mouseDownAndFlush(row: groupRow, disclosure: true)
             fixture.assertSelection(
                 Set(entries[1 ... 3].map(\.id)), focus: entries[3].id, rows: [groupRow], updates: 1,
@@ -448,7 +483,7 @@ extension EVM002ManageEntriesViewPresentationTests {
         let fixture = Task4Fixture(entries: entries, groups: [("G1", entries)])
         let ids = Set(entries.map(\.id))
         let bRow = try fixture.entryRow(id: entries[0].id)
-        XCTAssertTrue(try fixture.routeBody(row: fixture.groupRow(named: "G1")))
+        try fixture.selectGroup(named: "G1")
         try fixture.mouseDownAndFlush(row: bRow, modifiers: .command) { try fixture.rightMouseDown(row: bRow) }
         try fixture.mouseDownAndFlush(row: bRow, modifiers: .command) { try fixture.keyDown(.rightArrow) }
         fixture.assertSelection(ids, focus: entries[2].id, rows: IndexSet(integersIn: 0 ... 3), updates: 1)
@@ -458,7 +493,7 @@ extension EVM002ManageEntriesViewPresentationTests {
         fixture.assertSelection(
             Set(entries[1 ... 2].map(\.id)), focus: entries[2].id, rows: IndexSet(integersIn: 2 ... 3), updates: 2,
         )
-        XCTAssertTrue(try fixture.routeBody(row: fixture.groupRow(named: "G1")))
+        try fixture.selectGroup(named: "G1")
         try fixture.mouseDownAndFlush(row: fixture.entryRow(id: entries[0].id), modifiers: .command, dragOffset: 40)
         fixture.assertCanonical(ids, focus: entries[2].id, updates: 3)
     }
@@ -474,7 +509,7 @@ extension EVM002ManageEntriesViewPresentationTests {
         )
         fixture.coordinator.isRenderObservationEnabled = false
         let firstGroupRow = try fixture.groupRow(named: "G1")
-        XCTAssertTrue(try fixture.routeBody(row: firstGroupRow))
+        try fixture.selectGroup(named: "G1")
         fixture.coordinator.processRender(EntryListCoordinatorRenderSnapshot(state: fixture.store.state))
         let duplicateRows = fixture.visibleRows(id: first.id)
         XCTAssertEqual(duplicateRows.count, 2)
@@ -490,7 +525,7 @@ extension EVM002ManageEntriesViewPresentationTests {
         XCTAssertEqual(fixture.tableView.selectedRowIndexes, collapsedFullRows)
         XCTAssertTrue(try fixture.groupRowIsSelected(firstGroupRow))
         try fixture.mouseDownAndFlush(row: firstGroupRow, disclosure: true)
-        XCTAssertTrue(try fixture.routeBody(row: firstGroupRow))
+        try fixture.selectGroup(named: "G1")
         try fixture.keyDown(.leftArrow)
         fixture.assertCanonical([first.id, second.id], focus: second.id, updates: 1)
         fixture.coordinator.processRender(EntryListCoordinatorRenderSnapshot(state: fixture.store.state))
@@ -539,6 +574,58 @@ extension EVM002ManageEntriesViewPresentationTests {
         XCTAssertEqual(malformedState.rangeAnchorId, second.id)
     }
 
+    /// EVM-002-update_entry_selection: group header는 Entry selection과 분리된 keyboard/disclosure cursor로 동작한다.
+    /// 사용자가 entry 행에서 group 행으로 이동하거나 group body를 클릭한 뒤 disclosure 키를 사용하는 경로를 검증한다.
+    /// - 검증 내용: Up/Down이 group 행을 포함하고 group body는 child Entry를 선택하지 않는다.
+    /// - 사전 조건: root entry 하나와 두 child를 가진 expanded G1 group이 list projection에 있다.
+    /// - 기대 결과: group 행만 cursor로 선택되고 Left/Right로 G1을 접고 펼칠 수 있다.
+    func testGroupedRowsPreserveKeyboardCursorAcrossProjectionAndDisclosure() throws {
+        let entries = ["a", "b", "c"].map {
+            makePresentationFile(id: "/root/\($0).txt", name: "\($0).txt")
+        }
+        let fixture = Task4Fixture(entries: entries, groups: [("G1", Array(entries[1 ... 2]))])
+        fixture.prependRootEntry(entries[0])
+        let initialGroupRow = try fixture.groupRow(named: "G1")
+        fixture.setSelection([entries[0].id], focus: entries[0].id)
+        try fixture.keyDown(.downArrow)
+        fixture.renderCurrentState()
+        fixture.assertSelection([], focus: nil, rows: [initialGroupRow], updates: 2)
+
+        fixture.replaceProjectionWithFreshItems()
+        let projectedGroupRow = try fixture.groupRow(named: "G1")
+        let firstChildRow = try fixture.entryRow(id: entries[1].id)
+        let secondChildRow = try fixture.entryRow(id: entries[2].id)
+        try fixture.keyDown(.downArrow)
+        fixture.renderCurrentState()
+        fixture.assertSelection([entries[1].id], focus: entries[1].id, rows: [firstChildRow], updates: 3)
+        try fixture.keyDown(.downArrow)
+        fixture.renderCurrentState()
+        fixture.assertSelection([entries[2].id], focus: entries[2].id, rows: [secondChildRow], updates: 4)
+        try fixture.keyDown(.upArrow)
+        fixture.renderCurrentState()
+        fixture.assertSelection([entries[1].id], focus: entries[1].id, rows: [firstChildRow], updates: 5)
+        try fixture.keyDown(.upArrow)
+        fixture.renderCurrentState()
+        fixture.assertSelection([], focus: nil, rows: [projectedGroupRow], updates: 6)
+
+        fixture.setSelection([entries[1].id], focus: entries[1].id)
+        try fixture.mouseDownAndFlush(row: projectedGroupRow, outlineCellBody: true)
+        fixture.assertSelection([], focus: nil, rows: [projectedGroupRow], updates: 8)
+        try fixture.keyDown(.leftArrow)
+        XCTAssertTrue(fixture.store.state.entryArrangements.collapsedGroups.contains("G1"))
+
+        fixture.replaceProjectionWithFreshItems()
+        try fixture.keyDown(.leftArrow)
+        XCTAssertTrue(fixture.store.state.entryArrangements.collapsedGroups.contains("G1"))
+
+        fixture.coordinator.processRender(EntryListCoordinatorRenderSnapshot(state: fixture.store.state))
+        XCTAssertFalse(try fixture.tableView.isItemExpanded(XCTUnwrap(fixture.coordinator.groupItemByName["G1"])))
+        XCTAssertTrue(fixture.tableView.selectedRowIndexes.contains(projectedGroupRow))
+        try fixture.keyDown(.rightArrow)
+        XCTAssertFalse(fixture.store.state.entryArrangements.collapsedGroups.contains("G1"))
+        XCTAssertTrue(try fixture.groupRowIsSelected(projectedGroupRow))
+    }
+
     /// EVM-002-update_entry_selection: projection 교체는 stale occurrence를 버리고 canonical focus와 anchor에서
     /// 새 occurrence를 다시 찾는다.
     func testGroupedRowsReseedAfterProjectionReplacement() throws {
@@ -576,7 +663,7 @@ extension EVM002ManageEntriesViewPresentationTests {
         fixture.assertSelection([entries[0].id], focus: entries[0].id, rows: IndexSet(integer: 1), updates: 2)
 
         let reordered = Task4Fixture(entries: entries, groups: [("G1", entries), ("G2", entries)])
-        XCTAssertTrue(try reordered.routeBody(row: reordered.groupRow(named: "G1")))
+        try reordered.selectGroup(named: "G1")
         reordered.tableView.invalidateSelectionProjection()
         reordered.coordinator.outlineItems.reverse()
         reordered.tableView.reloadData()
@@ -1396,6 +1483,15 @@ private final class Task4Fixture {
         return row
     }
 
+    func renderCurrentState() {
+        coordinator.processRender(EntryListCoordinatorRenderSnapshot(state: store.state))
+    }
+
+    func selectGroup(named name: String) throws {
+        let item = try XCTUnwrap(coordinator.groupItemByName[name])
+        _ = coordinator.applyGroupSelection(item, commandPressed: false)
+    }
+
     func entryRow(id: EntryModel.ID) throws -> Int {
         let item = try XCTUnwrap(coordinator.entryItemsByID[id]?.first(where: { tableView.row(forItem: $0) >= 0 }))
         return tableView.row(forItem: item)
@@ -1506,6 +1602,7 @@ private final class Task4Fixture {
         row: Int,
         modifiers: NSEvent.ModifierFlags = [],
         disclosure: Bool = false,
+        outlineCellBody: Bool = false,
         dragOffset: CGFloat? = nil,
         beforeDrain: (() throws -> Void)? = nil,
     ) throws {
@@ -1522,6 +1619,7 @@ private final class Task4Fixture {
             type: .leftMouseDown,
             modifiers: modifiers,
             disclosure: disclosure,
+            outlineCellBody: outlineCellBody,
             windowNumber: windowNumber,
         )
         let mouseUp = try event(
@@ -1529,6 +1627,7 @@ private final class Task4Fixture {
             type: .leftMouseUp,
             modifiers: modifiers,
             disclosure: disclosure,
+            outlineCellBody: outlineCellBody,
             windowNumber: windowNumber,
         )
         NSApp.postEvent(mouseUp, atStart: true)
@@ -1584,6 +1683,7 @@ private final class Task4Fixture {
         modifiers: NSEvent.ModifierFlags = [],
         clickCount: Int = 1,
         disclosure: Bool = false,
+        outlineCellBody: Bool = false,
         windowNumber: Int = 0,
         locationOffset: NSPoint = .zero,
     ) throws -> NSEvent {
@@ -1591,9 +1691,15 @@ private final class Task4Fixture {
         if let row {
             let rowRect = tableView.rect(ofRow: row)
             let outlineRect = tableView.frameOfOutlineCell(atRow: row)
-            tablePoint = disclosure
-                ? NSPoint(x: outlineRect.midX, y: outlineRect.midY)
-                : NSPoint(x: max(rowRect.midX, outlineRect.maxX + 12), y: rowRect.midY)
+            let indentation = max(tableView.indentationPerLevel, 16)
+            let disclosureX = outlineRect.minX
+            tablePoint = if disclosure {
+                NSPoint(x: disclosureX + indentation / 2, y: outlineRect.midY)
+            } else if outlineCellBody {
+                NSPoint(x: disclosureX + indentation + 8, y: outlineRect.midY)
+            } else {
+                NSPoint(x: max(rowRect.midX, outlineRect.maxX + 12), y: rowRect.midY)
+            }
         } else {
             tablePoint = NSPoint(
                 x: tableView.bounds.midX,

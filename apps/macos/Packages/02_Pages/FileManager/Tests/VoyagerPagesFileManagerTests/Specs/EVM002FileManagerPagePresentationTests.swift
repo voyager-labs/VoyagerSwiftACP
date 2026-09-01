@@ -4,7 +4,7 @@ import IdentifiedCollections
 import VoyagerEntitiesAppPreferences
 import VoyagerEntitiesEntry
 @testable import VoyagerPagesFileManager
-import VoyagerWidgetsEntryViewLayout
+@testable import VoyagerWidgetsEntryViewLayout
 import XCTest
 
 @MainActor
@@ -543,6 +543,48 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
         XCTAssertTrue(children.contains { ($0 as? NSView) === retainedView })
         XCTAssertTrue(children.contains { ($0 as? NSView) === currentList })
         XCTAssertFalse(children.contains { ($0 as? NSView) === staleList })
+    }
+
+    /// EVM-002-update_entry_selection: FileManager key bridge routes arrows to the mounted list.
+    /// key-command focus가 overlay에 있어도 수정자 없는 화살표가 EntryListView의 visible outline 경로를 사용하는지 검증한다.
+    /// - 검증 내용: mounted list에 등록된 focus coordinator가 Down arrow를 list coordinator로 전달한다.
+    /// - 사전 조건: 두 Entry 중 첫 번째가 선택된 EntryListView와 key-command focus coordinator
+    /// - 기대 결과: bridge가 소비되고 두 번째 Entry가 선택된다.
+    func testKeyCommandFocusCoordinatorRoutesArrowToMountedEntryList() throws {
+        let first = EntryModel.temporaryFolder(id: "/root/first", name: "first")
+        let second = EntryModel.temporaryFolder(id: "/root/second", name: "second")
+        var state = FileManagerContentState()
+        state.entryViewLayout.entries = [first, second]
+        state.entryViewLayout.selectedIds = [first.id]
+        state.entryViewLayout.lastSelectedId = first.id
+        state.entryViewLayout.rangeAnchorId = first.id
+        let store = Store(initialState: state) {
+            FileManagerContentFeature()
+        }
+        let listCoordinator = EntryListCoordinator(store: store.scope(
+            state: \.entryViewLayout,
+            action: \.entryViewLayout,
+        ))
+        let listView = EntryListView()
+        listCoordinator.bind(to: listView)
+        let focusCoordinator = FileManagerKeyCommandFocusCoordinator()
+        focusCoordinator.registerEntryListView(listView)
+        let event = try XCTUnwrap(NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: [],
+            timestamp: 1,
+            windowNumber: 0,
+            context: nil,
+            characters: "\u{f701}",
+            charactersIgnoringModifiers: "\u{f701}",
+            isARepeat: false,
+            keyCode: 125,
+        ))
+
+        XCTAssertTrue(focusCoordinator.routeEntryListKeyDown(event))
+        XCTAssertEqual(listView.tableView.selectedRowIndexes, IndexSet(integer: 1))
+        XCTAssertEqual(store.state.entryViewLayout.selectedIds, [second.id])
     }
 
     // MARK: - VOY-578-ordinary_directory_loading

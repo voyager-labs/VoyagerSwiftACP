@@ -356,7 +356,7 @@ public final class EntryListView: NSView {
 
         override func keyDown(with event: NSEvent) {
             cancelPendingNativeSelection()
-            let row = liveRow(for: activeSelectionOccurrence) ?? selectedRow
+            let row = keyboardSelectionRow
             guard row >= 0, let specialKey = event.specialKey else {
                 super.keyDown(with: event)
                 return
@@ -366,26 +366,30 @@ public final class EntryListView: NSView {
             case .rightArrow:
                 let item = item(atRow: row)
                 if !isItemExpanded(item), isExpandable(item) {
-                    performDisclosureSelectionTransaction { expandItem(item) }
+                    performKeyboardDisclosure { expandItem(item) }
                     return
                 }
             case .leftArrow:
                 let item = item(atRow: row)
                 if isItemExpanded(item) {
-                    performDisclosureSelectionTransaction { collapseItem(item) }
+                    performKeyboardDisclosure { collapseItem(item) }
                     return
                 }
             case .upArrow, .downArrow:
                 let destinationRow = row + (specialKey == .upArrow ? -1 : 1)
                 guard (0 ..< numberOfRows).contains(destinationRow) else { return }
                 guard contextMenuProvider?.handleSelectionKeyDown(forRow: destinationRow, event: event) == true
-                else { break }
+                else { return }
                 scrollRowToVisible(destinationRow)
                 return
             default:
                 break
             }
             super.keyDown(with: event)
+        }
+
+        private var keyboardSelectionRow: Int {
+            liveRow(for: activeSelectionOccurrence) ?? selectedRow
         }
 
         override func rightMouseDown(with event: NSEvent) {
@@ -442,7 +446,19 @@ public final class EntryListView: NSView {
             let location = convert(event.locationInWindow, from: nil)
             let row = row(at: location)
             guard row >= 0 else { return nil }
-            return (row, frameOfOutlineCell(atRow: row).contains(location))
+            return (row, isDisclosureHit(at: location, row: row))
+        }
+
+        private func isDisclosureHit(at location: NSPoint, row: Int) -> Bool {
+            guard let item = item(atRow: row), isExpandable(item) else { return false }
+            let outlineCellFrame = frameOfOutlineCell(atRow: row)
+            let disclosureFrame = NSRect(
+                x: outlineCellFrame.minX,
+                y: outlineCellFrame.minY,
+                width: outlineCellFrame.width,
+                height: outlineCellFrame.height,
+            )
+            return disclosureFrame.contains(location)
         }
     }
 
@@ -616,6 +632,21 @@ public final class EntryListView: NSView {
     }
 }
 
+public extension EntryListView {
+    func handleListKeyDown(with event: NSEvent) -> Bool {
+        guard event.modifierFlags.isDisjoint(with: [.command, .option, .control]),
+              let specialKey = event.specialKey
+        else { return false }
+        switch specialKey {
+        case .leftArrow, .rightArrow, .upArrow, .downArrow:
+            tableView.keyDown(with: event)
+            return true
+        default:
+            return false
+        }
+    }
+}
+
 private extension EntryListView.EntryListTableView {
     func cancelPendingNativeSelection(ownedBy owner: UInt? = nil) {
         if let owner, pendingNativeSelectionOwner != owner { return }
@@ -642,5 +673,46 @@ private extension EntryListView.EntryListTableView {
                 self.selectRowIndexes(toggledRows, byExtendingSelection: false)
             }
         }
+    }
+
+    func performKeyboardDisclosure(_ operation: () -> Void) {
+        let selectedRows = selectedRowIndexes
+        let selectedGroupName: String? = if let item = item(atRow: keyboardSelectionRow) as? EntryListOutlineItem,
+                                            case let .group(name, _, _) = item.kind
+        {
+            name
+        } else {
+            nil
+        }
+        performDisclosureSelectionTransaction {
+            operation()
+            guard !selectedRows.isEmpty else { return }
+            selectRowIndexes(selectedRows, byExtendingSelection: false)
+        }
+        guard selectedRows.count == 1, let selectedGroupName else { return }
+        restoreKeyboardGroupCursor(named: selectedGroupName)
+        DispatchQueue.main.async { [weak self] in
+            self?.restoreKeyboardGroupCursor(named: selectedGroupName)
+        }
+    }
+
+    func restoreKeyboardGroupCursor(named name: String) {
+        if let active = activeSelectionOccurrence as? EntryListOutlineItem {
+            guard case let .group(activeName, _, _) = active.kind, activeName == name else { return }
+        } else if activeSelectionOccurrence != nil {
+            return
+        }
+        guard let row = (0 ..< numberOfRows).first(where: { row in
+            guard let item = item(atRow: row) as? EntryListOutlineItem else { return false }
+            guard case let .group(currentName, _, _) = item.kind else { return false }
+            return currentName == name
+        }), let item = item(atRow: row) as? EntryListOutlineItem
+        else { return }
+        let indexes = IndexSet(integer: row)
+        activeSelectionOccurrence = item
+        rangeAnchorOccurrence = item
+        selectedGroupNames = [name]
+        expectedSelectionSignature = indexes
+        selectRowIndexes(indexes, byExtendingSelection: false)
     }
 }

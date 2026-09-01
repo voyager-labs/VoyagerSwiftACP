@@ -114,12 +114,12 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
 
     // MARK: - EVM-002-set_entries_view_as_list_table
 
-    /// EVM-002-set_entries_view_as_list_table: 목록 헤더는 withinWindow material 백드롭으로 블러 배경을 유지한다.
+    /// EVM-002-set_entries_view_as_list_table: 목록 헤더는 behindWindow material 백드롭으로 블러 배경을 유지한다.
     /// 가로 스크롤로 오른쪽 컬럼이 새로 노출되어도 백드롭이 보이는 헤더 프레임 전체를 계속 덮는지 검증한다.
     /// - 검증 내용: 두 번 tile해도 NSVisualEffectView 백드롭이 정확히 1개이며 header clip의 화면 프레임을 따른다.
     /// - 사전 조건: 실제 EntryListScrollView와 NSTableHeaderView를 구성하고 header clip을 가로로 120pt 이동한다.
     /// - 기대 결과: 백드롭이 스크롤뷰에서 header clip 아래에 고정되고 새로 노출된 오른쪽 영역까지 채운다.
-    func testListHeaderBackdropUsesWithinWindowMaterialAcrossTilePasses() throws {
+    func testListHeaderBackdropUsesListHeaderMaterialAcrossTilePasses() throws {
         let view = EntryListView(frame: NSRect(x: 0, y: 0, width: 640, height: 360))
         view.layoutSubtreeIfNeeded()
         view.scrollView.tile()
@@ -151,11 +151,11 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
             let backdrops = view.scrollView.subviews.compactMap { $0 as? NSVisualEffectView }
             XCTAssertEqual(backdrops.count, 1)
             let backdrop = try XCTUnwrap(backdrops.first)
-            XCTAssertEqual(backdrop.blendingMode, .withinWindow)
+            XCTAssertEqual(backdrop.blendingMode, .behindWindow)
             XCTAssertEqual(backdrop.state, .followsWindowActiveState)
             XCTAssertEqual(
                 backdrop.alphaValue,
-                VoyagerDS.SurfaceMaterialRole.mainContentBackground.alphaValue,
+                VoyagerDS.SurfaceMaterialRole.listHeaderSurface.alphaValue,
                 accuracy: 0.001,
             )
             XCTAssertFalse(headerClip.drawsBackground)
@@ -218,7 +218,7 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
     /// 사용자가 그룹화된 목록을 펼치거나 접어도 일반 행의 줄무늬가 보존되는지 검증한다.
     /// - 검증 내용: Aqua와 Dark Aqua의 그룹 배경(material 투과 유지), 재사용 초기화, 행 높이와 인접 간격을 실제 AppKit 행으로 확인한다.
     /// - 사전 조건: 펼침·접힘 그룹과 두 일반 항목을 실제 EntryListCoordinator와 EntryListView에 바인딩한다.
-    /// - 기대 결과: 미선택 그룹은 전체 폭 DS contentPaneOverlay 오버레이, 선택 그룹은 AppKit 기본 배경, 그룹은 28pt이고 기존 지표는 유지된다.
+    /// - 기대 결과: 미선택 그룹은 전체 폭의 상태별 반투명 오버레이, 선택 그룹은 AppKit 기본 배경, 그룹은 28pt이고 기존 지표는 유지된다.
     func testGroupedListRowsUseTranslucentOverlayAndCompactSpacing() throws {
         for appearanceName in [NSAppearance.Name.aqua, .darkAqua] {
             try assertTask3Appearance(appearanceName)
@@ -1763,8 +1763,12 @@ private func assertTask3Appearance(_ appearanceName: NSAppearance.Name) throws {
     let groupItem = try XCTUnwrap(coordinator.outlineItems.first)
     let groupRow = try XCTUnwrap(view.tableView.rowView(atRow: 0, makeIfNecessary: true))
     let expectedGroupColor = try XCTUnwrap(
-        VoyagerDS.AppKitSurface
-            .contentPaneOverlay(isDark: appearanceName == .darkAqua)
+        (appearanceName == .darkAqua ? NSColor.white : NSColor.black)
+            .withAlphaComponent(
+                appearanceName == .darkAqua
+                    ? view.tableView.groupRowDarkOpacity
+                    : view.tableView.groupRowLightOpacity,
+            )
             .usingColorSpace(.sRGB),
     )
     try assertTask3Solid(task3Render(groupRow, appearance), expectedGroupColor)

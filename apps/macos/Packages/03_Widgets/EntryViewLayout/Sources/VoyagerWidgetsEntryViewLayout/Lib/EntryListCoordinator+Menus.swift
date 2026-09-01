@@ -50,7 +50,7 @@ extension EntryListCoordinator {
         }
         switch item.kind {
         case .group:
-            applyGroupSelection(item, commandPressed: event.modifierFlags.contains(.command))
+            applyGroupCursorSelection(item)
             return true
         case .entry, .empty, .error:
             return false
@@ -63,6 +63,8 @@ extension EntryListCoordinator {
         else { return false }
         if event.modifierFlags.contains(.shift) {
             applyRangeSelection(destination: item, destinationRow: row)
+        } else if case .group = item.kind {
+            applyGroupCursorSelection(item)
         } else {
             applyReplacementSelection(destination: item, destinationRow: row)
         }
@@ -84,6 +86,18 @@ extension EntryListCoordinator {
         case .empty, .error:
             return .suppressed
         }
+    }
+
+    private func applyGroupCursorSelection(_ item: OutlineItem) {
+        guard isSelectable(item),
+              let row = tableView.liveRow(for: item)
+        else { return }
+        applySelectionPlan(EntryListSelectionPlan(
+            canonical: EntryListCanonicalSelection(ids: [], focus: nil, anchor: nil),
+            physicalRows: IndexSet(integer: row),
+            activeOccurrence: item,
+            anchorOccurrence: item,
+        ))
     }
 
     @discardableResult
@@ -207,6 +221,7 @@ extension EntryListCoordinator {
         for selectedIDs: Set<EntryModel.ID>,
         includingGroupRows: IndexSet = [],
         preservingSelectedGroupRows: Bool = true,
+        forcingGroupRows: IndexSet = [],
     ) -> IndexSet {
         let includedGroupNames = Set(includingGroupRows.compactMap { row -> String? in
             guard let item = tableView.item(atRow: row) as? OutlineItem,
@@ -217,15 +232,22 @@ extension EntryListCoordinator {
         let selectedGroupNames = preservingSelectedGroupRows
             ? tableView.selectedGroupNames.union(includedGroupNames)
             : includedGroupNames
+        let forcedGroupNames = Set(forcingGroupRows.compactMap { row -> String? in
+            guard let item = tableView.item(atRow: row) as? OutlineItem,
+                  case let .group(name, _, _) = item.kind
+            else { return nil }
+            return name
+        })
         var indexes = IndexSet()
         for row in 0 ..< tableView.numberOfRows {
             guard let item = tableView.item(atRow: row) as? OutlineItem else { continue }
             switch item.kind {
             case let .group(name, _, _):
                 let groupIDs = item.orderedDistinctEntries().map(\.id)
-                if selectedGroupNames.contains(name),
-                   !groupIDs.isEmpty,
-                   groupIDs.allSatisfy(selectedIDs.contains)
+                if forcedGroupNames.contains(name)
+                    || (selectedGroupNames.contains(name)
+                        && !groupIDs.isEmpty
+                        && groupIDs.allSatisfy(selectedIDs.contains))
                 {
                     indexes.insert(row)
                 }
@@ -242,12 +264,39 @@ extension EntryListCoordinator {
         for id: EntryModel.ID?,
         preserving occurrence: AnyObject?,
     ) -> OutlineItem? {
+        if id == nil,
+           let occurrence = occurrence as? OutlineItem,
+           case let .group(name, _, _) = occurrence.kind
+        {
+            if tableView.liveRow(for: occurrence) != nil {
+                return occurrence
+            }
+            for row in 0 ..< tableView.numberOfRows {
+                guard let item = tableView.item(atRow: row) as? OutlineItem,
+                      case let .group(currentName, _, _) = item.kind,
+                      currentName == name
+                else { continue }
+                return item
+            }
+            return nil
+        }
         guard let id else { return nil }
         if let occurrence = occurrence as? OutlineItem,
-           tableView.liveRow(for: occurrence) != nil,
            occurrenceRepresents(occurrence, id: id)
         {
-            return occurrence
+            if tableView.liveRow(for: occurrence) != nil {
+                return occurrence
+            }
+            if case let .group(name, _, _) = occurrence.kind {
+                for row in 0 ..< tableView.numberOfRows {
+                    guard let item = tableView.item(atRow: row) as? OutlineItem,
+                          case let .group(currentName, _, _) = item.kind,
+                          currentName == name,
+                          occurrenceRepresents(item, id: id)
+                    else { continue }
+                    return item
+                }
+            }
         }
 
         for row in 0 ..< tableView.numberOfRows {
@@ -265,6 +314,18 @@ extension EntryListCoordinator {
             return item
         }
         return nil
+    }
+
+    func preservedSelectionOccurrence(
+        _ occurrence: AnyObject?,
+        focus: EntryModel.ID?,
+    ) -> AnyObject? {
+        guard let occurrence = occurrence as? EntryListOutlineItem,
+              case .group = occurrence.kind
+        else { return occurrence }
+        let entries = occurrence.orderedDistinctEntries()
+        guard focus == nil || entries.allSatisfy({ state.selectedIds.contains($0.id) }) else { return nil }
+        return occurrence
     }
 
     private func applyRangeSelection(destination: OutlineItem, destinationRow: Int) {
@@ -309,6 +370,10 @@ extension EntryListCoordinator {
     }
 
     private func applyReplacementSelection(destination: OutlineItem, destinationRow: Int) {
+        if case .group = destination.kind {
+            applyGroupCursorSelection(destination)
+            return
+        }
         let entries = selectionEntries(for: destination)
         guard !entries.isEmpty else { return }
         let selectedIDs = Set(entries.map(\.id))
@@ -369,7 +434,10 @@ extension EntryListCoordinator {
             guard let item = tableView.item(atRow: row) as? OutlineItem else { return [] }
             switch item.kind {
             case .group:
-                guard anchorRow == row || destinationRow == row else { return [] }
+                guard (anchorRow == nil && destinationRow == nil)
+                    || anchorRow == row
+                    || destinationRow == row
+                else { return [] }
                 return item.orderedDistinctEntries()
             case let .entry(entry):
                 return [entry]
