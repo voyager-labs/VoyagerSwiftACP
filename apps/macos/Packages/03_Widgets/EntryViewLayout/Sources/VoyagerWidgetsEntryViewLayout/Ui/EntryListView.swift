@@ -376,11 +376,15 @@ public final class EntryListView: NSView {
                     return
                 }
             case .upArrow, .downArrow:
-                let destinationRow = row + (specialKey == .upArrow ? -1 : 1)
-                guard (0 ..< numberOfRows).contains(destinationRow) else { return }
-                guard contextMenuProvider?.handleSelectionKeyDown(forRow: destinationRow, event: event) == true
-                else { return }
-                scrollRowToVisible(destinationRow)
+                let step = specialKey == .upArrow ? -1 : 1
+                var destinationRow = row + step
+                while (0 ..< numberOfRows).contains(destinationRow) {
+                    if contextMenuProvider?.handleSelectionKeyDown(forRow: destinationRow, event: event) == true {
+                        scrollRowToVisible(destinationRow)
+                        return
+                    }
+                    destinationRow += step
+                }
                 return
             default:
                 break

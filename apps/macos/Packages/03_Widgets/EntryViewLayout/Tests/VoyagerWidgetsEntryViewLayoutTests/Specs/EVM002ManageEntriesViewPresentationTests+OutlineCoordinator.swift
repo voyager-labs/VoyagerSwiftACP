@@ -626,6 +626,40 @@ extension EVM002ManageEntriesViewPresentationTests {
         XCTAssertTrue(try fixture.groupRowIsSelected(projectedGroupRow))
     }
 
+    /// EVM-002-update_entry_selection: keyboard navigation skips visible non-selectable status rows.
+    /// 빈 폴더 또는 로드 실패 sentinel이 visible outline에 있어도 다음 selectable Entry로 이동하는지 검증한다.
+    /// - 검증 내용: empty/error row를 연속으로 삽입한 상태에서 Down/Up이 두 Entry 사이를 이동한다.
+    /// - 사전 조건: first Entry, empty/error status row, second Entry 순서의 visible outline
+    /// - 기대 결과: 두 방향 모두 status row를 건너뛰고 대상 Entry만 선택한다.
+    func testKeyboardNavigationSkipsNonSelectableStatusRows() throws {
+        let first = makePresentationFile(id: "/root/first.txt", name: "first.txt")
+        let second = makePresentationFile(id: "/root/second.txt", name: "second.txt")
+        let fixture = Task4Fixture(
+            entries: [first, second],
+            groups: [],
+            selected: first.id,
+        )
+        fixture.coordinator.outlineItems.insert(
+            EntryListOutlineItem(kind: .empty(parent: "/root/empty-folder")),
+            at: 1,
+        )
+        fixture.coordinator.outlineItems.insert(
+            EntryListOutlineItem(
+                kind: .error(parent: "/root/error-folder", failure: .permissionDenied),
+            ),
+            at: 2,
+        )
+        fixture.coordinator.rebuildItemIndexes()
+        fixture.tableView.reloadData()
+        fixture.coordinator.syncListSelectionFromStore()
+
+        try fixture.keyDown(.downArrow)
+        fixture.assertSelection([second.id], focus: second.id, rows: [3], updates: 1)
+        fixture.setSelection([second.id], focus: second.id)
+        try fixture.keyDown(.upArrow)
+        fixture.assertSelection([first.id], focus: first.id, rows: [0], updates: 3)
+    }
+
     /// EVM-002-update_entry_selection: projection 교체는 stale occurrence를 버리고 canonical focus와 anchor에서
     /// 새 occurrence를 다시 찾는다.
     func testGroupedRowsReseedAfterProjectionReplacement() throws {
