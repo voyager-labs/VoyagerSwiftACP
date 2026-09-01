@@ -497,7 +497,11 @@ public final class EntryListView: NSView {
         override func keyDown(with event: NSEvent) {
             cancelPendingNativeSelection()
             let row = keyboardSelectionRow
-            guard row >= 0, let specialKey = event.specialKey else {
+            guard let specialKey = event.specialKey else {
+                super.keyDown(with: event)
+                return
+            }
+            guard row >= 0 || specialKey == .upArrow || specialKey == .downArrow else {
                 super.keyDown(with: event)
                 return
             }
@@ -517,7 +521,9 @@ public final class EntryListView: NSView {
                 }
             case .upArrow, .downArrow:
                 let step = specialKey == .upArrow ? -1 : 1
-                var destinationRow = row + step
+                var destinationRow = row >= 0
+                    ? row + step
+                    : (step < 0 ? numberOfRows - 1 : 0)
                 while (0 ..< numberOfRows).contains(destinationRow) {
                     if contextMenuProvider?.handleSelectionKeyDown(forRow: destinationRow, event: event) == true {
                         scrollRowToVisible(destinationRow)
@@ -534,6 +540,15 @@ public final class EntryListView: NSView {
 
         private var keyboardSelectionRow: Int {
             liveRow(for: activeSelectionOccurrence) ?? selectedRow
+        }
+
+        func shouldConsumeGroupRenameKey(_ event: NSEvent) -> Bool {
+            guard event.modifierFlags.isDisjoint(with: [.command, .option, .control, .shift]),
+                  event.keyCode == 36 || event.keyCode == 76,
+                  let activeOccurrence = activeSelectionOccurrence as? EntryListOutlineItem,
+                  case .group = activeOccurrence.kind
+            else { return false }
+            return liveRow(for: activeOccurrence) != nil
         }
 
         override func rightMouseDown(with event: NSEvent) {
@@ -779,9 +794,11 @@ public final class EntryListView: NSView {
 
 public extension EntryListView {
     func handleListKeyDown(with event: NSEvent) -> Bool {
-        guard event.modifierFlags.isDisjoint(with: [.command, .option, .control]),
-              let specialKey = event.specialKey
-        else { return false }
+        guard event.modifierFlags.isDisjoint(with: [.command, .option, .control]) else { return false }
+        if tableView.shouldConsumeGroupRenameKey(event) {
+            return true
+        }
+        guard let specialKey = event.specialKey else { return false }
         switch specialKey {
         case .leftArrow, .rightArrow, .upArrow, .downArrow:
             tableView.keyDown(with: event)
