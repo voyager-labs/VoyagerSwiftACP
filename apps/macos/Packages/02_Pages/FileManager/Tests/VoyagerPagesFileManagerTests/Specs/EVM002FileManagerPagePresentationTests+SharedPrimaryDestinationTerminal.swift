@@ -502,9 +502,11 @@ extension EVM002FileManagerPagePresentationTests {
         XCTAssertNil(fixture.store.state.entryViewLayout.hierarchy.deferredFolderReplacement(
             folderID: fixture.aliasA.id,
         ))
-        XCTAssertNil(fixture.store.state.entryViewLayout.hierarchy.deferredFolderReplacement(
+        let sourceReplacement = fixture.store.state.entryViewLayout.hierarchy.deferredFolderReplacement(
             folderID: fixture.source.id,
-        ))
+        )
+        XCTAssertEqual(sourceReplacement?.holdsUntilMigration, true)
+        XCTAssertEqual(sourceReplacement?.migrationCompleted, true)
         XCTAssertEqual(
             fixture.store.state.entryViewLayout.hierarchy.nodesByID[fixture.source.id]?.folder.children,
             [fixture.beforePrimary, fixture.beforeAdditional],

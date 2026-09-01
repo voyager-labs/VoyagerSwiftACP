@@ -4423,31 +4423,43 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         let rootPath = base + "root"
         let srcPath = rootPath + "/src"
         let dstPath = rootPath + "/dst"
+        let aliasPath = rootPath + "/alias"
         let outsidePath = base + "outside/target"
         let fm = FileManager.default
         try fm.createDirectory(atPath: srcPath, withIntermediateDirectories: true)
         try fm.createDirectory(atPath: dstPath, withIntermediateDirectories: true)
         try fm.createDirectory(atPath: outsidePath, withIntermediateDirectories: true)
+        try fm.createSymbolicLink(atPath: aliasPath, withDestinationPath: dstPath)
         try fm.createSymbolicLink(atPath: dstPath + "/moved.txt", withDestinationPath: outsidePath)
         defer { try? fm.removeItem(atPath: base) }
 
         let source = EntryModel.temporaryFolder(id: srcPath, name: "src")
         let destination = EntryModel.temporaryFolder(id: dstPath, name: "dst")
+        let alias = EntryModel.temporaryFolder(id: aliasPath, name: "alias")
         let before = makeCorrelationEntry(id: "\(srcPath)/moved.txt", name: "moved.txt")
         let after = makeCorrelationEntry(id: "\(dstPath)/moved.txt", name: "moved.txt")
         var state = FileManagerContentState()
         state.navigation.seedInitialFolderPath(rootPath)
         state.navigation.navigationState = .folder(rootPath)
         state.entryViewLayout.mode = .list
-        state.entryViewLayout.entries = [source, destination]
-        state.entryViewLayout.entryOperations.items = [source, destination]
-        state.entryViewLayout.entryOperations.loadingContext.items = [source, destination]
+        state.entryViewLayout.entries = [source, alias, destination]
+        state.entryViewLayout.entryOperations.items = [source, alias, destination]
+        state.entryViewLayout.entryOperations.loadingContext.items = [source, alias, destination]
         state.entryViewLayout.entryOperations.loadingContext.generation = 7
         state.entryViewLayout.hierarchy = .init(rootPath: rootPath)
         state.entryViewLayout.hierarchy.nodesByID[source.id] = .init(
             children: [before],
             loadPhase: .loaded,
             generation: 1,
+            expectedBatchIndex: 0,
+            coreFinished: true,
+        )
+        // canonical-equivalent alias가 실제 lexical destination보다 먼저 삽입되어도
+        // destination owner는 lexical 경계를 우선해야 한다.
+        state.entryViewLayout.hierarchy.nodesByID[alias.id] = .init(
+            children: [],
+            loadPhase: .loaded,
+            generation: 9,
             expectedBatchIndex: 0,
             coreFinished: true,
         )
@@ -4458,7 +4470,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             expectedBatchIndex: 0,
             coreFinished: true,
         )
-        state.entryViewLayout.hierarchy.setExpandedIDs([source.id, destination.id])
+        state.entryViewLayout.hierarchy.setExpandedIDs([source.id, alias.id, destination.id])
         state.entryViewLayout.selectedIds = [before.id]
         state.entryViewLayout.lastSelectedId = before.id
         state.entryViewLayout.rangeAnchorId = before.id

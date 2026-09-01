@@ -639,11 +639,14 @@ enum FileManagerContentIdentityTransitionCoordinator {
         if directParentPath == rootPath || canonicalizedPath(directParentPath) == rootPath {
             return rootOwner
         }
-        guard let folderID = state.entryViewLayout.hierarchy.nodesByID.keys.first(where: {
-            standardizedPath($0) == directParentPath || canonicalizedPath($0) == directParentPath
-        }),
-            state.entryViewLayout.hierarchy.expandedFolderIDs.contains(folderID),
-            let node = state.entryViewLayout.hierarchy.nodesByID[folderID]
+        let expandedFolderIDs = state.entryViewLayout.hierarchy.expandedFolderIDs
+        let folderID = state.entryViewLayout.hierarchy.nodesByID.keys.first(where: {
+            expandedFolderIDs.contains($0) && standardizedPath($0) == directParentPath
+        }) ?? state.entryViewLayout.hierarchy.nodesByID.keys.first(where: {
+            expandedFolderIDs.contains($0) && canonicalizedPath($0) == directParentPath
+        })
+        guard let folderID,
+              let node = state.entryViewLayout.hierarchy.nodesByID[folderID]
         else { return rootOwner }
         return .folder(id: folderID, generation: node.generation &+ 1)
     }
