@@ -748,7 +748,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
                 placement: .after,
                 actionSource: .contentTabBar,
             ))),
-            .request(.openNewContentTab),
+            .request(.openNewContentTab(source: .contentTabBar)),
             .request(.restoreLastClosedContentTab),
             .sidebar(.delegate(.pinContentTab(fixture.tabA))),
             .sidebar(.delegate(.unpinContentTab(fixture.tabD))),
@@ -5556,6 +5556,44 @@ final class CTM001HandleContentTabTests: XCTestCase {
         ])
     }
 
+    /// CTM-001-content_tab_action_metrics: menu command source는 default start-page resolution 뒤에도 유지된다.
+    /// - 검증 내용: directory 시작 페이지 open success 메트릭의 source와 operation ID
+    /// - 사전 조건: 유효한 default directory와 menuCommand source request
+    /// - 기대 결과: 새 Directory tab과 `.success/.open/.menuCommand` 메트릭 한 건
+    func testOpenNewContentTabMenuSourceSurvivesDefaultStartPageResolution() async throws {
+        let directory = try FileManagerFixtureSandbox.readOnlyDirectory(from: "fixtures/fixtures/documents")
+        let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 25))
+        var preferences = VoyagerPagesFileManager.AppPreferencesState()
+        preferences.defaultStartPage = .directory(directory.path)
+        let recorder = FileManagerProductMetricRecorder(makeOperationID: { operationID })
+        let store = TestStore(initialState: FileManagerFeature.State()) { FileManagerFeature() } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 443))
+            $0.startPageAvailabilityClient.probeDirectory = { _ in .availableDirectory }
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: start-page effect 내부 action보다 accepted source terminal에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.applyAppPreferences(preferences))
+        await store.skipReceivedActions(strict: false)
+        await store.send(.request(.openNewContentTab(source: .menuCommand)))
+        await receiveResolvedOpenContentTabAction(
+            store,
+            anchor: .directory(path: directory.path),
+            source: .menuCommand,
+        )
+
+        XCTAssertEqual(store.state.contentTabs.tabs.last?.anchor, .directory(path: directory.path))
+        XCTAssertEqual(recorder.metrics(), [
+            .contentTabAction(
+                result: .success,
+                identity: .openNewContentTab,
+                source: .menuCommand,
+                operationID: operationID,
+            ),
+        ])
+    }
+
     /// CTM-001-content_tab_action_metrics: maxTabs 도달 open은 탭을 만들지 않고 메트릭도 없다.
     /// - 검증 내용: tabs.count 유지, 레코더 빈 배열
     /// - 사전 조건: maxTabs(20)개 Directory tab
@@ -7001,8 +7039,42 @@ final class CTM001HandleContentTabTests: XCTestCase {
 
     // MARK: - CTM-001-open_new_content_tab_routing
 
+    private func receiveOpenContentTabAction(
+        _ store: TestStoreOf<FileManagerFeature>,
+        anchor: ContentTabPageAnchor,
+        source: ContentTabActionSource,
+    ) async {
+        await store.receive { action in
+            guard case let .contentTabActionRequested(.open(receivedAnchor), source: receivedSource) = action
+            else { return false }
+            return receivedAnchor == anchor && receivedSource == source
+        }
+    }
+
+    private func receiveResolvedOpenContentTabAction(
+        _ store: TestStoreOf<FileManagerFeature>,
+        anchor: ContentTabPageAnchor,
+        source: ContentTabActionSource,
+    ) async {
+        await store.receive { action in
+            guard case let .internal(.defaultStartPageResolved(startPage, source: receivedSource)) = action
+            else { return false }
+            let expectedStartPage: StartPage
+            switch anchor {
+            case .homeDefault:
+                expectedStartPage = .home
+            case let .directory(path):
+                expectedStartPage = .directory(path)
+            case .collectionFile, .virtualCollection, .aiChat:
+                return false
+            }
+            return startPage == expectedStartPage && receivedSource == source
+        }
+        await receiveOpenContentTabAction(store, anchor: anchor, source: source)
+    }
+
     /// CTM-001-open_new_content_tab_routing: WindowCommand.openNewContentTab이 explicit selection을 보존하고 Home tab을 활성화함
-    /// - 검증 내용: `.request(.openNewContentTab)`은 `.open(.homeDefault)`만 방출하고 selection collapse를 방출하지 않음
+    /// - 검증 내용: source-aware `.open(.homeDefault)` acceptance만 방출하고 selection collapse를 방출하지 않음
     /// - 사전 조건: 선택 및 anchor가 설정된 기본 Home tab 하나가 있는 FileManagerFeature.State
     /// - 기대 결과: 기존 selection/anchor를 유지하면서 새 Home tab이 list 끝에 추가되어 active가 됨
     func testOpenNewContentTab_commandRouting_createsHomeTabAppendedActive() async throws {
@@ -7022,8 +7094,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
         let beforeCount = store.state.contentTabs.tabs.count
         let beforeActiveID = store.state.contentTabs.activeTabID
 
-        await store.send(.request(.openNewContentTab))
-        await store.receive(\.contentTabs.open, .homeDefault)
+        await store.send(.request(.openNewContentTab(source: .contentTabBar)))
+        await receiveOpenContentTabAction(store, anchor: .homeDefault, source: .contentTabBar)
         await store.skipReceivedActions(strict: false)
 
         let afterCount = store.state.contentTabs.tabs.count
@@ -7062,8 +7134,12 @@ final class CTM001HandleContentTabTests: XCTestCase {
         await store.send(.applyAppPreferences(preferences))
         await store.skipReceivedActions(strict: false)
         let originalContent = store.state.content
-        await store.send(.request(.openNewContentTab))
-        await store.skipReceivedActions(strict: false)
+        await store.send(.request(.openNewContentTab(source: .contentTabBar)))
+        await receiveResolvedOpenContentTabAction(
+            store,
+            anchor: .directory(path: directory.path),
+            source: .contentTabBar,
+        )
 
         let newTab = try XCTUnwrap(store.state.contentTabs.tabs.last)
         XCTAssertEqual(newTab.anchor, .directory(path: directory.path))
@@ -7093,8 +7169,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
         // anchor 복제 방지 검증에 집중한다.
         store.exhaustivity = .off
 
-        await store.send(.request(.openNewContentTab))
-        await store.receive(\.contentTabs.open, .homeDefault)
+        await store.send(.request(.openNewContentTab(source: .contentTabBar)))
+        await receiveOpenContentTabAction(store, anchor: .homeDefault, source: .contentTabBar)
 
         let lastTab = try XCTUnwrap(store.state.contentTabs.tabs.last)
         XCTAssertEqual(lastTab.anchor, .homeDefault, "new tab must NOT clone existing Directory anchor")
@@ -7118,8 +7194,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
 
         let previousActiveID = try XCTUnwrap(store.state.contentTabs.activeTabID)
 
-        await store.send(.request(.openNewContentTab))
-        await store.receive(\.contentTabs.open, .homeDefault)
+        await store.send(.request(.openNewContentTab(source: .contentTabBar)))
+        await receiveOpenContentTabAction(store, anchor: .homeDefault, source: .contentTabBar)
 
         let newActiveID = try XCTUnwrap(store.state.contentTabs.activeTabID)
         XCTAssertNotNil(
@@ -7244,7 +7320,12 @@ final class CTM001HandleContentTabTests: XCTestCase {
         await store.skipReceivedActions(strict: false)
         await startConfiguredDirectoryOutgoingLoad(store, sourcePath: sourcePath, started: outgoingLoadStarted)
 
-        await store.send(.request(.openNewContentTab))
+        await store.send(.request(.openNewContentTab(source: .contentTabBar)))
+        await receiveResolvedOpenContentTabAction(
+            store,
+            anchor: .directory(path: directory.path),
+            source: .contentTabBar,
+        )
         await receiveConfiguredDirectoryHandoffActions(
             store,
             previousID: fixture.previousID,
@@ -7280,8 +7361,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
 
         let beforeCount = ContentTabProjection.sidebarItems(from: store.state.contentTabs).count
 
-        await store.send(.request(.openNewContentTab))
-        await store.receive(\.contentTabs.open, .homeDefault)
+        await store.send(.request(.openNewContentTab(source: .contentTabBar)))
+        await receiveOpenContentTabAction(store, anchor: .homeDefault, source: .contentTabBar)
 
         let sidebarItems = ContentTabProjection.sidebarItems(from: store.state.contentTabs)
         XCTAssertEqual(sidebarItems.count, beforeCount + 1, "projection must reflect new tab count")
@@ -7327,7 +7408,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
         // 비포괄적: maxTabs guard의 whole-state no-op과 unrelated loading 상태 불변 검증에 집중한다.
         store.exhaustivity = .off
 
-        await store.send(.request(.openNewContentTab))
+        await store.send(.request(.openNewContentTab(source: .contentTabBar)))
 
         XCTAssertEqual(store.state.contentTabs, originalContentTabs)
         XCTAssertTrue(store.state.content.entryViewLayout.entryOperations.isLoading)
@@ -7349,11 +7430,11 @@ final class CTM001HandleContentTabTests: XCTestCase {
         // 비포괄적: FileManagerFeature.onAppear가 여러 child action 방출하므로 ID uniqueness 검증에 집중한다.
         store.exhaustivity = .off
 
-        await store.send(.request(.openNewContentTab))
-        await store.receive(\.contentTabs.open, .homeDefault)
+        await store.send(.request(.openNewContentTab(source: .contentTabBar)))
+        await receiveOpenContentTabAction(store, anchor: .homeDefault, source: .contentTabBar)
 
-        await store.send(.request(.openNewContentTab))
-        await store.receive(\.contentTabs.open, .homeDefault)
+        await store.send(.request(.openNewContentTab(source: .contentTabBar)))
+        await receiveOpenContentTabAction(store, anchor: .homeDefault, source: .contentTabBar)
 
         let allIDs = store.state.contentTabs.tabs.map(\.id)
         let uniqueIDs = Set(allIDs)

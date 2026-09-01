@@ -346,7 +346,7 @@ final class FMW001FileManagerWindowTests: XCTestCase {
         await store.receive(\.navigation.view.goBack)
         await store.send(.request(.setViewLayout(.grid)))
         await store.receive(\.content.view.changeLayout)
-        await store.send(.request(.openNewContentTab))
+        await store.send(.request(.openNewContentTab(source: .contentTabBar)))
         await store.receive(\.contentTabs.open, .homeDefault)
         XCTAssertEqual(store.state.contentTabs.selectedTabIDs, [selectedTabID])
         XCTAssertEqual(store.state.contentTabs.selectionAnchorID, selectedTabID)

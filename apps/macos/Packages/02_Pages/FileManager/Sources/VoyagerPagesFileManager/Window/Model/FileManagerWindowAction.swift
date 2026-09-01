@@ -327,7 +327,7 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
         case homeAiChatNewChatSeedRequested(sessionID: AiChatSessionID)
         case applyContentNewChatSeed(FileManagerContentNewChatSeedApplication)
         case applyInspectorNewChatSeed(FileManagerInspectorNewChatSeedApplication)
-        case defaultStartPageResolved(StartPage)
+        case defaultStartPageResolved(StartPage, source: ContentTabActionSource)
     }
 
     @CasePathable
@@ -362,7 +362,7 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
         case selectAll
         case copyAbsolutePaths
         case copyURLs
-        case openNewContentTab
+        case openNewContentTab(source: ContentTabActionSource)
         case selectContentTab(position: Int)
         case selectMostRecentlyUsedContentTab
         case activateContentTabSwitcherSelection

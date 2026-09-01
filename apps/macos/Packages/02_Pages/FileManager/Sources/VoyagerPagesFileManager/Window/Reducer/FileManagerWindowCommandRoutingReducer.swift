@@ -368,14 +368,14 @@ struct FileManagerWindowCommandRoutingReducer {
             case let .internal(.applyInspectorNewChatSeed(application)):
                 return applyInspectorNewChatSeed(application, state: &state)
 
-            case let .internal(.defaultStartPageResolved(startPage)):
+            case let .internal(.defaultStartPageResolved(startPage, source)):
                 let anchor: ContentTabPageAnchor = switch startPage {
                 case .home:
                     .homeDefault
                 case let .directory(path):
                     .directory(path: path)
                 }
-                return .send(.contentTabs(.open(anchor)))
+                return .send(.contentTabActionRequested(.open(anchor), source: source))
 
             case .inspector(.aiChat(.providerConnectionsUpdated)):
                 if state.pendingAiChatInspectorOpen?.destination == .newChat {
