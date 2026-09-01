@@ -16,4 +16,7 @@ struct FileManagerWindowMaterialOverride {
 
     let windowShell: Surface
     let contentBackground: Surface
+    let listHeader: Surface
+    let groupRowLightOpacity: CGFloat
+    let groupRowDarkOpacity: CGFloat
 }

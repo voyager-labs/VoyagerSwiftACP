@@ -81,6 +81,9 @@ public struct FileManagerHostMaterialConfiguration {
         FileManagerWindowMaterialOverride(
             windowShell: windowShell.materialOverride,
             contentBackground: contentBackground.materialOverride,
+            listHeader: listHeader.materialOverride,
+            groupRowLightOpacity: groupRowLightOpacity,
+            groupRowDarkOpacity: groupRowDarkOpacity,
         )
     }
 }
