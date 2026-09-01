@@ -850,7 +850,10 @@ struct CodexExecProcessController {
         }
         if kind != .progress {
             state.terminal = kind
-            if kind == .failed { state.terminalFailure = .terminalError }
+            if kind == .failed {
+                state.decoder.retainStderr(event.payload.message ?? "")
+                state.terminalFailure = .terminalError
+            }
         }
     }
 

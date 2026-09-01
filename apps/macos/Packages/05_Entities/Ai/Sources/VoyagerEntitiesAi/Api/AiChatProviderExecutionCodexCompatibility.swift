@@ -82,7 +82,9 @@ private func consumeLegacy(
         await lifecycleTask.value
         try throwLegacyEventStreamFailure(eventStreamFailure)
         guard result.outcome == .completed else {
-            throw CodexCLIExecutionError.protocolFailure(.transportError)
+            throw CodexCLIExecutionError.protocolFailure(
+                legacyFailureReason(for: result),
+            )
         }
         return result.finalAssistantText.value
     } catch is CancellationError {
@@ -102,6 +104,15 @@ private func consumeLegacy(
 
 private func throwLegacyEventStreamFailure(_ error: Error?) throws {
     if let error { throw error }
+}
+
+private func legacyFailureReason(for result: CodexExecTerminalResult) -> AiChatExecutionFailure {
+    switch result.failure {
+    case .none, .some(.terminalError):
+        AiChatProviderExecutionClient.codexFailureReason(forCLIErrorOutput: result.diagnostics.stderr)
+    case let .some(failure):
+        CodexExecLiveComposition.failureReason(for: failure)
+    }
 }
 
 private extension CodexExecLiveComposition {

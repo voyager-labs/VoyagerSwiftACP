@@ -975,7 +975,8 @@ final class ATI008ObserveExternalAgentResultsTests: XCTestCase {
         let process = CodexExecFakeProcess(
             stdout: [
                 Data(#"{"type":"thread.started","thread_id":"thread-duplicate-failure"}"#.utf8),
-                Data(#"{"type":"error","turn_id":"turn-1","message":"failed"}"#.utf8),
+                Data(#"{"type":"error","turn_id":"turn-1","message":"Unauthorized: Bearer ati008-secret-sentinel"}"#
+                    .utf8),
                 Data(#"{"type":"turn.completed","turn_id":"turn-1"}"#.utf8),
             ],
             stderr: [],
@@ -1017,6 +1018,13 @@ final class ATI008ObserveExternalAgentResultsTests: XCTestCase {
         let result = try await receipt.terminalResult()
         XCTAssertEqual(result.outcome, .failed)
         XCTAssertEqual(result.failure, .terminalError)
+        XCTAssertTrue(result.diagnostics.stderr.contains("Unauthorized"))
+        XCTAssertFalse(result.diagnostics.stderr.contains("ati008-secret-sentinel"))
+        XCTAssertNotNil(String(data: Data(result.diagnostics.stderr.utf8), encoding: .utf8))
+        XCTAssertLessThanOrEqual(
+            result.diagnostics.stderr.utf8.count,
+            CodexExecDiagnosticsBuilder.maximumStderrBytes,
+        )
         XCTAssertEqual(lifecycle.map(\.kind), [.failed])
         XCTAssertEqual(rawTypes, ["thread.started", "error"])
         XCTAssertEqual(process.terminationCount, 1)

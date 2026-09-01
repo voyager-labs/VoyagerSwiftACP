@@ -733,6 +733,64 @@ extension CBW003ProviderExecutionResolutionTests {
         XCTAssertEqual(counts.fresh, 0)
     }
 
+    /// CBW-003-stream_contextual_chat_response: legacy failed terminal diagnostics use the existing Codex classifier.
+    /// failed provider event의 내부 diagnostics가 legacy execution에서 typed failure reason으로 분류되는지 검증합니다.
+    /// - 검증 내용: auth, network, rate-limit, quota, model-unavailable marker가 각각 기존 분류기로 매핑되는지 확인합니다.
+    /// - 사전 조건: 각 marker를 포함한 failed terminal event를 반환하는 fake Codex process를 사용합니다.
+    /// - 기대 결과: legacy execution이 marker별 `protocolFailure` reason을 반환합니다.
+    func testCodexLegacy_failedTerminalDiagnostics_mapThroughExistingClassifier() async throws {
+        let cases: [(marker: String, reason: AiChatExecutionFailure)] = [
+            ("Unauthorized: login required", .authentication),
+            ("error sending request for url: offline", .network),
+            ("rate limit exceeded", .rateLimited),
+            ("account quota exceeded", .quotaExceeded),
+            ("model not found", .modelUnavailable),
+        ]
+
+        for (index, failureCase) in cases.enumerated() {
+            let codexHome = URL(fileURLWithPath: "/tmp/voyager-cbw003-legacy-classifier-\(index)", isDirectory: true)
+            try? FileManager.default.removeItem(at: codexHome)
+            defer { try? FileManager.default.removeItem(at: codexHome) }
+            let process = CodexExecFakeProcess(stdout: [], stderr: [], terminationStatus: 0)
+            let runner = CodexExecControlledRunner(process: process)
+            let composition = CodexExecLiveComposition(
+                controller: CodexExecProcessController(runner: runner.run),
+                executableURL: URL(fileURLWithPath: "/tmp/codex"),
+                codexHome: codexHome,
+                readinessProbe: CodexExecReadinessProbe { _, arguments, _ in
+                    arguments == ["--version"]
+                        ? .init(exitCode: 0, stdout: "codex-cli 0.148.0\n", stderr: "")
+                        : .init(exitCode: 0, stdout: "", stderr: "")
+                },
+                legacySessionPreparer: makeFakeLegacySessionPreparer(codexHome: codexHome),
+            )
+
+            let execution = Task {
+                try await composition.executeLegacy(
+                    request: CodexExecutionRequest(
+                        runID: "legacy-classifier-\(index)", model: "gpt-5-codex", prompt: "prompt", thinking: nil,
+                    ),
+                    onEvent: { _ in },
+                )
+            }
+            await runner.waitUntilReady()
+            runner
+                .send(#"{"type":"thread.started","thread_id":"legacy-classifier"} "#
+                    .trimmingCharacters(in: .whitespaces))
+            runner
+                .send(#"{"type":"turn.failed","turn_id":"turn","status":"failed","message":""# + failureCase
+                    .marker + #""}"#)
+            runner.finishStreams()
+
+            do {
+                _ = try await execution.value
+                XCTFail("failed terminal must fail legacy execution")
+            } catch let error as CodexCLIExecutionError {
+                XCTAssertEqual(error, .protocolFailure(failureCase.reason))
+            }
+        }
+    }
+
     /// CBW-003-prepare_contextual_chat_request: legacy session symlink escapes are rejected before spawn.
     /// The final `CODEX_HOME/session` canonical path must remain contained after directory creation.
     /// - 검증 내용: 외부 대상 symlink가 typed launch failure를 만들고 runner spawn 및 외부 변경이 없는지 확인합니다.
