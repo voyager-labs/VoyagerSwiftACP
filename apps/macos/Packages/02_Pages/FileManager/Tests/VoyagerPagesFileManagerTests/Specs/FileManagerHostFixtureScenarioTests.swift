@@ -55,6 +55,32 @@ extension FileManagerHostFixturePhaseNotificationTests {
         )
     }
 
+    /// VOY-598: material-tuning Design Assets fixture avoids a self-child.
+    /// Material tuning에서 폴더를 펼쳐도 fixture projection이 자기 자신을 하위 Entry로 반환하지 않는지 검증한다.
+    /// - 검증 내용: Design Assets loader가 deterministic child 목록만 반환하고 folder path를 재귀적으로 반환하지 않는다.
+    /// - 사전 조건: `materialTuning` EntryLoadingClient와 Design Assets folder path가 준비되어 있다.
+    /// - 기대 결과: 로드된 child path가 기대 목록과 같고 folder 자체는 child에 포함되지 않는다.
+    func testMaterialTuningDesignAssetsFixtureDoesNotReturnItself() async throws {
+        let folderPath = "/Fixture/FileManager/Design Assets"
+        let client = FileManagerHostFixture.makeEntryLoadingClient(
+            preset: .materialTuning,
+            windowID: UUID(),
+        )
+        let events = try await Self.collect(client.loadItems(
+            URL(fileURLWithPath: folderPath),
+            false,
+            .none,
+        ))
+        let children = events.flatMap { event -> [EntryModel] in
+            guard case let .coreBatch(items, _) = event else { return [] }
+            return items
+        }
+
+        XCTAssertEqual(children.map(\.name), ["Design Asset Preview.png"])
+        XCTAssertFalse(children.contains { $0.fullPath == folderPath })
+        XCTAssertTrue(children.allSatisfy { $0.fullPath.hasPrefix(folderPath + "/") })
+    }
+
     func testHostDependenciesConfigureLegacyUndoManagerClient() async {
         let windowID = UUID()
         let scope = UndoManagerScope(windowID: windowID, contentTabID: "active-tab")

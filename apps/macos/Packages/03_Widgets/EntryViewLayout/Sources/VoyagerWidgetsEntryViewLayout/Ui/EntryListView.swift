@@ -284,7 +284,14 @@ public final class EntryListView: NSView {
 
         override func mouseDown(with event: NSEvent) {
             cancelPendingNativeSelection()
-            guard let hit = pointerHit(for: event) else { return }
+            guard let hit = pointerHit(for: event) else {
+                let isAdditive = event.modifierFlags.contains(.command) || event.modifierFlags.contains(.shift)
+                if !isAdditive {
+                    deselectAll(nil)
+                }
+                super.mouseDown(with: event)
+                return
+            }
             if handleCustomSelectionMouseDown(event).boolValue {
                 return
             }

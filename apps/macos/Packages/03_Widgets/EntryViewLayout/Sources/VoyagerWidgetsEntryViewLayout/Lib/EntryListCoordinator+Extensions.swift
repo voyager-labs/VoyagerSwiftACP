@@ -145,11 +145,7 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
         case .entry:
             return true
         case .group:
-            let isSelectable = !outlineItem.orderedDistinctEntries().isEmpty
-            if isSelectable, !isUpdatingSelectionFromStore {
-                tableView.prepareDisclosureSelectionCallbacks()
-            }
-            return isSelectable
+            return !outlineItem.orderedDistinctEntries().isEmpty
         case .empty, .error:
             return false
         }

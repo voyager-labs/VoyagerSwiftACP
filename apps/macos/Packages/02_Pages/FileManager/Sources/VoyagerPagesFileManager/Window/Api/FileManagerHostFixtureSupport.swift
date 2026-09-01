@@ -107,6 +107,8 @@ extension EntryLoadingClient {
             FileManagerHostFixtureSampleData.largeFolderEntries
         case FileManagerHostFixtureSampleData.projects.fullPath:
             FileManagerHostFixtureSampleData.progressiveChildren
+        case FileManagerHostFixtureSampleData.materialDesignAssets.fullPath:
+            FileManagerHostFixtureSampleData.materialDesignAssetEntries
         case FileManagerHostFixtureSampleData.path:
             if scenario.permission != .none {
                 FileManagerHostFixtureSampleData.permissionEntries
@@ -183,7 +185,7 @@ enum FileManagerHostFixtureSampleData {
 
     static let materialCatalogEntries: [EntryModel] = [
         makeEntry(name: "Projects", isFolder: true, size: 0, kind: "Folders"),
-        makeEntry(name: "Design Assets", isFolder: true, size: 0, kind: "Folders"),
+        materialDesignAssets,
         makeEntry(
             name: "Portable Document.pdf",
             isFolder: false,
@@ -227,6 +229,19 @@ enum FileManagerHostFixtureSampleData {
         makeEntry(name: "Release.zip", isFolder: false, size: 5_242_880, kind: "Archives", fileExtension: "zip"),
         makeEntry(name: "Backup.7z", isFolder: false, size: 12_582_912, kind: "Archives", fileExtension: "7z"),
         makeEntry(name: "Source.tar.gz", isFolder: false, size: 3_145_728, kind: "Archives", fileExtension: "gz"),
+    ]
+
+    static let materialDesignAssets = makeEntry(name: "Design Assets", isFolder: true, size: 0, kind: "Folders")
+
+    static let materialDesignAssetEntries = [
+        makeEntry(
+            name: "Design Asset Preview.png",
+            isFolder: false,
+            size: 1_572_864,
+            kind: "Images",
+            fileExtension: "png",
+            parentPath: materialDesignAssets.fullPath,
+        ),
     ]
 
     static let materialDocumentEntries = materialCatalogEntries.filter {

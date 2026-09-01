@@ -255,6 +255,7 @@ extension EVM002ManageEntriesViewPresentationTests {
         let fixture = Task4Fixture(entries: entries, groups: [("Alpha", entries)])
         let groupItem = try XCTUnwrap(fixture.coordinator.groupItemByName["Alpha"])
         let groupRow = try fixture.groupRow(named: "Alpha")
+        XCTAssertTrue(fixture.coordinator.outlineView(fixture.tableView, shouldSelectItem: groupItem))
         fixture.tableView.selectRowIndexes(IndexSet(integer: groupRow), byExtendingSelection: false)
 
         fixture.coordinator.outlineViewSelectionDidChange(Notification(name: .init("native-group-selection")))
@@ -263,6 +264,23 @@ extension EVM002ManageEntriesViewPresentationTests {
         XCTAssertTrue(try fixture.groupRowIsSelected(groupRow))
         XCTAssertTrue(fixture.tableView.selectedRowIndexes.contains(groupRow))
         XCTAssertIdentical(fixture.tableView.activeSelectionOccurrence, groupItem)
+    }
+
+    /// EVM-002-update_entry_selection: blank-space mouse down clears the current selection.
+    /// 목록의 행 바깥 빈 영역을 클릭해도 visible selection contract와 native focus 경로를 유지하는지 검증한다.
+    /// - 검증 내용: modifier 없는 빈 공간 mouseDown이 canonical selection과 물리 row selection을 비운다.
+    /// - 사전 조건: 하나의 Entry가 선택된 EntryListTableView와 마지막 row 아래의 빈 클릭 위치가 있다.
+    /// - 기대 결과: selection이 비고 native mouseDown이 소비되어 updateSelection은 한 번만 발생한다.
+    func testBlankSpaceMouseDownClearsSelection() throws {
+        let entry = makePresentationFile(id: "/root/a.txt", name: "a.txt")
+        let fixture = Task4Fixture(entries: [entry], groups: [("Alpha", [entry])])
+        fixture.setSelection([entry.id], focus: entry.id)
+
+        let event = try fixture.event(row: nil, type: .leftMouseDown)
+        fixture.tableView.mouseDown(with: event)
+
+        fixture.assertCanonical([], focus: nil, updates: 2)
+        XCTAssertTrue(fixture.tableView.selectedRowIndexes.isEmpty)
     }
 
     /// EVM-002-update_entry_selection: native modifier click은 그룹의 canonical Entry 선택을 보존한다.
