@@ -172,6 +172,71 @@ extension EPR006CoordinatePropertyChangesTests {
         }
     }
 
+    /// EPR-006-read_back_property_change_result: selection 변경 후에도 applied-unverified proposal을 보존한다.
+    /// - 검증 내용: 완료된 read-back 실패의 pending 보존과 기존 outcome 재게시
+    /// - 사전 조건: applied-unverified 상태에 현재 selection용 applied proposal이 있음
+    /// - 기대 결과: 새 selection은 초기화되고 이전 proposal은 read-only retry 대상으로 남음
+    func testSelectionChangeAfterAppliedUnverifiedPreservesPendingOutcome() async {
+        let fixture = Fixture()
+        let replacement = EntryPropertiesSelection(
+            targets: [.init(localPath: "/tmp/replacement")],
+            propertyID: fixture.selection.propertyID,
+        )
+        var state = fixture.readyState
+        state.status = .appliedUnverified
+        state.appliedProposal = fixture.proposal
+        let store = TestStore(initialState: state) { EntryPropertiesFeature() }
+
+        await store.send(.selectionChanged(replacement)) {
+            $0.generation = 1
+            $0.selection = replacement
+            $0.capabilityReport = nil
+            $0.targetSnapshot = nil
+            $0.proposal = nil
+            $0.canonicalResult = nil
+            $0.activePhase = nil
+            $0.appliedProposal = nil
+            $0.pendingReadBack = fixture.proposal
+            $0.readBackProposal = nil
+            $0.status = .idle
+            $0.lastOutcome = .propertyChangeAppliedUnverified(fixture.snapshot)
+        }
+        await store.receive(
+            .init(kind: .outcome(.propertyChangeAppliedUnverified(fixture.snapshot))),
+        )
+        XCTAssertEqual(store.state.pendingReadBack, fixture.proposal)
+        XCTAssertEqual(store.state.status, .idle)
+    }
+
+    /// EPR-006-prepare_property_change: ambiguous 상태에서는 새 mutation을 시작하지 않는다.
+    /// - 검증 내용: ambiguity 보존 중 prepare busy rejection과 dependency 호출 0회
+    /// - 사전 조건: execute 전송 결과가 ambiguous이고 기존 proposal이 남아 있음
+    /// - 기대 결과: reconnect/read-back recovery 전까지 새 prepare를 시작하지 않음
+    func testAmbiguousBlocksNewPrepare() async {
+        let recorder = OperationRecorder()
+        let fixture = Fixture()
+        var state = fixture.readyState
+        state.status = .ambiguous
+        state.proposal = fixture.proposal
+        let store = TestStore(initialState: state) {
+            EntryPropertiesFeature()
+        } withDependencies: {
+            $0.entryPropertiesClient = fixture.client(prepare: { _ in
+                await recorder.record("prepare")
+                return fixture.proposal
+            })
+        }
+
+        await store.send(.prepare(fixture.intent)) {
+            $0.lastOutcome = .propertyChangeRejected(.busy)
+        }
+        await store.receive(.init(kind: .outcome(.propertyChangeRejected(.busy))))
+        let recordedOperations = await recorder.values()
+        XCTAssertEqual(recordedOperations, [])
+        XCTAssertEqual(store.state.status, .ambiguous)
+        XCTAssertEqual(store.state.proposal, fixture.proposal)
+    }
+
     /// EPR-006-read_back_property_change_result: pending read-back이 있으면 새 mutation을 막는다.
     /// - 검증 내용: prepare/execute busy rejection과 dependency 호출 0회
     /// - 사전 조건: 이전 selection의 pending read-back proposal이 보존됨

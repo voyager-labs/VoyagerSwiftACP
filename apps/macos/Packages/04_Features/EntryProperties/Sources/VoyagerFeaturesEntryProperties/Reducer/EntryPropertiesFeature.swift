@@ -20,13 +20,14 @@ public struct EntryPropertiesFeature: Sendable {
                 let interruptedReadBack = state.activePhase == .applied
                 let interruptedReadBackProposal = state.readBackProposal ?? state.appliedProposal
                 let preservedPendingReadBack = state.pendingReadBack
+                let appliedUnverifiedProposal = state.status == .appliedUnverified ? state.appliedProposal : nil
                 state.generation &+= 1
                 state.selection = selection
                 state.capabilityReport = nil
                 state.targetSnapshot = nil
                 state.proposal = nil
                 state.appliedProposal = nil
-                state.pendingReadBack = preservedPendingReadBack
+                state.pendingReadBack = appliedUnverifiedProposal ?? preservedPendingReadBack
                 state.readBackProposal = nil
                 state.canonicalResult = nil
                 state.activePhase = nil
@@ -43,6 +44,17 @@ public struct EntryPropertiesFeature: Sendable {
                     state.pendingReadBack = interruptedReadBackProposal
                     let outcome = EntryPropertiesOutcome.propertyChangeAppliedUnverified(
                         interruptedReadBackProposal.snapshot,
+                    )
+                    state.status = .idle
+                    state.lastOutcome = outcome
+                    return .merge(
+                        .cancel(id: CancelID.flow),
+                        .send(.init(kind: .outcome(outcome))),
+                    )
+                }
+                if let appliedUnverifiedProposal {
+                    let outcome = EntryPropertiesOutcome.propertyChangeAppliedUnverified(
+                        appliedUnverifiedProposal.snapshot,
                     )
                     state.status = .idle
                     state.lastOutcome = outcome
@@ -123,7 +135,9 @@ public struct EntryPropertiesFeature: Sendable {
             case let .prepare(intent):
                 guard state.activePhase == nil else { return rejectBusy(&state) }
                 guard state.pendingReadBack == nil else { return rejectBusy(&state) }
-                guard state.status != .appliedUnverified else { return rejectBusy(&state) }
+                guard state.status != .appliedUnverified, state.status != .ambiguous else {
+                    return rejectBusy(&state)
+                }
                 guard let snapshot = state.targetSnapshot,
                       let capabilities = state.capabilityReport
                 else { return reject(&state, .stale) }

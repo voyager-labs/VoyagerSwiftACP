@@ -166,6 +166,33 @@ final class EntryCorePropertyClientFlowTests: XCTestCase {
         }
     }
 
+    func testDefinitionListRejectsResponseOutsideRequestContext() async throws {
+        let propertyID1 = try PropertyID(rawValue: "00000000-0000-0000-8000-000000000001")
+        let propertyID2 = try PropertyID(rawValue: "00000000-0000-0000-8000-000000000002")
+        let cases = try definitionListContextCases(
+            propertyID1: propertyID1,
+            propertyID2: propertyID2,
+        )
+        let endpoint = try EntryCoreEndpoint(path: "/tmp/property-client.sock")
+
+        for testCase in cases {
+            let recorder = PropertyTransportRecorder(response: Data(testCase.response.utf8))
+            let client = EntryCorePropertyClient.makeLive(
+                requestID: { "definition-id" },
+                makeTransport: recorder.makeTransport,
+            )
+
+            do {
+                _ = try await client.definitionList(endpoint, testCase.request)
+                XCTFail("\(testCase.name) should be rejected")
+            } catch {
+                XCTAssertEqual(error as? EntryCoreClientError, .protocolMismatch, testCase.name)
+            }
+            XCTAssertEqual(recorder.creationCount, 1, testCase.name)
+            XCTAssertEqual(recorder.requests.count, 1, testCase.name)
+        }
+    }
+
     func testInvalidLocalBoundsDoNotCreateTransport() throws {
         let recorder = PropertyTransportRecorder(response: Data())
         _ = EntryCorePropertyClient.makeLive(
@@ -257,6 +284,12 @@ private struct QueryContextMismatchCase {
 private struct AssignmentListContextCase {
     let name: String
     let request: PropertyAssignmentListRequest
+    let response: String
+}
+
+private struct DefinitionListContextCase {
+    let name: String
+    let request: PropertyDefinitionListRequest
     let response: String
 }
 
@@ -366,6 +399,74 @@ private func assignmentPageResponse(assignments: String) -> String {
       "ok":true,
       "result":{
         "assignments":\(assignments),
+        "has_more":false
+      }
+    }
+    """
+}
+
+private func definitionListContextCases(
+    propertyID1: PropertyID,
+    propertyID2: PropertyID,
+) throws -> [DefinitionListContextCase] {
+    let active1 = propertyDefinitionJSON(propertyID: propertyID1.rawValue, state: "active")
+    let active2 = propertyDefinitionJSON(propertyID: propertyID2.rawValue, state: "active")
+    let disabled1 = propertyDefinitionJSON(propertyID: propertyID1.rawValue, state: "disabled")
+    return try [
+        DefinitionListContextCase(
+            name: "page contains too many definitions",
+            request: PropertyDefinitionListRequest(
+                pageSize: 1,
+                requestedPropertyIDs: [propertyID1, propertyID2],
+            ),
+            response: definitionPageResponse(definitions: "[\(active1),\(active2)]"),
+        ),
+        DefinitionListContextCase(
+            name: "page contains an unrequested property",
+            request: PropertyDefinitionListRequest(
+                pageSize: 2,
+                requestedPropertyIDs: [propertyID1],
+            ),
+            response: definitionPageResponse(definitions: "[\(active2)]"),
+        ),
+        DefinitionListContextCase(
+            name: "page contains disabled definition when excluded",
+            request: PropertyDefinitionListRequest(
+                pageSize: 2,
+                includeDisabled: false,
+            ),
+            response: definitionPageResponse(definitions: "[\(disabled1)]"),
+        ),
+    ]
+}
+
+private func propertyDefinitionJSON(propertyID: String, state: String) -> String {
+    let reason = state == "disabled" ? "definition_disabled" : "unsupported_value_contract"
+    return """
+    {
+      "property_id":"\(propertyID)",
+      "key":"property-key",
+      "name":"Property name",
+      "value_type":"text",
+      "cardinality":"one",
+      "state":"\(state)",
+      "revision":1,
+      "options":[],
+      "condition_capability":{
+        "supported":false,
+        "reason":"\(reason)"
+      }
+    }
+    """
+}
+
+private func definitionPageResponse(definitions: String) -> String {
+    """
+    {
+      "request_id":"definition-id",
+      "ok":true,
+      "result":{
+        "definitions":\(definitions),
         "has_more":false
       }
     }

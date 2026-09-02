@@ -104,8 +104,26 @@ extension EntryCorePropertyClient {
             guard case let .definitionPage(value) = try await call(
                 .propertyDefinitionList, endpoint, request, requestID, makeTransport,
             ) else { throw EntryCoreClientError.protocolMismatch }
+            guard definitionPageMatchesRequest(value, request: request) else {
+                throw EntryCoreClientError.protocolMismatch
+            }
             return value
         }
+    }
+
+    nonisolated private static func definitionPageMatchesRequest(
+        _ page: PropertyDefinitionPage,
+        request: PropertyDefinitionListRequest,
+    ) -> Bool {
+        guard page.definitions.count <= request.pageSize else { return false }
+        if !request.requestedPropertyIDs.isEmpty {
+            let requested = Set(request.requestedPropertyIDs)
+            guard page.definitions.allSatisfy({ requested.contains($0.id) }) else { return false }
+        }
+        guard request.includeDisabled == true || page.definitions.allSatisfy({ $0.state != .disabled }) else {
+            return false
+        }
+        return true
     }
 
     nonisolated private static func definitionOperation<Request: Encodable & Sendable>(
