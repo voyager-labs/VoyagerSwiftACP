@@ -224,7 +224,9 @@ enum FileManagerContentIdentityTransitionCoordinator {
     ) -> Bool {
         switch owner {
         case let .root(generation):
-            state.entryViewLayout.entryOperations.loadingContext.generation == generation
+            // Root reloads reserve the next generation before loadItems reaches the
+            // loading reducer. Keep queued future owners current until loading advances past them.
+            state.entryViewLayout.entryOperations.loadingContext.generation <= generation
         case let .folder(id, generation):
             if let node = state.entryViewLayout.hierarchy.nodesByID[id] {
                 // Multiple reload actions can be queued before their child reducer runs.

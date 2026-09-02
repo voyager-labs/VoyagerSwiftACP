@@ -862,6 +862,44 @@ extension EVM002FileManagerPagePresentationTests {
         )
     }
 
+    /// EVM-002-command_external_refresh_correlation: 예약된 root reload owner는 실제 load 시작 전에도 current다.
+    /// root reload가 generation을 선점한 직후 겹친 외부 이벤트가 identity transition을 stale로 폐기하지 않게 한다.
+    /// - 검증 내용: root owner의 미래 예약 generation은 current로 유지하고 과거 generation은 stale로 판정함
+    /// - 사전 조건: loading context generation 3에서 root owner가 reload를 예약해 generation 4를 가리킴
+    /// - 기대 결과: 예약 owner는 current이고 generation 2 owner는 current가 아님
+    func testQueuedRootReloadOwnerRemainsCurrentBeforeLoadStarts() {
+        let before = EntryModel.temporaryFolder(id: "/root/before", name: "before")
+        var state = bufferedRootSourceState(
+            rootPath: "/root",
+            entries: [before],
+        )
+        state.entryViewLayout.entryOperations.loadingContext.generation = 3
+        state.pendingIdentityTransition = .init(
+            recordID: UUID(),
+            beforePath: before.id,
+            afterPath: "/root/after",
+            rootPath: "/root",
+            refreshGeneration: 1,
+            projectionOwner: .root(generation: 3),
+        )
+
+        FileManagerContentIdentityTransitionCoordinator.rebaseForNextRootReload(state: &state)
+
+        XCTAssertEqual(state.pendingIdentityTransition?.projectionOwner, .root(generation: 4))
+        XCTAssertTrue(
+            FileManagerContentIdentityTransitionCoordinator.ownerIsCurrent(
+                .root(generation: 4),
+                state: state,
+            ),
+        )
+        XCTAssertFalse(
+            FileManagerContentIdentityTransitionCoordinator.ownerIsCurrent(
+                .root(generation: 2),
+                state: state,
+            ),
+        )
+    }
+
     /// 같은 folder 재적용(탭 복원) reload도 전이 세대를 재기준화한다.
     /// - 검증 내용: applyNavigationState(.folder 동일 경로) 뒤 root 소유자 세대가 함께 올라간다.
     /// - 사전 조건: root 소유자 대기 전이와 gen 1 로딩 컨텍스트가 있다.
