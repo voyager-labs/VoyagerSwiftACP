@@ -769,11 +769,10 @@ extension EVM002FileManagerPagePresentationTests {
     }
 
     /// EVM-002-command_external_refresh_correlation: 연속 hierarchy invalidation마다 예약된 folder owner를 전진시킨다.
-    /// 첫 reload action이 적용되기 전에 두 번째 reload가 예약돼도 이미 N+1인 owner를 다시
-    /// 다음 세대로 옮겨 실제 node의 N+2 generation과 transition을 일치시켜야 한다.
-    /// - 검증 내용: 동일 expanded folder owner에 대한 연속 rebase가 generation을 두 번 증가
-    /// - 사전 조건: folder node와 projection owner가 generation 3이고 두 invalidation이 연속 예약됨
-    /// - 기대 결과: node가 아직 generation 3이어도 projectionOwner가 generation 5가 됨
+    /// 첫 reload action이 적용되기 전에 여러 reload가 예약돼도 owner가 모든 예약 세대를 따라가야 한다.
+    /// - 검증 내용: 동일 expanded folder owner에 대한 연속 rebase가 세 번의 예약 세대를 보존하고 현재 판정을 유지함
+    /// - 사전 조건: folder node와 projection owner가 generation 3이고 세 invalidation이 연속 예약됨
+    /// - 기대 결과: node가 아직 generation 3이어도 projectionOwner generation 6이 예약 상태로 유효함
     func testConsecutiveHierarchyInvalidationsAdvanceScheduledFolderOwner() {
         let destination = EntryModel.temporaryFolder(id: "/root/D", name: "D")
         var state = bufferedRootSourceState(
@@ -803,10 +802,26 @@ extension EVM002FileManagerPagePresentationTests {
             affectedPaths: [destination.id],
             state: &state,
         )
+        FileManagerContentIdentityTransitionCoordinator.rebaseForHierarchyInvalidation(
+            affectedPaths: [destination.id],
+            state: &state,
+        )
 
         XCTAssertEqual(
             state.pendingIdentityTransition?.projectionOwner,
-            .folder(id: destination.id, generation: 5),
+            .folder(id: destination.id, generation: 6),
+        )
+        XCTAssertTrue(
+            FileManagerContentIdentityTransitionCoordinator.ownerIsCurrent(
+                .folder(id: destination.id, generation: 6),
+                state: state,
+            ),
+        )
+        XCTAssertFalse(
+            FileManagerContentIdentityTransitionCoordinator.ownerIsCurrent(
+                .folder(id: destination.id, generation: 2),
+                state: state,
+            ),
         )
     }
 

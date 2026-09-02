@@ -227,7 +227,10 @@ enum FileManagerContentIdentityTransitionCoordinator {
             state.entryViewLayout.entryOperations.loadingContext.generation == generation
         case let .folder(id, generation):
             if let node = state.entryViewLayout.hierarchy.nodesByID[id] {
-                node.generation == generation || node.generation &+ 1 == generation
+                // Multiple reload actions can be queued before their child reducer runs.
+                // Any reserved future generation remains current until the node advances
+                // past it; only an owner behind the node is stale.
+                node.generation <= generation
             } else {
                 false
             }
@@ -266,7 +269,9 @@ enum FileManagerContentIdentityTransitionCoordinator {
             guard case let .folder(id, generation) = owner,
                   canonicalAffected.contains(canonicalizedPath(id)),
                   let node = state.entryViewLayout.hierarchy.nodesByID[id],
-                  node.generation == generation || node.generation &+ 1 == generation
+                  // Each invalidation reserves one future startLoad generation. Preserve
+                  // arbitrarily long queued bursts while rejecting already-stale owners.
+                  node.generation <= generation
             else { return owner }
             return .folder(id: id, generation: generation &+ 1)
         }
