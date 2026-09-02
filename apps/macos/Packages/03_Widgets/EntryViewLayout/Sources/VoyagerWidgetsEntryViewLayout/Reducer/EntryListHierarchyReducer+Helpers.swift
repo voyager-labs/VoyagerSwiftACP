@@ -153,6 +153,7 @@ extension EntryListHierarchyReducer {
         // 뒤의 reconcileHierarchySelection은 이미 빈 선택만 보게 된다. 따라서 재로드 전
         // 선택을 보존해 두고 이 함수에서 delegate를 직접 병합한다.
         let previousSelectedIds = state.selectedIds
+        let retainsExpandedSnapshots = retainsCompleteSnapshots || state.identityReplacement != nil
 
         for id in folderIDs {
             var nodeState = state.hierarchy.nodesByID[id] ?? FolderNodeState()
@@ -160,7 +161,7 @@ extension EntryListHierarchyReducer {
             // 보존 모드의 확장 폴더는 마커를 건드리지 않고 건너뛴다. 아래 startLoad의
             // reloadedNodeState가 완료 provenance를 보고 완전 스냅샷을 유지한 채
             // 세대만 올리고 커서를 되감는다.
-            if retainsCompleteSnapshots, isExpanded {
+            if retainsExpandedSnapshots, isExpanded {
                 continue
             }
             if !isExpanded {

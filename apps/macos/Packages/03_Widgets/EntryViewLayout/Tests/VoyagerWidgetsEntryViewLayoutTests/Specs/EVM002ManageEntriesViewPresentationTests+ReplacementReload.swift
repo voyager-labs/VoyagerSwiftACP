@@ -32,6 +32,40 @@ extension EVM002ManageEntriesViewPresentationTests {
         XCTAssertEqual(node?.generation, 4)
     }
 
+    /// EVM-002-replacement_reload_snapshot_retention: 활성 identity 전이 중 presentation reload도 snapshot을 유지한다.
+    /// hidden/sort/group 변경으로 expanded folder를 다시 로드해도 진행 중 replacement의 before 선택과
+    /// retained child가 새 세대의 첫 batch까지 사라지지 않아야 한다.
+    /// - 검증 내용: identityReplacement가 활성인 hidden-files reload에서 complete child snapshot 보존
+    /// - 사전 조건: expanded loaded folder와 활성 identity replacement가 있다.
+    /// - 기대 결과: generation만 증가하고 children은 유지된 채 loadingCore로 전환
+    func testIdentityReplacementPresentationReloadRetainsExpandedSnapshot() {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let retainedChild = replacementReloadFile(id: "/root/a/retained", name: "retained")
+        var state = replacementReloadState(folder: folder)
+        state.hierarchy.nodesByID[folder.id] = .init(
+            children: [retainedChild],
+            loadPhase: .loaded,
+            generation: 3,
+        )
+        state.hierarchy.setExpandedIDs([folder.id])
+        state.identityReplacement = .init(plan: .init(
+            transactionID: UUID(),
+            rootPath: "/root",
+            pairs: [.init(beforePath: retainedChild.id, afterPath: "/root/a/after")],
+        ))
+
+        _ = EntryListHierarchyReducer().reduce(
+            into: &state,
+            action: .hierarchy(.hiddenFilesSettingChanged),
+        )
+
+        let node = state.hierarchy.nodesByID[folder.id]
+        XCTAssertEqual(node?.generation, 4)
+        XCTAssertEqual(node?.loadPhase, .loadingCore)
+        XCTAssertEqual(node?.folder.children, [retainedChild])
+        XCTAssertTrue(node?.folder.retainsPreviousGenerationChildren ?? false)
+    }
+
     /// EVM-002-toggle_directory_expansion_in_list: identity replacement action owns source staging inside
     /// EntryViewLayout.
     /// FileManager supplies only an immutable before/after plan; the widget installs/cancels the source hold
