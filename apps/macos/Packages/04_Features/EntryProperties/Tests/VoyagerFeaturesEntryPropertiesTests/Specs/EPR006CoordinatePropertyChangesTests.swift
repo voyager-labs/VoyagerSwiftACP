@@ -188,6 +188,44 @@ final class EPR006CoordinatePropertyChangesTests: XCTestCase {
         XCTAssertEqual(store.state.lastOutcome, .propertyChangeRejected(.ambiguousExecution))
     }
 
+    /// EPR-006-read_back_property_change_result: read-back 중 selection 변경은 applied-unverified를 보존한다.
+    /// - 검증 내용: 기존 applied proposal, snapshot outcome과 generation fence
+    /// - 사전 조건: mutation 적용 후 canonical read-back effect가 진행 중임
+    /// - 기대 결과: 새 selection을 초기화하면서도 읽기 전용 재시도 가능한 applied-unverified를 게시함
+    func testSelectionChangeDuringReadBackPreservesAppliedUnverifiedAndFencesCompletion() async {
+        let fixture = Fixture()
+        let replacement = EntryPropertiesSelection(
+            targets: [.init(localPath: "/tmp/replacement")],
+            propertyID: fixture.selection.propertyID,
+        )
+        var state = fixture.readyState
+        state.appliedProposal = fixture.proposal
+        state.activePhase = .applied
+        state.status = .applied
+        let store = TestStore(initialState: state) { EntryPropertiesFeature() }
+
+        await store.send(.selectionChanged(replacement)) {
+            $0.generation = 1
+            $0.selection = replacement
+            $0.capabilityReport = nil
+            $0.targetSnapshot = nil
+            $0.proposal = nil
+            $0.canonicalResult = nil
+            $0.activePhase = nil
+            $0.appliedProposal = fixture.proposal
+            $0.status = .appliedUnverified
+            $0.lastOutcome = .propertyChangeAppliedUnverified(fixture.snapshot)
+        }
+        await store.receive(
+            .init(kind: .outcome(.propertyChangeAppliedUnverified(fixture.snapshot))),
+        )
+        await store.send(.init(kind: .readBackCompleted(0, .success(fixture.canonicalResult))))
+        XCTAssertEqual(store.state.selection, replacement)
+        XCTAssertEqual(store.state.status, .appliedUnverified)
+        XCTAssertEqual(store.state.appliedProposal, fixture.proposal)
+        XCTAssertEqual(store.state.lastOutcome, .propertyChangeAppliedUnverified(fixture.snapshot))
+    }
+
     // MARK: - EPR-006-execute_property_change
 
     /// EPR-006-execute_property_change: 확인이 필요한 proposal은 확인 전 로컬에서 거부한다.

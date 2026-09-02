@@ -17,6 +17,8 @@ public struct EntryPropertiesFeature: Sendable {
             switch action.kind {
             case let .selectionChanged(selection):
                 let interruptedExecution = state.activePhase == .executing
+                let interruptedReadBack = state.activePhase == .applied
+                let interruptedReadBackProposal = state.appliedProposal
                 state.generation &+= 1
                 state.selection = selection
                 state.capabilityReport = nil
@@ -28,6 +30,18 @@ public struct EntryPropertiesFeature: Sendable {
                 if interruptedExecution {
                     let outcome = EntryPropertiesOutcome.propertyChangeRejected(.ambiguousExecution)
                     state.status = .ambiguous
+                    state.lastOutcome = outcome
+                    return .merge(
+                        .cancel(id: CancelID.flow),
+                        .send(.init(kind: .outcome(outcome))),
+                    )
+                }
+                if interruptedReadBack, let interruptedReadBackProposal {
+                    state.appliedProposal = interruptedReadBackProposal
+                    let outcome = EntryPropertiesOutcome.propertyChangeAppliedUnverified(
+                        interruptedReadBackProposal.snapshot,
+                    )
+                    state.status = .appliedUnverified
                     state.lastOutcome = outcome
                     return .merge(
                         .cancel(id: CancelID.flow),
