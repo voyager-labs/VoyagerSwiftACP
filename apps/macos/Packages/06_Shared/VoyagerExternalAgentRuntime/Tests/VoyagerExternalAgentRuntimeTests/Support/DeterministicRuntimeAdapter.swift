@@ -23,6 +23,7 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
     private let launchDelay: Duration
     private let launchGate: RuntimeTestGate?
     private let launchReceiptRunReference: RuntimeRunReference?
+    private let launchReceiptProviderReference: ProviderInternalSessionReference?
     private let eventStreamDelay: Duration
     private let eventStreamInvocationGate: RuntimeTestGate?
     private let eventStreamGate: RuntimeTestGate?
@@ -42,6 +43,7 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
     private let failsRestart: Bool
     private var remainingLaunchFailures: Int
     private var launchCount = 0
+    private var launchRequests: [RuntimeLaunchRequest] = []
     private var launchCountWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
     private var eventStreamCount = 0
     private var eventStreamCountWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
@@ -68,6 +70,7 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
         launchDelay: Duration = .zero,
         launchGate: RuntimeTestGate? = nil,
         launchReceiptRunReference: RuntimeRunReference? = nil,
+        launchReceiptProviderReference: ProviderInternalSessionReference? = nil,
         eventStreamDelay: Duration = .zero,
         eventStreamInvocationGate: RuntimeTestGate? = nil,
         eventStreamGate: RuntimeTestGate? = nil,
@@ -104,6 +107,7 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
         self.launchDelay = launchDelay
         self.launchGate = launchGate
         self.launchReceiptRunReference = launchReceiptRunReference
+        self.launchReceiptProviderReference = launchReceiptProviderReference
         self.eventStreamDelay = eventStreamDelay
         self.eventStreamInvocationGate = eventStreamInvocationGate
         self.eventStreamGate = eventStreamGate
@@ -130,6 +134,7 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
 
     func launch(_ request: RuntimeLaunchRequest) async throws -> RuntimeLaunchReceipt {
         launchCount += 1
+        launchRequests.append(request)
         resumeLaunchCountWaiters()
         if let launchFailure {
             throw launchFailure
@@ -146,9 +151,14 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
         if failsLaunchAfterGate {
             throw InjectedFailure.launch
         }
+        let restoredProviderReference = restartBindings.last(where: {
+            $0.runReference == request.runReference
+        })?.providerInternalSessionReference
         return RuntimeLaunchReceipt(
             runReference: launchReceiptRunReference ?? request.runReference,
-            providerInternalSessionReference: IDs.providerSession(launchCount),
+            providerInternalSessionReference: launchReceiptProviderReference
+                ?? restoredProviderReference
+                ?? IDs.providerSession(launchCount),
         )
     }
 
@@ -258,6 +268,10 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
 
     func receivedRestartBindings() -> [RuntimeRestartBinding] {
         restartBindings
+    }
+
+    func receivedLaunchRequests() -> [RuntimeLaunchRequest] {
+        launchRequests
     }
 
     func receivedApprovalRequests() -> [RuntimeApprovalRequest] {

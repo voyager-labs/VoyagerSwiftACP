@@ -6,6 +6,134 @@ import XCTest
 // MARK: - ATI-006-coordinate_external_agent_sessions
 
 final class ATI006CoordinateExternalAgentSessionsTests: XCTestCase {
+    /// ATI-006-coordinate_external_agent_sessions: the real runtime plane resumes Codex from persisted state.
+    /// Shared control-plane restore/resume와 Codex adapter/process controller를 함께 통과하는 characterization 증거입니다.
+    /// - 검증 내용: staged compatibility, resume command, empty stdin, context, receipt, cursor, terminal convergence,
+    /// cleanup.
+    /// - 사전 조건: persisted running session과 provider thread reference가 in-memory store에 저장되어 있습니다.
+    /// - 기대 결과: restore는 spawn 없이 compatibility를 stage하고 resume은 정확히 한 번 실행되어 completed로 수렴합니다.
+    func testRestoreResume_realCodexAdapterUsesPersistedReceiptAndCursor() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("voyager-ati006-restore", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let host: ExternalAgentSessionReference = "ati006-restore-host"
+        let run = RuntimeRunReference("ati006-restore-run")
+        let provider = ProviderInternalSessionReference("thread-persisted")
+        let context = RuntimeContextPolicy(
+            branchReference: "feat/voy-699",
+            authorizationGeneration: 7,
+            localCorrelation: "ati006-correlation",
+            workingDirectory: root.path,
+            allowedRoots: [root.path],
+            requestContext: "ati006-request",
+        )
+        let process = CodexExecFakeProcess(
+            stdout: [
+                Data(#"{"type":"thread.started","thread_id":"thread-persisted"}"#.utf8),
+                Data(#"{"type":"turn.started","turn_id":"turn-resume"}"#.utf8),
+                Data(#"{"type":"turn.completed","turn_id":"turn-resume"}"#.utf8),
+            ],
+            stderr: [],
+            terminationStatus: 0,
+        )
+        let recorder = CodexExecCommandRecorder()
+        let runner: CodexExecProcessController.Runner = { command in
+            await recorder.record(command)
+            return try await CodexExecFakeRunner(process: process).run(command)
+        }
+        let adapter = CodexExecRuntimeAdapter(
+            controller: CodexExecProcessController(runner: runner),
+            readinessProbe: CodexExecReadinessProbe { _, arguments, _ in
+                arguments == ["--version"]
+                    ? .init(exitCode: 0, stdout: "codex-cli 0.148.0\n", stderr: "")
+                    : .init(exitCode: 0, stdout: "", stderr: "")
+            },
+            executableURL: URL(fileURLWithPath: "/tmp/codex"),
+        )
+        let stored = RuntimeStoredSession(
+            externalAgentSessionReference: host,
+            providerInternalSessionReference: provider,
+            runReference: run,
+            adapterID: adapter.descriptor.id,
+            adapterVersion: adapter.descriptor.adapterVersion,
+            capabilitySnapshot: adapter.descriptor.capabilities,
+            storedContext: RuntimeStoredContext(contextPolicy: context),
+            projection: .running,
+            lastSequence: 7,
+            acceptedIdempotencyKeys: [],
+            providerNamespace: adapter.descriptor.providerNamespace,
+            providerBranch: adapter.descriptor.providerBranch,
+        )
+        let store = ATI006RuntimeMemoryStore(
+            state: RuntimeStoredState(schemaVersion: RuntimeStoredState.currentSchemaVersion, sessions: [stored]),
+        )
+        let plane = RuntimeControlPlane(store: store)
+        try await plane.register(adapter)
+
+        let restoreResult = try await plane.restore(hostReference: host, expectedContext: context)
+        XCTAssertEqual(restoreResult, RuntimeRestoreResult.restored)
+        let stagedCommands = await recorder.commands
+        XCTAssertEqual(stagedCommands.count, 0)
+        let result = try await plane.resumeRestoredRun(hostReference: host)
+        let commands = await recorder.commands
+        XCTAssertEqual(commands.count, 1)
+        XCTAssertEqual(
+            commands[0].arguments,
+            [
+                "exec",
+                "resume",
+                "--model",
+                "gpt-5-codex",
+                "--json",
+                "--strict-config",
+                "--ignore-user-config",
+                "thread-persisted",
+                "-",
+            ],
+        )
+        XCTAssertEqual(commands[0].stdin, "")
+        let adapterCounts = await adapter.debugStorageCounts()
+        XCTAssertEqual(adapterCounts.receipts, 0)
+        XCTAssertEqual(adapterCounts.restartBindings, 0)
+        XCTAssertEqual(result.runReference, run)
+        XCTAssertEqual(result.outcome, RuntimeOutcome.completed)
+        let finalState = await store.state
+        let persisted = try XCTUnwrap(finalState.sessions.first)
+        XCTAssertEqual(persisted.runReference, run)
+        XCTAssertEqual(persisted.providerInternalSessionReference, provider)
+        XCTAssertEqual(persisted.lastSequence, 9)
+        XCTAssertEqual(persisted.projection, RuntimeProjection.completed)
+    }
+
+    private actor RestartStageGate {
+        private var firstCall = false
+        private var entered: CheckedContinuation<Void, Never>?
+        private var releaseFirst: CheckedContinuation<Void, Never>?
+
+        func waitForFirstStage() async {
+            await withCheckedContinuation { continuation in
+                entered = continuation
+            }
+        }
+
+        func release() {
+            releaseFirst?.resume()
+            releaseFirst = nil
+        }
+
+        func invoke() async {
+            guard !firstCall else { return }
+            firstCall = true
+            entered?.resume()
+            entered = nil
+            await withCheckedContinuation { continuation in
+                releaseFirst = continuation
+            }
+        }
+    }
+
     // MARK: - ATI-006-fresh_codex_launch
 
     /// ATI-006-fresh_codex_launch: receipt waits for a valid thread.started handshake.

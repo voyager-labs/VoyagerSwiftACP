@@ -28,6 +28,13 @@ public extension RuntimeControlPlane {
         if let runReference = sessions[hostReference]?.stored.runReference,
            let terminal = storedTerminalResult(host: hostReference, runReference: runReference)
         {
+            if let context = validatedRestoreContexts[hostReference] {
+                clearValidatedRestoreContext(
+                    host: hostReference,
+                    runReference: context.runReference,
+                    lease: context.lease,
+                )
+            }
             if case let .restored(lease) = sessions[hostReference]?.lease {
                 finalizeVisibleResumptionTerminal(
                     host: hostReference,
@@ -72,16 +79,17 @@ public extension RuntimeControlPlane {
         ) {
             return terminal
         }
+        let launchedClaim = try await launchValidatedRestore(claim, host: hostReference)
         guard let adapter = adapters[claim.adapterID] else { throw RuntimeHostError.invalidEvent }
         return try await finishRestoredResumeAttempt(
-            claim,
+            launchedClaim,
             from: adapter,
             host: hostReference,
             restoredContext: restoredContext,
         )
     }
 
-    private func finishRestoredResumeAttempt(
+    internal func finishRestoredResumeAttempt(
         _ claim: RestoredRunClaim,
         from adapter: any ExternalAgentRuntimeAdapter,
         host: ExternalAgentSessionReference,
@@ -94,6 +102,7 @@ public extension RuntimeControlPlane {
             restoredContext: restoredContext,
         )
         if case let .persistedTerminal(terminal) = consumption {
+            clearValidatedRestoreContext(host: host, runReference: terminal.runReference, lease: claim.lease)
             finalizeVisibleResumptionTerminal(
                 host: host,
                 runReference: terminal.runReference,
@@ -104,6 +113,7 @@ public extension RuntimeControlPlane {
         }
         guard case let .provider(result) = consumption else { throw RuntimeHostError.invalidEvent }
         if let terminal = storedTerminalResult(host: host, runReference: result.runReference) {
+            clearValidatedRestoreContext(host: host, runReference: result.runReference, lease: claim.lease)
             finalizeVisibleResumptionTerminal(
                 host: host,
                 runReference: result.runReference,
@@ -156,12 +166,14 @@ public extension RuntimeControlPlane {
             throw error
         }
         do {
-            return try await persistTerminalResult(
+            let terminal = try await persistTerminalResult(
                 result,
                 host: host,
                 lease: claim.lease,
                 restoredContext: restoredContext,
             )
+            clearValidatedRestoreContext(host: host, runReference: result.runReference, lease: claim.lease)
+            return terminal
         } catch {
             try? await restoreResumptionClaimIfNeeded(host, lease: claim.lease)
             throw error
@@ -264,6 +276,11 @@ public extension RuntimeControlPlane {
             host: host,
             runReference: claim.receipt.runReference,
         ) else { return nil }
+        clearValidatedRestoreContext(
+            host: host,
+            runReference: claim.receipt.runReference,
+            lease: claim.lease,
+        )
         finalizeVisibleResumptionTerminal(
             host: host,
             runReference: claim.receipt.runReference,
@@ -537,6 +554,7 @@ public extension RuntimeControlPlane {
                 expectedSession: expected,
                 loaded: loaded,
             ) {
+                plane.clearValidatedRestoreContext(host: host, runReference: runReference, lease: lease)
                 plane.sessions[host] = adopted
                 plane.finalizeVisibleResumptionTerminal(
                     host: host,
@@ -1102,6 +1120,7 @@ public extension RuntimeControlPlane {
                 if let restoredContext {
                     invalidateRestoredResumeAttempt(restoredContext.attemptID, host: host)
                 }
+                clearValidatedRestoreContext(host: host, runReference: runReference, lease: lease)
             } catch RuntimeHostError.persistenceConflict {
                 try await restoreResumptionClaimIfNeeded(
                     host,
@@ -1301,7 +1320,7 @@ public extension RuntimeControlPlane {
         throw error
     }
 
-    private func restoreResumptionClaimIfNeeded(
+    func restoreResumptionClaimIfNeeded(
         _ hostReference: ExternalAgentSessionReference,
         lease: UInt64,
         fencePersistedOwner shouldFencePersistedOwner: Bool = false,
@@ -1311,6 +1330,11 @@ public extension RuntimeControlPlane {
             let expectedRunReference = sessions[hostReference]?.stored.runReference
             let hasPersistedOwner = try await fencePersistedOwner(hostReference, lease: lease)
             if !hasPersistedOwner, let expectedRunReference {
+                clearValidatedRestoreContext(
+                    host: hostReference,
+                    runReference: expectedRunReference,
+                    lease: lease,
+                )
                 deactivateLocalResumptionLeaseIfOwned(
                     host: hostReference,
                     runReference: expectedRunReference,
@@ -1465,33 +1489,3 @@ public extension RuntimeControlPlane {
         sessions[hostReference] = session
     }
 }
-
-private struct RestoredRunClaim {
-    let receipt: RuntimeLaunchReceipt
-    let adapterID: RuntimeAdapterID
-    let lease: UInt64
-    let isPersisted: Bool
-}
-
-private enum RestoredConsumptionResult {
-    case provider(RuntimeResult)
-    case persistedTerminal(RuntimeResult)
-}
-
-private enum RuntimeRestoredResumeRaceOutcome {
-    case result(RuntimeResult)
-    case failure(RuntimeRestoredResumeRaceFailure)
-    case cancelled
-}
-
-private enum RuntimeRestoredResumeRaceFailure {
-    case cancellation
-    case attemptLost
-    case host(RuntimeHostError)
-    case terminalEventPersistence
-    case heartbeatPersistence
-    case providerTerminalAdmission
-}
-
-extension RuntimeRestoredResumeRaceOutcome: Sendable {}
-extension RuntimeRestoredResumeRaceFailure: Sendable {}

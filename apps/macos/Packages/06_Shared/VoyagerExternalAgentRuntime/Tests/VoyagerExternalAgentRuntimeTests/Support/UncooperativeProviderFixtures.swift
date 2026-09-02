@@ -36,12 +36,14 @@ private func makeUncooperativeStoredSession(
 private func makeUncooperativeAdapter(
     events: [[RuntimeEventEnvelope]],
     invocationGate: RuntimeTestGate? = nil,
+    providerReference: ProviderInternalSessionReference,
 ) -> DeterministicRuntimeAdapter {
     DeterministicRuntimeAdapter(
         id: "sdk",
         transport: .sdkAsyncStream,
         capabilities: uncooperativeStreamCapabilities,
         eventsByEventStream: events,
+        launchReceiptProviderReference: providerReference,
         eventStreamInvocationGate: invocationGate,
     )
 }
@@ -99,7 +101,11 @@ func makeUncooperativeProviderHostTerminalFixture() -> UncooperativeProviderHost
         receipt: "uncooperative-host-terminal-receipt",
     )
     let store = InMemoryRuntimeStateStore(state: makeState([stored]))
-    let adapter = makeUncooperativeAdapter(events: [[lateEvent]], invocationGate: streamGate)
+    let adapter = makeUncooperativeAdapter(
+        events: [[lateEvent]],
+        invocationGate: streamGate,
+        providerReference: ProviderInternalSessionReference("uncooperative-host-terminal-receipt"),
+    )
     let plane = RuntimeControlPlane(
         store: store,
         restorationHeartbeatInterval: .seconds(20),
@@ -168,6 +174,7 @@ func makeUncooperativeProviderCancellationFixture() -> UncooperativeProviderCanc
     let adapter = makeUncooperativeAdapter(
         events: [[oldEvent], [replacementEvent]],
         invocationGate: streamGate,
+        providerReference: ProviderInternalSessionReference("uncooperative-cancellation-receipt"),
     )
     let plane = RuntimeControlPlane(
         store: store,
@@ -223,7 +230,10 @@ func makeUncooperativeProviderCASFixture() -> UncooperativeProviderCASFixture {
         state: makeState([stored]),
         saveGates: [3: providerApplyGate],
     )
-    let adapter = makeUncooperativeAdapter(events: [[providerEvent]])
+    let adapter = makeUncooperativeAdapter(
+        events: [[providerEvent]],
+        providerReference: ProviderInternalSessionReference("provider-terminal-cas-loss-receipt"),
+    )
     let plane = RuntimeControlPlane(
         store: store,
         restorationHeartbeatInterval: .seconds(20),

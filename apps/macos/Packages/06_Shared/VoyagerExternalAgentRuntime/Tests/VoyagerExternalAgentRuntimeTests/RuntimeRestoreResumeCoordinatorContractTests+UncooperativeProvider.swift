@@ -118,6 +118,7 @@ extension RuntimeRestoreResumeCoordinatorContractTests {
         #expect(await fixture.store.currentState()?.sessions.first?.restorationClaim == nil)
         #expect(await fixture.plane.acceptedEventCount(for: fixture.host) == 1)
         let counts = await fixture.adapter.counts()
+        #expect(counts.launch == 2)
         #expect(counts.stream == 2)
         #expect(counts.terminalResult == 0)
     }
@@ -173,7 +174,7 @@ extension RuntimeRestoreResumeCoordinatorContractTests {
         #expect(await fixture.store.applyCount == 4)
         #expect(await fixture.store.loadCount == 3)
         let counts = await fixture.adapter.counts()
-        #expect(counts.launch == 0)
+        #expect(counts.launch == 1)
         #expect(counts.stream == 1)
         #expect(counts.terminalResult == 0)
     }
