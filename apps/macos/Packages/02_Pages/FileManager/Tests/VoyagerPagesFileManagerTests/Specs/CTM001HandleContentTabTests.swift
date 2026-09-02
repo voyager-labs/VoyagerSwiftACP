@@ -6077,6 +6077,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
             operationID: UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 3)),
             target: .unpinned,
             orderedTargetIDs: [fixture.pinnedID],
+            source: .contextMenu,
+            origin: .menu,
         )
         let pendingIntents = state.pendingTopNavigationIntents
         let optimisticOrder = state.optimisticTopNavigationOrder
@@ -9386,7 +9388,7 @@ extension CTM001HandleContentTabTests {
         let initialCount = store.state.contentTabs.tabs.count
 
         await store.send(.tabContent(tabID: tabID, action: .delegate(.openInNewTab(["/folder"]))))
-        await store.receive(\.contentTabs)
+        await receiveOpenContentTabAction(store, anchor: .directory(path: "/folder"), source: .contextMenu)
 
         XCTAssertEqual(store.state.contentTabs.tabs.count, initialCount + 1)
         let lastTab = try XCTUnwrap(store.state.contentTabs.tabs.last)
@@ -9414,8 +9416,8 @@ extension CTM001HandleContentTabTests {
         let initialCount = store.state.contentTabs.tabs.count
 
         await store.send(.tabContent(tabID: tabID, action: .delegate(.openInNewTab(["/a", "/b"]))))
-        await store.receive(\.contentTabs)
-        await store.receive(\.contentTabs)
+        await receiveOpenContentTabAction(store, anchor: .directory(path: "/a"), source: .contextMenu)
+        await receiveOpenContentTabAction(store, anchor: .directory(path: "/b"), source: .contextMenu)
 
         let tabs = store.state.contentTabs.tabs
         XCTAssertEqual(tabs.count, initialCount + 2)
@@ -9458,19 +9460,19 @@ extension CTM001HandleContentTabTests {
         XCTAssertEqual(store.state.contentTabs.activeTabID, activeID)
     }
 
-    /// CTM-001-open_in_new_tab_routing: max tab 한계에 도달하면 추가 open이 무시된다
-    /// ContentTabFeature.open의 max-tab guard가 각 .open 호출에서 강제되므로 경계에서 no-op이어야 한다.
-    /// - 검증 내용: maxTabs만큼 채운 상태에서 New Tab delegate가 새 tab을 만들지 않는다.
-    /// - 사전 조건: tabs가 ContentTabConstants.maxTabs로 가득 찬 상태.
-    /// - 기대 결과: tabs.count가 maxTabs를 넘지 않고 activeTabID가 유지된다.
+    /// CTM-001-open_in_new_tab_routing: 남은 한 슬롯만 수용하고 초과 open은 무시된다
+    /// ContentTabFeature.open의 max-tab guard가 product action boundary를 통과한 각 요청에 적용되는지 검증한다.
+    /// - 검증 내용: 두 경로 delegate 후 첫 경로만 생성되고 context-menu open success metric이 한 건 기록된다.
+    /// - 사전 조건: tabs가 maxTabs-1개인 active window state와 두 폴더 경로.
+    /// - 기대 결과: tabs.count가 maxTabs이고 마지막 anchor가 첫 경로이며 메트릭은 한 건이다.
     @MainActor
-    func testOpenInNewTabRouting_maxTabLimitRespected() async throws {
+    func testOpenInNewTabRouting_oneRemainingSlotLimitsOpenAndMetric() async throws {
         var tabs = IdentifiedArrayOf<ContentTabItem>()
-        for _ in 0 ..< ContentTabConstants.maxTabs {
+        for index in 0 ..< ContentTabConstants.maxTabs - 1 {
             tabs.append(ContentTabItem(
                 id: ContentTabID(),
                 page: .home,
-                anchor: .homeDefault,
+                anchor: .directory(path: "/existing/\(index)"),
                 isPinned: false,
                 title: nil,
                 iconName: nil,
@@ -9480,19 +9482,32 @@ extension CTM001HandleContentTabTests {
         var state = FileManagerFeature.State()
         state.contentTabs.tabs = tabs
         state.contentTabs.activeTabID = activeID
+        let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1))
+        let recorder = FileManagerProductMetricRecorder(makeOperationID: { operationID })
         let store = TestStore(initialState: state) {
             FileManagerFeature()
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_700_000_000))
+            $0.fileManagerProductMetricsClient = recorder.client
         }
-        // store.exhaustivity = .off: bootstrap child action을 무시하고 max-limit no-op 검증에 집중한다.
+        // store.exhaustivity = .off: bootstrap child action을 무시하고 one-slot admission과 metric만 검증한다.
         store.exhaustivity = .off
 
         let tabID = try XCTUnwrap(store.state.contentTabs.activeTabID)
-        await store.send(.tabContent(tabID: tabID, action: .delegate(.openInNewTab(["/folder"]))))
+        await store.send(.tabContent(tabID: tabID, action: .delegate(.openInNewTab(["/first", "/second"]))))
+        await receiveOpenContentTabAction(store, anchor: .directory(path: "/first"), source: .contextMenu)
+        await receiveOpenContentTabAction(store, anchor: .directory(path: "/second"), source: .contextMenu)
 
         XCTAssertEqual(store.state.contentTabs.tabs.count, ContentTabConstants.maxTabs)
-        XCTAssertEqual(store.state.contentTabs.activeTabID, activeID)
+        XCTAssertEqual(store.state.contentTabs.tabs.last?.anchor, .directory(path: "/first"))
+        XCTAssertEqual(recorder.metrics(), [
+            .contentTabAction(
+                result: .success,
+                identity: .openNewContentTab,
+                source: .contextMenu,
+                operationID: operationID,
+            ),
+        ])
     }
 
     private func makeDirtyMetricCloseState() -> DirtyMetricCloseFixture {

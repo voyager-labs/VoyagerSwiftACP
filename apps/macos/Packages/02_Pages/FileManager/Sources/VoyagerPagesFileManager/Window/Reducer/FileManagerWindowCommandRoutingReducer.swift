@@ -437,7 +437,7 @@ private func routeOpenInNewTab(
 ) -> Effect<FileManagerWindowAction> {
     guard tabID == activeTabID, !paths.isEmpty else { return .none }
     let openEffects = paths.map { path -> Effect<FileManagerWindowAction> in
-        .send(.contentTabs(.open(.directory(path: path))))
+        .send(.contentTabActionRequested(.open(.directory(path: path)), source: .contextMenu))
     }
     return .concatenate(openEffects)
 }
