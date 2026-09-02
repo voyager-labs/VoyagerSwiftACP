@@ -1,6 +1,7 @@
 @_spi(Internals) import ComposableArchitecture
 import Foundation
-import VoyagerEntitiesCollection
+@_spi(Testing)
+@testable import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
 import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
@@ -257,6 +258,93 @@ final class RCL003FileManagerCollectionBoundaryTests: XCTestCase {
         await store.receive(\.collection.refreshRequested)
         await store.receive(\.composer.view.applyFilters)
         await store.finish()
+    }
+
+    /// RCL-003-update_collection_results_on_filter_change: already-open query failure preserves the collection draft
+    /// 이미 열린 file-backed Collection의 query 실행 실패가 Composer draft를 Collection owner에 반영하는지 검증한다.
+    /// - 검증 내용: query context, dirty/save 상태, 기존 결과 보존 확인
+    /// - 사전 조건: ready 상태의 file-backed Collection에 새 query가 pending이고 search 요청이 실패함
+    /// - 기대 결과: 실패 feedback 경계는 유지하면서 query draft가 dirty/save 가능한 Collection context로 동기화됨
+    func testExecuteCollectionRetrieval_searchFailureSynchronizesOpenedCollectionDraft() async {
+        let requestID = UUID()
+        let draftQuery = "invoice"
+        var state = makeReadyContentState()
+        let baselineContext = state.collection.collectionContext
+        state.composer.isCollectionMode = true
+        state.composer.collectionContext = baselineContext
+        state.composer.scopes = baselineContext?.scopes ?? []
+        state.composer.pendingSearchQuery = draftQuery
+        state.composer.activeSearchRequestID = requestID
+        state.composer.isLoadingSearch = true
+        let previousEntry = makeEntry(path: "/VoyagerFixtures/Documents/report.md")
+        state.entryViewLayout.collectionItems = [previousEntry]
+        let store = TestStore(initialState: state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.continuousClock = ImmediateClock()
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        // store.exhaustivity = .off: failure boundary의 delegate와 draft 소유권을 함께 검증하고 child 내부 effect는 제외한다.
+        store.exhaustivity = .off
+
+        await store.send(.composer(.searchResponse(requestID, .failure(RCL003BoundaryFailure.thrown))))
+        await store.receive(\.delegate.composerCollectionSearchFailed)
+        await store.finish()
+
+        XCTAssertEqual(
+            store.state.collection.collectionContext,
+            CollectionContext(query: draftQuery, scopes: ["/VoyagerFixtures/Documents"], conditions: []),
+        )
+        XCTAssertTrue(store.state.collection.isDirty, "failed search draft must remain dirty")
+        XCTAssertTrue(store.state.collection.canSave(isCollectionMode: true))
+        XCTAssertEqual(store.state.entryViewLayout.collectionItems.map(\.id), [previousEntry.id])
+        XCTAssertNotNil(store.state.composer.transientFeedback)
+    }
+
+    /// RCL-003-update_collection_results_on_filter_change: already-open filter failure preserves the condition draft
+    /// 이미 열린 file-backed Collection의 execution-ready condition 실행 실패가 Collection owner에 반영되는지 검증한다.
+    /// - 검증 내용: condition context, dirty/save 상태, 기존 결과 보존 확인
+    /// - 사전 조건: ready 상태의 file-backed Collection에 execution-ready condition이 있고 filter 요청이 실패함
+    /// - 기대 결과: 실패 feedback 경계는 유지하면서 condition draft가 dirty/save 가능한 Collection context로 동기화됨
+    func testExecuteCollectionRetrieval_filterFailureSynchronizesOpenedCollectionDraft() async {
+        let requestID = UUID()
+        let condition = makeExecutionReadyCondition()
+        var state = makeReadyContentState()
+        let baselineContext = state.collection.collectionContext
+        state.composer.isCollectionMode = true
+        state.composer.collectionContext = baselineContext
+        state.composer.scopes = baselineContext?.scopes ?? []
+        state.composer.conditionEditors = [ConditionEditorState(id: UUID(951), condition: condition)]
+        state.composer.activeFiltersRequestID = requestID
+        state.composer.isLoadingFilters = true
+        state.composer.isFilteringInFlight = true
+        let previousEntry = makeEntry(path: "/VoyagerFixtures/Documents/report.md")
+        state.entryViewLayout.collectionItems = [previousEntry]
+        let store = TestStore(initialState: state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.continuousClock = ImmediateClock()
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        // store.exhaustivity = .off: failure boundary의 delegate와 draft 소유권을 함께 검증하고 child 내부 effect는 제외한다.
+        store.exhaustivity = .off
+
+        await store.send(.composer(.filtersResponse(requestID, .failure(RCL003BoundaryFailure.thrown))))
+        await store.receive(\.delegate.composerCollectionSearchFailed)
+        await store.finish()
+
+        XCTAssertEqual(
+            store.state.collection.collectionContext,
+            CollectionContext(
+                query: "report",
+                scopes: ["/VoyagerFixtures/Documents"],
+                conditions: [condition],
+            ),
+        )
+        XCTAssertTrue(store.state.collection.isDirty, "failed filter draft must remain dirty")
+        XCTAssertTrue(store.state.collection.canSave(isCollectionMode: true))
+        XCTAssertEqual(store.state.entryViewLayout.collectionItems.map(\.id), [previousEntry.id])
+        XCTAssertNotNil(store.state.composer.transientFeedback)
     }
 
     /// Definition-only Collection 재열기 검색은 snapshot refresh로 오인하지 않아야 한다.
@@ -636,6 +724,26 @@ final class RCL003FileManagerCollectionBoundaryTests: XCTestCase {
         state.composer.openedCollectionURL = url
         state.composer.openedCollectionCompatibility = makeAllowedCompatibility()
         return state
+    }
+
+    private func makeExecutionReadyCondition() -> Condition {
+        Condition(
+            property: .init(
+                key: "kind",
+                label: "Kind",
+                type: .string,
+                unitContract: nil,
+                operatorOptions: [.init(code: "eq", label: "Equals")],
+            ),
+            operation: .init(
+                code: "eq",
+                label: "Equals",
+                valueContract: .init(shape: .single, count: .fixed(1), input: .singleText),
+            ),
+            values: ["pdf"],
+            availability: .available,
+            opaqueSource: nil,
+        )
     }
 
     private func makeAllowedCompatibility() -> CollectionFileCompatibilityMetadata {

@@ -222,6 +222,19 @@ extension FileManagerContentComposerCoordinator {
         )
     }
 
+    private static func synchronizeOpenedCollectionDraftAfterFailure(
+        state: inout FileManagerContentState,
+    ) {
+        guard state.isCollectionMode,
+              state.collection.collectionSession.document?.url != nil,
+              let composerContext = state.composer.collectionContext
+        else {
+            return
+        }
+        let query = state.composer.pendingSearchQuery ?? composerContext.query
+        state.collection.collectionContext = state.composer.collectionContext(query: query)
+    }
+
     private static func handleSearchFailure(
         error: Error,
         title: String,
@@ -229,6 +242,7 @@ extension FileManagerContentComposerCoordinator {
         dependencies: Dependencies,
     ) -> Effect<FileManagerContentAction> {
         guard state.collection.collectionSession.phase.isOpening else {
+            synchronizeOpenedCollectionDraftAfterFailure(state: &state)
             return .send(.composer(.clearPendingSearchQuery))
         }
         let collectionAlertClient = dependencies.collectionAlertClient
