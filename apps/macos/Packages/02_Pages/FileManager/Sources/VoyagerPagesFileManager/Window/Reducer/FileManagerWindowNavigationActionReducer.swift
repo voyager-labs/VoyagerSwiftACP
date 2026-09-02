@@ -239,6 +239,9 @@ struct FileManagerNavigationActionReducer {
         _ pending: ContentPageNavigationPending,
         state: inout State,
     ) -> Effect<Action> {
+        FileManagerContentComposerCoordinator.synchronizeOpenedCollectionDraftFromComposer(
+            state: &state.content,
+        )
         if shouldPromptForUnsavedNavigation(state.content) {
             return .send(.navigation(.internal(.showUnsavedNavigationAlert(pending))))
         }

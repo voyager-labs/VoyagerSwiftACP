@@ -140,6 +140,27 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
         XCTAssertEqual(store.state.collection.collectionSession.document?.url, targetURL)
     }
 
+    /// RCL-002-save_collection_filter_changes: condition-only edit은 Collection owner를 즉시 동기화한다.
+    /// incomplete condition도 file-backed draft의 dirty/save 판정에 포함되어야 하며 retrieval은 실행하지 않는다.
+    func testEditEmptyCollection_conditionOnlySynchronizesCollectionDraft() async {
+        let targetURL = URL(fileURLWithPath: "/VoyagerFixtures/Collections/condition-only-edit.voycoll")
+        let requests = LockIsolated<[String]>([])
+        let store = makeCollectionEditStore(
+            targetURL: targetURL,
+            requests: requests,
+        )
+
+        await store.send(.composer(.view(.addCondition(propertyKey: "kind"))))
+        await store.finish()
+
+        let expectedCondition = store.state.composer.conditions[0]
+        XCTAssertEqual(store.state.collection.collectionContext?.conditions, [expectedCondition])
+        XCTAssertEqual(store.state.composer.collectionContext?.conditions, [expectedCondition])
+        XCTAssertTrue(store.state.collection.isDirty)
+        XCTAssertTrue(store.state.collection.canSave(isCollectionMode: true))
+        XCTAssertTrue(requests.value.isEmpty)
+    }
+
     /// RCL-002-save_collection_filter_changes: 첫 scope-only edit은 retrieval 없이 Collection draft를 dirty로 만든다.
     /// Composer child가 scope editor를 닫은 뒤 FileManager가 현재 scope rule을 Collection ownership에 동기화한다.
     /// - 검증 내용: scope/exclusion context, committed scope, dirty, URL, accepted response, request cardinality
@@ -1369,6 +1390,10 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
         state.content.composer.lastAcceptedFiltersRequestID = UUID(923)
         state.content.composer.lastSearchResponse = .init(itemCount: 1, items: [.string(oldEntry.fullPath)])
         state.content.composer.lastFiltersResponse = .init(itemCount: 0, items: [])
+        state.content.entryViewLayout.collectionReplaceEpoch = 17
+        state.content.entryViewLayout.activeCollectionReplacePaths = ["/old/in-flight"]
+        state.content.entryViewLayout.activeCollectionAppendPaths = [1: ["/old/in-flight"]]
+        state.content.entryViewLayout.activeAppendExpectedBatchIndices = [1: 0]
         state.content.composer.transientFeedback = .init(
             id: UUID(924),
             kind: .error,
@@ -1409,6 +1434,10 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
         XCTAssertTrue(requests.value.isEmpty)
         XCTAssertTrue(store.state.content.entryViewLayout.collectionItems.isEmpty)
         XCTAssertTrue(store.state.content.entryViewLayout.entries.isEmpty)
+        XCTAssertEqual(store.state.content.entryViewLayout.collectionReplaceEpoch, 18)
+        XCTAssertTrue(store.state.content.entryViewLayout.activeCollectionReplacePaths.isEmpty)
+        XCTAssertTrue(store.state.content.entryViewLayout.activeCollectionAppendPaths.isEmpty)
+        XCTAssertTrue(store.state.content.entryViewLayout.activeAppendExpectedBatchIndices.isEmpty)
         XCTAssertTrue(store.state.content.entryViewLayout.selectedIds.isEmpty)
         XCTAssertNil(store.state.content.entryViewLayout.lastSelectedId)
         XCTAssertNil(store.state.content.entryViewLayout.rangeAnchorId)
@@ -2019,6 +2048,36 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
         await store.receive(\.navigation.internal.showUnsavedNavigationAlert)
         await store.receive(\.navigation.internal.unsavedNavigationAlertResponse)
         await store.finish()
+    }
+
+    /// RCL-002-alert_unsaved_collection_filter_changes: condition-only draft도 history 이동 전에 동기화됨
+    /// Composer state에만 남은 condition 변경을 window navigation의 dirty guard가 놓치지 않는지 검증한다.
+    func testAlertUnsavedCollectionFilterChanges_conditionOnlyDraftSyncsBeforeHistoryPrompt() async {
+        let baseline = CollectionContext(query: "", scopes: [], conditions: [])
+        var state = makeOpenedCollectionState(
+            url: URL(fileURLWithPath: "/VoyagerFixtures/Collections/condition-navigation.voycoll"),
+            context: baseline,
+        )
+        state.content.composer.collectionContext = baseline
+        state.content.composer.conditionEditors = [
+            ConditionEditorState(id: UUID(953), condition: makeEditCondition(values: nil)),
+        ]
+        let store = TestStore(initialState: state) {
+            FileManagerNavigationActionReducer()
+        } withDependencies: {
+            $0.collectionAlertClient.showUnsavedNavigationAlert = { .cancel }
+        }
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.navigation(.view(.goBack)))
+        await store.receive(\.navigation.internal.showUnsavedNavigationAlert)
+        await store.receive(\.navigation.internal.unsavedNavigationAlertResponse)
+        await store.finish()
+
+        let condition = state.content.composer.conditions[0]
+        XCTAssertEqual(store.state.content.collection.collectionContext?.conditions, [condition])
+        XCTAssertEqual(store.state.content.composer.collectionContext?.conditions, [condition])
+        XCTAssertTrue(store.state.content.collection.isDirty)
     }
 
     /// RCL-002-alert_unsaved_collection_filter_changes: Collection open loading 중에도 dirty navigation 보호 유지

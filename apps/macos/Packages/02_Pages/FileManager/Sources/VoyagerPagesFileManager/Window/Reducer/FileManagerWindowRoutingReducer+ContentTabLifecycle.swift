@@ -501,7 +501,9 @@ extension FileManagerWindowRoutingReducer {
         targetState: inout FileManagerContentState,
         windowState: inout State,
     ) {
-        guard targetState.composer.isCollectionSearching || targetState.composer.pendingSearchQuery != nil else {
+        guard targetState.isCollectionMode,
+              targetState.collection.collectionSession.document?.url != nil
+        else {
             return
         }
         FileManagerContentComposerCoordinator.synchronizeOpenedCollectionDraftFromComposer(state: &targetState)

@@ -204,6 +204,10 @@ private func makeNoTriggerCollectionNavigationEffects(
     return [
         .send(.tabContent(
             tabID: activeTabID,
+            action: .entryViewLayout(.internal(.cancelCollectionMaterialization)),
+        )),
+        .send(.tabContent(
+            tabID: activeTabID,
             action: .internal(.requestNavigation(.internal(.setNavigationState(.collection(navigation))))),
         )),
         .send(.tabContent(tabID: activeTabID, action: .internal(.applyNavigationState(.collection(navigation))))),

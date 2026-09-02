@@ -2656,6 +2656,65 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         await store.finish()
     }
 
+    /// CTM-444-collection_dirty_close: condition-only draft를 close dirty 판정 전에 canonical owner에 반영함
+    /// condition 편집이 Composer state에만 남아 있어도 file-backed Collection tab을 보호하는지 검증한다.
+    func testConditionOnlyFileBackedCollectionProjectsDraftBeforeCloseDirtyCheck() async {
+        let tabID = ContentTabID()
+        let targetURL = URL(fileURLWithPath: "/tmp/condition-only-close.voycoll")
+        let baseline = CollectionContext(query: "", scopes: ["/tmp"], conditions: [])
+        let condition = Condition(
+            property: .init(
+                key: "kind",
+                label: "Kind",
+                type: .string,
+                unitContract: nil,
+                operatorOptions: [],
+            ),
+            operation: nil,
+            values: nil,
+            availability: .available,
+            opaqueSource: nil,
+        )
+        var content = FileManagerContentFeature.State()
+        content.entryViewLayout.isCollectionMode = true
+        content.collection.collectionContext = baseline
+        content.collection.collectionSession.document = .init(
+            url: targetURL,
+            name: "Condition Only",
+        )
+        content.collection.collectionSession.metadata.baseline = .init(context: baseline)
+        content.composer.collectionContext = baseline
+        content.composer.conditionEditors = [ConditionEditorState(id: UUID(611), condition: condition)]
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: tabID,
+                page: .collection,
+                anchor: .collectionFile(url: targetURL),
+                isPinned: false,
+                title: "Condition Only",
+                iconName: "rectangle.stack",
+            )],
+            activeTabID: tabID,
+            recentlyClosed: nil,
+        )
+        state.content = content
+        state.tabContentStates = [tabID: content]
+        state.syncContentTabSidebarItems()
+
+        let store = makeTestStore(state: state, alertChoice: .cancel)
+
+        await store.send(.closeContentTabRequested(tabID))
+        XCTAssertEqual(store.state.content.collection.collectionContext?.conditions, [condition])
+        XCTAssertEqual(store.state.content.composer.collectionContext?.conditions, [condition])
+        XCTAssertTrue(store.state.content.collection.isDirty)
+        XCTAssertNotNil(store.state.pendingContentTabClose)
+        await store.receive(\.contentTabCloseAlertResponse)
+        XCTAssertNotNil(store.state.contentTabs.tabs[id: tabID])
+        await store.finish()
+    }
+
     /// CTM-444-collection_dirty_close: Collection open loading 중 dirty tab close도 unsaved alert를 표시함
     /// Save UI 비활성화와 tab close의 미저장 보호가 독립적으로 유지되는지 검증한다.
     /// - 검증 내용: loading 중 close 요청의 pendingContentTabClose 설정과 cancel 처리

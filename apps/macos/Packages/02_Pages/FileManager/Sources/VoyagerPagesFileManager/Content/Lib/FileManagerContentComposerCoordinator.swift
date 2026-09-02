@@ -27,6 +27,7 @@ enum FileManagerContentComposerCoordinator {
             return effect
         }
 
+        synchronizeCollectionDraftAfterConditionEdit(action, state: &state)
         return .none
     }
 
@@ -34,6 +35,22 @@ enum FileManagerContentComposerCoordinator {
         state: inout FileManagerContentState,
     ) {
         synchronizeOpenedCollectionDraftAfterCancellation(state: &state)
+    }
+
+    private static func synchronizeCollectionDraftAfterConditionEdit(
+        _ action: ComposerFeature.Action,
+        state: inout FileManagerContentState,
+    ) {
+        switch action {
+        case .view(.addCondition),
+             .view(.removeCondition),
+             .propertyPicker,
+             .valuePicker,
+             .conditionEditor:
+            synchronizeOpenedCollectionDraftFromComposer(state: &state)
+        default:
+            break
+        }
     }
 
     private static func handleComposerLifecycleAction(
@@ -165,6 +182,7 @@ enum FileManagerContentComposerCoordinator {
             nextContext.scopes = []
         }
         state.collection.collectionContext = nextContext
+        state.composer.collectionContext = nextContext
     }
 
     private static func handleSetPresented(
