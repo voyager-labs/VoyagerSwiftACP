@@ -246,10 +246,12 @@ struct ComposerSearchLifecycleReducer {
                             requestID: requestID,
                             message: ComposerQueryFeedbackPolicy.failureMessage(for: error),
                             state: &state,
-                            registryClient: registryClient,
-                            uuid: { uuid() },
-                            clock: clock,
-                            composerMetricClient: composerMetricClient,
+                            dependencies: .init(
+                                registryClient: registryClient,
+                                uuid: { uuid() },
+                                clock: clock,
+                                composerMetricClient: composerMetricClient,
+                            ),
                         )
                     }
                     if let submittedQuery = state.queryRecoveryRawText(for: .filters(requestID)) {
@@ -295,10 +297,12 @@ struct ComposerSearchLifecycleReducer {
                         requestID: requestID,
                         message: feedbackFailureMessage(for: error),
                         state: &state,
-                        registryClient: registryClient,
-                        uuid: { uuid() },
-                        clock: clock,
-                        composerMetricClient: composerMetricClient,
+                        dependencies: .init(
+                            registryClient: registryClient,
+                            uuid: { uuid() },
+                            clock: clock,
+                            composerMetricClient: composerMetricClient,
+                        ),
                     )
                 }
 
@@ -503,22 +507,26 @@ private func handleApplyFilters(
     )
 }
 
+private struct FilterFailureDependencies {
+    let registryClient: RegistryClient
+    let uuid: () -> UUID
+    let clock: any Clock<Duration>
+    let composerMetricClient: ComposerMetricClient
+}
+
 private func handleFiltersFailure(
     requestID: UUID,
     message: String,
     state: inout ComposerSearchLifecycleReducer.State,
-    registryClient: RegistryClient,
-    uuid: () -> UUID,
-    clock: any Clock<Duration>,
-    composerMetricClient: ComposerMetricClient,
+    dependencies: FilterFailureDependencies,
 ) -> Effect<ComposerSearchLifecycleReducer.Action> {
     let metricSource = state.activeFiltersMetricSource ?? ComposerCollectionFilterMetrics.sourceManualApply
     let failedFilters = buildFilters(from: state)
     if metricSource == ComposerCollectionFilterMetrics.sourcePostQueryApply {
         restoreSubmittedSearchFilters(
             state: &state,
-            registryClient: registryClient,
-            uuid: uuid,
+            registryClient: dependencies.registryClient,
+            uuid: dependencies.uuid,
         )
     }
     state.restoreQueryRecoveryIfEligible(for: .filters(requestID))
@@ -527,8 +535,11 @@ private func handleFiltersFailure(
     state.activeFiltersRequestID = nil
     state.lastFailedFiltersRequestID = requestID
     state.activeFiltersMetricSource = nil
-    logFiltersDurationIfNeeded(state.filtersStartedAt, composerMetricClient: composerMetricClient)
-    composerMetricClient.logMetric(
+    logFiltersDurationIfNeeded(
+        state.filtersStartedAt,
+        composerMetricClient: dependencies.composerMetricClient,
+    )
+    dependencies.composerMetricClient.logMetric(
         ComposerCollectionFilterMetrics.applyResult,
         value: 1,
         tags: ComposerCollectionFilterMetrics.applyResultTags(
@@ -549,6 +560,6 @@ private func handleFiltersFailure(
         kind: .error,
         message: message,
         state: &state,
-        clock: clock,
+        clock: dependencies.clock,
     )
 }
