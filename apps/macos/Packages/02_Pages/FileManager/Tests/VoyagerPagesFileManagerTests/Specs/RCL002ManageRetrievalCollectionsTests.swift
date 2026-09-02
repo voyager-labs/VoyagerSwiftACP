@@ -84,12 +84,12 @@ private struct CollectionOpenMetricRecord: Equatable {
 final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
     // MARK: - RCL-002-save_collection_filter_changes
 
-    /// RCL-002-save_collection_filter_changes: empty Collection의 query edit은 기존 submit 검색을 유지한다.
-    /// scope-only draft 동기화 추가 전에 query-bearing edit의 retrieval 동작을 characterization 한다.
-    /// - 검증 내용: trimmed query submit은 SearchClient.search만 정확히 한 번 호출한다.
+    /// RCL-002-save_collection_filter_changes: empty Collection의 no-op query edit은 draft owner를 동기화한다.
+    /// query search는 filter preview만 반환하므로 실제 filter 검색 없이 Composer와 Collection context가 함께 갱신된다.
+    /// - 검증 내용: trimmed query submit, canonical context, dirty/canSave, request cardinality
     /// - 사전 조건: file-backed semantic-empty Collection과 새 query text
-    /// - 기대 결과: query search 1회, filter search 0회로 기존 실행 경계가 유지됨
-    func testEditEmptyCollection_queryStillRequestsOnce() async {
+    /// - 기대 결과: query search 1회, filter search 0회, 저장 가능한 dirty draft
+    func testEditEmptyCollection_queryNoOpSynchronizesCollectionDraft() async {
         let targetURL = URL(fileURLWithPath: "/VoyagerFixtures/Collections/query-edit.voycoll")
         let requests = LockIsolated<[String]>([])
         let store = makeCollectionEditStore(
@@ -103,7 +103,12 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
         await store.skipReceivedActions(strict: false)
         await store.finish()
 
+        let expectedContext = CollectionContext(query: "invoice", scopes: [], conditions: [])
         XCTAssertEqual(requests.value, ["submit"])
+        XCTAssertEqual(store.state.collection.collectionContext, expectedContext)
+        XCTAssertEqual(store.state.composer.collectionContext, expectedContext)
+        XCTAssertTrue(store.state.collection.isDirty)
+        XCTAssertTrue(store.state.collection.canSave(isCollectionMode: true))
         XCTAssertEqual(store.state.collection.collectionSession.document?.url, targetURL)
     }
 

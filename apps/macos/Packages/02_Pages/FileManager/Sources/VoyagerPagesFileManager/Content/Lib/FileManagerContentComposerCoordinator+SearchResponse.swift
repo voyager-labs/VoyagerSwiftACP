@@ -67,8 +67,19 @@ extension FileManagerContentComposerCoordinator {
             return .none
         }
         guard let error = response.error else {
+            guard state.isCollectionMode,
+                  let baseline = state.composer.submittedSearchFilters,
+                  ComposerQueryFeedbackPolicy.shouldSkipApplyFilters(response: response, baseline: baseline),
+                  let nextContext = state.composer.collectionContext,
+                  nextContext != state.collection.collectionContext
+            else {
+                return .none
+            }
+            // Query search returns a filter preview, so no-op success must update only the canonical draft.
+            state.collection.collectionContext = nextContext
             return .none
         }
+
         let searchEffect = handleSearchFailure(
             error: SearchResponsePayloadError(payload: error),
             title: "Unable to Run Collection Search",
