@@ -79,8 +79,8 @@ public struct FileManagerContentFeature {
                     navigationState,
                 ) {
                 case let (.folder(current), .folder(next)):
-                    FileManagerContentIdentityTransitionCoordinator.canonicalizedPath(current)
-                        == FileManagerContentIdentityTransitionCoordinator.canonicalizedPath(next)
+                    FileManagerContentIdentityTransitionCoordinator.standardizedPath(current)
+                        == FileManagerContentIdentityTransitionCoordinator.standardizedPath(next)
                 default:
                     false
                 }

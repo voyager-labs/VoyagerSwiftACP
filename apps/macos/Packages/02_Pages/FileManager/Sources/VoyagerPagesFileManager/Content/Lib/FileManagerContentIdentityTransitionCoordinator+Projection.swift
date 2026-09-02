@@ -605,9 +605,10 @@ extension FileManagerContentIdentityTransitionCoordinator {
         _ navigationState: ContentPageNavigationRoute,
         state: inout FileManagerContentState,
     ) {
-        guard let transition = state.pendingIdentityTransition else { return }
+        guard state.pendingIdentityTransition != nil else { return }
         if case let .folder(newPath) = navigationState,
-           canonicalizedPath(newPath) == transition.rootPath
+           case let .folder(currentPath) = state.navigation.navigationState,
+           standardizedPath(newPath) == standardizedPath(currentPath)
         {
             return
         }

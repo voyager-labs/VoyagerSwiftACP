@@ -794,6 +794,50 @@ extension EVM002FileManagerPagePresentationTests {
         XCTAssertEqual(store.state.pendingIdentityTransition?.projectionOwner, .root(generation: 2))
     }
 
+    /// EVM-002-command_external_refresh_correlation: canonical-equivalent alias navigation은 전이를 만료한다.
+    /// 실제 root가 같아도 lexical route가 바뀌면 기존 identity after path와 pending refresh scope를
+    /// 새 route에 재사용하지 않아야 한다.
+    /// - 검증 내용: alias A→B 이동 시 pending identity transition과 external refresh를 함께 제거
+    /// - 사전 조건: alias A current route와 canonical-equivalent alias B destination route, 대기 전이
+    /// - 기대 결과: lexical root 변경으로 stale transition/scope가 만료됨
+    func testCanonicalAliasNavigationExpiresIdentityTransition() async throws {
+        let rootURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let targetURL = rootURL.appendingPathComponent("target", isDirectory: true)
+        let aliasAURL = rootURL.appendingPathComponent("alias-a")
+        let aliasBURL = rootURL.appendingPathComponent("alias-b")
+        try FileManager.default.createDirectory(at: targetURL, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: aliasAURL, withDestinationURL: targetURL)
+        try FileManager.default.createSymbolicLink(at: aliasBURL, withDestinationURL: targetURL)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let rootPath = aliasAURL.path
+        var state = FileManagerContentState()
+        state.navigation.seedInitialFolderPath(rootPath)
+        state.navigation.navigationState = .folder(rootPath)
+        state.entryViewLayout.hierarchy = .init(rootPath: rootPath)
+        let canonicalRootPath = FileManagerContentIdentityTransitionCoordinator.canonicalizedPath(rootPath)
+        state.pendingIdentityTransition = .init(
+            recordID: UUID(),
+            beforePath: canonicalRootPath + "/before.txt",
+            afterPath: canonicalRootPath + "/after.txt",
+            rootPath: canonicalRootPath,
+            refreshGeneration: 1,
+        )
+        state.pendingExternalRefresh = .init(
+            rootPath: canonicalRootPath,
+            affectedPaths: [canonicalRootPath],
+            removedPrefixes: [],
+            requiresCoarseHierarchyReload: false,
+        )
+        let store = makeFileManagerContentFeatureStore(initialState: state)
+        store.exhaustivity = .off
+
+        await store.send(.internal(.applyNavigationState(.folder(aliasBURL.path))))
+
+        XCTAssertNil(store.state.pendingIdentityTransition)
+        XCTAssertNil(store.state.pendingExternalRefresh)
+    }
+
     private func makeMultiMoveSourceStagingState() -> FileManagerContentState {
         let beforePrimary = EntryModel.temporaryFolder(id: "/root/before", name: "before")
         let s1 = EntryModel.temporaryFolder(id: "/root/S1", name: "S1")
