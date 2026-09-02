@@ -17,8 +17,7 @@ Core rule: **prefer keeping a proven working mechanism and add detection or a gu
 ## When NOT to use this skill
 
 - Greenfield code with no proven mechanism to preserve
-- The existing mechanism is itself the confirmed root cause of the reported defect
-- A dedicated plan with its own TDD cycle exists for the rewrite
+- A dedicated plan with its own capability-parity checklist and RED-first TDD cycle owns the rewrite
 
 ## Instructions
 
