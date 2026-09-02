@@ -155,6 +155,27 @@ func TestConditionEvaluatorStateAndOperatorMatrix(t *testing.T) {
 			}
 		})
 	}
+	emptyText := ""
+	emptyTextFact := domainentry.EntryPropertyAssignment{
+		State:  domainentry.AssignmentStateValue,
+		Scalar: &domainentry.AssignmentValue{Text: &emptyText},
+	}
+	if !evaluateCondition(
+		definition(domainentry.PropertyTypeText, domainentry.PropertyCardinalityOne),
+		emptyTextFact,
+		condition("empty", "none"),
+		"2026-09-01",
+	) {
+		t.Fatal("empty scalar text did not match empty")
+	}
+	if evaluateCondition(
+		definition(domainentry.PropertyTypeText, domainentry.PropertyCardinalityOne),
+		emptyTextFact,
+		condition("exists", "none"),
+		"2026-09-01",
+	) {
+		t.Fatal("empty scalar text matched exists")
+	}
 }
 
 func TestConditionEvaluatorStateTruthTableAndFailClosedRows(t *testing.T) {

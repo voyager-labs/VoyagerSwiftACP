@@ -312,7 +312,16 @@ func allOperandsAreActiveOptions(options []domainentry.PropertyOption, operands 
 }
 
 func assignmentEmpty(fact domainentry.EntryPropertyAssignment) bool {
-	return fact.State == domainentry.AssignmentStateUnset || fact.State == domainentry.AssignmentStateNull || (fact.State == domainentry.AssignmentStateValue && fact.Many != nil && len(fact.Many) == 0)
+	if fact.State == domainentry.AssignmentStateUnset || fact.State == domainentry.AssignmentStateNull {
+		return true
+	}
+	if fact.State != domainentry.AssignmentStateValue {
+		return false
+	}
+	if fact.Scalar != nil {
+		return fact.Scalar.Text != nil && *fact.Scalar.Text == ""
+	}
+	return fact.Many != nil && len(fact.Many) == 0
 }
 
 func assignmentStrings(fact domainentry.EntryPropertyAssignment) []string {
