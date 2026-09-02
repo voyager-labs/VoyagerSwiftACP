@@ -93,4 +93,34 @@ final class EntryCorePropertyClientFlowTests: XCTestCase {
         }
         XCTAssertEqual(recorder.creationCount, 0)
     }
+
+    func testOversizedEncodedPropertyRequestDoesNotCreateTransport() async throws {
+        let recorder = PropertyTransportRecorder(response: Data())
+        let client = EntryCorePropertyClient.makeLive(
+            requestID: { "unused" },
+            makeTransport: recorder.makeTransport,
+        )
+        let endpoint = try EntryCoreEndpoint(path: "/tmp/property-client.sock")
+        let propertyID = try PropertyID(rawValue: "00000000-0000-0000-8000-000000000001")
+        let target = try PropertyTarget(localPath: "/a")
+        let value = String(repeating: "x", count: 4096)
+        let desired = PropertyDesiredState.value(.text, .many, .texts(Array(repeating: value, count: 256)))
+        let change = try PropertyChangeTarget(
+            target: target,
+            propertyID: propertyID,
+            expectedDefinitionRevision: 1,
+            expectedAssignmentRevision: 0,
+            desired: desired,
+        )
+        let request = try PropertyChangeRequest(changes: [change])
+
+        do {
+            _ = try await client.changePrepare(endpoint, request)
+            XCTFail("oversized request should be rejected before transport")
+        } catch {
+            XCTAssertEqual(error as? EntryCoreClientError, .protocolMismatch)
+        }
+        XCTAssertEqual(recorder.creationCount, 0)
+        XCTAssertEqual(recorder.requests, [])
+    }
 }

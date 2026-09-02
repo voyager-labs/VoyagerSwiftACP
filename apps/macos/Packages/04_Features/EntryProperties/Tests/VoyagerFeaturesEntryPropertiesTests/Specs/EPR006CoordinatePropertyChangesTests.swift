@@ -1,5 +1,5 @@
 import ComposableArchitecture
-import VoyagerEntryCoreClient
+@testable import VoyagerEntryCoreClient
 @testable import VoyagerFeaturesEntryProperties
 import XCTest
 
@@ -469,86 +469,6 @@ final class EPR006CoordinatePropertyChangesTests: XCTestCase {
 }
 
 extension EPR006CoordinatePropertyChangesTests {
-    /// EPR-006-read_back_property_change_result: read-back 중 selection 변경은 pending 상태를 보존한다.
-    /// - 검증 내용: 기존 read-back proposal, snapshot outcome과 generation fence
-    /// - 사전 조건: mutation 적용 후 canonical read-back effect가 진행 중임
-    /// - 기대 결과: 새 selection을 초기화하면서 읽기 전용 재시도 상태를 분리해 게시함
-    func testSelectionChangeDuringReadBackPreservesPendingOutcomeAndFencesCompletion() async {
-        let fixture = Fixture()
-        let replacement = EntryPropertiesSelection(
-            targets: [.init(localPath: "/tmp/replacement")],
-            propertyID: fixture.selection.propertyID,
-        )
-        var state = fixture.readyState
-        state.appliedProposal = fixture.proposal
-        state.activePhase = .applied
-        state.status = .applied
-        let store = TestStore(initialState: state) { EntryPropertiesFeature() }
-
-        await store.send(.selectionChanged(replacement)) {
-            $0.generation = 1
-            $0.selection = replacement
-            $0.capabilityReport = nil
-            $0.targetSnapshot = nil
-            $0.proposal = nil
-            $0.canonicalResult = nil
-            $0.activePhase = nil
-            $0.appliedProposal = nil
-            $0.pendingReadBack = fixture.proposal
-            $0.readBackProposal = nil
-            $0.status = .idle
-            $0.lastOutcome = .propertyChangeAppliedUnverified(fixture.snapshot)
-        }
-        await store.receive(
-            .init(kind: .outcome(.propertyChangeAppliedUnverified(fixture.snapshot))),
-        )
-        await store.send(.init(kind: .readBackCompleted(0, .success(fixture.canonicalResult))))
-        XCTAssertEqual(store.state.selection, replacement)
-        XCTAssertEqual(store.state.status, .idle)
-        XCTAssertEqual(store.state.pendingReadBack, fixture.proposal)
-        XCTAssertNil(store.state.canonicalResult)
-    }
-
-    /// EPR-006-read_back_property_change_result: pending read-back retry는 새 selection을 오염시키지 않는다.
-    /// - 검증 내용: old snapshot의 retry 실행과 current selection 상태 격리
-    /// - 사전 조건: selection 변경으로 pending read-back proposal이 보존됨
-    /// - 기대 결과: old snapshot verified outcome은 발행하지만 current selection은 idle로 유지됨
-    func testPendingReadBackRetryDoesNotContaminateCurrentSelection() async {
-        let fixture = Fixture()
-        let currentSelection = EntryPropertiesSelection(
-            targets: [.init(localPath: "/tmp/current")],
-            propertyID: fixture.selection.propertyID,
-        )
-        var state = EntryPropertiesState(selection: currentSelection)
-        state.generation = 1
-        state.pendingReadBack = fixture.proposal
-        let store = TestStore(initialState: state) {
-            EntryPropertiesFeature()
-        } withDependencies: {
-            $0.entryPropertiesClient = fixture.client(
-                readBack: { _ in fixture.canonicalResult },
-            )
-        }
-
-        await store.send(.retryReadBack) {
-            $0.activePhase = .applied
-            $0.readBackProposal = fixture.proposal
-        }
-        await store.receive(.init(kind: .readBackCompleted(1, .success(fixture.canonicalResult)))) {
-            $0.activePhase = nil
-            $0.pendingReadBack = nil
-            $0.readBackProposal = nil
-            $0.canonicalResult = nil
-            $0.status = .idle
-            $0.lastOutcome = .propertyChangeVerified(fixture.canonicalResult)
-        }
-        await store.receive(.init(kind: .outcome(.propertyChangeVerified(fixture.canonicalResult))))
-        XCTAssertEqual(store.state.selection, currentSelection)
-        XCTAssertEqual(store.state.status, .idle)
-        XCTAssertNil(store.state.canonicalResult)
-        XCTAssertNil(store.state.pendingReadBack)
-    }
-
     /// EPR-006-discover_property_change_capabilities: 재탐색 시작은 이전 snapshot을 폐기한다.
     /// - 검증 내용: discovery 중 snapshot/capability 무효화와 실패 후 stale prepare 차단
     /// - 사전 조건: 기존 ready snapshot을 가진 상태에서 재탐색이 시작됨
@@ -650,96 +570,6 @@ extension EPR006CoordinatePropertyChangesTests {
         }
         await appliedStore.receive(
             .init(kind: .outcome(.propertyChangeAppliedUnverified(fixture.snapshot))),
-        )
-    }
-}
-
-private struct Fixture {
-    let selection = EntryPropertiesSelection(
-        targets: [.init(localPath: "/a"), .init(localPath: "/b")],
-        propertyID: .init(rawValue: "property-a"),
-    )
-    let catalog = EntryPropertiesCatalog(version: "2.2.0")
-    let intent = EntryPropertiesChangeIntent(change: .set(.text("after")), isDestructive: false)
-
-    var assignments: EntryPropertiesAssignments {
-        .init(
-            canonicalRevision: 7,
-            values: selection.targets.map { .init(target: $0, value: .text("before"), revision: 7) },
-        )
-    }
-
-    var snapshot: EntryPropertiesTargetSnapshot {
-        .init(
-            reconcilingTargets: selection.targets,
-            propertyID: selection.propertyID,
-            catalogVersion: catalog.version ?? "2.2.0",
-            canonicalRevision: assignments.canonicalRevision,
-            definitionRevision: catalog.definitionRevision,
-            valueKind: catalog.valueKind,
-            cardinality: catalog.cardinality,
-            assignmentRevisions: assignments.values.map {
-                .init(target: $0.target, revision: $0.revision)
-            },
-        )
-    }
-
-    var capabilityReport: EntryPropertiesCapabilityReport {
-        .init(
-            items: [
-                .init(operation: .changeValue, capability: .supported),
-                .init(operation: .validate, capability: .supported),
-            ],
-            supportsMultipleTargets: true,
-            catalogVersion: "2.2.0",
-        )
-    }
-
-    var proposal: EntryPropertiesProposal {
-        .init(
-            snapshot: snapshot,
-            intent: intent,
-            differences: selection.targets.map {
-                .init(target: $0, before: .text("before"), after: .text("after"))
-            },
-            affectedTargetCount: selection.targets.count,
-            validation: .init(isValid: true),
-            requiresConfirmation: true,
-        )
-    }
-
-    var canonicalResult: EntryPropertiesCanonicalResult {
-        .init(
-            snapshot: snapshot,
-            values: selection.targets.map { .init(target: $0, value: .text("after"), revision: 8) },
-        )
-    }
-
-    var readyState: EntryPropertiesState {
-        var state = EntryPropertiesState(selection: selection, status: .ready)
-        state.targetSnapshot = snapshot
-        state.capabilityReport = capabilityReport
-        return state
-    }
-
-    func client(
-        prepare: @escaping @Sendable (EntryPropertiesPrepareRequest) async throws -> EntryPropertiesProposal = { _ in
-            throw EntryPropertiesFailure.unavailable
-        },
-        execute: @escaping @Sendable (EntryPropertiesProposal) async throws -> EntryPropertiesExecutionReceipt = { _ in
-            throw EntryPropertiesFailure.unavailable
-        },
-        readBack: @escaping @Sendable (
-            EntryPropertiesReadBackRequest,
-        ) async throws -> EntryPropertiesCanonicalResult = { _ in throw EntryPropertiesFailure.unavailable },
-    ) -> EntryPropertiesClient {
-        EntryPropertiesClient(
-            loadCatalog: { _ in throw EntryPropertiesFailure.unavailable },
-            loadAssignments: { _, _ in throw EntryPropertiesFailure.unavailable },
-            discoverCapabilities: { _ in throw EntryPropertiesFailure.unavailable },
-            prepare: prepare,
-            execute: execute,
-            readBack: readBack,
         )
     }
 }

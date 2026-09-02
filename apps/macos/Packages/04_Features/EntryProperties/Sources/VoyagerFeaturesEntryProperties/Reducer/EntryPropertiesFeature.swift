@@ -119,6 +119,7 @@ public struct EntryPropertiesFeature: Sendable {
 
             case let .prepare(intent):
                 guard state.activePhase == nil else { return rejectBusy(&state) }
+                guard state.pendingReadBack == nil else { return rejectBusy(&state) }
                 guard let snapshot = state.targetSnapshot,
                       let capabilities = state.capabilityReport
                 else { return reject(&state, .stale) }
@@ -163,6 +164,12 @@ public struct EntryPropertiesFeature: Sendable {
 
             case let .execute(confirmed):
                 guard state.activePhase == nil else { return rejectBusy(&state) }
+                guard state.pendingReadBack == nil else { return rejectBusy(&state) }
+                guard state.status == .prepared else {
+                    let outcome = EntryPropertiesOutcome.propertyChangeRejected(.stale)
+                    state.lastOutcome = outcome
+                    return .send(.init(kind: .outcome(outcome)))
+                }
                 guard let proposal = state.proposal,
                       proposal.snapshot == state.targetSnapshot
                 else { return reject(&state, .stale) }

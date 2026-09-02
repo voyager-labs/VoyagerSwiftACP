@@ -106,6 +106,15 @@ public enum EntryPropertiesClientFactory {
     ) async throws -> EntryPropertiesProposal {
         let changes = try makeWireChanges(snapshot: request.snapshot, intent: request.intent)
         let proposal = try await propertyClient.changePrepare(endpoint, PropertyChangeRequest(changes: changes))
+        guard proposal.changes.count == changes.count,
+              zip(proposal.changes, changes).allSatisfy({ prepared, requested in
+                  prepared.target.localPath == requested.target.localPath
+                      && prepared.propertyID == requested.propertyID
+                      && prepared.after == requested.desired
+              })
+        else {
+            throw EntryPropertiesFailure.validation
+        }
         let differences = try proposal.changes.map { change in
             let target = EntryPropertiesTarget(localPath: change.target.localPath)
             return try EntryPropertiesDifference(

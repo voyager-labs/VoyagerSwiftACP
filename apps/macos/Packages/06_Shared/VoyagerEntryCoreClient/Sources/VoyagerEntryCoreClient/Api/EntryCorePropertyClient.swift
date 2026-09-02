@@ -180,6 +180,9 @@ extension EntryCorePropertyClient {
         let request: Data
         do { request = try encoder.encode(PropertyRequestWire(requestID: id, method: method.rawValue, params: params))
         } catch { throw EntryCoreClientError.protocolMismatch }
+        guard request.count <= StrictJSONParser.maximumWireBytes else {
+            throw EntryCoreClientError.protocolMismatch
+        }
         let response = try await makeTransport()(request, endpoint)
         return try EntryCorePropertyResponseDecoder.decode(Array(response), method: method, expectedRequestID: id)
     }
