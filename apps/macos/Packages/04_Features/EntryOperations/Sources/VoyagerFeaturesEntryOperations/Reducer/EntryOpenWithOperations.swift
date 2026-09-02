@@ -386,19 +386,23 @@ struct EntryOpenWithOperationsReducer {
         send: Send<Action>,
     ) async -> Result<Void, FileOpError> {
         var setDefaultFailure: FileOpError?
-        if shouldSetAsDefault, let fileType = UTType(filenameExtension: file.fileExtension) {
+        if shouldSetAsDefault {
             let kind = OperationKind.setDefaultApp(bundleID)
             await send(.lifecycle(.operationStarted(file.fullPath, kind)))
-            do {
-                try await entryOpenClient.setDefaultApp(fileType, bundleID)
-                await send(.lifecycle(.operationFinished(file.fullPath, kind, .success(()))))
-            } catch {
-                let failure = error.fileOpError
-                if failure == .cancelled {
-                    await send(.lifecycle(.operationFinished(file.fullPath, kind, .failure(failure))))
-                    return .failure(failure)
+            if let fileType = UTType(filenameExtension: file.fileExtension) {
+                do {
+                    try await entryOpenClient.setDefaultApp(fileType, bundleID)
+                    await send(.lifecycle(.operationFinished(file.fullPath, kind, .success(()))))
+                } catch {
+                    let failure = error.fileOpError
+                    if failure == .cancelled {
+                        await send(.lifecycle(.operationFinished(file.fullPath, kind, .failure(failure))))
+                        return .failure(failure)
+                    }
+                    setDefaultFailure = failure
                 }
-                setDefaultFailure = failure
+            } else {
+                setDefaultFailure = .unsupportedType
             }
         }
 

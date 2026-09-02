@@ -485,19 +485,31 @@ enum EntryOperationsTestSupport {
         lastErrors: [String: FileOpError],
     ) -> OpenWithCommandEvidence {
         let openStartedPaths = actions.compactMap { action -> String? in
-            guard case let .lifecycle(.operationStarted(path, .openWithApp)) = action else { return nil }
+            guard case let .acceptedCommand(
+                _,
+                .lifecycle(.operationStarted(path, .openWithApp)),
+            ) = action else { return nil }
             return path
         }
         let openFinishedPaths = actions.compactMap { action -> String? in
-            guard case let .lifecycle(.operationFinished(path, .openWithApp, _)) = action else { return nil }
+            guard case let .acceptedCommand(
+                _,
+                .lifecycle(.operationFinished(path, .openWithApp, _)),
+            ) = action else { return nil }
             return path
         }
         let defaultFinishedPaths = actions.compactMap { action -> String? in
-            guard case let .lifecycle(.operationFinished(path, .setDefaultApp, .success)) = action else { return nil }
+            guard case let .acceptedCommand(
+                _,
+                .lifecycle(.operationFinished(path, .setDefaultApp, .success)),
+            ) = action else { return nil }
             return path
         }
         let defaultFailedPaths = actions.compactMap { action -> String? in
-            guard case let .lifecycle(.operationFinished(path, .setDefaultApp, .failure)) = action else { return nil }
+            guard case let .acceptedCommand(
+                _,
+                .lifecycle(.operationFinished(path, .setDefaultApp, .failure)),
+            ) = action else { return nil }
             return path
         }
         let terminals = actions.compactMap { action -> EntryActionRecord? in

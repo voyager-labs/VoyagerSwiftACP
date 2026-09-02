@@ -618,24 +618,32 @@ extension EOP001ExecuteEntryTests {
         XCTAssertEqual(terminal.cancelledCount, 1)
     }
 
-    /// EOP-001-open_entry_with_selected_app: 두 파일의 역순 open 완료에도 기본 앱 설정 실패 집계는 결정적이다.
-    /// 서로 다른 타입의 Always Open With가 선택 역순으로 완료되어도 파일별 결과와 terminal이 한 번만 수렴하는지 검증한다.
-    /// - 검증 내용: 한 파일의 set-default만 실패시키고 두 open을 역순 완료해 최종 오류와 aggregate count를 확인한다.
-    /// - 사전 조건: `fixtures/fixtures/texts/plain/11.txt`, `fixtures/fixtures/images/jpeg/resize.jpg` sandbox와 gated open
-    /// client가 있다.
-    /// - 기대 결과: attempted 2, succeeded 1, failed 1인 terminal 한 건과 실패 파일의 set-default 오류가 남는다.
-    func testAlwaysOpenWithMixedSetDefaultResultsRemainDeterministicWhenOpenCompletesInReverse() async throws {
+    /// EOP-001-open_entry_with_selected_app: 미지원 타입 혼합 batch도 역순 open 완료에서 실패 집계가 결정적이다.
+    /// extensionless·unknown 파일은 set-default를 건너뛰고 open을 계속하되 unsupportedType 결과를 보존하는지 검증한다.
+    /// - 검증 내용: 미지원 두 파일과 정상 jpg 파일을 역순 완료해 호출 수, 최종 오류, aggregate count를 확인한다.
+    /// - 사전 조건: extensionless·unknown·jpg sandbox와 gated open client가 있다.
+    /// - 기대 결과: set-default 1회, open 3회, attempted 3, succeeded 1, failed 2이며 두 미지원 파일 오류가 unsupportedType이다.
+    func testAlwaysOpenWithMixedUnsupportedTypesRemainDeterministicWhenOpenCompletesInReverse() async throws {
         let textSandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
         defer { textSandbox.cleanup() }
         let imageSandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/images/jpeg/resize.jpg")
         defer { imageSandbox.cleanup() }
-        let files = [textSandbox.fileURL, imageSandbox.fileURL].map {
-            EntryModelFixtures.makeFileEntry(
-                id: $0.path,
-                name: $0.lastPathComponent,
-                fileExtension: $0.pathExtension,
-            )
-        }
+        let extensionless = EntryModelFixtures.makeFileEntry(
+            id: textSandbox.fileURL.path,
+            name: "README",
+            fileExtension: "",
+        )
+        let unknown = EntryModelFixtures.makeFileEntry(
+            id: "\(textSandbox.root.path)/unknown",
+            name: "unknown",
+            fileExtension: "not/a/type",
+        )
+        let supported = EntryModelFixtures.makeFileEntry(
+            id: imageSandbox.fileURL.path,
+            name: imageSandbox.fileURL.lastPathComponent,
+            fileExtension: imageSandbox.fileURL.pathExtension,
+        )
+        let files = [extensionless, unknown, supported]
         let bundleID = "com.apple.Preview"
         let metadata = try makeMetadata(id: "00000000-0000-0000-0000-000000000703")
 
@@ -645,21 +653,21 @@ extension EOP001ExecuteEntryTests {
             bundleID: bundleID,
             metadata: metadata,
             shouldSetAsDefault: true,
-            failingDefaultTypeIDs: [UTType.plainText.identifier],
-            completionOrder: [files[1].fullPath, files[0].fullPath],
+            completionOrder: files.reversed().map(\.fullPath),
         )
 
-        XCTAssertEqual(evidence.setDefaultCallCount, 2)
-        XCTAssertEqual(evidence.defaultFailedPaths, [files[0].fullPath])
+        XCTAssertEqual(evidence.setDefaultCallCount, 1)
+        XCTAssertEqual(Set(evidence.defaultFailedPaths), Set([extensionless.fullPath, unknown.fullPath]))
         XCTAssertEqual(Set(evidence.openFinishedPaths), Set(files.map(\.fullPath)))
-        XCTAssertEqual(evidence.lastErrors[files[0].fullPath], .system(message: "set default denied"))
-        XCTAssertNil(evidence.lastErrors[files[1].fullPath])
+        XCTAssertEqual(evidence.lastErrors[extensionless.fullPath], .unsupportedType)
+        XCTAssertEqual(evidence.lastErrors[unknown.fullPath], .unsupportedType)
+        XCTAssertNil(evidence.lastErrors[supported.fullPath])
         XCTAssertEqual(evidence.terminals.count, 1)
         let terminal = try XCTUnwrap(evidence.terminals.first)
         XCTAssertEqual(terminal.command, metadata)
-        XCTAssertEqual(terminal.attemptedCount, 2)
+        XCTAssertEqual(terminal.attemptedCount, 3)
         XCTAssertEqual(terminal.succeededCount, 1)
-        XCTAssertEqual(terminal.failedCount, 1)
+        XCTAssertEqual(terminal.failedCount, 2)
         XCTAssertEqual(terminal.cancelledCount, 0)
     }
 }
