@@ -107,6 +107,9 @@ public enum EntryViewLayoutAction: ViewAction, CasePathable, Sendable {
             rangeAnchorId: EntryModel.ID?,
             shouldScrollToSelection: Bool,
         )
+        /// UI adapter가 확정한 사용자 제스처 clear(빈 영역 클릭, 마지막 항목 Command 해제, 빈 lasso 종료).
+        /// `updateSelection`의 authoritative setter 의미와 달리 “선택을 비운다”는 의도만 전달한다.
+        case clearSelection
         case selectAll(orderedItemIds: [EntryModel.ID])
         case selectNextItem(isShiftPressed: Bool)
         case selectPreviousItem(isShiftPressed: Bool)

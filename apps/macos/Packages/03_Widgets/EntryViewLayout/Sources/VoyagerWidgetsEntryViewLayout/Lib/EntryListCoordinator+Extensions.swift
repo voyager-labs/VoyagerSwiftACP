@@ -228,6 +228,8 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
 
     public func outlineViewSelectionDidChange(_: Notification) {
         let selectedIndexes = tableView.selectedRowIndexes
+        // 1회성 user-clear provenance를 어떤 경로든 먼저 소비해 stale 오귀속을 막는다.
+        let isExplicitUserClear = tableView.consumeExplicitUserClearGesture()
         guard !tableView.suppressesDisclosureSelectionCallback else { return }
         guard !tableView.shouldIgnoreSelectionCallback(selectedIndexes) else { return }
         guard !isUpdatingSelectionFromStore,
@@ -235,6 +237,23 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
               !tableView.isApplyingDisclosureSelectionTransaction,
               !projectionSession.isApplyingStoreProjection
         else { return }
+        if isExplicitUserClear, selectedIndexes.isEmpty {
+            applySelectionPlan(
+                EntryListSelectionPlan(
+                    canonical: EntryListCanonicalSelection(ids: [], focus: nil, anchor: nil),
+                    physicalRows: [],
+                    activeOccurrence: nil,
+                    anchorOccurrence: nil,
+                ),
+                sendsClearIntent: true,
+            )
+            return
+        }
+        guard !selectedIndexes.isEmpty else {
+            // 출처 없는 lifecycle empty callback: store 선택을 해석하지 않고 native 복원만 수행한다.
+            syncListSelectionFromStore()
+            return
+        }
         normalizeNativeSelection(
             physicalRows: selectedIndexes,
             context: tableView.takeNativeSelectionContext(),
