@@ -2,6 +2,7 @@ import AppKit
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesEntry
+import VoyagerFeaturesEntryOperations
 @testable import VoyagerWidgetsEntryViewLayout
 import XCTest
 
@@ -753,6 +754,51 @@ extension EVM002ManageEntriesViewPresentationTests {
 
         XCTAssertTrue(state.hierarchy.expandedFolderIDs.contains(folder.id))
         XCTAssertEqual(state.hierarchy.nodesByID[folder.id]?.loadPhase, .loadingCore)
+    }
+
+    /// EVM-002-command_external_refresh_correlation: root 밖 target symlink의 source move도 전이를 시작한다.
+    /// 표시된 alias child의 lexical 경로는 current root 안에 있으므로 canonical target 위치와
+    /// 무관하게 identity replacement와 source hold를 설치해야 한다.
+    /// - 검증 내용: lexical source containment가 identity replacement plan과 source hold로 이어지는지 검증
+    /// - 사전 조건: root 내부 alias folder가 root 밖 directory를 가리키고 alias child가 선택됨
+    /// - 기대 결과: plan의 lexical before와 alias sourceFolderID가 보존됨
+    func testDirectorySymlinkSourceMoveStartsIdentityReplacement() throws {
+        let container = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let root = container.appendingPathComponent("root", isDirectory: true)
+        let target = container.appendingPathComponent("outside", isDirectory: true)
+        let link = root.appendingPathComponent("link", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+        defer { try? FileManager.default.removeItem(at: container) }
+
+        let folder = hierarchyFolder(id: link.path, name: "link")
+        let beforePath = link.appendingPathComponent("before.txt").path
+        let afterPath = root.appendingPathComponent("after.txt").path
+        var state = hierarchyState(roots: [folder])
+        state.hierarchy = .init(rootPath: root.path)
+        state.hierarchy.nodesByID[folder.id] = .init(
+            folder: .init(children: [hierarchyFile(id: beforePath, name: "before.txt")]),
+            expansionIntent: true,
+            generation: 1,
+            loadPhase: .loaded,
+        )
+        state.hierarchy.setExpandedIDs([folder.id])
+        state.selectedIds = [beforePath]
+        let record = EntryActionRecord(
+            operationKind: .rename,
+            targets: [.init(beforePath: beforePath, afterPath: afterPath)],
+        )
+
+        _ = EntryViewLayoutFeature().reduce(
+            into: &state,
+            action: .entryOperations(.lifecycle(.entryActionCompleted(record))),
+        )
+
+        XCTAssertEqual(state.identityReplacement?.plan.pairs.first?.beforeLexicalPath, beforePath)
+        XCTAssertTrue(state.identityReplacement?.sourceFolderIDs.contains(folder.id) ?? false)
+        XCTAssertNotNil(state.hierarchy.deferredFolderReplacement(folderID: folder.id))
     }
 
     /// EVM-002-toggle_directory_expansion_in_list: depth-2 expansion과 완료된 child data가 3회의 parent collapse/re-expand

@@ -4714,6 +4714,54 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         )
     }
 
+    /// EVM-001-command_external_refresh_correlation: symlink source는 lexical root 범위에 포함된다.
+    /// root 밖 target을 가리키는 root 내부 symlink의 child를 이동해도 source transition을 기록해야
+    /// source hold와 before→after selection migration이 생략되지 않는다.
+    /// - 검증 내용: canonical source가 root 밖이어도 lexical before path로 전이가 등록되는지 검증
+    /// - 사전 조건: root 내부 alias folder가 root 밖 directory를 가리키고 alias child가 선택됨
+    /// - 기대 결과: pending transition과 alias preservation owner가 생성됨
+    func testSymlinkSourceWithinLexicalRootRecordsTransition() throws {
+        let base = NSTemporaryDirectory().appending("voyager-symlink-source-\(UUID().uuidString)")
+        let rootPath = base + "/root"
+        let aliasPath = rootPath + "/alias"
+        let outsidePath = base + "/outside"
+        let beforePath = aliasPath + "/before.txt"
+        let afterPath = rootPath + "/after.txt"
+        let fm = FileManager.default
+        try fm.createDirectory(atPath: rootPath, withIntermediateDirectories: true)
+        try fm.createDirectory(atPath: outsidePath, withIntermediateDirectories: true)
+        try fm.createSymbolicLink(atPath: aliasPath, withDestinationPath: outsidePath)
+        defer { try? fm.removeItem(atPath: base) }
+
+        let alias = EntryModel.temporaryFolder(id: aliasPath, name: "alias")
+        let before = makeCorrelationEntry(id: beforePath, name: "before.txt")
+        var state = FileManagerContentState()
+        state.navigation.seedInitialFolderPath(rootPath)
+        state.navigation.navigationState = .folder(rootPath)
+        state.entryViewLayout.entries = [alias]
+        state.entryViewLayout.entryOperations.items = [alias]
+        state.entryViewLayout.hierarchy = .init(rootPath: rootPath)
+        state.entryViewLayout.hierarchy.nodesByID[alias.id] = .init(
+            children: [before],
+            loadPhase: .loaded,
+            generation: 1,
+            coreFinished: true,
+        )
+        state.entryViewLayout.hierarchy.setExpandedIDs([alias.id])
+        state.entryViewLayout.selectedIds = [beforePath]
+
+        _ = FileManagerContentIdentityTransitionCoordinator.recordIfEligible(
+            .init(operationKind: .rename, targets: [.init(beforePath: beforePath, afterPath: afterPath)]),
+            state: &state,
+        )
+
+        XCTAssertEqual(state.pendingIdentityTransition?.beforeLexicalPath, beforePath)
+        XCTAssertEqual(
+            state.pendingIdentityTransition?.preservationOwner,
+            .folder(id: aliasPath, generation: 2),
+        )
+    }
+
     /// EVM-001-command_external_refresh_correlation: 상관 증거가 없는 조상 경로 rename은 외부 refresh로 통과한다.
     /// FSEvents가 변경 파일 대신 current root의 조상 경로를 보고해도 단독 순수 rename을 버리지 않는지 검증한다.
     /// - 검증 내용: 조상 경로 rename과 무관 경로가 모두 계층 무효화·reload에 반영된다.

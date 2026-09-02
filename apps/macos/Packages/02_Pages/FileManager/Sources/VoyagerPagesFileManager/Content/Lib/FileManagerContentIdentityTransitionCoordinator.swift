@@ -21,6 +21,7 @@ enum FileManagerContentIdentityTransitionCoordinator {
         guard record.operationKind == .rename || record.operationKind == .pasteFileMove else { return .none }
         guard case let .folder(currentPath) = state.navigation.navigationState else { return .none }
         let normalizedRoot = canonicalizedPath(currentPath)
+        let lexicalRoot = standardizedPath(currentPath)
         let selectedPaths = Set(state.entryViewLayout.selectedIds.map(canonicalizedPath))
         let movedTargets = record.targets.compactMap { target -> RecordedMoveTarget? in
             guard let beforePath = target.beforePath, let afterPath = target.afterPath else { return nil }
@@ -41,7 +42,7 @@ enum FileManagerContentIdentityTransitionCoordinator {
             movedTargets.count(where: { $0.before == move.before }) == 1
         }
         guard let move = trustedMoves.first else { return .none }
-        guard isSameOrDescendant(path: move.before, of: normalizedRoot) else { return .none }
+        guard isSameOrDescendant(path: standardizedPath(move.rawBefore), of: lexicalRoot) else { return .none }
 
         let projectionOwner = makeProjectionOwner(
             afterPath: move.rawAfter,
@@ -55,7 +56,7 @@ enum FileManagerContentIdentityTransitionCoordinator {
             state: state,
         )
         let additionalMoves = trustedMoves.dropFirst()
-            .filter { isSameOrDescendant(path: $0.before, of: normalizedRoot) }
+            .filter { isSameOrDescendant(path: standardizedPath($0.rawBefore), of: lexicalRoot) }
             .map { target in
                 FileManagerContentState.EntryMovePair(
                     beforePath: target.before,

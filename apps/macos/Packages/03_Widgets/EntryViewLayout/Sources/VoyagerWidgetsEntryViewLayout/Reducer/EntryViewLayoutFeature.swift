@@ -545,13 +545,14 @@ public struct EntryViewLayoutFeature {
         else {
             return .none
         }
-        let rootPath = canonicalizedPath(state.hierarchy.rootPath)
+        let lexicalRootPath = standardizedPath(state.hierarchy.rootPath)
+        let rootPath = canonicalizedPath(lexicalRootPath)
         let selectedPaths = Set(state.selectedIds.map(canonicalizedPath))
         let pairs = record.targets.compactMap { target -> EntryIdentityReplacementPair? in
             guard let beforePath = target.beforePath,
                   let afterPath = target.afterPath,
                   selectedPaths.contains(canonicalizedPath(beforePath)),
-                  isSameOrDescendant(path: canonicalizedPath(beforePath), of: rootPath),
+                  isSameOrDescendant(path: standardizedPath(beforePath), of: lexicalRootPath),
                   record.targets.count(where: {
                       guard let candidate = $0.beforePath else { return false }
                       return canonicalizedPath(candidate) == canonicalizedPath(beforePath)
