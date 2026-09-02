@@ -292,6 +292,58 @@ final class RCL003CollectionSearchExecutionTests: XCTestCase {
         XCTAssertFalse(state.isLoadingSearch)
     }
 
+    /// RCL-003-execute_filtered_collection_retrieval: active query 재제출은 이전 query를 먼저 종료함
+    /// 새 query가 이전 request를 덮어쓰기 전에 기존 lifecycle을 canonical cancellation으로 소비하는지 검증한다.
+    /// - 검증 내용: 공백 submit no-op, 이전 operation ID의 cancelled terminal 1건, 새 request/recovery 유지, 늦은 응답 무시
+    /// - 사전 조건: 원문 복구 context를 가진 query A가 active이고 query B가 입력됨
+    /// - 기대 결과: A만 cancelled로 종료되고 B가 active이며 submit event나 중복 terminal은 기록되지 않음
+    func testExecuteFilteredCollectionRetrieval_resubmitDuringActiveSearch_terminalizesPreviousQuery() throws {
+        let recorder = ComposerMetricRecorder()
+        let requestA = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000029"))
+        var state = ComposerState()
+        state.isLoadingSearch = true
+        state.activeSearchRequestID = requestA
+        state.searchStartedAt = Date(timeIntervalSinceNow: -0.1)
+        state.captureQueryRecovery(rawText: "query A", requestID: requestA)
+
+        withDependencies {
+            $0.composerMetricClient = ComposerMetricClient(recordProductMetric: recorder.record)
+        } operation: {
+            let feature = ComposerFeature()
+            state.text = "   "
+            _ = feature.reduce(into: &state, action: .submit)
+            XCTAssertEqual(state.activeSearchRequestID, requestA)
+            XCTAssertTrue(recorder.names.isEmpty)
+
+            state.text = "  query B  "
+            _ = feature.reduce(into: &state, action: .submit)
+        }
+
+        let requestB = try XCTUnwrap(state.activeSearchRequestID)
+        XCTAssertNotEqual(requestB, requestA)
+        XCTAssertEqual(state.text, "")
+        XCTAssertTrue(state.isLoadingSearch)
+        XCTAssertEqual(state.queryRecoveryContext?.rawText, "  query B  ")
+        XCTAssertEqual(state.queryRecoveryContext?.stage, .search(requestB))
+        XCTAssertEqual(recorder.names, [ComposerCollectionFilterMetrics.queryResult])
+        let call = try XCTUnwrap(recorder.callsSnapshot.first)
+        XCTAssertEqual(call.tags?["result_status"], "cancelled")
+        XCTAssertEqual(call.tags?["operation_id"], requestA.uuidString.lowercased())
+
+        let stateAfterResubmit = state
+        let feature = ComposerFeature()
+        _ = feature.reduce(
+            into: &state,
+            action: .searchResponse(requestA, .failure(ResubmitTestError())),
+        )
+        _ = feature.reduce(
+            into: &state,
+            action: .searchResponse(requestA, .success(SearchResponsePayload(itemCount: 1))),
+        )
+        XCTAssertEqual(state, stateAfterResubmit)
+        XCTAssertEqual(recorder.names, [ComposerCollectionFilterMetrics.queryResult])
+    }
+
     /// RCL-003-execute_filtered_collection_retrieval: Composer dismissal은 활성 query terminal을 한 번 기록함
     /// Composer를 닫을 때 활성 query가 canonical cancelled terminal로 종료되는지 검증한다.
     /// - 검증 내용: dismissal 1회, 반복 dismissal, 늦은 response 이후 cancelled query event 1건
@@ -374,6 +426,8 @@ final class RCL003CollectionSearchExecutionTests: XCTestCase {
         XCTAssertEqual(store.state.lastFiltersResponse?.itemCount, 1)
     }
 }
+
+private struct ResubmitTestError: Error {}
 
 private func makeRegistryClient() -> RegistryClient {
     .init(

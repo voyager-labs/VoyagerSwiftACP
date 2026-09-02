@@ -32,13 +32,12 @@ struct ComposerSearchLifecycleReducer {
                     state: &state,
                     searchClient: searchClient,
                     collectionSearchAISettingsClient: collectionSearchAISettingsClient,
-                    restoreQueryOwnedFilters: { state in
-                        guard state.activeFiltersMetricSource == ComposerCollectionFilterMetrics.sourcePostQueryApply
-                        else { return }
-                        restoreSubmittedSearchFilters(
+                    cancelFilters: { state in
+                        handleCancelFilters(
                             state: &state,
                             registryClient: registryClient,
                             uuid: { uuid() },
+                            composerMetricClient: composerMetricClient,
                         )
                     },
                     composerMetricClient: composerMetricClient,
@@ -303,15 +302,17 @@ private func handleSubmit(
     state: inout ComposerFeature.State,
     searchClient: SearchClient,
     collectionSearchAISettingsClient: CollectionSearchAISettingsClient,
-    restoreQueryOwnedFilters: (inout ComposerFeature.State) -> Void,
-    composerMetricClient _: ComposerMetricClient,
+    cancelFilters: (inout ComposerFeature.State) -> Effect<ComposerFeature.Action>,
+    composerMetricClient: ComposerMetricClient,
 ) -> Effect<ComposerFeature.Action> {
-    let query = state.text.trimmingCharacters(in: .whitespacesAndNewlines)
+    let rawQuery = state.text
+    let query = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !query.isEmpty else { return .none }
-    restoreQueryOwnedFilters(&state)
+    let filterCancellation = cancelFilters(&state)
+    let searchCancellation = handleCancelSearch(state: &state, composerMetricClient: composerMetricClient)
     let filters = buildFilters(from: state)
     let searchRequestID = UUID()
-    state.captureQueryRecovery(rawText: state.text, requestID: searchRequestID)
+    state.captureQueryRecovery(rawText: rawQuery, requestID: searchRequestID)
     state.hasSubmittedInSession = true
     state.searchStartedAt = Date()
     state.isLoadingSearch = true
@@ -348,7 +349,8 @@ private func handleSubmit(
     .cancellable(id: ComposerFeature.CancelID.search(ownerID: state.cancellationOwnerID), cancelInFlight: true)
 
     return .concatenate(
-        .cancel(id: ComposerFeature.CancelID.filters(ownerID: state.cancellationOwnerID)),
+        filterCancellation,
+        searchCancellation,
         searchEffect,
     )
 }
