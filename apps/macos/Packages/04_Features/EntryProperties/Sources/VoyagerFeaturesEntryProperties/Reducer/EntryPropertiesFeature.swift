@@ -397,33 +397,44 @@ func mappedFailure(_ error: any Error) -> EntryPropertiesFailure {
         return failure
     }
     guard let clientError = error as? EntryCoreClientError else { return .unavailable }
+    if case let .server(code) = clientError {
+        return mappedServerFailure(code)
+    }
     switch clientError {
-    case let .server(code):
-        switch code {
-        case .conflict:
-            return .conflict
-        case .unsupported, .unknownMethod:
-            return .unsupported
-        case .permissionDenied:
-            return .authorization
-        case .requestTooLarge, .invalidRequest, .invalidPath, .invalidSelector, .contextMismatch,
-             .scopeTooLarge, .invalidPageToken, .propertyNotFound, .responseTooLarge:
-            return .validation
-        case .mountNotFound, .sourceNotFound, .sourceUnavailable, .sourceDeleted, .entryNotFound,
-             .adapterFailure, .internalError:
-            return .unavailable
-        }
+    case .server:
+        return .unavailable
     case .invalidEndpoint, .daemonUnavailable, .timedOut(.connect), .transport(.connect):
         return .unavailable
     case .cancelled, .timedOut(.write), .timedOut(.read), .transport(.write), .transport(.read),
          .responseTooLarge, .malformedResponse, .protocolMismatch, .requestIDMismatch:
         return .unavailable
+    case .localValidation:
+        return .validation
+    }
+}
+
+private func mappedServerFailure(_ code: EntryCoreServerErrorCode) -> EntryPropertiesFailure {
+    switch code {
+    case .conflict:
+        .conflict
+    case .unsupported, .unknownMethod:
+        .unsupported
+    case .permissionDenied:
+        .authorization
+    case .requestTooLarge, .invalidRequest, .invalidPath, .invalidSelector, .contextMismatch,
+         .scopeTooLarge, .invalidPageToken, .propertyNotFound, .responseTooLarge:
+        .validation
+    case .mountNotFound, .sourceNotFound, .sourceUnavailable, .sourceDeleted, .entryNotFound,
+         .adapterFailure, .internalError:
+        .unavailable
     }
 }
 
 func mappedExecutionFailure(_ error: any Error) -> EntryPropertiesFailure {
     guard let clientError = error as? EntryCoreClientError else { return mappedFailure(error) }
     switch clientError {
+    case .localValidation:
+        return .validation
     case .cancelled, .timedOut(.write), .timedOut(.read), .transport(.write), .transport(.read),
          .responseTooLarge, .malformedResponse, .protocolMismatch, .requestIDMismatch:
         return .ambiguousExecution

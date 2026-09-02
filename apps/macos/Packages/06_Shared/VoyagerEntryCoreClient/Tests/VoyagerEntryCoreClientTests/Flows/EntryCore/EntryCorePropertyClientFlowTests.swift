@@ -114,6 +114,58 @@ final class EntryCorePropertyClientFlowTests: XCTestCase {
         }
     }
 
+    func testAssignmentListRejectsResponseOutsideRequestContext() async throws {
+        let propertyID1 = try PropertyID(rawValue: "00000000-0000-0000-8000-000000000001")
+        let propertyID2 = try PropertyID(rawValue: "00000000-0000-0000-8000-000000000002")
+        let target = try PropertyTarget(localPath: "/a")
+        let twoAssignments = [
+            propertyAssignmentJSON(propertyID: propertyID1.rawValue),
+            propertyAssignmentJSON(propertyID: propertyID2.rawValue),
+        ].joined(separator: ",")
+        let cases = try [
+            AssignmentListContextCase(
+                name: "page contains too many assignments",
+                request: PropertyAssignmentListRequest(
+                    pageSize: 1,
+                    target: target,
+                    requestedPropertyIDs: [propertyID1, propertyID2],
+                ),
+                response: assignmentPageResponse(
+                    assignments: "[\(twoAssignments)]",
+                ),
+            ),
+            AssignmentListContextCase(
+                name: "page contains an unrequested property",
+                request: PropertyAssignmentListRequest(
+                    pageSize: 2,
+                    target: target,
+                    requestedPropertyIDs: [propertyID1],
+                ),
+                response: assignmentPageResponse(
+                    assignments: "[\(propertyAssignmentJSON(propertyID: propertyID2.rawValue))]",
+                ),
+            ),
+        ]
+
+        let endpoint = try EntryCoreEndpoint(path: "/tmp/property-client.sock")
+        for testCase in cases {
+            let recorder = PropertyTransportRecorder(response: Data(testCase.response.utf8))
+            let client = EntryCorePropertyClient.makeLive(
+                requestID: { "assignment-id" },
+                makeTransport: recorder.makeTransport,
+            )
+
+            do {
+                _ = try await client.assignmentList(endpoint, testCase.request)
+                XCTFail("\(testCase.name) should be rejected")
+            } catch {
+                XCTAssertEqual(error as? EntryCoreClientError, .protocolMismatch, testCase.name)
+            }
+            XCTAssertEqual(recorder.creationCount, 1, testCase.name)
+            XCTAssertEqual(recorder.requests.count, 1, testCase.name)
+        }
+    }
+
     func testInvalidLocalBoundsDoNotCreateTransport() throws {
         let recorder = PropertyTransportRecorder(response: Data())
         _ = EntryCorePropertyClient.makeLive(
@@ -189,7 +241,7 @@ final class EntryCorePropertyClientFlowTests: XCTestCase {
             _ = try await client.changePrepare(endpoint, request)
             XCTFail("oversized request should be rejected before transport")
         } catch {
-            XCTAssertEqual(error as? EntryCoreClientError, .protocolMismatch)
+            XCTAssertEqual(error as? EntryCoreClientError, .localValidation)
         }
         XCTAssertEqual(recorder.creationCount, 0)
         XCTAssertEqual(recorder.requests, [])
@@ -199,6 +251,12 @@ final class EntryCorePropertyClientFlowTests: XCTestCase {
 private struct QueryContextMismatchCase {
     let name: String
     let request: PropertyConditionQueryRequest
+    let response: String
+}
+
+private struct AssignmentListContextCase {
+    let name: String
+    let request: PropertyAssignmentListRequest
     let response: String
 }
 
@@ -297,6 +355,19 @@ private func propertyAssignmentJSON(propertyID: String) -> String {
       "cardinality":"one",
       "state":"null",
       "revision":1
+    }
+    """
+}
+
+private func assignmentPageResponse(assignments: String) -> String {
+    """
+    {
+      "request_id":"assignment-id",
+      "ok":true,
+      "result":{
+        "assignments":\(assignments),
+        "has_more":false
+      }
     }
     """
 }

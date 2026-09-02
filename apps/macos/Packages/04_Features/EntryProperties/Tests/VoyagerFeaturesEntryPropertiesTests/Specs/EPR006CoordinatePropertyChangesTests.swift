@@ -285,6 +285,7 @@ final class EPR006CoordinatePropertyChangesTests: XCTestCase {
         XCTAssertEqual(mappedFailure(EntryCoreClientError.server(.permissionDenied)), .authorization)
         XCTAssertEqual(mappedFailure(EntryCoreClientError.server(.invalidRequest)), .validation)
         XCTAssertEqual(mappedFailure(EntryCoreClientError.daemonUnavailable), .unavailable)
+        XCTAssertEqual(mappedExecutionFailure(EntryCoreClientError.localValidation), .validation)
 
         for error in [
             EntryCoreClientError.cancelled,

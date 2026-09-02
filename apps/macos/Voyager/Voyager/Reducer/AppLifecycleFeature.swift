@@ -411,7 +411,7 @@ private func entryCoreHealthProbeResult(
         .init(outcome: .failed, phase: entryCoreHealthProbePhase(phase), duration: duration)
     case .cancelled:
         .init(outcome: .failed, phase: .response, duration: duration)
-    case .responseTooLarge, .malformedResponse, .protocolMismatch, .requestIDMismatch, .server:
+    case .responseTooLarge, .malformedResponse, .protocolMismatch, .localValidation, .requestIDMismatch, .server:
         .init(outcome: .failed, phase: .response, duration: duration)
     }
 }

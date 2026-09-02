@@ -56,6 +56,7 @@ final class EntryCorePublicContractFlowTests: XCTestCase {
             .responseTooLarge,
             .malformedResponse,
             .protocolMismatch,
+            .localValidation,
             .requestIDMismatch,
             .server(.internalError),
         ]

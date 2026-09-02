@@ -126,8 +126,23 @@ extension EntryCorePropertyClient {
             guard case let .assignmentPage(value) = try await call(
                 .propertyAssignmentList, endpoint, request, requestID, makeTransport,
             ) else { throw EntryCoreClientError.protocolMismatch }
+            guard assignmentPageMatchesRequest(value, request: request) else {
+                throw EntryCoreClientError.protocolMismatch
+            }
             return value
         }
+    }
+
+    nonisolated private static func assignmentPageMatchesRequest(
+        _ page: PropertyAssignmentPage,
+        request: PropertyAssignmentListRequest,
+    ) -> Bool {
+        guard page.assignments.count <= request.pageSize else { return false }
+        guard request.requestedPropertyIDs.isEmpty else {
+            let requested = Set(request.requestedPropertyIDs)
+            return page.assignments.allSatisfy { requested.contains($0.propertyID) }
+        }
+        return true
     }
 
     nonisolated private static func proposalOperation(
@@ -206,14 +221,14 @@ extension EntryCorePropertyClient {
         _ makeTransport: @Sendable () -> EntryCoreTransportRequest,
     ) async throws -> EntryCorePropertyDecodedResponse {
         let id = requestID()
-        guard !id.isEmpty, id.utf8.count <= 128 else { throw EntryCoreClientError.protocolMismatch }
+        guard !id.isEmpty, id.utf8.count <= 128 else { throw EntryCoreClientError.localValidation }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         let request: Data
         do { request = try encoder.encode(PropertyRequestWire(requestID: id, method: method.rawValue, params: params))
-        } catch { throw EntryCoreClientError.protocolMismatch }
+        } catch { throw EntryCoreClientError.localValidation }
         guard request.count <= StrictJSONParser.maximumWireBytes else {
-            throw EntryCoreClientError.protocolMismatch
+            throw EntryCoreClientError.localValidation
         }
         let response = try await makeTransport()(request, endpoint)
         return try EntryCorePropertyResponseDecoder.decode(Array(response), method: method, expectedRequestID: id)
