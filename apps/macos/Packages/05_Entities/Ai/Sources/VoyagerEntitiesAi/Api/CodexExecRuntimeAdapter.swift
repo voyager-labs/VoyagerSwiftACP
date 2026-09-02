@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import VoyagerExternalAgentRuntime
 
@@ -14,6 +15,7 @@ public actor CodexExecRuntimeAdapter: ExternalAgentRuntimeAdapter {
     private var evictedRestartBindings: Set<RuntimeRunReference> = []
     private var evictedRestartBindingOrder: [RuntimeRunReference] = []
     private var hosts: [RuntimeRunReference: ExternalAgentSessionReference] = [:]
+    private var sequenceBases: [RuntimeRunReference: UInt64] = [:]
     private var eventFinished: Set<RuntimeRunReference> = []
     private var resultFinished: Set<RuntimeRunReference> = []
     private var retainedCompletions: [RuntimeRunReference: UInt64] = [:]
@@ -86,8 +88,13 @@ public actor CodexExecRuntimeAdapter: ExternalAgentRuntimeAdapter {
         try await validateRestartBinding(resumeBinding, for: request)
         let command = try makeLaunchCommand(request: request, threadID: resumeBinding?.providerReference)
         let receipt = try await acquireReceipt(command, for: request, restartBinding: resumeBinding)
+        guard !receipt.threadID.isEmpty, receipt.threadID.unicodeScalars.count <= 4096 else {
+            await receipt.cancel()
+            throw RuntimeHostError.malformedAdapterResponse
+        }
         receipts[request.runReference] = receipt
         hosts[request.runReference] = request.externalAgentSessionReference
+        sequenceBases[request.runReference] = resumeBinding?.providerEventSequence ?? 0
         return RuntimeLaunchReceipt(
             runReference: request.runReference,
             providerInternalSessionReference: ProviderInternalSessionReference(receipt.threadID),
@@ -156,7 +163,11 @@ public actor CodexExecRuntimeAdapter: ExternalAgentRuntimeAdapter {
             throw RuntimeHostError.staleRestartBinding
         }
         guard let binding else { return }
-        let expected = makeRestartBinding(for: request, providerReference: binding.providerReference)
+        let expected = makeRestartBinding(
+            for: request,
+            providerReference: binding.providerReference,
+            providerEventSequence: binding.providerEventSequence,
+        )
         guard binding == expected else {
             removeRestartBinding(request.runReference)
             await controller.discardStagedRestartBinding(binding)
@@ -200,6 +211,8 @@ public actor CodexExecRuntimeAdapter: ExternalAgentRuntimeAdapter {
                 )
             }
             return receipt
+        } catch CodexExecProcessFailure.emptyThreadID {
+            throw RuntimeHostError.malformedAdapterResponse
         } catch let error as CodexExecProcessFailure {
             throw Self.mapProcessFailure(error)
         } catch let error as CodexExecRestartFailure {
@@ -225,9 +238,20 @@ public actor CodexExecRuntimeAdapter: ExternalAgentRuntimeAdapter {
         continuation: AsyncThrowingStream<RuntimeEventEnvelope, any Error>.Continuation,
     ) async {
         do {
-            var sequence: UInt64 = 0
+            var sequence = sequenceBases[runReference] ?? 0
             for try await event in source {
-                sequence += 1
+                let next = sequence.addingReportingOverflow(1)
+                guard !next.overflow, next.partialValue != UInt64.max else {
+                    let error = RuntimeHostError.adapterFailure(
+                        .processExit,
+                        RuntimeDiagnosticCode("event_sequence_overflow"),
+                    )
+                    await receipt.cancel()
+                    abandon(runReference)
+                    continuation.finish(throwing: error)
+                    return
+                }
+                sequence = next.partialValue
                 switch continuation.yield(Self.map(event, host: host, runReference: runReference, sequence: sequence)) {
                 case .enqueued: break
                 case .dropped:
@@ -309,6 +333,7 @@ public actor CodexExecRuntimeAdapter: ExternalAgentRuntimeAdapter {
     private func abandon(_ runReference: RuntimeRunReference) {
         receipts[runReference] = nil
         hosts[runReference] = nil
+        sequenceBases[runReference] = nil
         eventFinished.remove(runReference)
         resultFinished.remove(runReference)
         retainedCompletions[runReference] = nil
@@ -340,6 +365,7 @@ public actor CodexExecRuntimeAdapter: ExternalAgentRuntimeAdapter {
         }
         receipts[oldest.key] = nil
         hosts[oldest.key] = nil
+        sequenceBases[oldest.key] = nil
         eventFinished.remove(oldest.key)
         resultFinished.remove(oldest.key)
         retainedCompletions[oldest.key] = nil
@@ -349,6 +375,7 @@ public actor CodexExecRuntimeAdapter: ExternalAgentRuntimeAdapter {
         guard eventFinished.contains(runReference), resultFinished.contains(runReference) else { return }
         receipts[runReference] = nil
         hosts[runReference] = nil
+        sequenceBases[runReference] = nil
         removeRestartBinding(runReference)
         eventFinished.remove(runReference)
         resultFinished.remove(runReference)
@@ -382,7 +409,8 @@ public actor CodexExecRuntimeAdapter: ExternalAgentRuntimeAdapter {
               binding.adapterVersion == descriptor.adapterVersion,
               binding.providerBranch == descriptor.providerBranch,
               binding.capabilitySnapshot == descriptor.capabilities,
-              !binding.providerInternalSessionReference.rawValue.isEmpty
+              !binding.providerInternalSessionReference.rawValue.isEmpty,
+              binding.providerInternalSessionReference.rawValue.unicodeScalars.count <= 4096
         else { return .incompatible }
 
         let candidate = CodexExecRestartBinding(
@@ -402,11 +430,15 @@ public actor CodexExecRuntimeAdapter: ExternalAgentRuntimeAdapter {
                 allowedRoots: binding.contextPolicy.allowedRoots,
                 requestContext: binding.contextPolicy.requestContext,
             ),
+            providerEventSequence: binding.providerEventSequence,
         )
         let result = try await controller.restartCompatibilityAndStage(binding: candidate, current: candidate)
         guard result.compatibility == .compatible else { return Self.map(result.compatibility) }
         if let evictedBinding = result.evictedBinding {
             removeRestartBindingIfMatching(evictedBinding)
+        }
+        guard await controller.stagedRestartBinding(for: binding.runReference.rawValue) == candidate else {
+            return .stale
         }
         evictedRestartBindings.remove(binding.runReference)
         evictedRestartBindingOrder.removeAll { $0 == binding.runReference }
@@ -421,6 +453,7 @@ public actor CodexExecRuntimeAdapter: ExternalAgentRuntimeAdapter {
         CodexExecDebugStorageCounts(
             receipts: receipts.count,
             hosts: hosts.count,
+            sequenceBases: sequenceBases.count,
             restartBindings: restartBindings.count,
             tombstones: eventFinished.count + resultFinished.count,
         )
@@ -430,6 +463,7 @@ public actor CodexExecRuntimeAdapter: ExternalAgentRuntimeAdapter {
 struct CodexExecDebugStorageCounts {
     let receipts: Int
     let hosts: Int
+    let sequenceBases: Int
     let restartBindings: Int
     let tombstones: Int
 }
@@ -471,7 +505,11 @@ extension CodexExecRuntimeAdapter {
         )
     }
 
-    func makeRestartBinding(for request: RuntimeLaunchRequest, providerReference: String) -> CodexExecRestartBinding {
+    func makeRestartBinding(
+        for request: RuntimeLaunchRequest,
+        providerReference: String,
+        providerEventSequence: UInt64 = 0,
+    ) -> CodexExecRestartBinding {
         CodexExecRestartBinding(
             hostReference: request.externalAgentSessionReference.rawValue,
             runReference: request.runReference.rawValue,
@@ -489,6 +527,7 @@ extension CodexExecRuntimeAdapter {
                 allowedRoots: request.contextPolicy.allowedRoots,
                 requestContext: request.contextPolicy.requestContext,
             ),
+            providerEventSequence: providerEventSequence,
         )
     }
 
@@ -527,14 +566,28 @@ extension CodexExecRuntimeAdapter {
     ) -> RuntimeEventEnvelope {
         RuntimeEventEnvelope(
             source: .provider,
-            providerEventID: ProviderEventID(event.providerEventID),
+            providerEventID: ProviderEventID(
+                digestIdentifier(prefix: "codex.pe.", domain: "provider-event", values: [
+                    event.providerEventID, runReference.rawValue, String(sequence),
+                ]),
+            ),
             sequence: sequence,
-            idempotencyKey: RuntimeIdempotencyKey(event.idempotencyKey),
+            idempotencyKey: RuntimeIdempotencyKey(
+                digestIdentifier(prefix: "codex.ik.", domain: "runtime-idempotency", values: [
+                    runReference.rawValue, String(sequence),
+                ]),
+            ),
             timestamp: Date(),
             externalAgentSessionReference: host,
             runReference: runReference,
             kind: event.kind == .completed ? .completed : event.kind == .failed ? .failed : .progress,
         )
+    }
+
+    private static func digestIdentifier(prefix: String, domain: String, values: [String]) -> String {
+        let canonical = ([domain] + values).joined(separator: "\u{0}")
+        let digest = SHA256.hash(data: Data(canonical.utf8))
+        return prefix + digest.map { String(format: "%02x", $0) }.joined()
     }
 
     static func map(_ outcome: CodexExecLifecycleKind) -> RuntimeOutcome {

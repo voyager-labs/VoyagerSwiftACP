@@ -947,6 +947,118 @@ final class ATI006CoordinateExternalAgentSessionsTests: XCTestCase {
         let staged = await controller.hasStagedRestartBinding(for: binding.runReference)
         XCTAssertTrue(staged)
         XCTAssertEqual(runner.runCount, 0)
+        XCTAssertEqual(binding.providerEventSequence, 0)
+    }
+
+    /// ATI-006-exact_restart_binding: persisted provider cursor is part of exact identity.
+    /// resume binding이 persisted provider event cursor를 staging하고 cursor 차이를 거부하는지 검증합니다.
+    /// - 검증 내용: cursor 7 staging, cursor 8 identity mismatch, cursor 0 fresh default를 확인합니다.
+    /// - 사전 조건: 동일한 restart binding에서 provider event cursor만 변형합니다.
+    /// - 기대 결과: cursor 7은 compatible, cursor 8은 incompatible, 기본 cursor는 0입니다.
+    func testRestartCompatibility_providerEventSequenceIsExactIdentity() async throws {
+        let controller = CodexExecProcessController(
+            runner: CodexExecFakeRunner(
+                process: CodexExecFakeProcess(stdout: [], stderr: [], terminationStatus: 0),
+            ).run,
+        )
+        let fresh = makeRestartBinding()
+        let resumed = makeRestartBinding(providerEventSequence: 7)
+
+        XCTAssertEqual(fresh.providerEventSequence, 0)
+        let compatible = try await controller.restartCompatibility(binding: resumed, current: resumed)
+        XCTAssertEqual(compatible, .compatible)
+        let incompatible = try await controller.restartCompatibility(
+            binding: resumed,
+            current: resumed.with(providerEventSequence: 8),
+        )
+        XCTAssertEqual(incompatible, .incompatible)
+    }
+
+    /// ATI-006-exact_restart_binding: provider reference ingress uses the scalar boundary.
+    /// persisted provider handle이 허용된 Unicode scalar 범위를 넘지 않는지 검증합니다.
+    /// - 검증 내용: 4096 scalar는 compatible이고 4097 scalar는 incompatible이며 oversized binding을 stage하지 않는지 확인합니다.
+    /// - 사전 조건: provider reference만 4096/4097 scalar로 바꾼 exact restart binding을 제공합니다.
+    /// - 기대 결과: 경계값은 수용되고 초과값은 process spawn 없이 거부됩니다.
+    func testRestartCompatibility_providerReferenceIngressEnforcesScalarBoundary() async throws {
+        let controller = CodexExecProcessController(
+            runner: CodexExecFakeRunner(
+                process: CodexExecFakeProcess(stdout: [], stderr: [], terminationStatus: 0),
+            ).run,
+        )
+        let adapter = CodexExecRuntimeAdapter(controller: controller)
+        let validProviderReference = String(repeating: "e\u{301}", count: 2048)
+        let cases = [
+            (validProviderReference, RuntimeRestartCompatibility.compatible),
+            (validProviderReference + "x", RuntimeRestartCompatibility.incompatible),
+        ]
+
+        for (providerReference, expected) in cases {
+            let binding = RuntimeRestartBinding(
+                externalAgentSessionReference: .init("host"),
+                providerInternalSessionReference: .init(providerReference),
+                runReference: .init("boundary-run-\(providerReference.unicodeScalars.count)"),
+                adapterID: adapter.descriptor.id,
+                providerNamespace: adapter.descriptor.providerNamespace,
+                adapterVersion: adapter.descriptor.adapterVersion,
+                providerBranch: adapter.descriptor.providerBranch,
+                capabilitySnapshot: adapter.descriptor.capabilities,
+                contextPolicy: .init(
+                    branchReference: "branch",
+                    authorizationGeneration: 1,
+                    localCorrelation: "correlation",
+                ),
+            )
+            let compatibility = try await adapter.restartCompatibility(for: binding)
+            XCTAssertEqual(compatibility, expected)
+            if expected == .incompatible {
+                let isStaged = await controller.hasStagedRestartBinding(for: binding.runReference.rawValue)
+                XCTAssertFalse(isStaged)
+            }
+        }
+    }
+
+    /// ATI-006-exact_restart_binding: an older staged completion cannot publish over a newer binding.
+    /// controller stage gate로 completion 순서를 뒤집어도 adapter가 stale binding을 공개하지 않는지 검증합니다.
+    /// - 검증 내용: 같은 run의 newer provider reference와 cursor가 older completion을 이기고 exact current stage를 유지하는지 확인합니다.
+    /// - 사전 조건: 첫 stage completion만 gate하고 두 번째 compatible probe를 먼저 완료시킵니다.
+    /// - 기대 결과: newer probe는 compatible, older probe는 stale이며 adapter에는 newer binding만 남습니다.
+    func testRestartCompatibility_olderCompletionCannotOverwriteNewerBinding() async throws {
+        let gate = RestartStageGate()
+        let controller = CodexExecProcessController(
+            registry: nil,
+            onRestartCompatibilityStaged: { await gate.invoke() },
+        )
+        let adapter = CodexExecRuntimeAdapter(controller: controller)
+        let context = RuntimeContextPolicy(
+            branchReference: "branch",
+            authorizationGeneration: 1,
+            localCorrelation: "correlation",
+        )
+        func binding(provider: String, sequence: UInt64) -> RuntimeRestartBinding {
+            RuntimeRestartBinding(
+                externalAgentSessionReference: .init("host"),
+                providerInternalSessionReference: .init(provider),
+                runReference: .init("raced-run"),
+                adapterID: adapter.descriptor.id,
+                providerNamespace: adapter.descriptor.providerNamespace,
+                adapterVersion: adapter.descriptor.adapterVersion,
+                providerBranch: adapter.descriptor.providerBranch,
+                capabilitySnapshot: adapter.descriptor.capabilities,
+                contextPolicy: context,
+                providerEventSequence: sequence,
+            )
+        }
+
+        let older = Task { try await adapter.restartCompatibility(for: binding(provider: "old", sequence: 1)) }
+        await gate.waitForFirstStage()
+        let newer = try await adapter.restartCompatibility(for: binding(provider: "new", sequence: 2))
+        XCTAssertEqual(newer, .compatible)
+        await gate.release()
+        let olderResult = try await older.value
+        XCTAssertEqual(olderResult, .stale)
+        let staged = await controller.stagedRestartBinding(for: "raced-run")
+        XCTAssertEqual(staged?.providerReference, "new")
+        XCTAssertEqual(staged?.providerEventSequence, 2)
     }
 
     /// ATI-006-exact_restart_binding: every identity mismatch is incompatible without spawning.
@@ -1770,11 +1882,15 @@ final class ATI006CoordinateExternalAgentSessionsTests: XCTestCase {
         XCTAssertEqual(fresh.writes, [Data("fresh".utf8)])
     }
 
-    private func makeRestartBinding(run: String = "run") -> CodexExecRestartBinding {
+    private func makeRestartBinding(
+        run: String = "run",
+        providerReference: String = "provider-thread",
+        providerEventSequence: UInt64 = 0,
+    ) -> CodexExecRestartBinding {
         CodexExecRestartBinding(
             hostReference: "host",
             runReference: run,
-            providerReference: "provider-thread",
+            providerReference: providerReference,
             adapterID: "codex",
             providerNamespace: "openai.codex",
             adapterVersion: "0.148.0",
@@ -1785,6 +1901,36 @@ final class ATI006CoordinateExternalAgentSessionsTests: XCTestCase {
                 authorizationGeneration: 1,
                 localCorrelation: "correlation",
             ),
+            providerEventSequence: providerEventSequence,
         )
+    }
+}
+
+private actor ATI006RuntimeMemoryStore: RuntimeStateStore {
+    var state: RuntimeStoredState
+
+    init(state: RuntimeStoredState) {
+        self.state = state
+    }
+
+    func load() async throws -> RuntimeStoredState? {
+        state
+    }
+
+    func apply(_ mutation: RuntimeStateMutation) async throws -> RuntimeStateMutationResult {
+        let current = state.sessions.first(where: {
+            $0.externalAgentSessionReference == mutation.host
+        })
+        guard current == mutation.expected else {
+            return .conflict(state)
+        }
+        var sessions = state.sessions.filter {
+            $0.externalAgentSessionReference != mutation.host
+        }
+        if let replacement = mutation.replacement {
+            sessions.append(replacement)
+        }
+        state = RuntimeStoredState(schemaVersion: state.schemaVersion, sessions: sessions)
+        return .committed(state)
     }
 }

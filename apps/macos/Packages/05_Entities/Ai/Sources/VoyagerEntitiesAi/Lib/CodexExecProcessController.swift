@@ -309,6 +309,31 @@ struct CodexExecRestartBinding: Hashable {
     let providerBranch: String
     let capabilities: CodexExecRestartCapabilities
     let context: CodexExecRestartContext
+    let providerEventSequence: UInt64
+
+    init(
+        hostReference: String,
+        runReference: String,
+        providerReference: String,
+        adapterID: String,
+        providerNamespace: String,
+        adapterVersion: String,
+        providerBranch: String,
+        capabilities: CodexExecRestartCapabilities,
+        context: CodexExecRestartContext,
+        providerEventSequence: UInt64 = 0,
+    ) {
+        self.hostReference = hostReference
+        self.runReference = runReference
+        self.providerReference = providerReference
+        self.adapterID = adapterID
+        self.providerNamespace = providerNamespace
+        self.adapterVersion = adapterVersion
+        self.providerBranch = providerBranch
+        self.capabilities = capabilities
+        self.context = context
+        self.providerEventSequence = providerEventSequence
+    }
 
     var isValid: Bool {
         !hostReference.isEmpty && !runReference.isEmpty && !providerReference.isEmpty
@@ -327,6 +352,7 @@ struct CodexExecRestartBinding: Hashable {
         providerBranch: String? = nil,
         capabilities: CodexExecRestartCapabilities? = nil,
         context: CodexExecRestartContext? = nil,
+        providerEventSequence: UInt64? = nil,
     ) -> Self {
         Self(
             hostReference: hostReference ?? self.hostReference,
@@ -338,6 +364,7 @@ struct CodexExecRestartBinding: Hashable {
             providerBranch: providerBranch ?? self.providerBranch,
             capabilities: capabilities ?? self.capabilities,
             context: context ?? self.context,
+            providerEventSequence: providerEventSequence ?? self.providerEventSequence,
         )
     }
 }
@@ -416,6 +443,10 @@ actor CodexExecProcessRegistry {
         stagedBindings[runReference] != nil
     }
 
+    func stagedBinding(for runReference: String) -> CodexExecRestartBinding? {
+        stagedBindings[runReference]
+    }
+
     func unstage(_ binding: CodexExecRestartBinding) {
         guard stagedBindings[binding.runReference] == binding else { return }
         removeStagedBinding(binding.runReference)
@@ -488,6 +519,7 @@ struct CodexExecProcessController {
 
     private let runner: Runner
     private let registry: CodexExecProcessRegistry
+    private let onRestartCompatibilityStaged: @Sendable () async -> Void
 
     var identity: ObjectIdentifier {
         ObjectIdentifier(registry)
@@ -497,9 +529,11 @@ struct CodexExecProcessController {
         runner: @escaping Runner = CodexExecProcessController.launch,
         registry: CodexExecProcessRegistry? = nil,
         retentionCapacity: Int = CodexExecProcessRegistry.maximumRetainedCompletedSessions,
+        onRestartCompatibilityStaged: @escaping @Sendable () async -> Void = {},
     ) {
         self.runner = runner
         self.registry = registry ?? CodexExecProcessRegistry(retentionCapacity: retentionCapacity)
+        self.onRestartCompatibilityStaged = onRestartCompatibilityStaged
     }
 
     func acquire(runID: String, command: CodexExecCommand) async throws -> CodexExecProcessReceipt {
@@ -546,6 +580,7 @@ struct CodexExecProcessController {
             )
         }
         let evictedBinding = await registry.stage(binding)
+        await onRestartCompatibilityStaged()
         return CodexExecRestartStageResult(
             compatibility: .compatible,
             evictedRunReference: evictedBinding?.runReference,
@@ -555,6 +590,10 @@ struct CodexExecProcessController {
 
     func hasStagedRestartBinding(for runReference: String) async -> Bool {
         await registry.hasStagedBinding(for: runReference)
+    }
+
+    func stagedRestartBinding(for runReference: String) async -> CodexExecRestartBinding? {
+        await registry.stagedBinding(for: runReference)
     }
 
     func discardStagedRestartBinding(_ binding: CodexExecRestartBinding) async {

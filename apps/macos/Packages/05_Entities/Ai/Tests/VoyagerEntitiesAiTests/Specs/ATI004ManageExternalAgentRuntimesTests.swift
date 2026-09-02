@@ -688,6 +688,79 @@ final class ATI004ManageExternalAgentRuntimesTests: XCTestCase {
         XCTAssertEqual(harness.mainExecutionSpawnCount, 1)
     }
 
+    /// ATI-004-manage_external_agent_runtimes: provider thread IDs are admitted only within the opaque handle boundary.
+    /// receipt acquisition 이후 provider thread ID를 저장하기 전에 Unicode scalar 경계를 적용합니다.
+    /// - 검증 내용: empty ID 거부, combining scalar를 포함한 정확히 4096 scalar ID 수락, 4097 scalar ID 거부와 receipt 취소/상태 비저장을 확인합니다.
+    /// - 사전 조건: 각 launch가 readiness를 통과하고 지정된 thread.started receipt를 반환하는 fake process를 사용합니다.
+    /// - 기대 결과: 유효한 4096 scalar ID만 저장되고, 거부된 receipt는 한 번 취소되며 adapter/controller 상태와 process cleanup이 비어 있습니다.
+    func testAdapterLaunch_admitsProviderThreadIDsWithinOpaqueHandleBoundary() async throws {
+        let validThreadID = String(repeating: "e\u{301}", count: 2048)
+        XCTAssertEqual(validThreadID.unicodeScalars.count, 4096)
+        XCTAssertLessThan(validThreadID.count, validThreadID.unicodeScalars.count)
+
+        let cases: [(String, Bool)] = [("", false), (validThreadID, true), (validThreadID + "x", false)]
+        for (threadID, isValid) in cases {
+            let process = CodexExecFakeProcess(
+                stdout: [Data("{\"type\":\"thread.started\",\"thread_id\":\"\(threadID)\"}".utf8)],
+                stderr: [],
+                terminationStatus: 0,
+            )
+            let (adapter, controller) = makeAdapter(process: process)
+
+            if isValid {
+                let receipt = try await adapter.launch(makeRuntimeRequest())
+                XCTAssertEqual(receipt.providerInternalSessionReference.rawValue, threadID)
+                XCTAssertEqual(process.terminationCount, 0)
+                XCTAssertEqual(process.cleanupCount, 0)
+            } else {
+                try await assertInvalidThreadIDIsCleanedUp(
+                    adapter: adapter,
+                    controller: controller,
+                    process: process,
+                )
+            }
+        }
+    }
+
+    private func makeAdapter(
+        process: CodexExecFakeProcess,
+    ) -> (CodexExecRuntimeAdapter, CodexExecProcessController) {
+        let harness = CodexExecCommandTestHarness()
+        let controller = CodexExecProcessController(runner: harness.processRunner(process: process))
+        return (
+            CodexExecRuntimeAdapter(
+                controller: controller,
+                readinessProbe: CodexExecReadinessProbe(runner: harness.runner),
+                executableURL: URL(fileURLWithPath: "/tmp/codex"),
+            ),
+            controller,
+        )
+    }
+
+    private func assertInvalidThreadIDIsCleanedUp(
+        adapter: CodexExecRuntimeAdapter,
+        controller: CodexExecProcessController,
+        process: CodexExecFakeProcess,
+    ) async throws {
+        do {
+            _ = try await adapter.launch(makeRuntimeRequest())
+            XCTFail("invalid provider thread ID must fail")
+        } catch {
+            XCTAssertEqual(error as? RuntimeHostError, .malformedAdapterResponse)
+        }
+        let adapterCounts = await adapter.debugStorageCounts()
+        XCTAssertEqual(adapterCounts.receipts, 0)
+        XCTAssertEqual(adapterCounts.hosts, 0)
+        XCTAssertEqual(adapterCounts.restartBindings, 0)
+        XCTAssertEqual(adapterCounts.tombstones, 0)
+        let controllerCounts = await controller.debugRegistryCounts()
+        XCTAssertEqual(controllerCounts.fresh, 0)
+        XCTAssertEqual(controllerCounts.resume, 0)
+        XCTAssertEqual(controllerCounts.staged, 0)
+        XCTAssertEqual(process.terminationCount, 1)
+        XCTAssertEqual(process.cleanupCount, 1)
+    }
+
     /// ATI-004-manage_external_agent_runtimes: readiness failure prevents provider spawn.
     /// executable/version readiness 실패가 main process 실행보다 먼저 typed failure로 종료됩니다.
     /// - 검증 내용: readiness failure의 public error와 runner invocation count를 확인합니다.

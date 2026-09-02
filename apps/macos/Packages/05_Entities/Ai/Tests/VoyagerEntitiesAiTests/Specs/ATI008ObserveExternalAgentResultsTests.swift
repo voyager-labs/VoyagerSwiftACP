@@ -1450,6 +1450,206 @@ final class ATI008ObserveExternalAgentResultsTests: XCTestCase {
         XCTAssertEqual(runner.runCount, 1)
     }
 
+    /// ATI-008-observe_external_agent_results: resumed lifecycle events continue the persisted public cursor.
+    /// resume adapter가 persisted cursor 이후의 public sequence와 idempotency key를 생성하는지 검증합니다.
+    /// - 검증 내용: cursor 7 이후 sequence 8, 9와 run-scoped idempotency key 및 provider event ID를 확인합니다.
+    /// - 사전 조건: cursor 7의 compatible binding과 handshake 후 두 lifecycle event를 방출하는 fake process가 있습니다.
+    /// - 기대 결과: resumed event envelope가 8, 9이며 idempotency key가 codex.exec/run/8, /9입니다.
+    func testAdapterResume_continuesProviderEventSequenceAndRegeneratesIdempotency() async throws {
+        let root = URL(fileURLWithPath: "/tmp/voyager-adapter-resume-sequence", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let process = CodexExecFakeProcess(stdout: [], stderr: [], terminationStatus: 0)
+        let runner = CodexExecControlledRunner(process: process)
+        runner.initialLines = [#"{"type":"thread.started","thread_id":"resume-thread"}"#]
+        let adapter = CodexExecRuntimeAdapter(
+            controller: CodexExecProcessController(runner: runner.run),
+            readinessProbe: CodexExecReadinessProbe { _, arguments, _ in
+                arguments == ["--version"]
+                    ? CodexExecProbeResult(exitCode: 0, stdout: "codex-cli 0.148.0\n", stderr: "")
+                    : CodexExecProbeResult(exitCode: 0, stdout: "", stderr: "")
+            },
+            executableURL: URL(fileURLWithPath: "/tmp/codex"),
+        )
+        let request = RuntimeLaunchRequest(
+            externalAgentSessionReference: .init("host"),
+            runReference: .init("resume-run"),
+            adapterID: adapter.descriptor.id,
+            contextPolicy: .init(
+                branchReference: "branch",
+                authorizationGeneration: 0,
+                localCorrelation: "correlation",
+                workingDirectory: root.path,
+            ),
+            input: .init("prompt"),
+        )
+        let binding = RuntimeRestartBinding(
+            externalAgentSessionReference: request.externalAgentSessionReference,
+            providerInternalSessionReference: .init("resume-thread"),
+            runReference: request.runReference,
+            adapterID: request.adapterID,
+            providerNamespace: adapter.descriptor.providerNamespace,
+            adapterVersion: adapter.descriptor.adapterVersion,
+            providerBranch: adapter.descriptor.providerBranch,
+            capabilitySnapshot: adapter.descriptor.capabilities,
+            contextPolicy: request.contextPolicy,
+            providerEventSequence: 7,
+        )
+        let compatibility = try await adapter.restartCompatibility(for: binding)
+        XCTAssertEqual(compatibility, .compatible)
+        _ = try await adapter.launch(request)
+        let stream = try await adapter.eventStream(for: request.runReference)
+        let consumer = Task { () throws -> [RuntimeEventEnvelope] in
+            var events: [RuntimeEventEnvelope] = []
+            for try await event in stream {
+                events.append(event)
+            }
+            return events
+        }
+        runner.send(#"{"type":"turn.started","turn_id":"turn-8"}"#)
+        runner.send(#"{"type":"turn.completed"}"#)
+        runner.finishStreams()
+        let events = try await consumer.value
+        _ = try await adapter.terminalResult(for: request.runReference)
+        XCTAssertEqual(events.map(\.sequence), [8, 9])
+        XCTAssertTrue(events.allSatisfy { $0.idempotencyKey.rawValue.hasPrefix("codex.ik.") })
+        XCTAssertEqual(Set(events.map(\.idempotencyKey)).count, 2)
+        XCTAssertEqual(
+            events.map(\.providerEventID).count,
+            Set(events.map(\.providerEventID)).count,
+        )
+        XCTAssertTrue(events.allSatisfy { $0.providerEventID.rawValue.hasPrefix("codex.pe.") })
+        let counts = await adapter.debugStorageCounts()
+        XCTAssertEqual(counts.sequenceBases, 0)
+    }
+
+    /// ATI-008-observe_external_agent_results: mapped identifiers stay deterministic and bounded.
+    /// provider handle과 run reference가 최대 길이여도 public identifier가 안전한 고정 형식인지 검증합니다.
+    /// - 검증 내용: 여러 sequence의 결정성, sequence별 유일성, lowercase ASCII, 256 scalar 이하를 확인합니다.
+    /// - 사전 조건: 4096 scalar provider handle과 256 scalar run reference를 가진 lifecycle event를 매핑합니다.
+    /// - 기대 결과: ProviderEventID와 RuntimeIdempotencyKey가 반복 매핑에서 동일하고 bounded digest 형식입니다.
+    func testAdapterMappedIdentifiers_maximumInputsAreDeterministicLowercaseASCIIAndBounded() {
+        let providerHandle = String(repeating: "e\u{301}", count: 2048)
+        let runReference = String(repeating: "r", count: 256)
+        let host = ExternalAgentSessionReference(String(repeating: "h", count: 256))
+        let sequences: [UInt64] = [1, 2, 3, 4]
+        let events = sequences.map { sequence in
+            CodexExecRuntimeAdapter.map(
+                CodexExecLifecycleEvent(
+                    providerEventID: providerHandle,
+                    idempotencyKey: "ignored",
+                    ordinal: sequence,
+                    rawType: "turn.started",
+                    kind: .progress,
+                ),
+                host: host,
+                runReference: RuntimeRunReference(runReference),
+                sequence: sequence,
+            )
+        }
+        let repeated = sequences.map { sequence in
+            CodexExecRuntimeAdapter.map(
+                CodexExecLifecycleEvent(
+                    providerEventID: providerHandle,
+                    idempotencyKey: "ignored",
+                    ordinal: sequence,
+                    rawType: "turn.started",
+                    kind: .progress,
+                ),
+                host: host,
+                runReference: RuntimeRunReference(runReference),
+                sequence: sequence,
+            )
+        }
+
+        XCTAssertEqual(events.map(\.providerEventID), repeated.map(\.providerEventID))
+        XCTAssertEqual(events.map(\.idempotencyKey), repeated.map(\.idempotencyKey))
+        XCTAssertEqual(Set(events.map(\.providerEventID)).count, sequences.count)
+        XCTAssertEqual(Set(events.map(\.idempotencyKey)).count, sequences.count)
+        for identifier in events.flatMap({ [$0.providerEventID.rawValue, $0.idempotencyKey.rawValue] }) {
+            XCTAssertLessThanOrEqual(identifier.unicodeScalars.count, 256)
+            XCTAssertTrue(identifier.unicodeScalars.allSatisfy { $0.value < 128 })
+            XCTAssertEqual(identifier, identifier.lowercased())
+            let digest = identifier.split(separator: ".").dropFirst(2).joined()
+            XCTAssertTrue(digest.allSatisfy(\.isHexDigit))
+        }
+    }
+
+    /// ATI-008-observe_external_agent_results: resumed sequence overflow fails closed before emission.
+    /// persisted cursor가 UInt64.max 직전일 때 max emission과 wrap을 방지하는지 검증합니다.
+    /// - 검증 내용: max-2 cursor에서 max-1 한 건만 전달되고 다음 event가 event_sequence_overflow로 종료되는지 확인합니다.
+    /// - 사전 조건: cursor UInt64.max-2의 compatible binding과 lifecycle event 두 건을 방출하는 fake process가 있습니다.
+    /// - 기대 결과: UInt64.max-1만 노출되고 UInt64.max는 노출되지 않으며 adapter state가 정리됩니다.
+    func testAdapterResume_sequenceOverflowFailsClosedBeforeMaxEmission() async throws {
+        let root = URL(fileURLWithPath: "/tmp/voyager-adapter-resume-overflow", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let process = CodexExecFakeProcess(stdout: [], stderr: [], terminationStatus: 0)
+        let runner = CodexExecControlledRunner(process: process)
+        runner.initialLines = [#"{"type":"thread.started","thread_id":"overflow-thread"}"#]
+        let adapter = CodexExecRuntimeAdapter(
+            controller: CodexExecProcessController(runner: runner.run),
+            readinessProbe: CodexExecReadinessProbe { _, arguments, _ in
+                arguments == ["--version"]
+                    ? CodexExecProbeResult(exitCode: 0, stdout: "codex-cli 0.148.0\n", stderr: "")
+                    : CodexExecProbeResult(exitCode: 0, stdout: "", stderr: "")
+            },
+            executableURL: URL(fileURLWithPath: "/tmp/codex"),
+        )
+        let request = RuntimeLaunchRequest(
+            externalAgentSessionReference: .init("host"),
+            runReference: .init("overflow-run"),
+            adapterID: adapter.descriptor.id,
+            contextPolicy: .init(
+                branchReference: "branch",
+                authorizationGeneration: 0,
+                localCorrelation: "correlation",
+                workingDirectory: root.path,
+            ),
+            input: .init("prompt"),
+        )
+        let binding = RuntimeRestartBinding(
+            externalAgentSessionReference: request.externalAgentSessionReference,
+            providerInternalSessionReference: .init("overflow-thread"),
+            runReference: request.runReference,
+            adapterID: request.adapterID,
+            providerNamespace: adapter.descriptor.providerNamespace,
+            adapterVersion: adapter.descriptor.adapterVersion,
+            providerBranch: adapter.descriptor.providerBranch,
+            capabilitySnapshot: adapter.descriptor.capabilities,
+            contextPolicy: request.contextPolicy,
+            providerEventSequence: UInt64.max - 2,
+        )
+        let compatibility = try await adapter.restartCompatibility(for: binding)
+        XCTAssertEqual(compatibility, .compatible)
+        _ = try await adapter.launch(request)
+        let stream = try await adapter.eventStream(for: request.runReference)
+        let consumer = Task { () -> ([RuntimeEventEnvelope], RuntimeHostError?) in
+            var events: [RuntimeEventEnvelope] = []
+            do {
+                for try await event in stream {
+                    events.append(event)
+                }
+            } catch let error as RuntimeHostError {
+                return (events, error)
+            } catch {
+                return (events, nil)
+            }
+            return (events, nil)
+        }
+        runner.send(#"{"type":"turn.started","turn_id":"turn-1"}"#)
+        runner.send(#"{"type":"turn.started","turn_id":"turn-2"}"#)
+        let (events, error) = await consumer.value
+        XCTAssertEqual(error, .adapterFailure(.processExit, .init("event_sequence_overflow")))
+        XCTAssertEqual(events.map(\.sequence), [UInt64.max - 1])
+        XCTAssertFalse(events.contains { $0.sequence == UInt64.max })
+        let counts = await adapter.debugStorageCounts()
+        XCTAssertEqual(counts.receipts, 0)
+        XCTAssertEqual(counts.hosts, 0)
+        XCTAssertEqual(counts.sequenceBases, 0)
+        XCTAssertEqual(counts.tombstones, 0)
+    }
+
     /// ATI-008-observe_external_agent_results: adapter event consumer cancellation abandons owned state.
     /// public adapter stream의 downstream cancellation이 process와 adapter receipts를 함께 정리하는지 검증합니다.
     /// - 검증 내용: event consumer cancellation, 단일 terminate/cleanup, receipts/hosts/tombstones eviction을 확인합니다.
@@ -1574,15 +1774,10 @@ final class ATI008ObserveExternalAgentResultsTests: XCTestCase {
         let events = try await consumer.value
         XCTAssertEqual(events.count, 514)
         XCTAssertEqual(events.map(\.sequence), Array(1 ... 514).map(UInt64.init))
-        XCTAssertEqual(
-            events.map(\.providerEventID.rawValue),
-            (1 ... 513).map { "codex.exec/thread-lifecycle/turn.started/\($0)" }
-                + ["codex.exec/thread-lifecycle/turn.completed/514"],
-        )
-        XCTAssertEqual(
-            events.map(\.idempotencyKey.rawValue),
-            (1 ... 514).map { "codex.exec/lifecycle-only-run/\($0)" },
-        )
+        XCTAssertTrue(events.allSatisfy { $0.providerEventID.rawValue.hasPrefix("codex.pe.") })
+        XCTAssertTrue(events.allSatisfy { $0.idempotencyKey.rawValue.hasPrefix("codex.ik.") })
+        XCTAssertEqual(Set(events.map(\.providerEventID)).count, events.count)
+        XCTAssertEqual(Set(events.map(\.idempotencyKey)).count, events.count)
         XCTAssertEqual(events.map(\.kind), Array(repeating: .progress, count: 513) + [.completed])
         XCTAssertEqual(Set(events).count, events.count)
         XCTAssertEqual(runner.runCount, 1)
