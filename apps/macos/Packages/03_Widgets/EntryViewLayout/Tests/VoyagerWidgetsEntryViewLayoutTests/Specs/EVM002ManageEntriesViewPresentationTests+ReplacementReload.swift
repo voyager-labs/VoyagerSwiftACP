@@ -81,6 +81,60 @@ extension EVM002ManageEntriesViewPresentationTests {
         XCTAssertNil(store.state.identityReplacement)
     }
 
+    /// EVM-002-replacement_reload_snapshot_retention: replacement 재진입은 이전 selection을 정산한다.
+    /// 기존 transaction의 source staging을 커밋한 뒤 새 plan으로 교체할 때 stale before 선택을
+    /// 남기지 않고 `.superseded` cancel과 동일한 reconcile/delegate 경계를 사용해야 한다.
+    /// - 검증 내용: 이전 staging 커밋 후 before selection 제거, 새 plan 설치, selectionChanged 발행
+    /// - 사전 조건: source folder의 기존 replacement와 staged children, 선택된 before row가 있다.
+    /// - 기대 결과: 새 transaction만 남고 stale before 선택은 제거된다.
+    func testIdentityReplacementBeginSettlesExistingSelection() async {
+        let source = EntryModel.temporaryFolder(id: "/root/source", name: "source")
+        let before = replacementReloadFile(id: "/root/source/before.txt", name: "before.txt")
+        let kept = replacementReloadFile(id: "/root/source/kept.txt", name: "kept.txt")
+        var state = EntryViewLayoutState()
+        state.entries = [source]
+        state.hierarchy = .init(rootPath: "/root")
+        state.hierarchy.nodesByID[source.id] = .init(
+            folder: .init(children: [before], coreFinished: true, hasAppliedContentBatch: true),
+            expansionIntent: true,
+            generation: 2,
+            loadPhase: .loaded,
+        )
+        state.hierarchy.setExpandedIDs([source.id])
+        state.hierarchy.deferredFolderReplacements[source.id] = .init(
+            untilEntryID: "/root/old/after.txt",
+            stagedChildren: [kept],
+            holdsUntilMigration: true,
+        )
+        state.selectedIds = [before.id]
+        state.lastSelectedId = before.id
+        state.rangeAnchorId = before.id
+        let previousTransactionID = UUID()
+        let nextTransactionID = UUID()
+        state.identityReplacement = .init(
+            plan: .init(
+                transactionID: previousTransactionID,
+                rootPath: "/root",
+                pairs: [.init(beforePath: before.id, afterPath: "/root/old/after.txt")],
+            ),
+            sourceFolderIDs: [source.id],
+        )
+        let nextPlan = EntryIdentityReplacementPlan(
+            transactionID: nextTransactionID,
+            rootPath: "/root",
+            pairs: [.init(beforePath: kept.id, afterPath: "/root/next/after.txt")],
+        )
+        let store = TestStore(initialState: state) { EntryViewLayoutFeature() }
+        store.exhaustivity = .off
+
+        await store.send(.identityReplacement(.begin(nextPlan)))
+        await store.receive(\.delegate.selectionChanged)
+
+        XCTAssertEqual(store.state.identityReplacement?.plan.transactionID, nextTransactionID)
+        XCTAssertTrue(store.state.selectedIds.isEmpty, "이전 staging 커밋으로 사라진 before 선택은 정산된다")
+        XCTAssertNotNil(store.state.hierarchy.deferredFolderReplacement(folderID: source.id))
+    }
+
     /// EVM-002-replacement_reload_snapshot_retention: 대체 재로드 재진입도 마지막 완전 스냅샷을 유지한다.
     /// - 검증 내용: 첫 재로드 뒤 같은 폴더를 다시 무효화해도 retained children과 선택을 보존한다.
     /// - 사전 조건: 선택된 child를 가진 완료 폴더가 첫 대체 재로드로 loadingCore 상태에 진입했다.

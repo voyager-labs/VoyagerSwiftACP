@@ -587,8 +587,12 @@ public struct EntryViewLayoutFeature {
                   !state.hierarchy.rootPath.isEmpty,
                   canonicalizedPath(plan.rootPath) == canonicalizedPath(state.hierarchy.rootPath)
             else { return .none }
-            if state.identityReplacement != nil {
-                state.hierarchy.commitDeferredFolderReplacementsOnCancel()
+            var supersededEffect: Effect<Action> = .none
+            if let existingTransactionID = state.identityReplacement?.plan.transactionID {
+                supersededEffect = handleIdentityReplacementAction(
+                    .cancel(id: existingTransactionID, reason: .superseded),
+                    state: &state,
+                )
             }
             state.identityReplacement = .init(plan: plan)
             for pair in plan.pairs {
@@ -606,7 +610,7 @@ public struct EntryViewLayoutFeature {
                     holdsUntilMigration: true,
                 )
             }
-            return .none
+            return supersededEffect
 
         case let .cancel(id, _):
             guard state.identityReplacement?.plan.transactionID == id else { return .none }
