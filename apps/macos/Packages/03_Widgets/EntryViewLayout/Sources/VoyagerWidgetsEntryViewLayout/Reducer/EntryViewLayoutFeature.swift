@@ -42,10 +42,21 @@ public struct EntryViewLayoutFeature {
 
     public var body: some Reducer<State, Action> {
         Reduce { state, action in
-            guard case let .entryOperations(.lifecycle(.entryActionCompleted(record))) = action else {
-                return .none
+            switch action {
+            case let .entryOperations(.lifecycle(.entryActionCompleted(record))):
+                beginIdentityReplacementFromRecord(record, state: &state)
+            case let .entryOperations(.undoRedo(.replaySucceeded(
+                direction: direction,
+                sourceRecordID: _,
+                updatedRecord: record,
+            ))):
+                beginIdentityReplacementFromRecord(
+                    record.applying(direction: direction),
+                    state: &state,
+                )
+            default:
+                .none
             }
-            return beginIdentityReplacementFromRecord(record, state: &state)
         }
 
         Scope(state: \.entryOperations, action: \.entryOperations) {

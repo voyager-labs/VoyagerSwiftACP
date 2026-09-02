@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesEntry
+import VoyagerFeaturesEntryOperations
 @testable import VoyagerWidgetsEntryViewLayout
 import XCTest
 
@@ -113,6 +114,46 @@ extension EVM002ManageEntriesViewPresentationTests {
         await store.send(.identityReplacement(.cancel(id: transactionID, reason: .superseded)))
         XCTAssertNil(store.state.hierarchy.deferredFolderReplacement(folderID: source.id))
         XCTAssertNil(store.state.identityReplacement)
+    }
+
+    /// EVM-002-replacement_reload_snapshot_retention: undo/redo replay도 widget replacement plan을 시작한다.
+    /// undo replay가 원래 record를 반대 방향으로 적용해도 widget이 같은 transaction의 selection 보존을 소유해야 한다.
+    /// - 검증 내용: replaySucceeded(.undo)가 direction-adjusted before/after plan을 identityReplacement에 설치함
+    /// - 사전 조건: `/root/source/after.txt`가 선택된 directory와 원래 rename record가 있다.
+    /// - 기대 결과: replacement plan이 같은 transaction ID로 after→before 방향을 가리킨다.
+    func testUndoReplayBeginsDirectionAdjustedIdentityReplacement() {
+        let source = EntryModel.temporaryFolder(id: "/root/source", name: "source")
+        let before = replacementReloadFile(id: "/root/source/before.txt", name: "before.txt")
+        let after = replacementReloadFile(id: "/root/source/after.txt", name: "after.txt")
+        var state = replacementReloadState(folder: source)
+        state.hierarchy.nodesByID[source.id] = .init(
+            folder: .init(children: [after], coreFinished: true, hasAppliedContentBatch: true),
+            expansionIntent: true,
+            generation: 2,
+            loadPhase: .loaded,
+        )
+        state.hierarchy.setExpandedIDs([source.id])
+        state.selectedIds = [after.id]
+        let transactionID = UUID()
+        let record = EntryActionRecord(
+            operationKind: .rename,
+            targets: [.init(beforePath: before.id, afterPath: after.id)],
+            id: transactionID,
+            timestamp: Date(timeIntervalSince1970: 1_700_000_000),
+        )
+
+        _ = EntryViewLayoutFeature().reduce(
+            into: &state,
+            action: .entryOperations(.undoRedo(.replaySucceeded(
+                direction: .undo,
+                sourceRecordID: transactionID,
+                updatedRecord: record,
+            ))),
+        )
+
+        XCTAssertEqual(state.identityReplacement?.plan.transactionID, transactionID)
+        XCTAssertEqual(state.identityReplacement?.plan.pairs.first?.beforeLexicalPath, after.id)
+        XCTAssertEqual(state.identityReplacement?.plan.pairs.first?.afterLexicalPath, before.id)
     }
 
     /// EVM-002-replacement_reload_snapshot_retention: replacement 재진입은 이전 selection을 정산한다.
