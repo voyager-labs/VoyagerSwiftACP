@@ -275,6 +275,221 @@ final class EntryCorePropertyClientFlowTests: XCTestCase {
     }
 }
 
+extension EntryCorePropertyClientFlowTests {
+    func testDefinitionMutationsRejectIdentityAndRevisionMismatches() async throws {
+        let propertyID = try PropertyID(rawValue: "00000000-0000-0000-8000-000000000001")
+        let otherPropertyID = try PropertyID(rawValue: "00000000-0000-0000-8000-000000000002")
+        let endpoint = try EntryCoreEndpoint(path: "/tmp/property-client.sock")
+        let updateRequest = try PropertyDefinitionUpdateRequest(
+            propertyID: propertyID,
+            expectedDefinitionRevision: 1,
+            name: "Renamed",
+        )
+
+        await assertDefinitionMutationRejected(
+            "definition update property mismatch",
+            request: updateRequest,
+            response: definitionResponse(
+                definition: propertyDefinitionJSON(
+                    propertyID: otherPropertyID.rawValue,
+                    state: "active",
+                    name: "Renamed",
+                    revision: 2,
+                ),
+            ),
+            endpoint: endpoint,
+            operation: { client, endpoint, request in
+                try await client.definitionUpdate(endpoint, request)
+            },
+        )
+
+        let disableRequest = try PropertyDefinitionDisableRequest(
+            propertyID: propertyID,
+            expectedDefinitionRevision: 1,
+        )
+        await assertDefinitionMutationRejected(
+            "definition disable revision mismatch",
+            request: disableRequest,
+            response: definitionResponse(
+                definition: propertyDefinitionJSON(
+                    propertyID: propertyID.rawValue,
+                    state: "disabled",
+                    revision: 1,
+                ),
+            ),
+            endpoint: endpoint,
+            operation: { client, endpoint, request in
+                try await client.definitionDisable(endpoint, request)
+            },
+        )
+    }
+
+    func testDefinitionMutationsRejectResponsesOutsideRequestContext() async throws {
+        let propertyID = try PropertyID(rawValue: "00000000-0000-0000-8000-000000000001")
+        let endpoint = try EntryCoreEndpoint(path: "/tmp/property-client.sock")
+
+        let updateRequest = try PropertyDefinitionUpdateRequest(
+            propertyID: propertyID,
+            expectedDefinitionRevision: 1,
+            name: "Renamed",
+        )
+        await assertDefinitionMutationRejected(
+            "definition update name mismatch",
+            request: updateRequest,
+            response: definitionResponse(
+                definition: propertyDefinitionJSON(
+                    propertyID: propertyID.rawValue,
+                    state: "active",
+                    name: "Other name",
+                    revision: 2,
+                ),
+            ),
+            endpoint: endpoint,
+            operation: { client, endpoint, request in
+                try await client.definitionUpdate(endpoint, request)
+            },
+        )
+
+        let disableRequest = try PropertyDefinitionDisableRequest(
+            propertyID: propertyID,
+            expectedDefinitionRevision: 1,
+        )
+        await assertDefinitionMutationRejected(
+            "definition disable state mismatch",
+            request: disableRequest,
+            response: definitionResponse(
+                definition: propertyDefinitionJSON(
+                    propertyID: propertyID.rawValue,
+                    state: "active",
+                    revision: 2,
+                ),
+            ),
+            endpoint: endpoint,
+            operation: { client, endpoint, request in
+                try await client.definitionDisable(endpoint, request)
+            },
+        )
+    }
+
+    func testOptionCreateAndUpdateRejectResponsesOutsideRequestContext() async throws {
+        let propertyID = try PropertyID(rawValue: "00000000-0000-0000-8000-000000000001")
+        let optionID = try PropertyOptionID(rawValue: "00000000-0000-7000-8000-000000000001")
+        let endpoint = try EntryCoreEndpoint(path: "/tmp/property-client.sock")
+        let existingOptions = propertyOptionJSON(id: optionID.rawValue, label: "Existing", position: 1)
+
+        let optionCreateRequest = try PropertyOptionCreateRequest(
+            propertyID: propertyID,
+            expectedDefinitionRevision: 1,
+            label: "Created",
+        )
+        await assertDefinitionMutationRejected(
+            "option create missing requested label",
+            request: optionCreateRequest,
+            response: definitionResponse(
+                definition: propertyDefinitionJSON(
+                    propertyID: propertyID.rawValue,
+                    state: "active",
+                    revision: 2,
+                    valueType: "select",
+                    options: "[\(existingOptions)]",
+                ),
+            ),
+            endpoint: endpoint,
+            operation: { client, endpoint, request in
+                try await client.optionCreate(endpoint, request)
+            },
+        )
+
+        let optionUpdateRequest = try PropertyOptionUpdateRequest(
+            propertyID: propertyID,
+            optionID: optionID,
+            expectedDefinitionRevision: 1,
+            label: "Renamed option",
+        )
+        await assertDefinitionMutationRejected(
+            "option update label mismatch",
+            request: optionUpdateRequest,
+            response: definitionResponse(
+                definition: propertyDefinitionJSON(
+                    propertyID: propertyID.rawValue,
+                    state: "active",
+                    revision: 2,
+                    valueType: "select",
+                    options: "[\(existingOptions)]",
+                ),
+            ),
+            endpoint: endpoint,
+            operation: { client, endpoint, request in
+                try await client.optionUpdate(endpoint, request)
+            },
+        )
+    }
+
+    func testOptionReorderRejectsResponsesOutsideRequestContext() async throws {
+        let propertyID = try PropertyID(rawValue: "00000000-0000-0000-8000-000000000001")
+        let optionID1 = try PropertyOptionID(rawValue: "00000000-0000-7000-8000-000000000001")
+        let optionID2 = try PropertyOptionID(rawValue: "00000000-0000-7000-8000-000000000002")
+        let endpoint = try EntryCoreEndpoint(path: "/tmp/property-client.sock")
+
+        let reorderRequest = try PropertyOptionReorderRequest(
+            propertyID: propertyID,
+            expectedDefinitionRevision: 1,
+            optionIDs: [optionID2, optionID1],
+        )
+        let originalOrder = [
+            propertyOptionJSON(id: optionID1.rawValue, label: "First", position: 1),
+            propertyOptionJSON(id: optionID2.rawValue, label: "Second", position: 2),
+        ].joined(separator: ",")
+        await assertDefinitionMutationRejected(
+            "option reorder order mismatch",
+            request: reorderRequest,
+            response: definitionResponse(
+                definition: propertyDefinitionJSON(
+                    propertyID: propertyID.rawValue,
+                    state: "active",
+                    revision: 2,
+                    valueType: "select",
+                    options: "[\(originalOrder)]",
+                ),
+            ),
+            endpoint: endpoint,
+            operation: { client, endpoint, request in
+                try await client.optionReorder(endpoint, request)
+            },
+        )
+    }
+
+    func testOptionDisableRejectsResponsesOutsideRequestContext() async throws {
+        let propertyID = try PropertyID(rawValue: "00000000-0000-0000-8000-000000000001")
+        let optionID = try PropertyOptionID(rawValue: "00000000-0000-7000-8000-000000000001")
+        let endpoint = try EntryCoreEndpoint(path: "/tmp/property-client.sock")
+        let existingOptions = propertyOptionJSON(id: optionID.rawValue, label: "Existing", position: 1)
+        let request = try PropertyOptionDisableRequest(
+            propertyID: propertyID,
+            optionID: optionID,
+            expectedDefinitionRevision: 1,
+        )
+
+        await assertDefinitionMutationRejected(
+            "option disable state mismatch",
+            request: request,
+            response: definitionResponse(
+                definition: propertyDefinitionJSON(
+                    propertyID: propertyID.rawValue,
+                    state: "active",
+                    revision: 2,
+                    valueType: "select",
+                    options: "[\(existingOptions)]",
+                ),
+            ),
+            endpoint: endpoint,
+            operation: { client, endpoint, request in
+                try await client.optionDisable(endpoint, request)
+            },
+        )
+    }
+}
+
 private struct QueryContextMismatchCase {
     let name: String
     let request: PropertyConditionQueryRequest
@@ -440,24 +655,80 @@ private func definitionListContextCases(
     ]
 }
 
-private func propertyDefinitionJSON(propertyID: String, state: String) -> String {
+private func propertyDefinitionJSON(
+    propertyID: String,
+    state: String,
+    name: String = "Property name",
+    revision: Int = 1,
+    valueType: String = "text",
+    cardinality: String = "one",
+    options: String = "[]",
+) -> String {
     let reason = state == "disabled" ? "definition_disabled" : "unsupported_value_contract"
     return """
     {
       "property_id":"\(propertyID)",
       "key":"property-key",
-      "name":"Property name",
-      "value_type":"text",
-      "cardinality":"one",
+      "name":"\(name)",
+      "value_type":"\(valueType)",
+      "cardinality":"\(cardinality)",
       "state":"\(state)",
-      "revision":1,
-      "options":[],
+      "revision":\(revision),
+      "options":\(options),
       "condition_capability":{
         "supported":false,
         "reason":"\(reason)"
       }
     }
     """
+}
+
+private func propertyOptionJSON(id: String, label: String, position: Int, state: String = "active") -> String {
+    """
+    {
+      "option_id":"\(id)",
+      "label":"\(label)",
+      "position":\(position),
+      "state":"\(state)"
+    }
+    """
+}
+
+private func definitionResponse(definition: String) -> String {
+    """
+    {
+      "request_id":"definition-id",
+      "ok":true,
+      "result":{"definition":\(definition)}
+    }
+    """
+}
+
+private func assertDefinitionMutationRejected<Request: Encodable & Sendable>(
+    _ name: String,
+    request: Request,
+    response: String,
+    endpoint: EntryCoreEndpoint,
+    operation: @escaping @Sendable (
+        EntryCorePropertyClient,
+        EntryCoreEndpoint,
+        Request,
+    ) async throws -> PropertyDefinition,
+) async {
+    let recorder = PropertyTransportRecorder(response: Data(response.utf8))
+    let client = EntryCorePropertyClient.makeLive(
+        requestID: { "definition-id" },
+        makeTransport: recorder.makeTransport,
+    )
+
+    do {
+        _ = try await operation(client, endpoint, request)
+        XCTFail("\(name) should be rejected")
+    } catch {
+        XCTAssertEqual(error as? EntryCoreClientError, .protocolMismatch, name)
+    }
+    XCTAssertEqual(recorder.creationCount, 1, name)
+    XCTAssertEqual(recorder.requests.count, 1, name)
 }
 
 private func definitionPageResponse(definitions: String) -> String {

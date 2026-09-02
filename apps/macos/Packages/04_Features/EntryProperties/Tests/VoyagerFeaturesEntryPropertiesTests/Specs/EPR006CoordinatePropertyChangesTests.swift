@@ -355,7 +355,7 @@ final class EPR006CoordinatePropertyChangesTests: XCTestCase {
     }
 
     /// EPR-006-read_back_property_change_result: proposal after와 다른 정본은 verified가 아니다.
-    /// - 검증 내용: 누락·불일치·중복 canonical target/value 결과의 fail-closed 전이
+    /// - 검증 내용: 누락·불일치·중복·stale revision canonical 결과의 fail-closed 전이
     /// - 사전 조건: trusted apply 뒤 고정 snapshot의 read-back 결과가 proposal과 다름
     /// - 기대 결과: applied-unverified를 유지하고 verified result를 게시하지 않음
     func testReadBackRequiresExactProposalValuesBeforeVerification() async {
@@ -366,6 +366,18 @@ final class EPR006CoordinatePropertyChangesTests: XCTestCase {
             EntryPropertiesCanonicalResult(
                 snapshot: fixture.snapshot,
                 values: [.init(target: target, value: .text("different"), revision: 8)],
+            ),
+            EntryPropertiesCanonicalResult(
+                snapshot: fixture.snapshot,
+                values: fixture.selection.targets.map {
+                    .init(target: $0, value: .text("after"), revision: 7)
+                },
+            ),
+            EntryPropertiesCanonicalResult(
+                snapshot: fixture.snapshot,
+                values: fixture.selection.targets.map {
+                    .init(target: $0, value: .text("after"), revision: 9)
+                },
             ),
             EntryPropertiesCanonicalResult(
                 snapshot: fixture.snapshot,

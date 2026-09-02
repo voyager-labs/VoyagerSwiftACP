@@ -394,8 +394,24 @@ public struct EntryPropertiesFeature: Sendable {
             }
         }
         return proposal.differences.allSatisfy { difference in
-            valuesByTarget[difference.target]?.value == difference.after
+            guard let canonicalValue = valuesByTarget[difference.target],
+                  canonicalValue.value == difference.after,
+                  let expectedRevision = expectedNextAssignmentRevision(
+                      for: difference.target,
+                      snapshot: proposal.snapshot,
+                  ) else { return false }
+            return canonicalValue.revision == expectedRevision
         }
+    }
+
+    private func expectedNextAssignmentRevision(
+        for target: EntryPropertiesTarget,
+        snapshot: EntryPropertiesTargetSnapshot,
+    ) -> Int64? {
+        let previousRevision = snapshot.assignmentRevisions
+            .first(where: { $0.target == target })?.revision ?? snapshot.canonicalRevision
+        guard previousRevision >= 0, previousRevision < Int64.max else { return nil }
+        return previousRevision + 1
     }
 
     private func snapshotMatchesSelection(

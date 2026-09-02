@@ -82,13 +82,48 @@ extension EntryCorePropertyClient {
     ) -> Self {
         Self(
             definitionList: definitionPageOperation(requestID, makeTransport),
-            definitionCreate: definitionOperation(.propertyDefinitionCreate, requestID, makeTransport),
-            definitionUpdate: definitionOperation(.propertyDefinitionUpdate, requestID, makeTransport),
-            definitionDisable: definitionOperation(.propertyDefinitionDisable, requestID, makeTransport),
-            optionCreate: definitionOperation(.propertyOptionCreate, requestID, makeTransport),
-            optionUpdate: definitionOperation(.propertyOptionUpdate, requestID, makeTransport),
-            optionReorder: definitionOperation(.propertyOptionReorder, requestID, makeTransport),
-            optionDisable: definitionOperation(.propertyOptionDisable, requestID, makeTransport),
+            definitionCreate: definitionOperation(
+                .propertyDefinitionCreate,
+                requestID,
+                makeTransport,
+                validate: definitionCreateMatchesResponse,
+            ),
+            definitionUpdate: definitionOperation(
+                .propertyDefinitionUpdate,
+                requestID,
+                makeTransport,
+                validate: definitionUpdateMatchesResponse,
+            ),
+            definitionDisable: definitionOperation(
+                .propertyDefinitionDisable,
+                requestID,
+                makeTransport,
+                validate: definitionDisableMatchesResponse,
+            ),
+            optionCreate: definitionOperation(
+                .propertyOptionCreate,
+                requestID,
+                makeTransport,
+                validate: optionCreateMatchesResponse,
+            ),
+            optionUpdate: definitionOperation(
+                .propertyOptionUpdate,
+                requestID,
+                makeTransport,
+                validate: optionUpdateMatchesResponse,
+            ),
+            optionReorder: definitionOperation(
+                .propertyOptionReorder,
+                requestID,
+                makeTransport,
+                validate: optionReorderMatchesResponse,
+            ),
+            optionDisable: definitionOperation(
+                .propertyOptionDisable,
+                requestID,
+                makeTransport,
+                validate: optionDisableMatchesResponse,
+            ),
             assignmentList: assignmentPageOperation(requestID, makeTransport),
             changePrepare: proposalOperation(requestID, makeTransport),
             changeExecute: executeOperation(requestID, makeTransport),
@@ -130,10 +165,120 @@ extension EntryCorePropertyClient {
         _ method: EntryCoreMethod,
         _ requestID: @escaping @Sendable () -> String,
         _ makeTransport: @escaping @Sendable () -> EntryCoreTransportRequest,
+        validate: @escaping @Sendable (PropertyDefinition, Request) -> Bool,
     ) -> @Sendable (EntryCoreEndpoint, Request) async throws -> PropertyDefinition {
         { endpoint, request in
-            try await definition(method, endpoint, request, requestID, makeTransport)
+            let value = try await definition(method, endpoint, request, requestID, makeTransport)
+            guard validate(value, request) else { throw EntryCoreClientError.protocolMismatch }
+            return value
         }
+    }
+
+    nonisolated private static func definitionCreateMatchesResponse(
+        _ definition: PropertyDefinition,
+        request: PropertyDefinitionCreateRequest,
+    ) -> Bool {
+        let requestedLabels = request.options?.map(\.label) ?? []
+        let responseOptions = definition.options.sorted { $0.position < $1.position }
+        return definition.state == .active
+            && definition.revision == 1
+            && definition.key == request.key
+            && definition.name == request.name
+            && definition.valueType == request.valueType
+            && definition.cardinality == request.cardinality
+            && responseOptions.map(\.label) == requestedLabels
+            && responseOptions.enumerated().allSatisfy { index, option in
+                option.state == .active && option.position == index + 1
+            }
+    }
+
+    nonisolated private static func definitionUpdateMatchesResponse(
+        _ definition: PropertyDefinition,
+        request: PropertyDefinitionUpdateRequest,
+    ) -> Bool {
+        definitionMutationRevisionMatches(
+            definition,
+            propertyID: request.propertyID,
+            expectedDefinitionRevision: request.expectedDefinitionRevision,
+        ) && definition.name == request.name
+    }
+
+    nonisolated private static func definitionDisableMatchesResponse(
+        _ definition: PropertyDefinition,
+        request: PropertyDefinitionDisableRequest,
+    ) -> Bool {
+        definitionMutationRevisionMatches(
+            definition,
+            propertyID: request.propertyID,
+            expectedDefinitionRevision: request.expectedDefinitionRevision,
+            state: .disabled,
+        )
+    }
+
+    nonisolated private static func optionCreateMatchesResponse(
+        _ definition: PropertyDefinition,
+        request: PropertyOptionCreateRequest,
+    ) -> Bool {
+        definitionMutationRevisionMatches(
+            definition,
+            propertyID: request.propertyID,
+            expectedDefinitionRevision: request.expectedDefinitionRevision,
+        ) && definition.options.contains { option in
+            option.state == .active && option.label == request.label
+        }
+    }
+
+    nonisolated private static func optionUpdateMatchesResponse(
+        _ definition: PropertyDefinition,
+        request: PropertyOptionUpdateRequest,
+    ) -> Bool {
+        definitionMutationRevisionMatches(
+            definition,
+            propertyID: request.propertyID,
+            expectedDefinitionRevision: request.expectedDefinitionRevision,
+        ) && definition.options.contains { option in
+            option.id == request.optionID
+                && option.state == .active
+                && option.label == request.label
+        }
+    }
+
+    nonisolated private static func optionReorderMatchesResponse(
+        _ definition: PropertyDefinition,
+        request: PropertyOptionReorderRequest,
+    ) -> Bool {
+        definitionMutationRevisionMatches(
+            definition,
+            propertyID: request.propertyID,
+            expectedDefinitionRevision: request.expectedDefinitionRevision,
+        ) && definition.options
+            .filter { $0.state == .active }
+            .map(\.id) == request.optionIDs
+    }
+
+    nonisolated private static func optionDisableMatchesResponse(
+        _ definition: PropertyDefinition,
+        request: PropertyOptionDisableRequest,
+    ) -> Bool {
+        definitionMutationRevisionMatches(
+            definition,
+            propertyID: request.propertyID,
+            expectedDefinitionRevision: request.expectedDefinitionRevision,
+        ) && definition.options.contains { option in
+            option.id == request.optionID && option.state == .disabled
+        }
+    }
+
+    nonisolated private static func definitionMutationRevisionMatches(
+        _ definition: PropertyDefinition,
+        propertyID: PropertyID,
+        expectedDefinitionRevision: Int64,
+        state: PropertyDefinitionState = .active,
+    ) -> Bool {
+        guard expectedDefinitionRevision >= 1, expectedDefinitionRevision < Int64.max else { return false }
+        return definition.id == propertyID
+            && definition.revision == expectedDefinitionRevision + 1
+            && definition.state == state
     }
 
     nonisolated private static func assignmentPageOperation(
