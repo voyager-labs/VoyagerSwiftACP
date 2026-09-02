@@ -482,6 +482,7 @@ func compareText(values []string, condition QueryCondition) bool {
 	case "ew":
 		return strings.HasSuffix(value, operand)
 	case "rx":
+		operand = normalizeWildcardPattern(operand)
 		pattern := regexp.QuoteMeta(operand)
 		pattern = strings.ReplaceAll(pattern, `\*`, `.*`)
 		pattern = strings.ReplaceAll(pattern, `\?`, `.`)
@@ -489,6 +490,12 @@ func compareText(values []string, condition QueryCondition) bool {
 		return err == nil && matched
 	}
 	return false
+}
+
+func normalizeWildcardPattern(pattern string) string {
+	pattern = strings.ReplaceAll(pattern, `\.\*`, "*")
+	pattern = strings.ReplaceAll(pattern, ".*", "*")
+	return strings.ReplaceAll(pattern, "%", "*")
 }
 
 func containsAll(values, operands []string, substring bool) bool {

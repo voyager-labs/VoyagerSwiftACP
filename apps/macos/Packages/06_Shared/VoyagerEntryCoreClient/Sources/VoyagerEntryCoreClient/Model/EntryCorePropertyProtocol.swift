@@ -607,7 +607,12 @@ enum PropertyWireValidation {
             with: "/",
         )
         encoded += "="
-        return Data(base64Encoded: encoded)?.count == 32
+        guard let decoded = Data(base64Encoded: encoded), decoded.count == 32 else { return false }
+        let canonical = decoded.base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .trimmingCharacters(in: CharacterSet(charactersIn: "="))
+        return canonical == String(value.dropFirst(4))
     }
 
     static func short(_ value: String) -> Bool {

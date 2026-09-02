@@ -16,6 +16,12 @@ final class EntryCorePropertyPublicContractFlowTests: XCTestCase {
         XCTAssertEqual(PropertyConditionOperator.canonicalValues.count, 20)
     }
 
+    func testEntryIDRejectsStandardBase64Alphabet() {
+        XCTAssertThrowsError(
+            try EntryCoreEntryID(rawValue: "ent:+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/v7+/s"),
+        )
+    }
+
     func testSharedGoFixtureMatchesSwiftInventory() throws {
         let fixtureURL = try repositoryRoot().appendingPathComponent(
             "apps/entry-core/shared/entry_core_property_wire_cases.json",

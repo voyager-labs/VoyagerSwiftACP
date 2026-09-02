@@ -340,6 +340,38 @@ func stringPointer(value string) *string {
 	return &value
 }
 
+func TestConditionEvaluatorNormalizesLegacyWildcardAliases(t *testing.T) {
+	propertyID, err := domainentry.RegistryPropertyID("condition.query.wildcard-alias")
+	if err != nil {
+		t.Fatal(err)
+	}
+	value := "Documents"
+	view := DefinitionView{Definition: domainentry.WorkspacePropertyDefinition{
+		PropertyID:  propertyID,
+		Origin:      domainentry.PropertyOriginUserDefined,
+		ValueType:   domainentry.PropertyTypeText,
+		Cardinality: domainentry.PropertyCardinalityOne,
+		Lifecycle:   domainentry.PropertyLifecycleActive,
+	}}
+	fact := domainentry.EntryPropertyAssignment{
+		PropertyID: propertyID,
+		State:      domainentry.AssignmentStateValue,
+		Scalar:     &domainentry.AssignmentValue{Text: &value},
+	}
+	for _, pattern := range []string{"Doc.*", "Doc%", "Doc*"} {
+		t.Run(pattern, func(t *testing.T) {
+			condition := QueryCondition{
+				PropertyID: propertyID,
+				Operator:   "rx",
+				Operand:    ConditionOperand{Kind: "text", Values: []string{pattern}},
+			}
+			if !evaluateCondition(view, fact, condition, "2026-09-01") {
+				t.Fatalf("rx pattern %q did not match %q", pattern, value)
+			}
+		})
+	}
+}
+
 type conditionQueryResolverStub struct {
 	targets map[string]ResolvedTarget
 	errors  map[string]error
