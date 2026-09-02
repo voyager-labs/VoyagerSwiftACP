@@ -42,8 +42,7 @@ func handleNavigationDelegate(
 }
 
 /// EVM001: 실제 탐색과 콘텐츠 로딩 단말(`voyager_content_browsing_engaged`)을 상관시킨다.
-/// entry-loading route만 correlation을 성립시키고, 이미 성립된
-/// 콘텐츠 기원 correlation은 덮어쓰지 않으며, 비로딩 route는 미완료 correlation을 정리한다.
+/// entry-loading route만 correlation을 성립시키고, 새 route 전환은 기존 상관을 먼저 종결한다.
 private func syncProductBrowsingCorrelation(
     previous: ContentPageNavigationRoute,
     next: ContentPageNavigationRoute,
@@ -62,18 +61,38 @@ private func syncProductBrowsingCorrelation(
     case .home, .collection, .aiChat, .aiChatSessions:
         nil
     }
-    guard let content else {
-        state.content.productBrowsingOperationID = nil
-        state.content.productBrowsingIdentity = nil
-        state.content.productBrowsingSource = nil
-        state.content.productBrowsingContent = nil
-        return .none
-    }
+    terminalizeProductBrowsingCorrelation(state: &state, productMetricsClient: productMetricsClient)
+    guard let content else { return .none }
     state.content.productBrowsingOperationID = productMetricsClient.makeOperationID()
     state.content.productBrowsingIdentity = identity
     state.content.productBrowsingSource = source
     state.content.productBrowsingContent = content
     return .none
+}
+
+private func terminalizeProductBrowsingCorrelation(
+    state: inout FileManagerWindowState,
+    productMetricsClient: FileManagerProductMetricsClient,
+) {
+    let operationID = state.content.productBrowsingOperationID
+    let content = state.content.productBrowsingContent
+    let identity = state.content.productBrowsingIdentity
+    let source = state.content.productBrowsingSource
+    state.content.productBrowsingOperationID = nil
+    state.content.productBrowsingIdentity = nil
+    state.content.productBrowsingSource = nil
+    state.content.productBrowsingContent = nil
+    guard let operationID, let content, let identity, let source,
+          let metric = FileManagerProductMetricsProducer.browsingTerminal(
+              operationID: operationID,
+              content: content,
+              identity: identity,
+              source: source,
+              entryCount: nil,
+              failure: .unavailable,
+          )
+    else { return }
+    productMetricsClient.record(metric)
 }
 
 func resetComposerAndExitCollectionModeEffect() -> Effect<FileManagerWindowAction> {

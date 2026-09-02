@@ -1143,11 +1143,11 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         }
     }
 
-    /// EVM-001-content_browsing_correlation: superseded navigation cannot consume the current correlation.
-    /// 서로 다른 A/B 탐색이 겹칠 때 B가 새 상관을 소유하고 A의 stale 단말은 무음인지 검증한다.
-    /// - 검증 내용: A/B의 ID·identity·source 구분, stale A 무이벤트, current B exactly-once
+    /// EVM-001-content_browsing_correlation: superseded navigation terminalizes A before B starts.
+    /// 서로 다른 A/B 탐색이 겹칠 때 A를 unavailable로 종결하고 B가 새 상관을 소유하는지 검증한다.
+    /// - 검증 내용: A/B의 ID·identity·source 구분, stale·duplicate A 무이벤트, current B exactly-once
     /// - 사전 조건: A back/content 로딩 중 B forward/sidebar 탐색을 수락한 응답 없는 loader
-    /// - 기대 결과: B의 operation ID와 metadata를 가진 success terminal 한 건만 기록됨
+    /// - 기대 결과: A unavailable 뒤 B의 operation ID와 metadata를 가진 success가 순서대로 기록됨
     func testOverlappingWindowNavigationsEmitExactlyOneEvent() async {
         let currentPath = "/tmp/voyager-evm001-current-folder"
         let pathA = "/tmp/voyager-evm001-folder-a"
@@ -1178,11 +1178,25 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         XCTAssertEqual(store.state.content.productBrowsingIdentity, .forward)
         XCTAssertEqual(store.state.content.productBrowsingSource, .fileManagerSidebar)
 
-        await store.send(.content(.entryViewLayout(.entryOperations(.loading(
-            .streamFailed(generation: generationA),
-        )))))
-        XCTAssertTrue(metrics.value.isEmpty, "superseded A must not emit a synthetic terminal")
+        let expectedUnavailableA = FileManagerProductMetric.contentBrowsing(
+            result: .unavailable,
+            content: .folder,
+            identity: .back,
+            source: .fileManagerContent,
+            operationID: Self.typedBrowsingOperationIDs[0],
+        )
+        XCTAssertEqual(metrics.value, [expectedUnavailableA])
+
+        for _ in 0 ..< 2 {
+            await store.send(.content(.entryViewLayout(.entryOperations(.loading(
+                .streamFailed(generation: generationA),
+            )))))
+        }
+        XCTAssertEqual(metrics.value, [expectedUnavailableA], "stale or duplicate A must stay silent")
         XCTAssertEqual(store.state.content.productBrowsingOperationID, Self.typedBrowsingOperationIDs[1])
+        XCTAssertEqual(store.state.content.productBrowsingIdentity, .forward)
+        XCTAssertEqual(store.state.content.productBrowsingSource, .fileManagerSidebar)
+        XCTAssertEqual(store.state.content.productBrowsingContent, .folder)
 
         await store.send(.content(.entryViewLayout(.entryOperations(.loading(
             .streamEvent(EntryLoadingStreamEvent(
@@ -1202,14 +1216,17 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
 
         XCTAssertEqual(
             metrics.value,
-            [.contentBrowsing(
-                result: .success,
-                content: .folder,
-                identity: .forward,
-                source: .fileManagerSidebar,
-                operationID: Self.typedBrowsingOperationIDs[1],
-            )],
-            "only current B may emit exactly one browsing event",
+            [
+                expectedUnavailableA,
+                .contentBrowsing(
+                    result: .success,
+                    content: .folder,
+                    identity: .forward,
+                    source: .fileManagerSidebar,
+                    operationID: Self.typedBrowsingOperationIDs[1],
+                ),
+            ],
+            "A must terminalize before current B emits exactly once",
         )
     }
 
@@ -1253,6 +1270,44 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
                 operationID: Self.typedBrowsingOperationIDs[0],
             )],
         )
+    }
+
+    /// EVM-001-content_browsing_correlation: non-loading transition terminalizes accepted browsing.
+    /// 수락된 A 탐색 로딩 중 AI route로 전환하면 원래 상관 정보로 unavailable 단말을 기록한다.
+    /// - 검증 내용: accepted A 뒤 AI delegate 전환의 typed terminal과 전체 correlation 해제
+    /// - 사전 조건: content-originated folder A가 수락되어 응답 없는 loader에서 로딩 중이다.
+    /// - 기대 결과: A operation ID·content·identity·source의 unavailable 한 건과 correlation nil
+    func testNonLoadingRouteTerminalizesAcceptedBrowsing() async {
+        let pathA = "/tmp/voyager-evm001-accepted-before-ai"
+        let metrics = LockIsolated<[FileManagerProductMetric]>([])
+        let store = makeTypedBrowsingStore(metrics: metrics) {
+            $0.entryLoadingClient.loadItems = Self.suspendedLoadItems
+        }
+
+        await store.send(.content(.internal(.requestNavigation(.view(.navigateToPath(pathA))))))
+        await store.send(.navigation(.view(.navigateToPath(pathA))))
+        await store.skipReceivedActions()
+
+        await store.send(.navigation(.delegate(.logDAUNavigation(
+            previous: .folder(pathA),
+            next: .aiChat("evm001-chat"),
+            identity: .direct,
+        ))))
+
+        XCTAssertEqual(metrics.value, [
+            .contentBrowsing(
+                result: .unavailable,
+                content: .folder,
+                identity: .direct,
+                source: .fileManagerContent,
+                operationID: Self.typedBrowsingOperationIDs[0],
+            ),
+        ])
+        XCTAssertNil(store.state.content.productBrowsingOperationID)
+        XCTAssertNil(store.state.content.productBrowsingIdentity)
+        XCTAssertNil(store.state.content.productBrowsingSource)
+        XCTAssertNil(store.state.content.productBrowsingContent)
+        XCTAssertNil(store.state.content.pendingProductBrowsingSource)
     }
 
     /// EVM-001-content_browsing_correlation: non-loading route clears pending correlation
