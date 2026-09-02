@@ -3,7 +3,7 @@ import Foundation
 @_spi(Testing)
 @testable import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
-import VoyagerFeaturesComposer
+@testable import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 @testable import VoyagerPagesFileManager
 import VoyagerShared
@@ -258,6 +258,138 @@ final class RCL003FileManagerCollectionBoundaryTests: XCTestCase {
         await store.receive(\.collection.refreshRequested)
         await store.receive(\.composer.view.applyFilters)
         await store.finish()
+    }
+
+    /// RCL-003-update_collection_results_on_filter_change: file-backed empty Collection의 빈 입력은 Collection mode를 종료하지
+    /// 않는다.
+    /// query를 지웠을 때 temporary Collection 전용 exit 경로가 저장된 문서의 편집 상태를 파괴하지 않는지 검증한다.
+    /// - 검증 내용: 빈 입력 후 Collection mode, document URL, context 보존
+    /// - 사전 조건: root-only file-backed empty Collection에 query를 입력한 뒤 다시 지움
+    /// - 기대 결과: query는 비워지지만 Collection Page와 file identity가 유지됨
+    func testEditCollection_clearingQueryKeepsFileBackedDraftOpen() async {
+        let targetURL = URL(fileURLWithPath: "/VoyagerFixtures/Collections/empty-input.voycoll")
+        let store = TestStore(initialState: makeFileBackedCollectionContentState(targetURL: targetURL)) {
+            FileManagerContentFeature()
+        }
+        // Production composition emits child state transitions for the routed composer actions.
+        store.exhaustivity = .off
+
+        await store.send(.composer(.setText("invoice")))
+        await store.receive(\.composer.internal.setPendingSearchQuery)
+        await store.send(.composer(.setText("")))
+        await store.receive(\.composer.internal.setPendingSearchQuery)
+        await store.finish()
+
+        XCTAssertTrue(store.state.entryViewLayout.isCollectionMode)
+        XCTAssertEqual(store.state.collection.collectionSession.document?.url, targetURL)
+        XCTAssertEqual(store.state.collection.collectionContext, .init())
+    }
+
+    /// RCL-003-update_collection_results_on_filter_change: 검색 취소로 복구된 query는 file-backed Collection owner에 반영된다.
+    /// Composer의 recovery text와 Collection canonical context가 분리되지 않아 dirty/save 보호가 유지되는지 검증한다.
+    /// - 검증 내용: 복구 query, Collection context, dirty/canSave, document URL
+    /// - 사전 조건: file-backed Collection에서 query search가 진행 중이고 recovery 원문이 보관됨
+    /// - 기대 결과: 취소 후 query가 복구되고 동일 파일의 Collection draft가 dirty/save 가능 상태가 됨
+    func testCancelCollectionSearchSynchronizesRecoveredQueryToOpenedDraft() async {
+        let targetURL = URL(fileURLWithPath: "/VoyagerFixtures/Collections/cancel-search.voycoll")
+        let requestID = UUID(970)
+        let baselineContext = CollectionContext(
+            query: "",
+            scopes: ["/VoyagerFixtures/Documents"],
+            conditions: [],
+        )
+        var state = makeFileBackedCollectionContentState(
+            targetURL: targetURL,
+            context: baselineContext,
+        )
+        state.composer.captureQueryRecovery(rawText: "invoice", requestID: requestID)
+        state.composer.activeSearchRequestID = requestID
+        state.composer.isLoadingSearch = true
+        state.composer.queryRenderPhase = .searching
+        let store = TestStore(initialState: state) {
+            FileManagerContentFeature()
+        }
+        // Recovery and cancellation cleanup are owned by the nested Composer reducer.
+        store.exhaustivity = .off
+
+        await store.send(.composer(.cancelSearch))
+        await store.receive(\.composer.internal.clearPendingSearchQuery)
+        await store.finish()
+
+        XCTAssertEqual(store.state.composer.text, "invoice")
+        XCTAssertEqual(
+            store.state.collection.collectionContext,
+            CollectionContext(
+                query: "invoice",
+                scopes: ["/VoyagerFixtures/Documents"],
+                conditions: [],
+            ),
+        )
+        XCTAssertTrue(store.state.collection.isDirty)
+        XCTAssertTrue(store.state.collection.canSave(isCollectionMode: true))
+        XCTAssertEqual(store.state.collection.collectionSession.document?.url, targetURL)
+    }
+
+    /// RCL-003-update_collection_results_on_filter_change: post-query filter 취소로 복구된 query와 baseline filters를 owner에
+    /// 반영한다.
+    /// query recovery와 generated condition rollback이 함께 일어난 뒤에도 file-backed draft의 저장 보호가 유지되는지 검증한다.
+    /// - 검증 내용: query/condition 복구, Collection context, dirty/canSave, filter request cleanup
+    /// - 사전 조건: query 후 generated condition applyFilters가 진행 중이며 submitted filters가 원래 definition임
+    /// - 기대 결과: 취소 후 원래 filters와 query가 복구되고 Collection owner가 dirty/save 가능 상태가 됨
+    func testCancelCollectionFiltersSynchronizesRecoveredQueryAndFiltersToOpenedDraft() async {
+        let targetURL = URL(fileURLWithPath: "/VoyagerFixtures/Collections/cancel-filters.voycoll")
+        let searchRequestID = UUID(971)
+        let filtersRequestID = UUID(972)
+        let baselineContext = CollectionContext(
+            query: "",
+            scopes: ["/VoyagerFixtures/Documents"],
+            conditions: [],
+        )
+        let generatedCondition = makeExecutionReadyCondition()
+        var state = makeFileBackedCollectionContentState(
+            targetURL: targetURL,
+            context: baselineContext,
+        )
+        state.composer.captureQueryRecovery(rawText: "invoice", requestID: searchRequestID)
+        state.composer.retargetQueryRecovery(from: searchRequestID, to: filtersRequestID)
+        state.composer.submittedSearchFilters = .init(
+            scopes: baselineContext.scopes,
+            excludedScopes: baselineContext.excludedScopes,
+            includeSubfolders: baselineContext.includeSubfolders,
+            conditions: [],
+        )
+        state.composer.conditionEditors = [
+            .init(id: UUID(973), condition: generatedCondition),
+        ]
+        state.composer.activeFiltersRequestID = filtersRequestID
+        state.composer.activeFiltersMetricSource = ComposerCollectionFilterMetrics.sourcePostQueryApply
+        state.composer.isLoadingFilters = true
+        state.composer.isFilteringInFlight = true
+        let store = TestStore(initialState: state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.registryClient = .testValue
+        }
+        // Recovery and cancellation cleanup are owned by the nested Composer reducer.
+        store.exhaustivity = .off
+
+        await store.send(.composer(.cancelFilters))
+        await store.receive(\.composer.internal.clearPendingSearchQuery)
+        await store.finish()
+
+        XCTAssertEqual(store.state.composer.text, "invoice")
+        XCTAssertTrue(store.state.composer.conditions.isEmpty)
+        XCTAssertEqual(
+            store.state.collection.collectionContext,
+            CollectionContext(
+                query: "invoice",
+                scopes: ["/VoyagerFixtures/Documents"],
+                conditions: [],
+            ),
+        )
+        XCTAssertTrue(store.state.collection.isDirty)
+        XCTAssertTrue(store.state.collection.canSave(isCollectionMode: true))
+        XCTAssertEqual(store.state.collection.collectionSession.document?.url, targetURL)
     }
 
     /// RCL-003-update_collection_results_on_filter_change: already-open query failure preserves the collection draft
@@ -664,6 +796,45 @@ final class RCL003FileManagerCollectionBoundaryTests: XCTestCase {
 
         XCTAssertFalse(state.entryViewLayout.isCollectionMode)
         XCTAssertFalse(state.canSaveCollection)
+    }
+
+    private func makeFileBackedCollectionContentState(
+        targetURL: URL,
+        context: CollectionContext = .init(),
+    ) -> FileManagerContentState {
+        let name = targetURL.deletingPathExtension().lastPathComponent
+        let compatibility = makeAllowedCompatibility()
+        var state = FileManagerContentState()
+        state.entryViewLayout.isCollectionMode = true
+        state.collection.collectionContext = context
+        state.collection.collectionSession.document = .init(
+            url: targetURL,
+            name: name,
+            compatibility: compatibility,
+        )
+        state.collection.collectionSession.metadata.baseline = .init(context: context)
+        state.collection.collectionSession.phase = .opened(
+            kind: .definition,
+            base: .ready,
+            inflight: .none,
+        )
+        state.navigation.navigationState = .collection(.init(
+            kind: .file(url: targetURL, name: name),
+            context: context,
+            sortKey: .name,
+            sortOrder: .ascending,
+            viewLayout: .list,
+            compatibility: compatibility,
+        ))
+        state.composer.collectionContext = context
+        state.composer.openedCollectionURL = targetURL
+        state.composer.openedCollectionCompatibility = compatibility
+        state.composer.isCollectionMode = true
+        state.composer.scopes = context.scopes
+        state.composer.scopeEditor.includeSubfolders = context.includeSubfolders
+        state.composer.includeDirectories = context.includeDirectories
+        state.composer.text = context.query
+        return state
     }
 
     private func makeReadyContentState() -> FileManagerContentState {

@@ -1276,6 +1276,72 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
         }
     }
 
+    /// RCL-002-open_saved_collection: stale target를 열 때 다른 file의 reopen context를 재사용하지 않는다.
+    /// open 중 source Collection의 context가 target file의 stale restoration context를 오염시키지 않는지 검증한다.
+    /// - 검증 내용: target URL, loaded empty context, reopenContext nil, retrieval request 0
+    /// - 사전 조건: source file-backed Collection이 열려 있고 target file이 persisted invalidation으로 stale 상태임
+    /// - 기대 결과: target definition context가 유지되고 source query/scope가 target에 전파되지 않는다.
+    func testOpenSavedCollection_staleDifferentFileDoesNotReuseSourceReopenContext() async {
+        let sourceURL = URL(fileURLWithPath: "/VoyagerFixtures/Collections/source-reopen.voycoll")
+        let targetURL = URL(fileURLWithPath: "/VoyagerFixtures/Collections/target-stale-empty.voycoll")
+        let sourceContext = CollectionContext(
+            query: "source query",
+            scopes: ["/VoyagerFixtures/Source"],
+            conditions: [],
+        )
+        let targetFile = makeNoTriggerFile(id: "stale-different-file", name: "Target Stale Empty")
+        let targetPath = targetURL.standardizedFileURL.path
+        let invalidatedRecord = CollectionStalenessRecord(
+            definitionFingerprint: "target",
+            relevanceRoots: [],
+            excludedScopes: [],
+            includeSubfolders: true,
+            lastInvalidatedAt: Date(timeIntervalSince1970: 1_700_000_200),
+        )
+        var state = makeOpenedCollectionState(url: sourceURL, context: sourceContext)
+        state.content.composer.collectionContext = sourceContext
+        state.content.composer.openedCollectionURL = sourceURL
+        state.content.composer.isCollectionMode = true
+        let loadResult = makeSnapshotLoadResult(file: targetFile)
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.collectionFileClient.load = { _ in loadResult }
+            $0.collectionAlertClient = .testValue
+            $0.collectionStalenessClient = .init(
+                record: { path in path == targetPath ? invalidatedRecord : nil },
+                upsertRecord: { _, _ in },
+                invalidateRecords: { _ in },
+                suppressPaths: { _ in },
+                clearRecord: { _ in },
+                registerCollection: { _, _, _, _ in },
+                consumeInvalidation: { _ in false },
+            )
+            $0.registryClient = .testValue
+            $0.searchClient = .testValue
+            $0.date = .constant(Date(timeIntervalSince1970: 1_700_000_200))
+            $0.uuid = .constant(UUID(974))
+            $0.continuousClock = ImmediateClock()
+        }
+        // store.exhaustivity = .off: open child action보다 stale restoration context의 source/target 경계를 검증한다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.navigation(.view(.openCollectionFile(targetURL))))
+        await store.skipReceivedActions(strict: false)
+        await store.finish()
+
+        XCTAssertNil(store.state.pendingCollectionOpenRequest)
+        XCTAssertEqual(store.state.content.collection.collectionSession.document?.url, targetURL)
+        let expectedTargetContext = CollectionContext(includeDirectories: true)
+        XCTAssertEqual(store.state.content.collection.collectionContext, expectedTargetContext)
+        XCTAssertNil(store.state.content.collection.collectionSession.metadata.reopenContext)
+        guard case let .collection(navigation) = store.state.content.navigation.navigationState else {
+            return XCTFail("Expected target Collection navigation")
+        }
+        XCTAssertEqual(navigation.kind, .file(url: targetURL, name: targetFile.name))
+        XCTAssertEqual(navigation.context, expectedTargetContext)
+    }
+
     /// RCL-002-open_saved_collection: no-trigger open은 reused tab의 이전 결과와 failure provenance를 제거한다.
     /// 새 저장 draft가 이전 executable Collection의 검색/필터 결과나 scope transaction을 상속하지 않는지 검증한다.
     /// - 검증 내용: entries, selection, response/request IDs, pending query, feedback, dirty scope editor, old context

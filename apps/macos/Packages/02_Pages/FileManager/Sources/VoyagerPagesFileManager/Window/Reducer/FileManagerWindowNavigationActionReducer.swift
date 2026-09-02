@@ -452,9 +452,13 @@ private func prepareLoadedCollectionOpenStaleness(
     let hasPersistedInvalidation = environment.collectionStalenessClient.record(canonicalPath)?
         .lastInvalidatedAt != nil
     let hasScopeRootChangedSinceSnapshot = collectionScopeRootsChangedSinceSnapshot(file)
+    let reopenContext = state.content.collection.collectionSession.document?.url.standardizedFileURL
+        == request.url.standardizedFileURL
+        ? state.content.collection.collectionContext
+        : nil
     state.content.collection.prepareOpenTransition(
         at: request.url,
-        reopenContext: state.content.collection.collectionContext,
+        reopenContext: reopenContext,
         isAlreadyStale: hasPersistedInvalidation,
     )
     environment.collectionStalenessClient.registerCollection(

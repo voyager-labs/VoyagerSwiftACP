@@ -39,6 +39,10 @@ enum FileManagerContentComposerCoordinator {
             return effect
         }
 
+        if let effect = handleComposerCancellationAction(action, state: &state) {
+            return effect
+        }
+
         switch action {
         case let .view(.setPresented(isPresented)):
             return handleSetPresented(isPresented, state: &state, dependencies: dependencies)
@@ -55,12 +59,6 @@ enum FileManagerContentComposerCoordinator {
         case let .view(.setText(text)):
             return handleSetText(text, state: &state, dependencies: dependencies)
 
-        case .view(.cancelSearch):
-            return .concatenate(
-                .send(.composer(.clearPendingSearchQuery)),
-                collectionOpenSearchCancellationEffect(state: state),
-            )
-
         case .view(.clearAll):
             if state.isCollectionMode {
                 return .concatenate(
@@ -70,6 +68,27 @@ enum FileManagerContentComposerCoordinator {
                 )
             }
             return .send(.internal(.exitCollectionMode))
+
+        default:
+            return nil
+        }
+    }
+
+    private static func handleComposerCancellationAction(
+        _ action: ComposerFeature.Action,
+        state: inout FileManagerContentState,
+    ) -> Effect<FileManagerContentAction>? {
+        switch action {
+        case .view(.cancelSearch):
+            synchronizeOpenedCollectionDraftAfterCancellation(state: &state)
+            return .concatenate(
+                .send(.composer(.clearPendingSearchQuery)),
+                collectionOpenSearchCancellationEffect(state: state),
+            )
+
+        case .view(.cancelFilters):
+            synchronizeOpenedCollectionDraftAfterCancellation(state: &state)
+            return .send(.composer(.clearPendingSearchQuery))
 
         default:
             return nil
@@ -121,6 +140,25 @@ enum FileManagerContentComposerCoordinator {
             return .none
         }
         return .send(.collection(.openSearchPresentationCancelled))
+    }
+
+    private static func synchronizeOpenedCollectionDraftAfterCancellation(
+        state: inout FileManagerContentState,
+    ) {
+        guard state.isCollectionMode,
+              state.collection.collectionSession.document?.url != nil,
+              let composerContext = state.composer.collectionContext
+        else {
+            return
+        }
+        let textQuery = state.composer.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let query = state.composer.pendingSearchQuery
+            ?? (textQuery.isEmpty ? composerContext.query : textQuery)
+        var nextContext = state.composer.collectionContext(query: query)
+        if composerContext.scopes.isEmpty, state.composer.isSemanticallyRootOnly {
+            nextContext.scopes = []
+        }
+        state.collection.collectionContext = nextContext
     }
 
     private static func handleSetPresented(
@@ -179,7 +217,11 @@ enum FileManagerContentComposerCoordinator {
     ) -> Effect<FileManagerContentAction> {
         let query = text.trimmingCharacters(in: .whitespacesAndNewlines)
         state.composer.pendingSearchQuery = query.isEmpty ? nil : query
-        if query.isEmpty, state.composer.conditions.isEmpty, state.composer.isSemanticallyRootOnly {
+        if query.isEmpty,
+           state.composer.conditions.isEmpty,
+           state.composer.isSemanticallyRootOnly,
+           state.collection.collectionSession.document?.url == nil
+        {
             return .concatenate(
                 .send(.composer(.setPendingSearchQuery(nil))),
                 .send(.internal(.exitCollectionMode)),

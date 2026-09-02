@@ -138,7 +138,12 @@ struct ComposerSearchLifecycleReducer {
                         if let submittedQuery = state.queryRecoveryRawText(for: .search(requestID)) {
                             let trimmedQuery = submittedQuery.trimmingCharacters(in: .whitespacesAndNewlines)
                             if !trimmedQuery.isEmpty {
-                                state.collectionContext = state.collectionContext(query: trimmedQuery)
+                                let existingContext = state.collectionContext
+                                var nextContext = state.collectionContext(query: trimmedQuery)
+                                if existingContext?.scopes.isEmpty == true, state.isSemanticallyRootOnly {
+                                    nextContext.scopes = []
+                                }
+                                state.collectionContext = nextContext
                             }
                         }
                         state.discardQueryRecovery()
