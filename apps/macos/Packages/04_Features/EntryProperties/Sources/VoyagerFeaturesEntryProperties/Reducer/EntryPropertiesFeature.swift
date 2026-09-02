@@ -18,13 +18,16 @@ public struct EntryPropertiesFeature: Sendable {
             case let .selectionChanged(selection):
                 let interruptedExecution = state.activePhase == .executing
                 let interruptedReadBack = state.activePhase == .applied
-                let interruptedReadBackProposal = state.appliedProposal
+                let interruptedReadBackProposal = state.readBackProposal ?? state.appliedProposal
+                let preservedPendingReadBack = state.pendingReadBack
                 state.generation &+= 1
                 state.selection = selection
                 state.capabilityReport = nil
                 state.targetSnapshot = nil
                 state.proposal = nil
                 state.appliedProposal = nil
+                state.pendingReadBack = preservedPendingReadBack
+                state.readBackProposal = nil
                 state.canonicalResult = nil
                 state.activePhase = nil
                 if interruptedExecution {
@@ -37,11 +40,11 @@ public struct EntryPropertiesFeature: Sendable {
                     )
                 }
                 if interruptedReadBack, let interruptedReadBackProposal {
-                    state.appliedProposal = interruptedReadBackProposal
+                    state.pendingReadBack = interruptedReadBackProposal
                     let outcome = EntryPropertiesOutcome.propertyChangeAppliedUnverified(
                         interruptedReadBackProposal.snapshot,
                     )
-                    state.status = .appliedUnverified
+                    state.status = .idle
                     state.lastOutcome = outcome
                     return .merge(
                         .cancel(id: CancelID.flow),
@@ -195,7 +198,7 @@ public struct EntryPropertiesFeature: Sendable {
                     state.appliedProposal = proposal
                     state.status = .applied
                     let outcomeEffect = emit(&state, .propertyChangeApplied(receipt.snapshot))
-                    return .merge(outcomeEffect, readBackEffect(state: &state, snapshot: receipt.snapshot))
+                    return .merge(outcomeEffect, readBackEffect(state: &state, proposal: proposal))
                 case .failure(.ambiguousExecution):
                     state.status = .ambiguous
                     state.lastOutcome = .propertyChangeRejected(.ambiguousExecution)
@@ -206,30 +209,52 @@ public struct EntryPropertiesFeature: Sendable {
 
             case .retryReadBack:
                 guard state.activePhase == nil else { return rejectBusy(&state) }
+                if let proposal = state.pendingReadBack {
+                    return readBackEffect(state: &state, proposal: proposal)
+                }
                 guard state.status == .appliedUnverified,
-                      let snapshot = state.appliedProposal?.snapshot
+                      let proposal = state.appliedProposal
                 else { return reject(&state, .stale) }
-                return readBackEffect(state: &state, snapshot: snapshot)
+                return readBackEffect(state: &state, proposal: proposal)
 
             case let .readBackCompleted(generation, result):
                 guard generation == state.generation, state.activePhase == .applied else { return .none }
                 state.activePhase = nil
+                let proposal = state.readBackProposal ?? state.appliedProposal
+                let isPendingReadBack = state.pendingReadBack == proposal
+                state.readBackProposal = nil
+                guard let proposal else { return reject(&state, .stale) }
+                let currentSelection = snapshotMatchesSelection(proposal.snapshot, selection: state.selection)
+                if isPendingReadBack, currentSelection {
+                    state.pendingReadBack = nil
+                }
                 switch result {
                 case let .success(canonicalResult):
-                    guard let proposal = state.appliedProposal,
-                          canonicalResultMatchesProposal(canonicalResult, proposal: proposal)
-                    else {
-                        guard let snapshot = state.appliedProposal?.snapshot else { return reject(&state, .stale) }
-                        state.status = .appliedUnverified
-                        return emit(&state, .propertyChangeAppliedUnverified(snapshot))
+                    guard canonicalResultMatchesProposal(canonicalResult, proposal: proposal) else {
+                        if currentSelection {
+                            state.appliedProposal = proposal
+                            state.status = .appliedUnverified
+                        } else {
+                            state.pendingReadBack = proposal
+                        }
+                        return emit(&state, .propertyChangeAppliedUnverified(proposal.snapshot))
                     }
-                    state.canonicalResult = canonicalResult
-                    state.status = .verified
+                    if currentSelection {
+                        state.appliedProposal = proposal
+                        state.canonicalResult = canonicalResult
+                        state.status = .verified
+                    } else {
+                        state.pendingReadBack = nil
+                    }
                     return emit(&state, .propertyChangeVerified(canonicalResult))
                 case .failure:
-                    guard let snapshot = state.appliedProposal?.snapshot else { return reject(&state, .stale) }
-                    state.status = .appliedUnverified
-                    return emit(&state, .propertyChangeAppliedUnverified(snapshot))
+                    if currentSelection {
+                        state.appliedProposal = proposal
+                        state.status = .appliedUnverified
+                    } else {
+                        state.pendingReadBack = proposal
+                    }
+                    return emit(&state, .propertyChangeAppliedUnverified(proposal.snapshot))
                 }
 
             case .cancel:
@@ -243,12 +268,25 @@ public struct EntryPropertiesFeature: Sendable {
                         .propertyChangeRejected(.ambiguousExecution),
                     )
                 } else if state.activePhase == .applied {
-                    state.status = .appliedUnverified
-                    if let snapshot = state.appliedProposal?.snapshot {
+                    let proposal = state.readBackProposal ?? state.appliedProposal
+                    state.readBackProposal = nil
+                    if let proposal, snapshotMatchesSelection(proposal.snapshot, selection: state.selection) {
+                        state.appliedProposal = proposal
+                        state.status = .appliedUnverified
                         cancellationOutcomeEffect = emit(
                             &state,
-                            .propertyChangeAppliedUnverified(snapshot),
+                            .propertyChangeAppliedUnverified(proposal.snapshot),
                         )
+                    } else if let proposal {
+                        state.appliedProposal = nil
+                        state.pendingReadBack = proposal
+                        state.status = .idle
+                        cancellationOutcomeEffect = emit(
+                            &state,
+                            .propertyChangeAppliedUnverified(proposal.snapshot),
+                        )
+                    } else {
+                        state.status = .idle
                     }
                 } else {
                     state.status = .idle
@@ -265,10 +303,12 @@ public struct EntryPropertiesFeature: Sendable {
 
     private func readBackEffect(
         state: inout State,
-        snapshot: EntryPropertiesTargetSnapshot,
+        proposal: EntryPropertiesProposal,
     ) -> Effect<Action> {
+        let snapshot = proposal.snapshot
         let generation = state.generation
         state.activePhase = .applied
+        state.readBackProposal = proposal
         let client = client
         return .run { send in
             let result: Result<EntryPropertiesCanonicalResult, EntryPropertiesFailure>
@@ -331,6 +371,13 @@ public struct EntryPropertiesFeature: Sendable {
         return proposal.differences.allSatisfy { difference in
             valuesByTarget[difference.target]?.value == difference.after
         }
+    }
+
+    private func snapshotMatchesSelection(
+        _ snapshot: EntryPropertiesTargetSnapshot,
+        selection: EntryPropertiesSelection,
+    ) -> Bool {
+        snapshot.targets == selection.targets && snapshot.propertyID == selection.propertyID
     }
 }
 

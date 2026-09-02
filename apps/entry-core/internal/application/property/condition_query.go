@@ -263,6 +263,10 @@ func evaluateCondition(view DefinitionView, fact domainentry.EntryPropertyAssign
 	if !capability.Supported || !containsString(capability.AllowedOperators, condition.Operator) {
 		return false
 	}
+	operator, ok := domainentry.ConditionCatalogData.LookupOperator(condition.Operator)
+	if !ok || condition.Operand.Kind != conditionOperandKind(operator.ValueShape, capability.NativeType) {
+		return false
+	}
 	if condition.Operand.Kind == "option_ref" && !allOperandsAreActiveOptions(view.Options, condition.Operand.Values) {
 		return false
 	}
@@ -293,6 +297,46 @@ func evaluateCondition(view DefinitionView, fact domainentry.EntryPropertyAssign
 		return !containsAll(values, condition.Operand.Values, false)
 	default:
 		return false
+	}
+}
+
+func conditionOperandKind(shape domainentry.ConditionValueShape, nativeType domainentry.ConditionNativeType) string {
+	switch shape {
+	case domainentry.ConditionValueShapeNone:
+		return "none"
+	case domainentry.ConditionValueShapeRange:
+		switch nativeType {
+		case domainentry.ConditionNativeTypeDate:
+			return "date"
+		case domainentry.ConditionNativeTypeNumber:
+			return "number"
+		default:
+			return ""
+		}
+	case domainentry.ConditionValueShapeSingle:
+		switch nativeType {
+		case domainentry.ConditionNativeTypeBoolean:
+			return "boolean"
+		case domainentry.ConditionNativeTypeDate:
+			return "date"
+		case domainentry.ConditionNativeTypeNumber:
+			return "number"
+		case domainentry.ConditionNativeTypeString:
+			return "text"
+		default:
+			return ""
+		}
+	case domainentry.ConditionValueShapeList:
+		switch nativeType {
+		case domainentry.ConditionNativeTypeCategorical:
+			return "option_ref"
+		case domainentry.ConditionNativeTypeString, domainentry.ConditionNativeTypeStringList:
+			return "text"
+		default:
+			return ""
+		}
+	default:
+		return ""
 	}
 }
 

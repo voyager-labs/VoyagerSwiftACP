@@ -13,6 +13,8 @@ public struct EntryPropertiesState: Equatable, Sendable {
     var generation: UInt64
     var activePhase: EntryPropertiesPhase?
     var appliedProposal: EntryPropertiesProposal?
+    var pendingReadBack: EntryPropertiesProposal?
+    var readBackProposal: EntryPropertiesProposal?
 
     public init(
         selection: EntryPropertiesSelection,
@@ -28,5 +30,7 @@ public struct EntryPropertiesState: Equatable, Sendable {
         generation = 0
         activePhase = nil
         appliedProposal = nil
+        pendingReadBack = nil
+        readBackProposal = nil
     }
 }

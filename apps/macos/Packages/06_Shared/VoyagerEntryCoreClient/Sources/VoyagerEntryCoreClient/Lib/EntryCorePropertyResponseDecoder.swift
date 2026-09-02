@@ -232,7 +232,7 @@ private extension EntryCorePropertyResponseDecoder {
         switch type {
         case .boolean: return try .booleans(items.map(bool))
         case .select: return try .selects(items.map { try PropertyOptionID(rawValue: string($0)) })
-        case .text: return try .texts(items.map(string))
+        case .text: return try manyTextValue(items)
         case .number: let values = try items.map(string)
             guard values.allSatisfy(decimal) else { throw mismatch }
             return .numbers(values)
@@ -243,6 +243,12 @@ private extension EntryCorePropertyResponseDecoder {
             guard values.allSatisfy(timestamp) else { throw mismatch }
             return .dateTimes(values)
         }
+    }
+
+    static func manyTextValue(_ items: [StrictJSONValue]) throws -> PropertyValue {
+        let values = try items.map(string)
+        guard values.allSatisfy({ $0.utf8.count <= 4096 }) else { throw mismatch }
+        return .texts(values)
     }
 
     static func scalarValue(_ value: StrictJSONValue, type: PropertyValueType) throws -> PropertyValue {

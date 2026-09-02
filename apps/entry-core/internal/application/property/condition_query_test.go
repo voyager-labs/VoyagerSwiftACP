@@ -176,6 +176,31 @@ func TestConditionEvaluatorStateAndOperatorMatrix(t *testing.T) {
 	) {
 		t.Fatal("empty scalar text matched exists")
 	}
+	dateFact := domainentry.EntryPropertyAssignment{
+		State:  domainentry.AssignmentStateValue,
+		Scalar: &domainentry.AssignmentValue{Date: &date},
+	}
+	if evaluateCondition(
+		definition(domainentry.PropertyTypeDate, domainentry.PropertyCardinalityOne),
+		dateFact,
+		condition("gt", "number", "1"),
+		"2026-09-01",
+	) {
+		t.Fatal("date condition accepted a number operand")
+	}
+	optionID := domainentry.MustPropertyOptionID("00000000-0000-7000-8000-000000000001")
+	selectFact := domainentry.EntryPropertyAssignment{
+		State:  domainentry.AssignmentStateValue,
+		Scalar: &domainentry.AssignmentValue{OptionID: &optionID},
+	}
+	if evaluateCondition(
+		definition(domainentry.PropertyTypeSelect, domainentry.PropertyCardinalityOne),
+		selectFact,
+		condition("any", "text", optionID.String()),
+		"2026-09-01",
+	) {
+		t.Fatal("categorical condition accepted a text operand")
+	}
 }
 
 func TestConditionEvaluatorStateTruthTableAndFailClosedRows(t *testing.T) {
