@@ -4,13 +4,51 @@ import Foundation
 import PerceptionCore
 import SwiftUI
 import UniformTypeIdentifiers
+import VoyagerEntitiesAi
 import VoyagerEntitiesAppPreferences
 import VoyagerEntitiesEntry
+import VoyagerFeaturesAiChat
+import VoyagerFeaturesComposer
 import VoyagerFeaturesEntryOperations
 @testable import VoyagerPagesFileManager
 import VoyagerShared
 import VoyagerWidgetsEntryViewLayout
 import XCTest
+
+private actor FMW001SearchCancellationGate {
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var startWaiters: [CheckedContinuation<Void, Never>] = []
+    private var wasCancelled = false
+
+    func wait() async throws -> SearchResponsePayload {
+        try await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                self.continuation = continuation
+                let waiters = startWaiters
+                startWaiters.removeAll()
+                waiters.forEach { $0.resume() }
+            }
+            throw CancellationError()
+        } onCancel: {
+            Task { await self.cancel() }
+        }
+    }
+
+    func waitUntilStarted() async {
+        guard continuation == nil else { return }
+        await withCheckedContinuation { startWaiters.append($0) }
+    }
+
+    func cancellationObserved() -> Bool {
+        wasCancelled
+    }
+
+    private func cancel() {
+        wasCancelled = true
+        continuation?.resume()
+        continuation = nil
+    }
+}
 
 @MainActor
 final class FMW001FileManagerWindowTests: XCTestCase {
@@ -51,6 +89,256 @@ final class FMW001FileManagerWindowTests: XCTestCase {
             .copyURLs,
             .getInfo,
         ]
+    }
+
+    // MARK: - FMW-001-close_file_manager_window
+
+    /// FMW-001-close_file_manager_window: window teardown은 모든 child operation을 정확히 한 번 terminalize한다.
+    /// canonical child cleanup을 모든 content, inspector, tab snapshot, background AI owner에 적용한다.
+    /// - 검증 내용: unique operation별 cancelled terminal, alias dedupe, correlation 소비, 반복 teardown과 late response no-op.
+    /// - 사전 조건: accepted AiChat operation과 active Composer query/apply가 모든 합법적 window-owned 저장소에 존재한다.
+    /// - 기대 결과: unique operation마다 terminal이 1회 기록되고 모든 owner state가 idle이 된다.
+    func testOnDisappearTerminalizesEveryUniqueWindowOwnedChildOperationOnce() async throws {
+        let aiMetrics = LockIsolated<[AiChatProductMetric]>([])
+        let composerMetrics = LockIsolated<[ComposerProductMetric]>([])
+        let activeTabID = try XCTUnwrap(FileManagerWindowState().contentTabs.activeTabID)
+        let inactiveTabID = ContentTabID(rawValue: "teardown-inactive")
+        let aiOperationIDs = (0 ..< 6).map { _ in UUID() }
+        let queryOperationID = UUID()
+        let applyOperationID = UUID()
+
+        let activeAiChat = makeAcceptedAiChatState(operationID: aiOperationIDs[0], surface: .aiChatContent)
+        let inspectorAiChat = makeAcceptedAiChatState(operationID: aiOperationIDs[1], surface: .aiChatInspector)
+        let inactiveAiChat = makeAcceptedAiChatState(operationID: aiOperationIDs[2], surface: .aiChatContent)
+        let inactiveInspectorAiChat = makeAcceptedAiChatState(
+            operationID: aiOperationIDs[3],
+            surface: .aiChatInspector,
+        )
+        let backgroundAiChat = makeAcceptedAiChatState(operationID: aiOperationIDs[4], surface: .aiChatContent)
+        let backgroundInspectorAiChat = makeAcceptedAiChatState(
+            operationID: aiOperationIDs[5],
+            surface: .aiChatInspector,
+        )
+
+        var state = FileManagerWindowState()
+        state.contentTabs.tabs.append(ContentTabItem(
+            id: inactiveTabID,
+            page: .directory,
+            anchor: .directory(path: "/tmp/inactive"),
+            isPinned: false,
+            title: "Inactive",
+            iconName: "folder",
+        ))
+        state.content.aiChat = activeAiChat.state
+        state.content.composer = makeActiveComposerQuery(operationID: queryOperationID)
+        state.tabContentStates[activeTabID] = state.content
+
+        var inactiveContent = FileManagerContentFeature.State()
+        inactiveContent.aiChat = inactiveAiChat.state
+        inactiveContent.composer = makeActiveComposerApply(operationID: applyOperationID)
+        state.tabContentStates[inactiveTabID] = inactiveContent
+
+        state.inspector.aiChat = inspectorAiChat.state
+        state.tabInspectorStates[activeTabID] = state.inspector.tabSnapshot()
+        var inactiveInspector = FileManagerInspectorFeature.State()
+        inactiveInspector.aiChat = inactiveInspectorAiChat.state
+        state.tabInspectorStates[inactiveTabID] = inactiveInspector.tabSnapshot()
+
+        var backgroundContent = FileManagerContentFeature.State()
+        backgroundContent.aiChat = backgroundAiChat.state
+        let backgroundSessionID = try XCTUnwrap(backgroundAiChat.state.sessionID)
+        state.backgroundAiChatStates[backgroundSessionID] = backgroundContent
+        var backgroundInspector = FileManagerInspectorFeature.State()
+        backgroundInspector.aiChat = backgroundInspectorAiChat.state
+        let backgroundInspectorSessionID = try XCTUnwrap(backgroundInspectorAiChat.state.sessionID)
+        state.backgroundInspectorAiChatStates[backgroundInspectorSessionID] = backgroundInspector
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.aiChatProductMetricsClient = AiChatProductMetricsClient { metric in
+                aiMetrics.withValue { $0.append(metric) }
+            }
+            $0.composerMetricClient = ComposerMetricClient(recordProductMetric: { metric in
+                composerMetrics.withValue { $0.append(metric) }
+            })
+        }
+        // store.exhaustivity = .off: teardown은 기존 window close cancellation effect 전체를 함께 반환한다.
+        store.exhaustivity = .off
+
+        await store.send(.onDisappear)
+
+        XCTAssertEqual(cancelledAiChatOperationIDs(aiMetrics.value), Set(aiOperationIDs))
+        XCTAssertEqual(cancelledComposerOperationIDs(composerMetrics.value), [queryOperationID, applyOperationID])
+        assertWindowChildCorrelationsConsumed(store.state)
+
+        await store.send(.onDisappear)
+        await store.send(.content(.aiChat(.executionEvent(.final(response: AiChatResponse(
+            context: activeAiChat.context,
+            assistantMessage: AiChatMessage(role: .assistant, content: "late"),
+            completedAtMs: 1,
+        ))))))
+        await store.send(.content(.composer(.internal(.searchResponse(
+            queryOperationID,
+            .success(SearchResponsePayload(itemCount: 1)),
+        )))))
+        await store.finish()
+
+        XCTAssertEqual(cancelledAiChatOperationIDs(aiMetrics.value), Set(aiOperationIDs))
+        XCTAssertEqual(cancelledComposerOperationIDs(composerMetrics.value), [queryOperationID, applyOperationID])
+    }
+
+    /// FMW-001-close_file_manager_window: window teardown은 child reducer가 반환한 cancellation effect를 실행한다.
+    /// reducer state 정리만으로 끝나지 않고 실제 suspended search task가 취소되는지 검증한다.
+    /// - 검증 내용: onDisappear 이후 search dependency cancellation handler 실행.
+    /// - 사전 조건: active content Composer에서 accepted query effect가 대기 중이다.
+    /// - 기대 결과: teardown effect가 실행되어 suspended query가 취소된다.
+    func testOnDisappearExecutesReturnedChildCancellationEffect() async {
+        let gate = FMW001SearchCancellationGate()
+        var state = FileManagerWindowState()
+        state.content.composer.text = "find invoices"
+        state.content.composer.scopes = ["/tmp"]
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.searchClient.search = { _ in try await gate.wait() }
+        }
+        // store.exhaustivity = .off: UUID 기반 query lifecycle보다 실제 cancellation handler 실행을 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.content(.composer(.submit)))
+        await gate.waitUntilStarted()
+        await store.send(.onDisappear)
+        await store.finish()
+
+        let cancellationObserved = await gate.cancellationObserved()
+        XCTAssertTrue(cancellationObserved)
+    }
+
+    private func makeAcceptedAiChatState(
+        operationID: UUID,
+        surface: AiChatProductMetricSourceSurface,
+    ) -> (state: AiChatFeature.State, context: AiChatRequestContextSnapshot) {
+        let sessionID = AiChatSessionID(rawValue: UUID())
+        let requestID = AiChatRequestID(rawValue: UUID())
+        let runID = AiChatRunID(rawValue: UUID())
+        let modelHandle = AiModelHandle(provider: .openai, rawValue: "gpt-4.1-mini")
+        let modelRow = AiModelCatalogRow(
+            handle: modelHandle,
+            displayName: "GPT-4.1 Mini",
+            authMethod: .apiKey,
+            sortOrder: 10,
+        )
+        let context = AiChatRequestContextSnapshot(
+            sessionID: sessionID,
+            requestID: requestID,
+            runID: runID,
+            provider: .openai,
+            model: modelHandle,
+            selectedModel: AiProviderModel(
+                id: modelHandle,
+                provider: .openai,
+                rawModelID: "gpt-4.1-mini",
+                displayName: "GPT-4.1 Mini",
+                providerDisplayName: "OpenAI",
+                thinkingCapability: .unknown(reason: .init(message: "Not loaded")),
+            ),
+            selectedModelRow: modelRow,
+            sessionStatus: .active,
+            promptSummary: "teardown",
+            submittedAtMs: 0,
+        )
+        let lock = AiChatRequestLock(
+            kind: .submit,
+            requestID: requestID,
+            runID: runID,
+            context: context,
+            request: AiChatRequest(
+                context: context,
+                messages: [AiChatMessage(role: .user, content: "teardown")],
+            ),
+            selectedModelHandle: modelHandle,
+            selectedModelRow: modelRow,
+            assistantReplacementIndex: nil,
+            persistenceTranscriptHistory: nil,
+        )
+        var state = AiChatFeature.State(sessionID: sessionID, sessionStatus: .active)
+        state.executionPhase = .processing(lock)
+        state.productMetricSourceSurface = surface
+        withDependencies {
+            $0.uuid = .constant(operationID)
+        } operation: {
+            _ = AiChatFeature().reduce(
+                into: &state,
+                action: .executionEvent(.requestPrepared(context: context)),
+            )
+        }
+        return (state, context)
+    }
+
+    private func makeActiveComposerQuery(operationID: UUID) -> ComposerFeature.State {
+        var state = ComposerFeature.State()
+        state.isLoadingSearch = true
+        state.activeSearchRequestID = operationID
+        state.lastAcceptedSearchRequestID = operationID
+        state.searchStartedAt = Date(timeIntervalSince1970: 1)
+        state.queryRenderPhase = .searching
+        return state
+    }
+
+    private func makeActiveComposerApply(operationID: UUID) -> ComposerFeature.State {
+        var state = ComposerFeature.State()
+        state.isLoadingFilters = true
+        state.isFilteringInFlight = true
+        state.activeFiltersRequestID = operationID
+        state.lastAcceptedFiltersRequestID = operationID
+        state.filtersStartedAt = Date(timeIntervalSince1970: 1)
+        return state
+    }
+
+    private func cancelledAiChatOperationIDs(_ metrics: [AiChatProductMetric]) -> Set<UUID> {
+        Set(metrics.compactMap { metric in
+            guard case let .turnResult(operationID, _, result, _) = metric,
+                  result == .cancelled
+            else { return nil }
+            return operationID
+        })
+    }
+
+    private func cancelledComposerOperationIDs(_ metrics: [ComposerProductMetric]) -> Set<UUID> {
+        Set(metrics.compactMap { metric in
+            switch metric {
+            case let .queryResult(operationID, result, _) where result == .cancelled:
+                operationID
+            case let .applyResult(operationID, result, _) where result == .cancelled:
+                operationID
+            default:
+                nil
+            }
+        })
+    }
+
+    private func assertWindowChildCorrelationsConsumed(
+        _ state: FileManagerWindowState,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+    ) {
+        let contentStates = [state.content] + Array(state.tabContentStates.values)
+            + Array(state.backgroundAiChatStates.values)
+        for content in contentStates {
+            XCTAssertTrue(content.aiChat.productMetricOperations.isEmpty, file: file, line: line)
+            XCTAssertEqual(content.aiChat.executionPhase, .idle, file: file, line: line)
+        }
+        for content in [state.content] + Array(state.tabContentStates.values) {
+            XCTAssertNil(content.composer.activeSearchRequestID, file: file, line: line)
+            XCTAssertNil(content.composer.activeFiltersRequestID, file: file, line: line)
+        }
+        let inspectorStates = [state.inspector] + Array(state.tabInspectorStates.values)
+            + Array(state.backgroundInspectorAiChatStates.values)
+        for inspector in inspectorStates {
+            XCTAssertTrue(inspector.aiChat.productMetricOperations.isEmpty, file: file, line: line)
+            XCTAssertEqual(inspector.aiChat.executionPhase, .idle, file: file, line: line)
+        }
     }
 
     // MARK: - VOY-578-entry_commands
