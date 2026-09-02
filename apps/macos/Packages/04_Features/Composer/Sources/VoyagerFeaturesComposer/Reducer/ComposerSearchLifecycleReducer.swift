@@ -134,6 +134,13 @@ struct ComposerSearchLifecycleReducer {
                     )
                     state.searchStartedAt = nil
                     if shouldSkipApplyFilters {
+                        // no-op filters: 제출 쿼리를 collection draft 정의에 반영해 저장 계약을 유지한다.
+                        if let submittedQuery = state.queryRecoveryRawText(for: .search(requestID)) {
+                            let trimmedQuery = submittedQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+                            if !trimmedQuery.isEmpty {
+                                state.collectionContext = state.collectionContext(query: trimmedQuery)
+                            }
+                        }
                         state.discardQueryRecovery()
                         kComposerSearchLifecycleLogger.debug("Composer query search resolved to no-op filters")
                         state.isLoadingFilters = false

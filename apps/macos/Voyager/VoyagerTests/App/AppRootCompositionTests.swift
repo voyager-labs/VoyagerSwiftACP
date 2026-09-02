@@ -160,7 +160,12 @@ final class AppRootCompositionTests: XCTestCase {
             await store.finish()
         }
 
-        let requests = metricRequests.value
+        // develop이 open 흐름에 추가한 dau.navigation 등 타 metric은 이 테스트 대상이 아니라서
+        // collection.open(result_status/failure_reason properties)만 골라 검증한다.
+        let requests = metricRequests.value.filter {
+            let keys = Set($0.properties.keys)
+            return keys == ["result_status"] || keys == ["result_status", "failure_reason"]
+        }
         XCTAssertEqual(requests.count, 6)
         XCTAssertEqual(requests.count { $0.properties["result_status"] == .string("valid_empty") }, 1)
         XCTAssertEqual(requests.count { $0.properties["result_status"] == .string("load_failure") }, 5)
@@ -3760,6 +3765,17 @@ final class AppRootCompositionTests: XCTestCase {
         initialState.lifecycle.didStartHelper = true
         initialState.lifecycle.didCompleteEntryCoreHealthProbe = true
         initialState.lifecycle.didCreateInitialWindow = true
+        // develop의 external-open placement는 이미 존재하는 초기 윈도우를 재사용 대상으로 본다.
+        // didCreateInitialWindow=true는 실제 윈도우 세션을 만들지 않으므로 테스트에서 직접 구성한다.
+        let initialWindowID = UUID()
+        let initialWindow = WindowSessionState(
+            id: initialWindowID,
+            window: .makeInitial(path: nil),
+        )
+        initialState.windowManager.windows.append(initialWindow)
+        initialState.windowManager.focusedWindowID = initialWindowID
+        initialState.windowManager.lastUsedWindowIDs = [initialWindowID]
+        registeredWindowIDs.withValue { $0.insert(initialWindowID) }
         let store = TestStore(initialState: initialState) {
             AppRootFeature()
         } withDependencies: {
