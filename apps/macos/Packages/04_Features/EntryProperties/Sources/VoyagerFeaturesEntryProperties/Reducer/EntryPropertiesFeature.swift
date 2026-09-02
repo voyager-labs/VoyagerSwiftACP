@@ -56,7 +56,10 @@ public struct EntryPropertiesFeature: Sendable {
                 return .cancel(id: CancelID.flow)
 
             case .discoverCapabilities, .reconnect:
-                guard state.activePhase != .executing, state.activePhase != .applied else {
+                guard state.activePhase != .executing,
+                      state.activePhase != .applied,
+                      state.status != .appliedUnverified
+                else {
                     return rejectBusy(&state)
                 }
                 state.generation &+= 1

@@ -146,6 +146,32 @@ extension EPR006CoordinatePropertyChangesTests {
         XCTAssertEqual(store.state.appliedProposal, fixture.proposal)
     }
 
+    /// EPR-006-read_back_property_change_result: applied-unverified 상태에서는 재탐색을 시작하지 않는다.
+    /// - 검증 내용: discover/reconnect busy rejection과 applied proposal/read-back 상태 보존
+    /// - 사전 조건: trusted apply 뒤 canonical read-back이 실패해 현재 proposal이 applied-unverified로 남음
+    /// - 기대 결과: 재탐색 effect를 시작하지 않고 read-only retry 경로를 보존함
+    func testAppliedUnverifiedBlocksRediscovery() async {
+        let fixture = Fixture()
+        for action in [EntryPropertiesAction.discoverCapabilities, .reconnect] {
+            var state = fixture.readyState
+            state.status = .appliedUnverified
+            state.appliedProposal = fixture.proposal
+            let store = TestStore(initialState: state) {
+                EntryPropertiesFeature()
+            } withDependencies: {
+                $0.entryPropertiesClient = fixture.client()
+            }
+
+            await store.send(action) {
+                $0.lastOutcome = .propertyChangeRejected(.busy)
+            }
+            await store.receive(.init(kind: .outcome(.propertyChangeRejected(.busy))))
+            XCTAssertEqual(store.state.status, .appliedUnverified)
+            XCTAssertEqual(store.state.appliedProposal, fixture.proposal)
+            XCTAssertEqual(store.state.generation, 0)
+        }
+    }
+
     /// EPR-006-read_back_property_change_result: pending read-back이 있으면 새 mutation을 막는다.
     /// - 검증 내용: prepare/execute busy rejection과 dependency 호출 0회
     /// - 사전 조건: 이전 selection의 pending read-back proposal이 보존됨
