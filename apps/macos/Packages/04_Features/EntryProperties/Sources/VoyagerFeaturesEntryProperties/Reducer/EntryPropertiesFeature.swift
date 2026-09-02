@@ -39,7 +39,7 @@ public struct EntryPropertiesFeature: Sendable {
                 return .cancel(id: CancelID.flow)
 
             case .discoverCapabilities, .reconnect:
-                guard state.activePhase != .executing else {
+                guard state.activePhase != .executing, state.activePhase != .applied else {
                     return rejectBusy(&state)
                 }
                 state.generation &+= 1
@@ -218,16 +218,27 @@ public struct EntryPropertiesFeature: Sendable {
 
             case .cancel:
                 state.generation &+= 1
+                let cancellationEffect: Effect<Action> = .cancel(id: CancelID.flow)
+                var cancellationOutcomeEffect: Effect<Action> = .none
                 if state.activePhase == .executing {
                     state.status = .ambiguous
-                    state.lastOutcome = .propertyChangeRejected(.ambiguousExecution)
+                    cancellationOutcomeEffect = emit(
+                        &state,
+                        .propertyChangeRejected(.ambiguousExecution),
+                    )
                 } else if state.activePhase == .applied {
                     state.status = .appliedUnverified
+                    if let snapshot = state.appliedProposal?.snapshot {
+                        cancellationOutcomeEffect = emit(
+                            &state,
+                            .propertyChangeAppliedUnverified(snapshot),
+                        )
+                    }
                 } else {
                     state.status = .idle
                 }
                 state.activePhase = nil
-                return .cancel(id: CancelID.flow)
+                return .merge(cancellationEffect, cancellationOutcomeEffect)
 
             case let .outcome(outcome):
                 state.lastOutcome = outcome

@@ -464,6 +464,75 @@ final class EPR006CoordinatePropertyChangesTests: XCTestCase {
     }
 }
 
+extension EPR006CoordinatePropertyChangesTests {
+    /// EPR-006-read_back_property_change_result: read-back 중 discovery/reconnect는 busy로 보존한다.
+    /// - 검증 내용: applied phase·status·generation·proposal 보존
+    /// - 사전 조건: trusted apply 뒤 canonical read-back effect가 진행 중임
+    /// - 기대 결과: 재연결이나 capability discovery가 read-back을 취소하지 않고 busy outcome만 게시함
+    func testBusyRejectionPreservesAppliedReadBack() async {
+        let fixture = Fixture()
+        var state = fixture.readyState
+        state.appliedProposal = fixture.proposal
+        state.activePhase = .applied
+        state.status = .applied
+        let store = TestStore(initialState: state) { EntryPropertiesFeature() }
+
+        await store.send(.discoverCapabilities) {
+            $0.lastOutcome = .propertyChangeRejected(.busy)
+        }
+        await store.receive(.init(kind: .outcome(.propertyChangeRejected(.busy))))
+        XCTAssertEqual(store.state.activePhase, .applied)
+        XCTAssertEqual(store.state.status, .applied)
+        XCTAssertEqual(store.state.generation, 0)
+        XCTAssertEqual(store.state.appliedProposal, fixture.proposal)
+
+        await store.send(.reconnect)
+        await store.receive(.init(kind: .outcome(.propertyChangeRejected(.busy))))
+        XCTAssertEqual(store.state.activePhase, .applied)
+        XCTAssertEqual(store.state.status, .applied)
+        XCTAssertEqual(store.state.generation, 0)
+        XCTAssertEqual(store.state.appliedProposal, fixture.proposal)
+    }
+
+    /// EPR-006-execute_property_change: 취소 시 lifecycle outcome을 caller에 발행한다.
+    /// - 검증 내용: execute cancellation의 ambiguity와 read-back cancellation의 applied-unverified
+    /// - 사전 조건: 각 phase의 effect가 진행 중임
+    /// - 기대 결과: 취소 effect와 phase별 public outcome이 함께 게시됨
+    func testCancellationPublishesPhaseSpecificOutcome() async {
+        let fixture = Fixture()
+
+        var executingState = fixture.readyState
+        executingState.proposal = fixture.proposal
+        executingState.activePhase = .executing
+        executingState.status = .executing
+        let executingStore = TestStore(initialState: executingState) { EntryPropertiesFeature() }
+
+        await executingStore.send(.cancel) {
+            $0.generation = 1
+            $0.activePhase = nil
+            $0.status = .ambiguous
+            $0.lastOutcome = .propertyChangeRejected(.ambiguousExecution)
+        }
+        await executingStore.receive(.init(kind: .outcome(.propertyChangeRejected(.ambiguousExecution))))
+
+        var appliedState = fixture.readyState
+        appliedState.appliedProposal = fixture.proposal
+        appliedState.activePhase = .applied
+        appliedState.status = .applied
+        let appliedStore = TestStore(initialState: appliedState) { EntryPropertiesFeature() }
+
+        await appliedStore.send(.cancel) {
+            $0.generation = 1
+            $0.activePhase = nil
+            $0.status = .appliedUnverified
+            $0.lastOutcome = .propertyChangeAppliedUnverified(fixture.snapshot)
+        }
+        await appliedStore.receive(
+            .init(kind: .outcome(.propertyChangeAppliedUnverified(fixture.snapshot))),
+        )
+    }
+}
+
 private struct Fixture {
     let selection = EntryPropertiesSelection(
         targets: [.init(localPath: "/a"), .init(localPath: "/b")],
