@@ -296,9 +296,15 @@ extension EVM002FileManagerPagePresentationTests {
         }
         await store.receive(\.entryViewLayout.entryOperations.loading.loadItems)
         XCTAssertTrue(store.state.entryViewLayout.entryOperations.loadingContext.isBufferingPreservedDirectoryReload)
-        await store.send(.entryViewLayout(.entryOperations(.loading(.streamFailed(generation: 1)))))
+        await store.send(.entryViewLayout(.entryOperations(.loading(.streamFailed(
+            generation: 1,
+            failure: .unavailable(description: "test"),
+        )))))
         XCTAssertEqual(store.state.pendingIdentityTransition?.additionalMoves.first?.migrated, false)
-        await store.send(.entryViewLayout(.entryOperations(.loading(.streamFailed(generation: 2)))))
+        await store.send(.entryViewLayout(.entryOperations(.loading(.streamFailed(
+            generation: 2,
+            failure: .unavailable(description: "test"),
+        )))))
         XCTAssertEqual(store.state.pendingIdentityTransition?.additionalMoves.first?.migrated, true)
         XCTAssertEqual(store.state.pendingIdentityTransition?.primaryMigrated, false)
         XCTAssertEqual(

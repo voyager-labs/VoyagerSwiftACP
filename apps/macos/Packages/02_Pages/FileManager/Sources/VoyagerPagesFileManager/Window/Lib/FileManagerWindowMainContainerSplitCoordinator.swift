@@ -283,10 +283,18 @@ final class MainContainerSplitCoordinator: NSViewController, NSSplitViewDelegate
                 overlayProps: overlayProps,
                 activePageAnchor: activePageAnchor,
                 onNavigationAction: { [weak self] action in
-                    self?.store.send(.navigation(.view(action)))
+                    guard let self, let activeTabID = store.state.contentTabs.activeTabID else { return }
+                    store.send(.tabContent(
+                        tabID: activeTabID,
+                        action: .internal(.requestNavigation(.view(action))),
+                    ))
                 },
                 onNavigate: { [weak self] path in
-                    self?.store.send(.navigation(.view(.navigateToPath(path))))
+                    guard let self, let activeTabID = store.state.contentTabs.activeTabID else { return }
+                    store.send(.tabContent(
+                        tabID: activeTabID,
+                        action: .internal(.requestNavigation(.view(.navigateToPath(path)))),
+                    ))
                 },
             )
             .id(chromeProps.renderIdentity)

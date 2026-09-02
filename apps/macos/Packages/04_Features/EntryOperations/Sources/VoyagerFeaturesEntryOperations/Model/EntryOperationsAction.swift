@@ -87,7 +87,7 @@ public enum EntryOperationsAction: CasePathable, Sendable {
         case computerItemsLoadFailed(generation: Int)
         case streamEvent(EntryLoadingStreamEvent)
         case streamFinished(generation: Int)
-        case streamFailed(generation: Int)
+        case streamFailed(generation: Int, failure: EntryFolderLoadFailure)
         case loadFolderItems(EntryFolderLoadRequest)
         case cancelFolderItems(EntryFolderLoadRequest.RequestID)
         case cancelAllFolderItems
@@ -229,6 +229,17 @@ public struct EntryOperationsDuplicateGroup: Equatable, Sendable {
 public enum EntryFolderLoadFailure: Equatable, Sendable {
     case permissionDenied
     case unavailable(description: String)
+
+    public static func from(error: Error) -> Self {
+        let nsError = error as NSError
+        if nsError.domain == NSCocoaErrorDomain, nsError.code == NSFileReadNoPermissionError {
+            return .permissionDenied
+        }
+        if nsError.domain == NSPOSIXErrorDomain, nsError.code == EACCES || nsError.code == EPERM {
+            return .permissionDenied
+        }
+        return .unavailable(description: nsError.localizedDescription)
+    }
 }
 
 public struct EntryLoadingStreamEvent: Equatable, Sendable {

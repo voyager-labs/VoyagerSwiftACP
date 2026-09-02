@@ -190,6 +190,50 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
     }
 
+    /// EOP-003-entry_command_teardown: 수용된 command의 path lifecycle은 원 metadata를 유지한다.
+    /// Window owner가 teardown aggregate를 계산할 수 있도록 실제 effect 출력의 metadata envelope를 검증한다.
+    /// - 검증 내용: Quick Look의 started/finished가 acceptedCommand로 전달되고 terminal record에도 metadata가 연결됨
+    /// - 사전 조건: 고정 command metadata와 성공하는 Quick Look dependency
+    /// - 기대 결과: 모든 lifecycle 단계가 동일 command ID, interaction, source를 유지함
+    func testAcceptedCommandPropagatesMetadataThroughPathLifecycle() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+        let path = sandbox.fileURL.path
+        let metadata = EntryCommandMetadata(
+            id: UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 4)),
+            interaction: .quickLookEntry,
+            source: .keyboardShortcut,
+        )
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryQuickLookClient = EntryQuickLookClient(quickLook: { _, _ in })
+        }
+        // store.exhaustivity = .off: lifecycle metadata envelope만 검증하고 item 상태 변화는 기존 owner에 위임함
+        store.exhaustivity = .off
+
+        await store.send(.acceptedCommand(
+            metadata: metadata,
+            action: .open(.quickLookFiles(paths: [path])),
+        ))
+        await store.receive { action in
+            guard case let .acceptedCommand(received, .lifecycle(.operationStarted(receivedPath, kind))) = action
+            else { return false }
+            return received == metadata && receivedPath == path && kind == .quickLook
+        }
+        await store.receive { action in
+            guard case let .acceptedCommand(
+                received,
+                .lifecycle(.operationFinished(receivedPath, kind, .success)),
+            ) = action else { return false }
+            return received == metadata && receivedPath == path && kind == .quickLook
+        }
+        await store.receive { action in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return false }
+            return record.command == metadata
+                && record.operationKind == .quickLook
+                && record.succeededCount == 1
+        }
+    }
+
     /// EOP-003-move_entries_to_trash: 손상된 Trash metadata를 격리한 뒤 새 기록을 안전하게 저장한다.
     /// 사용자가 Entry를 Trash로 보낼 때 기존 plist가 손상되어도 원본 증거와 새 복구 경로를 모두 보존하는지 확인한다.
     /// - 검증 내용: 손상 파일 격리, 새 metadata 저장, 디렉터리와 plist의 owner-only 권한
@@ -1941,7 +1985,7 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
             $0.loadingContext.preservedDirectoryReloadItems = [candidate]
             $0.loadingContext.expectedCoreBatchIndex = 1
         }
-        await store.send(.loading(.streamFailed(generation: generation))) {
+        await store.send(.loading(.streamFailed(generation: generation, failure: .unavailable(description: "test")))) {
             $0.loadingContext.preservedDirectoryReloadItems = nil
             $0.loadingContext.streamTerminal = true
             $0.loadingContext.isIncomplete = true
@@ -2019,6 +2063,60 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         ))))
     }
 
+    /// EOP-003-load_entry_items: root stream permission failures retain typed permissionDenied.
+    /// Cocoa and POSIX permission errors must reach the loading action without collapsing to unavailable.
+    /// - 검증 내용: root stream failure action carries `.permissionDenied` for both OS error families.
+    /// - 사전 조건: directory stream throws Cocoa no-permission or POSIX EACCES/EPERM.
+    /// - 기대 결과: current generation emits the matching typed failure and terminates loading.
+    func testRootStreamPermissionFailureEmitsTypedFailure() async {
+        for error in [
+            NSError(domain: NSCocoaErrorDomain, code: NSFileReadNoPermissionError),
+            NSError(domain: NSPOSIXErrorDomain, code: Int(EACCES)),
+            NSError(domain: NSPOSIXErrorDomain, code: Int(EPERM)),
+        ] {
+            let store = EntryOperationsTestSupport.makeStore {
+                $0.entryLoadingClient.stagedLoadItems = { _, _, _ in
+                    AsyncThrowingStream { continuation in
+                        continuation.finish(throwing: error)
+                    }
+                }
+            }
+            // store.exhaustivity = .off: 로딩 시작이 여러 loadingContext 필드를 함께 변경하므로 terminal action만 검증한다.
+            store.exhaustivity = .off
+            await store.send(EntryOperationsAction.loading(.loadItems(path: "/tmp", showHidden: false)))
+            await store.receive { action in
+                guard case let .loading(.streamFailed(generation, failure)) = action else { return false }
+                return generation == 1 && failure == .permissionDenied
+            }
+            await store.finish()
+        }
+    }
+
+    /// EOP-003-load_entry_items: root stream generic failures retain unavailable.
+    /// Non-permission errors must preserve their description while keeping stale generation guards unchanged.
+    /// - 검증 내용: generic stream failure action carries `.unavailable(description:)`.
+    /// - 사전 조건: current directory stream throws a generic NSError.
+    /// - 기대 결과: current generation emits unavailable with the NSError localized description.
+    func testRootStreamGenericFailureEmitsUnavailable() async {
+        let error = NSError(domain: "EOP003", code: 77, userInfo: [NSLocalizedDescriptionKey: "generic failure"])
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryLoadingClient.stagedLoadItems = { _, _, _ in
+                AsyncThrowingStream { continuation in
+                    continuation.finish(throwing: error)
+                }
+            }
+        }
+
+        // store.exhaustivity = .off: 로딩 시작이 여러 loadingContext 필드를 함께 변경하므로 terminal action만 검증한다.
+        store.exhaustivity = .off
+        await store.send(EntryOperationsAction.loading(.loadItems(path: "/tmp", showHidden: false)))
+        await store.receive { action in
+            guard case let .loading(.streamFailed(generation, failure)) = action else { return false }
+            return generation == 1 && failure == .unavailable(description: "generic failure")
+        }
+        await store.finish()
+    }
+
     /// EOP-003-load_entry_items: route clear는 root load generation과 transient snapshot을 함께 무효화한다.
     /// Home·AI Chat 전환 뒤 이미 enqueue된 이전 stream event가 빈 목록을 다시 채우지 않는지 검증한다.
     /// - 검증 내용: cancelAndClearItems의 generation 증가와 stale batch 차단
@@ -2088,7 +2186,7 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         state.items = [entry]
         let store = EntryOperationsTestSupport.makeStore(initialState: state)
 
-        await store.send(.loading(.streamFailed(generation: 5))) {
+        await store.send(.loading(.streamFailed(generation: 5, failure: .unavailable(description: "test")))) {
             $0.loadingContext.streamTerminal = true
             $0.loadingContext.isIncomplete = true
         }
@@ -2609,7 +2707,11 @@ private extension EOP003ManageEntryLifecycleTests {
         }
         await gate.waitUntilWaiting()
         await gate.resume(with: .failure)
-        await store.receive(\.loading.streamFailed, 1) {
+        await store.receive { action in
+            guard case let .loading(.streamFailed(generation, failure)) = action else { return false }
+            guard case .unavailable = failure else { return false }
+            return generation == 1
+        } assert: {
             $0.isLoading = false
             $0.isReloading = false
             $0.loadingContext.streamTerminal = true

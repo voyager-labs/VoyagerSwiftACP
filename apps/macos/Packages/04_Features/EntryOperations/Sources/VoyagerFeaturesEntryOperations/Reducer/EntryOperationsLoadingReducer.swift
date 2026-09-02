@@ -45,7 +45,7 @@ public struct EntryOperationsLoadingReducer {
                         return
                     } catch {
                         guard !Task.isCancelled else { return }
-                        await send(.loading(.streamFailed(generation: generation)))
+                        await send(.loading(.streamFailed(generation: generation, failure: .from(error: error))))
                     }
                 }
                 .cancellable(
@@ -72,7 +72,7 @@ public struct EntryOperationsLoadingReducer {
                         return
                     } catch {
                         guard !Task.isCancelled else { return }
-                        await send(.loading(.streamFailed(generation: generation)))
+                        await send(.loading(.streamFailed(generation: generation, failure: .from(error: error))))
                     }
                 }
                 .cancellable(
@@ -99,7 +99,7 @@ public struct EntryOperationsLoadingReducer {
                         return
                     } catch {
                         guard !Task.isCancelled else { return }
-                        await send(.loading(.streamFailed(generation: generation)))
+                        await send(.loading(.streamFailed(generation: generation, failure: .from(error: error))))
                     }
                 }
                 .cancellable(
@@ -247,7 +247,7 @@ public struct EntryOperationsLoadingReducer {
                 state.loadingContext.streamTerminal = true
                 return .none
 
-            case let .loading(.streamFailed(generation)):
+            case let .loading(.streamFailed(generation, _)):
                 guard generation == state.loadingContext.generation,
                       !state.loadingContext.streamTerminal
                 else {

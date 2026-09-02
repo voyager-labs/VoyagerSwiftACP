@@ -71,7 +71,7 @@ struct FileManagerContentPendingSelectionReducer {
 
         switch action {
         case let .entryViewLayout(.entryOperations(.loading(.streamFinished(generation)))),
-             let .entryViewLayout(.entryOperations(.loading(.streamFailed(generation)))):
+             let .entryViewLayout(.entryOperations(.loading(.streamFailed(generation, _)))):
             // 네비게이션 기원 pending은 목적지 로드 세대에 바인딩된 경우에만 소비한다.
             // 목적지 loadItems가 세대를 증가시키기 전에 도착한 이전 로딩의 터미널은 무시한다.
             guard generation == state.entryViewLayout.entryOperations.loadingContext.generation,

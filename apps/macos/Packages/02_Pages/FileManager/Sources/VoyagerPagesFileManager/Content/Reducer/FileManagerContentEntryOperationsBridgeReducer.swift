@@ -396,9 +396,12 @@ struct FileManagerContentEntryOperationsBridgeReducer {
             failure = nil
             entryCount = context.items.count
 
-        case let .streamFailed(generation):
+        case let .streamFailed(generation, entryFailure):
             guard generation == context.generation, context.streamTerminal else { return false }
-            failure = .unavailable
+            failure = switch entryFailure {
+            case .permissionDenied: .failure
+            case .unavailable: .unavailable
+            }
             entryCount = nil
 
         default:

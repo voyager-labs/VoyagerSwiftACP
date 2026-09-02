@@ -594,6 +594,90 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         XCTAssertTrue(metrics.value.isEmpty)
     }
 
+    /// EVM-001-navigate_pages: content chrome keeps accepted navigation in the content browsing domain.
+    /// Toolbar, history, swipe, and breadcrumb callbacks must preserve their content ownership at the window bridge.
+    /// - 검증 내용: accepted chrome routes allocate content browsing source, rejected and same-route inputs stay silent.
+    /// - 사전 조건: each accepted route has its required history or parent state; rejected routes do not.
+    /// - 기대 결과: accepted routes use fileManagerContent, rejected and same-route routes allocate no operation.
+    func testContentChromeNavigationMatrixPreservesContentBrowsingSource() async throws {
+        let accepted: [(
+            ContentPageNavigationAction.View,
+            ContentPageNavigationInteractionIdentity,
+            (inout FileManagerFeature.State) -> Void,
+        )] = [
+            (.goBack, .back, { $0.content.navigation.backHistory = [
+                ContentPageNavigationHistorySnapshot(navigationState: .folder("/tmp/content-back")),
+            ] }),
+            (.goForward, .forward, { $0.content.navigation.forwardHistory = [
+                ContentPageNavigationHistorySnapshot(navigationState: .folder("/tmp/content-forward")),
+            ] }),
+            (.goToHistoryIndex(0, isBackHistory: true), .history, { $0.content.navigation.backHistory = [
+                ContentPageNavigationHistorySnapshot(navigationState: .folder("/tmp/content-history")),
+            ] }),
+            (
+                .goToEnclosingDirectory,
+                .enclosingDirectory,
+                { $0.content.navigation.navigationState = .folder("/tmp/content-parent/child") },
+            ),
+            (
+                .navigateToPath("/tmp/content-breadcrumb"),
+                .direct,
+                { $0.content.navigation.navigationState = .folder("/tmp/content-current") },
+            ),
+        ]
+
+        for (action, identity, configureState) in accepted {
+            var state = FileManagerFeature.State()
+            configureState(&state)
+            let metrics = LockIsolated<[FileManagerProductMetric]>([])
+            let store = makeTypedBrowsingStore(metrics: metrics, initialState: state)
+
+            let activeTabID = try XCTUnwrap(store.state.contentTabs.activeTabID)
+            await store.send(.tabContent(
+                tabID: activeTabID,
+                action: .internal(.requestNavigation(.view(action))),
+            ))
+            await store.skipReceivedActions()
+
+            XCTAssertEqual(metrics.value, [
+                .contentBrowsing(
+                    result: .empty,
+                    content: .folder,
+                    identity: identity,
+                    source: .fileManagerContent,
+                    operationID: Self.typedBrowsingOperationIDs[0],
+                ),
+            ], "\(action)")
+        }
+
+        let silent: [(ContentPageNavigationAction.View, (inout FileManagerFeature.State) -> Void)] = [
+            (.goBack, { _ in }),
+            (.goForward, { _ in }),
+            (.goToHistoryIndex(0, isBackHistory: true), { _ in }),
+            (.goToEnclosingDirectory, { $0.content.navigation.navigationState = .folder("/") }),
+            (
+                .navigateToPath("/tmp/content-same"),
+                { $0.content.navigation.navigationState = .folder("/tmp/content-same") },
+            ),
+        ]
+
+        for (action, configureState) in silent {
+            var state = FileManagerFeature.State()
+            configureState(&state)
+            let metrics = LockIsolated<[FileManagerProductMetric]>([])
+            let store = makeTypedBrowsingStore(metrics: metrics, initialState: state)
+
+            let activeTabID = try XCTUnwrap(store.state.contentTabs.activeTabID)
+            await store.send(.tabContent(
+                tabID: activeTabID,
+                action: .internal(.requestNavigation(.view(action))),
+            ))
+
+            XCTAssertNil(store.state.content.productBrowsingOperationID, "\(action)")
+            XCTAssertTrue(metrics.value.isEmpty, "\(action)")
+        }
+    }
+
     /// EVM-001-navigate_pages: unsaved Cancel은 browsing intent를 폐기한다.
     /// 취소 뒤 도착한 reload terminal이 취소된 사용자 탐색으로 오귀속되지 않는지 검증한다.
     /// - 검증 내용: Cancel 뒤 pending intent와 operation 부재, itemsLoaded 무이벤트
@@ -983,7 +1067,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         try XCTSkipUnless(generation > 0, "navigation must begin a loading stream")
 
         await store.send(.content(.entryViewLayout(.entryOperations(.loading(
-            .streamFailed(generation: generation),
+            .streamFailed(generation: generation, failure: .unavailable(description: "test")),
         )))))
 
         XCTAssertEqual(
@@ -1035,7 +1119,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
 
         await store.send(.onDisappear)
         await store.send(.content(.entryViewLayout(.entryOperations(.loading(
-            .streamFailed(generation: generation),
+            .streamFailed(generation: generation, failure: .unavailable(description: "test")),
         )))))
         await store.send(.content(.entryViewLayout(.entryOperations(.loading(
             .streamFinished(generation: generation),
@@ -1074,7 +1158,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         XCTAssertNotNil(store.state.content.productBrowsingOperationID, "stale terminal must preserve correlation")
 
         await store.send(.content(.entryViewLayout(.entryOperations(.loading(
-            .streamFailed(generation: generation),
+            .streamFailed(generation: generation, failure: .unavailable(description: "test")),
         )))))
 
         XCTAssertEqual(metrics.value.count, 1, "current terminal must emit exactly once")
@@ -1204,7 +1288,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
 
         for _ in 0 ..< 2 {
             await store.send(.content(.entryViewLayout(.entryOperations(.loading(
-                .streamFailed(generation: generationA),
+                .streamFailed(generation: generationA, failure: .unavailable(description: "test")),
             )))))
         }
         XCTAssertEqual(metrics.value, [expectedUnavailableA], "stale or duplicate A must stay silent")
@@ -6238,20 +6322,10 @@ extension EVM001FileManagerNavigationTests {
             FileManagerFeature()
         } withDependencies: {
             $0.fileManagerProductMetricsClient = recorder.client
-            $0.entryFileOpsClient.loadClipboardPaths = { ([], .copy) }
             $0.date = .constant(Date())
         }
         // store.exhaustivity = .off: 메트릭 상관 계약에 집중하고 라우팅 부수 효과 수신은 생략함
         store.exhaustivity = .off
-
-        await store.send(.content(.entryViewLayout(.delegate(.executeCommand(
-            "clipboard.pasteItems",
-            source: .fileManagerContent,
-        )))))
-        await store.send(.content(.entryViewLayout(.delegate(.executeCommand(
-            "navigation.quickLookSelectedItem",
-            source: .fileManagerContent,
-        )))))
 
         let latePasteRecord = EntryActionRecord(
             operationKind: .pasteFileMove,
@@ -6307,16 +6381,10 @@ extension EVM001FileManagerNavigationTests {
             FileManagerFeature()
         } withDependencies: {
             $0.fileManagerProductMetricsClient = recorder.client
-            $0.entryFileOpsClient.loadClipboardPaths = { ([], .copy) }
             $0.date = .constant(Date())
         }
         // store.exhaustivity = .off: 메트릭 truth table 계약에 집중함
         store.exhaustivity = .off
-
-        await store.send(.content(.entryViewLayout(.delegate(.executeCommand(
-            "clipboard.pasteItems",
-            source: .fileManagerContent,
-        )))))
 
         let allFailedRecord = EntryActionRecord(
             operationKind: .pasteFileMove,
@@ -6399,16 +6467,11 @@ extension EVM001FileManagerNavigationTests {
             FileManagerFeature()
         } withDependencies: {
             $0.fileManagerProductMetricsClient = recorder.client
-            $0.entryFileOpsClient.loadClipboardPaths = { ([], .copy) }
             $0.date = .constant(Date())
         }
         // store.exhaustivity = .off: 메트릭 truth table 계약에 집중함
         store.exhaustivity = .off
 
-        await store.send(.content(.entryViewLayout(.delegate(.executeCommand(
-            "clipboard.pasteItems",
-            source: .fileManagerContent,
-        )))))
         let successRecord = EntryActionRecord(
             operationKind: .pasteFileCopy,
             targets: [.init(beforePath: "/src/a.txt", afterPath: "/dest/a.txt")],
@@ -6417,10 +6480,6 @@ extension EVM001FileManagerNavigationTests {
             successRecord,
         ))))))
 
-        await store.send(.content(.entryViewLayout(.delegate(.executeCommand(
-            "clipboard.pasteItems",
-            source: .fileManagerContent,
-        )))))
         let partialRecord = EntryActionRecord(
             operationKind: .pasteFileCopy,
             targets: [.init(beforePath: "/src/b.txt", afterPath: "/dest/b.txt")],

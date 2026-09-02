@@ -409,7 +409,10 @@ final class FMW003PendingSelectionTests: XCTestCase {
         let store = makeFileManagerContentFeatureStore(initialState: state)
         store.exhaustivity = .off
 
-        await store.send(.entryViewLayout(.entryOperations(.loading(.streamFailed(generation: 4))))) {
+        await store.send(.entryViewLayout(.entryOperations(.loading(.streamFailed(
+            generation: 4,
+            failure: .unavailable(description: "test"),
+        ))))) {
             $0.pendingSelectEntryID = nil
             $0.pendingSelectEntryDestinationPath = nil
             $0.entryViewLayout.selectedIds = [targetID]
@@ -437,7 +440,10 @@ final class FMW003PendingSelectionTests: XCTestCase {
         let store = makeFileManagerContentFeatureStore(initialState: state)
         store.exhaustivity = .off
 
-        await store.send(.entryViewLayout(.entryOperations(.loading(.streamFailed(generation: 4))))) {
+        await store.send(.entryViewLayout(.entryOperations(.loading(.streamFailed(
+            generation: 4,
+            failure: .unavailable(description: "test"),
+        ))))) {
             $0.pendingSelectEntryID = nil
             $0.pendingSelectEntryDestinationPath = nil
         }

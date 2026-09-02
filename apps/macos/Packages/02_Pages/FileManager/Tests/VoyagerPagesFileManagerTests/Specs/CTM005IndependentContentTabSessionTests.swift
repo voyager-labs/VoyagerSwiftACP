@@ -13147,7 +13147,13 @@ private extension CTM005IndependentContentTabSessionTests {
         XCTAssertEqual(store.state.content.entryViewLayout.entries, [fixture.staleEntry])
 
         await fixture.gate.resume(with: .failure)
-        await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.streamFailed, 1)
+        await store.receive { action in
+            guard case let .tabContent(
+                _,
+                .entryViewLayout(.entryOperations(.loading(.streamFailed(generation, failure)))),
+            ) = action else { return false }
+            return generation == 1 && failure == .unavailable(description: "test")
+        }
 
         await store.send(.contentTabs(.setCurrent(fixture.homeID)))
         await store.skipReceivedActions()

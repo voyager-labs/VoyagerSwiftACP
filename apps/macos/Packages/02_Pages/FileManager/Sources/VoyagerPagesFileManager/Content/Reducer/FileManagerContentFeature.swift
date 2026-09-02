@@ -321,7 +321,7 @@ public struct FileManagerContentFeature {
             // 선택·rename delegate를 동기화한다. 이전 generation의 stale failure는
             // EntryOperationsLoadingReducer가 무시하므로, 여기서도 현재 loading generation과
             // 일치할 때만 재조정을 발행해 진행 중인 새 batch의 선택·rename을 조기에 제거하지 않는다.
-            if case let .entryViewLayout(.entryOperations(.loading(.streamFailed(generation)))) = action,
+            if case let .entryViewLayout(.entryOperations(.loading(.streamFailed(generation, _)))) = action,
                generation == state.entryViewLayout.entryOperations.loadingContext.generation,
                !state.entryViewLayout.hierarchy.rootPath.isEmpty
             {
@@ -660,7 +660,7 @@ public struct FileManagerContentFeature {
             }
             return migrated || hadRootPair || terminalized
 
-        case let .entryViewLayout(.entryOperations(.loading(.streamFailed(streamGeneration)))):
+        case let .entryViewLayout(.entryOperations(.loading(.streamFailed(streamGeneration, _)))):
             guard streamGeneration == generation,
                   state.entryViewLayout.entryOperations.loadingContext.streamTerminal,
                   state.entryViewLayout.entryOperations.loadingContext.isIncomplete

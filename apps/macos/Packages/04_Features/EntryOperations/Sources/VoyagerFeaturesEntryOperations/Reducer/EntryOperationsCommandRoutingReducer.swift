@@ -118,6 +118,8 @@ struct EntryOperationsCommandRoutingReducer {
             case let .acceptedCommand(metadata, nestedAction):
                 let effect = if case .routing = nestedAction {
                     EntryOperationsCommandRoutingReducer().reduce(into: &state, action: nestedAction)
+                } else if case .lifecycle = nestedAction {
+                    EntryOperationsFeature().reduce(into: &state, action: nestedAction)
                 } else {
                     EntryOperationsExecutionReducer().reduce(into: &state, action: nestedAction)
                 }
@@ -210,6 +212,10 @@ struct EntryOperationsCommandRoutingReducer {
         switch action {
         case let .lifecycle(.entryActionCompleted(record)):
             .lifecycle(.entryActionCompleted(record.attaching(command: metadata)))
+        case .lifecycle(.operationStarted),
+             .lifecycle(.operationFinished),
+             .lifecycle(.dropOperationFinished):
+            .acceptedCommand(metadata: metadata, action: action)
         case .lifecycle, .delegate, .outcome:
             action
         default:

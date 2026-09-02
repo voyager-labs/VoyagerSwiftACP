@@ -488,7 +488,7 @@ extension FileManagerContentIdentityTransitionCoordinator {
         on action: FileManagerContentAction,
         state: inout FileManagerContentState,
     ) -> Bool {
-        guard case let .entryViewLayout(.entryOperations(.loading(.streamFailed(streamGeneration)))) = action,
+        guard case let .entryViewLayout(.entryOperations(.loading(.streamFailed(streamGeneration, _)))) = action,
               state.entryViewLayout.entryOperations.loadingContext.generation == streamGeneration,
               state.entryViewLayout.entryOperations.loadingContext.streamTerminal,
               state.entryViewLayout.entryOperations.loadingContext.isIncomplete,

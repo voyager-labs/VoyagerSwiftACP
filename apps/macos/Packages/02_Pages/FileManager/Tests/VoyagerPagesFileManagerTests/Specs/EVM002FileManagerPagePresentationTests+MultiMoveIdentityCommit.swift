@@ -574,7 +574,10 @@ extension EVM002FileManagerPagePresentationTests {
         )
         let store = makeRootSourceCandidateStore(state)
 
-        await store.send(.entryViewLayout(.entryOperations(.loading(.streamFailed(generation: 1)))))
+        await store.send(.entryViewLayout(.entryOperations(.loading(.streamFailed(
+            generation: 1,
+            failure: .unavailable(description: "test"),
+        )))))
 
         XCTAssertEqual(store.state.pendingIdentityTransition?.additionalMoves.map(\.migrated), [true, false])
         XCTAssertNotNil(store.state.pendingIdentityTransition)
@@ -633,7 +636,10 @@ extension EVM002FileManagerPagePresentationTests {
         )
         let store = makeRootSourceCandidateStore(state)
 
-        await store.send(.entryViewLayout(.entryOperations(.loading(.streamFailed(generation: 1)))))
+        await store.send(.entryViewLayout(.entryOperations(.loading(.streamFailed(
+            generation: 1,
+            failure: .unavailable(description: "test"),
+        )))))
 
         XCTAssertEqual(store.state.pendingIdentityTransition?.primaryMigrated, true)
         XCTAssertEqual(store.state.pendingIdentityTransition?.additionalMoves.first?.migrated, false)

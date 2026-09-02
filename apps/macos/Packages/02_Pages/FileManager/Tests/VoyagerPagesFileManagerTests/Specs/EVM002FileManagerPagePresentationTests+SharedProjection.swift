@@ -758,7 +758,10 @@ extension EVM002FileManagerPagePresentationTests {
         }
         store.exhaustivity = .off
 
-        await store.send(.entryViewLayout(.entryOperations(.loading(.streamFailed(generation: 1)))))
+        await store.send(.entryViewLayout(.entryOperations(.loading(.streamFailed(
+            generation: 1,
+            failure: .unavailable(description: "test"),
+        )))))
         await store.receive { action in
             guard case let .entryViewLayout(.view(.applyContentProjection(projection))) = action else {
                 return false
