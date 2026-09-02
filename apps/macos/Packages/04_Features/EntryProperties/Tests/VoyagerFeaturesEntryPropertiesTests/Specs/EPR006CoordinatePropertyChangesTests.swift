@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import VoyagerEntryCoreClient
 @testable import VoyagerFeaturesEntryProperties
 import XCTest
 
@@ -150,6 +151,43 @@ final class EPR006CoordinatePropertyChangesTests: XCTestCase {
         XCTAssertNil(store.state.proposal)
     }
 
+    /// EPR-006-execute_property_change: execute 중 selection 변경은 ambiguity를 지우지 않는다.
+    /// - 검증 내용: 새 selection 초기화, ambiguous outcome, generation fencing
+    /// - 사전 조건: 이전 selection의 confirmed proposal mutation이 실행 중임
+    /// - 기대 결과: 새 selection에 stale completion이 반영되지 않고 ambiguity가 게시됨
+    func testSelectionChangeDuringExecutionPreservesAmbiguityAndFencesCompletion() async {
+        let fixture = Fixture()
+        let replacement = EntryPropertiesSelection(
+            targets: [.init(localPath: "/tmp/replacement")],
+            propertyID: fixture.selection.propertyID,
+        )
+        var state = fixture.readyState
+        state.proposal = fixture.proposal
+        state.activePhase = .executing
+        state.status = .executing
+        let store = TestStore(initialState: state) {
+            EntryPropertiesFeature()
+        }
+
+        await store.send(.selectionChanged(replacement)) {
+            $0.generation = 1
+            $0.selection = replacement
+            $0.capabilityReport = nil
+            $0.targetSnapshot = nil
+            $0.proposal = nil
+            $0.appliedProposal = nil
+            $0.canonicalResult = nil
+            $0.activePhase = nil
+            $0.status = .ambiguous
+            $0.lastOutcome = .propertyChangeRejected(.ambiguousExecution)
+        }
+        await store.receive(.init(kind: .outcome(.propertyChangeRejected(.ambiguousExecution))))
+        await store.send(.init(kind: .executeCompleted(0, .success(.init(snapshot: fixture.snapshot)))))
+        XCTAssertEqual(store.state.selection, replacement)
+        XCTAssertEqual(store.state.status, .ambiguous)
+        XCTAssertEqual(store.state.lastOutcome, .propertyChangeRejected(.ambiguousExecution))
+    }
+
     // MARK: - EPR-006-execute_property_change
 
     /// EPR-006-execute_property_change: 확인이 필요한 proposal은 확인 전 로컬에서 거부한다.
@@ -235,6 +273,34 @@ final class EPR006CoordinatePropertyChangesTests: XCTestCase {
         await store.receive(.init(kind: .outcome(.propertyChangeRejected(.ambiguousExecution))))
         XCTAssertEqual(store.state.proposal, fixture.proposal)
         XCTAssertNil(store.state.canonicalResult)
+    }
+
+    /// EPR-006-execute_property_change: Entry Core 오류 의미를 lifecycle failure로 보존한다.
+    /// - 검증 내용: deterministic server error와 post-write transport ambiguity mapping
+    /// - 사전 조건: strict Entry Core client error taxonomy
+    /// - 기대 결과: conflict/unsupported/authorization/validation과 ambiguous execute 구분
+    func testEntryCoreErrorsMapToLifecycleSemantics() {
+        XCTAssertEqual(mappedFailure(EntryCoreClientError.server(.conflict)), .conflict)
+        XCTAssertEqual(mappedFailure(EntryCoreClientError.server(.unsupported)), .unsupported)
+        XCTAssertEqual(mappedFailure(EntryCoreClientError.server(.permissionDenied)), .authorization)
+        XCTAssertEqual(mappedFailure(EntryCoreClientError.server(.invalidRequest)), .validation)
+        XCTAssertEqual(mappedFailure(EntryCoreClientError.daemonUnavailable), .unavailable)
+
+        for error in [
+            EntryCoreClientError.cancelled,
+            .timedOut(.write),
+            .timedOut(.read),
+            .transport(.write),
+            .transport(.read),
+            .responseTooLarge,
+            .malformedResponse,
+            .protocolMismatch,
+            .requestIDMismatch,
+        ] {
+            XCTAssertEqual(mappedExecutionFailure(error), .ambiguousExecution)
+        }
+        XCTAssertEqual(mappedExecutionFailure(EntryCoreClientError.transport(.connect)), .unavailable)
+        XCTAssertEqual(mappedExecutionFailure(EntryCoreClientError.server(.conflict)), .conflict)
     }
 
     /// EPR-006-execute_property_change: trusted success 뒤 canonical read-back까지 완료한다.

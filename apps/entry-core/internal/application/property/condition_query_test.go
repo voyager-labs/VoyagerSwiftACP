@@ -99,13 +99,22 @@ func TestConditionCapabilityMappingCompleteness(t *testing.T) {
 		{domainentry.PropertyTypeBoolean, domainentry.PropertyCardinalityMany, "", false},
 	}
 	for _, test := range contracts {
-		capability := ConditionCapabilityFor(domainentry.WorkspacePropertyDefinition{ValueType: test.valueType, Cardinality: test.cardinality, Lifecycle: domainentry.PropertyLifecycleActive})
+		capability := ConditionCapabilityFor(domainentry.WorkspacePropertyDefinition{Origin: domainentry.PropertyOriginUserDefined, ValueType: test.valueType, Cardinality: test.cardinality, Lifecycle: domainentry.PropertyLifecycleActive})
 		if capability.Supported != test.supported || capability.NativeType != test.native {
 			t.Errorf("%s/%s capability = %+v", test.valueType, test.cardinality, capability)
 		}
 		if !test.supported && capability.Reason != "unsupported_value_contract" {
 			t.Errorf("unsupported reason = %q", capability.Reason)
 		}
+	}
+	sourceBacked := ConditionCapabilityFor(domainentry.WorkspacePropertyDefinition{
+		Origin:      domainentry.PropertyOriginBuiltIn,
+		ValueType:   domainentry.PropertyTypeText,
+		Cardinality: domainentry.PropertyCardinalityOne,
+		Lifecycle:   domainentry.PropertyLifecycleActive,
+	})
+	if sourceBacked.Supported || sourceBacked.Reason != "source_runtime_unavailable" {
+		t.Fatalf("source-backed capability = %+v", sourceBacked)
 	}
 }
 
@@ -118,7 +127,7 @@ func TestConditionEvaluatorStateAndOperatorMatrix(t *testing.T) {
 	decimal := "10.5"
 	date := "2026-09-01"
 	definition := func(valueType domainentry.PropertyType, cardinality domainentry.PropertyCardinality) DefinitionView {
-		return DefinitionView{Definition: domainentry.WorkspacePropertyDefinition{PropertyID: propertyID, ValueType: valueType, Cardinality: cardinality, Lifecycle: domainentry.PropertyLifecycleActive}}
+		return DefinitionView{Definition: domainentry.WorkspacePropertyDefinition{PropertyID: propertyID, Origin: domainentry.PropertyOriginUserDefined, ValueType: valueType, Cardinality: cardinality, Lifecycle: domainentry.PropertyLifecycleActive}}
 	}
 	condition := func(operator, kind string, values ...string) QueryCondition {
 		return QueryCondition{PropertyID: propertyID, Operator: operator, Operand: ConditionOperand{Kind: kind, Values: values}}
@@ -154,7 +163,7 @@ func TestConditionEvaluatorStateTruthTableAndFailClosedRows(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := "value"
-	activeView := DefinitionView{Definition: domainentry.WorkspacePropertyDefinition{PropertyID: propertyID, ValueType: domainentry.PropertyTypeText, Cardinality: domainentry.PropertyCardinalityMany, Lifecycle: domainentry.PropertyLifecycleActive}}
+	activeView := DefinitionView{Definition: domainentry.WorkspacePropertyDefinition{PropertyID: propertyID, Origin: domainentry.PropertyOriginUserDefined, ValueType: domainentry.PropertyTypeText, Cardinality: domainentry.PropertyCardinalityMany, Lifecycle: domainentry.PropertyLifecycleActive}}
 	states := []struct {
 		name   string
 		fact   domainentry.EntryPropertyAssignment
@@ -214,7 +223,7 @@ func TestConditionEvaluatorStateTruthTableAndFailClosedRows(t *testing.T) {
 	}
 
 	optionID := domainentry.MustPropertyOptionID("00000000-0000-7000-8000-000000000001")
-	selectView := DefinitionView{Definition: domainentry.WorkspacePropertyDefinition{PropertyID: propertyID, ValueType: domainentry.PropertyTypeSelect, Cardinality: domainentry.PropertyCardinalityOne, Lifecycle: domainentry.PropertyLifecycleActive}, Options: []domainentry.PropertyOption{{OptionID: optionID, PropertyID: propertyID, Active: false}}}
+	selectView := DefinitionView{Definition: domainentry.WorkspacePropertyDefinition{PropertyID: propertyID, Origin: domainentry.PropertyOriginUserDefined, ValueType: domainentry.PropertyTypeSelect, Cardinality: domainentry.PropertyCardinalityOne, Lifecycle: domainentry.PropertyLifecycleActive}, Options: []domainentry.PropertyOption{{OptionID: optionID, PropertyID: propertyID, Active: false}}}
 	selectFact := domainentry.EntryPropertyAssignment{State: domainentry.AssignmentStateValue, Scalar: &domainentry.AssignmentValue{OptionID: &optionID}}
 	if evaluateCondition(selectView, selectFact, QueryCondition{PropertyID: propertyID, Operator: "any", Operand: ConditionOperand{Kind: "option_ref", Values: []string{optionID.String()}}}, "2026-09-01") {
 		t.Fatal("inactive option operand matched")

@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import VoyagerEntryCoreClient
 
 @Reducer
 public struct EntryPropertiesFeature: Sendable {
@@ -15,6 +16,7 @@ public struct EntryPropertiesFeature: Sendable {
         Reduce { state, action in
             switch action.kind {
             case let .selectionChanged(selection):
+                let interruptedExecution = state.activePhase == .executing
                 state.generation &+= 1
                 state.selection = selection
                 state.capabilityReport = nil
@@ -23,6 +25,15 @@ public struct EntryPropertiesFeature: Sendable {
                 state.appliedProposal = nil
                 state.canonicalResult = nil
                 state.activePhase = nil
+                if interruptedExecution {
+                    let outcome = EntryPropertiesOutcome.propertyChangeRejected(.ambiguousExecution)
+                    state.status = .ambiguous
+                    state.lastOutcome = outcome
+                    return .merge(
+                        .cancel(id: CancelID.flow),
+                        .send(.init(kind: .outcome(outcome))),
+                    )
+                }
                 state.status = .idle
                 state.lastOutcome = nil
                 return .cancel(id: CancelID.flow)
@@ -150,10 +161,8 @@ public struct EntryPropertiesFeature: Sendable {
                     let result: Result<EntryPropertiesExecutionReceipt, EntryPropertiesFailure>
                     do {
                         result = try await .success(client.execute(proposal))
-                    } catch is CancellationError {
-                        result = .failure(.ambiguousExecution)
                     } catch {
-                        result = .failure(mappedFailure(error))
+                        result = .failure(mappedExecutionFailure(error))
                     }
                     await send(.init(kind: .executeCompleted(generation, result)))
                 }
@@ -298,6 +307,42 @@ public struct EntryPropertiesFeature: Sendable {
     }
 }
 
-private func mappedFailure(_ error: any Error) -> EntryPropertiesFailure {
-    error as? EntryPropertiesFailure ?? .unavailable
+func mappedFailure(_ error: any Error) -> EntryPropertiesFailure {
+    if let failure = error as? EntryPropertiesFailure {
+        return failure
+    }
+    guard let clientError = error as? EntryCoreClientError else { return .unavailable }
+    switch clientError {
+    case let .server(code):
+        switch code {
+        case .conflict:
+            return .conflict
+        case .unsupported, .unknownMethod:
+            return .unsupported
+        case .permissionDenied:
+            return .authorization
+        case .requestTooLarge, .invalidRequest, .invalidPath, .invalidSelector, .contextMismatch,
+             .scopeTooLarge, .invalidPageToken, .propertyNotFound, .responseTooLarge:
+            return .validation
+        case .mountNotFound, .sourceNotFound, .sourceUnavailable, .sourceDeleted, .entryNotFound,
+             .adapterFailure, .internalError:
+            return .unavailable
+        }
+    case .invalidEndpoint, .daemonUnavailable, .timedOut(.connect), .transport(.connect):
+        return .unavailable
+    case .cancelled, .timedOut(.write), .timedOut(.read), .transport(.write), .transport(.read),
+         .responseTooLarge, .malformedResponse, .protocolMismatch, .requestIDMismatch:
+        return .unavailable
+    }
+}
+
+func mappedExecutionFailure(_ error: any Error) -> EntryPropertiesFailure {
+    guard let clientError = error as? EntryCoreClientError else { return mappedFailure(error) }
+    switch clientError {
+    case .cancelled, .timedOut(.write), .timedOut(.read), .transport(.write), .transport(.read),
+         .responseTooLarge, .malformedResponse, .protocolMismatch, .requestIDMismatch:
+        return .ambiguousExecution
+    default:
+        return mappedFailure(clientError)
+    }
 }

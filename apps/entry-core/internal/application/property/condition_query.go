@@ -31,6 +31,9 @@ func ConditionCapabilityFor(definition domainentry.WorkspacePropertyDefinition) 
 	if definition.Lifecycle != domainentry.PropertyLifecycleActive {
 		return ConditionCapability{Reason: "definition_disabled"}
 	}
+	if definition.Origin == domainentry.PropertyOriginBuiltIn {
+		return ConditionCapability{Reason: "source_runtime_unavailable"}
+	}
 	nativeType, ok := conditionNativeType(definition.ValueType, definition.Cardinality)
 	if !ok {
 		return ConditionCapability{Reason: "unsupported_value_contract"}
