@@ -685,7 +685,7 @@ enum FileManagerContentIdentityTransitionCoordinator {
             }
             return true
         case let (.folder(expectedID, expectedGeneration), .folder(actualID, actualGeneration)):
-            guard canonicalizedPath(expectedID) == canonicalizedPath(actualID) else { return false }
+            guard standardizedPath(expectedID) == standardizedPath(actualID) else { return false }
             guard expectedGeneration == actualGeneration else {
                 discard(state: &state)
                 return false

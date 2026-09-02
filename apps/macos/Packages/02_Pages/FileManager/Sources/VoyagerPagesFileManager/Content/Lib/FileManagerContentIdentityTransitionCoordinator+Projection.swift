@@ -17,7 +17,7 @@ extension FileManagerContentIdentityTransitionCoordinator {
             guard !move.migrated,
                   case let .folder(ownerID, _) = move.sourceOwner ?? transition.projectionOwner
             else { return false }
-            return canonicalizedPath(ownerID) == canonicalizedPath(folderID)
+            return standardizedPath(ownerID) == standardizedPath(folderID)
         }) {
             shouldDefer = true
             holdsUntilMigration = true
@@ -50,7 +50,7 @@ extension FileManagerContentIdentityTransitionCoordinator {
             }
         }
         if case let .folder(ownerID, _) = transition.preservationOwner,
-           canonicalizedPath(ownerID) == canonicalizedPath(folderID),
+           standardizedPath(ownerID) == standardizedPath(folderID),
            shouldDefer == nil
         {
             shouldDefer = true
@@ -62,7 +62,7 @@ extension FileManagerContentIdentityTransitionCoordinator {
             // 다중 이동: additional 이동의 source 폴더도 primary 보존과 동일하게 보류한다.
             for move in transition.additionalMoves where !move.migrated {
                 guard case let .folder(ownerID, _) = move.sourceOwner ?? transition.projectionOwner,
-                      canonicalizedPath(ownerID) == canonicalizedPath(folderID)
+                      standardizedPath(ownerID) == standardizedPath(folderID)
                 else { continue }
                 shouldDefer = true
                 holdsUntilMigration = true
@@ -633,13 +633,13 @@ extension FileManagerContentIdentityTransitionCoordinator {
             _, folderID, folderGeneration, .event(.coreBatch),
         ))):
             if case let .folder(expectedID, expectedGeneration) = transition.projectionOwner,
-               canonicalizedPath(folderID) == canonicalizedPath(expectedID),
+               standardizedPath(folderID) == standardizedPath(expectedID),
                folderGeneration == expectedGeneration
             {
                 return .migration
             }
             if case let .folder(preservedID, preservedGeneration) = transition.preservationOwner,
-               canonicalizedPath(folderID) == canonicalizedPath(preservedID),
+               standardizedPath(folderID) == standardizedPath(preservedID),
                folderGeneration == preservedGeneration
             {
                 return .preservation

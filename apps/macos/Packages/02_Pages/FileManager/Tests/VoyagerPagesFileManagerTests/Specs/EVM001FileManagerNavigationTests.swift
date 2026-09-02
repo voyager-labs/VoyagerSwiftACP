@@ -1730,6 +1730,96 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         XCTAssertEqual(state.pendingIdentityTransition?.preservedLexicalBeforeID, oldPath)
     }
 
+    /// EVM-001-command_external_refresh_correlation: source projection hold는 lexical owner만 보류한다.
+    /// canonical target이 같은 expanded symlink alias가 동시에 존재해도 다른 alias의 batch를
+    /// source hold로 오인하지 않아야 한다.
+    /// - 검증 내용: canonical-equivalent alias B에는 hold를 만들지 않고 lexical owner A에만 생성
+    /// - 사전 조건: preservationOwner가 alias A인 대기 identity transition
+    /// - 기대 결과: alias B 호출은 no-op, alias A 호출은 migration hold를 설치
+    func testSourceProjectionHoldsUseLexicalOwnerIdentity() throws {
+        let rootURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let targetURL = rootURL.appendingPathComponent("target", isDirectory: true)
+        let aliasAURL = rootURL.appendingPathComponent("alias-a")
+        let aliasBURL = rootURL.appendingPathComponent("alias-b")
+        try FileManager.default.createDirectory(at: targetURL, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: aliasAURL, withDestinationURL: targetURL)
+        try FileManager.default.createSymbolicLink(at: aliasBURL, withDestinationURL: targetURL)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        var state = FileManagerContentState()
+        state.pendingIdentityTransition = .init(
+            recordID: UUID(),
+            beforePath: rootURL.appendingPathComponent("before").path,
+            afterPath: rootURL.appendingPathComponent("after").path,
+            rootPath: rootURL.path,
+            refreshGeneration: 1,
+            projectionOwner: .root(generation: 1),
+            preservationOwner: .folder(id: aliasAURL.path, generation: 2),
+            afterLexicalPath: rootURL.appendingPathComponent("after").path,
+        )
+
+        FileManagerContentIdentityTransitionCoordinator.beginDeferredFolderReplacementIfNeeded(
+            folderID: aliasBURL.path,
+            items: [],
+            state: &state,
+        )
+        XCTAssertNil(state.entryViewLayout.hierarchy.deferredFolderReplacement(folderID: aliasBURL.path))
+
+        FileManagerContentIdentityTransitionCoordinator.beginDeferredFolderReplacementIfNeeded(
+            folderID: aliasAURL.path,
+            items: [],
+            state: &state,
+        )
+        XCTAssertEqual(
+            state.entryViewLayout.hierarchy.deferredFolderReplacement(folderID: aliasAURL.path)?.holdsUntilMigration,
+            true,
+        )
+    }
+
+    /// EVM-001-command_external_refresh_correlation: identity migration은 lexical batch owner를 요구한다.
+    /// canonical-equivalent alias의 batch가 다른 lexical folder transition의 selection을 소비하지 않아야 한다.
+    /// - 검증 내용: alias B batch를 alias A owner transition에 적용해도 선택·전이가 유지되는지 검증
+    /// - 사전 조건: alias A가 projection owner인 대기 transition과 before/after row가 있다.
+    /// - 기대 결과: alias B batch는 migration하지 않고 before 선택을 유지
+    func testIdentityMigrationRejectsCanonicalAliasOwner() throws {
+        let rootURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let targetURL = rootURL.appendingPathComponent("target", isDirectory: true)
+        let aliasAURL = rootURL.appendingPathComponent("alias-a")
+        let aliasBURL = rootURL.appendingPathComponent("alias-b")
+        try FileManager.default.createDirectory(at: targetURL, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: aliasAURL, withDestinationURL: targetURL)
+        try FileManager.default.createSymbolicLink(at: aliasBURL, withDestinationURL: targetURL)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let beforePath = rootURL.appendingPathComponent("before").path
+        let afterPath = aliasAURL.appendingPathComponent("after").path
+        let after = makeCorrelationEntry(id: afterPath, name: "after")
+        var state = FileManagerContentState()
+        state.navigation.seedInitialFolderPath(rootURL.path)
+        state.navigation.navigationState = .folder(rootURL.path)
+        state.entryViewLayout.selectedIds = [beforePath]
+        state.pendingIdentityTransition = .init(
+            recordID: UUID(),
+            beforePath: beforePath,
+            afterPath: afterPath,
+            rootPath: rootURL.path,
+            refreshGeneration: 1,
+            projectionOwner: .folder(id: aliasAURL.path, generation: 2),
+            preservationOwner: nil,
+            afterLexicalPath: afterPath,
+        )
+
+        let didMigrate = FileManagerContentIdentityTransitionCoordinator.migrateSelection(
+            entries: [after],
+            projectionOwner: .folder(id: aliasBURL.path, generation: 2),
+            state: &state,
+        )
+
+        XCTAssertFalse(didMigrate)
+        XCTAssertEqual(state.entryViewLayout.selectedIds, [beforePath])
+        XCTAssertNotNil(state.pendingIdentityTransition)
+    }
+
     private func makeExpandedChildTransitionFixture() -> ExpandedChildTransitionFixture {
         let rootPath = "/tmp/voyager-correlation"
         let folder = EntryModel.temporaryFolder(id: "\(rootPath)/folder", name: "folder")

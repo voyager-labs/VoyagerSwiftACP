@@ -256,6 +256,58 @@ extension EVM002ManageEntriesViewPresentationTests {
         await store.receive(\.delegate.expandRequested, folder.id)
     }
 
+    /// EVM-002-toggle_directory_expansion_in_list: canonical invalidation은 모든 lexical alias를 재로드한다.
+    /// 같은 실폴더를 가리키는 expanded symlink alias가 하나의 canonical affected path를 공유해도
+    /// 한 alias만 restart하면 다른 alias가 이전 세대에 남으므로 두 hierarchy key를 함께 올린다.
+    /// - 검증 내용: canonical-equivalent A/B의 generation과 retained snapshot을 동시에 갱신
+    /// - 사전 조건: A/B alias folder가 모두 expanded·loaded 상태임
+    /// - 기대 결과: A/B 모두 generation +1 및 loadingCore 전환
+    func testCanonicalInvalidationReloadsAllLexicalAliases() throws {
+        let rootURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let targetURL = rootURL.appendingPathComponent("target", isDirectory: true)
+        let aliasAURL = rootURL.appendingPathComponent("alias-a")
+        let aliasBURL = rootURL.appendingPathComponent("alias-b")
+        try FileManager.default.createDirectory(at: targetURL, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: aliasAURL, withDestinationURL: targetURL)
+        try FileManager.default.createSymbolicLink(at: aliasBURL, withDestinationURL: targetURL)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let aliasA = EntryModel.temporaryFolder(id: aliasAURL.path, name: "alias-a")
+        let aliasB = EntryModel.temporaryFolder(id: aliasBURL.path, name: "alias-b")
+        let staleA = replacementReloadFile(id: aliasAURL.appendingPathComponent("stale-a").path, name: "stale-a")
+        let staleB = replacementReloadFile(id: aliasBURL.appendingPathComponent("stale-b").path, name: "stale-b")
+        var state = EntryViewLayoutState()
+        state.entries = [aliasA, aliasB]
+        state.hierarchy = .init(rootPath: rootURL.path)
+        state.hierarchy.nodesByID[aliasA.id] = .init(
+            children: [staleA],
+            loadPhase: .loaded,
+            generation: 2,
+        )
+        state.hierarchy.nodesByID[aliasB.id] = .init(
+            children: [staleB],
+            loadPhase: .loaded,
+            generation: 2,
+        )
+        state.hierarchy.setExpandedIDs([aliasA.id, aliasB.id])
+
+        _ = EntryListHierarchyReducer().reduce(
+            into: &state,
+            action: .hierarchy(.hierarchyInvalidated(
+                affectedPaths: [targetURL.path],
+                removedPrefixes: [],
+            )),
+        )
+
+        for (id, staleChild) in [(aliasA.id, staleA), (aliasB.id, staleB)] {
+            let node = state.hierarchy.nodesByID[id]
+            XCTAssertEqual(node?.generation, 3)
+            XCTAssertEqual(node?.loadPhase, .loadingCore)
+            XCTAssertEqual(node?.folder.children, [staleChild])
+            XCTAssertTrue(node?.folder.retainsPreviousGenerationChildren ?? false)
+        }
+    }
+
     /// EVM-002-toggle_directory_expansion_in_list: loading folder의 watcher invalidation은 stream을 재시작한다.
     /// 진행 중인 child snapshot이 외부 추가·삭제를 놓친 채 loaded로 고정되지 않는지 검증한다.
     /// - 검증 내용: loading parent의 generation 증가와 새 load request 생성
