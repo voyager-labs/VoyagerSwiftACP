@@ -695,8 +695,10 @@ public struct FileManagerContentFeature {
               case let .root(generation) = transition.projectionOwner,
               case let .folder(currentPath) = state.navigation.navigationState
         else { return false }
-        let currentGeneration = state.entryViewLayout.entryOperations.loadingContext.generation
-        guard generation == currentGeneration || generation == currentGeneration &+ 1 else { return false }
+        guard FileManagerContentIdentityTransitionCoordinator.ownerIsCurrent(
+            .root(generation: generation),
+            state: state,
+        ) else { return false }
         return FileManagerContentIdentityTransitionCoordinator.canonicalizedPath(currentPath) == transition.rootPath
     }
 

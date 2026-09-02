@@ -900,6 +900,39 @@ extension EVM002FileManagerPagePresentationTests {
         )
     }
 
+    /// EVM-002-command_external_refresh_correlation: 모든 queued root owner 동안 aggregate reload를 생략한다.
+    /// 여러 root reload가 예약된 상태에서 aggregate reload가 추가 generation을 소비하지 않게 한다.
+    /// - 검증 내용: current보다 두 세대 앞선 root owner도 active identity reload로 인정함
+    /// - 사전 조건: loading context generation 1과 queued root projection owner generation 3이 있다.
+    /// - 기대 결과: reloadDirectoryListing이 추가 loadItems를 발행하지 않고 generation 1을 유지한다.
+    func testAggregateReloadYieldsToQueuedRootReloadOwners() async {
+        var state = FileManagerContentState()
+        state.navigation.navigationState = .folder("/root")
+        state.entryViewLayout.entryOperations.loadingContext.generation = 1
+        state.pendingIdentityTransition = .init(
+            recordID: UUID(),
+            beforePath: "/root/before",
+            afterPath: "/root/after",
+            rootPath: "/root",
+            refreshGeneration: 1,
+            projectionOwner: .root(generation: 3),
+        )
+
+        let store = TestStore(initialState: state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+            $0.entryLoadingClient.stagedLoadItems = { _, _, _ in
+                AsyncThrowingStream { _ in }
+            }
+        }
+
+        await store.send(.internal(.reloadDirectoryListing))
+        XCTAssertEqual(store.state.entryViewLayout.entryOperations.loadingContext.generation, 1)
+        XCTAssertFalse(store.state.entryViewLayout.entryOperations.isLoading)
+        await store.finish()
+    }
+
     /// 같은 folder 재적용(탭 복원) reload도 전이 세대를 재기준화한다.
     /// - 검증 내용: applyNavigationState(.folder 동일 경로) 뒤 root 소유자 세대가 함께 올라간다.
     /// - 사전 조건: root 소유자 대기 전이와 gen 1 로딩 컨텍스트가 있다.
