@@ -70,6 +70,50 @@ final class EntryCorePropertyClientFlowTests: XCTestCase {
         }
     }
 
+    func testExecuteRejectsResponseOutsideRequestChanges() async throws {
+        let propertyID1 = try PropertyID(rawValue: "00000000-0000-0000-8000-000000000001")
+        let propertyID2 = try PropertyID(rawValue: "00000000-0000-0000-8000-000000000002")
+        let propertyID3 = try PropertyID(rawValue: "00000000-0000-0000-8000-000000000003")
+        let change1 = try PropertyChangeTarget(
+            target: PropertyTarget(localPath: "/a"),
+            propertyID: propertyID1,
+            expectedDefinitionRevision: 1,
+            expectedAssignmentRevision: 0,
+            desired: .null,
+        )
+        let change2 = try PropertyChangeTarget(
+            target: PropertyTarget(localPath: "/b"),
+            propertyID: propertyID2,
+            expectedDefinitionRevision: 1,
+            expectedAssignmentRevision: 0,
+            desired: .null,
+        )
+        let request = try PropertyChangeRequest(changes: [change1, change2])
+        let cases = executeResponseCases(
+            propertyID1: propertyID1,
+            propertyID2: propertyID2,
+            propertyID3: propertyID3,
+        )
+        let endpoint = try EntryCoreEndpoint(path: "/tmp/property-client.sock")
+
+        for (name, response) in cases {
+            let recorder = PropertyTransportRecorder(response: Data(response.utf8))
+            let client = EntryCorePropertyClient.makeLive(
+                requestID: { "execute-id" },
+                makeTransport: recorder.makeTransport,
+            )
+
+            do {
+                _ = try await client.changeExecute(endpoint, request)
+                XCTFail("\(name) should be rejected")
+            } catch {
+                XCTAssertEqual(error as? EntryCoreClientError, .protocolMismatch, name)
+            }
+            XCTAssertEqual(recorder.creationCount, 1, name)
+            XCTAssertEqual(recorder.requests.count, 1, name)
+        }
+    }
+
     func testInvalidLocalBoundsDoNotCreateTransport() throws {
         let recorder = PropertyTransportRecorder(response: Data())
         _ = EntryCorePropertyClient.makeLive(
@@ -240,6 +284,53 @@ private func queryPageResponse(items: String, unresolved: String) -> String {
         "catalog_version":"2.2.0",
         "has_more":false
       }
+    }
+    """
+}
+
+private func propertyAssignmentJSON(propertyID: String) -> String {
+    """
+    {
+      "property_id":"\(propertyID)",
+      "entry_id":"ent:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "value_type":"text",
+      "cardinality":"one",
+      "state":"null",
+      "revision":1
+    }
+    """
+}
+
+private func executeResponseCases(
+    propertyID1: PropertyID,
+    propertyID2: PropertyID,
+    propertyID3: PropertyID,
+) -> [(String, String)] {
+    let assignment1 = propertyAssignmentJSON(propertyID: propertyID1.rawValue)
+    let assignment2 = propertyAssignmentJSON(propertyID: propertyID2.rawValue)
+    let assignment3 = propertyAssignmentJSON(propertyID: propertyID3.rawValue)
+    return [
+        (
+            "fewer assignments",
+            executeResponse(assignments: "[\(assignment1)]"),
+        ),
+        (
+            "wrong assignment order",
+            executeResponse(assignments: "[\(assignment2),\(assignment1)]"),
+        ),
+        (
+            "unrequested property",
+            executeResponse(assignments: "[\(assignment1),\(assignment3)]"),
+        ),
+    ]
+}
+
+private func executeResponse(assignments: String) -> String {
+    """
+    {
+      "request_id":"execute-id",
+      "ok":true,
+      "result":{"assignments":\(assignments)}
     }
     """
 }

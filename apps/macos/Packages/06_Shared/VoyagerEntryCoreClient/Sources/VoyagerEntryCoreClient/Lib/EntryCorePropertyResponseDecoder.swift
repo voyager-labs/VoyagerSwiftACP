@@ -282,11 +282,16 @@ private extension EntryCorePropertyResponseDecoder {
               case let .string(pid)? = fields["property_id"], case let .string(eid)? = fields["entry_id"],
               let targetValue = fields["target"],
               let afterValue = fields["after"], let beforeValue = fields["before"] else { throw mismatch }
+        let propertyID = try PropertyID(rawValue: pid)
+        let entryID = try EntryCoreEntryID(rawValue: eid)
         let before: PropertyAssignment? = beforeValue == .null ? nil : try assignment(beforeValue)
+        if let before, before.propertyID != propertyID || before.entryID != entryID {
+            throw mismatch
+        }
         return try PropertyPreparedChange(
             target: target(targetValue),
-            propertyID: PropertyID(rawValue: pid),
-            entryID: EntryCoreEntryID(rawValue: eid),
+            propertyID: propertyID,
+            entryID: entryID,
             before: before,
             after: desired(afterValue),
         )

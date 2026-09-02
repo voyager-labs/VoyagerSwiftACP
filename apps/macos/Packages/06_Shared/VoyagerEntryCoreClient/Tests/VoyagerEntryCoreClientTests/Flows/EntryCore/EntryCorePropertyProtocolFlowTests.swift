@@ -57,6 +57,29 @@ final class EntryCorePropertyProtocolFlowTests: XCTestCase {
         }
     }
 
+    func testPrepareRejectsBeforeIdentityMismatch() throws {
+        let propertyID = "00000000-0000-0000-8000-000000000001"
+        let otherPropertyID = "00000000-0000-0000-8000-000000000002"
+        let entryID = "ent:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        let otherEntryID = "ent:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+        let responses = [
+            prepareResponse(beforePropertyID: otherPropertyID, beforeEntryID: entryID),
+            prepareResponse(beforePropertyID: propertyID, beforeEntryID: otherEntryID),
+        ]
+
+        for wire in responses {
+            XCTAssertThrowsError(
+                try EntryCorePropertyResponseDecoder.decode(
+                    Array(wire),
+                    method: .propertyChangePrepare,
+                    expectedRequestID: "id",
+                ),
+            ) {
+                XCTAssertEqual($0 as? EntryCoreClientError, .protocolMismatch)
+            }
+        }
+    }
+
     func testAssignmentDecodesRFC3339NanoFractionalDatetime() throws {
         let wire = Data(
             #"""
@@ -112,4 +135,32 @@ final class EntryCorePropertyProtocolFlowTests: XCTestCase {
             XCTAssertEqual($0 as? EntryCoreClientError, .protocolMismatch)
         }
     }
+}
+
+private func prepareResponse(beforePropertyID: String, beforeEntryID: String) -> Data {
+    Data(
+        """
+        {
+          "request_id":"id",
+          "ok":true,
+          "result":{
+            "changes":[{
+              "target":{"kind":"local_path","local_path":"/a"},
+              "property_id":"00000000-0000-0000-8000-000000000001",
+              "entry_id":"ent:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+              "before":{
+                "property_id":"\(beforePropertyID)",
+                "entry_id":"\(beforeEntryID)",
+                "value_type":"text",
+                "cardinality":"one",
+                "state":"null",
+                "revision":1
+              },
+              "after":{"state":"null"}
+            }],
+            "requires_confirmation":true
+          }
+        }
+        """.utf8,
+    )
 }

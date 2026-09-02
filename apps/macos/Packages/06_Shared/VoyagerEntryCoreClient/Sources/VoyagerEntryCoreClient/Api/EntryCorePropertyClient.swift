@@ -150,7 +150,20 @@ extension EntryCorePropertyClient {
             guard case let .assignments(value) = try await call(
                 .propertyChangeExecute, endpoint, request, requestID, makeTransport,
             ) else { throw EntryCoreClientError.protocolMismatch }
+            guard executeAssignmentsMatchRequest(value, request: request) else {
+                throw EntryCoreClientError.protocolMismatch
+            }
             return value
+        }
+    }
+
+    nonisolated private static func executeAssignmentsMatchRequest(
+        _ assignments: [PropertyAssignment],
+        request: PropertyChangeRequest,
+    ) -> Bool {
+        guard assignments.count == request.changes.count else { return false }
+        return zip(assignments, request.changes).allSatisfy { assignment, change in
+            assignment.propertyID == change.propertyID
         }
     }
 
