@@ -27,6 +27,10 @@ type PropertyService interface {
 	ListAssignmentsPage(ctx context.Context, workspace domainentry.WorkspaceContext, localPath string, requestedIDs []domainentry.PropertyID, after *domainentry.PropertyID, limit int) ([]domainentry.EntryPropertyAssignment, map[domainentry.PropertyID]applicationproperty.DefinitionView, *domainentry.PropertyID, bool, error)
 }
 
+type propertyConditionQueryService interface {
+	Query(ctx context.Context, workspace domainentry.WorkspaceContext, query applicationproperty.ConditionQuery) (applicationproperty.ConditionQueryResult, error)
+}
+
 // NewWithPropertyService는 Property 전용 테스트·조합 생성자다. 워크스페이스
 // 식별이 typed UUIDv7로 파싱되지 않으면 실패 닫기로 서비스를 떼어 게이트가
 // 거절한다.
@@ -83,6 +87,8 @@ func propertyParamsMissing(request schema.Request) bool {
 		return request.PropertyChangePrepareParams == nil
 	case schema.MethodPropertyChangeExecute:
 		return request.PropertyChangeExecuteParams == nil
+	case schema.MethodPropertyConditionQuery:
+		return request.PropertyConditionQueryParams == nil
 	default:
 		return false
 	}

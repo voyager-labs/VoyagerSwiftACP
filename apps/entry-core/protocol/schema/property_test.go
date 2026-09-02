@@ -39,7 +39,14 @@ func ascendingUUID(n int) string {
 }
 
 func fixtureDefinitionJSON(id string) string {
-	return `{"property_id":"` + id + `","key":"k","name":"n","value_type":"text","cardinality":"one","state":"active","revision":1,"options":[]}`
+	return `{"property_id":"` + id + `","key":"k","name":"n","value_type":"text","cardinality":"one","state":"active","revision":1,"options":[],"condition_capability":` + fixtureConditionCapabilityJSON() + `}`
+}
+
+func fixtureConditionCapabilityJSON() string {
+	return `{"supported":true,"evaluation_scope":"local_assignment","catalog_version":"2.2.0","native_type":"string","allowed_operators":["all","any","cn","empty","eq","ew","exists","nc","neq","rx","sw"]}`
+}
+func fixtureConditionCapability() PropertyConditionCapability {
+	return PropertyConditionCapability{Supported: true, EvaluationScope: "local_assignment", CatalogVersion: "2.2.0", NativeType: "string", AllowedOperators: []string{"all", "any", "cn", "empty", "eq", "ew", "exists", "nc", "neq", "rx", "sw"}}
 }
 
 func fixtureAssignmentJSON(id, entryID string) string {
@@ -60,7 +67,7 @@ func decodePropertyParams(t *testing.T, wire []byte) (Request, *ProtocolError) {
 	return request, protocolError
 }
 
-// --- 1. 메서드 계약 완전성: 11개 메서드 각각 디코드/게이트/유니언 오류 ---
+// --- 1. 메서드 계약 완전성: 12개 메서드 각각 디코드/게이트/유니언 오류 ---
 
 func TestPropertyMethodContractCompleteness(t *testing.T) {
 	t.Parallel()
@@ -84,6 +91,7 @@ func TestPropertyMethodContractCompleteness(t *testing.T) {
 		{MethodPropertyAssignmentList, `{"page_size":1,"requested_property_ids":[],"target":{"kind":"local_path","local_path":"/a"}}`},
 		{MethodPropertyChangePrepare, `{"changes":[` + changeTarget + `]}`},
 		{MethodPropertyChangeExecute, `{"changes":[` + changeTarget + `]}`},
+		{MethodPropertyConditionQuery, `{"targets":[{"kind":"local_path","local_path":"/a"}],"combinator":"all","conditions":[{"property_id":"` + pid + `","operator":"exists","operand":{"kind":"none"}}],"projection_property_ids":[],"evaluation_date":"2026-09-01","page_size":1}`},
 	}
 
 	for _, test := range methods {
@@ -116,6 +124,50 @@ func TestPropertyMethodContractCompleteness(t *testing.T) {
 				t.Fatalf("unknown member accepted: %#v", protocolError)
 			}
 		})
+	}
+}
+
+func TestPropertyConditionQueryRequestBoundsAndStrictness(t *testing.T) {
+	pid1, pid2 := ascendingUUID(1), ascendingUUID(2)
+	base := `{"targets":[{"kind":"local_path","local_path":"/a"}],"combinator":"all","conditions":[{"property_id":"` + pid1 + `","operator":"exists","operand":{"kind":"none"}}],"projection_property_ids":["` + pid2 + `"],"evaluation_date":"2026-09-01","page_size":1}`
+	request, protocolError := decodePropertyParams(t, propertyRequest(MethodPropertyConditionQuery, base))
+	if protocolError != nil || request.PropertyConditionQueryParams == nil {
+		t.Fatalf("valid query rejected: %#v", protocolError)
+	}
+	cases := []struct {
+		name, params string
+		code         ErrorCode
+	}{
+		{"duplicate target", strings.Replace(base, `[{"kind":"local_path","local_path":"/a"}]`, `[{"kind":"local_path","local_path":"/a"},{"kind":"local_path","local_path":"/a"}]`, 1), ErrorInvalidRequest},
+		{"duplicate condition", strings.Replace(base, `[{"property_id":"`+pid1+`","operator":"exists","operand":{"kind":"none"}}]`, `[{"property_id":"`+pid1+`","operator":"exists","operand":{"kind":"none"}},{"property_id":"`+pid1+`","operator":"empty","operand":{"kind":"none"}}]`, 1), ErrorInvalidRequest},
+		{"bad date", strings.Replace(base, "2026-09-01", "2026-9-1", 1), ErrorInvalidRequest},
+		{"wrong operand shape", strings.Replace(base, `"operand":{"kind":"none"}`, `"operand":{"kind":"text","values":["x"]}`, 1), ErrorInvalidRequest},
+		{"unsorted projection", strings.Replace(base, `"projection_property_ids":["`+pid2+`"]`, `"projection_property_ids":["`+pid2+`","`+pid1+`"]`, 1), ErrorInvalidRequest},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			_, got := decodePropertyParams(t, propertyRequest(MethodPropertyConditionQuery, test.params))
+			if got == nil || got.Code != test.code {
+				t.Fatalf("error = %#v, want %s", got, test.code)
+			}
+		})
+	}
+
+	targets := make([]string, 17)
+	for index := range targets {
+		targets[index] = `{"kind":"local_path","local_path":"/` + fmt.Sprint(index) + `"}`
+	}
+	conditions := make([]string, 256)
+	for index := range conditions {
+		conditions[index] = `{"property_id":"` + ascendingUUID(index+1) + `","operator":"exists","operand":{"kind":"none"}}`
+	}
+	atLimit := `{"targets":[` + strings.Join(targets[:16], ",") + `],"combinator":"all","conditions":[` + strings.Join(conditions[:256], ",") + `],"projection_property_ids":[],"evaluation_date":"2026-09-01","page_size":1}`
+	if _, got := decodePropertyParams(t, propertyRequest(MethodPropertyConditionQuery, atLimit)); got != nil {
+		t.Fatalf("4096 work units rejected: %#v", got)
+	}
+	over := `{"targets":[` + strings.Join(targets, ",") + `],"combinator":"all","conditions":[` + strings.Join(conditions[:241], ",") + `],"projection_property_ids":[],"evaluation_date":"2026-09-01","page_size":1}`
+	if _, got := decodePropertyParams(t, propertyRequest(MethodPropertyConditionQuery, over)); got == nil || got.Code != ErrorScopeTooLarge {
+		t.Fatalf("4097 work units error = %#v", got)
 	}
 }
 
@@ -483,7 +535,7 @@ func TestPropertyResultEncodeShapeAndRoundTrip(t *testing.T) {
 
 	pid := fixturePropertyID(t, 500)
 	entryID := fixtureEntryID(1)
-	definition := PropertyDefinition{PropertyID: pid, Key: "k", Name: "n", ValueType: "text", Cardinality: "one", State: "active", Revision: 1, Options: []PropertyOption{}}
+	definition := PropertyDefinition{PropertyID: pid, Key: "k", Name: "n", ValueType: "text", Cardinality: "one", State: "active", Revision: 1, Options: []PropertyOption{}, ConditionCapability: fixtureConditionCapability()}
 	assignment := PropertyAssignment{PropertyID: pid, EntryID: entryID, ValueType: "text", Cardinality: "one", State: "value", Revision: 1, Payload: &PropertyPayload{kind: "text", one: "v"}}
 	prepared := PropertyPreparedChange{
 		Target:     PropertyTargetSelector{Kind: "local_path", LocalPath: "/a"},
@@ -501,17 +553,17 @@ func TestPropertyResultEncodeShapeAndRoundTrip(t *testing.T) {
 		{
 			MethodPropertyDefinitionList,
 			PropertyDefinitionListResult{Definitions: []PropertyDefinition{definition}, HasMore: false},
-			`{"request_id":"id","ok":true,"result":{"definitions":[{"property_id":"` + pid + `","key":"k","name":"n","value_type":"text","cardinality":"one","state":"active","revision":1,"options":[]}],"has_more":false}}`,
+			`{"request_id":"id","ok":true,"result":{"definitions":[` + fixtureDefinitionJSON(pid) + `],"has_more":false}}`,
 		},
 		{
 			MethodPropertyDefinitionUpdate,
 			PropertyDefinitionResult{Definition: definition},
-			`{"request_id":"id","ok":true,"result":{"definition":{"property_id":"` + pid + `","key":"k","name":"n","value_type":"text","cardinality":"one","state":"active","revision":1,"options":[]}}}`,
+			`{"request_id":"id","ok":true,"result":{"definition":` + fixtureDefinitionJSON(pid) + `}}`,
 		},
 		{
 			MethodPropertyOptionReorder,
 			PropertyDefinitionResult{Definition: definition},
-			`{"request_id":"id","ok":true,"result":{"definition":{"property_id":"` + pid + `","key":"k","name":"n","value_type":"text","cardinality":"one","state":"active","revision":1,"options":[]}}}`,
+			`{"request_id":"id","ok":true,"result":{"definition":` + fixtureDefinitionJSON(pid) + `}}`,
 		},
 		{
 			MethodPropertyAssignmentList,
@@ -647,7 +699,7 @@ func TestEncodedSuccessBytesExactness(t *testing.T) {
 	t.Parallel()
 
 	pid := fixturePropertyID(t, 700)
-	definition := PropertyDefinition{PropertyID: pid, Key: "k", Name: "n", ValueType: "text", Cardinality: "one", State: "active", Revision: 1, Options: []PropertyOption{}}
+	definition := PropertyDefinition{PropertyID: pid, Key: "k", Name: "n", ValueType: "text", Cardinality: "one", State: "active", Revision: 1, Options: []PropertyOption{}, ConditionCapability: fixtureConditionCapability()}
 	result := PropertyDefinitionResult{Definition: definition}
 
 	size, fits := EncodedSuccessBytes("id", result)
@@ -664,7 +716,7 @@ func TestEncodedSuccessBytesExactness(t *testing.T) {
 	for index := range options {
 		options[index] = PropertyOption{OptionID: fixtureOptionID(1000 + index), Label: strings.Repeat("l", 256), Position: int64(index), State: "active"}
 	}
-	fat := PropertyDefinitionListResult{Definitions: []PropertyDefinition{{PropertyID: pid, Key: "k", Name: "n", ValueType: "select", Cardinality: "one", State: "active", Revision: 1, Options: options}}, HasMore: false}
+	fat := PropertyDefinitionListResult{Definitions: []PropertyDefinition{{PropertyID: pid, Key: "k", Name: "n", ValueType: "select", Cardinality: "one", State: "active", Revision: 1, Options: options, ConditionCapability: fixtureConditionCapability()}}, HasMore: false}
 	fatSize, fatFits := EncodedSuccessBytes("id", fat)
 	if fatFits || fatSize <= MaxWireBytes {
 		t.Fatalf("oversized read-back not flagged: size=%d fits=%v", fatSize, fatFits)

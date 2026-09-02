@@ -161,7 +161,7 @@ func TestMutationsRejectEnvelopeOverflowBeforeCommit(t *testing.T) {
 
 	labels := make([]string, 200)
 	for index := range labels {
-		labels[index] = strings.Repeat("a", 230)
+		labels[index] = strings.Repeat("a", 229)
 	}
 	created, err := service.CreateDefinition(ctx, workspace, CreateDefinitionInput{
 		Key:          "edge",

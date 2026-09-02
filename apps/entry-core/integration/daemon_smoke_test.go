@@ -292,6 +292,9 @@ func TestDaemonProcessSmoke(t *testing.T) {
 	t.Run("property_change_oversized_envelope", func(t *testing.T) {
 		runPropertyOversizedEnvelope(t, propertyEnv)
 	})
+	t.Run("property_condition_query", func(t *testing.T) {
+		runPropertyConditionQuery(t, propertyEnv)
+	})
 }
 
 // inspectCatalogStore는 daemon 종료 후 DB를 열어 (workspace identity, seed row

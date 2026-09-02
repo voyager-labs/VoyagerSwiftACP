@@ -25,7 +25,7 @@ func protocolCodeForPropertyError(err error) schema.ErrorCode {
 		errors.Is(err, applicationproperty.ErrDuplicateOptionID),
 		errors.Is(err, domainentry.ErrAssignmentInactiveOption):
 		return schema.ErrorConflict
-	case errors.Is(err, applicationproperty.ErrScopeTooLarge):
+	case errors.Is(err, applicationproperty.ErrScopeTooLarge), errors.Is(err, applicationproperty.ErrConditionQueryScopeTooLarge):
 		return schema.ErrorScopeTooLarge
 	case errors.Is(err, applicationproperty.ErrDefinitionNotFound),
 		errors.Is(err, applicationproperty.ErrOptionNotFound):
@@ -56,6 +56,7 @@ func protocolCodeForPropertyError(err error) schema.ErrorCode {
 func isPropertyClientContractError(err error) bool {
 	switch {
 	case errors.Is(err, applicationproperty.ErrInvalidChangeRequest),
+		errors.Is(err, applicationproperty.ErrInvalidConditionQuery),
 		errors.Is(err, applicationproperty.ErrDuplicateChangeTarget),
 		errors.Is(err, applicationproperty.ErrInvalidOptionOwner),
 		errors.Is(err, applicationproperty.ErrInvalidOptionOrder),

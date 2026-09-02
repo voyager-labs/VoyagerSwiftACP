@@ -61,6 +61,7 @@ type Request struct {
 	PropertyAssignmentListParams    *PropertyAssignmentListParams
 	PropertyChangePrepareParams     *PropertyChangePrepareParams
 	PropertyChangeExecuteParams     *PropertyChangeExecuteParams
+	PropertyConditionQueryParams    *PropertyConditionQueryParams
 }
 
 type ProtocolError struct {
@@ -293,6 +294,8 @@ func validResult(result Result) bool {
 		return typed.Validate() == nil
 	case PropertyChangeExecuteResult:
 		return typed.Validate() == nil
+	case PropertyConditionQueryResult:
+		return typed.Validate() == nil
 	default:
 		return false
 	}
@@ -455,6 +458,12 @@ func decodeResult(value jsonValue, method Method) (Result, error) {
 		return result, nil
 	case MethodPropertyChangeExecute:
 		result, ok := decodePropertyChangeExecuteResult(value)
+		if !ok {
+			return nil, ErrInvalidResponse
+		}
+		return result, nil
+	case MethodPropertyConditionQuery:
+		result, ok := decodePropertyConditionQueryResult(value)
 		if !ok {
 			return nil, ErrInvalidResponse
 		}

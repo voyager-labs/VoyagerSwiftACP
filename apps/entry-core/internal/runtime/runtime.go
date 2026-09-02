@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"crypto/rand"
 	"sync"
 )
 
@@ -14,12 +15,13 @@ const (
 )
 
 type Runtime struct {
-	mu              sync.RWMutex
-	state           State
-	appVersion      string
-	entryService    EntryService
-	propertyService PropertyService
-	workspaceID     string
+	mu                    sync.RWMutex
+	state                 State
+	appVersion            string
+	entryService          EntryService
+	propertyService       PropertyService
+	workspaceID           string
+	propertyQueryTokenKey [32]byte
 }
 
 func New() *Runtime {
@@ -31,7 +33,11 @@ func newWithAppVersion(appVersion string) *Runtime {
 }
 
 func newWithAppVersionAndServices(appVersion, workspaceID string, entryService EntryService, propertyService PropertyService) *Runtime {
-	return &Runtime{state: StateRunning, appVersion: appVersion, entryService: entryService, propertyService: propertyService, workspaceID: workspaceID}
+	runtime := &Runtime{state: StateRunning, appVersion: appVersion, entryService: entryService, propertyService: propertyService, workspaceID: workspaceID}
+	if _, err := rand.Read(runtime.propertyQueryTokenKey[:]); err != nil {
+		runtime.propertyService = nil
+	}
+	return runtime
 }
 
 func (runtime *Runtime) State() State {

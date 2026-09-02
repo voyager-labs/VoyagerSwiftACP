@@ -30,6 +30,7 @@ const (
 	MethodPropertyAssignmentList    Method = "property.assignment.list"
 	MethodPropertyChangePrepare     Method = "property.change.prepare"
 	MethodPropertyChangeExecute     Method = "property.change.execute"
+	MethodPropertyConditionQuery    Method = "property.condition.query"
 )
 
 // Property 계약에 필요한 추가 안정 에러. 메시지는 고정·redacted다.
@@ -43,7 +44,7 @@ func propertyMethodValid(method Method) bool {
 	switch method {
 	case MethodPropertyDefinitionList, MethodPropertyDefinitionCreate, MethodPropertyDefinitionUpdate, MethodPropertyDefinitionDisable,
 		MethodPropertyOptionCreate, MethodPropertyOptionUpdate, MethodPropertyOptionReorder, MethodPropertyOptionDisable,
-		MethodPropertyAssignmentList, MethodPropertyChangePrepare, MethodPropertyChangeExecute:
+		MethodPropertyAssignmentList, MethodPropertyChangePrepare, MethodPropertyChangeExecute, MethodPropertyConditionQuery:
 		return true
 	default:
 		return false
@@ -76,14 +77,27 @@ type PropertyChangeTarget struct {
 }
 
 type PropertyDefinition struct {
-	PropertyID  string           `json:"property_id"`
-	Key         string           `json:"key"`
-	Name        string           `json:"name"`
-	ValueType   string           `json:"value_type"`
-	Cardinality string           `json:"cardinality"`
-	State       string           `json:"state"`
-	Revision    int64            `json:"revision"`
-	Options     []PropertyOption `json:"options"`
+	PropertyID          string                      `json:"property_id"`
+	Key                 string                      `json:"key"`
+	Name                string                      `json:"name"`
+	ValueType           string                      `json:"value_type"`
+	Cardinality         string                      `json:"cardinality"`
+	State               string                      `json:"state"`
+	Revision            int64                       `json:"revision"`
+	Options             []PropertyOption            `json:"options"`
+	ConditionCapability PropertyConditionCapability `json:"condition_capability"`
+}
+
+// PropertyConditionCapability is a strict supported/unsupported union. A
+// supported capability carries the complete local evaluator contract; an
+// unsupported capability carries exactly one stable reason.
+type PropertyConditionCapability struct {
+	Supported        bool     `json:"supported"`
+	EvaluationScope  string   `json:"evaluation_scope,omitempty"`
+	CatalogVersion   string   `json:"catalog_version,omitempty"`
+	NativeType       string   `json:"native_type,omitempty"`
+	AllowedOperators []string `json:"allowed_operators,omitempty"`
+	Reason           string   `json:"reason,omitempty"`
 }
 
 type PropertyOption struct {
@@ -181,6 +195,28 @@ type PropertyChangeExecuteParams struct {
 	Changes []PropertyChangeTarget
 }
 
+type PropertyConditionOperand struct {
+	Kind    string   `json:"kind"`
+	Values  []string `json:"values,omitempty"`
+	Boolean *bool    `json:"boolean,omitempty"`
+}
+
+type PropertyCondition struct {
+	PropertyID string                   `json:"property_id"`
+	Operator   string                   `json:"operator"`
+	Operand    PropertyConditionOperand `json:"operand"`
+}
+
+type PropertyConditionQueryParams struct {
+	Targets               []PropertyTargetSelector
+	Combinator            string
+	Conditions            []PropertyCondition
+	ProjectionPropertyIDs []string
+	EvaluationDate        string
+	PageSize              int
+	PageToken             *string
+}
+
 // --- 결과 ---
 
 type PropertyDefinitionListResult struct {
@@ -217,6 +253,22 @@ type PropertyChangeExecuteResult struct {
 }
 
 func (PropertyChangeExecuteResult) isResult() {}
+
+type PropertyConditionQueryItem struct {
+	CandidateIndex int                  `json:"candidate_index"`
+	EntryID        string               `json:"entry_id"`
+	Projection     []PropertyAssignment `json:"projection"`
+}
+
+type PropertyConditionQueryResult struct {
+	Items                      []PropertyConditionQueryItem `json:"items"`
+	UnresolvedCandidateIndices []int                        `json:"unresolved_candidate_indices"`
+	CatalogVersion             string                       `json:"catalog_version"`
+	NextPageToken              *string                      `json:"next_page_token,omitempty"`
+	HasMore                    bool                         `json:"has_more"`
+}
+
+func (PropertyConditionQueryResult) isResult() {}
 
 // EncodedSuccessBytes는 성공 응답의 정확한 인코딩 바이트 수를 계산한다.
 // execute는 mutation 전에 이 값으로 정준 read-back 바이트를 검증해야 하며,
@@ -415,7 +467,7 @@ func (definition PropertyDefinition) Validate() error {
 	if !validPropertyIDText(definition.PropertyID) || !validUTF8Bytes(definition.Key, 1, maximumPropertyNameBytes) ||
 		!validUTF8Bytes(definition.Name, 1, maximumPropertyNameBytes) || !validPropertyValueType(definition.ValueType) ||
 		!validPropertyCardinality(definition.Cardinality) || !oneOf(definition.State, "active", "disabled") ||
-		definition.Revision < 1 || definition.Options == nil || len(definition.Options) > maximumPropertyIDs {
+		definition.Revision < 1 || definition.Options == nil || len(definition.Options) > maximumPropertyIDs || definition.ConditionCapability.Validate() != nil {
 		return ErrInvalidResponse
 	}
 	if definition.ValueType != "select" && len(definition.Options) > 0 {
@@ -436,6 +488,33 @@ func (definition PropertyDefinition) Validate() error {
 		}
 	}
 	return nil
+}
+
+func (capability PropertyConditionCapability) Validate() error {
+	if capability.Supported {
+		if capability.EvaluationScope != "local_assignment" || capability.CatalogVersion == "" ||
+			!oneOf(capability.NativeType, "string", "number", "date", "boolean", "string_list", "categorical") ||
+			capability.Reason != "" || capability.AllowedOperators == nil {
+			return ErrInvalidResponse
+		}
+		previous := ""
+		for _, operator := range capability.AllowedOperators {
+			if !validConditionOperator(operator) || (previous != "" && previous >= operator) {
+				return ErrInvalidResponse
+			}
+			previous = operator
+		}
+		return nil
+	}
+	if capability.EvaluationScope != "" || capability.CatalogVersion != "" || capability.NativeType != "" || capability.AllowedOperators != nil ||
+		!oneOf(capability.Reason, "definition_disabled", "source_runtime_unavailable", "unsupported_value_contract") {
+		return ErrInvalidResponse
+	}
+	return nil
+}
+
+func validConditionOperator(operator string) bool {
+	return oneOf(operator, "all", "any", "btw", "cn", "empty", "eq", "ew", "exists", "gt", "gte", "lt", "lte", "miss", "nbtw", "nc", "neq", "none", "rx", "sw", "today")
 }
 
 func (assignment PropertyAssignment) Validate() error {
@@ -534,6 +613,38 @@ func (result PropertyChangeExecuteResult) Validate() error {
 			return ErrInvalidResponse
 		}
 		seen[key] = struct{}{}
+	}
+	return nil
+}
+
+func (result PropertyConditionQueryResult) Validate() error {
+	if result.Items == nil || result.UnresolvedCandidateIndices == nil || result.CatalogVersion == "" ||
+		result.HasMore != (result.NextPageToken != nil) {
+		return ErrInvalidResponse
+	}
+	if result.NextPageToken != nil && !validOpaqueASCII(*result.NextPageToken, 1, maximumPageTokenBytes) {
+		return ErrInvalidResponse
+	}
+	last := -1
+	for _, item := range result.Items {
+		if item.CandidateIndex <= last || !validEntryID(item.EntryID) || item.Projection == nil {
+			return ErrInvalidResponse
+		}
+		last = item.CandidateIndex
+		previousID := ""
+		for _, assignment := range item.Projection {
+			if assignment.EntryID != item.EntryID || assignment.Validate() != nil || (previousID != "" && previousID >= assignment.PropertyID) {
+				return ErrInvalidResponse
+			}
+			previousID = assignment.PropertyID
+		}
+	}
+	last = -1
+	for _, index := range result.UnresolvedCandidateIndices {
+		if index <= last {
+			return ErrInvalidResponse
+		}
+		last = index
 	}
 	return nil
 }
@@ -881,10 +992,154 @@ func decodePropertyChangeParams(value jsonValue) ([]PropertyChangeTarget, ErrorC
 	return changes, ""
 }
 
+func decodePropertyConditionQueryParams(value jsonValue) (PropertyConditionQueryParams, ErrorCode) {
+	fields, ok := objectFieldsWithOptional(value,
+		[]string{"targets", "combinator", "conditions", "projection_property_ids", "evaluation_date", "page_size"},
+		[]string{"page_token"})
+	if !ok || fields["targets"].kind != jsonArray || fields["conditions"].kind != jsonArray ||
+		fields["projection_property_ids"].kind != jsonArray || fields["combinator"].kind != jsonString ||
+		fields["evaluation_date"].kind != jsonString {
+		return PropertyConditionQueryParams{}, ErrorInvalidRequest
+	}
+	if len(fields["targets"].items) < 1 || len(fields["targets"].items) > maximumPropertyTargets ||
+		len(fields["conditions"].items) < 1 || len(fields["conditions"].items) > maximumPropertyIDs ||
+		!oneOf(fields["combinator"].text, "all", "any") || !validPropertyDate(fields["evaluation_date"].text) {
+		return PropertyConditionQueryParams{}, ErrorInvalidRequest
+	}
+	pageSize, ok := decodePageSize(fields["page_size"])
+	if !ok {
+		return PropertyConditionQueryParams{}, ErrorInvalidRequest
+	}
+	params := PropertyConditionQueryParams{Combinator: fields["combinator"].text, EvaluationDate: fields["evaluation_date"].text, PageSize: pageSize}
+	seenTargets := make(map[string]struct{}, len(fields["targets"].items))
+	for _, item := range fields["targets"].items {
+		target, code := decodePropertyTargetSelector(item)
+		if code != "" {
+			return PropertyConditionQueryParams{}, code
+		}
+		if _, duplicate := seenTargets[target.LocalPath]; duplicate {
+			return PropertyConditionQueryParams{}, ErrorInvalidRequest
+		}
+		seenTargets[target.LocalPath] = struct{}{}
+		params.Targets = append(params.Targets, target)
+	}
+	seenConditions := make(map[string]struct{}, len(fields["conditions"].items))
+	for _, item := range fields["conditions"].items {
+		condition, valid := decodePropertyCondition(item)
+		if !valid {
+			return PropertyConditionQueryParams{}, ErrorInvalidRequest
+		}
+		if _, duplicate := seenConditions[condition.PropertyID]; duplicate {
+			return PropertyConditionQueryParams{}, ErrorInvalidRequest
+		}
+		seenConditions[condition.PropertyID] = struct{}{}
+		params.Conditions = append(params.Conditions, condition)
+	}
+	projection, ok := decodePropertyIDFilter(fields["projection_property_ids"])
+	if !ok {
+		return PropertyConditionQueryParams{}, ErrorInvalidRequest
+	}
+	for index := 1; index < len(projection); index++ {
+		if projection[index-1] >= projection[index] {
+			return PropertyConditionQueryParams{}, ErrorInvalidRequest
+		}
+	}
+	params.ProjectionPropertyIDs = projection
+	unique := make(map[string]struct{}, len(seenConditions)+len(projection))
+	for id := range seenConditions {
+		unique[id] = struct{}{}
+	}
+	for _, id := range projection {
+		unique[id] = struct{}{}
+	}
+	if len(params.Targets)*len(unique) > 4096 {
+		return PropertyConditionQueryParams{}, ErrorScopeTooLarge
+	}
+	if field, exists := fields["page_token"]; exists {
+		if field.kind != jsonString || !validOpaqueASCII(field.text, 1, maximumPageTokenBytes) {
+			return PropertyConditionQueryParams{}, ErrorInvalidRequest
+		}
+		params.PageToken = stringPointer(field.text)
+	}
+	return params, ""
+}
+
+func decodePropertyCondition(value jsonValue) (PropertyCondition, bool) {
+	fields, ok := objectFields(value, "property_id", "operator", "operand")
+	if !ok || fields["operator"].kind != jsonString || !validConditionOperator(fields["operator"].text) {
+		return PropertyCondition{}, false
+	}
+	propertyID, ok := decodePropertyIDField(fields["property_id"])
+	if !ok {
+		return PropertyCondition{}, false
+	}
+	operand, ok := decodePropertyConditionOperand(fields["operand"])
+	if !ok || !validConditionOperandShape(fields["operator"].text, operand) {
+		return PropertyCondition{}, false
+	}
+	return PropertyCondition{PropertyID: propertyID, Operator: fields["operator"].text, Operand: operand}, true
+}
+
+func validConditionOperandShape(operator string, operand PropertyConditionOperand) bool {
+	switch operator {
+	case "empty", "exists", "today":
+		return operand.Kind == "none"
+	case "btw", "nbtw":
+		return (operand.Kind == "number" || operand.Kind == "date") && len(operand.Values) == 2
+	case "all", "any", "miss", "none":
+		return (operand.Kind == "text" || operand.Kind == "option_ref") && len(operand.Values) >= 1
+	case "cn", "nc", "sw", "ew", "rx":
+		return operand.Kind == "text" && len(operand.Values) == 1
+	case "eq":
+		return (operand.Kind == "boolean" && operand.Boolean != nil) ||
+			((operand.Kind == "text" || operand.Kind == "number" || operand.Kind == "date") && len(operand.Values) == 1)
+	case "neq", "gt", "gte", "lt", "lte":
+		return (operand.Kind == "text" || operand.Kind == "number" || operand.Kind == "date") && len(operand.Values) == 1
+	default:
+		return false
+	}
+}
+
+func decodePropertyConditionOperand(value jsonValue) (PropertyConditionOperand, bool) {
+	if fields, ok := objectFields(value, "kind"); ok && fields["kind"].kind == jsonString && fields["kind"].text == "none" {
+		return PropertyConditionOperand{Kind: "none"}, true
+	}
+	if fields, ok := objectFields(value, "kind", "boolean"); ok && fields["kind"].kind == jsonString && fields["kind"].text == "boolean" && fields["boolean"].kind == jsonBool {
+		boolean := fields["boolean"].boolean
+		return PropertyConditionOperand{Kind: "boolean", Boolean: &boolean}, true
+	}
+	fields, ok := objectFields(value, "kind", "values")
+	if !ok || fields["kind"].kind != jsonString || fields["values"].kind != jsonArray ||
+		!oneOf(fields["kind"].text, "text", "number", "date", "option_ref") || len(fields["values"].items) > maximumPropertyManyItems {
+		return PropertyConditionOperand{}, false
+	}
+	values := make([]string, len(fields["values"].items))
+	for index, item := range fields["values"].items {
+		if item.kind != jsonString {
+			return PropertyConditionOperand{}, false
+		}
+		text := item.text
+		valid := validUTF8Bytes(text, 0, maximumPropertyScalarBytes)
+		switch fields["kind"].text {
+		case "number":
+			valid = validCanonicalDecimal(text)
+		case "date":
+			valid = validPropertyDate(text)
+		case "option_ref":
+			valid = validPropertyOptionIDText(text)
+		}
+		if !valid {
+			return PropertyConditionOperand{}, false
+		}
+		values[index] = text
+	}
+	return PropertyConditionOperand{Kind: fields["kind"].text, Values: values}, true
+}
+
 // --- 결과 디코딩 ---
 
 func decodePropertyDefinition(value jsonValue) (PropertyDefinition, bool) {
-	fields, ok := objectFields(value, "property_id", "key", "name", "value_type", "cardinality", "state", "revision", "options")
+	fields, ok := objectFields(value, "property_id", "key", "name", "value_type", "cardinality", "state", "revision", "options", "condition_capability")
 	if !ok || !allStrings(fields, "property_id", "key", "name", "value_type", "cardinality", "state") || fields["options"].kind != jsonArray {
 		return PropertyDefinition{}, false
 	}
@@ -902,6 +1157,11 @@ func decodePropertyDefinition(value jsonValue) (PropertyDefinition, bool) {
 		Revision:    revision,
 		Options:     make([]PropertyOption, len(fields["options"].items)),
 	}
+	capability, valid := decodePropertyConditionCapability(fields["condition_capability"])
+	if !valid {
+		return PropertyDefinition{}, false
+	}
+	definition.ConditionCapability = capability
 	for index, item := range fields["options"].items {
 		optionFields, valid := objectFields(item, "option_id", "label", "position", "state")
 		if !valid || !allStrings(optionFields, "option_id", "label", "state") {
@@ -914,6 +1174,26 @@ func decodePropertyDefinition(value jsonValue) (PropertyDefinition, bool) {
 		definition.Options[index] = PropertyOption{OptionID: optionFields["option_id"].text, Label: optionFields["label"].text, Position: position - 1, State: optionFields["state"].text}
 	}
 	return definition, definition.Validate() == nil
+}
+
+func decodePropertyConditionCapability(value jsonValue) (PropertyConditionCapability, bool) {
+	if fields, ok := objectFields(value, "supported", "reason"); ok && fields["supported"].kind == jsonBool && !fields["supported"].boolean && fields["reason"].kind == jsonString {
+		capability := PropertyConditionCapability{Reason: fields["reason"].text}
+		return capability, capability.Validate() == nil
+	}
+	fields, ok := objectFields(value, "supported", "evaluation_scope", "catalog_version", "native_type", "allowed_operators")
+	if !ok || fields["supported"].kind != jsonBool || !fields["supported"].boolean ||
+		!allStrings(fields, "evaluation_scope", "catalog_version", "native_type") || fields["allowed_operators"].kind != jsonArray {
+		return PropertyConditionCapability{}, false
+	}
+	capability := PropertyConditionCapability{Supported: true, EvaluationScope: fields["evaluation_scope"].text, CatalogVersion: fields["catalog_version"].text, NativeType: fields["native_type"].text, AllowedOperators: make([]string, len(fields["allowed_operators"].items))}
+	for index, item := range fields["allowed_operators"].items {
+		if item.kind != jsonString {
+			return PropertyConditionCapability{}, false
+		}
+		capability.AllowedOperators[index] = item.text
+	}
+	return capability, capability.Validate() == nil
 }
 
 func decodePropertyAssignment(value jsonValue) (PropertyAssignment, bool) {
@@ -1053,6 +1333,45 @@ func decodePropertyChangeExecuteResult(value jsonValue) (PropertyChangeExecuteRe
 			return PropertyChangeExecuteResult{}, false
 		}
 		result.Assignments[index] = assignment
+	}
+	return result, result.Validate() == nil
+}
+
+func decodePropertyConditionQueryResult(value jsonValue) (PropertyConditionQueryResult, bool) {
+	fields, ok := objectFieldsWithOptional(value, []string{"items", "unresolved_candidate_indices", "catalog_version", "has_more"}, []string{"next_page_token"})
+	if !ok || fields["items"].kind != jsonArray || fields["unresolved_candidate_indices"].kind != jsonArray || fields["catalog_version"].kind != jsonString || fields["has_more"].kind != jsonBool {
+		return PropertyConditionQueryResult{}, false
+	}
+	token, ok := decodePropertyPagedToken(fields)
+	if !ok {
+		return PropertyConditionQueryResult{}, false
+	}
+	result := PropertyConditionQueryResult{Items: make([]PropertyConditionQueryItem, len(fields["items"].items)), UnresolvedCandidateIndices: make([]int, len(fields["unresolved_candidate_indices"].items)), CatalogVersion: fields["catalog_version"].text, HasMore: fields["has_more"].boolean, NextPageToken: token}
+	for index, item := range fields["items"].items {
+		itemFields, valid := objectFields(item, "candidate_index", "entry_id", "projection")
+		if !valid || itemFields["entry_id"].kind != jsonString || itemFields["projection"].kind != jsonArray {
+			return PropertyConditionQueryResult{}, false
+		}
+		candidateIndex, valid := lexicalInteger(itemFields["candidate_index"])
+		if !valid || candidateIndex < 0 {
+			return PropertyConditionQueryResult{}, false
+		}
+		mapped := PropertyConditionQueryItem{CandidateIndex: int(candidateIndex), EntryID: itemFields["entry_id"].text, Projection: make([]PropertyAssignment, len(itemFields["projection"].items))}
+		for projectionIndex, projectionItem := range itemFields["projection"].items {
+			assignment, valid := decodePropertyAssignment(projectionItem)
+			if !valid {
+				return PropertyConditionQueryResult{}, false
+			}
+			mapped.Projection[projectionIndex] = assignment
+		}
+		result.Items[index] = mapped
+	}
+	for index, item := range fields["unresolved_candidate_indices"].items {
+		candidateIndex, valid := lexicalInteger(item)
+		if !valid || candidateIndex < 0 {
+			return PropertyConditionQueryResult{}, false
+		}
+		result.UnresolvedCandidateIndices[index] = int(candidateIndex)
 	}
 	return result, result.Validate() == nil
 }

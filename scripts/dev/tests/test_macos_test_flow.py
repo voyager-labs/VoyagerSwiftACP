@@ -134,6 +134,19 @@ class MacOSTestFlowTests(unittest.TestCase):
             condition.selector, "VoyagerTests/CollectionConditionEditingFlowTests"
         )
 
+    def test_epr_property_change_mapping(self) -> None:
+        mapping = macos_test_flow.resolve_mapping(
+            *macos_test_flow.parse_flow_id("epr.property_change")
+        )
+
+        self.assertEqual(mapping.document_path, "epr/flows/property_change_flow.md")
+        self.assertEqual(
+            mapping.swift_path,
+            "apps/macos/Voyager/VoyagerTests/Flows/EPR/PropertyChangeFlowTests.swift",
+        )
+        self.assertEqual(mapping.class_name, "PropertyChangeFlowTests")
+        self.assertEqual(mapping.selector, "VoyagerTests/PropertyChangeFlowTests")
+
     def test_invalid_flow_ids(self) -> None:
         for flow_id in (
             "ONB.access_unlock",

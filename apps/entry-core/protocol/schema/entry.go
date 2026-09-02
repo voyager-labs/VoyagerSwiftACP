@@ -133,6 +133,12 @@ func DecodeRequest(wire []byte) (Request, string, *ProtocolError) {
 			return request, trustworthyID, newProtocolError(code)
 		}
 		request.PropertyChangeExecuteParams = &PropertyChangeExecuteParams{Changes: changes}
+	case MethodPropertyConditionQuery:
+		params, code := decodePropertyConditionQueryParams(fields["params"])
+		if code != "" {
+			return request, trustworthyID, newProtocolError(code)
+		}
+		request.PropertyConditionQueryParams = &params
 	default:
 		if !validEmptyParams(fields["params"]) {
 			return request, trustworthyID, newProtocolError(ErrorInvalidRequest)

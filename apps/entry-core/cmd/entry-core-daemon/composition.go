@@ -21,6 +21,7 @@ import (
 type propertyService struct {
 	*applicationproperty.CatalogService
 	*applicationproperty.ChangeService
+	*applicationproperty.ConditionQueryService
 }
 
 // localfsTargetResolver는 localfs.Adapter.ResolveLocalPath(entry.EntryRef 반환)를
@@ -78,10 +79,14 @@ func composeWorkspaceServices(
 	if err != nil {
 		return nil, err
 	}
+	queryService, err := applicationproperty.NewConditionQueryService(catalogStore, facts, localfsTargetResolver{adapter: resolver}, runner)
+	if err != nil {
+		return nil, err
+	}
 	// production 조합은 Property 서비스만 주입한다. Entry production route는
 	// method gate 뒤에 유지된다(README 계약) — 빈 mount registry 경로가 외부
 	// UDS에 노출되면 안 된다. entry.list/resolve의 production wiring과 overlay
 	// 결합은 mount/source를 소유한 후속 변경이 소유한다.
-	service := &propertyService{CatalogService: catalogService, ChangeService: changeService}
+	service := &propertyService{CatalogService: catalogService, ChangeService: changeService, ConditionQueryService: queryService}
 	return entryruntime.NewWithPropertyService(wsctx.ID.String(), service), nil
 }

@@ -42,6 +42,31 @@ func fixtureContracts(fx propertyFixture) map[domainentry.PropertyID]domainentry
 	}
 }
 
+func TestLoadAssignmentsMemberCappedFailsBeforeAssembly(t *testing.T) {
+	ctx := context.Background()
+	store := migratedStore(t)
+	defer store.Close()
+	fx := buildPropertyFixture(t, store)
+	now := time.Now()
+	entryID := testEntryID(990)
+	header := EntryPropertyAssignmentRow{WorkspaceID: fx.wsctx.ID.Bytes(), EntryID: entryID, PropertyID: fx.multiDef.Bytes(), TargetKind: "locator_derived", State: "value", RecordRevision: 1, ValueContractRevision: 1, CreatedAt: now, UpdatedAt: now}
+	if err := store.db.Create(&header).Error; err != nil {
+		t.Fatal(err)
+	}
+	values := []EntryPropertyAssignmentValueRow{
+		{WorkspaceID: fx.wsctx.ID.Bytes(), EntryID: entryID, PropertyID: fx.multiDef.Bytes(), Ordinal: 0, ValueKind: "option_ref", OptionID: fx.multiOptA.Bytes(), CreatedAt: now, UpdatedAt: now},
+		{WorkspaceID: fx.wsctx.ID.Bytes(), EntryID: entryID, PropertyID: fx.multiDef.Bytes(), Ordinal: 1, ValueKind: "option_ref", OptionID: fx.multiOptB.Bytes(), CreatedAt: now, UpdatedAt: now},
+		{WorkspaceID: fx.wsctx.ID.Bytes(), EntryID: entryID, PropertyID: fx.multiDef.Bytes(), Ordinal: 2, ValueKind: "option_ref", OptionID: fx.multiOptA.Bytes(), CreatedAt: now, UpdatedAt: now},
+	}
+	if err := store.db.Create(&values).Error; err != nil {
+		t.Fatal(err)
+	}
+	_, err := NewEntryPropertyRepository(store).LoadAssignmentsMemberCapped(ctx, fx.wsctx, []string{entryID}, []domainentry.PropertyID{fx.multiDef}, 2)
+	if !errors.Is(err, applicationproperty.ErrConditionQueryScopeTooLarge) {
+		t.Fatalf("error = %v, want query scope too large", err)
+	}
+}
+
 func TestPropertyAssignmentRoundTripAllStates(t *testing.T) {
 	ctx := context.Background()
 	store := migratedStore(t)

@@ -136,6 +136,35 @@ func (s *EntryPropertyFactStore) LoadAssignmentsCapped(
 	return ordered, nil
 }
 
+// LoadAssignmentsMemberCapped is the condition-query snapshot read. The
+// repository stops at maxMembers+1 value rows so the 16,385th member fails the
+// whole page before assignment materialization.
+func (s *EntryPropertyFactStore) LoadAssignmentsMemberCapped(
+	ctx context.Context,
+	workspace domainentry.WorkspaceContext,
+	entryIDs []string,
+	propertyIDs []domainentry.PropertyID,
+	maxMembers int,
+) ([]domainentry.EntryPropertyAssignment, error) {
+	facts, err := s.repository.LoadAssignmentsMemberCapped(ctx, workspace, entryIDs, propertyIDs, maxMembers)
+	if err != nil {
+		return nil, err
+	}
+	ordered := make([]domainentry.EntryPropertyAssignment, 0, len(facts))
+	for _, fact := range facts {
+		if fact.RecordRevision > 0 {
+			ordered = append(ordered, fact)
+		}
+	}
+	sort.Slice(ordered, func(i, j int) bool {
+		if ordered[i].EntryID != ordered[j].EntryID {
+			return ordered[i].EntryID < ordered[j].EntryID
+		}
+		return ordered[i].PropertyID.String() < ordered[j].PropertyID.String()
+	})
+	return ordered, nil
+}
+
 // SaveAssignments는 fact 배치를 하나의 원자적 트랜잭션으로 위임한다.
 func (s *EntryPropertyFactStore) SaveAssignments(
 	ctx context.Context,
