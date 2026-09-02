@@ -75,7 +75,7 @@ public struct ComposerFeature {
                 )
 
             case let .view(.setText(text)):
-                state.text = text
+                state.setTextFromUserIntent(text)
                 state.transientFeedback = nil
                 return .cancel(id: CancelID.feedbackDismiss(ownerID: state.cancellationOwnerID))
 
@@ -123,6 +123,8 @@ public struct ComposerFeature {
                 )
                 let filtersCancellation = handleCancelFilters(
                     state: &state,
+                    registryClient: registryClient,
+                    uuid: { uuid() },
                     composerMetricClient: composerMetricClient,
                 )
                 state.transientFeedback = nil
@@ -137,6 +139,7 @@ public struct ComposerFeature {
                 state.searchStartedAt = nil
                 state.filtersStartedAt = nil
                 state.activeFiltersMetricSource = nil
+                state.discardQueryRecovery()
                 applyQueryPhaseTransition(.reset, state: &state)
                 return .merge(
                     searchCancellation,
@@ -193,6 +196,8 @@ public struct ComposerFeature {
                 )
                 let filtersCancellation = handleCancelFilters(
                     state: &state,
+                    registryClient: registryClient,
+                    uuid: { uuid() },
                     composerMetricClient: composerMetricClient,
                 )
                 state = .init()
@@ -246,10 +251,20 @@ private func handleSetPresented(
             || state.isLoadingFilters
         let shouldKeepFiltersAlive = shouldPreserveFilterLifecycle || hasActiveFilterLifecycle
         let shouldCloseScopeEditorWithoutCommit = state.scopeEditor.isPresented && !shouldPreserveFilterLifecycle
+        let hadActiveSearch = state.activeSearchRequestID != nil
         let searchCancellation = handleCancelSearch(
             state: &state,
             composerMetricClient: composerMetricClient,
         )
+        let shouldRetainQueryRecovery = shouldKeepFiltersAlive
+            && state.activeFiltersRequestID.map { state.queryRecoveryContext?.stage == .filters($0) } == true
+
+        if !shouldRetainQueryRecovery {
+            state.discardQueryRecovery()
+            if hadActiveSearch {
+                state.clearTextForSubmit()
+            }
+        }
 
         state.hasSubmittedInSession = false
         state.transientFeedback = nil
@@ -311,6 +326,7 @@ func applyAppliedFilters(
     state: inout ComposerFeature.State,
     registryClient: RegistryClient,
     uuid: () -> UUID = UUID.init,
+    preserveLocalMultiScope: Bool = true,
 ) {
     if let includeSubfolders = appliedFilters?.includeSubfolders {
         state.scopeEditor.includeSubfolders = includeSubfolders
@@ -327,7 +343,8 @@ func applyAppliedFilters(
         exceptions: resolved.excludedScopes,
         includeSubfolders: state.scopeEditor.includeSubfolders,
     )
-    let shouldPreserveLocalMultiScope = state.scopeEditor.selection.explicitBases.count > 1
+    let shouldPreserveLocalMultiScope = preserveLocalMultiScope
+        && state.scopeEditor.selection.explicitBases.count > 1
         && resolved.excludedScopes.isEmpty
         && selection.legacyScopePaths != state.scopeEditor.selection.legacyScopePaths
     if !shouldPreserveLocalMultiScope {

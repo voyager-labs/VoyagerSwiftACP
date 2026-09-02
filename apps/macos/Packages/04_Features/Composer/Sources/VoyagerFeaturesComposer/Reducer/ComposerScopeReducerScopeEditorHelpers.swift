@@ -131,7 +131,7 @@ func handleClearAll(
     guard !state.isLoadingSearch else { return .none }
 
     state.pushHistory()
-    state.text = ""
+    state.replaceTextAndDiscardQueryRecovery("")
     state.scopeEditor.selection = .rootOnly
     state.scopeEditor.isPresented = false
     state.resetScopeEditorInteractionState(clearQuery: true)
@@ -148,6 +148,11 @@ func handleClearAll(
     state.propertyPicker = .init()
     state.valuePicker = .init()
     state.isLoadingFilters = false
+    state.isFilteringInFlight = false
+    state.activeFiltersRequestID = nil
+    state.lastAcceptedFiltersRequestID = nil
+    state.filtersStartedAt = nil
+    state.activeFiltersMetricSource = nil
     state.lastFiltersResponse = nil
     state.lastScopeChangeFeedback = nil
     applyQueryPhaseTransition(.reset, state: &state)

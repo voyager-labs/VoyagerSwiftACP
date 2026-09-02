@@ -200,6 +200,9 @@ struct ContentPageView: View {
 
     private func handleKeyboardEvent(_ event: NSEvent) {
         guard presentationPolicy.allowsKeyboardCommandDispatch else { return }
+        if keyCommandFocusCoordinator?.routeEntryListKeyDown(event) == true {
+            return
+        }
 
         let command = KeyCommand(
             keyCode: event.keyCode,

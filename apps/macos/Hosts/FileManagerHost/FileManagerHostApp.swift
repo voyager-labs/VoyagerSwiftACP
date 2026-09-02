@@ -111,7 +111,11 @@ private final class FileManagerHostAppDelegate: NSObject, NSApplicationDelegate,
         NSApp.setActivationPolicy(.regular)
         let preset = initialPreset
         DispatchQueue.main.async { [weak self] in
-            self?.showWindow(for: preset)
+            guard let self else { return }
+            showWindow(for: preset)
+            if preset == .materialTuning {
+                showMaterialTuningPanel()
+            }
         }
     }
 
@@ -164,6 +168,7 @@ private final class FileManagerHostAppDelegate: NSObject, NSApplicationDelegate,
         }
         controller.showWindow(nil)
         presentWindow(controller)
+        FileManagerHostFixture.updateMaterialConfiguration(materialTuning.configuration, in: controller)
         FileManagerHostFixture.startScenarioIfNeeded(for: preset, in: controller)
         DispatchQueue.main.async { [weak self, weak controller] in
             guard let self,
@@ -217,7 +222,7 @@ private final class FileManagerHostAppDelegate: NSObject, NSApplicationDelegate,
             rootView: FileManagerHostMaterialTuningPanel(tuningState: materialTuning),
         )
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 420, height: 510),
+            contentRect: NSRect(x: 0, y: 0, width: 420, height: 680),
             styleMask: [.titled, .closable, .utilityWindow],
             backing: .buffered,
             defer: false,
@@ -440,6 +445,31 @@ private struct FileManagerHostMaterialTuningPanel: View {
                     set: { surface in tuningState.update { $0.contentBackground = surface } },
                 ),
             )
+            Divider()
+            FileManagerHostMaterialSurfaceControls(
+                title: "List Header",
+                surface: Binding(
+                    get: { tuningState.configuration.listHeader },
+                    set: { surface in tuningState.update { $0.listHeader = surface } },
+                ),
+            )
+            Divider()
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Group Rows")
+                    .font(.subheadline.weight(.semibold))
+                opacityField("Light (Black)", value: Binding(
+                    get: { tuningState.configuration.groupRowLightOpacity },
+                    set: { value in
+                        tuningState.update { $0.groupRowLightOpacity = min(max(value, 0), 1) }
+                    },
+                ))
+                opacityField("Dark (White)", value: Binding(
+                    get: { tuningState.configuration.groupRowDarkOpacity },
+                    set: { value in
+                        tuningState.update { $0.groupRowDarkOpacity = min(max(value, 0), 1) }
+                    },
+                ))
+            }
             HStack {
                 Spacer()
                 Button("Reset to Production Defaults") {
@@ -449,6 +479,23 @@ private struct FileManagerHostMaterialTuningPanel: View {
         }
         .padding(16)
         .frame(width: 420)
+    }
+
+    private func opacityField(_ title: String, value: Binding<CGFloat>) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            TextField(
+                "Opacity",
+                value: Binding(
+                    get: { Double(value.wrappedValue) },
+                    set: { value.wrappedValue = CGFloat($0) },
+                ),
+                format: .number.precision(.fractionLength(3)),
+            )
+            .textFieldStyle(.roundedBorder)
+            .frame(width: 80)
+        }
     }
 }
 

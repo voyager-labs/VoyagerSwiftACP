@@ -97,6 +97,23 @@ private final class RCL004MetricRecorder: @unchecked Sendable {
     }
 }
 
+private final class RCL004SearchRequestRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var recordedRequests: [SearchRequestPayload] = []
+
+    func record(_ request: SearchRequestPayload) {
+        lock.lock()
+        recordedRequests.append(request)
+        lock.unlock()
+    }
+
+    var requests: [SearchRequestPayload] {
+        lock.lock()
+        defer { lock.unlock() }
+        return recordedRequests
+    }
+}
+
 @MainActor
 final class RCL004ComposeCollectionFilterTests: XCTestCase {
     // MARK: - RCL-004-submit_collection_filter_query
@@ -118,7 +135,12 @@ final class RCL004ComposeCollectionFilterTests: XCTestCase {
         XCTAssertFalse(state.isLoadingFilters)
         XCTAssertEqual(state.queryRenderPhase, .searching)
         XCTAssertEqual(state.text, "")
-        XCTAssertNotNil(state.activeSearchRequestID)
+        let requestID = state.activeSearchRequestID
+        XCTAssertNotNil(requestID)
+        XCTAssertEqual(state.queryRecoveryContext?.rawText, "  find invoices  ")
+        XCTAssertEqual(state.queryRecoveryContext?.capturedInputRevision, 0)
+        XCTAssertEqual(state.queryRecoveryContext?.stage, requestID.map(ComposerQueryRecoveryContext.Stage.search))
+        XCTAssertEqual(state.inputRevision, 0)
         XCTAssertEqual(state.submittedSearchFilters?.scopes, ["/VoyagerFixtures/Documents"])
         XCTAssertTrue(state.includeDirectories)
     }
@@ -127,8 +149,8 @@ final class RCL004ComposeCollectionFilterTests: XCTestCase {
     /// accepted query의 terminal boundary 전 submit이 Product event를 만들지 않는지 검증한다.
     /// - 검증 내용: 최초/재제출 모두 capture 0건
     /// - 사전 조건: 비공백 query를 최초 제출한 뒤 다른 비공백 query를 재제출함
-    /// - 기대 결과: 최초 metric은 submit, 이후 metric은 resubmit source를 가짐
-    func testSubmitCollectionFilterQuery_recordsCanonicalSubmitMetricForFirstAndResubmit() {
+    /// - 기대 결과: 최초/재제출 모두 terminal 전 Product event가 없고 최신 원문 복구 상태가 유지됨
+    func testSubmitCollectionFilterQuery_doesNotRecordProductEventBeforeTerminal() {
         let recorder = RCL004MetricRecorder()
         var state = ComposerState()
         state.text = "find invoices"
@@ -141,8 +163,12 @@ final class RCL004ComposeCollectionFilterTests: XCTestCase {
             _ = ComposerFeature().reduce(into: &state, action: .submit)
         }
 
-        let calls = recorder.calls
-        XCTAssertTrue(calls.isEmpty)
+        XCTAssertTrue(recorder.calls.isEmpty)
+        XCTAssertEqual(state.queryRecoveryContext?.rawText, "find reports")
+        XCTAssertEqual(
+            state.queryRecoveryContext?.stage,
+            state.activeSearchRequestID.map(ComposerQueryRecoveryContext.Stage.search),
+        )
     }
 
     /// RCL-004-submit_collection_filter_query: 공백 query는 submit metric을 기록하지 않음
@@ -165,6 +191,131 @@ final class RCL004ComposeCollectionFilterTests: XCTestCase {
 
         XCTAssertTrue(recorder.calls.isEmpty)
         XCTAssertFalse(state.isLoadingSearch)
+        XCTAssertEqual(state.text, " \n\t ")
+        XCTAssertNil(state.activeSearchRequestID)
+    }
+
+    /// RCL-004-submit_collection_filter_query: 변환 중 throw가 발생하면 제출 원문을 그대로 복원함
+    /// 공백과 Unicode를 포함한 사용자 입력이 전송 payload와 별개로 보존되는 대표 실패 경로를 검증한다.
+    /// - 검증 내용: search payload trim, 변환 실패 후 visible text의 scalar 단위 원문 복원
+    /// - 사전 조건: synthetic Unicode query의 앞뒤에 공백과 개행이 있고 search client가 throw함
+    /// - 기대 결과: 요청에는 trim된 query가 전달되고 입력창에는 제출 전 원문이 정확히 복원됨
+    func testSubmitCollectionFilterQuery_whenConversionThrows_restoresExactRawInput() async {
+        let rawQuery = " \tVOY589_SYNTHETIC_청구서.PDF  \n"
+        let trimmedQuery = "VOY589_SYNTHETIC_청구서.PDF"
+        let recorder = RCL004SearchRequestRecorder()
+        let clock = TestClock()
+        var initialState = ComposerState()
+        initialState.text = rawQuery
+        let store = TestStore(initialState: initialState) {
+            ComposerFeature()
+        } withDependencies: {
+            $0.continuousClock = clock
+            $0.searchClient.search = { request in
+                recorder.record(request)
+                throw MockLocalizedError("LLM_CONVERSION_FAILED: synthetic")
+            }
+        }
+        // store.exhaustivity = .off: 생성되는 request UUID보다 visible 복원 계약을 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.submit)
+        await store.receive(\.internal.searchResponse)
+
+        XCTAssertEqual(recorder.requests.map(\.query), [trimmedQuery])
+        XCTAssertEqual(store.state.text, rawQuery)
+        XCTAssertEqual(store.state.text.unicodeScalars.count, rawQuery.unicodeScalars.count)
+        XCTAssertNil(store.state.queryRecoveryContext)
+
+        await store.send(.internal(.clearTransientFeedback))
+        await store.finish()
+    }
+
+    /// RCL-004-submit_collection_filter_query: accepted no-op success는 제출 뒤의 최신 입력을 보존함
+    /// 변환 성공 응답이 filter 실행 없이 종료될 때 clear 상태와 후속 사용자 입력을 덮어쓰지 않는지 검증한다.
+    /// - 검증 내용: submit-owned clear, 후속 setText, active response 수락 뒤 visible text 보존
+    /// - 사전 조건: query를 제출한 뒤 사용자가 새 synthetic text를 입력하고 unchanged response가 도착함
+    /// - 기대 결과: 제출 직후에는 비어 있고 response 처리 뒤에는 최신 사용자 입력이 유지됨
+    func testSubmitCollectionFilterQuery_whenAcceptedNoOpSucceeds_preservesNewerVisibleInput() {
+        var state = ComposerState()
+        state.text = "VOY589_SYNTHETIC_청구서.PDF"
+
+        _ = ComposerFeature().reduce(into: &state, action: .submit)
+        XCTAssertEqual(state.text, "")
+        let requestID = state.activeSearchRequestID
+        guard let requestID else {
+            return XCTFail("submit must create an active search request")
+        }
+
+        _ = ComposerFeature().reduce(into: &state, action: .setText("VOY589_SYNTHETIC_NEW"))
+        _ = ComposerFeature().reduce(
+            into: &state,
+            action: .searchResponse(
+                requestID,
+                .success(SearchResponsePayload(
+                    itemCount: 0,
+                    queryConversion: SearchQueryConversionMetadataPayload(outcome: .unchangedResult),
+                )),
+            ),
+        )
+
+        XCTAssertEqual(state.text, "VOY589_SYNTHETIC_NEW")
+        XCTAssertNil(state.activeSearchRequestID)
+        XCTAssertFalse(state.isLoadingSearch)
+    }
+
+    /// RCL-004-submit_collection_filter_query: 복원된 query를 수정해 재제출하면 새 trimmed 요청이 성공함
+    /// conversion error payload 뒤 복원된 입력을 사용자가 수정하고 즉시 재제출하는 retry 경로를 검증한다.
+    /// - 검증 내용: 첫 실패의 원문 복원, 수정된 retry payload trim, 새 request 성공 후 visible clear
+    /// - 사전 조건: 첫 search는 conversion error payload를 반환하고 두 번째 search는 unchanged success를 반환함
+    /// - 기대 결과: 두 요청이 각각 trim되어 전송되고 retry 성공 뒤 active search와 visible text가 정리됨
+    func testSubmitCollectionFilterQuery_afterConversionFailureEditAndResubmit_sendsTrimmedSuccessfulRetry() async {
+        let firstRawQuery = " \tVOY589_SYNTHETIC_FIRST.PDF  \n"
+        let retryRawQuery = "  VOY589_SYNTHETIC_RETRY.PDF \n"
+        let recorder = RCL004SearchRequestRecorder()
+        let clock = TestClock()
+        var initialState = ComposerState()
+        initialState.text = firstRawQuery
+        let store = TestStore(initialState: initialState) {
+            ComposerFeature()
+        } withDependencies: {
+            $0.continuousClock = clock
+            $0.searchClient.search = { request in
+                recorder.record(request)
+                if recorder.requests.count == 1 {
+                    return SearchResponsePayload(
+                        itemCount: 0,
+                        error: SearchErrorPayload(code: "LLM_CONVERSION_FAILED", details: "synthetic"),
+                        queryConversion: SearchQueryConversionMetadataPayload(outcome: .conversionFailure),
+                    )
+                }
+                return SearchResponsePayload(
+                    itemCount: 0,
+                    queryConversion: SearchQueryConversionMetadataPayload(outcome: .unchangedResult),
+                )
+            }
+        }
+        // store.exhaustivity = .off: 생성되는 request UUID보다 retry의 public visible/payload 계약을 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.submit)
+        await store.receive(\.internal.searchResponse)
+        XCTAssertEqual(store.state.text, firstRawQuery)
+
+        await store.send(.setText(retryRawQuery))
+        await store.send(.submit)
+        await store.receive(\.internal.searchResponse)
+
+        XCTAssertEqual(
+            recorder.requests.map(\.query),
+            ["VOY589_SYNTHETIC_FIRST.PDF", "VOY589_SYNTHETIC_RETRY.PDF"],
+        )
+        XCTAssertEqual(store.state.text, "")
+        XCTAssertNil(store.state.activeSearchRequestID)
+        XCTAssertFalse(store.state.isLoadingSearch)
+
+        await store.send(.internal(.clearTransientFeedback))
+        await store.finish()
     }
 
     // MARK: - RCL-004-type_collection_filter_query
@@ -178,11 +329,26 @@ final class RCL004ComposeCollectionFilterTests: XCTestCase {
         var state = ComposerState()
         state.text = "old query"
         state.transientFeedback = ComposerTransientFeedback(id: UUID(), kind: .error, message: "previous failure")
+        let recoveryRequestID = UUID()
+        state.captureQueryRecovery(rawText: "submitted query", requestID: recoveryRequestID)
 
         _ = ComposerFeature().reduce(into: &state, action: .setText("find reports"))
 
         XCTAssertEqual(state.text, "find reports")
+        XCTAssertEqual(state.inputRevision, 1)
         XCTAssertNil(state.transientFeedback)
+        XCTAssertEqual(state.queryRecoveryContext?.stage, .search(recoveryRequestID))
+
+        _ = ComposerFeature().reduce(into: &state, action: .setText("find reports"))
+        XCTAssertEqual(state.inputRevision, 2)
+
+        _ = ComposerFeature().reduce(into: &state, action: .setText(""))
+        XCTAssertEqual(state.inputRevision, 3)
+
+        _ = ComposerFeature().reduce(into: &state, action: .setText(""))
+        XCTAssertEqual(state.inputRevision, 4)
+        XCTAssertEqual(state.text, "")
+        XCTAssertNotNil(state.queryRecoveryContext)
     }
 
     // MARK: - RCL-004-generate_filter_changes_from_query
@@ -195,6 +361,7 @@ final class RCL004ComposeCollectionFilterTests: XCTestCase {
     func testGenerateFilterChangesFromQuery_withGeneratedCondition_startsFilterApplication() {
         let requestID = UUID()
         var state = makeSearchLoadingState(activeRequestID: requestID)
+        state.captureQueryRecovery(rawText: "VOY589_SYNTHETIC", requestID: requestID)
         let response = SearchResponsePayload(
             itemCount: 0,
             appliedFilters: AppliedFiltersPayload(
@@ -210,6 +377,12 @@ final class RCL004ComposeCollectionFilterTests: XCTestCase {
             $0.registryClient = makeRegistryClient()
             $0.uuid = .constant(UUID())
         } operation: {
+            let recoveryBeforeStaleResponse = state.queryRecoveryContext
+            _ = ComposerFeature().reduce(into: &state, action: .searchResponse(UUID(), .success(response)))
+            XCTAssertEqual(state.activeSearchRequestID, requestID)
+            XCTAssertEqual(state.queryRecoveryContext, recoveryBeforeStaleResponse)
+            XCTAssertTrue(state.isLoadingSearch)
+
             _ = ComposerFeature().reduce(into: &state, action: .searchResponse(requestID, .success(response)))
         }
 
@@ -217,7 +390,13 @@ final class RCL004ComposeCollectionFilterTests: XCTestCase {
         XCTAssertTrue(state.isLoadingFilters)
         XCTAssertTrue(state.isFilteringInFlight)
         XCTAssertNil(state.activeSearchRequestID)
-        XCTAssertNotNil(state.activeFiltersRequestID)
+        let filtersRequestID = state.activeFiltersRequestID
+        XCTAssertNotNil(filtersRequestID)
+        XCTAssertEqual(
+            state.queryRecoveryContext?.stage,
+            filtersRequestID.map(ComposerQueryRecoveryContext.Stage.filters),
+        )
+        XCTAssertEqual(state.queryRecoveryContext?.capturedInputRevision, 0)
         XCTAssertEqual(state.queryRenderPhase, .chipsAppliedPendingList)
         XCTAssertNil(state.transientFeedback)
     }
@@ -232,6 +411,7 @@ final class RCL004ComposeCollectionFilterTests: XCTestCase {
     func testApplyGeneratedFilterChanges_withGeneratedScopeOnly_doesNotStartFilterExecution() {
         let requestID = UUID()
         var state = makeSearchLoadingState(activeRequestID: requestID)
+        state.captureQueryRecovery(rawText: "VOY589_SYNTHETIC", requestID: requestID)
         let response = SearchResponsePayload(
             itemCount: 0,
             appliedFilters: AppliedFiltersPayload(
@@ -256,8 +436,85 @@ final class RCL004ComposeCollectionFilterTests: XCTestCase {
             state.lastSearchResponse?.appliedFilters?.scopes,
             ["/VoyagerFixtures/Documents", "/VoyagerFixtures/Notes"],
         )
+        XCTAssertNil(state.queryRecoveryContext)
     }
 
+    /// RCL-004-apply_generated_filter_changes: generated filter 성공은 query 복원 context를 폐기함
+    /// 변환 단계에서 execution 단계로 retarget된 context가 최종 성공 뒤 남지 않는지 검증한다.
+    /// - 검증 내용: active filters response success 수락 뒤 internal recovery context disposal
+    /// - 사전 조건: generated filter request ID를 소유한 query recovery context가 있음
+    /// - 기대 결과: filter 성공 상태를 반영하고 이전 제출 원문 context는 제거됨
+    func testApplyGeneratedFilterChanges_whenExecutionSucceeds_discardsQueryRecovery() {
+        let requestID = UUID()
+        var state = makeFiltersLoadingState(activeRequestID: requestID)
+        state.queryRecoveryContext = ComposerQueryRecoveryContext(
+            rawText: "VOY589_SYNTHETIC",
+            capturedInputRevision: state.inputRevision,
+            stage: .filters(requestID),
+        )
+
+        withDependencies {
+            $0.registryClient = makeRegistryClient()
+        } operation: {
+            _ = ComposerFeature().reduce(
+                into: &state,
+                action: .filtersResponse(requestID, .success(SearchResponsePayload(itemCount: 1))),
+            )
+        }
+
+        XCTAssertNil(state.queryRecoveryContext)
+        XCTAssertNil(state.activeFiltersRequestID)
+        XCTAssertFalse(state.isLoadingFilters)
+    }
+
+    /// RCL-004-apply_generated_filter_changes: filter 성공 handoff는 visible draft가 아닌 제출 query를 사용함
+    /// A 처리 중 B를 입력해도 FileManager collection context에는 A가 전달되는지 검증한다.
+    /// - 검증 내용: query-owned filter response success 전 request-bound pending query projection
+    /// - 사전 조건: A의 generated filter request 중 B가 visible draft와 pending query를 대체함
+    /// - 기대 결과: visible B는 유지되고 handoff query만 제출된 A로 복원됨
+    func testApplyGeneratedFilterChanges_whenVisibleDraftChanges_usesSubmittedQueryForHandoff() {
+        let submittedQuery = "VOY589_SYNTHETIC_SUBMITTED"
+        let visibleDraft = "VOY589_SYNTHETIC_DRAFT"
+        var state = makeGeneratedFilterStageState(rawText: submittedQuery)
+        guard let requestID = state.activeFiltersRequestID else {
+            return XCTFail("generated response must create an active filters request")
+        }
+
+        _ = ComposerFeature().reduce(into: &state, action: .setText(visibleDraft))
+        state.pendingSearchQuery = visibleDraft
+
+        withDependencies {
+            $0.registryClient = makeRegistryClient()
+            $0.uuid = .constant(UUID())
+        } operation: {
+            _ = ComposerFeature().reduce(
+                into: &state,
+                action: .filtersResponse(requestID, .success(SearchResponsePayload(itemCount: 1))),
+            )
+        }
+
+        XCTAssertEqual(state.text, visibleDraft)
+        XCTAssertEqual(state.pendingSearchQuery, submittedQuery)
+    }
+
+    /// RCL-004-apply_generated_filter_changes: manual apply는 query 복원 context보다 우선함
+    /// 사용자가 명시적으로 현재 filter를 적용하면 이전 자연어 submit context가 폐기되는지 검증한다.
+    /// - 검증 내용: applyFilters action의 internal recovery context supersession
+    /// - 사전 조건: active search 단계의 synthetic recovery context와 condition 없는 filter가 있음
+    /// - 기대 결과: manual apply가 context를 제거하고 이전 제출 원문은 복원 대상에서 제외됨
+    func testApplyGeneratedFilterChanges_whenManualApplySupersedes_discardsQueryRecovery() {
+        let requestID = UUID()
+        var state = makeSearchLoadingState(activeRequestID: requestID)
+        state.captureQueryRecovery(rawText: "VOY589_SYNTHETIC", requestID: requestID)
+
+        _ = ComposerFeature().reduce(into: &state, action: .applyFilters)
+
+        XCTAssertNil(state.queryRecoveryContext)
+        XCTAssertNil(state.activeSearchRequestID)
+    }
+}
+
+extension RCL004ComposeCollectionFilterTests {
     // MARK: - RCL-004-show_query_conversion_failure_feedback
 
     /// RCL-004-show_query_conversion_failure_feedback: query 변환 실패는 conversion feedback으로 표시됨
@@ -306,6 +563,204 @@ final class RCL004ComposeCollectionFilterTests: XCTestCase {
         XCTAssertEqual(state.transientFeedback?.message, ComposerQueryFeedbackPolicy.conversionFailureMessage)
     }
 
+    /// RCL-004-show_query_conversion_failure_feedback: response error payload는 제출 원문을 그대로 복원함
+    /// success envelope 안의 conversion error도 throw failure와 동일한 visible recovery를 제공하는지 검증한다.
+    /// - 검증 내용: active response-error 처리 뒤 공백/Unicode 원문 복원과 search terminal state
+    /// - 사전 조건: raw synthetic query를 submit한 active search가 conversion error payload를 반환함
+    /// - 기대 결과: 입력창에 exact raw query가 복원되고 active search는 정리됨
+    func testShowQueryConversionFailureFeedback_withResponseErrorPayload_restoresExactRawInput() {
+        let rawQuery = " \tVOY589_SYNTHETIC_청구서.PDF  \n"
+        var state = ComposerState()
+        state.text = rawQuery
+        _ = ComposerFeature().reduce(into: &state, action: .submit)
+        guard let requestID = state.activeSearchRequestID else {
+            return XCTFail("submit must create an active search request")
+        }
+
+        _ = ComposerFeature().reduce(
+            into: &state,
+            action: .searchResponse(requestID, .success(makeConversionErrorResponse())),
+        )
+
+        XCTAssertEqual(state.text, rawQuery)
+        XCTAssertEqual(state.text.unicodeScalars.count, rawQuery.unicodeScalars.count)
+        XCTAssertNil(state.activeSearchRequestID)
+        XCTAssertFalse(state.isLoadingSearch)
+        XCTAssertEqual(state.transientFeedback?.message, ComposerQueryFeedbackPolicy.conversionFailureMessage)
+        XCTAssertNil(state.queryRecoveryContext)
+    }
+
+    /// RCL-004-show_query_conversion_failure_feedback: 실패보다 늦은 모든 setText intent가 복원보다 우선함
+    /// 새 non-empty 입력, submit-clear와 같은 explicit empty, type-then-delete empty를 각각 검증한다.
+    /// - 검증 내용: matching active failure 뒤 최신 non-empty/empty visible text 보존
+    /// - 사전 조건: 각 query submit 뒤 response 도착 전에 서로 다른 setText intent가 수신됨
+    /// - 기대 결과: 이전 제출 원문이 최신 사용자 입력을 덮어쓰지 않음
+    func testShowQueryConversionFailureFeedback_afterNewerTextIntents_preservesLatestVisibleInput() {
+        var nonEmptyState = ComposerState()
+        nonEmptyState.text = "VOY589_SYNTHETIC_A"
+        _ = ComposerFeature().reduce(into: &nonEmptyState, action: .submit)
+        guard let nonEmptyRequestID = nonEmptyState.activeSearchRequestID else {
+            return XCTFail("submit must create an active search request")
+        }
+        _ = ComposerFeature().reduce(into: &nonEmptyState, action: .setText("VOY589_SYNTHETIC_NEW"))
+        _ = ComposerFeature().reduce(
+            into: &nonEmptyState,
+            action: .searchResponse(nonEmptyRequestID, .failure(MockLocalizedError("synthetic"))),
+        )
+        XCTAssertEqual(nonEmptyState.text, "VOY589_SYNTHETIC_NEW")
+        XCTAssertNil(nonEmptyState.queryRecoveryContext)
+
+        var explicitEmptyState = ComposerState()
+        explicitEmptyState.text = "VOY589_SYNTHETIC_B"
+        _ = ComposerFeature().reduce(into: &explicitEmptyState, action: .submit)
+        guard let explicitEmptyRequestID = explicitEmptyState.activeSearchRequestID else {
+            return XCTFail("submit must create an active search request")
+        }
+        XCTAssertEqual(explicitEmptyState.text, "")
+        _ = ComposerFeature().reduce(into: &explicitEmptyState, action: .setText(""))
+        _ = ComposerFeature().reduce(
+            into: &explicitEmptyState,
+            action: .searchResponse(explicitEmptyRequestID, .success(makeConversionErrorResponse())),
+        )
+        XCTAssertEqual(explicitEmptyState.text, "")
+        XCTAssertNil(explicitEmptyState.queryRecoveryContext)
+
+        var deletedState = ComposerState()
+        deletedState.text = "VOY589_SYNTHETIC_C"
+        _ = ComposerFeature().reduce(into: &deletedState, action: .submit)
+        guard let deletedRequestID = deletedState.activeSearchRequestID else {
+            return XCTFail("submit must create an active search request")
+        }
+        _ = ComposerFeature().reduce(into: &deletedState, action: .setText("VOY589_SYNTHETIC_TYPED"))
+        _ = ComposerFeature().reduce(into: &deletedState, action: .setText(""))
+        _ = ComposerFeature().reduce(
+            into: &deletedState,
+            action: .searchResponse(deletedRequestID, .failure(MockLocalizedError("synthetic"))),
+        )
+        XCTAssertEqual(deletedState.text, "")
+        XCTAssertNil(deletedState.queryRecoveryContext)
+    }
+
+    /// RCL-004-show_query_conversion_failure_feedback: A filter를 대체한 B 실패는 stale filter lock을 남기지 않음
+    /// generated filter 단계의 A를 B submit이 대체하고 B가 실패한 뒤 늦은 A 응답이 도착하는 race를 검증한다.
+    /// - 검증 내용: 즉시 filter lifecycle 정리, B failure terminal state, late A response full no-op
+    /// - 사전 조건: A가 filter stage에 진입한 뒤 B가 새 active search request로 제출됨
+    /// - 기대 결과: B 실패 뒤 B 원문만 복원되고 Composer가 stale filter Stop 없이 failed 상태가 됨
+    func testShowQueryConversionFailureFeedback_afterAtoBResubmit_ignoresLateASearchAndFilterResponses() {
+        let queryB = "VOY589_SYNTHETIC_B"
+        var state = makeGeneratedFilterStageState(rawText: "VOY589_SYNTHETIC_A")
+        guard
+            let searchRequestA = state.lastAcceptedSearchRequestID,
+            let filtersRequestA = state.activeFiltersRequestID
+        else {
+            return XCTFail("generated response A must establish search and filter ownership")
+        }
+
+        _ = ComposerFeature().reduce(into: &state, action: .setText(queryB))
+        _ = ComposerFeature().reduce(into: &state, action: .submit)
+        XCTAssertTrue(state.scopeEditor.selection.isRootOnly)
+        XCTAssertTrue(state.conditions.isEmpty)
+        guard let searchRequestB = state.activeSearchRequestID else {
+            return XCTFail("submit B must create an active search request")
+        }
+        XCTAssertFalse(state.isLoadingFilters)
+        XCTAssertFalse(state.isFilteringInFlight)
+        XCTAssertNil(state.activeFiltersRequestID)
+        XCTAssertNil(state.lastAcceptedFiltersRequestID)
+        XCTAssertNil(state.activeFiltersMetricSource)
+        XCTAssertNil(state.filtersStartedAt)
+
+        _ = ComposerFeature().reduce(
+            into: &state,
+            action: .searchResponse(
+                searchRequestB,
+                .failure(MockLocalizedError("LLM_CONVERSION_FAILED: synthetic B failure")),
+            ),
+        )
+        XCTAssertEqual(state.text, queryB)
+        XCTAssertFalse(state.isLoadingSearch)
+        XCTAssertFalse(state.isLoadingFilters)
+        XCTAssertFalse(state.isFilteringInFlight)
+        XCTAssertNil(state.activeSearchRequestID)
+        XCTAssertNil(state.activeFiltersRequestID)
+        XCTAssertEqual(state.queryRenderPhase, .failed)
+        XCTAssertEqual(state.transientFeedback?.message, ComposerQueryFeedbackPolicy.conversionFailureMessage)
+        XCTAssertNil(state.queryRecoveryContext)
+        let stateAfterBFailure = state
+
+        _ = ComposerFeature().reduce(
+            into: &state,
+            action: .searchResponse(searchRequestA, .failure(MockLocalizedError("stale synthetic"))),
+        )
+        _ = ComposerFeature().reduce(
+            into: &state,
+            action: .filtersResponse(filtersRequestA, .failure(MockLocalizedError("stale synthetic"))),
+        )
+
+        XCTAssertEqual(state, stateAfterBFailure)
+    }
+
+    /// RCL-004-show_query_conversion_failure_feedback: A filter를 대체한 B Stop은 Composer를 완전히 idle로 만듦
+    /// generated filter 단계의 A를 B submit이 대체한 직후 사용자가 B 변환을 중단하는 경로를 검증한다.
+    /// - 검증 내용: superseded filter lifecycle 정리, B 원문 복원, Stop 뒤 processing state 해제
+    /// - 사전 조건: A가 filter stage에 진입한 뒤 B가 새 active search request로 제출됨
+    /// - 기대 결과: B Stop 뒤 B 원문이 복원되고 search/filter ownership과 Stop 상태가 모두 사라짐
+    func testShowQueryConversionFailureFeedback_afterAtoBResubmitAndStop_leavesComposerIdle() {
+        let queryB = "VOY589_SYNTHETIC_B_STOP"
+        var state = makeGeneratedFilterStageState(rawText: "VOY589_SYNTHETIC_A_STOP")
+        guard let filtersRequestA = state.activeFiltersRequestID else {
+            return XCTFail("generated response A must create an active filters request")
+        }
+
+        _ = ComposerFeature().reduce(into: &state, action: .setText(queryB))
+        _ = ComposerFeature().reduce(into: &state, action: .submit)
+        XCTAssertFalse(state.isLoadingFilters)
+        XCTAssertFalse(state.isFilteringInFlight)
+        XCTAssertNil(state.activeFiltersRequestID)
+        XCTAssertNil(state.activeFiltersMetricSource)
+        XCTAssertNil(state.filtersStartedAt)
+
+        _ = ComposerFeature().reduce(into: &state, action: .cancelSearch)
+
+        XCTAssertEqual(state.text, queryB)
+        XCTAssertNil(state.transientFeedback)
+        XCTAssertFalse(state.isLoadingSearch)
+        XCTAssertFalse(state.isLoadingFilters)
+        XCTAssertFalse(state.isFilteringInFlight)
+        XCTAssertNil(state.activeSearchRequestID)
+        XCTAssertNil(state.activeFiltersRequestID)
+        XCTAssertEqual(state.queryRenderPhase, .idle)
+        XCTAssertNil(state.queryRecoveryContext)
+        let stateAfterBStop = state
+
+        _ = ComposerFeature().reduce(
+            into: &state,
+            action: .filtersResponse(filtersRequestA, .failure(MockLocalizedError("stale synthetic"))),
+        )
+        XCTAssertEqual(state, stateAfterBStop)
+    }
+
+    /// RCL-004-show_query_conversion_failure_feedback: explicit search Stop은 실패 feedback 없이 원문을 복원함
+    /// 사용자가 변환 중 Stop을 선택하면 수정/재시도를 위해 제출 원문이 돌아오는지 검증한다.
+    /// - 검증 내용: matching active search 취소의 exact visible restoration과 feedback 부재
+    /// - 사전 조건: raw synthetic query submit 이후 search request가 active임
+    /// - 기대 결과: Stop 뒤 원문이 복원되고 search loading/request가 정리되며 새 failure feedback이 없음
+    func testShowQueryConversionFailureFeedback_whenSearchIsStopped_restoresExactRawInputWithoutFailureFeedback() {
+        let rawQuery = "  VOY589_SYNTHETIC_STOP_SEARCH.PDF \n"
+        var state = ComposerState()
+        state.text = rawQuery
+        _ = ComposerFeature().reduce(into: &state, action: .submit)
+
+        _ = ComposerFeature().reduce(into: &state, action: .cancelSearch)
+
+        XCTAssertEqual(state.text, rawQuery)
+        XCTAssertNil(state.transientFeedback)
+        XCTAssertNil(state.activeSearchRequestID)
+        XCTAssertFalse(state.isLoadingSearch)
+        XCTAssertEqual(state.queryRenderPhase, .idle)
+        XCTAssertNil(state.queryRecoveryContext)
+    }
+
     // MARK: - RCL-004-show_query_execution_failure_feedback
 
     /// RCL-004-show_query_execution_failure_feedback: filter 실행 실패는 execution feedback으로 표시됨
@@ -329,6 +784,178 @@ final class RCL004ComposeCollectionFilterTests: XCTestCase {
         XCTAssertEqual(state.queryRenderPhase, .idle)
         XCTAssertEqual(state.transientFeedback?.kind, .error)
         XCTAssertEqual(state.transientFeedback?.message, ComposerQueryFeedbackPolicy.executionFailureMessage)
+    }
+
+    /// RCL-004-show_query_execution_failure_feedback: generated filter 실패는 제출 원문을 그대로 복원함
+    /// accepted conversion이 filter stage로 넘어간 뒤 execution failure가 발생하는 terminal recovery를 검증한다.
+    /// - 검증 내용: generated stage handoff, exact visible restoration, execution feedback과 spinner reset
+    /// - 사전 조건: raw synthetic query가 generated condition으로 변환되어 query-owned filter request가 active임
+    /// - 기대 결과: filter failure 뒤 원문이 복원되고 execution state가 정리됨
+    func testShowQueryExecutionFailureFeedback_withGeneratedFilterFailure_restoresExactRawInput() {
+        let rawQuery = " \tVOY589_SYNTHETIC_EXECUTION.PDF  \n"
+        var state = ComposerState()
+        state.text = rawQuery
+        _ = ComposerFeature().reduce(into: &state, action: .submit)
+        guard let searchRequestID = state.activeSearchRequestID else {
+            return XCTFail("submit must create an active search request")
+        }
+        withDependencies {
+            $0.registryClient = makeRegistryClient()
+            $0.uuid = .constant(UUID())
+        } operation: {
+            _ = ComposerFeature().reduce(
+                into: &state,
+                action: .searchResponse(searchRequestID, .success(makeGeneratedConditionResponse())),
+            )
+        }
+        guard let filtersRequestID = state.activeFiltersRequestID else {
+            return XCTFail("generated response must create an active filters request")
+        }
+
+        _ = ComposerFeature().reduce(
+            into: &state,
+            action: .filtersResponse(filtersRequestID, .failure(MockLocalizedError("HELPER_UNAVAILABLE: synthetic"))),
+        )
+
+        XCTAssertEqual(state.text, rawQuery)
+        XCTAssertEqual(state.text.unicodeScalars.count, rawQuery.unicodeScalars.count)
+        XCTAssertFalse(state.isLoadingFilters)
+        XCTAssertFalse(state.isFilteringInFlight)
+        XCTAssertNil(state.activeFiltersRequestID)
+        XCTAssertEqual(state.queryRenderPhase, .idle)
+        XCTAssertEqual(state.transientFeedback?.message, ComposerQueryFeedbackPolicy.executionFailureMessage)
+        XCTAssertNil(state.queryRecoveryContext)
+    }
+
+    /// RCL-004-show_query_execution_failure_feedback: generated multi-scope failure는 제출 baseline으로 복원함
+    /// rollback 시 일반 applied-filter의 local multi-scope 보존 정책이 baseline 복원을 막지 않는지 검증한다.
+    /// - 검증 내용: generated multi-scope 적용 후 execution failure의 direct scope rollback
+    /// - 사전 조건: 제출 전 root-only state에서 두 scope가 생성되고 filter execution이 실패함
+    /// - 기대 결과: generated scope/condition이 모두 제출 전 baseline으로 돌아감
+    func testShowQueryExecutionFailureFeedback_withGeneratedMultiScopeFailure_restoresSubmittedBaseline() {
+        var state = makeGeneratedFilterStageState(
+            rawText: "VOY589_SYNTHETIC_MULTI_SCOPE_FAILURE",
+            response: makeGeneratedConditionResponse(
+                scopes: ["/VoyagerFixtures/Documents", "/VoyagerFixtures/Notes"],
+            ),
+        )
+        guard let requestID = state.activeFiltersRequestID else {
+            return XCTFail("generated response must create an active filters request")
+        }
+        XCTAssertEqual(state.scopeEditor.selection.explicitBases.count, 2)
+
+        _ = ComposerFeature().reduce(
+            into: &state,
+            action: .filtersResponse(requestID, .failure(MockLocalizedError("synthetic"))),
+        )
+
+        XCTAssertTrue(state.scopeEditor.selection.isRootOnly)
+        XCTAssertTrue(state.conditions.isEmpty)
+    }
+
+    /// RCL-004-show_query_execution_failure_feedback: execution failure 복원문은 즉시 재제출할 수 있음
+    /// generated filter failure 직후 별도 edit 없이 같은 원문을 retry하는 public lifecycle을 검증한다.
+    /// - 검증 내용: 원문 복원, 새 search request ID, retry 성공 뒤 terminal cleanup
+    /// - 사전 조건: 첫 query가 filter execution failure로 종료되어 visible input에 복원됨
+    /// - 기대 결과: immediate resubmit이 이전 ID와 다른 search를 만들고 accepted success로 정리됨
+    func testShowQueryExecutionFailureFeedback_afterImmediateResubmit_startsNewSuccessfulRetry() {
+        let rawQuery = "  VOY589_SYNTHETIC_EXECUTION_RETRY.PDF \n"
+        var state = ComposerState()
+        state.text = rawQuery
+        _ = ComposerFeature().reduce(into: &state, action: .submit)
+        guard let firstSearchRequestID = state.activeSearchRequestID else {
+            return XCTFail("first submit must create an active search request")
+        }
+        withDependencies {
+            $0.registryClient = makeRegistryClient()
+            $0.uuid = .constant(UUID())
+        } operation: {
+            _ = ComposerFeature().reduce(
+                into: &state,
+                action: .searchResponse(firstSearchRequestID, .success(makeGeneratedConditionResponse())),
+            )
+        }
+        guard let firstFiltersRequestID = state.activeFiltersRequestID else {
+            return XCTFail("generated response must create an active filters request")
+        }
+        _ = ComposerFeature().reduce(
+            into: &state,
+            action: .filtersResponse(firstFiltersRequestID, .failure(MockLocalizedError("synthetic"))),
+        )
+        XCTAssertEqual(state.text, rawQuery)
+        XCTAssertTrue(state.scopeEditor.selection.isRootOnly)
+        XCTAssertTrue(state.conditions.isEmpty)
+
+        _ = ComposerFeature().reduce(into: &state, action: .submit)
+        guard let retrySearchRequestID = state.activeSearchRequestID else {
+            return XCTFail("retry submit must create an active search request")
+        }
+        XCTAssertNotEqual(retrySearchRequestID, firstSearchRequestID)
+        XCTAssertEqual(state.text, "")
+        withDependencies {
+            $0.registryClient = makeRegistryClient()
+            $0.uuid = .constant(UUID())
+        } operation: {
+            _ = ComposerFeature().reduce(
+                into: &state,
+                action: .searchResponse(retrySearchRequestID, .success(makeGeneratedConditionResponse())),
+            )
+        }
+
+        guard let retryFiltersRequestID = state.activeFiltersRequestID else {
+            return XCTFail("retry must re-execute generated filters")
+        }
+        XCTAssertTrue(state.isFilteringInFlight)
+
+        withDependencies {
+            $0.registryClient = makeRegistryClient()
+            $0.uuid = .constant(UUID())
+        } operation: {
+            _ = ComposerFeature().reduce(
+                into: &state,
+                action: .filtersResponse(retryFiltersRequestID, .success(SearchResponsePayload(itemCount: 0))),
+            )
+        }
+
+        XCTAssertNil(state.activeSearchRequestID)
+        XCTAssertFalse(state.isLoadingSearch)
+        XCTAssertEqual(state.text, "")
+    }
+
+    /// RCL-004-show_query_execution_failure_feedback: query-owned filter Stop은 실패 feedback 없이 원문을 복원함
+    /// 변환으로 시작된 filter execution을 사용자가 중단할 때 submit 문장을 다시 편집할 수 있는지 검증한다.
+    /// - 검증 내용: post-query filter cancellation의 exact restoration과 feedback 부재
+    /// - 사전 조건: raw synthetic query가 generated condition으로 변환되어 filter request가 active임
+    /// - 기대 결과: Stop 뒤 원문이 복원되고 filter ownership/spinner가 정리되며 failure feedback은 없음
+    func testShowQueryExecutionFailureFeedback_whenQueryOwnedFiltersAreStopped_restoresExactRawInputWithoutFailureFeedback() {
+        let rawQuery = "  VOY589_SYNTHETIC_STOP_FILTERS.PDF \n"
+        var state = ComposerState()
+        state.text = rawQuery
+        _ = ComposerFeature().reduce(into: &state, action: .submit)
+        guard let searchRequestID = state.activeSearchRequestID else {
+            return XCTFail("submit must create an active search request")
+        }
+        withDependencies {
+            $0.registryClient = makeRegistryClient()
+            $0.uuid = .constant(UUID())
+        } operation: {
+            _ = ComposerFeature().reduce(
+                into: &state,
+                action: .searchResponse(searchRequestID, .success(makeGeneratedConditionResponse())),
+            )
+        }
+
+        _ = ComposerFeature().reduce(into: &state, action: .cancelFilters)
+
+        XCTAssertEqual(state.text, rawQuery)
+        XCTAssertNil(state.transientFeedback)
+        XCTAssertNil(state.activeFiltersRequestID)
+        XCTAssertFalse(state.isLoadingFilters)
+        XCTAssertFalse(state.isFilteringInFlight)
+        XCTAssertTrue(state.scopeEditor.selection.isRootOnly)
+        XCTAssertTrue(state.conditions.isEmpty)
+        XCTAssertEqual(state.queryRenderPhase, .idle)
+        XCTAssertNil(state.queryRecoveryContext)
     }
 
     /// RCL-004-show_query_execution_failure_feedback: collection cleanup은 실행 중 작업만 정리함
@@ -800,10 +1427,6 @@ final class RCL004ComposeCollectionFilterTests: XCTestCase {
         XCTAssertTrue(state.isCollectionMode)
     }
 
-    // MARK: - RCL-004-show_query_conversion_failure_feedback
-
-    // MARK: - RCL-004-apply_generated_filter_changes
-
     // MARK: - RCL-004-apply_generated_filter_changes
 
     /// RCL-004-apply_generated_filter_changes: filter 취소는 terminal apply event를 기록함
@@ -813,7 +1436,16 @@ final class RCL004ComposeCollectionFilterTests: XCTestCase {
     /// - 기대 결과: 취소 후 canonical apply metric만 관찰되고 활성 요청이 해제됨
     func testCancelFilters_recordsCanonicalApplyMetricOnceWithoutLegacyAlias() throws {
         let recorder = RCL004MetricRecorder()
-        var state = makeFiltersLoadingState(activeRequestID: UUID())
+        let requestID = UUID()
+        let visibleText = "VOY589_SYNTHETIC_MANUAL_CANCEL_NEWER"
+        var state = makeFiltersLoadingState(activeRequestID: requestID)
+        state.text = visibleText
+        state.activeFiltersMetricSource = ComposerCollectionFilterMetrics.sourceManualApply
+        state.queryRecoveryContext = ComposerQueryRecoveryContext(
+            rawText: "VOY589_SYNTHETIC_MANUAL_CANCEL_OLD",
+            capturedInputRevision: state.inputRevision,
+            stage: .filters(requestID),
+        )
 
         withDependencies {
             $0.composerMetricClient = ComposerMetricClient(recordProductMetric: recorder.record)
@@ -831,6 +1463,8 @@ final class RCL004ComposeCollectionFilterTests: XCTestCase {
         XCTAssertNil(call.tags?["filters"])
         XCTAssertNil(state.activeFiltersRequestID)
         XCTAssertFalse(state.isFilteringInFlight)
+        XCTAssertEqual(state.text, visibleText)
+        XCTAssertNil(state.queryRecoveryContext)
     }
 
     /// RCL-004-apply_generated_filter_changes: 활성 apply 없는 취소는 event를 기록하지 않음
@@ -885,6 +1519,29 @@ final class RCL004ComposeCollectionFilterTests: XCTestCase {
         )
     }
 
+    private func makeConversionErrorResponse() -> SearchResponsePayload {
+        SearchResponsePayload(
+            itemCount: 0,
+            error: SearchErrorPayload(code: "LLM_CONVERSION_FAILED", details: "synthetic"),
+            queryConversion: SearchQueryConversionMetadataPayload(outcome: .conversionFailure),
+        )
+    }
+
+    private func makeGeneratedConditionResponse(
+        scopes: [String] = ["/VoyagerFixtures/Documents"],
+    ) -> SearchResponsePayload {
+        SearchResponsePayload(
+            itemCount: 0,
+            appliedFilters: AppliedFiltersPayload(
+                scopes: scopes,
+                conditions: [
+                    SearchConditionPayload(propertyKey: "kind", operator: "eq", value: .string("pdf")),
+                ],
+            ),
+            queryConversion: SearchQueryConversionMetadataPayload(outcome: .generatedChangeSet),
+        )
+    }
+
     private func makeRegistryClient() -> RegistryClient {
         .init(
             allProperties: { [] },
@@ -932,6 +1589,278 @@ final class RCL004ComposeCollectionFilterTests: XCTestCase {
                 )
             },
         )
+    }
+}
+
+extension RCL004ComposeCollectionFilterTests {
+    // MARK: - RCL-004-submit_collection_filter_query
+
+    /// RCL-004-submit_collection_filter_query: semantic payload replacement는 이전 query 복원을 폐기함
+    /// draft, navigation, open restoration payload가 진행 중 제출보다 우선하는지 검증한다.
+    /// - 검증 내용: 각 replacement의 exact text, input revision 증가, recovery context 폐기
+    /// - 사전 조건: synthetic query submit 뒤 서로 다른 collection payload가 적용됨
+    /// - 기대 결과: payload text가 유지되고 늦은 이전 failure가 이를 덮어쓰지 않음
+    func testSemanticPayloadReplacement_discardsSubmittedQueryRecovery() {
+        let submittedText = "VOY589_SYNTHETIC_SUBMITTED"
+        let context = CollectionContext(query: "VOY589_SYNTHETIC_REPLACEMENT", scopes: [], conditions: [])
+
+        var draftState = ComposerState()
+        draftState.text = submittedText
+        _ = ComposerFeature().reduce(into: &draftState, action: .submit)
+        let draftRequestID = draftState.activeSearchRequestID
+        _ = ComposerFeature().reduce(
+            into: &draftState,
+            action: .applyCollectionDraftRestore(.init(context: context, openedURL: nil)),
+        )
+        XCTAssertEqual(draftState.text, context.query)
+        XCTAssertEqual(draftState.inputRevision, 1)
+        XCTAssertNil(draftState.queryRecoveryContext)
+        if let draftRequestID {
+            _ = ComposerFeature().reduce(
+                into: &draftState,
+                action: .searchResponse(draftRequestID, .failure(MockLocalizedError("synthetic"))),
+            )
+        }
+        XCTAssertEqual(draftState.text, context.query)
+
+        var navigationState = ComposerState()
+        navigationState.text = submittedText
+        _ = ComposerFeature().reduce(into: &navigationState, action: .submit)
+        let navigationPayload = CollectionNavigationStatePayload(
+            context: context,
+            document: nil,
+            baseline: nil,
+            composerText: "VOY589_SYNTHETIC_NAVIGATION",
+            scopes: [],
+            conditions: [],
+        )
+        _ = ComposerFeature().reduce(
+            into: &navigationState,
+            action: .applyCollectionNavigationComposer(navigationPayload),
+        )
+        XCTAssertEqual(navigationState.text, navigationPayload.composerText)
+        XCTAssertEqual(navigationState.inputRevision, 1)
+        XCTAssertNil(navigationState.queryRecoveryContext)
+
+        var openState = ComposerState()
+        openState.text = submittedText
+        _ = ComposerFeature().reduce(into: &openState, action: .submit)
+        let openPayload = CollectionOpenRestorationPayload(
+            context: context,
+            compatibility: nil,
+            navigation: nil,
+            shouldRestoreStaleNavigation: false,
+            queryTrigger: nil,
+            hydratedOpenPayload: nil,
+            isEmptyDefinition: false,
+            unsupportedFilterKeys: [],
+        )
+        openState.applyCollectionOpenRestorationComposerPayload(
+            openPayload,
+            registryClient: makeRegistryClient(),
+        )
+        XCTAssertEqual(openState.text, context.query)
+        XCTAssertEqual(openState.inputRevision, 1)
+        XCTAssertNil(openState.queryRecoveryContext)
+    }
+
+    /// RCL-004-submit_collection_filter_query: full reset은 새 revision/context로 이전 제출을 폐기함
+    /// semantic reset 뒤 늦은 matching failure가 abandoned query를 복원하지 않는지 검증한다.
+    /// - 검증 내용: reset의 fresh text/revision/context와 cancellation owner 보존
+    /// - 사전 조건: owner가 있는 Composer에 active synthetic query submit이 존재함
+    /// - 기대 결과: reset 뒤 owner만 유지되고 늦은 failure는 public text를 변경하지 않음
+    func testResetComposerAndSync_discardsSubmittedQueryRecovery() {
+        let ownerID = UUID()
+        var state = ComposerState()
+        state.cancellationOwnerID = ownerID
+        state.text = "VOY589_SYNTHETIC_RESET"
+        _ = ComposerFeature().reduce(into: &state, action: .submit)
+        let requestID = state.activeSearchRequestID
+
+        _ = ComposerFeature().reduce(
+            into: &state,
+            action: .internal(.resetComposerAndSync(
+                context: nil,
+                url: nil,
+                compatibility: nil,
+                isCollectionMode: false,
+            )),
+        )
+
+        XCTAssertEqual(state.cancellationOwnerID, ownerID)
+        XCTAssertEqual(state.text, "")
+        XCTAssertEqual(state.inputRevision, 0)
+        XCTAssertNil(state.queryRecoveryContext)
+        if let requestID {
+            _ = ComposerFeature().reduce(
+                into: &state,
+                action: .searchResponse(requestID, .failure(MockLocalizedError("synthetic"))),
+            )
+        }
+        XCTAssertEqual(state.text, "")
+    }
+
+    /// RCL-004-submit_collection_filter_query: scope reexecution은 semantic replacement 뒤 새 submit을 소유함
+    /// scope editor commit으로 재실행할 때 이전 context가 아닌 새 request가 query 복원을 소유하는지 검증한다.
+    /// - 검증 내용: replacement revision 증가, 새 active request/context capture, submit-owned clear
+    /// - 사전 조건: 기존 submit과 pending scope 변경 및 non-empty collection query가 있음
+    /// - 기대 결과: 새 search context가 trimmed query와 증가한 revision을 캡처함
+    func testScopeTriggeredReexecution_replacesRecoveryBeforeNewSubmit() async {
+        var initialState = ComposerState()
+        initialState.text = "  VOY589_SYNTHETIC_SCOPE  "
+        _ = ComposerFeature().reduce(into: &initialState, action: .submit)
+        initialState.pendingSearchQuery = "  VOY589_SYNTHETIC_SCOPE  "
+        initialState.scopeEditor.isPresented = true
+        initialState.scopes = ["/VoyagerFixtures/Documents"]
+        let store = TestStore(initialState: initialState) {
+            ComposerFeature()
+        } withDependencies: {
+            $0.registryClient = makeRegistryClient()
+            $0.uuid = .constant(UUID())
+            $0.searchClient.search = { _ in
+                SearchResponsePayload(
+                    itemCount: 0,
+                    queryConversion: SearchQueryConversionMetadataPayload(outcome: .unchangedResult),
+                )
+            }
+        }
+        // store.exhaustivity = .off: scope dismiss의 부수 state보다 새 query recovery ownership을 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.scopeEditorSetPresented(false))
+        await store.receive(\.view.submit)
+
+        XCTAssertEqual(store.state.inputRevision, 1)
+        XCTAssertEqual(store.state.text, "")
+        XCTAssertEqual(store.state.queryRecoveryContext?.rawText, "VOY589_SYNTHETIC_SCOPE")
+        XCTAssertEqual(store.state.queryRecoveryContext?.capturedInputRevision, 1)
+        XCTAssertEqual(
+            store.state.queryRecoveryContext?.stage,
+            store.state.activeSearchRequestID.map(ComposerQueryRecoveryContext.Stage.search),
+        )
+
+        await store.receive(\.internal.searchResponse)
+        await store.finish()
+    }
+
+    // MARK: - RCL-004-apply_generated_filter_changes
+
+    /// RCL-004-apply_generated_filter_changes: filter stage clear-all은 active lifecycle을 semantic clear함
+    /// generated filter 실행 중 Clear All 뒤 늦은 matching failure가 처리 상태나 제출문을 되살리지 않는지 검증한다.
+    /// - 검증 내용: clear revision 증가, filter ownership/processing/context 폐기, late filter failure full no-op
+    /// - 사전 조건: synthetic query가 generated filter stage에 진입함
+    /// - 기대 결과: clear-all이 최종 사용자 intent가 되어 visible text가 계속 비어 있음
+    func testClearAllDuringFilterStage_discardsSubmittedQueryRecovery() {
+        var state = makeGeneratedFilterStageState(rawText: "VOY589_SYNTHETIC_CLEAR_ALL")
+        let requestID = state.activeFiltersRequestID
+
+        _ = ComposerFeature().reduce(into: &state, action: .clearAll)
+
+        XCTAssertEqual(state.text, "")
+        XCTAssertEqual(state.inputRevision, 1)
+        XCTAssertFalse(state.isLoadingFilters)
+        XCTAssertFalse(state.isFilteringInFlight)
+        XCTAssertNil(state.activeFiltersRequestID)
+        XCTAssertNil(state.lastAcceptedFiltersRequestID)
+        XCTAssertNil(state.activeFiltersMetricSource)
+        XCTAssertNil(state.filtersStartedAt)
+        XCTAssertNil(state.queryRecoveryContext)
+        let stateAfterClearAll = state
+        if let requestID {
+            _ = ComposerFeature().reduce(
+                into: &state,
+                action: .filtersResponse(requestID, .failure(MockLocalizedError("synthetic"))),
+            )
+        }
+        XCTAssertEqual(state, stateAfterClearAll)
+    }
+
+    // MARK: - RCL-004-show_query_execution_failure_feedback
+
+    /// RCL-004-show_query_execution_failure_feedback: Composer dismiss는 lifecycle별 recovery 정책을 적용함
+    /// search dismiss, exact live filter 유지, cancelled filter dismiss의 서로 다른 context 처리를 검증한다.
+    /// - 검증 내용: search discard, matching live filter retain, cancelled filter discard
+    /// - 사전 조건: 각 stage에 synthetic recovery context가 존재함
+    /// - 기대 결과: intentionally alive인 exact filter context만 dismiss 이후 남음
+    func testDismiss_appliesExactSearchAndFilterRecoveryPolicy() {
+        var searchState = ComposerState()
+        searchState.text = "VOY589_SYNTHETIC_DISMISS_SEARCH"
+        _ = ComposerFeature().reduce(into: &searchState, action: .submit)
+        _ = ComposerFeature().reduce(into: &searchState, action: .setPresented(false))
+        XCTAssertNil(searchState.queryRecoveryContext)
+        XCTAssertEqual(searchState.text, "")
+
+        let filterRawText = "VOY589_SYNTHETIC_DISMISS_FILTER"
+        var liveFilterState = makeGeneratedFilterStageState(rawText: filterRawText)
+        let liveRequestID = liveFilterState.activeFiltersRequestID
+        let liveContext = liveFilterState.queryRecoveryContext
+        _ = ComposerFeature().reduce(into: &liveFilterState, action: .setPresented(false))
+        XCTAssertEqual(liveFilterState.queryRecoveryContext, liveContext)
+        XCTAssertEqual(liveFilterState.activeFiltersRequestID, liveRequestID)
+        if let liveRequestID {
+            _ = ComposerFeature().reduce(
+                into: &liveFilterState,
+                action: .filtersResponse(liveRequestID, .failure(MockLocalizedError("synthetic"))),
+            )
+        }
+        XCTAssertEqual(liveFilterState.text, filterRawText)
+
+        let cancelledRequestID = UUID()
+        var cancelledFilterState = ComposerState()
+        cancelledFilterState.queryRecoveryContext = ComposerQueryRecoveryContext(
+            rawText: "VOY589_SYNTHETIC_CANCELLED_FILTER",
+            capturedInputRevision: cancelledFilterState.inputRevision,
+            stage: .filters(cancelledRequestID),
+        )
+        _ = ComposerFeature().reduce(into: &cancelledFilterState, action: .setPresented(false))
+        XCTAssertNil(cancelledFilterState.queryRecoveryContext)
+    }
+
+    /// RCL-004-show_query_execution_failure_feedback: cleanup은 matching late failure 전에 recovery를 폐기함
+    /// collection cleanup 뒤 이전 filter failure가 도착해도 abandoned query가 복원되지 않는지 검증한다.
+    /// - 검증 내용: cleanup 직후 context disposal과 late response public no-op
+    /// - 사전 조건: generated filter request와 exact raw synthetic recovery가 active임
+    /// - 기대 결과: cleanup 뒤 text/context/feedback가 유지되고 늦은 failure는 무시됨
+    func testCleanupThenLateMatchingFailure_doesNotRestoreSubmittedQuery() {
+        var state = makeGeneratedFilterStageState(rawText: "VOY589_SYNTHETIC_CLEANUP")
+        let requestID = state.activeFiltersRequestID
+
+        _ = ComposerFeature().reduce(into: &state, action: .internal(.cleanupCollectionWork))
+        let textAfterCleanup = state.text
+        let feedbackAfterCleanup = state.transientFeedback
+
+        XCTAssertNil(state.queryRecoveryContext)
+        if let requestID {
+            _ = ComposerFeature().reduce(
+                into: &state,
+                action: .filtersResponse(requestID, .failure(MockLocalizedError("synthetic"))),
+            )
+        }
+        XCTAssertEqual(state.text, textAfterCleanup)
+        XCTAssertEqual(state.transientFeedback, feedbackAfterCleanup)
+        XCTAssertNil(state.queryRecoveryContext)
+    }
+
+    private func makeGeneratedFilterStageState(
+        rawText: String,
+        response: SearchResponsePayload? = nil,
+    ) -> ComposerState {
+        var state = ComposerState()
+        state.text = rawText
+        _ = ComposerFeature().reduce(into: &state, action: .submit)
+        guard let requestID = state.activeSearchRequestID else {
+            preconditionFailure("submit must create an active request")
+        }
+        withDependencies {
+            $0.registryClient = makeRegistryClient()
+            $0.uuid = .constant(UUID())
+        } operation: {
+            _ = ComposerFeature().reduce(
+                into: &state,
+                action: .searchResponse(requestID, .success(response ?? makeGeneratedConditionResponse())),
+            )
+        }
+        return state
     }
 }
 
