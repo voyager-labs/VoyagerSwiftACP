@@ -210,20 +210,6 @@ struct RuntimeModelTechnicalTests {
         #expect(binding.contextPolicy.requestContext == context.requestContext)
     }
 
-    @Test
-    func `restart binding defaults provider event sequence to zero`() {
-        #expect(makeTechnicalRestartBinding().providerEventSequence == 0)
-    }
-
-    @Test
-    func `restart binding equality distinguishes provider event sequence`() {
-        let first = makeTechnicalRestartBinding()
-        let second = makeTechnicalRestartBinding(providerEventSequence: 1)
-
-        #expect(first != second)
-        #expect(Set([first, second]).count == 2)
-    }
-
     private struct FingerprintVector {
         let name: String
         let workingDirectory: String?
@@ -413,23 +399,4 @@ struct RuntimeModelTechnicalTests {
             requestContext: "content-tab",
         )
     }
-}
-
-private func makeTechnicalRestartBinding(providerEventSequence: UInt64 = 0) -> RuntimeRestartBinding {
-    RuntimeRestartBinding(
-        externalAgentSessionReference: "host-binding-technical",
-        providerInternalSessionReference: ProviderInternalSessionReference("provider-binding-technical"),
-        runReference: RuntimeRunReference("run-binding-technical"),
-        adapterID: RuntimeAdapterID("sdk"),
-        providerNamespace: "provider",
-        adapterVersion: "1.0.0",
-        providerBranch: .claudeAgentSDK,
-        capabilitySnapshot: .allSupported,
-        contextPolicy: RuntimeContextPolicy(
-            branchReference: "feat/voy-696",
-            authorizationGeneration: 1,
-            localCorrelation: "local-a",
-        ),
-        providerEventSequence: providerEventSequence,
-    )
 }

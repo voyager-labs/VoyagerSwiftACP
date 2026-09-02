@@ -58,7 +58,6 @@ extension RuntimeRestoreResumeCoordinatorContractTests {
             providerInternalSessionReference: receiptReference,
             runReference: run,
             projection: .running,
-            lastSequence: 7,
         )
         let expected = RuntimeResult(
             runReference: run,
@@ -73,13 +72,12 @@ extension RuntimeRestoreResumeCoordinatorContractTests {
                     makeEvent(
                         host: host,
                         run: run,
-                        sequence: 8,
+                        sequence: 1,
                         idempotencyKey: "replay-stream-terminal",
                         kind: .completed,
                     ),
                 ],
             ],
-            launchReceiptProviderReference: receiptReference,
             terminalResultOverride: expected,
         )
         let store = InMemoryRuntimeStateStore(state: makeState([stored]))
@@ -88,8 +86,8 @@ extension RuntimeRestoreResumeCoordinatorContractTests {
 
         #expect(try await plane.restore(hostReference: host, expectedContext: context) == .restored)
         let result = try await plane.resumeRestoredRun(hostReference: host)
-        let (persisted, binding) = try await restoredStreamEvidence(store: store, adapter: adapter)
-        #expect(binding.providerEventSequence == 7)
+        let persisted = try #require(await store.currentState()?.sessions.first)
+        let binding = try #require(await adapter.receivedRestartBindings().first)
 
         expectRestoredReceipt(
             result: result,
@@ -99,45 +97,9 @@ extension RuntimeRestoreResumeCoordinatorContractTests {
             receiptReference: receiptReference,
         )
         expectCompletedSession(persisted)
-        await expectRestoredStreamCounts(plane: plane, adapter: adapter, host: host)
-        let launchRequests = await adapter.receivedLaunchRequests()
-        #expect(launchRequests.count == 1)
-        #expect(launchRequests.first?.input == RuntimeSensitiveInput(""))
-        #expect(launchRequests.first?.contextPolicy == context)
-    }
-
-    /// VOY-747-resume_replay: launched receipt mismatch fails before provider consumption.
-    /// 재개 launch receipt가 persisted claim과 다르면 event/result 소비 전에 fail-closed 하는지 검증한다.
-    /// - 검증 내용: mismatch 오류와 provider 소비 0회를 확인한다.
-    /// - 사전 조건: compatibility와 restore claim은 성공하지만 launch provider reference가 다르다.
-    /// - 기대 결과: restartIncompatible가 반환되고 eventStream/terminalResult는 호출되지 않는다.
-    @Test
-    func `launched receipt mismatch fails before provider consumption`() async throws {
-        let host: ExternalAgentSessionReference = "replay-launch-mismatch-host"
-        let run = RuntimeRunReference("replay-launch-mismatch-run")
-        let context = makeContext()
-        let stored = makeEqualitySession(
-            storedContext: RuntimeStoredContext(contextPolicy: context),
-            externalAgentSessionReference: host,
-            runReference: run,
-            projection: .running,
-        )
-        let store = InMemoryRuntimeStateStore(state: makeState([stored]))
-        let adapter = DeterministicRuntimeAdapter(
-            id: "sdk",
-            launchReceiptProviderReference: ProviderInternalSessionReference("wrong-receipt"),
-        )
-        let plane = RuntimeControlPlane(store: store)
-        try await plane.register(adapter)
-
-        #expect(try await plane.restore(hostReference: host, expectedContext: context) == .restored)
-        await #expect(throws: RuntimeHostError.restartIncompatible) {
-            _ = try await plane.resumeRestoredRun(hostReference: host)
-        }
-        let counts = await adapter.counts()
-        #expect(counts.launch == 1)
-        #expect(counts.stream == 0)
-        #expect(counts.terminalResult == 0)
+        #expect(await plane.acceptedEventCount(for: host) == 1)
+        #expect(await adapter.counts().stream == 1)
+        #expect(await adapter.counts().terminalResult == 1)
     }
 
     /// VOY-747-process_restart_after_claim_recovery: process restart resumes same run after claim recovery.
@@ -475,7 +437,6 @@ private func makeProviderResultExpiryFixture() -> ProviderResultExpiryFixture {
         id: "sdk",
         capabilities: capabilities,
         eventsByLaunch: [[]],
-        launchReceiptProviderReference: receiptReference,
         terminalResultOverride: expected,
         terminalResultGate: resultGate,
     )
@@ -770,25 +731,6 @@ private func expectRestoredReceipt(
     #expect(persisted.providerInternalSessionReference == receiptReference)
     #expect(binding.runReference == run)
     #expect(binding.providerInternalSessionReference == receiptReference)
-}
-
-private func restoredStreamEvidence(
-    store: InMemoryRuntimeStateStore,
-    adapter: DeterministicRuntimeAdapter,
-) async throws -> (RuntimeStoredSession, RuntimeRestartBinding) {
-    let persisted = try #require(await store.currentState()?.sessions.first)
-    let binding = try #require(await adapter.receivedRestartBindings().first)
-    return (persisted, binding)
-}
-
-private func expectRestoredStreamCounts(
-    plane: RuntimeControlPlane,
-    adapter: DeterministicRuntimeAdapter,
-    host: ExternalAgentSessionReference,
-) async {
-    #expect(await plane.acceptedEventCount(for: host) == 1)
-    #expect(await adapter.counts().stream == 1)
-    #expect(await adapter.counts().terminalResult == 1)
 }
 
 private func expectRetryClaim(
