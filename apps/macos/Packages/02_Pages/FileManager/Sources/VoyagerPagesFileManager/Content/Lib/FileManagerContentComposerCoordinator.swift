@@ -33,8 +33,9 @@ enum FileManagerContentComposerCoordinator {
 
     static func synchronizeOpenedCollectionDraftFromComposer(
         state: inout FileManagerContentState,
+        explicitQuery: String? = nil,
     ) {
-        synchronizeOpenedCollectionDraftAfterCancellation(state: &state)
+        synchronizeOpenedCollectionDraftAfterCancellation(state: &state, explicitQuery: explicitQuery)
     }
 
     private static func synchronizeCollectionDraftAfterConditionEdit(
@@ -167,6 +168,7 @@ enum FileManagerContentComposerCoordinator {
 
     private static func synchronizeOpenedCollectionDraftAfterCancellation(
         state: inout FileManagerContentState,
+        explicitQuery: String? = nil,
     ) {
         guard state.isCollectionMode,
               state.collection.collectionSession.document?.url != nil,
@@ -175,7 +177,8 @@ enum FileManagerContentComposerCoordinator {
             return
         }
         let textQuery = state.composer.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        let query = state.composer.pendingSearchQuery
+        let query = explicitQuery
+            ?? state.composer.pendingSearchQuery
             ?? (textQuery.isEmpty ? composerContext.query : textQuery)
         var nextContext = state.composer.collectionContext(query: query)
         if composerContext.scopes.isEmpty, state.composer.isSemanticallyRootOnly {
@@ -241,6 +244,9 @@ enum FileManagerContentComposerCoordinator {
     ) -> Effect<FileManagerContentAction> {
         let query = text.trimmingCharacters(in: .whitespacesAndNewlines)
         state.composer.pendingSearchQuery = query.isEmpty ? nil : query
+        if state.collection.collectionSession.document?.url != nil {
+            synchronizeOpenedCollectionDraftFromComposer(state: &state, explicitQuery: query)
+        }
         if query.isEmpty,
            state.composer.conditions.isEmpty,
            state.composer.isSemanticallyRootOnly,

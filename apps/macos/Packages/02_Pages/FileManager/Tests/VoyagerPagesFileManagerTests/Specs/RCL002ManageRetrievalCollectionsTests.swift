@@ -161,6 +161,36 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
         XCTAssertTrue(requests.value.isEmpty)
     }
 
+    /// RCL-002-save_collection_filter_changes: file-backed query draft는 입력과 삭제를 모두 owner에 동기화한다.
+    /// query를 아직 submit하지 않아도 dirty/save 판정과 close 시 query 삭제가 canonical 상태에 반영되는지 검증한다.
+    func testEditFileBackedCollection_queryDraftSynchronizesIncludingClear() async {
+        let targetURL = URL(fileURLWithPath: "/VoyagerFixtures/Collections/query-draft-edit.voycoll")
+        let baseline = CollectionContext(query: "baseline", scopes: ["/tmp"], conditions: [])
+        let requests = LockIsolated<[String]>([])
+        var state = makeFileBackedEmptyCollectionContentState(targetURL: targetURL)
+        state.collection.collectionContext = baseline
+        state.collection.collectionSession.metadata.baseline = .init(context: baseline)
+        state.composer.collectionContext = baseline
+        state.composer.scopes = baseline.scopes
+        state.composer.text = baseline.query
+        let store = makeCollectionEditStore(initialState: state, requests: requests)
+
+        await store.send(.composer(.setText(" invoice ")))
+        await store.skipReceivedActions(strict: false)
+        XCTAssertEqual(store.state.collection.collectionContext?.query, "invoice")
+        XCTAssertTrue(store.state.collection.isDirty)
+        XCTAssertTrue(store.state.collection.canSave(isCollectionMode: true))
+
+        await store.send(.composer(.setText("")))
+        await store.skipReceivedActions(strict: false)
+        await store.finish()
+
+        XCTAssertEqual(store.state.collection.collectionContext?.query, "")
+        XCTAssertEqual(store.state.composer.collectionContext?.query, "")
+        XCTAssertTrue(store.state.collection.isDirty)
+        XCTAssertTrue(requests.value.isEmpty)
+    }
+
     /// RCL-002-save_collection_filter_changes: 첫 scope-only edit은 retrieval 없이 Collection draft를 dirty로 만든다.
     /// Composer child가 scope editor를 닫은 뒤 FileManager가 현재 scope rule을 Collection ownership에 동기화한다.
     /// - 검증 내용: scope/exclusion context, committed scope, dirty, URL, accepted response, request cardinality
