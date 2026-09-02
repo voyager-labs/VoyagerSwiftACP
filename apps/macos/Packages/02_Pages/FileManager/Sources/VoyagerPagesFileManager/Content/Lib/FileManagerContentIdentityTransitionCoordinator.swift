@@ -260,14 +260,18 @@ enum FileManagerContentIdentityTransitionCoordinator {
     static func rebaseForHierarchyInvalidation(
         affectedPaths: [String],
         state: inout FileManagerContentState,
+        removedPrefixes: [String] = [],
     ) {
         guard var transition = state.pendingIdentityTransition else { return }
-        let canonicalAffected = Set(affectedPaths.map(canonicalizedPath))
+        let reloadOwnerIDs = state.entryViewLayout.hierarchy.reloadableFolderIDs(
+            for: affectedPaths,
+            excluding: removedPrefixes,
+        )
         func rebased(_ owner: FileManagerContentState.EntryIdentityTransitionProjectionOwner)
             -> FileManagerContentState.EntryIdentityTransitionProjectionOwner
         {
             guard case let .folder(id, generation) = owner,
-                  canonicalAffected.contains(canonicalizedPath(id)),
+                  reloadOwnerIDs.contains(id),
                   let node = state.entryViewLayout.hierarchy.nodesByID[id],
                   // Each invalidation reserves one future startLoad generation. Preserve
                   // arbitrarily long queued bursts while rejecting already-stale owners.

@@ -825,6 +825,43 @@ extension EVM002FileManagerPagePresentationTests {
         )
     }
 
+    /// EVM-002-command_external_refresh_correlation: 중첩 invalidation은 실제 reload owner를 재기준화한다.
+    /// 이벤트가 loaded folder의 더 깊은 child path를 가리켜도 hierarchy reload와 identity owner를 일치시킨다.
+    /// - 검증 내용: nested event path가 nearest loaded parent folder owner의 generation을 전진시킴
+    /// - 사전 조건: `/root/A` folder node가 loaded generation 3이고 `/root/A/sub/file` 이벤트가 도착함
+    /// - 기대 결과: projectionOwner가 실제 재시작되는 `/root/A`의 generation 4를 가리킴
+    func testNestedHierarchyInvalidationRebasesNearestLoadedOwner() {
+        let destination = EntryModel.temporaryFolder(id: "/root/A", name: "A")
+        var state = bufferedRootSourceState(
+            rootPath: "/root",
+            entries: [destination],
+        )
+        state.entryViewLayout.hierarchy.nodesByID[destination.id] = .init(
+            children: [],
+            loadPhase: .loaded,
+            generation: 3,
+        )
+        state.entryViewLayout.hierarchy.setExpandedIDs([destination.id])
+        state.pendingIdentityTransition = .init(
+            recordID: UUID(),
+            beforePath: "/root/before",
+            afterPath: "/root/A/after",
+            rootPath: "/root",
+            refreshGeneration: 1,
+            projectionOwner: .folder(id: destination.id, generation: 3),
+        )
+
+        FileManagerContentIdentityTransitionCoordinator.rebaseForHierarchyInvalidation(
+            affectedPaths: ["/root/A/sub/file"],
+            state: &state,
+        )
+
+        XCTAssertEqual(
+            state.pendingIdentityTransition?.projectionOwner,
+            .folder(id: destination.id, generation: 4),
+        )
+    }
+
     /// 같은 folder 재적용(탭 복원) reload도 전이 세대를 재기준화한다.
     /// - 검증 내용: applyNavigationState(.folder 동일 경로) 뒤 root 소유자 세대가 함께 올라간다.
     /// - 사전 조건: root 소유자 대기 전이와 gen 1 로딩 컨텍스트가 있다.

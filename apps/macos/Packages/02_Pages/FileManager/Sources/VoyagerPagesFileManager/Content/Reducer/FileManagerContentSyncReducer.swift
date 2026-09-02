@@ -125,6 +125,7 @@ struct FileManagerContentSyncReducer {
                 ? Array(state.entryViewLayout.hierarchy.expandedFolderIDs)
                 : affectedPaths,
             state: &state,
+            removedPrefixes: removedPrefixes,
         )
         let hierarchyAction: EntryListHierarchyAction = shouldCoarseReload
             ? .coarseHierarchyInvalidated(

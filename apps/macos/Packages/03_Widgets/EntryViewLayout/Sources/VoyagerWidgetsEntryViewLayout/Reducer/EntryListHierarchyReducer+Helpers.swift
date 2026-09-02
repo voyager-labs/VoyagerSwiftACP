@@ -82,17 +82,10 @@ extension EntryListHierarchyReducer {
             )])
         }
 
-        var affectedIDs = Set<EntryModel.ID>()
-        for path in affectedPaths {
-            let canonicalPath = normalizedPath(path)
-            let matchingFolderIDs = state.hierarchy.nodesByID.keys.filter {
-                normalizedPath($0) == canonicalPath
-            }
-            affectedIDs.formUnion(matchingFolderIDs)
-            affectedIDs.formUnion(nearestLoadedParentIDs(for: canonicalPath, state: state))
-        }
-
-        let reloadIDs = affectedIDs.subtracting(removedIDs)
+        let reloadIDs = state.hierarchy.reloadableFolderIDs(
+            for: affectedPaths,
+            excluding: removedPrefixes,
+        )
         if !reloadIDs.isEmpty {
             state.advanceOutlineProjectionRevision()
         }
@@ -352,30 +345,6 @@ extension EntryListHierarchyReducer {
              let .tags(id, _),
              let .supplementaryMetadata(id, _):
             id
-        }
-    }
-
-    func nearestLoadedParentIDs(for path: String, state: State) -> Set<EntryModel.ID> {
-        let candidates = state.hierarchy.nodesByID
-            .filter {
-                isLoadedOrLoading($0.value.loadPhase)
-                    && isSameOrDescendant(path: path, of: $0.key)
-            }
-        guard let deepestPathComponentCount = candidates.keys
-            .map({ pathComponents(for: normalizedPath($0)).count })
-            .max()
-        else {
-            return []
-        }
-        return Set(candidates.keys.filter {
-            pathComponents(for: normalizedPath($0)).count == deepestPathComponentCount
-        })
-    }
-
-    func isLoadedOrLoading(_ phase: FolderLoadPhase) -> Bool {
-        switch phase {
-        case .loadingCore, .enriching, .loaded: true
-        case .idle, .failed: false
         }
     }
 

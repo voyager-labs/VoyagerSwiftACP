@@ -114,6 +114,40 @@ public struct EntryListHierarchyState: Equatable, Sendable {
         self.nodesByID = nodesByID
     }
 
+    /// 외부 hierarchy invalidation이 실제로 재시작할 folder owner를 계산한다.
+    /// identity transition rebase와 hierarchy reducer가 같은 reload 집합을 사용하도록
+    /// exact folder match와 가장 깊은 loaded parent를 한 곳에서 소유한다.
+    public func reloadableFolderIDs(
+        for affectedPaths: [String],
+        excluding removedPrefixes: [String] = [],
+    ) -> Set<EntryModel.ID> {
+        let removedIDs = Set(nodesByID.keys.filter { id in
+            removedPrefixes.contains { isSameOrDescendant(path: id, of: $0) }
+        })
+        var reloadIDs = Set<EntryModel.ID>()
+
+        for path in affectedPaths {
+            let canonicalPath = normalizedPath(path)
+            reloadIDs.formUnion(nodesByID.keys.filter {
+                normalizedPath($0) == canonicalPath
+            })
+
+            let loadedCandidates = nodesByID.filter {
+                isLoadedOrLoading($0.value.loadPhase)
+                    && isSameOrDescendant(path: canonicalPath, of: $0.key)
+            }
+            guard let deepestPathComponentCount = loadedCandidates.keys
+                .map({ pathComponents(for: normalizedPath($0)).count })
+                .max()
+            else { continue }
+            reloadIDs.formUnion(loadedCandidates.keys.filter {
+                pathComponents(for: normalizedPath($0)).count == deepestPathComponentCount
+            })
+        }
+
+        return reloadIDs.subtracting(removedIDs)
+    }
+
     public mutating func replaceRoot(path: String) {
         if !rootPath.isEmpty, !path.isEmpty {
             let currentPath = URL(fileURLWithPath: rootPath).standardizedFileURL.path
@@ -237,6 +271,28 @@ public struct EntryListHierarchyState: Equatable, Sendable {
             remaining[folderID] = nil
         }
         deferredFolderReplacements = remaining
+    }
+
+    private func isLoadedOrLoading(_ phase: FolderLoadPhase) -> Bool {
+        switch phase {
+        case .loadingCore, .enriching, .loaded: true
+        case .idle, .failed: false
+        }
+    }
+
+    private func isSameOrDescendant(path: String, of ancestor: String) -> Bool {
+        let pathComponents = URL(fileURLWithPath: normalizedPath(path)).pathComponents
+        let ancestorComponents = URL(fileURLWithPath: normalizedPath(ancestor)).pathComponents
+        return pathComponents.starts(with: ancestorComponents)
+    }
+
+    private func normalizedPath(_ path: String) -> String {
+        guard !path.isEmpty else { return path }
+        return URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath().path
+    }
+
+    private func pathComponents(for path: String) -> [String] {
+        URL(fileURLWithPath: path).standardizedFileURL.pathComponents
     }
 
     /// migration이 폴더 children을 교체한 뒤 남은 stale 로드 하위 node를 정리한다.

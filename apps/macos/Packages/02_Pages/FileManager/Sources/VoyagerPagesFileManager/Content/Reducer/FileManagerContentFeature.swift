@@ -469,6 +469,7 @@ public struct FileManagerContentFeature {
                 ? Array(state.entryViewLayout.hierarchy.expandedFolderIDs)
                 : pending.affectedPaths,
             state: &state,
+            removedPrefixes: pending.removedPrefixes,
         )
         let hierarchyAction: EntryListHierarchyAction = pending.requiresCoarseHierarchyReload
             ? .coarseHierarchyInvalidated(
