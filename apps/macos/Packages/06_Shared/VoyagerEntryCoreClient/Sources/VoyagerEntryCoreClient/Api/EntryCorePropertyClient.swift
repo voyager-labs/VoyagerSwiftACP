@@ -162,8 +162,27 @@ extension EntryCorePropertyClient {
             guard case let .queryPage(value) = try await call(
                 .propertyConditionQuery, endpoint, request, requestID, makeTransport,
             ) else { throw EntryCoreClientError.protocolMismatch }
+            guard queryPageMatchesRequest(value, request: request) else {
+                throw EntryCoreClientError.protocolMismatch
+            }
             return value
         }
+    }
+
+    nonisolated private static func queryPageMatchesRequest(
+        _ page: PropertyConditionQueryPage,
+        request: PropertyConditionQueryRequest,
+    ) -> Bool {
+        guard page.items.count <= request.pageSize else { return false }
+        let requestedProjection = Set(request.projectionPropertyIDs)
+        let itemIndices = Set(page.items.map(\.candidateIndex))
+        let unresolvedIndices = Set(page.unresolvedCandidateIndices)
+        guard page.items.allSatisfy({ item in
+            item.candidateIndex < request.targets.count
+                && item.projection.allSatisfy { requestedProjection.contains($0.propertyID) }
+        }), page.unresolvedCandidateIndices.allSatisfy({ $0 < request.targets.count }),
+        itemIndices.isDisjoint(with: unresolvedIndices) else { return false }
+        return true
     }
 
     nonisolated private static func call(

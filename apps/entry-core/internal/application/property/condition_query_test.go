@@ -1,9 +1,12 @@
 package property
 
 import (
+	"context"
+	"errors"
 	"testing"
 
 	domainentry "github.com/voyager-labs/voyager-app/apps/entry-core/internal/domain/entry"
+	"github.com/voyager-labs/voyager-app/apps/entry-core/internal/source"
 )
 
 func TestConditionCapabilityMappingCompleteness(t *testing.T) {
@@ -273,5 +276,114 @@ func TestConditionEvaluatorStateTruthTableAndFailClosedRows(t *testing.T) {
 	selectFact := domainentry.EntryPropertyAssignment{State: domainentry.AssignmentStateValue, Scalar: &domainentry.AssignmentValue{OptionID: &optionID}}
 	if evaluateCondition(selectView, selectFact, QueryCondition{PropertyID: propertyID, Operator: "any", Operand: ConditionOperand{Kind: "option_ref", Values: []string{optionID.String()}}}, "2026-09-01") {
 		t.Fatal("inactive option operand matched")
+	}
+}
+
+type conditionQueryResolverStub struct {
+	targets map[string]ResolvedTarget
+	errors  map[string]error
+	calls   int
+}
+
+func (resolver *conditionQueryResolverStub) ResolveLocalPath(_ context.Context, localPath string) (ResolvedTarget, error) {
+	resolver.calls++
+	if err, ok := resolver.errors[localPath]; ok {
+		return ResolvedTarget{}, err
+	}
+	if target, ok := resolver.targets[localPath]; ok {
+		return target, nil
+	}
+	return ResolvedTarget{}, source.ErrEntryNotFound
+}
+
+func TestConditionQueryResolverErrorsAreFailClosed(t *testing.T) {
+	workspace := mustWorkspaceContext(t)
+	propertyID, err := domainentry.RegistryPropertyID("condition.query.resolver-errors")
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog := newMemCatalogStore()
+	catalog.defs[propertyID] = domainentry.WorkspacePropertyDefinition{
+		PropertyID:    propertyID,
+		Origin:        domainentry.PropertyOriginUserDefined,
+		ValueType:     domainentry.PropertyTypeText,
+		Cardinality:   domainentry.PropertyCardinalityOne,
+		Lifecycle:     domainentry.PropertyLifecycleActive,
+		DefinitionRev: 1,
+	}
+	condition := QueryCondition{
+		PropertyID: propertyID,
+		Operator:   "exists",
+		Operand:    ConditionOperand{Kind: "none"},
+	}
+	resolvedTarget := mustResolvedTargetFor(t, "resolver-errors-resolved")
+
+	for _, test := range []struct {
+		name string
+		err  error
+	}{
+		{name: "entry not found is unresolved", err: source.ErrEntryNotFound},
+		{name: "permission denied is unresolved", err: source.ErrPermissionDenied},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			facts := newMemFactStore()
+			runner := &changeTxRunner{facts: facts}
+			resolver := &conditionQueryResolverStub{
+				targets: map[string]ResolvedTarget{"/resolved": resolvedTarget},
+				errors:  map[string]error{"/unresolved": test.err},
+			}
+			service, err := NewConditionQueryService(catalog, facts, resolver, runner)
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := service.Query(context.Background(), workspace, ConditionQuery{
+				LocalPaths:     []string{"/unresolved", "/resolved"},
+				Combinator:     "all",
+				Conditions:     []QueryCondition{condition},
+				EvaluationDate: "2026-09-01",
+				PageSize:       1,
+			})
+			if err != nil {
+				t.Fatalf("Query() error = %v", err)
+			}
+			if len(result.UnresolvedCandidateIndices) != 1 || result.UnresolvedCandidateIndices[0] != 0 {
+				t.Fatalf("unresolved indices = %v, want [0]", result.UnresolvedCandidateIndices)
+			}
+			if runner.calls != 1 || facts.loadCalls != 1 {
+				t.Fatalf("candidate-level error skipped batch query: tx calls=%d fact loads=%d", runner.calls, facts.loadCalls)
+			}
+		})
+	}
+
+	for _, test := range []struct {
+		name string
+		err  error
+	}{
+		{name: "context cancellation", err: context.Canceled},
+		{name: "adapter failure", err: source.ErrAdapterFailure},
+		{name: "path escape", err: source.ErrPathEscape},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			facts := newMemFactStore()
+			runner := &changeTxRunner{facts: facts}
+			resolver := &conditionQueryResolverStub{errors: map[string]error{"/system-error": test.err}}
+			service, err := NewConditionQueryService(catalog, facts, resolver, runner)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = service.Query(context.Background(), workspace, ConditionQuery{
+				LocalPaths:     []string{"/system-error"},
+				Combinator:     "all",
+				Conditions:     []QueryCondition{condition},
+				EvaluationDate: "2026-09-01",
+				PageSize:       1,
+			})
+			if !errors.Is(err, test.err) {
+				t.Fatalf("Query() error = %v, want %v", err, test.err)
+			}
+			if runner.calls != 0 || facts.loadCalls != 0 {
+				t.Fatalf("system resolver error entered storage: tx calls=%d fact loads=%d", runner.calls, facts.loadCalls)
+			}
+		})
 	}
 }

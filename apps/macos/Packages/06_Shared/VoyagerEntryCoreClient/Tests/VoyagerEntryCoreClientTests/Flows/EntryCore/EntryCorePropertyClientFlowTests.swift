@@ -43,6 +43,33 @@ final class EntryCorePropertyClientFlowTests: XCTestCase {
         XCTAssertEqual(params["page_size"] as? Int, 32)
     }
 
+    func testQueryRejectsResponseOutsideRequestContext() async throws {
+        let propertyID = try PropertyID(rawValue: "00000000-0000-0000-8000-000000000001")
+        let condition = try PropertyCondition(
+            propertyID: propertyID,
+            operator: PropertyConditionOperator(rawValue: "exists"),
+            operand: .none,
+        )
+        let cases = try makeQueryContextMismatchCases(condition: condition)
+        let endpoint = try EntryCoreEndpoint(path: "/tmp/property-client.sock")
+        for testCase in cases {
+            let recorder = PropertyTransportRecorder(response: Data(testCase.response.utf8))
+            let client = EntryCorePropertyClient.makeLive(
+                requestID: { "query-id" },
+                makeTransport: recorder.makeTransport,
+            )
+
+            do {
+                _ = try await client.conditionQuery(endpoint, testCase.request)
+                XCTFail("\(testCase.name) should be rejected")
+            } catch {
+                XCTAssertEqual(error as? EntryCoreClientError, .protocolMismatch, testCase.name)
+            }
+            XCTAssertEqual(recorder.creationCount, 1, testCase.name)
+            XCTAssertEqual(recorder.requests.count, 1, testCase.name)
+        }
+    }
+
     func testInvalidLocalBoundsDoNotCreateTransport() throws {
         let recorder = PropertyTransportRecorder(response: Data())
         _ = EntryCorePropertyClient.makeLive(
@@ -123,4 +150,96 @@ final class EntryCorePropertyClientFlowTests: XCTestCase {
         XCTAssertEqual(recorder.creationCount, 0)
         XCTAssertEqual(recorder.requests, [])
     }
+}
+
+private struct QueryContextMismatchCase {
+    let name: String
+    let request: PropertyConditionQueryRequest
+    let response: String
+}
+
+private func makeQueryRequest(
+    targets: [PropertyTarget],
+    condition: PropertyCondition,
+    pageSize: Int,
+) throws -> PropertyConditionQueryRequest {
+    try PropertyConditionQueryRequest(
+        targets: targets,
+        combinator: .all,
+        conditions: [condition],
+        evaluationDate: "2026-09-01",
+        pageSize: pageSize,
+    )
+}
+
+private func makeQueryContextMismatchCases(
+    condition: PropertyCondition,
+) throws -> [QueryContextMismatchCase] {
+    let targetA = try PropertyTarget(localPath: "/a")
+    let targetB = try PropertyTarget(localPath: "/b")
+    let outOfRangeItem = queryItem(index: 1)
+    let tooManyItems = "[\(queryItem(index: 0)),\(queryItem(index: 1))]"
+    let projection = #"""
+    [{
+      "property_id": "00000000-0000-0000-8000-000000000001",
+      "entry_id": "ent:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "value_type": "text",
+      "cardinality": "one",
+      "state": "null",
+      "revision": 1
+    }]
+    """#
+    let unrequestedProjection = queryItem(index: 0, projection: projection)
+    return try [
+        QueryContextMismatchCase(
+            name: "candidate index out of range",
+            request: makeQueryRequest(targets: [targetA], condition: condition, pageSize: 1),
+            response: queryPageResponse(items: "[\(outOfRangeItem)]", unresolved: "[]"),
+        ),
+        QueryContextMismatchCase(
+            name: "page contains too many items",
+            request: makeQueryRequest(targets: [targetA, targetB], condition: condition, pageSize: 1),
+            response: queryPageResponse(items: tooManyItems, unresolved: "[]"),
+        ),
+        QueryContextMismatchCase(
+            name: "projection contains an unrequested property",
+            request: makeQueryRequest(targets: [targetA], condition: condition, pageSize: 1),
+            response: queryPageResponse(items: "[\(unrequestedProjection)]", unresolved: "[]"),
+        ),
+        QueryContextMismatchCase(
+            name: "unresolved index out of range",
+            request: makeQueryRequest(targets: [targetA], condition: condition, pageSize: 1),
+            response: queryPageResponse(items: "[]", unresolved: "[1]"),
+        ),
+        QueryContextMismatchCase(
+            name: "item and unresolved index overlap",
+            request: makeQueryRequest(targets: [targetA], condition: condition, pageSize: 1),
+            response: queryPageResponse(items: "[\(queryItem(index: 0))]", unresolved: "[0]"),
+        ),
+    ]
+}
+
+private func queryItem(index: Int, projection: String = "[]") -> String {
+    """
+    {
+      "candidate_index":\(index),
+      "entry_id":"ent:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "projection":\(projection)
+    }
+    """
+}
+
+private func queryPageResponse(items: String, unresolved: String) -> String {
+    """
+    {
+      "request_id":"query-id",
+      "ok":true,
+      "result":{
+        "items":\(items),
+        "unresolved_candidate_indices":\(unresolved),
+        "catalog_version":"2.2.0",
+        "has_more":false
+      }
+    }
+    """
 }

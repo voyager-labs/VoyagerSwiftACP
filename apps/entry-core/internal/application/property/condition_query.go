@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	domainentry "github.com/voyager-labs/voyager-app/apps/entry-core/internal/domain/entry"
+	"github.com/voyager-labs/voyager-app/apps/entry-core/internal/source"
 )
 
 const maximumQueryValueMembers = 16384
@@ -142,8 +143,11 @@ func (service *ConditionQueryService) Query(ctx context.Context, workspace domai
 	for index := query.CandidateOffset; index < len(query.LocalPaths); index++ {
 		target, err := service.targets.ResolveLocalPath(ctx, query.LocalPaths[index])
 		if err != nil {
-			unresolved = append(unresolved, index)
-			continue
+			if errors.Is(err, source.ErrEntryNotFound) || errors.Is(err, source.ErrPermissionDenied) {
+				unresolved = append(unresolved, index)
+				continue
+			}
+			return ConditionQueryResult{}, err
 		}
 		if target.Validate() != nil {
 			return ConditionQueryResult{}, ErrInvalidResolvedTarget
