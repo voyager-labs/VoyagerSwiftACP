@@ -98,7 +98,7 @@ final class SET002ConfigureGeneralSettingsTests: XCTestCase {
 
         await store.send(.selectStartPageOption(.home))
         XCTAssertEqual(storage.getString(SettingsKeys.defaultStartPageType), "home")
-        XCTAssertEqual(storage.getString(SettingsKeys.defaultTabPath), nil)
+        XCTAssertNil(storage.getString(SettingsKeys.defaultTabPath))
 
         await store.send(.selectStartPageOption(.homeDirectory))
         XCTAssertEqual(storage.getString(SettingsKeys.defaultStartPageType), "directory")

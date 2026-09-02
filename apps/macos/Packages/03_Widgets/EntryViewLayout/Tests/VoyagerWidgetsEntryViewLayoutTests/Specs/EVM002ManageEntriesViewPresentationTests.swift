@@ -2087,4 +2087,127 @@ extension EVM002ManageEntriesViewPresentationTests {
         XCTAssertEqual(store.state.entries.count, 1)
         XCTAssertEqual(store.state.entries.first?.facets.tags, [favoriteTag])
     }
+
+    // MARK: - EVM-002-toggle_directory_expansion_in_list
+
+    /// EVM-002-toggle_directory_expansion_in_list: terminal staging의 취소 커밋은 stale descendant cache를 제거한다.
+    /// - 검증 내용: coreFinished로 확정된 staging을 취소 커밋한 뒤 제거된 child와 descendant node가 함께 사라진다.
+    /// - 사전 조건: retained subtree를 가진 보류 폴더가 새 children staging과 coreFinished에 도달한다.
+    /// - 기대 결과: 새 children만 남고 제거된 subtree의 node cache는 재사용되지 않는다.
+    func testTerminalCancellationCommitReconcilesStaleDescendants() {
+        let folder = EntryModel.temporaryFolder(id: "/root/source", name: "source")
+        let removedFolder = EntryModel.temporaryFolder(id: "/root/source/removed", name: "removed")
+        let removedDescendant = EntryModel.temporaryFolder(
+            id: "/root/source/removed/descendant",
+            name: "descendant",
+        )
+        let kept = EntryModel.temporaryFolder(id: "/root/source/kept", name: "kept")
+        var hierarchy = EntryListHierarchyState(nodesByID: [
+            folder.id: FolderNodeState(
+                folder: .init(children: [removedFolder], coreFinished: true, hasAppliedContentBatch: true),
+                generation: 4,
+                loadPhase: .loadingCore,
+            ),
+            removedFolder.id: FolderNodeState(
+                folder: .init(children: [removedDescendant], coreFinished: true, hasAppliedContentBatch: true),
+                generation: 3,
+                loadPhase: .loaded,
+            ),
+            removedDescendant.id: FolderNodeState(
+                parentID: removedFolder.id,
+                generation: 3,
+                loadPhase: .loaded,
+            ),
+        ])
+        hierarchy.beginDeferredFolderReplacement(
+            folderID: folder.id,
+            untilEntryID: "/root/destination/moved",
+            holdsUntilMigration: false,
+        )
+        hierarchy.deferredFolderReplacements[folder.id]?.stagedChildren = [kept]
+
+        hierarchy.commitDeferredFolderReplacementsOnCancel()
+
+        XCTAssertEqual(hierarchy.nodesByID[folder.id]?.folder.children, [kept])
+        XCTAssertNil(hierarchy.nodesByID[removedFolder.id])
+        XCTAssertNil(hierarchy.nodesByID[removedDescendant.id])
+    }
+
+    /// EVM-002-toggle_directory_expansion_in_list: terminal empty staging도 authoritative 빈 snapshot으로 정리한다.
+    /// - 검증 내용: 빈 staging의 terminal 취소 커밋 뒤 기존 child subtree가 제거된다.
+    /// - 사전 조건: coreFinished 폴더와 빈 deferred replacement가 있다.
+    /// - 기대 결과: children과 stale descendant cache가 모두 비워진다.
+    func testTerminalEmptyCancellationCommitReconcilesStaleDescendants() {
+        let folder = EntryModel.temporaryFolder(id: "/root/source", name: "source")
+        let removedFolder = EntryModel.temporaryFolder(id: "/root/source/removed", name: "removed")
+        let removedDescendant = EntryModel.temporaryFolder(
+            id: "/root/source/removed/descendant",
+            name: "descendant",
+        )
+        var hierarchy = EntryListHierarchyState(nodesByID: [
+            folder.id: FolderNodeState(
+                folder: .init(children: [removedFolder], coreFinished: true, hasAppliedContentBatch: true),
+                generation: 4,
+                loadPhase: .loadingCore,
+            ),
+            removedFolder.id: FolderNodeState(generation: 3, loadPhase: .loaded),
+            removedDescendant.id: FolderNodeState(
+                parentID: removedFolder.id,
+                generation: 3,
+                loadPhase: .loaded,
+            ),
+        ])
+        hierarchy.beginDeferredFolderReplacement(
+            folderID: folder.id,
+            untilEntryID: "/root/destination/moved",
+            holdsUntilMigration: false,
+        )
+
+        hierarchy.commitDeferredFolderReplacementsOnCancel()
+
+        XCTAssertEqual(hierarchy.nodesByID[folder.id]?.folder.children, [])
+        XCTAssertNil(hierarchy.nodesByID[removedFolder.id])
+        XCTAssertNil(hierarchy.nodesByID[removedDescendant.id])
+    }
+
+    /// EVM-002-toggle_directory_expansion_in_list: nonterminal partial 취소는 staging과 retained snapshot을 유지한다.
+    /// - 검증 내용: 미완료 source staging을 terminal까지 보존하고 기존 child subtree cache를 유지한다.
+    /// - 사전 조건: coreFinished가 아닌 폴더에 일부 staged children이 있다.
+    /// - 기대 결과: 기존 children과 descendant cache가 유지되고 staging은 terminal commit 대기 상태로 남는다.
+    func testNonterminalPartialCancellationCommitKeepsDescendantCache() {
+        let folder = EntryModel.temporaryFolder(id: "/root/source", name: "source")
+        let removedFolder = EntryModel.temporaryFolder(id: "/root/source/removed", name: "removed")
+        let removedDescendant = EntryModel.temporaryFolder(
+            id: "/root/source/removed/descendant",
+            name: "descendant",
+        )
+        let staged = EntryModel.temporaryFolder(id: "/root/source/staged", name: "staged")
+        var hierarchy = EntryListHierarchyState(nodesByID: [
+            folder.id: FolderNodeState(
+                folder: .init(children: [removedFolder]),
+                generation: 4,
+                loadPhase: .loadingCore,
+            ),
+            removedFolder.id: FolderNodeState(generation: 3, loadPhase: .loaded),
+            removedDescendant.id: FolderNodeState(
+                parentID: removedFolder.id,
+                generation: 3,
+                loadPhase: .loaded,
+            ),
+        ])
+        hierarchy.beginDeferredFolderReplacement(
+            folderID: folder.id,
+            untilEntryID: "/root/destination/moved",
+            holdsUntilMigration: true,
+        )
+        hierarchy.deferredFolderReplacements[folder.id]?.stagedChildren = [staged]
+
+        hierarchy.commitDeferredFolderReplacementsOnCancel()
+
+        XCTAssertEqual(hierarchy.nodesByID[folder.id]?.folder.children, [removedFolder])
+        XCTAssertEqual(hierarchy.deferredFolderReplacements[folder.id]?.stagedChildren, [staged])
+        XCTAssertTrue(hierarchy.deferredFolderReplacements[folder.id]?.migrationCompleted ?? false)
+        XCTAssertNotNil(hierarchy.nodesByID[removedFolder.id])
+        XCTAssertNotNil(hierarchy.nodesByID[removedDescendant.id])
+    }
 }

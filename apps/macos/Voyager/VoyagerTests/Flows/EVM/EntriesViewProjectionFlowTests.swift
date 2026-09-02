@@ -426,8 +426,12 @@ final class EntriesViewProjectionFlowTests: XCTestCase {
         await store.receive(\.entryViewLayout.entryOperations.loading.loadFolderItems)
 
         XCTAssertEqual(store.state.entryViewLayout.hierarchy.nodesByID[folder.id]?.loadPhase, .loadingCore)
-        XCTAssertTrue(store.state.entryViewLayout.hierarchy.nodesByID[folder.id]?.folder.children.isEmpty ?? false)
-        XCTAssertFalse(store.state.entryViewLayout.visibleSelectableEntryIDs(isNormalDirectoryPage: true)
+        XCTAssertEqual(
+            store.state.entryViewLayout.hierarchy.nodesByID[folder.id]?.folder.children,
+            [oldChild],
+            "완료된 child snapshot은 새 replacement batch가 올 때까지 유지한다",
+        )
+        XCTAssertTrue(store.state.entryViewLayout.visibleSelectableEntryIDs(isNormalDirectoryPage: true)
             .contains(oldChild.id))
         await store.skipReceivedActions()
         await store.finish()
@@ -471,10 +475,14 @@ final class EntriesViewProjectionFlowTests: XCTestCase {
         )))
 
         XCTAssertEqual(store.state.hierarchy.nodesByID[folder.id]?.generation, 2)
-        XCTAssertEqual(store.state.hierarchy.nodesByID[folder.id]?.folder.children, [])
+        XCTAssertEqual(
+            store.state.hierarchy.nodesByID[folder.id]?.folder.children,
+            [oldChild],
+            "stale response는 retained snapshot을 덮어쓰지 않는다",
+        )
         XCTAssertEqual(
             store.state.visibleSelectableEntryIDs(isNormalDirectoryPage: true),
-            [folder.id],
+            [folder.id, oldChild.id],
         )
     }
 

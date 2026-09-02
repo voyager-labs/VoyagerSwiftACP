@@ -1,7 +1,7 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesEntry
-import VoyagerFeaturesEntryOperations
+@testable import VoyagerFeaturesEntryOperations
 @testable import VoyagerPagesFileManager
 import XCTest
 
@@ -151,13 +151,15 @@ extension EVM001FileManagerNavigationTests {
             path: parentPath,
             showHidden: false,
             priority: .none,
-        )))))
-        XCTAssertEqual(store.state.entryViewLayout.entryOperations.loadingContext.items, [])
-        XCTAssertEqual(store.state.entryViewLayout.entryOperations.loadingContext.generation, 8)
-        XCTAssertEqual(store.state.entryViewLayout.entryOperations.loadingContext.expectedCoreBatchIndex, 0)
-        XCTAssertEqual(store.state.entryViewLayout.entryOperations.loadingContext.sourceKind, .directory)
-        XCTAssertTrue(store.state.entryViewLayout.entryOperations.isLoading)
-        XCTAssertEqual(store.state.pendingSelectEntryLoadGeneration, 8)
+        ))))) {
+            $0.entryViewLayout.entryOperations.loadingContext.items = []
+            $0.entryViewLayout.entryOperations.loadingContext.generation = 8
+            $0.entryViewLayout.entryOperations.loadingContext.expectedCoreBatchIndex = 0
+            $0.entryViewLayout.entryOperations.loadingContext.sourceKind = .directory
+            $0.entryViewLayout.entryOperations.loadingContext.directoryPath = parentPath
+            $0.entryViewLayout.entryOperations.isLoading = true
+            $0.pendingSelectEntryLoadGeneration = 8
+        }
 
         await store.send(.entryViewLayout(.entryOperations(.loading(.streamEvent(.init(
             generation: 8,

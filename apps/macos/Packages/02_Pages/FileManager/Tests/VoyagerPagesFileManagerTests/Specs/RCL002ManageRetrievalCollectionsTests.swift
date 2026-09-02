@@ -1,4 +1,5 @@
-@_spi(Internals) import ComposableArchitecture
+@_spi(Internals)
+import ComposableArchitecture
 import Foundation
 @_spi(Testing)
 @testable import VoyagerEntitiesCollection

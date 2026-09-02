@@ -4,15 +4,44 @@ import VoyagerEntitiesEntry
 import VoyagerShared
 
 extension EntryListHierarchyReducer {
+    /// 재로드 세대를 위한 공통 node 상태 전이. 모든 재시작 경로(explicit startLoad,
+    /// root snapshot 완료 시 unfinished-folder 재시작)가 이 경로를 사용해야 한다.
+    ///
+    /// 마지막 완전 스냅샷(coreFinished 또는 loaded)이 있으면 유지하고, 배치 커서만 0으로
+    /// 되돌려 다음 유효 배치가 retained children을 교체하게 표시한다(중간 빈 투영 방지).
+    /// 초기 확장(idle)·부분 수신(loadingCore 중간)처럼 캐시가 없으면 오늘과 같이 비운다.
+    /// 실패 재시도는 cursor가 아니라 content provenance로 이전 완전 세대와 부분 수신을 구분한다.
+    func reloadedNodeState(for nodeState: FolderNodeState) -> FolderNodeState {
+        var refreshedNode = nodeState
+        var retainsCompleteSnapshot = refreshedNode.folder.coreFinished
+            || refreshedNode.loadPhase == .loaded
+            || refreshedNode.folder.retainsPreviousGenerationChildren
+        if case .failed = refreshedNode.loadPhase {
+            retainsCompleteSnapshot = refreshedNode.folder.retainsPreviousGenerationChildren
+        }
+        refreshedNode.generation &+= 1
+        refreshedNode.loadPhase = FolderLoadPhase.loadingCore
+        if retainsCompleteSnapshot {
+            refreshedNode.folder.coreFinished = false
+            refreshedNode.folder.expectedBatchIndex = 0
+            refreshedNode.folder.hasAppliedContentBatch = false
+            refreshedNode.folder.retainsPreviousGenerationChildren = true
+        } else {
+            refreshedNode.folder = FolderSnapshot()
+        }
+        return refreshedNode
+    }
+
     func startLoad(
         folder _: EntryModel,
         id: EntryModel.ID,
         state: inout State,
     ) -> Effect<Action> {
-        var nodeState = state.hierarchy.nodesByID[id] ?? FolderNodeState()
-        nodeState.generation &+= 1
-        nodeState.loadPhase = FolderLoadPhase.loadingCore
-        nodeState.folder = FolderSnapshot()
+        // 새 세대 진입 시 이전 세대의 deferred staging을 폐기한다. staging은 특정 세대의
+        // batch 수신과 연관되므로, 세대가 재시작되면 남은 항목이 새 listing에 중복·stale로
+        // 합쳐지지 않게 새로 초기화되어야 한다.
+        state.hierarchy.discardDeferredFolderReplacement(folderID: id)
+        var nodeState = reloadedNodeState(for: state.hierarchy.nodesByID[id] ?? FolderNodeState())
         // parentID를 설정한다: nodesByID에서 이 node를 children으로 포함하는 node를 찾는다.
         if nodeState.parentID == nil {
             nodeState.parentID = state.hierarchy.nodesByID.first(where: { _, node in
@@ -32,6 +61,7 @@ extension EntryListHierarchyReducer {
     func invalidateHierarchy(
         affectedPaths: [String],
         removedPrefixes: [String],
+        retainsCompleteSnapshots: Bool = false,
         reloadCachedFolders: Bool,
         state: inout State,
     ) -> Effect<Action> {
@@ -46,23 +76,16 @@ extension EntryListHierarchyReducer {
         }
 
         if reloadCachedFolders {
-            return .merge(effects + [reloadFoldersForPresentationChange(state: &state)])
+            return .merge(effects + [reloadFoldersForPresentationChange(
+                state: &state,
+                retainsCompleteSnapshots: retainsCompleteSnapshots,
+            )])
         }
 
-        var affectedIDs = Set<EntryModel.ID>()
-        for path in affectedPaths {
-            let canonicalPath = normalizedPath(path)
-            if let folderID = state.hierarchy.nodesByID.keys.first(where: {
-                normalizedPath($0) == canonicalPath
-            }) {
-                affectedIDs.insert(folderID)
-            }
-            if let parentID = nearestLoadedParentID(for: canonicalPath, state: state) {
-                affectedIDs.insert(parentID)
-            }
-        }
-
-        let reloadIDs = affectedIDs.subtracting(removedIDs)
+        let reloadIDs = state.hierarchy.reloadableFolderIDs(
+            for: affectedPaths,
+            excluding: removedPrefixes,
+        )
         if !reloadIDs.isEmpty {
             state.advanceOutlineProjectionRevision()
         }
@@ -106,7 +129,10 @@ extension EntryListHierarchyReducer {
         state.hierarchy.nodesByID[folderID] = nodeState
     }
 
-    func reloadFoldersForPresentationChange(state: inout State) -> Effect<Action> {
+    func reloadFoldersForPresentationChange(
+        state: inout State,
+        retainsCompleteSnapshots: Bool = false,
+    ) -> Effect<Action> {
         let folderIDs = Array(state.hierarchy.nodesByID.keys)
         let expandedFolders = state.hierarchy.expandedFolderIDs
             .compactMap { id in
@@ -120,10 +146,18 @@ extension EntryListHierarchyReducer {
         // 뒤의 reconcileHierarchySelection은 이미 빈 선택만 보게 된다. 따라서 재로드 전
         // 선택을 보존해 두고 이 함수에서 delegate를 직접 병합한다.
         let previousSelectedIds = state.selectedIds
+        let retainsExpandedSnapshots = retainsCompleteSnapshots || state.identityReplacement != nil
 
         for id in folderIDs {
             var nodeState = state.hierarchy.nodesByID[id] ?? FolderNodeState()
-            if !state.hierarchy.expandedFolderIDs.contains(id) {
+            let isExpanded = state.hierarchy.expandedFolderIDs.contains(id)
+            // 보존 모드의 확장 폴더는 마커를 건드리지 않고 건너뛴다. 아래 startLoad의
+            // reloadedNodeState가 완료 provenance를 보고 완전 스냅샷을 유지한 채
+            // 세대만 올리고 커서를 되감는다.
+            if retainsExpandedSnapshots, isExpanded {
+                continue
+            }
+            if !isExpanded {
                 nodeState.generation &+= 1
             }
             nodeState.folder = FolderSnapshot()
@@ -239,13 +273,32 @@ extension EntryListHierarchyReducer {
         batchIndex: Int,
         to snapshot: inout FolderSnapshot,
     ) -> Bool {
-        guard !snapshot.coreFinished, batchIndex == snapshot.expectedBatchIndex else { return false }
+        guard !snapshot.coreFinished else { return false }
+        // 아직 이번 세대 내용 배치를 받지 않은 상태에서 이전 세대 children이 남아 있으면
+        // startLoad가 심은 retained 스냅샷(교체 대기)이다. 생산자는 빈 배치도 커서를 올리므로,
+        // 빈 배치는 children을 유지한 채 커서만 소진하고, 첫 내용 배치가 retained children을 한 번에 교체한다.
+        if !snapshot.hasAppliedContentBatch, !snapshot.children.isEmpty {
+            guard batchIndex == snapshot.expectedBatchIndex else { return false }
+            guard !items.isEmpty else {
+                snapshot.expectedBatchIndex += 1
+                return true
+            }
+            snapshot.children = items
+            snapshot.hasAppliedContentBatch = true
+            snapshot.retainsPreviousGenerationChildren = false
+            snapshot.expectedBatchIndex += 1
+            return true
+        }
+        guard batchIndex == snapshot.expectedBatchIndex else { return false }
         for item in items {
             if let index = snapshot.children.firstIndex(where: { $0.id == item.id }) {
                 snapshot.children[index] = item
             } else {
                 snapshot.children.append(item)
             }
+        }
+        if !items.isEmpty {
+            snapshot.hasAppliedContentBatch = true
         }
         snapshot.expectedBatchIndex &+= 1
         return true
@@ -256,6 +309,12 @@ extension EntryListHierarchyReducer {
         to snapshot: inout FolderSnapshot,
     ) -> Bool {
         guard !snapshot.coreFinished, batchCount == snapshot.expectedBatchIndex else { return false }
+        // 이번 세대에서 내용 배치를 하나도 적용하지 못했다면(빈 배치뿐) 실제 빈 스냅샷으로 커밋해
+        // retained children이 남는 것을 막는다.
+        if !snapshot.hasAppliedContentBatch {
+            snapshot.children = []
+        }
+        snapshot.retainsPreviousGenerationChildren = false
         snapshot.coreFinished = true
         return true
     }
@@ -265,12 +324,19 @@ extension EntryListHierarchyReducer {
         to snapshot: inout FolderSnapshot,
     ) -> Bool {
         guard snapshot.coreFinished else { return false }
+        snapshot.children = applyMetadataPatches(patches, to: snapshot.children)
+        return true
+    }
+
+    func applyMetadataPatches(
+        _ patches: [EntryMetadataPatch],
+        to children: [EntryModel],
+    ) -> [EntryModel] {
         let patchesByEntryID = Dictionary(grouping: patches, by: metadataPatchEntryID)
-        snapshot.children = snapshot.children.map { child in
+        return children.map { child in
             guard let childPatches = patchesByEntryID[child.id] else { return child }
             return childPatches.reduce(child) { $0.applying($1) }
         }
-        return true
     }
 
     func metadataPatchEntryID(_ patch: EntryMetadataPatch) -> EntryModel.ID {
@@ -279,25 +345,6 @@ extension EntryListHierarchyReducer {
              let .tags(id, _),
              let .supplementaryMetadata(id, _):
             id
-        }
-    }
-
-    func nearestLoadedParentID(for path: String, state: State) -> EntryModel.ID? {
-        state.hierarchy.nodesByID
-            .filter {
-                isLoadedOrLoading($0.value.loadPhase)
-                    && isSameOrDescendant(path: path, of: $0.key)
-            }
-            .map(\.key)
-            .max { lhs, rhs in
-                pathComponents(for: lhs).count < pathComponents(for: rhs).count
-            }
-    }
-
-    func isLoadedOrLoading(_ phase: FolderLoadPhase) -> Bool {
-        switch phase {
-        case .loadingCore, .enriching, .loaded: true
-        case .idle, .failed: false
         }
     }
 
