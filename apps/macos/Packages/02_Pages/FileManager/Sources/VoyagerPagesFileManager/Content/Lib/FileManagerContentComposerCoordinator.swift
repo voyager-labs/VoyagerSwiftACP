@@ -30,6 +30,12 @@ enum FileManagerContentComposerCoordinator {
         return .none
     }
 
+    static func synchronizeOpenedCollectionDraftFromComposer(
+        state: inout FileManagerContentState,
+    ) {
+        synchronizeOpenedCollectionDraftAfterCancellation(state: &state)
+    }
+
     private static func handleComposerLifecycleAction(
         _ action: ComposerFeature.Action,
         state: inout FileManagerContentState,
