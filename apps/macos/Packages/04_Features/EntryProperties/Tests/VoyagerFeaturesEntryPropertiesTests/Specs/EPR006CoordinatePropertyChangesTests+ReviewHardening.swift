@@ -117,6 +117,35 @@ extension EPR006CoordinatePropertyChangesTests {
         }
     }
 
+    /// EPR-006-prepare_property_change: applied-unverified 상태에서는 새 mutation을 시작하지 않는다.
+    /// - 검증 내용: read-back 미검증 상태의 prepare busy rejection과 dependency 호출 0회
+    /// - 사전 조건: trusted apply 뒤 canonical read-back이 실패해 현재 proposal이 applied-unverified로 남음
+    /// - 기대 결과: read-only retry 경로를 보존하고 새 prepare를 시작하지 않음
+    func testAppliedUnverifiedBlocksNewPrepare() async {
+        let recorder = OperationRecorder()
+        let fixture = Fixture()
+        var state = fixture.readyState
+        state.status = .appliedUnverified
+        state.appliedProposal = fixture.proposal
+        let store = TestStore(initialState: state) {
+            EntryPropertiesFeature()
+        } withDependencies: {
+            $0.entryPropertiesClient = fixture.client(prepare: { _ in
+                await recorder.record("prepare")
+                return fixture.proposal
+            })
+        }
+
+        await store.send(.prepare(fixture.intent)) {
+            $0.lastOutcome = .propertyChangeRejected(.busy)
+        }
+        await store.receive(.init(kind: .outcome(.propertyChangeRejected(.busy))))
+        let recordedOperations = await recorder.values()
+        XCTAssertEqual(recordedOperations, [])
+        XCTAssertEqual(store.state.status, .appliedUnverified)
+        XCTAssertEqual(store.state.appliedProposal, fixture.proposal)
+    }
+
     /// EPR-006-read_back_property_change_result: pending read-back이 있으면 새 mutation을 막는다.
     /// - 검증 내용: prepare/execute busy rejection과 dependency 호출 0회
     /// - 사전 조건: 이전 selection의 pending read-back proposal이 보존됨

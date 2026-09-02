@@ -449,7 +449,16 @@ func compareOrdered(values []string, condition QueryCondition, nativeType domain
 		if len(operands) != 2 {
 			return false
 		}
-		inside := c >= 0 && cmp(values[0], operands[1]) <= 0
+		lower, upper := operands[0], operands[1]
+		if cmp(lower, upper) > 0 {
+			lower, upper = upper, lower
+		}
+		lowerComparison := cmp(values[0], lower)
+		upperComparison := cmp(values[0], upper)
+		if lowerComparison == -2 || upperComparison == -2 {
+			return false
+		}
+		inside := lowerComparison >= 0 && upperComparison <= 0
 		if condition.Operator == "nbtw" {
 			return !inside
 		}

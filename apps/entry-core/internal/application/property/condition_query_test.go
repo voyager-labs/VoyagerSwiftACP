@@ -279,6 +279,67 @@ func TestConditionEvaluatorStateTruthTableAndFailClosedRows(t *testing.T) {
 	}
 }
 
+func TestConditionEvaluatorNormalizesReversedRanges(t *testing.T) {
+	propertyID, err := domainentry.RegistryPropertyID("condition.query.reversed-range")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name      string
+		valueType domainentry.PropertyType
+		value     domainentry.AssignmentValue
+		kind      string
+		operands  []string
+	}{
+		{
+			name:      "number",
+			valueType: domainentry.PropertyTypeNumber,
+			value:     domainentry.AssignmentValue{Decimal: stringPointer("10.5")},
+			kind:      "number",
+			operands:  []string{"20", "10"},
+		},
+		{
+			name:      "date",
+			valueType: domainentry.PropertyTypeDate,
+			value:     domainentry.AssignmentValue{Date: stringPointer("2026-09-01")},
+			kind:      "date",
+			operands:  []string{"2026-09-30", "2026-08-01"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			view := DefinitionView{Definition: domainentry.WorkspacePropertyDefinition{
+				PropertyID:  propertyID,
+				Origin:      domainentry.PropertyOriginUserDefined,
+				ValueType:   test.valueType,
+				Cardinality: domainentry.PropertyCardinalityOne,
+				Lifecycle:   domainentry.PropertyLifecycleActive,
+			}}
+			fact := domainentry.EntryPropertyAssignment{
+				PropertyID: propertyID,
+				State:      domainentry.AssignmentStateValue,
+				Scalar:     &test.value,
+			}
+			for _, operator := range []string{"btw", "nbtw"} {
+				condition := QueryCondition{
+					PropertyID: propertyID,
+					Operator:   operator,
+					Operand:    ConditionOperand{Kind: test.kind, Values: test.operands},
+				}
+				got := evaluateCondition(view, fact, condition, "2026-09-01")
+				want := operator == "btw"
+				if got != want {
+					t.Fatalf("%s reversed range = %v, want %v", operator, got, want)
+				}
+			}
+		})
+	}
+}
+
+func stringPointer(value string) *string {
+	return &value
+}
+
 type conditionQueryResolverStub struct {
 	targets map[string]ResolvedTarget
 	errors  map[string]error

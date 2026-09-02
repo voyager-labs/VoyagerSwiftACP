@@ -120,6 +120,7 @@ public struct EntryPropertiesFeature: Sendable {
             case let .prepare(intent):
                 guard state.activePhase == nil else { return rejectBusy(&state) }
                 guard state.pendingReadBack == nil else { return rejectBusy(&state) }
+                guard state.status != .appliedUnverified else { return rejectBusy(&state) }
                 guard let snapshot = state.targetSnapshot,
                       let capabilities = state.capabilityReport
                 else { return reject(&state, .stale) }
