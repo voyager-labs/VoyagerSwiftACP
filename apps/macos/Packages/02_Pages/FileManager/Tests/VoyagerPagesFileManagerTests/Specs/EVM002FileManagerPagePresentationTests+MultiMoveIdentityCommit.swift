@@ -768,6 +768,48 @@ extension EVM002FileManagerPagePresentationTests {
         XCTAssertEqual(store.state.pendingIdentityTransition?.projectionOwner, .root(generation: 2))
     }
 
+    /// EVM-002-command_external_refresh_correlation: 연속 hierarchy invalidation마다 예약된 folder owner를 전진시킨다.
+    /// 첫 reload action이 적용되기 전에 두 번째 reload가 예약돼도 이미 N+1인 owner를 다시
+    /// 다음 세대로 옮겨 실제 node의 N+2 generation과 transition을 일치시켜야 한다.
+    /// - 검증 내용: 동일 expanded folder owner에 대한 연속 rebase가 generation을 두 번 증가
+    /// - 사전 조건: folder node와 projection owner가 generation 3이고 두 invalidation이 연속 예약됨
+    /// - 기대 결과: node가 아직 generation 3이어도 projectionOwner가 generation 5가 됨
+    func testConsecutiveHierarchyInvalidationsAdvanceScheduledFolderOwner() {
+        let destination = EntryModel.temporaryFolder(id: "/root/D", name: "D")
+        var state = bufferedRootSourceState(
+            rootPath: "/root",
+            entries: [destination],
+        )
+        state.entryViewLayout.hierarchy.nodesByID[destination.id] = .init(
+            children: [],
+            loadPhase: .loaded,
+            generation: 3,
+        )
+        state.entryViewLayout.hierarchy.setExpandedIDs([destination.id])
+        state.pendingIdentityTransition = .init(
+            recordID: UUID(),
+            beforePath: "/root/before",
+            afterPath: "/root/D/after",
+            rootPath: "/root",
+            refreshGeneration: 1,
+            projectionOwner: .folder(id: destination.id, generation: 3),
+        )
+
+        FileManagerContentIdentityTransitionCoordinator.rebaseForHierarchyInvalidation(
+            affectedPaths: [destination.id],
+            state: &state,
+        )
+        FileManagerContentIdentityTransitionCoordinator.rebaseForHierarchyInvalidation(
+            affectedPaths: [destination.id],
+            state: &state,
+        )
+
+        XCTAssertEqual(
+            state.pendingIdentityTransition?.projectionOwner,
+            .folder(id: destination.id, generation: 5),
+        )
+    }
+
     /// 같은 folder 재적용(탭 복원) reload도 전이 세대를 재기준화한다.
     /// - 검증 내용: applyNavigationState(.folder 동일 경로) 뒤 root 소유자 세대가 함께 올라간다.
     /// - 사전 조건: root 소유자 대기 전이와 gen 1 로딩 컨텍스트가 있다.

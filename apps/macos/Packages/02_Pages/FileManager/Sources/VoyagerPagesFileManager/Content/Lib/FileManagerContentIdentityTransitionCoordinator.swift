@@ -266,7 +266,7 @@ enum FileManagerContentIdentityTransitionCoordinator {
             guard case let .folder(id, generation) = owner,
                   canonicalAffected.contains(canonicalizedPath(id)),
                   let node = state.entryViewLayout.hierarchy.nodesByID[id],
-                  node.generation == generation
+                  node.generation == generation || node.generation &+ 1 == generation
             else { return owner }
             return .folder(id: id, generation: generation &+ 1)
         }
