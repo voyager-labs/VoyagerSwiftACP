@@ -559,6 +559,68 @@ extension EVM002FileManagerPagePresentationTests {
         XCTAssertNil(store.state.pendingIdentityTransition, "before 선택 포기는 owning batch에서 전이를 소비한다")
     }
 
+    /// EVM-002-command_external_refresh_correlation: after batch는 이전 사용자 deselect를 복원하지 않는다.
+    /// 첫 batch에서 transient selection 보존이 끝난 뒤 사용자가 before를 해제하면,
+    /// 다음 after batch는 stale before를 다시 삽입하지 않고 전이만 정산해야 한다.
+    /// - 검증 내용: first batch 보존 → 사용자 deselect → after batch 뒤 빈 selection 유지
+    /// - 사전 조건: root identity reload 중 before 선택, 이후 after row가 도착하는 두 배치
+    /// - 기대 결과: after batch가 선택을 복원하지 않고 pending transition만 종료
+    func testRootAfterBatchDoesNotUndoUserDeselect() async {
+        let rootPath = "/root"
+        let oldPath = "/root/old.txt"
+        let newPath = "/root/new.txt"
+        let oldEntry = hierarchyFile(id: oldPath, name: "old.txt")
+        let unrelatedEntry = hierarchyFile(id: "/root/unrelated.txt", name: "unrelated.txt")
+        var state = FileManagerContentState()
+        state.navigation.seedInitialFolderPath(rootPath)
+        state.entryViewLayout.mode = .list
+        state.entryViewLayout.hierarchy.replaceRoot(path: rootPath)
+        state.entryViewLayout.entryOperations.items = [oldEntry]
+        state.entryViewLayout.entries = [oldEntry]
+        state.entryViewLayout.selectedIds = [oldPath]
+        state.entryViewLayout.lastSelectedId = oldPath
+        state.entryViewLayout.rangeAnchorId = oldPath
+        state.entryViewLayout.entryOperations.loadingContext.generation = 1
+        state.entryViewLayout.entryOperations.isReloading = true
+        state.pendingIdentityTransition = .init(
+            recordID: UUID(),
+            beforePath: oldPath,
+            afterPath: newPath,
+            rootPath: rootPath,
+            refreshGeneration: 1,
+        )
+        let store = TestStore(initialState: state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.entryOpenClient = .testValue
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+        }
+        store.exhaustivity = .off
+
+        // 첫 batch에서 transient 보존 표시를 소비한다.
+        await store.send(.entryViewLayout(.entryOperations(.loading(.streamEvent(.init(
+            generation: 1,
+            event: .coreBatch(items: [unrelatedEntry], batchIndex: 0),
+        ))))))
+        XCTAssertEqual(store.state.entryViewLayout.selectedIds, [oldPath])
+
+        // transient 보존이 끝난 뒤 사용자가 before를 명시적으로 해제한다.
+        await store.send(.entryViewLayout(.internal(.applyClearSelection)))
+        XCTAssertTrue(store.state.entryViewLayout.selectedIds.isEmpty)
+
+        let renamedEntry = hierarchyFile(id: newPath, name: "new.txt")
+        await store.send(.entryViewLayout(.entryOperations(.loading(.streamEvent(.init(
+            generation: 1,
+            event: .coreBatch(items: [unrelatedEntry, renamedEntry], batchIndex: 1),
+        ))))))
+
+        XCTAssertTrue(
+            store.state.entryViewLayout.selectedIds.isEmpty,
+            "after batch는 사용자 deselect를 before/after 선택으로 되돌리지 않는다",
+        )
+        XCTAssertNil(store.state.pendingIdentityTransition, "선택이 없으면 identity transition은 정산된다")
+    }
+
     /// EVM-002-command_external_refresh_correlation: 종료(accepted) projection에서 after-path가
     /// 끝내 없으면 전이를 소비하고 일반 선택 reconcile이 이긴다.
     /// - 검증 내용: coreFinished(빈) 후 selectedIds가 비워지고 pendingIdentityTransition == nil

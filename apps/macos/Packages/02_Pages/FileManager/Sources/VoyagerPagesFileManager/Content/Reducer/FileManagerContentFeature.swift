@@ -621,14 +621,15 @@ public struct FileManagerContentFeature {
                 ? transition.beforePath
                 : transition.beforeLexicalPath
             let primaryAfter = FileManagerContentIdentityTransitionCoordinator.afterLexicalPath(transition)
-            if items.contains(where: {
-                FileManagerContentIdentityTransitionCoordinator.standardizedPath($0.id)
-                    == FileManagerContentIdentityTransitionCoordinator.standardizedPath(primaryAfter)
-            }),
-                !state.entryViewLayout.selectedIds.contains(where: {
-                    FileManagerContentIdentityTransitionCoordinator.standardizedPath($0)
-                        == FileManagerContentIdentityTransitionCoordinator.standardizedPath(primaryBefore)
-                })
+            if transition.preserveSelectionForReplacementBatch,
+               items.contains(where: {
+                   FileManagerContentIdentityTransitionCoordinator.standardizedPath($0.id)
+                       == FileManagerContentIdentityTransitionCoordinator.standardizedPath(primaryAfter)
+               }),
+               !state.entryViewLayout.selectedIds.contains(where: {
+                   FileManagerContentIdentityTransitionCoordinator.standardizedPath($0)
+                       == FileManagerContentIdentityTransitionCoordinator.standardizedPath(primaryBefore)
+               })
             {
                 state.entryViewLayout.selectedIds.insert(primaryBefore)
             }
