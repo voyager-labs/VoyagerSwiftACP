@@ -153,6 +153,10 @@ struct AiProviderSetupFeature {
         switch action {
         case let .connectionResponse(response):
             result = response.state == .connected ? .success : .failure
+        case .verificationResponse(.invalid),
+             .verificationResponse(.unsupportedProvider),
+             .verificationResponse(.networkError):
+            result = .failure
         case .browserLoginFailed(.cancelled), .deviceAuthFailed(.cancelled), .cancelButtonTapped:
             state.pendingConnectionOperationIDs.removeValue(forKey: provider)
             return

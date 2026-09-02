@@ -418,6 +418,144 @@ final class ONB004ConfigureAIProviderDuringOnboardingTests: XCTestCase {
         await store.finish()
     }
 
+    /// ONB-004-start_ai_provider_connection_from_onboarding: API key 검증의 유한 실패는 provider metric을 한 번 기록한다.
+    /// API key 검증 결과가 실패로 끝날 때 해당 provider의 pending operation만 소비하는지 검증한다.
+    /// - 검증 내용: invalid, unsupportedProvider, networkError 각각의 단말 결과와 중복 결과 처리.
+    /// - 사전 조건: OpenAI row에 provider-keyed pending operation ID가 있다.
+    /// - 기대 결과: 각 실패는 failure metric 하나를 기록하고 pending ID를 제거하며 duplicate는 무시한다.
+    func testAPIKeyVerificationFailuresRecordOneMetricAndIgnoreDuplicates() async {
+        let outcomes: [AiProviderVerificationResult] = [
+            .invalid(.invalidAPIKey),
+            .unsupportedProvider,
+            .networkError,
+        ]
+
+        for outcome in outcomes {
+            let provider = AiProvider.openai
+            let operationID = UUID()
+            let metrics = LockIsolated<[OnboardingProductMetric]>([])
+            var initialState = AiProviderSetupState()
+            initialState.pendingConnectionOperationIDs[provider] = operationID
+
+            let store = TestStore(initialState: initialState) {
+                AiProviderSetupFeature()
+            } withDependencies: {
+                $0.onboardingProductMetricsClient = OnboardingProductMetricsClient(record: { metric in
+                    metrics.withValue { $0.append(metric) }
+                })
+            }
+            // store.exhaustivity = .off: 이 테스트는 child row 상태가 아니라 provider terminal metric 상관관계만 검증한다.
+            store.exhaustivity = .off
+
+            await store.send(.row(.element(id: provider, action: .verificationResponse(outcome))))
+            await store.send(.row(.element(id: provider, action: .verificationResponse(outcome))))
+
+            guard metrics.value.count == 1 else {
+                return XCTFail("Expected one failed provider metric")
+            }
+            guard case let .aiProviderWithKind(metricID, metricProvider, .failure) = metrics.value[0] else {
+                return XCTFail("Expected one failed provider metric")
+            }
+            XCTAssertEqual(metricID, operationID)
+            XCTAssertEqual(metricProvider, .init(provider: provider))
+            XCTAssertNil(store.state.pendingConnectionOperationIDs[provider])
+        }
+    }
+
+    /// ONB-004-start_ai_provider_connection_from_onboarding: API key 검증 실패 후 retry는 새 operation을 만든다.
+    /// terminal 실패가 이전 correlation을 소비한 뒤 retry가 stale operation을 재사용하지 않는지 검증한다.
+    /// - 검증 내용: 실패 metric 기록, pending ID 제거, retry 후 UUID 교체.
+    /// - 사전 조건: OpenAI row에 첫 번째 pending operation ID가 있고 검증 결과는 invalid다.
+    /// - 기대 결과: retry operation ID가 첫 ID와 다르고 두 번째 실패도 별도 failure metric으로 기록된다.
+    func testAPIKeyVerificationFailureRetryUsesFreshOperationID() async throws {
+        let provider = AiProvider.openai
+        let firstOperationID = UUID()
+        let metrics = LockIsolated<[OnboardingProductMetric]>([])
+        var initialState = AiProviderSetupState()
+        initialState.pendingConnectionOperationIDs[provider] = firstOperationID
+
+        let store = TestStore(initialState: initialState) {
+            AiProviderSetupFeature()
+        } withDependencies: {
+            $0.onboardingProductMetricsClient = OnboardingProductMetricsClient(record: { metric in
+                metrics.withValue { $0.append(metric) }
+            })
+        }
+        // store.exhaustivity = .off: 이 테스트는 retry correlation과 metric 순서만 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.row(.element(
+            id: provider,
+            action: .verificationResponse(.invalid(.invalidAPIKey)),
+        )))
+        await store.send(.row(.element(id: provider, action: .retryButtonTapped)))
+        let retryOperationID = try XCTUnwrap(store.state.pendingConnectionOperationIDs[provider])
+        XCTAssertNotEqual(retryOperationID, firstOperationID)
+
+        await store.send(.row(.element(id: provider, action: .verificationResponse(.networkError))))
+
+        XCTAssertEqual(metrics.value.count, 2)
+        XCTAssertNil(store.state.pendingConnectionOperationIDs[provider])
+    }
+
+    /// ONB-004-start_ai_provider_connection_from_onboarding: valid 검증은 connection response까지 terminal metric을 기록하지 않는다.
+    /// API key 검증 성공 자체가 onboarding 성공으로 처리되지 않고 실제 persistence connection 결과를 기다리는지 검증한다.
+    /// - 검증 내용: valid 이후 connected와 connectionFailed 결과가 각각 terminal success/failure를 기록하는 경계.
+    /// - 사전 조건: OpenAI row에 pending operation ID가 있고 connection client가 지정된 결과를 반환한다.
+    /// - 기대 결과: valid 처리 전에는 metric이 없고 connection response 이후 정확히 하나 기록된다.
+    func testValidVerificationWaitsForConnectionResponseTerminalMetric() async {
+        let results: [(ProviderConnectionState, ProviderStatusReason)] = [
+            (.connected, .none),
+            (.connectionFailed, .invalidAPIKey),
+        ]
+
+        for (connectionState, reason) in results {
+            let expectedMetricResult: OnboardingProductMetric.AIProviderResult =
+                connectionState == .connected ? .success : .failure
+            let provider = AiProvider.openai
+            let operationID = UUID()
+            let metrics = LockIsolated<[OnboardingProductMetric]>([])
+            let releaseConnection = LockIsolated(false)
+            let updatedFile = AIConnectionsFile.empty(updatedAtMs: 1)
+            var initialState = AiProviderSetupState()
+            initialState.pendingConnectionOperationIDs[provider] = operationID
+
+            let store = TestStore(initialState: initialState) {
+                AiProviderSetupFeature()
+            } withDependencies: {
+                $0.aiProviderConnectionClient.connectAPIKey = { provider, _, _ in
+                    while !releaseConnection.value {
+                        try? await Task.sleep(nanoseconds: 1_000_000)
+                    }
+                    return AiProviderConnectionResult(
+                        provider: provider,
+                        state: connectionState,
+                        reason: reason,
+                        updatedFile: updatedFile,
+                    )
+                }
+                $0.onboardingProductMetricsClient = OnboardingProductMetricsClient(record: { metric in
+                    metrics.withValue { $0.append(metric) }
+                })
+            }
+            // store.exhaustivity = .off: 이 테스트는 valid와 connection terminal 사이의 metric 경계만 검증한다.
+            store.exhaustivity = .off
+
+            await store.send(.row(.element(id: provider, action: .verificationResponse(.valid))))
+            XCTAssertTrue(metrics.value.isEmpty)
+            releaseConnection.setValue(true)
+            await store.receive(\.row[id: provider].connectionResponse)
+
+            XCTAssertEqual(metrics.value.count, 1)
+            guard case let .aiProviderWithKind(metricID, metricProvider, result) = metrics.value[0] else {
+                return XCTFail("Expected one terminal provider metric")
+            }
+            XCTAssertEqual(metricID, operationID)
+            XCTAssertEqual(metricProvider, .init(provider: provider))
+            XCTAssertEqual(result, expectedMetricResult)
+        }
+    }
+
     /// ONB-004-start_ai_provider_connection_from_onboarding: interleaved provider terminals correlate to their starts.
     /// 두 provider 연결 시도가 교차 완료되어도 terminal metric이 다른 provider의 operation을 소비하지 않는지 검증한다.
     /// - 검증 내용: provider별 operation ID 유지, matching terminal 소비, duplicate terminal 무시, 다른 provider terminal 보존.
