@@ -146,15 +146,7 @@ final class AppKeyboardShortcutMonitor {
                 emit: onCommand,
             )
         }
-        resignActiveObserver = NotificationCenter.default.addObserver(
-            forName: NSApplication.didResignActiveNotification,
-            object: NSApp,
-            queue: .main,
-        ) { [weak self] _ in
-            Task { @MainActor in
-                self?.applicationDidResignActive()
-            }
-        }
+        observeApplicationResignation()
     }
 
     func stop() {
@@ -204,15 +196,7 @@ final class AppKeyboardShortcutMonitor {
             return event
         }
 
-        if case let .overlayOwned(_, ownerWindowID, source) = controlTabState,
-           let ownerWindowID,
-           ownerWindowID != context.focusedWindowID ||
-           !context.isContentTabSwitcherPresented ||
-           context.contentTabSwitcherSource != source
-        {
-            generation &+= 1
-            controlTabState = .idle
-        }
+        resetStaleOverlayOwner(context: context)
 
         switch controlTabState {
         case .idle:
@@ -244,6 +228,29 @@ final class AppKeyboardShortcutMonitor {
             )
         }
         return nil
+    }
+
+    private func observeApplicationResignation() {
+        resignActiveObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didResignActiveNotification,
+            object: NSApp,
+            queue: .main,
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.applicationDidResignActive()
+            }
+        }
+    }
+
+    private func resetStaleOverlayOwner(context: ContentTabShortcutContext) {
+        guard case let .overlayOwned(_, ownerWindowID, source) = controlTabState,
+              let ownerWindowID,
+              ownerWindowID != context.focusedWindowID ||
+              !context.isContentTabSwitcherPresented ||
+              context.contentTabSwitcherSource != source
+        else { return }
+        generation &+= 1
+        controlTabState = .idle
     }
 
     @discardableResult

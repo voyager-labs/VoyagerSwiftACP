@@ -330,11 +330,13 @@ extension EntryListCoordinator {
 
     func handleSnapshotChanges(previous: RenderSnapshot, snapshot: RenderSnapshot) {
         handleVisibleColumnsChange(previous: previous, snapshot: snapshot)
-        let didRebuildRows = rebuildRowsIfNeeded(previous: previous, snapshot: snapshot)
+        // 한 Store emission당 change set을 한 번만 계산해 flat 렌더와 selection 동기화가 재사용한다.
+        let changes = snapshot.presentation.changes(from: previous.presentation)
+        let didRebuildRows = rebuildRowsIfNeeded(previous: previous, snapshot: snapshot, changes: changes)
         updateListMetricsIfNeeded(previous: previous, snapshot: snapshot)
         resetThumbnailSessionIfNeeded(previous: previous, snapshot: snapshot)
         if !didRebuildRows {
-            syncSelectionIfNeeded(previous: previous, snapshot: snapshot)
+            syncSelectionIfNeeded(previous: previous, snapshot: snapshot, changes: changes)
         }
         reloadVisibleRowsIfNeeded(previous: previous, snapshot: snapshot)
         if !didRebuildRows {
@@ -366,7 +368,11 @@ extension EntryListCoordinator {
     }
 
     @discardableResult
-    func rebuildRowsIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) -> Bool {
+    func rebuildRowsIfNeeded(
+        previous: RenderSnapshot,
+        snapshot: RenderSnapshot,
+        changes: EntryViewLayoutPresentationChangeSet,
+    ) -> Bool {
         guard previous.isHierarchyOutlineEnabled == snapshot.isHierarchyOutlineEnabled else {
             tableView.invalidateSelectionProjection()
             projectionSession.reset()
@@ -391,19 +397,19 @@ extension EntryListCoordinator {
         return applyFlatPresentationChanges(
             previous: previous,
             snapshot: snapshot,
+            changes: changes,
         )
     }
 
     private func applyFlatPresentationChanges(
         previous: RenderSnapshot,
         snapshot: RenderSnapshot,
+        changes: EntryViewLayoutPresentationChangeSet,
     ) -> Bool {
         let pathChanged = previous.currentPath != snapshot.currentPath
 
-        let changes = snapshot.presentation.changes(from: previous.presentation)
         if changes.groupExpansionChanged {
-            tableView.invalidateSelectionProjection()
-            rebuildRowsAndReload()
+            applyFlatGroupExpansionChange(snapshot: snapshot, pathChanged: pathChanged)
             return true
         } else if changes.sectionStructureChanged {
             tableView.invalidateSelectionProjection()
@@ -437,6 +443,46 @@ extension EntryListCoordinator {
         return false
     }
 
+    private func applyFlatGroupExpansionChange(snapshot: RenderSnapshot, pathChanged: Bool) {
+        let preservedGroupName = (tableView.activeSelectionOccurrence as? OutlineItem).flatMap { item -> String? in
+            guard case let .group(name, _, _) = item.kind else { return nil }
+            return name
+        }
+        let flatItems = makeOutlineItems(presentation: snapshot.presentation)
+        tableView.invalidateSelectionProjection()
+        // flat 모드에서는 snapshot.presentation을 직접 소비해 재구축한다.
+        // 새 RenderSnapshot/EntryListOutlineProjection을 만들어 state를 다시 읽지 않는다.
+        projectionSession.reset()
+        applyPostReloadPresentation(
+            pathChanged: pathChanged,
+            structureChanged: true,
+            updateKind: .fullReload,
+            selectionChanged: false,
+        ) {
+            outlineItems = flatItems
+            rebuildItemIndexes()
+            lastAppliedVisibleRows = []
+            tableView.reloadData()
+            applyGroupExpansionState(presentation: snapshot.presentation)
+        }
+        if let preservedGroupName,
+           state.selectedIds.isEmpty,
+           let groupItem = groupItemByName[preservedGroupName],
+           !groupItem.orderedDistinctEntries().isEmpty
+        {
+            let row = tableView.row(forItem: groupItem)
+            if row >= 0 {
+                isUpdatingSelectionFromStore = true
+                tableView.applyCanonicalSelection(
+                    IndexSet(integer: row),
+                    activeOccurrence: groupItem,
+                    anchorOccurrence: groupItem,
+                )
+                isUpdatingSelectionFromStore = false
+            }
+        }
+    }
+
     func tryIncrementalFlatRowUpdate(
         previous: EntryViewLayoutPresentation,
         current: EntryViewLayoutPresentation,
@@ -445,8 +491,17 @@ extension EntryListCoordinator {
         guard sectionsMatch(previous, current) else { return false }
 
         let changedCount = changes.insertedEntryIDs.count + changes.removedEntryIDs.count
-        guard changedCount * 2 <= max(previous.entries.count, current.entries.count) else { return false }
+        let isSingleIdentitySwap = changes.insertedEntryIDs.count == 1 && changes.removedEntryIDs.count == 1
+        guard isSingleIdentitySwap || changedCount * 2 <= max(previous.entries.count, current.entries.count)
+        else { return false }
         let incomingItems = makeOutlineItems(presentation: current)
+        if tryIncrementalFlatRootRowUpdate(
+            incomingItems: incomingItems,
+            changes: changes,
+            presentation: current,
+        ) {
+            return true
+        }
 
         var childUpdates: [ChildRowUpdate] = []
         for (sectionIndex, oldParent) in outlineItems.enumerated() {
@@ -462,20 +517,6 @@ extension EntryListCoordinator {
         guard childUpdates.contains(where: { !$0.removed.isEmpty || !$0.inserted.isEmpty }) else { return false }
         applyChildRowUpdates(childUpdates, changedEntryIDs: changes.updatedEntryIDs)
         return true
-    }
-
-    private func sectionsMatch(
-        _ previous: EntryViewLayoutPresentation,
-        _ current: EntryViewLayoutPresentation,
-    ) -> Bool {
-        guard previous.sections.count == current.sections.count else { return false }
-        return previous.sections.enumerated().allSatisfy { index, section in
-            let next = current.sections[index]
-            return section.id == next.id
-                && section.title == next.title
-                && section.colorCode == next.colorCode
-                && section.isCollapsed == next.isCollapsed
-        }
     }
 
     private func makeChildRowUpdate(
@@ -500,7 +541,9 @@ extension EntryListCoordinator {
         guard retainedOrderPreserved else { return nil }
         let removed = IndexSet(oldIDs.enumerated().compactMap { newIDSet.contains($0.element) ? nil : $0.offset })
         let inserted = IndexSet(newIDs.enumerated().compactMap { oldIDSet.contains($0.element) ? nil : $0.offset })
-        guard max(removed.count, inserted.count) * 2 <= max(oldIDs.count, newIDs.count) else { return nil }
+        let isSingleIdentitySwap = removed.count == 1 && inserted.count == 1
+        guard isSingleIdentitySwap || max(removed.count, inserted.count) * 2 <= max(oldIDs.count, newIDs.count)
+        else { return nil }
         let oldChildrenByID = Dictionary(
             oldChildren.map { ($0.id, $0) },
             uniquingKeysWith: { first, _ in first },
@@ -612,8 +655,13 @@ extension EntryListCoordinator {
         }
     }
 
-    func syncSelectionIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
-        if snapshot.presentation.changes(from: previous.presentation).selectionChanged {
+    func syncSelectionIfNeeded(
+        previous _: RenderSnapshot,
+        snapshot _: RenderSnapshot,
+        changes: EntryViewLayoutPresentationChangeSet,
+    ) {
+        // 공유 change set의 selection flag로 전체 presentation 재계산 없이 동기화한다.
+        if changes.selectionChanged {
             syncListSelectionFromStore()
         }
     }
@@ -760,10 +808,8 @@ public extension EntryListCoordinator {
     func refreshVisibleNameCellIcons(for paths: Set<String>? = nil) {
         guard tableView.numberOfRows > 0 else { return }
         guard let nameColumnIndex else { return }
-
         let visibleRange = tableView.rows(in: tableView.visibleRect)
         guard visibleRange.length > 0 else { return }
-
         let dateModifiedWidth = tableView
             .tableColumn(withIdentifier: NSUserInterfaceItemIdentifier(EntryListColumn.dateModified.rawValue))?
             .width ?? 0
@@ -777,7 +823,6 @@ public extension EntryListCoordinator {
             guard let outlineItem = tableView.item(atRow: row) as? OutlineItem else { continue }
             guard case let .entry(entry) = outlineItem.kind else { continue }
             if let paths, !paths.contains(entry.fullPath) { continue }
-
             let thumbnail = thumbnailImagesByPath[entry.fullPath]
             let configuration = makeEntryCellConfiguration(
                 entry: entry,

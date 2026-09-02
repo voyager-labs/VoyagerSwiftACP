@@ -223,23 +223,7 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
             return
         }
         defer { Darwin.close(descriptor) }
-        let writeError = dataFlavor.bytes.withUnsafeBytes { raw -> Int32 in
-            guard !raw.isEmpty else { return 0 }
-            var written = 0
-            while written < raw.count {
-                let writeCount = Darwin.write(
-                    descriptor,
-                    raw.baseAddress! + written,
-                    raw.count - written,
-                )
-                if writeCount <= 0 {
-                    if writeCount < 0, errno == EINTR { continue }
-                    return -1
-                }
-                written += writeCount
-            }
-            return 0
-        }
+        let writeError = Self.write(dataFlavor.bytes, to: descriptor)
         guard writeError == 0 else {
             failMaterializationLocked()
             return
@@ -285,6 +269,22 @@ final class ExternalDropAcquisitionSession: @unchecked Sendable {
         pendingSnapshotCount -= 1
         if sessionIsCompleteLocked() {
             emitTerminalLocked(.succeeded(sessionID))
+        }
+    }
+
+    private static func write(_ data: Data, to descriptor: Int32) -> Int32 {
+        data.withUnsafeBytes { raw in
+            guard let baseAddress = raw.baseAddress else { return 0 }
+            var written = 0
+            while written < raw.count {
+                let writeCount = Darwin.write(descriptor, baseAddress + written, raw.count - written)
+                if writeCount <= 0 {
+                    if writeCount < 0, errno == EINTR { continue }
+                    return -1
+                }
+                written += writeCount
+            }
+            return 0
         }
     }
 

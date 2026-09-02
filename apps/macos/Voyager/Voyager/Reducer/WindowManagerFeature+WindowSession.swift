@@ -29,8 +29,8 @@ extension WindowManagerFeature {
                 requestID: requestID,
                 path: nil,
                 selectEntryID: nil,
-                resolvedStartPage: nil,
                 state: &state,
+                resolvedStartPage: nil,
             )
 
         case let .openWindow(requestID, path, selectEntryID):
@@ -41,8 +41,8 @@ extension WindowManagerFeature {
                 requestID: requestID,
                 path: path,
                 selectEntryID: selectEntryID,
-                resolvedStartPage: nil,
                 state: &state,
+                resolvedStartPage: nil,
             )
         }
     }
@@ -53,8 +53,8 @@ extension WindowManagerFeature {
             return openWindowSession(
                 path: path,
                 selectEntryID: selectEntryID,
-                resolvedStartPage: nil,
                 state: &state,
+                resolvedStartPage: nil,
             )
         case let .file(.openCollectionFile(url)):
             return openCollectionWindowSession(url: url, state: &state)
@@ -119,8 +119,8 @@ extension WindowManagerFeature {
         requestID: UUID,
         path: String?,
         selectEntryID: String?,
-        resolvedStartPage: StartPage?,
         state: inout State,
+        resolvedStartPage: StartPage? = nil,
     ) -> Effect<Action> {
         guard state.authorizedTrackedSingletonRequestID == requestID else {
             return trackedSingletonCompletionEffect(requestID)
@@ -514,8 +514,8 @@ extension WindowManagerFeature {
     private func openWindowSession(
         path: String?,
         selectEntryID: String?,
-        resolvedStartPage: StartPage?,
         state: inout State,
+        resolvedStartPage: StartPage? = nil,
     ) -> Effect<Action> {
         if onboardingWindowClient.showIfNeeded() { return .none }
         var startPage: StartPage?
@@ -571,15 +571,15 @@ extension WindowManagerFeature {
                 requestID: requestID,
                 path: nil,
                 selectEntryID: selectEntryID,
-                resolvedStartPage: startPage,
                 state: &state,
+                resolvedStartPage: startPage,
             )
         }
         return openWindowSession(
             path: nil,
             selectEntryID: selectEntryID,
-            resolvedStartPage: startPage,
             state: &state,
+            resolvedStartPage: startPage,
         )
     }
 

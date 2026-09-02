@@ -654,8 +654,6 @@ func fileManagerContentState(
     state.contentTabs.activeTabID == tabID ? state.content : state.tabContentStates[tabID]
 }
 
-/// 프로세스 전역 Quick Look 패널 동기화 action 여부.
-/// selectionChanged bridge가 발행하는 `.open(.syncQuickLookSelection)`만 해당한다.
 private func isQuickLookSelectionSync(_ action: FileManagerContentAction) -> Bool {
     if case .entryViewLayout(.entryOperations(.open(.syncQuickLookSelection))) = action {
         return true
@@ -848,13 +846,10 @@ struct ContentTabPinnedRecordPersistenceResult {
 
 extension FileManagerWindowState {
     func isCurrentSelectedContentTabClose(operationID: UUID, tabID: ContentTabID) -> Bool {
-        guard !isClosing,
-              let batch = pendingSelectedContentTabClose,
+        guard !isClosing, let batch = pendingSelectedContentTabClose,
               let pendingClose = pendingContentTabClose
         else { return false }
-        return batch.operationID == operationID
-            && batch.currentTabID == tabID
-            && pendingClose.batchOperationID == operationID
-            && pendingClose.tabID == tabID
+        return batch.operationID == operationID && batch.currentTabID == tabID
+            && pendingClose.batchOperationID == operationID && pendingClose.tabID == tabID
     }
 }

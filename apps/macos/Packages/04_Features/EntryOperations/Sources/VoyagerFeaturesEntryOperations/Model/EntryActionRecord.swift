@@ -85,6 +85,40 @@ public struct EntryActionRecord: Equatable, Identifiable, Sendable {
         )
     }
 
+    /// Replay가 실제 적용한 방향의 identity record를 반환한다.
+    /// undo는 원본 target을 반대 방향으로 적용하지만 command와 집계는 유지한다.
+    public func applying(direction: EntryActionDirection) -> Self {
+        guard direction == .undo else { return self }
+        let reversedTargets = targets.map { target in
+            Target(
+                beforePath: target.afterPath,
+                afterPath: target.beforePath,
+                beforeTags: target.afterTags,
+                afterTags: target.beforeTags,
+            )
+        }
+        if let command {
+            return Self(
+                command: command,
+                operationKind: operationKind,
+                targets: reversedTargets,
+                failedCount: failedCount,
+                cancelledCount: cancelledCount,
+                succeededCount: succeededCount,
+                timestamp: timestamp,
+            )
+        }
+        return Self(
+            operationKind: operationKind,
+            targets: reversedTargets,
+            failedCount: failedCount,
+            cancelledCount: cancelledCount,
+            succeededCount: succeededCount,
+            id: id,
+            timestamp: timestamp,
+        )
+    }
+
     nonisolated private init(
         command: EntryCommandMetadata,
         operationKind: OperationKind,

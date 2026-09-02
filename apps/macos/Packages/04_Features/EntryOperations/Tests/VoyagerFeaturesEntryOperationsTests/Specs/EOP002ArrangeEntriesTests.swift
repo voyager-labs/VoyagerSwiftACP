@@ -3102,7 +3102,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         let receiver = FilePromiseReceiverSpy(names: ["a.txt"])
         _ = client.begin([receiver], [], "/dest", false, [], [], [])
         XCTAssertNotNil(receiver.receivedOperationQueue)
-        XCTAssertFalse(receiver.receivedOperationQueue === OperationQueue.main)
+        XCTAssertNotIdentical(receiver.receivedOperationQueue, OperationQueue.main)
     }
 
     /// EOP-002-import_external_objects (VOY-736 회귀): AppKit이 reader 콜백을 non-main
@@ -4592,10 +4592,14 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         )
 
         let events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
-        XCTAssertEqual(events.compactMap { event -> ExternalDropReceivedFile? in
-            guard case let .received(file) = event else { return nil }
-            return file
-        }.map(\.stagedPath), [claimedContainer(staging).appendingPathComponent("a.txt").path])
+        XCTAssertEqual(
+            events.compactMap { event -> ExternalDropReceivedFile? in
+                guard case let .received(file) = event else { return nil }
+                return file
+            }
+            .map(\.stagedPath),
+            [claimedContainer(staging).appendingPathComponent("a.txt").path],
+        )
         XCTAssertEqual(events.last, .failed(request.sessionID, .callbackError))
     }
 

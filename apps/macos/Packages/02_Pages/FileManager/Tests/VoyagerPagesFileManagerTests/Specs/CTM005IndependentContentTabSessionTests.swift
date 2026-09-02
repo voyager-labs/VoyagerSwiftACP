@@ -678,7 +678,7 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         XCTAssertTrue(savedInFlightSnapshot.entryViewLayout.entries.isEmpty)
         await gate.resume(with: .entries([lateEntry]))
         await store.skipReceivedActions()
-        XCTAssertTrue(store.state.tabContentStates[directoryID]?.entryViewLayout.entries.isEmpty == true)
+        XCTAssertEqual(store.state.tabContentStates[directoryID]?.entryViewLayout.entries.isEmpty, true)
 
         await store.send(.contentTabs(.setCurrent(directoryID)))
         await store.receiveTabContent(\.internal.applyNavigationState, .folder(secondPath))

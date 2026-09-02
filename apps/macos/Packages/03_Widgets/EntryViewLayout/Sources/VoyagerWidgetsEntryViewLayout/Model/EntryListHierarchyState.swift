@@ -9,15 +9,25 @@ public struct FolderSnapshot: Equatable, Sendable {
     public var children: [EntryModel]
     public var expectedBatchIndex: Int
     public var coreFinished: Bool
+    /// 이번 generation에서 내용(non-empty) core batch를 한 번이라도 적용했는지 여부.
+    /// startLoad가 이전 세대 완료 스냅샷을 보존(retained)할 때 false로 유지되어,
+    /// 아직 새 내용을 받지 않은 상태에서 첫 내용 배치가 retained children을 교체하도록 표시한다.
+    public var hasAppliedContentBatch: Bool
+    /// children이 현재 generation의 부분 결과가 아니라 이전 완료 generation에서 보존됐는지 여부.
+    public var retainsPreviousGenerationChildren: Bool
 
     public init(
         children: [EntryModel] = [],
         expectedBatchIndex: Int = 0,
         coreFinished: Bool = false,
+        hasAppliedContentBatch: Bool = false,
+        retainsPreviousGenerationChildren: Bool = false,
     ) {
         self.children = children
         self.expectedBatchIndex = expectedBatchIndex
         self.coreFinished = coreFinished
+        self.hasAppliedContentBatch = hasAppliedContentBatch
+        self.retainsPreviousGenerationChildren = retainsPreviousGenerationChildren
     }
 }
 
@@ -56,7 +66,31 @@ public struct FolderNodeState: Equatable, Sendable {
     }
 }
 
+public struct DeferredFolderReplacement: Equatable, Sendable {
+    public var untilEntryID: EntryModel.ID
+    public var stagedChildren: [EntryModel]
+    /// 보존(preservation) 소유자 폴더처럼 migration 완료까지 staging을 보류해야 하는지 여부.
+    /// true면 해당 폴더의 coreFinished가 terminal만 기록하고 retained children과 staging을 유지하며,
+    /// 실제 커밋은 destination migration(migrateSelection)이 담당한다.
+    public let holdsUntilMigration: Bool
+    public var migrationCompleted: Bool
+
+    public init(
+        untilEntryID: EntryModel.ID,
+        stagedChildren: [EntryModel] = [],
+        holdsUntilMigration: Bool = false,
+        migrationCompleted: Bool = false,
+    ) {
+        self.untilEntryID = untilEntryID
+        self.stagedChildren = stagedChildren
+        self.holdsUntilMigration = holdsUntilMigration
+        self.migrationCompleted = migrationCompleted
+    }
+}
+
 public struct EntryListHierarchyState: Equatable, Sendable {
+    var deferredFolderReplacements: [EntryModel.ID: DeferredFolderReplacement] = [:]
+
     public private(set) var rootContextGeneration: Int
     public private(set) var rootPath: String
 
@@ -80,6 +114,40 @@ public struct EntryListHierarchyState: Equatable, Sendable {
         self.nodesByID = nodesByID
     }
 
+    /// 외부 hierarchy invalidation이 실제로 재시작할 folder owner를 계산한다.
+    /// identity transition rebase와 hierarchy reducer가 같은 reload 집합을 사용하도록
+    /// exact folder match와 가장 깊은 loaded parent를 한 곳에서 소유한다.
+    public func reloadableFolderIDs(
+        for affectedPaths: [String],
+        excluding removedPrefixes: [String] = [],
+    ) -> Set<EntryModel.ID> {
+        let removedIDs = Set(nodesByID.keys.filter { id in
+            removedPrefixes.contains { isSameOrDescendant(path: id, of: $0) }
+        })
+        var reloadIDs = Set<EntryModel.ID>()
+
+        for path in affectedPaths {
+            let canonicalPath = normalizedPath(path)
+            reloadIDs.formUnion(nodesByID.keys.filter {
+                normalizedPath($0) == canonicalPath
+            })
+
+            let loadedCandidates = nodesByID.filter {
+                isLoadedOrLoading($0.value.loadPhase)
+                    && isSameOrDescendant(path: canonicalPath, of: $0.key)
+            }
+            guard let deepestPathComponentCount = loadedCandidates.keys
+                .map({ pathComponents(for: normalizedPath($0)).count })
+                .max()
+            else { continue }
+            reloadIDs.formUnion(loadedCandidates.keys.filter {
+                pathComponents(for: normalizedPath($0)).count == deepestPathComponentCount
+            })
+        }
+
+        return reloadIDs.subtracting(removedIDs)
+    }
+
     public mutating func replaceRoot(path: String) {
         if !rootPath.isEmpty, !path.isEmpty {
             let currentPath = URL(fileURLWithPath: rootPath).standardizedFileURL.path
@@ -89,6 +157,175 @@ public struct EntryListHierarchyState: Equatable, Sendable {
         rootContextGeneration &+= 1
         rootPath = path
         nodesByID = [:]
+        deferredFolderReplacements = [:]
+    }
+
+    public mutating func beginDeferredFolderReplacement(
+        folderID: EntryModel.ID,
+        untilEntryID: EntryModel.ID,
+        holdsUntilMigration: Bool = false,
+    ) {
+        guard deferredFolderReplacements[folderID] == nil else { return }
+        deferredFolderReplacements[folderID] = .init(
+            untilEntryID: untilEntryID,
+            holdsUntilMigration: holdsUntilMigration,
+        )
+    }
+
+    /// 기존 deferred replacement의 untilEntryID를 갱신하거나, 없으면 생성한다.
+    /// 다중 이동에서 동일 destination을 공유하는 pair들의 after 도착 진행에 따라
+    /// combine 시점을 조정하는 데 사용한다.
+    public mutating func upsertDeferredFolderReplacement(
+        folderID: EntryModel.ID,
+        untilEntryID: EntryModel.ID,
+    ) {
+        if deferredFolderReplacements[folderID] != nil {
+            deferredFolderReplacements[folderID]?.untilEntryID = untilEntryID
+        } else {
+            beginDeferredFolderReplacement(folderID: folderID, untilEntryID: untilEntryID)
+        }
+    }
+
+    public mutating func takeDeferredFolderReplacement(folderID: EntryModel.ID) -> [EntryModel]? {
+        deferredFolderReplacements.removeValue(forKey: folderID)?.stagedChildren
+    }
+
+    public mutating func discardDeferredFolderReplacement(folderID: EntryModel.ID) {
+        guard let replacement = deferredFolderReplacements[folderID] else { return }
+        guard replacement.holdsUntilMigration else {
+            deferredFolderReplacements.removeValue(forKey: folderID)
+            return
+        }
+        deferredFolderReplacements[folderID] = .init(
+            untilEntryID: replacement.untilEntryID,
+            holdsUntilMigration: true,
+            migrationCompleted: replacement.migrationCompleted,
+        )
+    }
+
+    public mutating func markDeferredFolderReplacementMigrationCompleted(folderID: EntryModel.ID) {
+        deferredFolderReplacements[folderID]?.migrationCompleted = true
+    }
+
+    public func deferredFolderReplacement(folderID: EntryModel.ID) -> DeferredFolderReplacement? {
+        deferredFolderReplacements[folderID]
+    }
+
+    public mutating func discardAllDeferredFolderReplacements() {
+        deferredFolderReplacements = [:]
+    }
+
+    /// 전이 취소 시 staging을 그대로 버리지 않고 폴더에 반영한다.
+    /// staging 누적 동안 expectedBatchIndex가 증가했으므로 이를 폐기하면 같은 세대의
+    /// 후속 batch가 generic 경로에서 cursor 어긋남 없이 처리되기 위해 누적 결과가 필요하다.
+    /// nonterminal staging은 retained children을 건드리지 않고 terminal까지 보존한다.
+    public mutating func commitDeferredFolderReplacementsOnCancel() {
+        var remaining = deferredFolderReplacements
+        for (folderID, replacement) in deferredFolderReplacements {
+            guard var node = nodesByID[folderID] else {
+                remaining[folderID] = nil
+                continue
+            }
+            if replacement.holdsUntilMigration,
+               node.folder.hasAppliedContentBatch,
+               replacement.stagedChildren.isEmpty
+            {
+                // A source that was already complete may have received a migration hold
+                // before any replacement batch arrived. Do not overwrite its authoritative
+                // children with an empty staging snapshot when the identity transition ends.
+                remaining[folderID] = nil
+                continue
+            }
+            if case .failed = node.loadPhase {
+                remaining[folderID] = nil
+                continue
+            }
+            if replacement.holdsUntilMigration, !node.folder.coreFinished {
+                // identity transition이 취소되어도 이미 소비한 cursor는 되돌릴 수 없다.
+                // 아직 아무 batch도 소비하지 않았다면 hold를 제거하고, 소비한 batch가
+                // 있으면 migration 전용 owner만 generic replacement로 넘긴다. transition이
+                // 사라진 뒤 holdsUntilMigration=true가 남으면 다음 terminal의 owner 없는
+                // staging이 되어 영구적으로 child projection을 가로막는다.
+                guard !replacement.stagedChildren.isEmpty || node.folder.expectedBatchIndex > 0 else {
+                    remaining[folderID] = nil
+                    continue
+                }
+                remaining[folderID] = .init(
+                    untilEntryID: replacement.untilEntryID,
+                    stagedChildren: replacement.stagedChildren,
+                    holdsUntilMigration: false,
+                    migrationCompleted: true,
+                )
+                continue
+            } else if replacement.stagedChildren.isEmpty, !node.folder.coreFinished {
+                remaining[folderID] = nil
+                continue
+            }
+            node.folder.children = replacement.stagedChildren
+            node.folder.hasAppliedContentBatch = !replacement.stagedChildren.isEmpty
+            node.folder.retainsPreviousGenerationChildren = false
+            nodesByID[folderID] = node
+            if node.folder.coreFinished {
+                reconcileNodesAfterMigrationCommit(folderID: folderID)
+            }
+            remaining[folderID] = nil
+        }
+        deferredFolderReplacements = remaining
+    }
+
+    private func isLoadedOrLoading(_ phase: FolderLoadPhase) -> Bool {
+        switch phase {
+        case .loadingCore, .enriching, .loaded: true
+        case .idle, .failed: false
+        }
+    }
+
+    private func isSameOrDescendant(path: String, of ancestor: String) -> Bool {
+        let pathComponents = URL(fileURLWithPath: normalizedPath(path)).pathComponents
+        let ancestorComponents = URL(fileURLWithPath: normalizedPath(ancestor)).pathComponents
+        return pathComponents.starts(with: ancestorComponents)
+    }
+
+    private func normalizedPath(_ path: String) -> String {
+        guard !path.isEmpty else { return path }
+        return URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath().path
+    }
+
+    private func pathComponents(for path: String) -> [String] {
+        URL(fileURLWithPath: path).standardizedFileURL.pathComponents
+    }
+
+    /// migration이 폴더 children을 교체한 뒤 남은 stale 로드 하위 node를 정리한다.
+    /// 같은 경로의 폴더를 다시 펼칠 때 과거 캐시가 재사용되지 않도록 parent edge와 함께 제거한다.
+    public mutating func reconcileNodesAfterMigrationCommit(folderID: EntryModel.ID) {
+        guard let folderNode = nodesByID[folderID] else { return }
+        let liveChildIDs = Set(folderNode.folder.children.map(\.id))
+        for childID in liveChildIDs where nodesByID[childID] != nil {
+            nodesByID[childID]?.parentID = folderID
+        }
+        let folderComponents = URL(fileURLWithPath: folderID).standardizedFileURL.pathComponents
+        let staleRoots = Set(nodesByID.keys.filter { id in
+            guard id != folderID, !liveChildIDs.contains(id) else { return false }
+            if nodesByID[id]?.parentID == folderID { return true }
+            let childComponents = URL(fileURLWithPath: id).standardizedFileURL.pathComponents
+            return childComponents.count == folderComponents.count + 1
+                && childComponents.starts(with: folderComponents)
+        })
+        var staleIDs = staleRoots
+        for id in nodesByID.keys where !staleRoots.contains(id) {
+            var currentParent = nodesByID[id]?.parentID
+            var visited = Set<EntryModel.ID>()
+            while let parentID = currentParent, visited.insert(parentID).inserted {
+                if staleRoots.contains(parentID) {
+                    staleIDs.insert(id)
+                    break
+                }
+                currentParent = nodesByID[parentID]?.parentID
+            }
+        }
+        for id in staleIDs {
+            nodesByID[id] = nil
+        }
     }
 }
 
@@ -97,17 +334,28 @@ public struct EntryListHierarchyState: Equatable, Sendable {
 public extension FolderNodeState {
     /// children + loadPhase + generation + expectedBatchIndex + coreFinished를 folder: FolderSnapshot으로 변환한다.
     /// children과 loadPhase가 required이므로 canonical init과의 ambiguity가 없다.
+    /// hasAppliedContentBatch는 생략 시 테스트 편의 의미로 유추한다(내용 존재 + 진행 상태).
     init(
         children: [EntryModel],
         loadPhase: FolderLoadPhase,
         generation: Int,
         expectedBatchIndex: Int = 0,
         coreFinished: Bool = false,
+        hasAppliedContentBatch: Bool? = nil,
     ) {
+        let appliedContent = hasAppliedContentBatch ?? {
+            let hasContent = !children.isEmpty
+            let progressed = loadPhase == .loaded
+                || loadPhase == .enriching
+                || coreFinished
+                || expectedBatchIndex > 0
+            return hasContent && progressed
+        }()
         folder = FolderSnapshot(
             children: children,
             expectedBatchIndex: expectedBatchIndex,
             coreFinished: coreFinished,
+            hasAppliedContentBatch: appliedContent,
         )
         self.generation = generation
         self.loadPhase = loadPhase

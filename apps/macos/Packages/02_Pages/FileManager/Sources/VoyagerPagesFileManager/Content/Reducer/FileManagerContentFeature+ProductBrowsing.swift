@@ -1,6 +1,31 @@
+import ComposableArchitecture
 import VoyagerFeaturesContentPageNavigation
 
 extension FileManagerContentFeature {
+    func handleProductBrowsingNavigation(
+        _ action: ContentPageNavigationAction.View,
+        state: inout State,
+    ) -> Effect<Action> {
+        guard shouldBeginProductBrowsing(action, navigation: state.navigation) else {
+            state.pendingProductBrowsingSource = nil
+            return .none
+        }
+        switch action {
+        case .navigateToPath,
+             .goBack,
+             .goForward,
+             .goToHistoryIndex,
+             .goToEnclosingDirectory,
+             .showRecents,
+             .showComputer,
+             .showTag:
+            state.pendingProductBrowsingSource = .fileManagerContent
+        default:
+            state.pendingProductBrowsingSource = nil
+        }
+        return .none
+    }
+
     func shouldBeginProductBrowsing(
         _ action: ContentPageNavigationAction.View,
         navigation: ContentPageNavigationState,
@@ -46,6 +71,29 @@ extension FileManagerContentFeature {
             tagName != currentTagName
         default:
             true
+        }
+    }
+
+    static func isRootCompletion(_ action: Action, state: inout State) -> Bool {
+        switch action {
+        case let .entryViewLayout(.entryOperations(.loading(.itemsLoaded(generation, _)))):
+            guard generation == state.entryViewLayout.entryOperations.loadingContext.generation else { return false }
+            return true
+        case let .entryViewLayout(.entryOperations(.loading(.streamEvent(streamEvent)))):
+            guard case .coreFinished = streamEvent.event,
+                  state.entryViewLayout.entryOperations.loadingContext.acceptedCoreFinishedGeneration == streamEvent
+                  .generation,
+                  !state.entryViewLayout.entryOperations.loadingContext.isBufferingPreservedDirectoryReload
+            else { return false }
+            state.entryViewLayout.entryOperations.loadingContext.acceptedCoreFinishedGeneration = nil
+            return true
+        case let .entryViewLayout(.entryOperations(.loading(.streamFinished(generation)))):
+            guard state.entryViewLayout.entryOperations.loadingContext.acceptedCoreFinishedGeneration == generation
+            else { return false }
+            state.entryViewLayout.entryOperations.loadingContext.acceptedCoreFinishedGeneration = nil
+            return true
+        default:
+            return false
         }
     }
 }

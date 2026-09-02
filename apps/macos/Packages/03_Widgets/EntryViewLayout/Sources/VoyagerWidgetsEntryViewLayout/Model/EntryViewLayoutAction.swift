@@ -7,11 +7,71 @@ import VoyagerFeaturesEntryOperations
 import VoyagerFeaturesEntryThumbnail
 import VoyagerShared
 
+/// The immutable identity mapping supplied by the page that owns the filesystem
+/// operation. The view-layout feature never re-derives these paths from a later
+/// callback, which keeps lexical row identity separate from canonical scope matching.
+public struct EntryIdentityReplacementPair: Equatable, Sendable {
+    public let beforePath: String
+    public let beforeLexicalPath: String
+    public let afterPath: String
+    public let afterLexicalPath: String
+
+    public init(
+        beforePath: String,
+        afterPath: String,
+        beforeLexicalPath: String = "",
+        afterLexicalPath: String = "",
+    ) {
+        self.beforePath = beforePath
+        self.beforeLexicalPath = beforeLexicalPath
+        self.afterPath = afterPath
+        self.afterLexicalPath = afterLexicalPath
+    }
+}
+
+public struct EntryIdentityReplacementPlan: Equatable, Sendable {
+    public let transactionID: UUID
+    public let rootPath: String
+    public let pairs: [EntryIdentityReplacementPair]
+
+    public init(
+        transactionID: UUID,
+        rootPath: String,
+        pairs: [EntryIdentityReplacementPair],
+    ) {
+        self.transactionID = transactionID
+        self.rootPath = rootPath
+        self.pairs = pairs
+    }
+}
+
+public enum EntryIdentityReplacementCancelReason: Equatable, Sendable {
+    case navigationChanged
+    case superseded
+    case userCollapsedSource
+    case destinationCollapsed
+    case failed
+}
+
+public enum EntryIdentityReplacementOutcome: Equatable, Sendable {
+    case completed
+    case failed
+    case cancelled(EntryIdentityReplacementCancelReason)
+}
+
+@CasePathable
+public enum EntryIdentityReplacementAction: CasePathable, Sendable {
+    case begin(EntryIdentityReplacementPlan)
+    case cancel(id: UUID, reason: EntryIdentityReplacementCancelReason)
+    case settle(id: UUID, outcome: EntryIdentityReplacementOutcome)
+}
+
 @CasePathable
 public enum EntryViewLayoutAction: ViewAction, CasePathable, Sendable {
     case view(View)
     case delegate(Delegate)
     case `internal`(Internal)
+    case identityReplacement(EntryIdentityReplacementAction)
     case hierarchy(EntryListHierarchyAction)
     case entryOperations(EntryOperationsFeature.Action)
     case entryThumbnail(EntryThumbnailFeature.Action)
@@ -115,6 +175,10 @@ public enum EntryViewLayoutAction: ViewAction, CasePathable, Sendable {
         case toggleTag(tagName: String, source: EntryCommandSource)
         case openWithApp(bundleID: String?, source: EntryCommandSource)
         case dropItems(sourcePaths: [String], destinationPath: String, isOptionDrag: Bool)
+        case identityReplacementSettled(
+            id: UUID,
+            outcome: EntryIdentityReplacementOutcome,
+        )
     }
 
     @CasePathable

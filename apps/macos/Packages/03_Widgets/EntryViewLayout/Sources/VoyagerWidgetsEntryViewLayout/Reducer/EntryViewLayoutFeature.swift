@@ -41,6 +41,23 @@ public struct EntryViewLayoutFeature {
     }
 
     public var body: some Reducer<State, Action> {
+        Reduce { state, action in
+            if case let .entryOperations(.lifecycle(.entryActionCompleted(record))) = action {
+                return beginIdentityReplacementFromRecord(record, state: &state)
+            }
+            if case let .entryOperations(.undoRedo(.replaySucceeded(
+                direction: direction,
+                sourceRecordID: _,
+                updatedRecord: record,
+            ))) = action {
+                return beginIdentityReplacementFromRecord(
+                    record.applying(direction: direction),
+                    state: &state,
+                )
+            }
+            return .none
+        }
+
         Scope(state: \.entryOperations, action: \.entryOperations) {
             EntryOperationsFeature()
         }
@@ -57,6 +74,9 @@ public struct EntryViewLayoutFeature {
 
         Reduce { state, action in
             switch action {
+            case let .identityReplacement(identityAction):
+                return handleIdentityReplacementAction(identityAction, state: &state)
+
             case let .internal(.setSelectionState(ids, lastSelectedId, rangeAnchorId, shouldScrollToSelection)):
                 return setSelectionState(
                     ids: ids,
@@ -283,6 +303,8 @@ public struct EntryViewLayoutFeature {
             case let .view(.applyContentProjection(projection)):
                 let previousSelectedIds = state.selectedIds
                 let previousRenamingItemID = state.entryOperations.renamingItemId
+                let replacementEffect = applyIdentityReplacementEntries(projection.entries, state: &state)
+                let replacementChangedSelection = state.selectedIds != previousSelectedIds
                 state.entries = projection.entries
                 state.trashDirectoryPath = projection.trashDirectoryPath
                 state.entryOperations.isLoading = projection.isLoading
@@ -301,10 +323,10 @@ public struct EntryViewLayoutFeature {
                 {
                     reconcileEffects.append(.send(.delegate(.renameCanceled)))
                 }
-                if previousSelectedIds != state.selectedIds {
+                if previousSelectedIds != state.selectedIds, !replacementChangedSelection {
                     reconcileEffects.append(.send(.delegate(.selectionChanged)))
                 }
-                return .merge(reconcileEffects)
+                return .merge(reconcileEffects + [replacementEffect])
 
             case let .internal(.setCollectionMode(isCollectionMode)):
                 state.isCollectionMode = isCollectionMode
@@ -474,33 +496,41 @@ public struct EntryViewLayoutFeature {
                 return .none
 
             case let .entryOperations(entryOperationsAction):
-                switch entryOperationsAction {
-                case let .loading(.itemsLoaded(generation, _)):
+                if case let .loading(.itemsLoaded(generation, items)) = entryOperationsAction {
                     guard generation == state.entryOperations.loadingContext.generation else { return .none }
-                    return Self.updateEntriesAndReapply(&state)
-                case let .loading(.computerItemsLoadFailed(generation)):
-                    guard generation == state.entryOperations.loadingContext.generation else { return .none }
-                    return Self.updateEntriesAndReapply(&state)
-                default:
-                    return .none
+                    let replacementEffect = handleIdentityReplacementEntryOperationsAction(
+                        .loading(.itemsLoaded(generation: generation, items: items)),
+                        state: &state,
+                    )
+                    return .merge(
+                        Self.updateEntriesAndReapply(&state),
+                        replacementEffect,
+                    )
                 }
+                if case let .loading(.computerItemsLoadFailed(generation)) = entryOperationsAction {
+                    guard generation == state.entryOperations.loadingContext.generation else { return .none }
+                    return Self.updateEntriesAndReapply(&state)
+                }
+                return handleIdentityReplacementEntryOperationsAction(
+                    entryOperationsAction,
+                    state: &state,
+                )
 
             case let .entryArrangements(entryArrangementsAction):
-                switch entryArrangementsAction {
-                case .delegate(.requestApply):
+                if case .delegate(.requestApply) = entryArrangementsAction {
                     return .send(.entryArrangements(.apply(
                         items: state.entries,
                         isCollectionMode: state.isCollectionMode,
                     )))
-                case let .delegate(.applied(sortedItems, _)):
+                }
+                if case let .delegate(.applied(sortedItems, _)) = entryArrangementsAction {
                     state.entries = sortedItems
                     return .send(.internal(.reconcileHierarchySelection))
-                default:
-                    return .none
                 }
-
-            case .hierarchy:
                 return .none
+
+            case let .hierarchy(hierarchyAction):
+                return handleIdentityReplacementHierarchyAction(hierarchyAction, state: &state)
             }
         }
     }
@@ -525,4 +555,8 @@ public struct EntryViewLayoutFeature {
     }
 
     // MARK: - Helpers
+
+    func standardizedPath(_ path: String) -> String {
+        URL(fileURLWithPath: path).standardizedFileURL.path
+    }
 }
