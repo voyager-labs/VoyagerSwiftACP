@@ -717,13 +717,21 @@ enum FileManagerContentIdentityTransitionCoordinator {
             generation: state.entryViewLayout.entryOperations.loadingContext.generation,
         )
         let directParentPath = standardizedPath(parentPath(for: afterPath))
+        let expandedFolderIDs = state.entryViewLayout.hierarchy.expandedFolderIDs
+        // Canonical-equivalent root aliases still represent distinct visible folders.
+        // Prefer the exact lexical owner before falling back to the root projection.
+        let lexicalFolderID = state.entryViewLayout.hierarchy.nodesByID.keys.first(where: {
+            expandedFolderIDs.contains($0) && standardizedPath($0) == directParentPath
+        })
+        if let lexicalFolderID,
+           let node = state.entryViewLayout.hierarchy.nodesByID[lexicalFolderID]
+        {
+            return .folder(id: lexicalFolderID, generation: node.generation &+ 1)
+        }
         if directParentPath == rootPath || canonicalizedPath(directParentPath) == rootPath {
             return rootOwner
         }
-        let expandedFolderIDs = state.entryViewLayout.hierarchy.expandedFolderIDs
         let folderID = state.entryViewLayout.hierarchy.nodesByID.keys.first(where: {
-            expandedFolderIDs.contains($0) && standardizedPath($0) == directParentPath
-        }) ?? state.entryViewLayout.hierarchy.nodesByID.keys.first(where: {
             expandedFolderIDs.contains($0) && canonicalizedPath($0) == directParentPath
         })
         guard let folderID,

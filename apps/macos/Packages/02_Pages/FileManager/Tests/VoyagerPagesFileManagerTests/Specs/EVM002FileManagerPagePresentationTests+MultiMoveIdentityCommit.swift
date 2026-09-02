@@ -149,6 +149,47 @@ extension EVM002FileManagerPagePresentationTests {
         XCTAssertEqual(state.pendingIdentityTransition?.primaryMigrated, false)
     }
 
+    /// EVM-001-reload_directory_page_on_external_change: root canonical alias도 lexical folder owner를 우선한다.
+    /// root를 가리키는 directory symlink 하위의 after 행은 root batch가 아닌 alias folder batch가 소유한다.
+    /// - 검증 내용: canonical root과 같은 alias parent가 expanded hierarchy node로 있으면 folder owner를 기록함
+    /// - 사전 조건: `/root/alias -> /root` symlink와 expanded alias node, root 내부 before 선택
+    /// - 기대 결과: identity transition projectionOwner가 `.folder(alias, nextGeneration)`이다.
+    func testRootAliasDestinationPrefersLexicalExpandedFolderOwner() throws {
+        let rootURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let aliasURL = rootURL.appendingPathComponent("alias", isDirectory: true)
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: aliasURL, withDestinationURL: rootURL)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let beforePath = rootURL.appendingPathComponent("before").path
+        let afterPath = aliasURL.appendingPathComponent("after").path
+        var state = FileManagerContentState()
+        state.navigation.seedInitialFolderPath(rootURL.path)
+        state.navigation.navigationState = .folder(rootURL.path)
+        state.entryViewLayout.selectedIds = [beforePath]
+        state.entryViewLayout.entryOperations.loadingContext.generation = 7
+        state.entryViewLayout.hierarchy = .init(rootPath: rootURL.path)
+        state.entryViewLayout.hierarchy.nodesByID[aliasURL.path] = .init(
+            children: [],
+            loadPhase: .loaded,
+            generation: 3,
+            expectedBatchIndex: 0,
+            coreFinished: true,
+        )
+        state.entryViewLayout.hierarchy.setExpandedIDs([aliasURL.path])
+
+        let record = EntryActionRecord(
+            operationKind: .rename,
+            targets: [.init(beforePath: beforePath, afterPath: afterPath)],
+        )
+        _ = FileManagerContentIdentityTransitionCoordinator.recordIfEligible(record, state: &state)
+
+        XCTAssertEqual(
+            state.pendingIdentityTransition?.projectionOwner,
+            .folder(id: aliasURL.path, generation: 4),
+        )
+    }
+
     /// EVM-002-command_external_refresh_correlation: source staging은 source terminal까지 보류된다.
     /// - 검증 내용: destination migration 뒤에도 source staging은 커밋되지 않고 source terminal에서만 반영된다.
     /// - 사전 조건: 서로 다른 source/destination pair 2건이 모두 staging 보류 중이다.
