@@ -64,8 +64,12 @@ struct CodexExecJSONLDecoder {
             let outcome = try decode(line)
             lastOutcomeEncodedBytes = [line.count]
             return [outcome]
-        } catch CodexExecDecodeError
-            .malformedFrame { throw CodexExecDecodeError.incompleteFrame }
+        } catch CodexExecDecodeError.malformedFrame {
+            guard (try? JSONSerialization.jsonObject(with: line)) == nil else {
+                throw CodexExecDecodeError.malformedFrame
+            }
+            throw CodexExecDecodeError.incompleteFrame
+        }
     }
 
     mutating func reset() {
@@ -261,6 +265,29 @@ struct CodexExecJSONLDecoder {
         guard stringKeys.allSatisfy({ key in object[key] == nil || object[key] is String }) else { return false }
         guard object["item"] == nil || object["item"] is [String: Any] else { return false }
         guard object["turn"] == nil || object["turn"] is [String: Any] else { return false }
+        if let item = object["item"] as? [String: Any], !validNestedStringFields(
+            in: item,
+            keys: ["id", "type", "text", "status"],
+        ) {
+            return false
+        }
+        if let item = object["item"] as? [String: Any],
+           let itemType = object["item_type"] as? String,
+           let nestedItemType = item["type"] as? String,
+           itemType != nestedItemType
+        {
+            return false
+        }
+        if let turn = object["turn"] as? [String: Any], !validNestedStringFields(
+            in: turn,
+            keys: ["id", "status"],
+        ) {
+            return false
+        }
         return true
+    }
+
+    private func validNestedStringFields(in object: [String: Any], keys: [String]) -> Bool {
+        keys.allSatisfy { key in object[key] == nil || object[key] is String }
     }
 }

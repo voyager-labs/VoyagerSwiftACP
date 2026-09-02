@@ -152,6 +152,84 @@ final class ATI008ObserveExternalAgentResultsTests: XCTestCase {
         }
     }
 
+    /// ATI-008-observe_external_agent_results: EOF preserves semantic malformed frames.
+    /// JSON이 닫혔지만 known event payload 계약을 위반한 frame은 truncation으로 완화하지 않는지 검증합니다.
+    /// - 검증 내용: semantic malformed frame은 finish에서도 malformedFrame으로 유지되는지 확인합니다.
+    /// - 사전 조건: 닫힌 JSON object에 known event의 잘못된 scalar payload가 newline 없이 제공됩니다.
+    /// - 기대 결과: EOF 결과가 incompleteFrame이 아닌 malformedFrame입니다.
+    func testDecode_eofSemanticMalformedFrame_remainsMalformed() throws {
+        var decoder = CodexExecJSONLDecoder()
+        _ = try decoder.append(Data(#"{"type":"thread.started","thread_id":17}"#.utf8))
+
+        XCTAssertThrowsError(try decoder.finish()) { error in
+            XCTAssertEqual(error as? CodexExecDecodeError, .malformedFrame)
+        }
+    }
+
+    /// ATI-008-observe_external_agent_results: conflicting item type projections are malformed.
+    /// known event의 top-level과 nested item type이 충돌할 때 임의의 한 값을 선택하지 않는지 검증합니다.
+    /// - 검증 내용: 충돌 거부, matching duplicate 수용, unknown arbitrary payload 보존을 확인합니다.
+    /// - 사전 조건: item.started known event와 future unknown event에 top-level/nested item type을 섞어 제공합니다.
+    /// - 기대 결과: known 충돌만 malformedFrame이고 matching duplicate와 unknown payload는 기존 의미를 유지합니다.
+    func testDecode_itemTypeProjection_conflictIsMalformedMatchingIsAcceptedUnknownIsUntouched() throws {
+        var conflicting = CodexExecJSONLDecoder()
+        XCTAssertThrowsError(
+            try conflicting.append(
+                Data(
+                    (#"{"type":"item.started","item_type":"command","item":{"type":"file_change"}}"# + "\n").utf8,
+                ),
+            ),
+        ) { error in
+            XCTAssertEqual(error as? CodexExecDecodeError, .malformedFrame)
+        }
+
+        var matching = CodexExecJSONLDecoder()
+        let matchingOutcomes = try matching.append(
+            Data(
+                (#"{"type":"item.started","item_type":"command","item":{"type":"command"}}"# + "\n").utf8,
+            ),
+        )
+        guard let matchingOutcome = matchingOutcomes.first,
+              case let .event(event) = matchingOutcome
+        else {
+            return XCTFail("matching duplicate item type should decode as an event")
+        }
+        XCTAssertEqual(event.payload.itemType, "command")
+
+        var unknown = CodexExecJSONLDecoder()
+        let unknownOutcomes = try unknown.append(
+            Data(
+                (#"{"type":"future/event","item_type":"command","item":{"type":17,"arbitrary":[true]}}"# + "\n").utf8,
+            ),
+        )
+        guard let unknownOutcome = unknownOutcomes.first,
+              case .unknown(type: "future/event") = unknownOutcome
+        else {
+            return XCTFail("unknown arbitrary payload should remain unknown")
+        }
+    }
+
+    // MARK: - ATI-008-malformed_nested_scalars
+
+    /// ATI-008-malformed_nested_scalars: malformed known nested scalar fields fail decoding.
+    /// 알려진 event의 nested scalar type이 잘못되면 성공 event로 투영하지 않는지 검증합니다.
+    /// - 검증 내용: turn id/status와 item id/type/text/status의 invalid scalar type을 malformedFrame으로 거부하는지 확인합니다.
+    /// - 사전 조건: known event의 nested object에 숫자 또는 boolean scalar를 제공합니다.
+    /// - 기대 결과: 각 frame이 malformedFrame으로 거부됩니다.
+    func testDecode_knownNestedScalarTypeMismatch_isMalformed() throws {
+        let cases = [
+            #"{"type":"turn.completed","turn":{"id":123,"status":false}}"#,
+            #"{"type":"item.completed","item":{"id":123,"type":false,"text":17}}"#,
+        ]
+
+        for line in cases {
+            var decoder = CodexExecJSONLDecoder()
+            XCTAssertThrowsError(try decoder.append(Data((line + "\n").utf8))) { error in
+                XCTAssertEqual(error as? CodexExecDecodeError, .malformedFrame, line)
+            }
+        }
+    }
+
     /// ATI-008-observe_external_agent_results: unknown evidence is bounded by unique types and total count.
     /// 알 수 없는 provider event가 diagnostics를 무한히 성장시키지 않는지 검증합니다.
     /// - 검증 내용: unique type cap 32와 total count cap 128을 동시에 확인합니다.
