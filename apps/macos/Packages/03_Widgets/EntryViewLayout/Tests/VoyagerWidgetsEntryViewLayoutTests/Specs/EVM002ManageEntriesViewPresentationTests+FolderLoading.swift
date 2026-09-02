@@ -6,6 +6,62 @@ import VoyagerEntitiesEntry
 import XCTest
 
 extension EVM002ManageEntriesViewPresentationTests {
+    // MARK: - EVM-002-update_entry_selection
+
+    /// EVM-002-update_entry_selection: hierarchy entry replacement selects only the destination entry.
+    /// 계층 outline에서 하위 folder row를 선택해도 해당 folder의 subtree가 canonical selection에 섞이지 않는지 검증한다.
+    /// - 검증 내용: native keyboard replacement가 destination folder ID 하나만 selectedIds와 focus/anchor로 투영한다.
+    /// - 사전 조건: expanded root folder 아래 expanded child folder와 그 하위 file이 list projection에 있다.
+    /// - 기대 결과: child folder row 선택 결과가 child folder 하나이고 nested file은 선택되지 않는다.
+    func testHierarchyEntryReplacementSelectsOnlyDestinationEntry() throws {
+        let root = hierarchyFolder(id: "/root/root", name: "root")
+        let childFolder = hierarchyFolder(id: "/root/root/child", name: "child")
+        let nestedFile = hierarchyFile(id: "/root/root/child/item.txt", name: "item.txt")
+        var hierarchy = EntryListHierarchyState(rootPath: "/root")
+        hierarchy.setExpandedIDs([root.id, childFolder.id])
+        hierarchy.nodesByID[root.id] = .init(
+            folder: .init(children: [childFolder], coreFinished: true),
+            expansionIntent: true,
+            generation: 1,
+            loadPhase: .loaded,
+        )
+        hierarchy.nodesByID[childFolder.id] = .init(
+            folder: .init(children: [nestedFile], coreFinished: true),
+            expansionIntent: true,
+            generation: 1,
+            loadPhase: .loaded,
+        )
+        let projection = hierarchyProjection(folder: root, hierarchy: hierarchy)
+        var state = hierarchyState(roots: [root])
+        state.hierarchy = hierarchy
+        state.outlineProjectionRevision = projection.revision
+        let store = Store(initialState: state) { EntryViewLayoutFeature() }
+        let coordinator = EntryListCoordinator(store: store)
+        coordinator.bind(to: EntryListView(frame: .zero))
+        coordinator.applyStoreProjection(projection)
+
+        let childItem = try XCTUnwrap(coordinator.entryItemById[childFolder.id])
+        let childRow = coordinator.tableView.row(forItem: childItem)
+        let event = try XCTUnwrap(NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            characters: "a",
+            charactersIgnoringModifiers: "a",
+            isARepeat: false,
+            keyCode: 125,
+        ))
+
+        XCTAssertTrue(coordinator.handleSelectionKeyDown(forRow: childRow, event: event))
+        XCTAssertEqual(store.state.selectedIds, Set([childFolder.id]))
+        XCTAssertEqual(store.state.lastSelectedId, childFolder.id)
+        XCTAssertEqual(store.state.rangeAnchorId, childFolder.id)
+        XCTAssertEqual(coordinator.tableView.selectedRowIndexes, IndexSet(integer: childRow))
+    }
+
     // MARK: - EVM-002-toggle_directory_expansion_in_list
 
     /// EVM-002-toggle_directory_expansion_in_list: loading folder는 수신한 children과 parent spinner를 함께 유지한다.
