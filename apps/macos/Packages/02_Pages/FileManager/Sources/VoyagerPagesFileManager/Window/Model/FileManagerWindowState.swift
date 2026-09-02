@@ -39,6 +39,30 @@ struct ContentTabRowInteractionSurface: Equatable {
     }
 }
 
+enum FileManagerObservedEntryPathResult: Equatable {
+    case pending
+    case succeeded
+    case failed
+    case cancelled
+}
+
+struct FileManagerPendingEntryCommand: Equatable {
+    let metadata: EntryCommandMetadata
+    var pathResults: [String: FileManagerObservedEntryPathResult] = [:]
+
+    var aggregate: EntryActionAggregate {
+        let succeeded = pathResults.values.count { $0 == .succeeded }
+        let failed = pathResults.values.count { $0 == .failed }
+        let cancelled = pathResults.values.count { $0 == .cancelled }
+        return .init(
+            attempted: pathResults.count,
+            succeeded: succeeded,
+            failed: failed,
+            cancelled: cancelled,
+        )
+    }
+}
+
 public enum FileManagerUndoRedoPhase: Equatable, Sendable {
     case idle
     case invoking(requestID: UUID, direction: EntryActionDirection)
@@ -238,6 +262,7 @@ public struct FileManagerWindowState: Equatable {
     public var undoRedoPhase: FileManagerUndoRedoPhase
     public var sidebarEntryDropOperations: EntryOperationsState
     var recordedContentEntryCommandIDs: Set<UUID> = []
+    var pendingContentEntryCommands: [UUID: FileManagerPendingEntryCommand] = [:]
     var recordedSidebarEntryCommandIDs: Set<UUID> = []
     public var pendingCollectionOpenRequest: ContentPageCollectionOpenRequest?
     public var pendingContentTabMove: FileManagerWindowContentTabMovePending?
@@ -481,6 +506,7 @@ public struct PendingSelectedContentTabPinMutation: Equatable {
     public let operationID: UUID
     public let target: SelectedContentTabPinMutationTargetState
     public let orderedTargetIDs: [ContentTabID]
+    public let source: ContentTabActionSource
     public let origin: SelectedContentTabPinMutationOrigin
     public let dragOperationID: UUID?
     public let sourceWindowID: UUID?
@@ -510,6 +536,7 @@ public struct PendingSelectedContentTabPinMutation: Equatable {
         operationID: UUID,
         target: SelectedContentTabPinMutationTargetState,
         orderedTargetIDs: [ContentTabID],
+        source: ContentTabActionSource,
         origin: SelectedContentTabPinMutationOrigin = .menu,
         dragOperationID: UUID? = nil,
         sourceWindowID: UUID? = nil,
@@ -529,6 +556,7 @@ public struct PendingSelectedContentTabPinMutation: Equatable {
         self.operationID = operationID
         self.target = target
         self.orderedTargetIDs = orderedTargetIDs
+        self.source = source
         self.origin = origin
         self.dragOperationID = dragOperationID
         self.sourceWindowID = sourceWindowID

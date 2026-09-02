@@ -121,6 +121,7 @@ extension FileManagerWindowRoutingReducer {
                 remainingCount: pendingPinMutation.totalCount
                     - pendingPinMutation.successCount
                     - pendingPinMutation.failureCount,
+                source: pendingPinMutation.source,
                 origin: pendingPinMutation.origin,
             ))
         }

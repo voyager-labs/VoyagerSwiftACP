@@ -291,7 +291,7 @@ extension WindowManagerFeature {
                 : .pinned
             return .send(.windows(.element(
                 id: id,
-                action: .window(.requestSelectedContentTabPinMutation(target: target)),
+                action: .window(.requestSelectedContentTabPinMutation(target: target, source: .menuCommand)),
             )))
         }
 

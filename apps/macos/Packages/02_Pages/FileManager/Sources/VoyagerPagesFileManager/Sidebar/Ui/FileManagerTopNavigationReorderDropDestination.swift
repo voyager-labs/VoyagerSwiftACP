@@ -411,6 +411,7 @@ final class FileManagerTopNavigationReorderDropDestinationView: NSView {
             initiatingTabID: movePayload.initiatingTabID,
             orderedTabIDs: movePayload.orderedTabIDs,
             placement: placement,
+            source: .dragAndDrop,
         ))
         return true
     }

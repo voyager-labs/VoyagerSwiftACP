@@ -630,6 +630,8 @@ func busyCloseAndPinSubcases(
                 operationID: requestID,
                 target: .pinned,
                 orderedTargetIDs: [tabID],
+                source: .contextMenu,
+                origin: .menu,
             )
         }),
     ]

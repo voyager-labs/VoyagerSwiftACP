@@ -417,9 +417,15 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         await store.receive { action in
             guard case let .tabContent(
                 receivedTabID,
-                .entryViewLayout(.entryOperations(.lifecycle(.operationStarted(path, kind)))),
+                .entryViewLayout(.entryOperations(.acceptedCommand(
+                    metadata,
+                    .lifecycle(.operationStarted(path, kind)),
+                ))),
             ) = action else { return false }
-            return receivedTabID == tabA && path == oldPath && kind == .rename
+            return receivedTabID == tabA
+                && metadata.id == commandID
+                && path == oldPath
+                && kind == .rename
         }
         await gate.waitUntilWaiting()
         await store.send(.contentTabs(.close(tabA)))

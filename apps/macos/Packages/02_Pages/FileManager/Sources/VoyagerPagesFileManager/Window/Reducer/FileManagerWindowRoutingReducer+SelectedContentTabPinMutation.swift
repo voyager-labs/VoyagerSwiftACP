@@ -13,6 +13,7 @@ import VoyagerShared
 extension FileManagerWindowRoutingReducer {
     func handleRequestSelectedContentTabPinMutation(
         target: SelectedContentTabPinMutationTargetState,
+        source: ContentTabActionSource,
         state: inout State,
     ) -> Effect<Action> {
         guard state.canStartSelectedContentTabPinMutation else { return .none }
@@ -25,6 +26,8 @@ extension FileManagerWindowRoutingReducer {
             operationID: operationID,
             target: target,
             orderedTargetIDs: orderedTargetIDs,
+            source: source,
+            origin: .menu,
         )
         return .send(.processNextSelectedContentTabPinMutation(operationID: operationID))
     }
@@ -43,6 +46,7 @@ extension FileManagerWindowRoutingReducer {
             operationID: operationID,
             target: target,
             orderedTargetIDs: request.orderedTabIDs,
+            source: request.source,
             origin: .drag,
             dragOperationID: request.operationID,
             sourceWindowID: request.sourceWindowID,
@@ -163,6 +167,7 @@ extension FileManagerWindowRoutingReducer {
             successCount: pending.successCount,
             failureCount: pending.failureCount,
             remainingCount: pending.remainingCount,
+            source: pending.source,
             origin: pending.origin,
         )
         guard result.totalCount == result.successCount + result.failureCount + result.remainingCount else {
@@ -177,7 +182,6 @@ extension FileManagerWindowRoutingReducer {
 
     /// 배치 pin/unpin 완료를 집계 terminal 한 건으로 기록한다. 항목별 이벤트는 만들지 않는다.
     /// 수용 항목 중 실패가 있으면 failure가 우선하고, 전부 적용 성공일 때만 success, 그 외는 cancelled다.
-    /// source_surface는 배치 origin을 보존한다. menu는 content_tab_bar, drag는 drag_and_drop다.
     func recordSelectedPinMutationBatchMetric(_ result: SelectedContentTabPinMutationResult) {
         guard result.totalCount > 0 else { return }
         let outcome: ContentTabActionResult = if result.failureCount > 0 {
@@ -190,7 +194,7 @@ extension FileManagerWindowRoutingReducer {
         productMetricsClient.record(FileManagerProductMetricsProducer.contentTabTerminal(
             operationID: result.operationID,
             identity: result.target == .pinned ? .pinContentTabs : .unpinContentTabs,
-            source: result.origin == .drag ? .dragAndDrop : .contentTabBar,
+            source: result.source,
             result: outcome,
         ))
     }

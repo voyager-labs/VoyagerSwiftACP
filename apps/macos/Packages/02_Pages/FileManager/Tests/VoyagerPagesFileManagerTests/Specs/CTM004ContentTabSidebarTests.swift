@@ -8171,6 +8171,7 @@ extension CTM004ContentTabSidebarTests {
             initiatingTabID: sourceID,
             orderedTabIDs: [selectedID, sourceID],
             placement: .before(anchorID),
+            source: .dragAndDrop,
         )])
         XCTAssertNil(sessionStore.entry)
     }
@@ -8189,6 +8190,7 @@ extension CTM004ContentTabSidebarTests {
             initiatingTabID: .init(rawValue: "source"),
             orderedTabIDs: [.init(rawValue: "source")],
             placement: .empty,
+            source: .dragAndDrop,
         )
         let store = TestStore(initialState: FileManagerSidebarState()) {
             FileManagerSidebarFeature()

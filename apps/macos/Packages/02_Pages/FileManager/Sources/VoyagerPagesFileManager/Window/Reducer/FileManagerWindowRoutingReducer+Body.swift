@@ -30,8 +30,8 @@ extension FileManagerWindowRoutingReducer {
                     state: &state,
                 )
 
-            case let .requestSelectedContentTabPinMutation(target):
-                return handleRequestSelectedContentTabPinMutation(target: target, state: &state)
+            case let .requestSelectedContentTabPinMutation(target, source):
+                return handleRequestSelectedContentTabPinMutation(target: target, source: source, state: &state)
 
             case let .requestContentTabDomainTransition(request):
                 return handleRequestContentTabDomainTransition(request, state: &state)
@@ -210,7 +210,7 @@ extension FileManagerWindowRoutingReducer {
                 return .send(.contentTabActionRequested(.unpin(tabID), source: .contentTabBar))
 
             case let .sidebar(.delegate(.setSelectedContentTabsPinned(target))):
-                return .send(.requestSelectedContentTabPinMutation(target: target))
+                return .send(.requestSelectedContentTabPinMutation(target: target, source: .contextMenu))
 
             case let .sidebar(.delegate(.contentTabDomainTransitionRequested(request))):
                 return .send(.requestContentTabDomainTransition(request))

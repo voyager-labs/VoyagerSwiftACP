@@ -9918,6 +9918,7 @@ final class WindowManagerFeatureContractTests: XCTestCase {
             operationID: UUID(),
             target: .pinned,
             orderedTargetIDs: [tabID],
+            source: .contentTabBar,
             currentTabID: tabID,
         )
         var topNavigationState = state

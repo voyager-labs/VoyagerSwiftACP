@@ -465,7 +465,7 @@ extension CTM003ManagePinnedContentTabsTests {
 
     /// CTM-003-product_action_metrics: 다중 선택 Pin 배치 완료는 집계 terminal 메트릭 정확히 한 건을 기록한다.
     /// 배치 coordinator 결과가 항목별 이벤트 없이 단일 typed event로 상관되는지 검증한다.
-    /// - 검증 내용: success=2 배치에 대해 `.success/.pin/.contentTabBar`와 배치 operationID 일치, 메트릭 총 1건
+    /// - 검증 내용: success=2 배치에 대해 `.success/.pin/.contextMenu`와 배치 operationID 일치, 메트릭 총 1건
     /// - 사전 조건: unpinned Directory 2개 선택과 deterministic applied persistence
     /// - 기대 결과: 레코더에 aggregate success 메트릭 1건만 기록됨
     func testSelectedPinBatchCompletionEmitsSingleAggregateSuccessMetric() async {
@@ -486,7 +486,7 @@ extension CTM003ManagePinnedContentTabsTests {
         // store.exhaustivity = .off: correlated child terminal의 동적 intent/generation보다 집계 메트릭 계약에 집중함
         store.exhaustivity = .off
 
-        await store.send(.requestSelectedContentTabPinMutation(target: .pinned))
+        await store.send(.requestSelectedContentTabPinMutation(target: .pinned, source: .contextMenu))
         await store.skipReceivedActions()
         await store.finish()
 
@@ -495,7 +495,7 @@ extension CTM003ManagePinnedContentTabsTests {
             .contentTabAction(
                 result: .success,
                 identity: .pinContentTabs,
-                source: .contentTabBar,
+                source: .contextMenu,
                 operationID: operationID,
             ),
         ])
@@ -524,6 +524,7 @@ extension CTM003ManagePinnedContentTabsTests {
             successCount: 2,
             failureCount: 0,
             remainingCount: 0,
+            source: .dragAndDrop,
             origin: .drag,
         )))
         await store.finish()
@@ -540,7 +541,7 @@ extension CTM003ManagePinnedContentTabsTests {
 
     /// CTM-003-product_action_metrics: 전 항목 persistence 실패 배치는 failure 집계 메트릭 한 건을 기록한다.
     /// 부분/전체 실패가 항목별 이벤트 폭증 없이 단일 failure terminal로 수렴하는지 검증한다.
-    /// - 검증 내용: failure=2 배치의 `.failure/.unpin/.contentTabBar` 메트릭 1건과 배치 operationID 상관
+    /// - 검증 내용: failure=2 배치의 `.failure/.unpin/.contextMenu` 메트릭 1건과 배치 operationID 상관
     /// - 사전 조건: selected pinned Directory 2개와 guarded persistence 전면 throw
     /// - 기대 결과: 레코더에 aggregate failure 메트릭 1건만 기록됨
     func testSelectedUnpinBatchWithAllPersistenceFailuresEmitsSingleFailureMetric() async {
@@ -559,7 +560,7 @@ extension CTM003ManagePinnedContentTabsTests {
         // store.exhaustivity = .off: rollback/terminal context보다 failure 집계 메트릭 계약에 집중함
         store.exhaustivity = .off
 
-        await store.send(.requestSelectedContentTabPinMutation(target: .unpinned))
+        await store.send(.requestSelectedContentTabPinMutation(target: .unpinned, source: .contextMenu))
         await store.skipReceivedActions()
         await store.finish()
 
@@ -568,7 +569,7 @@ extension CTM003ManagePinnedContentTabsTests {
             .contentTabAction(
                 result: .failure,
                 identity: .unpinContentTabs,
-                source: .contentTabBar,
+                source: .contextMenu,
                 operationID: operationID,
             ),
         ])
@@ -593,7 +594,7 @@ extension CTM003ManagePinnedContentTabsTests {
         // store.exhaustivity = .off: preflight remaining 경로의 집계 메트릭 계약에 집중함
         store.exhaustivity = .off
 
-        await store.send(.requestSelectedContentTabPinMutation(target: .pinned))
+        await store.send(.requestSelectedContentTabPinMutation(target: .pinned, source: .contextMenu))
         await store.skipReceivedActions()
         await store.finish()
 
@@ -602,7 +603,7 @@ extension CTM003ManagePinnedContentTabsTests {
             .contentTabAction(
                 result: .cancelled,
                 identity: .pinContentTabs,
-                source: .contentTabBar,
+                source: .contextMenu,
                 operationID: operationID,
             ),
         ])
@@ -639,7 +640,7 @@ extension CTM003ManagePinnedContentTabsTests {
         // store.exhaustivity = .off: rollback/terminal context보다 mixed 집합 규칙에 집중함
         store.exhaustivity = .off
 
-        await store.send(.requestSelectedContentTabPinMutation(target: .pinned))
+        await store.send(.requestSelectedContentTabPinMutation(target: .pinned, source: .contextMenu))
         await store.skipReceivedActions()
         await store.finish()
 
@@ -648,7 +649,7 @@ extension CTM003ManagePinnedContentTabsTests {
             .contentTabAction(
                 result: .failure,
                 identity: .pinContentTabs,
-                source: .contentTabBar,
+                source: .contextMenu,
                 operationID: operationID,
             ),
         ])
@@ -672,7 +673,7 @@ extension CTM003ManagePinnedContentTabsTests {
         // store.exhaustivity = .off: gate 거부 시 무효과(no effect) 경로만 검증함
         store.exhaustivity = .off
 
-        await store.send(.requestSelectedContentTabPinMutation(target: .pinned))
+        await store.send(.requestSelectedContentTabPinMutation(target: .pinned, source: .contextMenu))
 
         XCTAssertNil(store.state.pendingSelectedContentTabPinMutation)
         XCTAssertTrue(recorder.metrics().isEmpty)
@@ -729,9 +730,10 @@ extension CTM003ManagePinnedContentTabsTests {
                 initiatingTabID: tabIDs[0],
                 orderedTabIDs: tabIDs,
                 placement: .empty,
+                source: .dragAndDrop,
             )))
         } else {
-            await store.send(.requestSelectedContentTabPinMutation(target: .pinned))
+            await store.send(.requestSelectedContentTabPinMutation(target: .pinned, source: .contextMenu))
         }
         XCTAssertEqual(store.state.pendingSelectedContentTabPinMutation?.operationID, operationID)
         XCTAssertEqual(store.state.pendingSelectedContentTabPinMutation?.origin, origin)
@@ -754,7 +756,7 @@ extension CTM003ManagePinnedContentTabsTests {
         let expectedMetric = FileManagerProductMetric.contentTabAction(
             result: firstItemFails ? .failure : .cancelled,
             identity: .pinContentTabs,
-            source: origin == .drag ? .dragAndDrop : .contentTabBar,
+            source: origin == .drag ? .dragAndDrop : .contextMenu,
             operationID: operationID,
         )
         XCTAssertNil(store.state.pendingSelectedContentTabPinMutation, label)
@@ -5724,6 +5726,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             operationID: operationID,
             target: .pinned,
             orderedTargetIDs: [target],
+            source: .contextMenu,
             currentTabID: target,
         )
         _ = withDependencies {
@@ -8550,6 +8553,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             operationID: operationID,
             target: .unpinned,
             orderedTargetIDs: [tabID],
+            source: .contextMenu,
             currentTabID: tabID,
         )
         let batchFailures = LockIsolated<[ContentTabID]>([])
@@ -11252,7 +11256,10 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         }
 
         await store.send(.sidebar(.delegate(.setSelectedContentTabsPinned(target: .unpinned))))
-        await store.receive(\.requestSelectedContentTabPinMutation, .unpinned)
+        await store.receive { action in
+            guard case let .requestSelectedContentTabPinMutation(target, source) = action else { return false }
+            return target == .unpinned && source == .contextMenu
+        }
         await store.finish()
     }
 
@@ -11522,7 +11529,10 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         }
 
         await store.send(.sidebar(.delegate(.setSelectedContentTabsPinned(target: .pinned))))
-        await store.receive(\.requestSelectedContentTabPinMutation, .pinned)
+        await store.receive { action in
+            guard case let .requestSelectedContentTabPinMutation(target, source) = action else { return false }
+            return target == .pinned && source == .contextMenu
+        }
         await store.finish()
     }
 
@@ -11549,11 +11559,12 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         // store.exhaustivity = .off: request 순간 frozen coordinator와 전체 완료 결과에 집중함
         store.exhaustivity = .off
 
-        await store.send(.requestSelectedContentTabPinMutation(target: .pinned)) {
+        await store.send(.requestSelectedContentTabPinMutation(target: .pinned, source: .contextMenu)) {
             $0.pendingSelectedContentTabPinMutation = PendingSelectedContentTabPinMutation(
                 operationID: operationID,
                 target: .pinned,
                 orderedTargetIDs: [fixture.pinnedID, fixture.unpinnedID, fixture.unsupportedID],
+                source: .contextMenu,
             )
         }
         await store.skipReceivedActions()
@@ -11585,11 +11596,12 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         // store.exhaustivity = .off: request 시점에 동결되는 표시 순서만 검증함
         store.exhaustivity = .off
 
-        await store.send(.requestSelectedContentTabPinMutation(target: .unpinned)) {
+        await store.send(.requestSelectedContentTabPinMutation(target: .unpinned, source: .contextMenu)) {
             $0.pendingSelectedContentTabPinMutation = PendingSelectedContentTabPinMutation(
                 operationID: operationID,
                 target: .unpinned,
                 orderedTargetIDs: [secondID, firstID],
+                source: .contextMenu,
             )
         }
         await store.skipReceivedActions()
@@ -11628,7 +11640,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         // store.exhaustivity = .off: correlated child terminal의 동적 intent/generation보다 최종 직렬 결과와 보존 계약을 검증함
         store.exhaustivity = .off
 
-        await store.send(.requestSelectedContentTabPinMutation(target: .pinned))
+        await store.send(.requestSelectedContentTabPinMutation(target: .pinned, source: .contextMenu))
         await store.skipReceivedActions()
         await store.finish()
 
@@ -11642,6 +11654,8 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                 successCount: 2,
                 failureCount: 0,
                 remainingCount: 0,
+                source: .contextMenu,
+                origin: .menu,
             ),
         ])
         XCTAssertEqual(store.state.content, originalContent)
@@ -11678,7 +11692,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         // store.exhaustivity = .off: 동적 terminal context보다 최종 직렬 Unpin ordering과 보존 상태를 검증함
         store.exhaustivity = .off
 
-        await store.send(.requestSelectedContentTabPinMutation(target: .unpinned))
+        await store.send(.requestSelectedContentTabPinMutation(target: .unpinned, source: .contextMenu))
         await store.skipReceivedActions()
         await store.finish()
 
@@ -11737,6 +11751,8 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             successCount: 0,
             failureCount: 0,
             remainingCount: 1,
+            source: .contextMenu,
+            origin: .menu,
         ))
         await store.finish()
         XCTAssertNil(store.state.pendingSelectedContentTabPinMutation)
@@ -11819,7 +11835,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         var countOne = fixture.state
         countOne.contentTabs.selectedTabIDs = [fixture.orderedIDs[0]]
         let store = TestStore(initialState: countOne) { CTM003FileManagerPersistenceHarness() }
-        await store.send(.requestSelectedContentTabPinMutation(target: .pinned))
+        await store.send(.requestSelectedContentTabPinMutation(target: .pinned, source: .contextMenu))
         XCTAssertNil(store.state.pendingSelectedContentTabPinMutation)
     }
 
@@ -11837,6 +11853,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             operationID: operationID,
             target: .pinned,
             orderedTargetIDs: fixture.orderedIDs,
+            source: .contextMenu,
             currentTabID: fixture.orderedIDs[0],
         )
         let staleContext = ContentTabPinnedRecordTerminalContext(
@@ -11887,6 +11904,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             operationID: operationID,
             target: .pinned,
             orderedTargetIDs: fixture.orderedIDs,
+            source: .contextMenu,
             currentTabID: fixture.orderedIDs[0],
         )
         let store = TestStore(initialState: initialState) { CTM003FileManagerPersistenceHarness() }
@@ -12199,6 +12217,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             operationID: operationID,
             target: .pinned,
             orderedTargetIDs: fixture.orderedIDs,
+            source: .contextMenu,
             currentTabID: tabID,
         )
         let intentID = initialState.contentTabs.markLatestPinnedRecordPersistenceIntent(for: tabID)
@@ -12272,7 +12291,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         // store.exhaustivity = .off: 첫 terminal completion chain 뒤 duplicate wrapper의 zero mutation을 검증함
         store.exhaustivity = .off
 
-        await store.send(.requestSelectedContentTabPinMutation(target: .pinned))
+        await store.send(.requestSelectedContentTabPinMutation(target: .pinned, source: .contextMenu))
         XCTAssertEqual(store.state, initialState)
         await store.send(.performSelectedContentTabPinMutation(
             operationID: operationID,
@@ -12412,6 +12431,8 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             successCount: 0,
             failureCount: 1,
             remainingCount: 1,
+            source: .contextMenu,
+            origin: .menu,
         )))
         await store.finish()
 
@@ -12513,6 +12534,8 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                     successCount: 3,
                     failureCount: 0,
                     remainingCount: 0,
+                    source: .contextMenu,
+                    origin: .menu,
                 ),
                 count: 0,
                 title: nil,
@@ -12525,6 +12548,8 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                     successCount: 1,
                     failureCount: 1,
                     remainingCount: 1,
+                    source: .contextMenu,
+                    origin: .menu,
                 ),
                 count: 1,
                 title: "Some Tabs Couldn’t Be Pinned",
@@ -12537,6 +12562,8 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
                     successCount: 2,
                     failureCount: 0,
                     remainingCount: 1,
+                    source: .contextMenu,
+                    origin: .menu,
                 ),
                 count: 1,
                 title: "Some Tabs Remained Pinned",
@@ -12607,6 +12634,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             operationID: operationID,
             target: .pinned,
             orderedTargetIDs: fixture.orderedIDs,
+            source: .contextMenu,
         )
         state.syncContentTabSidebarItems()
         return state
@@ -12649,7 +12677,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         // store.exhaustivity = .off: 실제 wrapper terminal의 동적 context를 소비하고 final rollback matrix를 검증함
         store.exhaustivity = .off
 
-        await store.send(.requestSelectedContentTabPinMutation(target: .pinned))
+        await store.send(.requestSelectedContentTabPinMutation(target: .pinned, source: .contextMenu))
         await store.skipReceivedActions()
         await store.finish()
 
@@ -12834,6 +12862,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             operationID: operationID,
             target: .pinned,
             orderedTargetIDs: orderedTargetIDs,
+            source: .contextMenu,
             currentTabID: currentTabID,
         )
         state.syncContentTabSidebarItems()
@@ -12879,6 +12908,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             operationID: operationID,
             target: .unpinned,
             orderedTargetIDs: [tabID],
+            source: .contextMenu,
             currentTabID: tabID,
             currentItemRollbackSnapshot: rollback,
         )
@@ -12935,6 +12965,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             operationID: operationID,
             target: .pinned,
             orderedTargetIDs: [tabID],
+            source: .contextMenu,
             currentTabID: tabID,
         )
         let context = ContentTabPinnedRecordTerminalContext(
@@ -12979,6 +13010,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             operationID: operationID,
             target: .pinned,
             orderedTargetIDs: [tabID],
+            source: .contextMenu,
             currentTabID: tabID,
             currentItemRollbackSnapshot: rollbackSnapshot,
         )
@@ -13929,6 +13961,7 @@ extension CTM003ManagePinnedContentTabsTests {
             initiatingTabID: targetID,
             orderedTabIDs: [targetID],
             placement: .empty,
+            source: .dragAndDrop,
         )
         let store = TestStore(initialState: initialState) {
             FileManagerWindowRoutingReducer()
@@ -13943,6 +13976,7 @@ extension CTM003ManagePinnedContentTabsTests {
                 operationID: coordinatorOperationID,
                 target: .pinned,
                 orderedTargetIDs: [targetID],
+                source: .dragAndDrop,
                 origin: .drag,
                 dragOperationID: dragOperationID,
                 sourceWindowID: sourceWindowID,
@@ -13984,6 +14018,7 @@ extension CTM003ManagePinnedContentTabsTests {
             initiatingTabID: targetID,
             orderedTabIDs: [targetID],
             placement: .empty,
+            source: .dragAndDrop,
         )
         let store = TestStore(initialState: initialState) {
             FileManagerWindowRoutingReducer()
@@ -13998,6 +14033,7 @@ extension CTM003ManagePinnedContentTabsTests {
                 operationID: coordinatorOperationID,
                 target: .pinned,
                 orderedTargetIDs: [targetID],
+                source: .dragAndDrop,
                 origin: .drag,
                 dragOperationID: dragOperationID,
                 sourceWindowID: sourceWindowID,
@@ -14033,6 +14069,7 @@ extension CTM003ManagePinnedContentTabsTests {
                 initiatingTabID: firstID,
                 orderedTabIDs: [firstID, firstID],
                 placement: .empty,
+                source: .dragAndDrop,
             ),
             ContentTabDomainTransitionRequest(
                 operationID: matrixOperationID(group: 9, offset: 5),
@@ -14042,6 +14079,7 @@ extension CTM003ManagePinnedContentTabsTests {
                 initiatingTabID: firstID,
                 orderedTabIDs: [firstID],
                 placement: .empty,
+                source: .dragAndDrop,
             ),
             ContentTabDomainTransitionRequest(
                 operationID: matrixOperationID(group: 9, offset: 7),
@@ -14051,6 +14089,7 @@ extension CTM003ManagePinnedContentTabsTests {
                 initiatingTabID: firstID,
                 orderedTabIDs: [firstID],
                 placement: .before(ContentTabID(rawValue: "missing-pinned-anchor")),
+                source: .dragAndDrop,
             ),
         ]
 
@@ -14080,6 +14119,7 @@ extension CTM003ManagePinnedContentTabsTests {
             operationID: operationID,
             target: .pinned,
             orderedTargetIDs: fixture.orderedIDs,
+            source: .dragAndDrop,
             origin: .drag,
             dragOperationID: matrixOperationID(group: 9, offset: 9),
             sourceDomain: .unpinned,
@@ -14184,6 +14224,7 @@ extension CTM003ManagePinnedContentTabsTests {
             operationID: operationID,
             target: .pinned,
             orderedTargetIDs: [tabID],
+            source: .contextMenu,
         )
         let store = TestStore(initialState: initialState) {
             FileManagerWindowRoutingReducer()
@@ -14250,6 +14291,7 @@ extension CTM003ManagePinnedContentTabsTests {
             operationID: operationID,
             target: .pinned,
             orderedTargetIDs: fixture.orderedIDs,
+            source: .contextMenu,
             origin: .menu,
             currentTabID: tabID,
             currentItemRollbackSnapshot: rollback,
@@ -14322,6 +14364,7 @@ extension CTM003ManagePinnedContentTabsTests {
             successCount: 0,
             failureCount: 0,
             remainingCount: 1,
+            source: .dragAndDrop,
             origin: .drag,
         )
         XCTAssertEqual(completedResults.value, [expectedResult, expectedResult])
@@ -14457,6 +14500,7 @@ extension CTM003ManagePinnedContentTabsTests {
             successCount: 0,
             failureCount: 0,
             remainingCount: 1,
+            source: .dragAndDrop,
             origin: .drag,
         )
     }
@@ -14484,6 +14528,7 @@ extension CTM003ManagePinnedContentTabsTests {
                 initiatingTabID: movingID,
                 orderedTabIDs: [movingID],
                 placement: .before(anchorID),
+                source: .dragAndDrop,
             ),
             coordinatorOperationID: operationID,
             movingID: movingID,
@@ -14516,6 +14561,7 @@ extension CTM003ManagePinnedContentTabsTests {
                 initiatingTabID: movingID,
                 orderedTabIDs: [movingID],
                 placement: .before(anchorID),
+                source: .dragAndDrop,
             ),
             coordinatorOperationID: operationID,
             movingID: movingID,
@@ -14607,6 +14653,7 @@ extension CTM003ManagePinnedContentTabsTests {
             initiatingTabID: targetID,
             orderedTabIDs: [targetID],
             placement: .after(anchorID),
+            source: .dragAndDrop,
         )
         return .init(
             state: state,
