@@ -64,4 +64,33 @@ final class EntryCorePropertyClientFlowTests: XCTestCase {
         ))
         XCTAssertEqual(recorder.creationCount, 0)
     }
+
+    func testPropertyChangeRejectsInvalidPayloadBeforeTransport() throws {
+        let recorder = PropertyTransportRecorder(response: Data())
+        _ = EntryCorePropertyClient.makeLive(
+            requestID: { "unused" },
+            makeTransport: recorder.makeTransport,
+        )
+        let target = try PropertyTarget(localPath: "/a")
+        let propertyID = try PropertyID(rawValue: "00000000-0000-0000-8000-000000000001")
+
+        let invalidDesiredStates: [PropertyDesiredState] = [
+            .value(.number, .one, .number("01")),
+            .value(.date, .one, .date("2026-02-30")),
+            .value(.datetime, .one, .dateTime("2026-08-03T10:02:03.100Z")),
+            .value(.text, .one, .text(String(repeating: "x", count: 4097))),
+            .value(.text, .many, .texts(Array(repeating: "x", count: 257))),
+        ]
+
+        for desired in invalidDesiredStates {
+            XCTAssertThrowsError(try PropertyChangeTarget(
+                target: target,
+                propertyID: propertyID,
+                expectedDefinitionRevision: 1,
+                expectedAssignmentRevision: 0,
+                desired: desired,
+            ))
+        }
+        XCTAssertEqual(recorder.creationCount, 0)
+    }
 }

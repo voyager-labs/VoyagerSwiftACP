@@ -47,6 +47,8 @@ public struct EntryPropertiesFeature: Sendable {
                 let selection = state.selection
                 state.activePhase = .discovering
                 state.status = .discovering
+                state.capabilityReport = nil
+                state.targetSnapshot = nil
                 state.proposal = nil
                 state.canonicalResult = nil
                 let client = client

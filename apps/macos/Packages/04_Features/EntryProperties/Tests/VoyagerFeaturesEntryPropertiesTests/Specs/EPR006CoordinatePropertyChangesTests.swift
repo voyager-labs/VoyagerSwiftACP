@@ -465,6 +465,43 @@ final class EPR006CoordinatePropertyChangesTests: XCTestCase {
 }
 
 extension EPR006CoordinatePropertyChangesTests {
+    /// EPR-006-discover_property_change_capabilities: 재탐색 시작은 이전 snapshot을 폐기한다.
+    /// - 검증 내용: discovery 중 snapshot/capability 무효화와 실패 후 stale prepare 차단
+    /// - 사전 조건: 기존 ready snapshot을 가진 상태에서 재탐색이 시작됨
+    /// - 기대 결과: 실패한 refresh의 이전 정본으로 mutation proposal을 만들지 않음
+    func testRediscoveryInvalidatesPreviousSnapshotBeforeFailure() async {
+        let fixture = Fixture()
+        let store = TestStore(initialState: fixture.readyState) {
+            EntryPropertiesFeature()
+        } withDependencies: {
+            $0.entryPropertiesClient = .unavailable
+        }
+
+        await store.send(.discoverCapabilities) {
+            $0.generation = 1
+            $0.activePhase = .discovering
+            $0.status = .discovering
+            $0.capabilityReport = nil
+            $0.targetSnapshot = nil
+            $0.proposal = nil
+            $0.canonicalResult = nil
+        }
+        await store.receive(.init(kind: .discoveryCompleted(1, .failure(.unavailable)))) {
+            $0.activePhase = nil
+            $0.status = .rejected(.unavailable)
+            $0.lastOutcome = .propertyChangeRejected(.unavailable)
+        }
+        await store.receive(.init(kind: .outcome(.propertyChangeRejected(.unavailable))))
+        XCTAssertNil(store.state.targetSnapshot)
+        XCTAssertNil(store.state.capabilityReport)
+
+        await store.send(.prepare(fixture.intent)) {
+            $0.status = .rejected(.stale)
+            $0.lastOutcome = .propertyChangeRejected(.stale)
+        }
+        await store.receive(.init(kind: .outcome(.propertyChangeRejected(.stale))))
+    }
+
     /// EPR-006-read_back_property_change_result: read-back 중 discovery/reconnect는 busy로 보존한다.
     /// - 검증 내용: applied phase·status·generation·proposal 보존
     /// - 사전 조건: trusted apply 뒤 canonical read-back effect가 진행 중임

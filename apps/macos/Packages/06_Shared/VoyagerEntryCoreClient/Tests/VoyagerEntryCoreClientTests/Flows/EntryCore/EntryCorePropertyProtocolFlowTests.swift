@@ -56,4 +56,28 @@ final class EntryCorePropertyProtocolFlowTests: XCTestCase {
             XCTAssertEqual($0 as? EntryCoreClientError, .protocolMismatch)
         }
     }
+
+    func testAssignmentDecodesRFC3339NanoFractionalDatetime() throws {
+        let wire = Data(
+            #"""
+            {"request_id":"id","ok":true,"result":{"assignments":[{
+                "property_id":"00000000-0000-0000-8000-000000000001",
+                "entry_id":"ent:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+                "value_type":"datetime","cardinality":"one","state":"value","revision":1,
+                "value":"2026-08-03T10:02:03.1Z"
+            }]}}
+            """#.utf8,
+        )
+        let result = try EntryCorePropertyResponseDecoder.decode(
+            Array(wire),
+            method: .propertyChangeExecute,
+            expectedRequestID: "id",
+        )
+
+        guard case let .assignments(assignments) = result else {
+            return XCTFail("expected assignment result")
+        }
+        XCTAssertEqual(assignments.count, 1)
+        XCTAssertEqual(assignments[0].value, .dateTime("2026-08-03T10:02:03.1Z"))
+    }
 }

@@ -620,9 +620,37 @@ enum PropertyWireValidation {
     }
 
     static func date(_ value: String) -> Bool {
-        value
-            .range(of: #"^\d{4}-\d{2}-\d{2}$"#, options: .regularExpression) != nil && ISO8601DateFormatter()
-            .date(from: value + "T00:00:00Z") != nil
+        guard value.range(of: #"^\d{4}-\d{2}-\d{2}$"#, options: .regularExpression) != nil else {
+            return false
+        }
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.isLenient = false
+        guard let parsed = formatter.date(from: value) else { return false }
+        return formatter.string(from: parsed) == value
+    }
+
+    static func timestamp(_ value: String) -> Bool {
+        guard value.utf8.count <= 64,
+              value.range(
+                  of: #"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?Z$"#,
+                  options: .regularExpression,
+              ) != nil else { return false }
+        let base: String
+        if let separator = value.firstIndex(of: ".") {
+            base = String(value[..<separator]) + "Z"
+            let fraction = value[value.index(after: separator) ..< value.index(before: value.endIndex)]
+            guard !fraction.hasSuffix("0") else { return false }
+        } else {
+            base = value
+        }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withDashSeparatorInDate, .withColonSeparatorInTime]
+        guard let parsed = formatter.date(from: base) else { return false }
+        return formatter.string(from: parsed) == base
     }
 
     static func isLocalPath(_ value: String) -> Bool {
@@ -719,20 +747,35 @@ enum PropertyWireValidation {
         type: PropertyValueType,
         cardinality: PropertyCardinality,
     ) -> Bool {
-        switch (
-            value,
-            type,
-            cardinality,
-        ) {
-        case (.text, .text, .one), (.number, .number, .one), (.date, .date, .one), (.dateTime, .datetime, .one), (
-            .boolean,
-            .boolean,
-            .one,
-        ), (.select, .select, .one), (.texts, .text, .many), (.numbers, .number, .many), (.dates, .date, .many), (
-            .dateTimes,
-            .datetime,
-            .many,
-        ), (.booleans, .boolean, .many), (.selects, .select, .many): true
+        switch cardinality {
+        case .one: matchesScalar(value, type: type)
+        case .many: matchesMany(value, type: type)
+        }
+    }
+
+    static func matchesScalar(_ value: PropertyValue, type: PropertyValueType) -> Bool {
+        switch (value, type) {
+        case let (.text(raw), .text): raw.utf8.count <= 4096
+        case let (.number(raw), .number): decimal(raw)
+        case let (.date(raw), .date): date(raw)
+        case let (.dateTime(raw), .datetime): timestamp(raw)
+        case (.boolean, .boolean), (.select, .select): true
+        default: false
+        }
+    }
+
+    static func matchesMany(_ value: PropertyValue, type: PropertyValueType) -> Bool {
+        switch (value, type) {
+        case let (.texts(values), .text):
+            values.count <= 256 && values.allSatisfy { $0.utf8.count <= 4096 }
+        case let (.numbers(values), .number):
+            values.count <= 256 && values.allSatisfy(decimal)
+        case let (.dates(values), .date):
+            values.count <= 256 && values.allSatisfy(date)
+        case let (.dateTimes(values), .datetime):
+            values.count <= 256 && values.allSatisfy(timestamp)
+        case let (.booleans(values), .boolean): values.count <= 256
+        case let (.selects(values), .select): values.count <= 256
         default: false
         }
     }

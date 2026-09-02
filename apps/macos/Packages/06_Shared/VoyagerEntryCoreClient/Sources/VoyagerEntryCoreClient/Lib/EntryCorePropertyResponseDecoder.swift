@@ -380,10 +380,7 @@ private extension EntryCorePropertyResponseDecoder {
     }
 
     static func timestamp(_ value: String) -> Bool {
-        value.range(
-            of: #"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$"#,
-            options: .regularExpression,
-        ) != nil && ISO8601DateFormatter().date(from: value) != nil
+        PropertyWireValidation.timestamp(value)
     }
 
     static func pageToken(_ value: StrictJSONValue?) throws -> String? {
