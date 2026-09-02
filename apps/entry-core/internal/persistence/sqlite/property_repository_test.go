@@ -67,6 +67,31 @@ func TestLoadAssignmentsMemberCappedFailsBeforeAssembly(t *testing.T) {
 	}
 }
 
+func TestLoadAssignmentsMemberCappedSkipsWorkspaceScanForEmptyEntrySet(t *testing.T) {
+	ctx := context.Background()
+	store := migratedStore(t)
+	defer store.Close()
+	fx := buildPropertyFixture(t, store)
+	now := time.Now()
+	entryID := testEntryID(991)
+	header := EntryPropertyAssignmentRow{WorkspaceID: fx.wsctx.ID.Bytes(), EntryID: entryID, PropertyID: fx.multiDef.Bytes(), TargetKind: "locator_derived", State: "value", RecordRevision: 1, ValueContractRevision: 1, CreatedAt: now, UpdatedAt: now}
+	if err := store.db.Create(&header).Error; err != nil {
+		t.Fatal(err)
+	}
+	value := EntryPropertyAssignmentValueRow{WorkspaceID: fx.wsctx.ID.Bytes(), EntryID: entryID, PropertyID: fx.multiDef.Bytes(), Ordinal: 0, ValueKind: "option_ref", OptionID: fx.multiOptA.Bytes(), CreatedAt: now, UpdatedAt: now}
+	if err := store.db.Create(&value).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, err := NewEntryPropertyRepository(store).LoadAssignmentsMemberCapped(ctx, fx.wsctx, []string{}, []domainentry.PropertyID{fx.multiDef}, 0)
+	if err != nil {
+		t.Fatalf("load empty entry set: %v", err)
+	}
+	if len(loaded) != 0 {
+		t.Fatalf("loaded = %#v, want empty", loaded)
+	}
+}
+
 func TestPropertyAssignmentRoundTripAllStates(t *testing.T) {
 	ctx := context.Background()
 	store := migratedStore(t)

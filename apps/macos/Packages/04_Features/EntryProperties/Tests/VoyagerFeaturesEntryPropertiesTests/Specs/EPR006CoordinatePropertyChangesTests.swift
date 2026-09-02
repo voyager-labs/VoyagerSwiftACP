@@ -181,6 +181,39 @@ final class EPR006CoordinatePropertyChangesTests: XCTestCase {
         XCTAssertEqual(recordedOperations, [])
     }
 
+    /// EPR-006-execute_property_change: busy 거부는 진행 중 mutation을 해제하지 않는다.
+    /// - 검증 내용: discovery/reconnect/execute 중복 요청의 phase·status·generation 보존
+    /// - 사전 조건: confirmed proposal execute가 이미 진행 중임
+    /// - 기대 결과: busy outcome만 게시되고 새 client operation은 시작되지 않음
+    func testBusyRejectionPreservesExecutingMutation() async {
+        let fixture = Fixture()
+        var state = fixture.readyState
+        state.proposal = fixture.proposal
+        state.activePhase = .executing
+        state.status = .executing
+        let store = TestStore(initialState: state) {
+            EntryPropertiesFeature()
+        } withDependencies: {
+            $0.entryPropertiesClient = fixture.client()
+        }
+
+        await store.send(.discoverCapabilities) {
+            $0.lastOutcome = .propertyChangeRejected(.busy)
+        }
+        await store.receive(.init(kind: .outcome(.propertyChangeRejected(.busy))))
+        XCTAssertEqual(store.state.activePhase, .executing)
+        XCTAssertEqual(store.state.status, .executing)
+        XCTAssertEqual(store.state.generation, 0)
+
+        for action in [EntryPropertiesAction.reconnect, .execute(confirmed: true)] {
+            await store.send(action)
+            await store.receive(.init(kind: .outcome(.propertyChangeRejected(.busy))))
+            XCTAssertEqual(store.state.activePhase, .executing)
+            XCTAssertEqual(store.state.status, .executing)
+            XCTAssertEqual(store.state.generation, 0)
+        }
+    }
+
     /// EPR-006-execute_property_change: ambiguous completion은 mutation 재시도 없이 보존한다.
     /// 전송 또는 cancellation ambiguity를 성공·실패로 추정하지 않는지 검증한다.
     /// - 검증 내용: ambiguous status와 proposal 보존
@@ -250,6 +283,47 @@ final class EPR006CoordinatePropertyChangesTests: XCTestCase {
         await store.receive(.init(kind: .outcome(.propertyChangeVerified(fixture.canonicalResult))))
         let recordedOperations = await recorder.values()
         XCTAssertEqual(recordedOperations, ["execute", "readBack"])
+    }
+
+    /// EPR-006-read_back_property_change_result: proposal after와 다른 정본은 verified가 아니다.
+    /// - 검증 내용: 누락·불일치·중복 canonical target/value 결과의 fail-closed 전이
+    /// - 사전 조건: trusted apply 뒤 고정 snapshot의 read-back 결과가 proposal과 다름
+    /// - 기대 결과: applied-unverified를 유지하고 verified result를 게시하지 않음
+    func testReadBackRequiresExactProposalValuesBeforeVerification() async {
+        let fixture = Fixture()
+        let target = fixture.selection.targets[0]
+        let mismatches = [
+            EntryPropertiesCanonicalResult(snapshot: fixture.snapshot, values: []),
+            EntryPropertiesCanonicalResult(
+                snapshot: fixture.snapshot,
+                values: [.init(target: target, value: .text("different"), revision: 8)],
+            ),
+            EntryPropertiesCanonicalResult(
+                snapshot: fixture.snapshot,
+                values: [
+                    .init(target: target, value: .text("after"), revision: 8),
+                    .init(target: target, value: .text("after"), revision: 8),
+                ],
+            ),
+        ]
+
+        for canonicalResult in mismatches {
+            var state = fixture.readyState
+            state.activePhase = .applied
+            state.status = .applied
+            state.appliedProposal = fixture.proposal
+            let store = TestStore(initialState: state) {
+                EntryPropertiesFeature()
+            }
+
+            await store.send(.init(kind: .readBackCompleted(0, .success(canonicalResult)))) {
+                $0.activePhase = nil
+                $0.status = .appliedUnverified
+                $0.lastOutcome = .propertyChangeAppliedUnverified(fixture.snapshot)
+            }
+            await store.receive(.init(kind: .outcome(.propertyChangeAppliedUnverified(fixture.snapshot))))
+            XCTAssertNil(store.state.canonicalResult)
+        }
     }
 
     // MARK: - EPR-006-read_back_property_change_result

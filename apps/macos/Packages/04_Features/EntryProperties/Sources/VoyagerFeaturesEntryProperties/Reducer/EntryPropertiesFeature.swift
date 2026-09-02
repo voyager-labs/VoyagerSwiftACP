@@ -29,7 +29,7 @@ public struct EntryPropertiesFeature: Sendable {
 
             case .discoverCapabilities, .reconnect:
                 guard state.activePhase != .executing else {
-                    return reject(&state, .busy)
+                    return rejectBusy(&state)
                 }
                 state.generation &+= 1
                 let generation = state.generation
@@ -88,7 +88,7 @@ public struct EntryPropertiesFeature: Sendable {
                 }
 
             case let .prepare(intent):
-                guard state.activePhase == nil else { return reject(&state, .busy) }
+                guard state.activePhase == nil else { return rejectBusy(&state) }
                 guard let snapshot = state.targetSnapshot,
                       let capabilities = state.capabilityReport
                 else { return reject(&state, .stale) }
@@ -132,7 +132,7 @@ public struct EntryPropertiesFeature: Sendable {
                 }
 
             case let .execute(confirmed):
-                guard state.activePhase == nil else { return reject(&state, .busy) }
+                guard state.activePhase == nil else { return rejectBusy(&state) }
                 guard let proposal = state.proposal,
                       proposal.snapshot == state.targetSnapshot
                 else { return reject(&state, .stale) }
@@ -180,7 +180,7 @@ public struct EntryPropertiesFeature: Sendable {
                 }
 
             case .retryReadBack:
-                guard state.activePhase == nil else { return reject(&state, .busy) }
+                guard state.activePhase == nil else { return rejectBusy(&state) }
                 guard state.status == .appliedUnverified,
                       let snapshot = state.appliedProposal?.snapshot
                 else { return reject(&state, .stale) }
@@ -191,7 +191,13 @@ public struct EntryPropertiesFeature: Sendable {
                 state.activePhase = nil
                 switch result {
                 case let .success(canonicalResult):
-                    guard canonicalResult.snapshot == state.appliedProposal?.snapshot else { return .none }
+                    guard let proposal = state.appliedProposal,
+                          canonicalResultMatchesProposal(canonicalResult, proposal: proposal)
+                    else {
+                        guard let snapshot = state.appliedProposal?.snapshot else { return reject(&state, .stale) }
+                        state.status = .appliedUnverified
+                        return emit(&state, .propertyChangeAppliedUnverified(snapshot))
+                    }
                     state.canonicalResult = canonicalResult
                     state.status = .verified
                     return emit(&state, .propertyChangeVerified(canonicalResult))
@@ -245,6 +251,12 @@ public struct EntryPropertiesFeature: Sendable {
         return .send(.init(kind: .outcome(outcome)))
     }
 
+    private func rejectBusy(_ state: inout State) -> Effect<Action> {
+        let outcome = EntryPropertiesOutcome.propertyChangeRejected(.busy)
+        state.lastOutcome = outcome
+        return .send(.init(kind: .outcome(outcome)))
+    }
+
     private func reject(_ state: inout State, _ failure: EntryPropertiesFailure) -> Effect<Action> {
         state.activePhase = nil
         switch failure {
@@ -265,6 +277,24 @@ public struct EntryPropertiesFeature: Sendable {
 
     private enum CancelID: Hashable {
         case flow
+    }
+
+    private func canonicalResultMatchesProposal(
+        _ result: EntryPropertiesCanonicalResult,
+        proposal: EntryPropertiesProposal,
+    ) -> Bool {
+        guard result.snapshot == proposal.snapshot,
+              result.values.count == proposal.differences.count
+        else { return false }
+        var valuesByTarget: [EntryPropertiesTarget: EntryPropertiesCanonicalValue] = [:]
+        for canonicalValue in result.values {
+            guard valuesByTarget.updateValue(canonicalValue, forKey: canonicalValue.target) == nil else {
+                return false
+            }
+        }
+        return proposal.differences.allSatisfy { difference in
+            valuesByTarget[difference.target]?.value == difference.after
+        }
     }
 }
 

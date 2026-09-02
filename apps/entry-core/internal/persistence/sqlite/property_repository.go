@@ -105,6 +105,9 @@ func (r *EntryPropertyRepository) LoadAssignmentsMemberCapped(ctx context.Contex
 	if wsctx.ID == (domainentry.WorkspaceID{}) || maxMembers < 0 {
 		return nil, ErrInvalidPropertyRow
 	}
+	if len(entryIDs) == 0 {
+		return map[EntryPropertyRef]domainentry.EntryPropertyAssignment{}, nil
+	}
 	wsBytes := wsctx.ID.Bytes()
 	var headers []EntryPropertyAssignmentRow
 	if err := scopeAssignmentQuery(db.Model(&EntryPropertyAssignmentRow{}), wsBytes, entryIDs, propertyIDs).Find(&headers).Error; err != nil {
