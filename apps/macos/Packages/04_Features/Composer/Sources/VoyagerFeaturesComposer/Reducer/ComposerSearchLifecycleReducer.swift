@@ -117,6 +117,7 @@ struct ComposerSearchLifecycleReducer {
                     state.activeSearchRequestID = nil
                     state.lastSearchResponse = response
                     state.lastFiltersResponse = nil
+                    state.lastFiltersResponseDefinitionFingerprint = nil
                     applyQueryPhaseTransition(.searchSucceeded, state: &state)
                     applyAppliedFilters(
                         normalizedAppliedFilters,
@@ -151,6 +152,7 @@ struct ComposerSearchLifecycleReducer {
                         state.isLoadingFilters = false
                         state.isFilteringInFlight = false
                         state.activeFiltersRequestID = nil
+                        state.activeFiltersRequestQuery = nil
                         state.activeFiltersMetricSource = nil
                         state.filtersStartedAt = nil
                         state.pendingSearchQuery = nil
@@ -171,6 +173,10 @@ struct ComposerSearchLifecycleReducer {
                     let filtersRequestID = UUID()
                     let executionFilters = buildFilters(from: state)
                     state.activeFiltersRequestID = filtersRequestID
+                    state.activeFiltersRequestQuery = state.queryRecoveryRawText(for: .search(requestID))
+                        ?? state.pendingSearchQuery
+                        ?? state.collectionContext?.query
+                        ?? ""
                     state.retargetQueryRecovery(from: requestID, to: filtersRequestID)
                     state.activeFiltersMetricSource = ComposerCollectionFilterMetrics.sourcePostQueryApply
                     state.filtersStartedAt = Date()
@@ -259,6 +265,11 @@ struct ComposerSearchLifecycleReducer {
                             ),
                         )
                     }
+                    let responseQuery = state.activeFiltersRequestQuery
+                        ?? state.queryRecoveryRawText(for: .filters(requestID))
+                        ?? state.pendingSearchQuery
+                        ?? state.collectionContext?.query
+                        ?? ""
                     if let submittedQuery = state.queryRecoveryRawText(for: .filters(requestID)) {
                         let trimmedQuery = submittedQuery.trimmingCharacters(in: .whitespacesAndNewlines)
                         state.pendingSearchQuery = trimmedQuery.isEmpty ? nil : trimmedQuery
@@ -279,6 +290,15 @@ struct ComposerSearchLifecycleReducer {
                         registryClient: registryClient,
                         uuid: { uuid() },
                     )
+                    state.lastFiltersResponseDefinitionFingerprint = CollectionSnapshotHydration.definitionFingerprint(
+                        query: responseQuery,
+                        scopes: state.scopes,
+                        excludedScopes: state.scopeEditor.selection.exceptions.map(\.path),
+                        includeSubfolders: state.scopeEditor.effectiveIncludeSubfolders,
+                        includeDirectories: state.includeDirectories,
+                        conditions: state.conditions,
+                    )
+                    state.activeFiltersRequestQuery = nil
                     state.scopeEditor.committedSelection = state.scopeEditor.selection
                     state.scopeEditor.committedIncludeSubfolders = state.scopeEditor.includeSubfolders
                     state.resolveScopeChangeFeedback(.filters(requestID), phase: .visible)
@@ -347,12 +367,14 @@ private func handleSubmit(
     state.submittedSearchFilters = filters
     state.activeSearchRequestID = searchRequestID
     state.activeFiltersRequestID = nil
+    state.activeFiltersRequestQuery = nil
     state.activeFiltersMetricSource = nil
     state.filtersStartedAt = nil
     state.lastFailedFiltersRequestID = nil
     state.lastAcceptedSearchRequestID = nil
     state.lastAcceptedFiltersRequestID = nil
     state.lastFiltersResponse = nil
+    state.lastFiltersResponseDefinitionFingerprint = nil
     state.markScopeChangeFeedbackPending(.search(searchRequestID))
     applyQueryPhaseTransition(.startSearch, state: &state)
     state.clearTextForSubmit()
@@ -411,6 +433,7 @@ private func handleCancelSearch(
     let requestID = state.activeSearchRequestID
     state.isLoadingSearch = false
     state.activeSearchRequestID = nil
+    state.activeFiltersRequestQuery = nil
     if let requestID {
         state.restoreQueryRecoveryIfEligible(for: .search(requestID))
         state.resolveScopeChangeFeedback(.search(requestID), phase: .visible)
@@ -443,6 +466,7 @@ private func handleCancelFilters(
     state.isLoadingFilters = false
     state.isFilteringInFlight = false
     state.activeFiltersRequestID = nil
+    state.activeFiltersRequestQuery = nil
     state.activeFiltersMetricSource = nil
     state.lastFailedFiltersRequestID = nil
     state.pendingSearchQuery = nil
@@ -502,6 +526,7 @@ private func handleApplyFilters(
     state.isLoadingFilters = true
     state.isFilteringInFlight = true
     state.activeFiltersRequestID = filtersRequestID
+    state.activeFiltersRequestQuery = nil
     state.lastAcceptedFiltersRequestID = nil
     state.lastFailedFiltersRequestID = nil
     applyQueryPhaseTransition(.reset, state: &state)
@@ -538,6 +563,7 @@ private func handleFiltersFailure(
     state.isLoadingFilters = false
     state.isFilteringInFlight = false
     state.activeFiltersRequestID = nil
+    state.activeFiltersRequestQuery = nil
     state.lastFailedFiltersRequestID = requestID
     state.activeFiltersMetricSource = nil
     logFiltersDurationIfNeeded(

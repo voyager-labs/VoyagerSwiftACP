@@ -191,6 +191,111 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
         XCTAssertTrue(requests.value.isEmpty)
     }
 
+    /// RCL-002-save_collection_filter_changes: query definition 편집 후 실행하지 않은 저장은 이전 snapshot을 제거한다.
+    /// 기존 response가 남아 있어도 새 definition과 상관없는 결과를 snapshot으로 저장하지 않아 reopen 시 definition-first fallback을 보장한다.
+    func testEditFileBackedCollection_queryDraftSaveDropsStaleSnapshot() async throws {
+        let targetURL = URL(fileURLWithPath: "/VoyagerFixtures/Collections/query-snapshot-edit.voycoll")
+        let baseline = CollectionContext(query: "baseline", scopes: ["/tmp"], conditions: [])
+        let previousResponse = SearchResponsePayload(
+            itemCount: 1,
+            appliedFilters: .init(
+                scopes: baseline.scopes,
+                includeSubfolders: baseline.includeSubfolders,
+                conditions: [],
+            ),
+            items: [.string("/tmp/old-result.txt")],
+        )
+        let savedFiles = LockIsolated<[VoyagerCollectionFile]>([])
+        let requests = LockIsolated<[String]>([])
+        var state = makeFileBackedEmptyCollectionContentState(targetURL: targetURL)
+        state.collection.collectionContext = baseline
+        state.collection.collectionSession.metadata.baseline = .init(context: baseline)
+        state.composer.collectionContext = baseline
+        state.composer.scopes = baseline.scopes
+        state.composer.text = baseline.query
+        state.composer.applyHydratedCollectionOpenComposerPayload(
+            .init(
+                lastFiltersResponse: previousResponse,
+                lastSearchResponse: previousResponse,
+                snapshotPaths: ["/tmp/old-result.txt"],
+            ),
+            isNavigationQueryEmpty: false,
+        )
+        let store = makeCollectionEditStore(
+            initialState: state,
+            requests: requests,
+            saveFiles: savedFiles,
+        )
+
+        await store.send(.composer(.setText("updated query")))
+        await store.skipReceivedActions(strict: false)
+        XCTAssertEqual(store.state.collection.collectionContext?.query, "updated query")
+
+        await store.send(.composer(.saveCollection))
+        await store.skipReceivedActions(strict: false)
+        await store.finish()
+
+        let savedFile = try XCTUnwrap(savedFiles.value.first)
+        XCTAssertEqual(savedFile.query, "updated query")
+        XCTAssertNil(savedFile.snapshot)
+        XCTAssertNil(savedFile.snapshotMeta)
+    }
+
+    /// RCL-002-save_collection_filter_changes: condition definition 편집 후 실행하지 않은 저장은 이전 snapshot을 제거한다.
+    /// 마지막 condition을 제거하면 filter 요청 없이 definition만 바뀌므로 stale 결과가 저장되지 않아야 한다.
+    func testEditFileBackedCollection_conditionDraftSaveDropsStaleSnapshot() async throws {
+        let targetURL = URL(fileURLWithPath: "/VoyagerFixtures/Collections/condition-snapshot-edit.voycoll")
+        let baselineCondition = makeEditCondition(values: ["txt"])
+        let baseline = CollectionContext(query: "", scopes: ["/tmp"], conditions: [baselineCondition])
+        let previousResponse = SearchResponsePayload(
+            itemCount: 1,
+            appliedFilters: .init(
+                scopes: baseline.scopes,
+                includeSubfolders: baseline.includeSubfolders,
+                conditions: [
+                    .init(propertyKey: "kind", operator: "eq", value: .string("txt")),
+                ],
+            ),
+            items: [.string("/tmp/old-result.txt")],
+        )
+        let savedFiles = LockIsolated<[VoyagerCollectionFile]>([])
+        let requests = LockIsolated<[String]>([])
+        let conditionID = UUID(953)
+        var state = makeFileBackedEmptyCollectionContentState(targetURL: targetURL)
+        state.collection.collectionContext = baseline
+        state.collection.collectionSession.metadata.baseline = .init(context: baseline)
+        state.composer.collectionContext = baseline
+        state.composer.scopes = baseline.scopes
+        state.composer.conditionEditors = [.init(id: conditionID, condition: baselineCondition)]
+        state.composer.applyHydratedCollectionOpenComposerPayload(
+            .init(
+                lastFiltersResponse: previousResponse,
+                lastSearchResponse: previousResponse,
+                snapshotPaths: ["/tmp/old-result.txt"],
+            ),
+            isNavigationQueryEmpty: true,
+        )
+        let store = makeCollectionEditStore(
+            initialState: state,
+            requests: requests,
+            saveFiles: savedFiles,
+        )
+
+        await store.send(.composer(.removeCondition(id: conditionID)))
+        await store.skipReceivedActions(strict: false)
+        XCTAssertEqual(store.state.collection.collectionContext?.conditions ?? [], [])
+        XCTAssertEqual(requests.value, [])
+
+        await store.send(.composer(.saveCollection))
+        await store.skipReceivedActions(strict: false)
+        await store.finish()
+
+        let savedFile = try XCTUnwrap(savedFiles.value.first)
+        XCTAssertEqual(savedFile.conditions, [])
+        XCTAssertNil(savedFile.snapshot)
+        XCTAssertNil(savedFile.snapshotMeta)
+    }
+
     /// RCL-002-save_collection_filter_changes: 첫 scope-only edit은 retrieval 없이 Collection draft를 dirty로 만든다.
     /// Composer child가 scope editor를 닫은 뒤 FileManager가 현재 scope rule을 Collection ownership에 동기화한다.
     /// - 검증 내용: scope/exclusion context, committed scope, dirty, URL, accepted response, request cardinality
@@ -2500,14 +2605,16 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
         initialState: FileManagerContentState,
         requests: LockIsolated<[String]>,
         saveURLs: LockIsolated<[URL]>? = nil,
+        saveFiles: LockIsolated<[VoyagerCollectionFile]>? = nil,
     ) -> TestStore<FileManagerContentState, FileManagerContentAction> {
         let store = TestStore(initialState: initialState) {
             FileManagerContentFeature()
         } withDependencies: {
             $0.collectionAlertClient = .testValue
             $0.collectionFileClient = .testValue
-            $0.collectionFileClient.save = { _, url in
+            $0.collectionFileClient.save = { file, url in
                 saveURLs?.withValue { $0.append(url) }
+                saveFiles?.withValue { $0.append(file) }
             }
             $0.collectionStalenessClient = .testValue
             $0.registryClient = makeRegistryClient()

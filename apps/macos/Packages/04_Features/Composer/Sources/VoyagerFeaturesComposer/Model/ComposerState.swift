@@ -118,6 +118,8 @@ public struct ComposerState: Equatable {
 
     public var lastSearchResponse: VoyagerShared.SearchResponsePayload?
     public var lastFiltersResponse: VoyagerShared.SearchResponsePayload?
+    var lastFiltersResponseDefinitionFingerprint: String?
+    var activeFiltersRequestQuery: String?
     public var searchStartedAt: Date?
     public var filtersStartedAt: Date?
     var activeFiltersMetricSource: String?
@@ -405,6 +407,8 @@ public struct ComposerState: Equatable {
         filtersStartedAt = nil
         activeFiltersMetricSource = nil
         hasSubmittedInSession = false
+        lastFiltersResponseDefinitionFingerprint = nil
+        activeFiltersRequestQuery = nil
     }
 
     mutating func replaceConditions(_ conditions: [Condition], uuid: () -> UUID) {
@@ -423,6 +427,18 @@ public struct ComposerState: Equatable {
         lastFiltersResponse = payload.lastFiltersResponse
         lastSearchResponse = payload
             .lastSearchResponse ?? (isNavigationQueryEmpty ? nil : payload.lastFiltersResponse)
+        if let context = collectionContext {
+            lastFiltersResponseDefinitionFingerprint = CollectionSnapshotHydration.definitionFingerprint(
+                query: context.query,
+                scopes: context.scopes,
+                excludedScopes: context.excludedScopes,
+                includeSubfolders: context.includeSubfolders,
+                includeDirectories: context.includeDirectories,
+                conditions: context.conditions,
+            )
+        } else {
+            lastFiltersResponseDefinitionFingerprint = nil
+        }
     }
 }
 

@@ -123,6 +123,7 @@ public struct ComposerFeature {
                 state.isFilteringInFlight = false
                 state.activeSearchRequestID = nil
                 state.activeFiltersRequestID = nil
+                state.activeFiltersRequestQuery = nil
                 state.lastAcceptedSearchRequestID = nil
                 state.lastAcceptedFiltersRequestID = nil
                 state.lastFailedFiltersRequestID = nil
@@ -437,6 +438,9 @@ func applyFiltersIfNeeded(
     state.isLoadingFilters = true
     state.isFilteringInFlight = true
     state.activeFiltersRequestID = requestID
+    state.activeFiltersRequestQuery = state.pendingSearchQuery
+        ?? state.collectionContext?.query
+        ?? ""
     state.lastFailedFiltersRequestID = nil
     state.activeFiltersMetricSource = metricSource
     let filters = buildFilters(from: state)
@@ -444,6 +448,7 @@ func applyFiltersIfNeeded(
         state.isLoadingFilters = false
         state.isFilteringInFlight = false
         state.activeFiltersRequestID = nil
+        state.activeFiltersRequestQuery = nil
         state.activeFiltersMetricSource = nil
         state.pendingSearchQuery = nil
         return .cancel(id: ComposerFeature.CancelID.filters(ownerID: state.cancellationOwnerID))
