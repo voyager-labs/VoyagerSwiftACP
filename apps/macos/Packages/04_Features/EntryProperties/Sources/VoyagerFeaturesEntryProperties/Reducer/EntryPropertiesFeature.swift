@@ -17,6 +17,7 @@ public struct EntryPropertiesFeature: Sendable {
             switch action.kind {
             case let .selectionChanged(selection):
                 let interruptedExecution = state.activePhase == .executing
+                let interruptedExecutionProposal = interruptedExecution ? state.proposal : nil
                 let interruptedReadBack = state.activePhase == .applied
                 let interruptedReadBackProposal = state.readBackProposal ?? state.appliedProposal
                 let preservedPendingReadBack = state.pendingReadBack
@@ -27,7 +28,8 @@ public struct EntryPropertiesFeature: Sendable {
                 state.targetSnapshot = nil
                 state.proposal = nil
                 state.appliedProposal = nil
-                state.pendingReadBack = appliedUnverifiedProposal ?? preservedPendingReadBack
+                state.pendingReadBack = interruptedExecutionProposal ?? appliedUnverifiedProposal
+                state.pendingReadBack = state.pendingReadBack ?? preservedPendingReadBack
                 state.readBackProposal = nil
                 state.canonicalResult = nil
                 state.activePhase = nil

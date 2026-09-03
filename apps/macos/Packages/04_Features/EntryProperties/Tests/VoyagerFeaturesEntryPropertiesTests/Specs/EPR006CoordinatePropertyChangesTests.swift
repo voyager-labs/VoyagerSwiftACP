@@ -176,6 +176,7 @@ final class EPR006CoordinatePropertyChangesTests: XCTestCase {
             $0.targetSnapshot = nil
             $0.proposal = nil
             $0.appliedProposal = nil
+            $0.pendingReadBack = fixture.proposal
             $0.canonicalResult = nil
             $0.activePhase = nil
             $0.status = .ambiguous
@@ -185,6 +186,7 @@ final class EPR006CoordinatePropertyChangesTests: XCTestCase {
         await store.send(.init(kind: .executeCompleted(0, .success(.init(snapshot: fixture.snapshot)))))
         XCTAssertEqual(store.state.selection, replacement)
         XCTAssertEqual(store.state.status, .ambiguous)
+        XCTAssertEqual(store.state.pendingReadBack, fixture.proposal)
         XCTAssertEqual(store.state.lastOutcome, .propertyChangeRejected(.ambiguousExecution))
     }
 

@@ -177,6 +177,81 @@ final class EntryCorePropertyProtocolFlowTests: XCTestCase {
         )
         assertProtocolMismatch(unsupportedValueContract)
     }
+
+    func testCapabilityRejectsDefinitionLifecycleMismatch() throws {
+        let disabledSupported = try propertyDefinitionPageResponse(
+            valueType: "text",
+            cardinality: "one",
+            nativeType: "string",
+            operators: PropertyConditionRelation.operators(for: .string).map(\.rawValue),
+            state: "disabled",
+        )
+        assertProtocolMismatch(disabledSupported)
+
+        let activeDefinitionDisabled = try propertyDefinitionPageResponse(
+            valueType: "text",
+            cardinality: "one",
+            nativeType: "string",
+            operators: [],
+            conditionCapability: [
+                "supported": false,
+                "reason": "definition_disabled",
+            ],
+        )
+        assertProtocolMismatch(activeDefinitionDisabled)
+
+        let disabledRuntimeUnavailable = try propertyDefinitionPageResponse(
+            valueType: "text",
+            cardinality: "one",
+            nativeType: "string",
+            operators: [],
+            state: "disabled",
+            conditionCapability: [
+                "supported": false,
+                "reason": "source_runtime_unavailable",
+            ],
+        )
+        assertProtocolMismatch(disabledRuntimeUnavailable)
+    }
+
+    func testCapabilityAcceptsDefinitionLifecycleAlignedReasons() throws {
+        let disabled = try propertyDefinitionPageResponse(
+            valueType: "text",
+            cardinality: "one",
+            nativeType: "string",
+            operators: [],
+            state: "disabled",
+            conditionCapability: [
+                "supported": false,
+                "reason": "definition_disabled",
+            ],
+        )
+        XCTAssertNoThrow(
+            try EntryCorePropertyResponseDecoder.decode(
+                Array(disabled),
+                method: .propertyDefinitionList,
+                expectedRequestID: "id",
+            ),
+        )
+
+        let activeRuntimeUnavailable = try propertyDefinitionPageResponse(
+            valueType: "text",
+            cardinality: "one",
+            nativeType: "string",
+            operators: [],
+            conditionCapability: [
+                "supported": false,
+                "reason": "source_runtime_unavailable",
+            ],
+        )
+        XCTAssertNoThrow(
+            try EntryCorePropertyResponseDecoder.decode(
+                Array(activeRuntimeUnavailable),
+                method: .propertyDefinitionList,
+                expectedRequestID: "id",
+            ),
+        )
+    }
 }
 
 private func assertProtocolMismatch(
@@ -202,23 +277,26 @@ private func propertyDefinitionPageResponse(
     cardinality: String,
     nativeType: String,
     operators: [String],
+    state: String = "active",
+    conditionCapability: [String: Any]? = nil,
 ) throws -> Data {
+    let capability = conditionCapability ?? [
+        "supported": true,
+        "evaluation_scope": "local_assignment",
+        "catalog_version": "2.2.0",
+        "native_type": nativeType,
+        "allowed_operators": operators,
+    ]
     let definition: [String: Any] = [
         "property_id": "00000000-0000-0000-8000-000000000001",
         "key": "k",
         "name": "n",
         "value_type": valueType,
         "cardinality": cardinality,
-        "state": "active",
+        "state": state,
         "revision": 1,
         "options": [],
-        "condition_capability": [
-            "supported": true,
-            "evaluation_scope": "local_assignment",
-            "catalog_version": "2.2.0",
-            "native_type": nativeType,
-            "allowed_operators": operators,
-        ],
+        "condition_capability": capability,
     ]
     let object: [String: Any] = [
         "request_id": "id",

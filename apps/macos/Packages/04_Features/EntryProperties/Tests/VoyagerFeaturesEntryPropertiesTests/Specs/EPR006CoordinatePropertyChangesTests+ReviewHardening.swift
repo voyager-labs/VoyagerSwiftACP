@@ -358,6 +358,80 @@ extension EPR006CoordinatePropertyChangesTests {
             XCTAssertEqual(error as? EntryPropertiesFailure, .validation)
         }
     }
+
+    /// EPR-006-prepare_property_change / EPR-006-execute_property_change: 전송 전
+    /// request model 검증 실패를 transport 장애나 실행 ambiguity로 분류하지 않는다.
+    /// - 검증 내용: malformed decimal·4097바이트 text의 prepare/execute 요청 0회
+    /// - 사전 조건: valid snapshot과 전송 전 검증을 실패시키는 사용자 입력
+    /// - 기대 결과: 두 API 모두 validation을 반환하고 Core mutation 경계를 호출하지 않음
+    func testRequestAssemblyValidationDoesNotBecomeTransportFailure() async throws {
+        let recorder = OperationRecorder()
+        let endpoint = try EntryCoreEndpoint(path: "/tmp/entry-properties-review.sock")
+        let client = EntryPropertiesClientFactory.live(
+            propertyClient: requestAssemblyValidationClient(recorder: recorder),
+            endpoint: endpoint,
+            capabilityDiscovery: { _ in throw EntryPropertiesFailure.unavailable },
+        )
+        let snapshot = EntryPropertiesTargetSnapshot(
+            targets: [.init(localPath: "/a")],
+            propertyID: .init(rawValue: "00000000-0000-0000-8000-000000000001"),
+            catalogVersion: "2.2.0",
+            canonicalRevision: 0,
+        )
+        let intents = [
+            EntryPropertiesChangeIntent(change: .set(.text(String(repeating: "x", count: 4097)))),
+            EntryPropertiesChangeIntent(change: .set(.number("1."))),
+        ]
+
+        for intent in intents {
+            do {
+                _ = try await client.prepare(.init(snapshot: snapshot, intent: intent))
+                XCTFail("request assembly should reject invalid intent")
+            } catch {
+                XCTAssertEqual(error as? EntryPropertiesFailure, .validation)
+            }
+
+            let proposal = EntryPropertiesProposal(
+                snapshot: snapshot,
+                intent: intent,
+                differences: [],
+                affectedTargetCount: 1,
+                validation: .init(isValid: true),
+                requiresConfirmation: false,
+            )
+            do {
+                _ = try await client.execute(proposal)
+                XCTFail("request assembly should reject invalid intent")
+            } catch {
+                XCTAssertEqual(error as? EntryPropertiesFailure, .validation)
+            }
+        }
+        let recordedOperations = await recorder.values()
+        XCTAssertEqual(recordedOperations, [])
+    }
+}
+
+private func requestAssemblyValidationClient(recorder: OperationRecorder) -> EntryCorePropertyClient {
+    EntryCorePropertyClient(
+        definitionList: { _, _ in throw EntryCoreClientError.daemonUnavailable },
+        definitionCreate: { _, _ in throw EntryCoreClientError.daemonUnavailable },
+        definitionUpdate: { _, _ in throw EntryCoreClientError.daemonUnavailable },
+        definitionDisable: { _, _ in throw EntryCoreClientError.daemonUnavailable },
+        optionCreate: { _, _ in throw EntryCoreClientError.daemonUnavailable },
+        optionUpdate: { _, _ in throw EntryCoreClientError.daemonUnavailable },
+        optionReorder: { _, _ in throw EntryCoreClientError.daemonUnavailable },
+        optionDisable: { _, _ in throw EntryCoreClientError.daemonUnavailable },
+        assignmentList: { _, _ in throw EntryCoreClientError.daemonUnavailable },
+        changePrepare: { _, _ in
+            await recorder.record("prepare")
+            throw EntryCoreClientError.daemonUnavailable
+        },
+        changeExecute: { _, _ in
+            await recorder.record("execute")
+            return []
+        },
+        conditionQuery: { _, _ in throw EntryCoreClientError.daemonUnavailable },
+    )
 }
 
 private func contractViolatingAssignmentClient(page: PropertyAssignmentPage) -> EntryCorePropertyClient {

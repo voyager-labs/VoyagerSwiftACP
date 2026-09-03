@@ -256,18 +256,25 @@ public enum EntryPropertiesClientFactory {
         snapshot: EntryPropertiesTargetSnapshot,
         intent: EntryPropertiesChangeIntent,
     ) throws -> [PropertyChangeTarget] {
-        let propertyID = try PropertyID(rawValue: snapshot.propertyID.rawValue)
-        let desired = try wireDesiredState(intent.change, snapshot: snapshot)
-        return try snapshot.targets.map { target in
-            let assignmentRevision = snapshot.assignmentRevisions
-                .first(where: { $0.target == target })?.revision ?? snapshot.canonicalRevision
-            return try PropertyChangeTarget(
-                target: PropertyTarget(localPath: target.localPath),
-                propertyID: propertyID,
-                expectedDefinitionRevision: snapshot.definitionRevision,
-                expectedAssignmentRevision: assignmentRevision,
-                desired: desired,
-            )
+        do {
+            let propertyID = try PropertyID(rawValue: snapshot.propertyID.rawValue)
+            let desired = try wireDesiredState(intent.change, snapshot: snapshot)
+            return try snapshot.targets.map { target in
+                let assignmentRevision = snapshot.assignmentRevisions
+                    .first(where: { $0.target == target })?.revision ?? snapshot.canonicalRevision
+                return try PropertyChangeTarget(
+                    target: PropertyTarget(localPath: target.localPath),
+                    propertyID: propertyID,
+                    expectedDefinitionRevision: snapshot.definitionRevision,
+                    expectedAssignmentRevision: assignmentRevision,
+                    desired: desired,
+                )
+            }
+        } catch let error as EntryCoreClientError {
+            guard case .protocolMismatch = error else { throw error }
+            // Request model validation happens before any transport call. Keep it
+            // distinct from response protocol mismatches and transport failures.
+            throw EntryPropertiesFailure.validation
         }
     }
 

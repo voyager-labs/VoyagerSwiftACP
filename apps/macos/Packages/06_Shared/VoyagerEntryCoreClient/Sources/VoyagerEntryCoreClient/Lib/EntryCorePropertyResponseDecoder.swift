@@ -118,7 +118,12 @@ private extension EntryCorePropertyResponseDecoder {
         guard type == .select || options.isEmpty, Set(options.map(\.id)).count == options.count,
               zip(options, options.dropFirst()).allSatisfy({ $0.position < $1.position }) else { throw mismatch }
         let conditionCapability = try capability(fields["condition_capability"])
-        try validate(conditionCapability, matchesValueType: type, cardinality: cardinality)
+        try validate(
+            conditionCapability,
+            matchesValueType: type,
+            cardinality: cardinality,
+            state: state,
+        )
         return try PropertyDefinition(
             id: PropertyID(rawValue: id),
             key: key,
@@ -132,25 +137,38 @@ private extension EntryCorePropertyResponseDecoder {
         )
     }
 
-    /// capability가 definition value contract에서 유도되는 native type과 Registry
-    /// relation의 전체 operator 집합과 정확히 일치하는지 검증한다(Go
-    /// protocol/schema/property_capability_validation.go와 같은 경계). evaluator가
-    /// 항상 false로 평가하는 operator를 광고하면 client가 잘못된 operand UI를
-    /// 구성할 수 있으므로 fail-closed로 거절한다. unsupported capability의 안정
-    /// 사유는 enum이 제한하므로 여기서 추가 대조를 하지 않는다.
+    /// capability가 definition lifecycle과 value contract에서 유도되는 native
+    /// type 및 Registry relation의 전체 operator 집합과 정확히 일치하는지 검증한다
+    /// (Go protocol/schema/property_capability_validation.go와 같은 경계). evaluator가
+    /// 항상 false로 평가하는 operator를 광고하거나 definition lifecycle과 모순되는
+    /// 지원 상태를 반환하면 client가 잘못된 operand UI·기능 상태를 구성할 수 있으므로
+    /// fail-closed로 거절한다.
     static func validate(
         _ capability: PropertyConditionCapability,
         matchesValueType valueType: PropertyValueType,
         cardinality: PropertyCardinality,
+        state: PropertyDefinitionState,
     ) throws {
-        guard case let .supported(_, nativeType, allowedOperators) = capability else { return }
-        guard let expectedNativeType = PropertyConditionRelation.nativeType(
-            for: valueType,
-            cardinality: cardinality,
-        ),
-            nativeType == expectedNativeType,
-            allowedOperators == PropertyConditionRelation.operators(for: expectedNativeType)
-        else { throw mismatch }
+        switch capability {
+        case let .supported(_, nativeType, allowedOperators):
+            guard state == .active,
+                  let expectedNativeType = PropertyConditionRelation.nativeType(
+                      for: valueType,
+                      cardinality: cardinality,
+                  ),
+                  nativeType == expectedNativeType,
+                  allowedOperators == PropertyConditionRelation.operators(for: expectedNativeType)
+            else { throw mismatch }
+        case let .unsupported(reason):
+            switch (state, reason) {
+            case (.disabled, .definitionDisabled),
+                 (.active, .sourceRuntimeUnavailable),
+                 (.active, .unsupportedValueContract):
+                break
+            default:
+                throw mismatch
+            }
+        }
     }
 
     static func option(_ value: StrictJSONValue) throws -> PropertyOption {
