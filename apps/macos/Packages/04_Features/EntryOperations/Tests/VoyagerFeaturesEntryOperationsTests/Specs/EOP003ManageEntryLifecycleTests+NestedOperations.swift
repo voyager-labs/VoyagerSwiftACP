@@ -44,6 +44,105 @@ extension EOP003ManageEntryLifecycleTests {
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
     }
 
+    /// EOP-003-empty_trash: 수용된 빈 Trash 확인은 metadata를 보존한 취소 terminal을 기록한다.
+    /// 빈 Trash confirmation이 all-zero 성공 metric으로 해석되지 않고 명령 상관관계를 유지하는지 확인한다.
+    /// - 검증 내용: cancelled aggregate, command metadata/operation ID, 빈 targets와 모든 외부 부작용 부재
+    /// - 사전 조건: empty Trash 확인 명령을 accepted metadata와 빈 paths로 전달한다.
+    /// - 기대 결과: 취소 terminal 하나만 방출되고 삭제, metadata 제거, Undo, reload, sound는 호출되지 않는다.
+    func testAcceptedEmptyTrash_emitsMetadataPreservingCancelledTerminalWithoutSideEffects() async {
+        let mutationCalls = LockIsolated(0)
+        let metadataRemovalCalls = LockIsolated(0)
+        let reloadRecorder = CallRecorder<[String]>()
+        let soundCalls = LockIsolated(0)
+        let undoSpy = UndoManagerSpy()
+        var fileOps = EntryFileOpsClient.previewValue
+        fileOps.deleteImmediately = { _ in
+            mutationCalls.withValue { $0 += 1 }
+        }
+        fileOps.postFileSystemChanged = reloadRecorder.record
+        let metadataStore = TrashMetadataStoreClient(
+            save: { _ in },
+            load: { [] },
+            find: { _ in nil },
+            remove: { _ in },
+            removeAll: { metadataRemovalCalls.withValue { $0 += 1 } },
+        )
+        let metadata = EntryCommandMetadata(id: UUID(), interaction: .emptyTrash, source: .contextMenu)
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryFileOpsClient = fileOps
+            $0.trashMetadataStoreClient = metadataStore
+            $0.entryOperationSoundClient = EntryOperationSoundClient { _ in
+                soundCalls.withValue { $0 += 1 }
+            }
+            $0.undoManagerClient = undoSpy.client
+        }
+
+        await store.send(.acceptedCommand(
+            metadata: metadata,
+            action: .trash(.emptyTrashConfirmed(paths: [])),
+        ))
+        await store.receive { action in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return false }
+            return record.command == metadata
+                && record.id == metadata.id
+                && record.operationKind == .deleteImmediately
+                && record.attemptedCount == 1
+                && record.succeededCount == 0
+                && record.failedCount == 0
+                && record.cancelledCount == 1
+                && record.targets.isEmpty
+        }
+        await store.finish()
+
+        XCTAssertEqual(mutationCalls.value, 0)
+        XCTAssertEqual(metadataRemovalCalls.value, 0)
+        XCTAssertTrue(reloadRecorder.recorded.isEmpty)
+        XCTAssertEqual(soundCalls.value, 0)
+        XCTAssertTrue(undoSpy.registerUndoCalls.isEmpty)
+    }
+
+    /// EOP-003-empty_trash: 직접 전달된 빈 Trash 확인은 조용히 종료한다.
+    /// accepted correlation이 없는 내부 확인 action이 all-zero terminal을 생성하지 않는지 확인한다.
+    /// - 검증 내용: action, filesystem, metadata, Undo, reload, sound 부재
+    /// - 사전 조건: metadata 없이 `.trash(.emptyTrashConfirmed(paths: []))`를 직접 전달한다.
+    /// - 기대 결과: 추가 action과 외부 부작용 없이 reducer가 종료된다.
+    func testDirectEmptyTrashConfirmation_remainsSilentWithoutSideEffects() async {
+        let mutationCalls = LockIsolated(0)
+        let metadataRemovalCalls = LockIsolated(0)
+        let reloadRecorder = CallRecorder<[String]>()
+        let soundCalls = LockIsolated(0)
+        let undoSpy = UndoManagerSpy()
+        var fileOps = EntryFileOpsClient.previewValue
+        fileOps.deleteImmediately = { _ in
+            mutationCalls.withValue { $0 += 1 }
+        }
+        fileOps.postFileSystemChanged = reloadRecorder.record
+        let metadataStore = TrashMetadataStoreClient(
+            save: { _ in },
+            load: { [] },
+            find: { _ in nil },
+            remove: { _ in },
+            removeAll: { metadataRemovalCalls.withValue { $0 += 1 } },
+        )
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryFileOpsClient = fileOps
+            $0.trashMetadataStoreClient = metadataStore
+            $0.entryOperationSoundClient = EntryOperationSoundClient { _ in
+                soundCalls.withValue { $0 += 1 }
+            }
+            $0.undoManagerClient = undoSpy.client
+        }
+
+        await store.send(.trash(.emptyTrashConfirmed(paths: [])))
+        await store.finish()
+
+        XCTAssertEqual(mutationCalls.value, 0)
+        XCTAssertEqual(metadataRemovalCalls.value, 0)
+        XCTAssertTrue(reloadRecorder.recorded.isEmpty)
+        XCTAssertEqual(soundCalls.value, 0)
+        XCTAssertTrue(undoSpy.registerUndoCalls.isEmpty)
+    }
+
     /// EOP-003-move_entries_to_trash: 선택된 부모와 하위 항목은 부모만 Trash 이동으로 계획한다.
     /// 사용자가 하위 항목, 같은 raw-prefix peer, 부모를 표시 순서대로 함께 선택할 때 lifecycle planner가 부모와 peer만 유지하는지 확인한다.
     /// - 검증 내용: `.routing(.executeCommand)` planner가 선택된 조상 관계를 pathComponents로 판별하고 원본 fullPath 및 남은 표시 순서를 보존한다.

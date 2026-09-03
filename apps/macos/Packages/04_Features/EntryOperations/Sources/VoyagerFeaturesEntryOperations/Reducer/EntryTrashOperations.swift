@@ -116,6 +116,10 @@ struct EntryTrashOperationsReducer {
                 return .none
 
             case let .trash(.emptyTrashConfirmed(paths)):
+                guard !paths.isEmpty else {
+                    return .none
+                }
+
                 return EntryOperationsExecutionSupport.runParallel(
                     paths: paths,
                     kind: .deleteImmediately,

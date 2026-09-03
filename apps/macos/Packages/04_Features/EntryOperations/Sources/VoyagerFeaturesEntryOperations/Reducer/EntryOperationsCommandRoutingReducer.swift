@@ -88,6 +88,13 @@ struct EntryOperationsCommandRoutingReducer {
                     )),
                 )
 
+            case let .acceptedCommand(metadata, .trash(.emptyTrashConfirmed(paths))) where paths.isEmpty:
+                let effect = EntryOperationsExecutionReducer().reduce(
+                    into: &state,
+                    action: .trash(.emptyTrashCancelled),
+                )
+                return effect.map { Self.propagate(metadata, through: $0) }
+
             case let .acceptedCommand(
                 metadata,
                 .routing(.dropItems(sourcePaths, destinationPath, isOptionDrag)),
