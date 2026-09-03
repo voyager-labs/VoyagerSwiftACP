@@ -692,6 +692,12 @@ func TestPropertyCapabilityExactnessAgainstValueContract(t *testing.T) {
 		t.Fatal("text/many with derived capability rejected")
 	}
 
+	disabledSupported := base("text", "one")
+	disabledSupported.State = "disabled"
+	if disabledSupported.Validate() == nil {
+		t.Fatal("disabled definition with supported capability accepted")
+	}
+
 	mismatchedNative := base("text", "one")
 	mismatchedNative.ConditionCapability.NativeType = "date"
 	if mismatchedNative.Validate() == nil {

@@ -32,7 +32,7 @@ func validConditionCapabilityForDefinition(definition PropertyDefinition) bool {
 			return false
 		}
 	}
-	if !valueContractSupported || capability.NativeType != string(nativeType) {
+	if definition.State != "active" || !valueContractSupported || capability.NativeType != string(nativeType) {
 		return false
 	}
 	expected := append([]string(nil), domainentry.ConditionCatalogData.OperatorsForType(nativeType)...)

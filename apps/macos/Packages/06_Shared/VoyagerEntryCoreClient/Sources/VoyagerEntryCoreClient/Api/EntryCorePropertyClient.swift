@@ -316,7 +316,22 @@ extension EntryCorePropertyClient {
             guard case let .proposal(value) = try await call(
                 .propertyChangePrepare, endpoint, request, requestID, makeTransport,
             ) else { throw EntryCoreClientError.protocolMismatch }
+            guard proposalMatchesRequest(value, request: request) else {
+                throw EntryCoreClientError.protocolMismatch
+            }
             return value
+        }
+    }
+
+    nonisolated private static func proposalMatchesRequest(
+        _ proposal: PropertyChangeProposal,
+        request: PropertyChangeRequest,
+    ) -> Bool {
+        guard proposal.changes.count == request.changes.count else { return false }
+        return zip(proposal.changes, request.changes).allSatisfy { prepared, requested in
+            prepared.target == requested.target
+                && prepared.propertyID == requested.propertyID
+                && prepared.after == requested.desired
         }
     }
 
