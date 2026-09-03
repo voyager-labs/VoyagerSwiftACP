@@ -239,6 +239,74 @@ final class RCL004ComposeCollectionFilterTests: XCTestCase {
         XCTAssertFalse(state.isLoadingSearch)
     }
 
+    /// RCL-004-submit_collection_filter_query: 제출 뒤 편집이 있는 no-op success는 제출 쿼리로 draft를 덮지 않음
+    /// 검색 in-flight 중 사용자가 query를 고치면 inputRevision이 증가하므로, no-op 응답이 도착해도
+    /// 제출 당시 쿼리를 canonical draft와 pending state에 다시 기록해서는 안 된다.
+    /// - 검증 내용: collectionContext query 보존, pendingSearchQuery 보존, recovery 폐기
+    /// - 사전 조건: file-backed draft(query A)를 제출한 뒤 사용자가 query B로 편집하고 unchanged response가 도착함
+    /// - 기대 결과: canonical draft와 pending query는 편집된 B로 유지되고 제출 쿼리 A로 되돌아가지 않음
+    func testSubmitCollectionFilterQuery_whenNoOpSucceedsAfterPostSubmitEdit_keepsEditedDraftAndPendingQuery() {
+        let requestID = UUID()
+        var state = makeSearchLoadingState(activeRequestID: requestID)
+        state.captureQueryRecovery(rawText: "VOY589_SYNTHETIC_SUBMITTED", requestID: requestID)
+        state.collectionContext = CollectionContext(query: "VOY589_SYNTHETIC_EDITED")
+        state.pendingSearchQuery = "VOY589_SYNTHETIC_EDITED"
+        state.setTextFromUserIntent("VOY589_SYNTHETIC_EDITED")
+        XCTAssertNotEqual(
+            state.queryRecoveryContext?.capturedInputRevision,
+            state.inputRevision,
+        )
+
+        _ = ComposerFeature().reduce(
+            into: &state,
+            action: .searchResponse(
+                requestID,
+                .success(SearchResponsePayload(
+                    itemCount: 0,
+                    queryConversion: SearchQueryConversionMetadataPayload(outcome: .unchangedResult),
+                )),
+            ),
+        )
+
+        XCTAssertEqual(state.collectionContext?.query, "VOY589_SYNTHETIC_EDITED")
+        XCTAssertEqual(state.pendingSearchQuery, "VOY589_SYNTHETIC_EDITED")
+        XCTAssertNil(state.queryRecoveryContext)
+        XCTAssertNil(state.activeSearchRequestID)
+        XCTAssertFalse(state.isLoadingSearch)
+    }
+
+    /// RCL-004-submit_collection_filter_query: 제출 뒤 편집이 없는 no-op success는 제출 쿼리를 draft로 승격함
+    /// revision 상관 검사가 정상 제출의 draft 반영 계약을 유지하는지 검증한다.
+    /// - 검증 내용: 제출 쿼리의 canonical draft 승격, pending query 해제
+    /// - 사전 조건: query를 제출한 뒤 사용자 편집 없이 unchanged response가 도착함
+    /// - 기대 결과: collectionContext query가 제출 쿼리로 갱신되고 pending query는 해제됨
+    func testSubmitCollectionFilterQuery_whenNoOpSucceedsWithoutPostSubmitEdit_promotesSubmittedQueryToDraft() {
+        let requestID = UUID()
+        var state = makeSearchLoadingState(activeRequestID: requestID)
+        state.captureQueryRecovery(rawText: "VOY589_SYNTHETIC_SUBMITTED", requestID: requestID)
+        state.collectionContext = CollectionContext(query: "VOY589_SYNTHETIC_BASELINE")
+        state.pendingSearchQuery = "VOY589_SYNTHETIC_SUBMITTED"
+        XCTAssertEqual(
+            state.queryRecoveryContext?.capturedInputRevision,
+            state.inputRevision,
+        )
+
+        _ = ComposerFeature().reduce(
+            into: &state,
+            action: .searchResponse(
+                requestID,
+                .success(SearchResponsePayload(
+                    itemCount: 0,
+                    queryConversion: SearchQueryConversionMetadataPayload(outcome: .unchangedResult),
+                )),
+            ),
+        )
+
+        XCTAssertEqual(state.collectionContext?.query, "VOY589_SYNTHETIC_SUBMITTED")
+        XCTAssertNil(state.pendingSearchQuery)
+        XCTAssertNil(state.queryRecoveryContext)
+    }
+
     /// RCL-004-submit_collection_filter_query: 복원된 query를 수정해 재제출하면 새 trimmed 요청이 성공함
     /// conversion error payload 뒤 복원된 입력을 사용자가 수정하고 즉시 재제출하는 retry 경로를 검증한다.
     /// - 검증 내용: 첫 실패의 원문 복원, 수정된 retry payload trim, 새 request 성공 후 visible clear

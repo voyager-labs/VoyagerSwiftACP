@@ -159,6 +159,17 @@ public struct ComposerState: Equatable {
         return queryRecoveryContext.rawText
     }
 
+    /// 제출 뒤 사용자 입력으로 inputRevision이 바뀌지 않은 경우에만 recovery 원문을 돌려준다.
+    func uneditedQueryRecoveryRawText(for stage: ComposerQueryRecoveryContext.Stage) -> String? {
+        guard let queryRecoveryContext,
+              queryRecoveryContext.stage == stage,
+              queryRecoveryContext.capturedInputRevision == inputRevision
+        else {
+            return nil
+        }
+        return queryRecoveryContext.rawText
+    }
+
     mutating func retargetQueryRecovery(from searchRequestID: UUID, to filtersRequestID: UUID) {
         guard queryRecoveryContext?.stage == .search(searchRequestID) else { return }
         queryRecoveryContext?.stage = .filters(filtersRequestID)

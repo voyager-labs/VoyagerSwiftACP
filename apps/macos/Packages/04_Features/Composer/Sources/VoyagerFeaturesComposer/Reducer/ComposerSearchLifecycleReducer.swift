@@ -136,7 +136,9 @@ struct ComposerSearchLifecycleReducer {
                     state.searchStartedAt = nil
                     if shouldSkipApplyFilters {
                         // no-op filters: 제출 쿼리를 collection draft 정의에 반영해 저장 계약을 유지한다.
-                        if let submittedQuery = state.queryRecoveryRawText(for: .search(requestID)) {
+                        // 제출 뒤 사용자 입력으로 revision이 바뀌었다면 최신 편집이 우선하므로
+                        // canonical draft와 pending state를 덮지 않는다.
+                        if let submittedQuery = state.uneditedQueryRecoveryRawText(for: .search(requestID)) {
                             let trimmedQuery = submittedQuery.trimmingCharacters(in: .whitespacesAndNewlines)
                             if !trimmedQuery.isEmpty {
                                 let existingContext = state.collectionContext
@@ -146,6 +148,7 @@ struct ComposerSearchLifecycleReducer {
                                 }
                                 state.collectionContext = nextContext
                             }
+                            state.pendingSearchQuery = nil
                         }
                         state.discardQueryRecovery()
                         kComposerSearchLifecycleLogger.debug("Composer query search resolved to no-op filters")
@@ -155,7 +158,6 @@ struct ComposerSearchLifecycleReducer {
                         state.activeFiltersRequestQuery = nil
                         state.activeFiltersMetricSource = nil
                         state.filtersStartedAt = nil
-                        state.pendingSearchQuery = nil
                         applyQueryPhaseTransition(.reset, state: &state)
                         state.resolveScopeChangeFeedback(.search(requestID), phase: .visible)
                         if let feedback = ComposerQueryFeedbackPolicy.feedback(for: response) {
