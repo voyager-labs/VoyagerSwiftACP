@@ -459,35 +459,6 @@ final class EPR006CoordinatePropertyChangesTests: XCTestCase {
         let recordedOperations = await recorder.values()
         XCTAssertEqual(recordedOperations, ["readBack"])
     }
-
-    /// EPR-006-read_back_property_change_result: lifecycle disposition matrix는 모든 조합을 소유한다.
-    /// operation × phase × freshness × active effect × trust 누락을 구조적으로 검증한다.
-    /// - 검증 내용: cartesian inventory 크기와 stale/ambiguous/read-only disposition
-    /// - 사전 조건: 정의된 enum case inventory
-    /// - 기대 결과: 모든 row가 정확히 한 disposition으로 분류됨
-    func testLifecycleMatrixEnumeratesEveryDispositionCombination() {
-        let expectedCount = EntryPropertiesOperationPhase.allCases.count
-            * EntryPropertiesPhase.allCases.count
-            * EntryPropertiesFreshness.allCases.count
-            * EntryPropertiesActiveEffect.allCases.count
-            * EntryPropertiesCompletionTrust.allCases.count
-        XCTAssertEqual(EntryPropertiesLifecycleMatrix.allCases.count, expectedCount)
-        XCTAssertEqual(Set(EntryPropertiesLifecycleMatrix.allCases).count, expectedCount)
-
-        for lifecycleCase in EntryPropertiesLifecycleMatrix.allCases {
-            let disposition = EntryPropertiesLifecycleMatrix.disposition(for: lifecycleCase)
-            if lifecycleCase.freshness == .stale {
-                XCTAssertEqual(disposition, .ignoreLate)
-            }
-            if lifecycleCase.operation == .execute,
-               lifecycleCase.freshness == .current,
-               lifecycleCase.activeEffect == .matching,
-               lifecycleCase.trust == .ambiguous
-            {
-                XCTAssertEqual(disposition, .preserveAmbiguity)
-            }
-        }
-    }
 }
 
 extension EPR006CoordinatePropertyChangesTests {

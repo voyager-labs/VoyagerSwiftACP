@@ -1,0 +1,99 @@
+@testable import VoyagerEntryCoreClient
+@testable import VoyagerFeaturesEntryProperties
+import XCTest
+
+/// 단일 필터 페이지네이션 계약: daemon은 ID·target 필터를 페이징 전에 적용하므로
+/// 단일 ID·target(pageSize 256) 요청의 정상 응답은 한 페이지다. hasMore는 wire
+/// 계약 위반으로 거절해 무한 transport 루프를 막는다.
+extension EPR006CoordinatePropertyChangesTests {
+    /// EPR-006-discover_property_change_capabilities: catalog 로드는 두 번째 페이지를 받지 않는다.
+    /// - 검증 내용: hasMore 응답의 protocolMismatch 거절과 transport 호출 1회 종료
+    /// - 사전 조건: 빈 definition 페이지에 hasMore를 반환하는 Core stub
+    /// - 기대 결과: capability discovery가 토큰 추적 없이 즉시 실패로 종료됨
+    func testLoadCatalogRejectsSecondPageUnderSingleIDFilter() async throws {
+        let recorder = OperationRecorder()
+        let propertyID = try PropertyID(rawValue: "00000000-0000-0000-8000-000000000001")
+        let propertyClient = paginatingPropertyClient(
+            definitionList: { _, _ in
+                await recorder.record("definitionList")
+                return PropertyDefinitionPage(definitions: [], nextPageToken: "token", hasMore: true)
+            },
+            assignmentList: { _, _ in throw EntryCoreClientError.daemonUnavailable },
+        )
+        let client = try EntryPropertiesClientFactory.live(
+            propertyClient: propertyClient,
+            endpoint: EntryCoreEndpoint(path: "/tmp/entry-properties-review.sock"),
+            capabilityDiscovery: { _ in throw EntryPropertiesFailure.unavailable },
+        )
+        let selection = EntryPropertiesSelection(
+            targets: [.init(localPath: "/a")],
+            propertyID: .init(rawValue: propertyID.rawValue),
+        )
+
+        do {
+            _ = try await client.loadCatalog(selection)
+            XCTFail("second page under single-ID filter should be rejected")
+        } catch {
+            XCTAssertEqual(error as? EntryCoreClientError, .protocolMismatch)
+        }
+        let recordedOperations = await recorder.values()
+        XCTAssertEqual(recordedOperations, ["definitionList"])
+    }
+
+    /// EPR-006-discover_property_change_capabilities: assignment 로드는 두 번째 페이지를 받지 않는다.
+    /// - 검증 내용: 단일 target × ID 요청의 hasMore 거절과 transport 호출 1회 종료
+    /// - 사전 조건: 빈 assignment 페이지에 hasMore를 반환하는 Core stub
+    /// - 기대 결과: assignment 로드가 토큰 추적 없이 즉시 실패로 종료됨
+    func testLoadAssignmentsRejectsSecondPageUnderSingleTargetFilter() async throws {
+        let recorder = OperationRecorder()
+        let propertyID = try PropertyID(rawValue: "00000000-0000-0000-8000-000000000001")
+        let propertyClient = paginatingPropertyClient(
+            definitionList: { _, _ in throw EntryCoreClientError.daemonUnavailable },
+            assignmentList: { _, _ in
+                await recorder.record("assignmentList")
+                return PropertyAssignmentPage(assignments: [], nextPageToken: "token", hasMore: true)
+            },
+        )
+        let client = try EntryPropertiesClientFactory.live(
+            propertyClient: propertyClient,
+            endpoint: EntryCoreEndpoint(path: "/tmp/entry-properties-review.sock"),
+            capabilityDiscovery: { _ in throw EntryPropertiesFailure.unavailable },
+        )
+        let selection = EntryPropertiesSelection(
+            targets: [.init(localPath: "/a")],
+            propertyID: .init(rawValue: propertyID.rawValue),
+        )
+        let catalog = EntryPropertiesCatalog(version: "2.2.0")
+
+        do {
+            _ = try await client.loadAssignments(selection, catalog)
+            XCTFail("second page under single-target filter should be rejected")
+        } catch {
+            XCTAssertEqual(error as? EntryCoreClientError, .protocolMismatch)
+        }
+        let recordedOperations = await recorder.values()
+        XCTAssertEqual(recordedOperations, ["assignmentList"])
+    }
+}
+
+private func paginatingPropertyClient(
+    definitionList: @escaping @Sendable (EntryCoreEndpoint, PropertyDefinitionListRequest) async throws
+        -> PropertyDefinitionPage,
+    assignmentList: @escaping @Sendable (EntryCoreEndpoint, PropertyAssignmentListRequest) async throws
+        -> PropertyAssignmentPage,
+) -> EntryCorePropertyClient {
+    EntryCorePropertyClient(
+        definitionList: definitionList,
+        definitionCreate: { _, _ in throw EntryCoreClientError.daemonUnavailable },
+        definitionUpdate: { _, _ in throw EntryCoreClientError.daemonUnavailable },
+        definitionDisable: { _, _ in throw EntryCoreClientError.daemonUnavailable },
+        optionCreate: { _, _ in throw EntryCoreClientError.daemonUnavailable },
+        optionUpdate: { _, _ in throw EntryCoreClientError.daemonUnavailable },
+        optionReorder: { _, _ in throw EntryCoreClientError.daemonUnavailable },
+        optionDisable: { _, _ in throw EntryCoreClientError.daemonUnavailable },
+        assignmentList: assignmentList,
+        changePrepare: { _, _ in throw EntryCoreClientError.daemonUnavailable },
+        changeExecute: { _, _ in throw EntryCoreClientError.daemonUnavailable },
+        conditionQuery: { _, _ in throw EntryCoreClientError.daemonUnavailable },
+    )
+}

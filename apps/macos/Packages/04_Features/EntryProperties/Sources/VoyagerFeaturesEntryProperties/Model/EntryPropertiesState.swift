@@ -1,5 +1,19 @@
 import ComposableArchitecture
 
+/// reducer가 현재 점유한 effect 단계다. completion은 이 단계가 일치할 때만
+/// 수용되고, 그 외의 늦은 completion은 generation fence와 함께 무시된다.
+enum EntryPropertiesPhase: CaseIterable, Hashable {
+    case idle
+    case discovering
+    case ready
+    case preparing
+    case prepared
+    case executing
+    case applied
+    case appliedUnverified
+    case terminal
+}
+
 @ObservableState
 public struct EntryPropertiesState: Equatable, Sendable {
     public internal(set) var selection: EntryPropertiesSelection

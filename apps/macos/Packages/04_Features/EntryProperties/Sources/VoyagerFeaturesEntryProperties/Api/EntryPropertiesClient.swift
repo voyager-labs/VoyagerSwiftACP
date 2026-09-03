@@ -222,30 +222,28 @@ public enum EntryPropertiesClientFactory {
         selection: EntryPropertiesSelection,
     ) async throws -> EntryPropertiesCatalog {
         let propertyID = try PropertyID(rawValue: selection.propertyID.rawValue)
-        var pageToken: String?
-        repeat {
-            let request = try PropertyDefinitionListRequest(
-                pageSize: 256,
-                requestedPropertyIDs: [propertyID],
-                includeDisabled: true,
-                pageToken: pageToken,
-            )
-            let page = try await propertyClient.definitionList(endpoint, request)
-            if let definition = page.definitions.first(where: { $0.id == propertyID }) {
-                let version: String? = switch definition.conditionCapability {
-                case let .supported(catalogVersion, _, _): catalogVersion
-                case .unsupported: nil
-                }
-                return EntryPropertiesCatalog(
-                    version: version,
-                    definitionRevision: definition.revision,
-                    valueKind: semanticValueKind(definition.valueType),
-                    cardinality: semanticCardinality(definition.cardinality),
-                )
+        let request = try PropertyDefinitionListRequest(
+            pageSize: 256,
+            requestedPropertyIDs: [propertyID],
+            includeDisabled: true,
+        )
+        let page = try await propertyClient.definitionList(endpoint, request)
+        // daemon은 ID 필터를 페이징 전에 적용하므로 단일 ID(pageSize 256) 요청의
+        // 정상 응답은 한 페이지다. hasMore는 wire 계약 위반이므로 무한 transport
+        // 루프 대신 protocolMismatch로 거절한다.
+        guard !page.hasMore else { throw EntryCoreClientError.protocolMismatch }
+        if let definition = page.definitions.first(where: { $0.id == propertyID }) {
+            let version: String? = switch definition.conditionCapability {
+            case let .supported(catalogVersion, _, _): catalogVersion
+            case .unsupported: nil
             }
-            pageToken = page.nextPageToken
-            if !page.hasMore { break }
-        } while pageToken != nil
+            return EntryPropertiesCatalog(
+                version: version,
+                definitionRevision: definition.revision,
+                valueKind: semanticValueKind(definition.valueType),
+                cardinality: semanticCardinality(definition.cardinality),
+            )
+        }
         throw EntryPropertiesFailure.unavailable
     }
 
@@ -260,20 +258,17 @@ public enum EntryPropertiesClientFactory {
         values.reserveCapacity(selection.targets.count)
         for target in selection.targets {
             let wireTarget = try PropertyTarget(localPath: target.localPath)
-            var pageToken: String?
-            var resolved: PropertyAssignment?
-            repeat {
-                let request = try PropertyAssignmentListRequest(
-                    pageSize: 256,
-                    requestedPropertyIDs: [propertyID],
-                    target: wireTarget,
-                    pageToken: pageToken,
-                )
-                let page = try await propertyClient.assignmentList(endpoint, request)
-                resolved = page.assignments.first(where: { $0.propertyID == propertyID })
-                if resolved != nil || !page.hasMore { break }
-                pageToken = page.nextPageToken
-            } while pageToken != nil
+            let request = try PropertyAssignmentListRequest(
+                pageSize: 256,
+                target: wireTarget,
+                requestedPropertyIDs: [propertyID],
+            )
+            let page = try await propertyClient.assignmentList(endpoint, request)
+            // daemon은 target·ID 필터를 페이징 전에 적용하므로 단일 target × ID
+            // (pageSize 256) 요청의 정상 응답은 한 페이지다. hasMore는 wire 계약
+            // 위반이므로 무한 transport 루프 대신 protocolMismatch로 거절한다.
+            guard !page.hasMore else { throw EntryCoreClientError.protocolMismatch }
+            let resolved = page.assignments.first(where: { $0.propertyID == propertyID })
 
             if let resolved {
                 // daemon이 정확한 property ID를 담아도 catalog value contract와
