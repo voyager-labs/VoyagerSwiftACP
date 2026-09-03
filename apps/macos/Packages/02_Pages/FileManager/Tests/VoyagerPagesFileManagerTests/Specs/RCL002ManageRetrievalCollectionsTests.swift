@@ -2220,6 +2220,55 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
         XCTAssertEqual(store.state.content.navigation.navigationState, collectionRoute)
     }
 
+    /// RCL-002-alert_unsaved_collection_filter_changes: direct navigation cancel preserves the current tab anchor.
+    /// Direct navigation must not mutate the Content Tab anchor before the unsaved-change decision is accepted.
+    /// - 검증 내용: fixed-location navigation이 cancel되면 alert와 기존 Collection anchor가 유지된다.
+    /// - 사전 조건: dirty file-backed Collection과 다른 fixed-location target.
+    /// - 기대 결과: alert가 한 번 표시되고 current Collection tab anchor와 route가 보존된다.
+    func testAlertUnsavedCollectionFilterChanges_cancelPreservesCurrentTabAnchor() async throws {
+        let sourceURL = URL(fileURLWithPath: "/VoyagerFixtures/Collections/direct-anchor.voycoll")
+        let baseline = CollectionContext(query: "baseline", scopes: ["/VoyagerFixtures/Documents"], conditions: [])
+        let current = CollectionContext(query: "changed", scopes: baseline.scopes, conditions: [])
+        let location = FileManagerFixedLocationItem(
+            id: "location-documents",
+            title: "Documents",
+            path: "/VoyagerFixtures/Documents",
+            iconName: "folder",
+            accessibilityLabel: "Documents",
+        )
+        var state = makeOpenedCollectionState(url: sourceURL, context: baseline)
+        state.content.collection.collectionContext = current
+        state.content.composer.collectionContext = current
+        let activeTabID = try XCTUnwrap(state.contentTabs.activeTabID)
+        state.contentTabs.tabs[id: activeTabID]?.page = .collection
+        state.contentTabs.tabs[id: activeTabID]?.anchor = .collectionFile(url: sourceURL)
+        state.sidebar.fixedLocationItems = [location]
+        let alertCount = LockIsolated(0)
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.collectionAlertClient.showUnsavedNavigationAlert = {
+                alertCount.withValue { $0 += 1 }
+                return .cancel
+            }
+        }
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.sidebar(.delegate(.selectFixedLocation(location.id))))
+        await store.skipReceivedActions(strict: false)
+        await store.finish()
+
+        XCTAssertEqual(alertCount.value, 1)
+        XCTAssertEqual(
+            store.state.contentTabs.tabs[id: activeTabID]?.anchor,
+            .collectionFile(url: sourceURL),
+        )
+        guard case let .collection(navigation) = store.state.content.navigation.navigationState else {
+            return XCTFail("cancelled direct navigation must preserve the current Collection route")
+        }
+        XCTAssertEqual(navigation.context, baseline)
+    }
+
     /// RCL-002-alert_unsaved_collection_filter_changes: cancel does not install a navigation reveal.
     /// Cancelled dirty navigation must not create a pending entry ID or destination guard.
     /// - 검증 내용: unsaved alert cancel leaves both pending-selection fields empty.

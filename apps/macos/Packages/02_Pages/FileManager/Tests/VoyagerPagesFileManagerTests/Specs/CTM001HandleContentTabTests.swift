@@ -1061,6 +1061,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
             else { return false }
             return receivedPath == path
         }
+        await store.receive(\.contentTabs)
         await store.receive { action in
             guard case let .tabContent(_, .internal(.applyNavigationState(.folder(receivedPath)))) = action
             else { return false }
@@ -5905,7 +5906,6 @@ final class CTM001HandleContentTabTests: XCTestCase {
         let beforeActiveID = store.state.contentTabs.activeTabID
 
         await store.sendTabContent(.view(.homeSelectionTapped(.fixedDirectory(.desktop))))
-        await store.receive(\.contentTabs)
         await receiveDirectoryNavigation(store, path: desktopPath)
 
         XCTAssertEqual(store.state.content.navigation.currentPath, desktopPath)
@@ -5936,7 +5936,6 @@ final class CTM001HandleContentTabTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.sendTabContent(.view(.homeSelectionTapped(.fixedDirectory(.documents))))
-        await store.receive(\.contentTabs)
         await receiveDirectoryNavigation(store, path: documentsPath)
 
         XCTAssertEqual(store.state.content.navigation.currentPath, documentsPath)
@@ -5966,7 +5965,6 @@ final class CTM001HandleContentTabTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.sendTabContent(.view(.homeSelectionTapped(.openDirectory)))
-        await store.receive(\.contentTabs)
         await receiveDirectoryNavigation(store, path: "/tmp/test")
 
         XCTAssertEqual(store.state.content.navigation.currentPath, "/tmp/test")
@@ -6432,24 +6430,12 @@ final class CTM001HandleContentTabTests: XCTestCase {
 
         await store.sendTabContent(.view(.homeSelectionTapped(.startAiChat)))
         // Home AI Chat 전환은 same-tab handoff에서도 Inspector Chat을 먼저 닫고,
-        // active tab anchor와 navigation route를 고정한 뒤 provider load만 tab-scoped async로 처리한다.
+        // navigation 승인 후 tab anchor를 동기화한 뒤 provider load를 tab-scoped async로 처리한다.
         await store.receive { action in
             guard case .inspector(.closeChat) = action else { return false }
             return true
         } assert: { state in
             state.inspector.inspectorVisible = false
-        }
-        await store.receive { action in
-            guard case let .contentTabs(.updateActivePageAnchor(_, .aiChat(receivedSessionID))) = action else {
-                return false
-            }
-            return receivedSessionID == sessionID
-        }
-        await store.receive { action in
-            guard case let .internal(.aiChatTabTitleUpdated(receivedSessionID, title)) = action else {
-                return false
-            }
-            return receivedSessionID.rawValue.uuidString == sessionID && title == "New Chat"
         }
         await store.receive { action in
             guard case let .navigation(.view(.showAiChat(receivedSessionID))) = action else { return false }
@@ -6471,6 +6457,12 @@ final class CTM001HandleContentTabTests: XCTestCase {
             return receivedSessionID == sessionID
         }
         await store.receive { action in
+            guard case let .contentTabs(.updateActivePageAnchor(_, .aiChat(receivedSessionID))) = action else {
+                return false
+            }
+            return receivedSessionID == sessionID
+        }
+        await store.receive { action in
             guard case let .tabContent(_, .internal(.applyNavigationState(.aiChat(receivedSessionID)))) = action
             else { return false }
             return receivedSessionID == sessionID
@@ -6478,6 +6470,12 @@ final class CTM001HandleContentTabTests: XCTestCase {
         await store.receive { action in
             guard case .tabContent(_, .aiChat(.providerConnectionsUpdated)) = action else { return false }
             return true
+        }
+        await store.receive { action in
+            guard case let .internal(.aiChatTabTitleUpdated(receivedSessionID, title)) = action else {
+                return false
+            }
+            return receivedSessionID.rawValue.uuidString == sessionID && title == "New Chat"
         }
 
         let expectedSessionUUID = AiChatSessionID(rawValue: UUID(uuidString: sessionID) ?? UUID())
