@@ -117,6 +117,7 @@ public enum EntryPropertiesClientFactory {
         }
         let differences = try proposal.changes.map { change in
             let target = EntryPropertiesTarget(localPath: change.target.localPath)
+            try validatePreparedBefore(change.before, target: target, snapshot: request.snapshot)
             return try EntryPropertiesDifference(
                 target: target,
                 before: semanticValue(change.before),
@@ -252,6 +253,33 @@ public enum EntryPropertiesClientFactory {
         )
     }
 
+    private static func validatePreparedBefore(
+        _ before: PropertyAssignment?,
+        target: EntryPropertiesTarget,
+        snapshot: EntryPropertiesTargetSnapshot,
+    ) throws {
+        let expectedRevision = expectedAssignmentRevision(for: target, snapshot: snapshot)
+        guard let before else {
+            guard expectedRevision == 0 else { throw EntryPropertiesFailure.validation }
+            return
+        }
+        guard before.propertyID.rawValue == snapshot.propertyID.rawValue,
+              semanticValueKind(before.valueType) == snapshot.valueKind,
+              semanticCardinality(before.cardinality) == snapshot.cardinality,
+              before.revision == expectedRevision
+        else {
+            throw EntryPropertiesFailure.validation
+        }
+    }
+
+    private static func expectedAssignmentRevision(
+        for target: EntryPropertiesTarget,
+        snapshot: EntryPropertiesTargetSnapshot,
+    ) -> Int64 {
+        snapshot.assignmentRevisions
+            .first(where: { $0.target == target })?.revision ?? snapshot.canonicalRevision
+    }
+
     private static func makeWireChanges(
         snapshot: EntryPropertiesTargetSnapshot,
         intent: EntryPropertiesChangeIntent,
@@ -260,8 +288,7 @@ public enum EntryPropertiesClientFactory {
             let propertyID = try PropertyID(rawValue: snapshot.propertyID.rawValue)
             let desired = try wireDesiredState(intent.change, snapshot: snapshot)
             return try snapshot.targets.map { target in
-                let assignmentRevision = snapshot.assignmentRevisions
-                    .first(where: { $0.target == target })?.revision ?? snapshot.canonicalRevision
+                let assignmentRevision = expectedAssignmentRevision(for: target, snapshot: snapshot)
                 return try PropertyChangeTarget(
                     target: PropertyTarget(localPath: target.localPath),
                     propertyID: propertyID,

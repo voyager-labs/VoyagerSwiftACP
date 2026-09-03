@@ -397,6 +397,103 @@ extension EPR006CoordinatePropertyChangesTests {
         }
     }
 
+    /// EPR-006-prepare_property_change: Core before는 고정 snapshot의 assignment 계약과
+    /// 일치해야 한다.
+    /// - 검증 내용: before의 value type/cardinality/revision과 암시적 unset 불일치 거절
+    /// - 사전 조건: target/property identity는 맞지만 snapshot 계약을 위반하는 Core proposal
+    /// - 기대 결과: 모순된 before를 semantic difference로 변환하지 않고 validation으로 fail closed
+    func testPrepareRejectsBeforeViolatingSnapshotContract() async throws {
+        let propertyID = try PropertyID(rawValue: "00000000-0000-0000-8000-000000000001")
+        let entryID = try EntryCoreEntryID(rawValue: "ent:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
+        let target = try PropertyTarget(localPath: "/a")
+        let snapshot = EntryPropertiesTargetSnapshot(
+            targets: [.init(localPath: target.localPath)],
+            propertyID: .init(rawValue: propertyID.rawValue),
+            catalogVersion: "2.2.0",
+            canonicalRevision: 7,
+        )
+        let request = EntryPropertiesPrepareRequest(
+            snapshot: snapshot,
+            intent: .init(change: .set(.text("after"))),
+        )
+        let desired = PropertyDesiredState.value(.text, .one, .text("after"))
+        for (name, before) in invalidPreparedBefores(propertyID: propertyID, entryID: entryID) {
+            let response = PropertyChangeProposal(
+                changes: [
+                    PropertyPreparedChange(
+                        target: target,
+                        propertyID: propertyID,
+                        entryID: entryID,
+                        before: before,
+                        after: desired,
+                    ),
+                ],
+                requiresConfirmation: true,
+            )
+            let client = try EntryPropertiesClientFactory.live(
+                propertyClient: mismatchedPropertyClient(response: response),
+                endpoint: EntryCoreEndpoint(path: "/tmp/entry-properties-review.sock"),
+                capabilityDiscovery: { _ in throw EntryPropertiesFailure.unavailable },
+            )
+
+            do {
+                _ = try await client.prepare(request)
+                XCTFail("snapshot-violating before (\(name)) should be rejected")
+            } catch {
+                XCTAssertEqual(error as? EntryPropertiesFailure, .validation, name)
+            }
+        }
+    }
+
+    /// EPR-006-prepare_property_change: snapshot과 일치하는 durable before는
+    /// semantic difference로 변환할 수 있다.
+    /// - 검증 내용: snapshot의 value type/cardinality/revision과 일치하는 before 허용
+    /// - 기대 결과: before/after를 보존한 proposal 생성
+    func testPrepareAcceptsBeforeMatchingSnapshotContract() async throws {
+        let propertyID = try PropertyID(rawValue: "00000000-0000-0000-8000-000000000001")
+        let entryID = try EntryCoreEntryID(rawValue: "ent:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
+        let target = try PropertyTarget(localPath: "/a")
+        let snapshot = EntryPropertiesTargetSnapshot(
+            targets: [.init(localPath: target.localPath)],
+            propertyID: .init(rawValue: propertyID.rawValue),
+            catalogVersion: "2.2.0",
+            canonicalRevision: 7,
+        )
+        let response = PropertyChangeProposal(
+            changes: [
+                PropertyPreparedChange(
+                    target: target,
+                    propertyID: propertyID,
+                    entryID: entryID,
+                    before: PropertyAssignment(
+                        propertyID: propertyID,
+                        entryID: entryID,
+                        valueType: .text,
+                        cardinality: .one,
+                        state: .value,
+                        revision: 7,
+                        value: .text("before"),
+                    ),
+                    after: .value(.text, .one, .text("after")),
+                ),
+            ],
+            requiresConfirmation: true,
+        )
+        let client = try EntryPropertiesClientFactory.live(
+            propertyClient: mismatchedPropertyClient(response: response),
+            endpoint: EntryCoreEndpoint(path: "/tmp/entry-properties-review.sock"),
+            capabilityDiscovery: { _ in throw EntryPropertiesFailure.unavailable },
+        )
+
+        let proposal = try await client.prepare(
+            .init(snapshot: snapshot, intent: .init(change: .set(.text("after")))),
+        )
+        XCTAssertEqual(
+            proposal.differences,
+            [.init(target: .init(localPath: "/a"), before: .text("before"), after: .text("after"))],
+        )
+    }
+
     /// EPR-006-read_back_property_change_result: assignment은 catalog value contract와 대조된다.
     /// - 검증 내용: definition-derived catalog와 다른 value type assignment 거절
     /// - 사전 조건: text/one snapshot 계약에 number/one assignment를 반환하는 Core stub
@@ -487,6 +584,51 @@ extension EPR006CoordinatePropertyChangesTests {
         let recordedOperations = await recorder.values()
         XCTAssertEqual(recordedOperations, [])
     }
+}
+
+private func invalidPreparedBefores(
+    propertyID: PropertyID,
+    entryID: EntryCoreEntryID,
+) -> [(String, PropertyAssignment?)] {
+    [
+        (
+            "value type",
+            PropertyAssignment(
+                propertyID: propertyID,
+                entryID: entryID,
+                valueType: .number,
+                cardinality: .one,
+                state: .value,
+                revision: 7,
+                value: .number("42"),
+            ),
+        ),
+        (
+            "cardinality",
+            PropertyAssignment(
+                propertyID: propertyID,
+                entryID: entryID,
+                valueType: .text,
+                cardinality: .many,
+                state: .value,
+                revision: 7,
+                value: .texts(["before"]),
+            ),
+        ),
+        (
+            "revision",
+            PropertyAssignment(
+                propertyID: propertyID,
+                entryID: entryID,
+                valueType: .text,
+                cardinality: .one,
+                state: .value,
+                revision: 8,
+                value: .text("before"),
+            ),
+        ),
+        ("implicit unset", nil),
+    ]
 }
 
 private func requestAssemblyValidationClient(recorder: OperationRecorder) -> EntryCorePropertyClient {
