@@ -2331,6 +2331,50 @@ extension FMW001FileManagerWindowTests {
         ))
     }
 
+    /// FMW-001-key_command_focus: 제어 종료 후 document가 key로 돌아오지 않으면 보류된 resign을 정산한다.
+    /// Quick Look이 key를 비-FileManager window에 넘기거나 앱이 비활성화되면 document는 두 번째
+    /// resignKey를 받지 못하므로 panel control 종료 시점에 정산해야 한다.
+    /// - 검증 내용: begin으로 logical focus를 유지한 뒤 document가 non-key인 채 control을 끝내면
+    ///   `onResignedKey`가 windowID로 한 번 호출되는지 확인한다.
+    /// - 사전 조건: panel-control recording client와 onResignedKey recorder를 단 coordinator
+    /// - 기대 결과: endPreviewPanelControl에서 resign이 정산된다.
+    func testEndPreviewPanelControlSettlesRetainedResignKeyWhenDocumentNotKeyAgain() throws {
+        _ = NSApplication.shared
+        let panel = try XCTUnwrap(QLPreviewPanel.shared())
+        let windowID = UUID()
+        let beginCount = LockIsolated(0)
+        let endCount = LockIsolated(0)
+        let resignedWindowIDs = LockIsolated<[UUID]>([])
+        let quickLookClient = EntryQuickLookClient(
+            quickLook: { _, _ in },
+            acceptsPreviewPanelControl: { true },
+            beginPreviewPanelControl: { _, _ in beginCount.withValue { $0 += 1 } },
+            endPreviewPanelControl: { _, _ in endCount.withValue { $0 += 1 } },
+        )
+        let registry = FileOperationUndoManagerRegistry()
+        let store = Store(initialState: FileManagerFeature.State()) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.entryQuickLookClient = quickLookClient
+            $0.fileOperationUndoManagerClient = .live(registry: registry)
+        }
+        let coordinator = FileManagerWindowCoordinator(
+            windowID: windowID,
+            store: store,
+            fileOperationUndoManagerRegistry: registry,
+            onResignedKey: { id in resignedWindowIDs.withValue { $0.append(id) } },
+            makeContentViewController: { _, _ in NSViewController() },
+        )
+        defer { coordinator.close() }
+
+        coordinator.beginPreviewPanelControl(panel)
+        coordinator.endPreviewPanelControl(panel)
+
+        XCTAssertEqual(beginCount.value, 1)
+        XCTAssertEqual(endCount.value, 1)
+        XCTAssertEqual(resignedWindowIDs.value, [windowID])
+    }
+
     /// FMW-001-key_command_focus: mounted ContentPage restore가 편집 중인 NSTextView를 교체하지 않는다.
     /// selectedIds 변경으로 실제 ContentPage restore caller가 실행되어도 Inspector 텍스트 입력이 유지되는지 검증한다.
     /// - 검증 내용: mounted ContentPage의 selectedIds onChange 이후 firstResponder identity

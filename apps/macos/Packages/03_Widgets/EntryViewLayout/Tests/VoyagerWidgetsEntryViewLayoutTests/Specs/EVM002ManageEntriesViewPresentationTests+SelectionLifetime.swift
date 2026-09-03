@@ -210,6 +210,27 @@ extension EVM002ManageEntriesViewPresentationTests {
         XCTAssertEqual(fixture.recorder.updateCount, 0)
     }
 
+    /// EVM-002-update_entry_selection: 실제 delegate 경로의 Command-last-deselect도 clear intent로 정산된다.
+    /// - 검증 내용: beginNativeSelection이 남긴 Command context를 빈 `outlineViewSelectionDidChange` callback이
+    ///   먼저 정산해 AppKit native deselect가 store 복원으로 되돌려지지 않는지 확인한다.
+    /// - 사전 조건: 한 Entry가 선택된 상태에서 해당 row에 Command context를 남기고 native deselect로 비운다.
+    /// - 기대 결과: canonical tuple/native selection이 비고 clear action만 한 번 기록된다.
+    func testCommandLastListDeselectThroughDelegateCallbackUsesClearIntentOnce() throws {
+        let entry = EntryModel.temporaryFolder(id: "/root/a.txt", name: "a.txt")
+        let fixture = SelectionLifetimeListFixture(entries: [entry], selectedID: entry.id)
+        let row = try fixture.entryRow(id: entry.id)
+
+        XCTAssertTrue(fixture.tableView.beginNativeSelection(atRow: row, modifierFlags: .command))
+        fixture.tableView.deselectAll(nil)
+
+        XCTAssertTrue(fixture.store.state.selectedIds.isEmpty)
+        XCTAssertNil(fixture.store.state.lastSelectedId)
+        XCTAssertNil(fixture.store.state.rangeAnchorId)
+        XCTAssertTrue(fixture.tableView.selectedRowIndexes.isEmpty)
+        XCTAssertEqual(fixture.recorder.clearCount, 1)
+        XCTAssertEqual(fixture.recorder.updateCount, 0)
+    }
+
     /// EVM-002-update_entry_selection: Grid의 명시적 blank clear는 empty callback을 clear intent로 귀속한다.
     /// - 검증 내용: coordinator가 연결한 blank-space hook 뒤 empty collection callback이 한 번의 clear를 발행하는지 확인한다.
     /// - 사전 조건: 선택된 Entry 하나와 비워진 native collection selection이 있다.
