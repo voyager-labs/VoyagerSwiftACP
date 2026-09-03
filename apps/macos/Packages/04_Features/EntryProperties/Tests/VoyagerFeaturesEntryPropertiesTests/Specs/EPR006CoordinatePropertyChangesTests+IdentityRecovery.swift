@@ -103,6 +103,65 @@ extension EPR006CoordinatePropertyChangesTests {
         XCTAssertEqual(store.state.pendingReadBack, fixture.proposal)
     }
 
+    /// EPR-006-discover_property_change_capabilities: pending recovery 중 discovery는 차단된다.
+    /// - 검증 내용: pendingReadBack 잔존 시 discover busy 거절과 복구 후 재개
+    /// - 사전 조건: selection 변경으로 ambiguous proposal이 pendingReadBack으로 이동
+    /// - 기대 결과: read-only retry로 복구되기 전까지 discovery가 시작되지 않음
+    func testPendingRecoveryBlocksDiscoveryUntilResolved() async {
+        let fixture = Fixture()
+        let replacement = EntryPropertiesSelection(
+            targets: [.init(localPath: "/tmp/replacement")],
+            propertyID: fixture.selection.propertyID,
+        )
+        var state = fixture.readyState
+        state.status = .ambiguous
+        state.proposal = fixture.proposal
+        let store = TestStore(initialState: state) {
+            EntryPropertiesFeature()
+        } withDependencies: {
+            $0.entryPropertiesClient = fixture.client(
+                readBack: { _ in fixture.canonicalResult },
+            )
+        }
+
+        await moveAmbiguousProposalToPendingReadBack(store, replacement: replacement, fixture: fixture)
+
+        await store.send(.discoverCapabilities) {
+            $0.lastOutcome = .propertyChangeRejected(.busy)
+        }
+        await store.receive(.init(kind: .outcome(.propertyChangeRejected(.busy))))
+        XCTAssertEqual(store.state.pendingReadBack, fixture.proposal)
+
+        await store.send(.retryReadBack) {
+            $0.activePhase = .applied
+            $0.readBackProposal = fixture.proposal
+        }
+        await store.receive(.init(kind: .readBackCompleted(1, .success(fixture.canonicalResult)))) {
+            $0.activePhase = nil
+            $0.pendingReadBack = nil
+            $0.readBackProposal = nil
+            $0.lastOutcome = .propertyChangeVerified(fixture.canonicalResult)
+        }
+        await store.receive(.init(kind: .outcome(.propertyChangeVerified(fixture.canonicalResult))))
+        XCTAssertNil(store.state.pendingReadBack)
+
+        await store.send(.discoverCapabilities) {
+            $0.generation = 2
+            $0.activePhase = .discovering
+            $0.status = .discovering
+            $0.capabilityReport = nil
+            $0.targetSnapshot = nil
+            $0.proposal = nil
+            $0.canonicalResult = nil
+        }
+        await store.receive(.init(kind: .discoveryCompleted(2, .failure(.unavailable)))) {
+            $0.activePhase = nil
+            $0.status = .rejected(.unavailable)
+            $0.lastOutcome = .propertyChangeRejected(.unavailable)
+        }
+        await store.receive(.init(kind: .outcome(.propertyChangeRejected(.unavailable))))
+    }
+
     /// EPR-006-prepare_property_change: identity 보강 전 snapshot의 unset target
     /// revision은 local path로 대응한다.
     /// - 검증 내용: 일부 target만 assignment를 가진 변경에서 prepare before == nil 수용
@@ -119,6 +178,29 @@ extension EPR006CoordinatePropertyChangesTests {
             .init(snapshot: mixedIdentitySnapshot(), intent: .init(change: .set(.text("after")))),
         )
         XCTAssertEqual(proposal.differences, try mixedIdentityDifferences())
+    }
+
+    /// ambiguous proposal을 selection 변경으로 pendingReadBack으로 옮기는 첫 단계다.
+    private func moveAmbiguousProposalToPendingReadBack(
+        _ store: TestStore<EntryPropertiesState, EntryPropertiesAction>,
+        replacement: EntryPropertiesSelection,
+        fixture: Fixture,
+    ) async {
+        await store.send(.selectionChanged(replacement)) {
+            $0.generation = 1
+            $0.selection = replacement
+            $0.capabilityReport = nil
+            $0.targetSnapshot = nil
+            $0.proposal = nil
+            $0.appliedProposal = nil
+            $0.pendingReadBack = fixture.proposal
+            $0.canonicalResult = nil
+            $0.activePhase = nil
+            $0.readBackProposal = nil
+            $0.status = .idle
+            $0.lastOutcome = .propertyChangeRejected(.ambiguousExecution)
+        }
+        await store.receive(.init(kind: .outcome(.propertyChangeRejected(.ambiguousExecution))))
     }
 }
 

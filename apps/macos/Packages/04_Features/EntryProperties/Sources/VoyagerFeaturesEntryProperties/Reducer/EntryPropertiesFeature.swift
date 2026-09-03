@@ -76,7 +76,12 @@ public struct EntryPropertiesFeature: Sendable {
                 guard state.activePhase != .executing,
                       state.activePhase != .applied,
                       state.status != .appliedUnverified,
-                      state.status != .ambiguous
+                      state.status != .ambiguous,
+                      // pending recovery가 남아 있으면 discovery도 차단한다.
+                      // 허용하면 prepare는 pending guard로 계속 막히면서 공개
+                      // 상태만 ready가 되어 caller가 read-only 복구를 안내할
+                      // 근거를 잃는다.
+                      state.pendingReadBack == nil
                 else {
                     return rejectBusy(&state)
                 }
