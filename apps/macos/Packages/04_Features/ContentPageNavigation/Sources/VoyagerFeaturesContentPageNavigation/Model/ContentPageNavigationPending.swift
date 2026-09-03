@@ -1,3 +1,5 @@
+import Foundation
+
 public enum ContentPageNavigationPending: Equatable, Sendable {
     case back
     case forward
@@ -9,6 +11,7 @@ public enum ContentPageNavigationPending: Equatable, Sendable {
     case showTag(String)
     case showAiChat(String)
     case showAiChatSessions(String)
+    case openCollectionFile(URL)
 }
 
 public extension ContentPageNavigationPending {

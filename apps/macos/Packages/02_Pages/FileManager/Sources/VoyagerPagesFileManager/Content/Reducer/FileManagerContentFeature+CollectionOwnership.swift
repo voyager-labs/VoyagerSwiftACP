@@ -102,23 +102,25 @@ extension FileManagerContentFeature {
     ) -> Effect<Action>? {
         switch action {
         case let .collection(.delegate(.draftRestorePrepared(payload))):
-            .concatenate(
+            let skipRestoreSearch = state.skipCollectionRestoreSearchOnNextDiscard
+            state.skipCollectionRestoreSearchOnNextDiscard = false
+            return .concatenate(
                 .send(.composer(.applyCollectionDraftRestore(payload))),
                 syncComposerCollectionStateEffect(state),
-                restoredCollectionSearchEffect(payload: payload),
+                skipRestoreSearch ? .none : restoredCollectionSearchEffect(payload: payload),
             )
 
         case let .collection(.delegate(.writeBackNavigationPrepared(payload))):
-            handleCollectionWriteBackPrepared(payload: payload, state: &state)
+            return handleCollectionWriteBackPrepared(payload: payload, state: &state)
 
         case let .collection(.delegate(.saveFeedback(payload))):
-            handleCollectionSaveFeedback(payload: payload, state: &state)
+            return handleCollectionSaveFeedback(payload: payload, state: &state)
 
         case let .collection(.delegate(delegateAction)):
-            handleCollectionDelegateAction(delegateAction, state: &state)
+            return handleCollectionDelegateAction(delegateAction, state: &state)
 
         default:
-            nil
+            return nil
         }
     }
 
@@ -157,6 +159,7 @@ extension FileManagerContentFeature {
         guard state.isCollectionMode,
               state.isOpenedCollectionDirty
         else {
+            state.skipCollectionRestoreSearchOnNextDiscard = false
             return .none
         }
 

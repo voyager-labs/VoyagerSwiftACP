@@ -22,7 +22,7 @@ enum ContentPageNavigationDirectTransition {
             show(.aiChat(sessionID), state: &state)
         case let .showAiChatSessions(sessionID):
             show(.aiChatSessions(sessionID), state: &state)
-        case .back, .forward, .history, .enclosingDirectory:
+        case .back, .forward, .history, .enclosingDirectory, .openCollectionFile:
             .none
         }
     }

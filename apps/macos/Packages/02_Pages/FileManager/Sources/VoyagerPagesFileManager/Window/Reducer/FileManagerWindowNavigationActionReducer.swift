@@ -89,7 +89,8 @@ struct FileManagerNavigationActionReducer {
              .showComputer,
              .showTag,
              .showAiChat,
-             .showAiChatSessions:
+             .showAiChatSessions,
+             .openCollectionFile:
             let failedPinnedReturnTabID = state.pendingPinnedCollectionReturnTabID
             let cancelEffect = cancelPendingCollectionOpen(
                 state: &state,
@@ -114,15 +115,6 @@ struct FileManagerNavigationActionReducer {
                     failedPinnedReturnTabID: failedPinnedReturnTabID,
                 ),
                 handleHistoryNavigationAction(action, state: &state),
-            )
-
-        case let .openCollectionFile(url):
-            return handleOpenCollectionFile(
-                url: url,
-                state: &state,
-                collectionFileClient: collectionFileClient,
-                metricsClient: metricsClient,
-                uuid: uuid,
             )
         }
     }
@@ -231,6 +223,8 @@ struct FileManagerNavigationActionReducer {
             pending = .showAiChat(sessionID)
         case let .showAiChatSessions(sessionID):
             pending = .showAiChatSessions(sessionID)
+        case let .openCollectionFile(url):
+            pending = .openCollectionFile(url)
         default:
             return nil
         }
@@ -265,11 +259,23 @@ struct FileManagerNavigationActionReducer {
             }
         case let .unsavedNavigationAlertResponse(pending, choice):
             return handleUnsavedNavigationAlertResponse(pending: pending, choice: choice, state: &state)
-        case .performNavigation:
-            guard state.content.resetComposerOnNextDirectoryNavigation else {
-                return .none
+        case let .performNavigation(pending):
+            let resetComposerEffect: Effect<Action> = state.content.resetComposerOnNextDirectoryNavigation
+                ? .send(.content(.internal(.resetComposerAfterDirectoryNavigation)))
+                : .none
+            guard case let .openCollectionFile(url) = pending else {
+                return resetComposerEffect
             }
-            return .send(.content(.internal(.resetComposerAfterDirectoryNavigation)))
+            return .concatenate(
+                resetComposerEffect,
+                handleOpenCollectionFile(
+                    url: url,
+                    state: &state,
+                    collectionFileClient: collectionFileClient,
+                    metricsClient: metricsClient,
+                    uuid: uuid,
+                ),
+            )
         default:
             return .none
         }
@@ -285,6 +291,7 @@ struct FileManagerNavigationActionReducer {
             return .none
         case .discard:
             state.content.resetComposerOnNextDirectoryNavigation = true
+            state.content.skipCollectionRestoreSearchOnNextDiscard = true
             return .concatenate(
                 .send(.content(.view(.discardCollectionChanges))),
                 .send(.navigation(.internal(.performNavigation(pending)))),

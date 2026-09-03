@@ -39,6 +39,9 @@ struct ContentPageNavigationHistoryReducer {
             performEnclosingDirectoryNavigation(state: &state)
         case .navigateToPath, .showRecents, .showComputer, .showTag, .showAiChat, .showAiChatSessions:
             ContentPageNavigationDirectTransition.perform(pending, state: &state)
+        case .openCollectionFile:
+            // Collection file loading belongs to the FileManager window boundary.
+            .none
         }
     }
 

@@ -19,6 +19,7 @@ extension FileManagerContentFeature.State {
             && homeChatHistoryItems == baseline.homeChatHistoryItems
             && homeChatHistoryLoadFailed == baseline.homeChatHistoryLoadFailed
             && resetComposerOnNextDirectoryNavigation == baseline.resetComposerOnNextDirectoryNavigation
+            && skipCollectionRestoreSearchOnNextDiscard == baseline.skipCollectionRestoreSearchOnNextDiscard
             && suppressAutomaticRefreshFeedback == baseline.suppressAutomaticRefreshFeedback
     }
 

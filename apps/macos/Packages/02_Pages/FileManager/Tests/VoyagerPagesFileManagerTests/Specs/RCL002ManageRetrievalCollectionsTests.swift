@@ -1456,6 +1456,7 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
         )
         var state = makeOpenedCollectionState(url: sourceURL, context: sourceContext)
         state.content.composer.collectionContext = sourceContext
+        state.content.composer.scopes = sourceContext.scopes
         state.content.composer.openedCollectionURL = sourceURL
         state.content.composer.isCollectionMode = true
         let loadResult = makeSnapshotLoadResult(file: targetFile)
@@ -1546,7 +1547,7 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
             FileManagerFeature()
         } withDependencies: {
             $0.collectionFileClient.load = { _ in loadResult }
-            $0.collectionAlertClient = .testValue
+            $0.collectionAlertClient.showUnsavedNavigationAlert = { .discard }
             $0.collectionStalenessClient = .testValue
             $0.registryClient = self.makeRegistryClient()
             $0.searchClient.search = { _ in
@@ -1621,7 +1622,7 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
             FileManagerFeature()
         } withDependencies: {
             $0.collectionFileClient.load = { _ in loadResult }
-            $0.collectionAlertClient = .testValue
+            $0.collectionAlertClient.showUnsavedNavigationAlert = { .discard }
             $0.collectionStalenessClient = .testValue
             $0.registryClient = self.makeRegistryClient()
             $0.searchClient.search = { _ in
@@ -1685,7 +1686,7 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
             FileManagerFeature()
         } withDependencies: {
             $0.collectionFileClient.load = { _ in loadResult }
-            $0.collectionAlertClient = .testValue
+            $0.collectionAlertClient.showUnsavedNavigationAlert = { .discard }
             $0.collectionStalenessClient = .testValue
             $0.registryClient = self.makeRegistryClient()
             $0.searchClient.search = { _ in
@@ -1924,7 +1925,7 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
             FileManagerFeature()
         } withDependencies: {
             $0.collectionFileClient.load = { _ in try await loadGate.wait() }
-            $0.collectionAlertClient = .testValue
+            $0.collectionAlertClient.showUnsavedNavigationAlert = { .discard }
             $0.collectionStalenessClient = .testValue
             $0.registryClient = .testValue
             $0.date = .constant(Date(timeIntervalSince1970: 1_700_000_200))
@@ -1945,7 +1946,7 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
             sourceURL: sourceURL,
             targetURL: targetURL,
             sourceContext: sourceContext,
-            sourceDraftContext: dirtySourceContext,
+            sourceDraftContext: sourceContext,
         )
 
         await loadGate.resume(with: .success(targetLoadResult))
@@ -1983,6 +1984,7 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
             FileManagerFeature()
         } withDependencies: {
             $0.collectionFileClient.load = { _ in try await loadGate.wait() }
+            $0.collectionAlertClient.showUnsavedNavigationAlert = { .discard }
             $0.collectionAlertClient.showCollectionOpenErrorAlert = { _, _ in }
             $0.collectionStalenessClient = .testValue
             $0.registryClient = .testValue
@@ -2005,7 +2007,7 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
             sourceURL: sourceURL,
             targetURL: targetURL,
             sourceContext: sourceContext,
-            sourceDraftContext: dirtySourceContext,
+            sourceDraftContext: sourceContext,
         )
 
         await loadGate.resume(with: .failure)
@@ -2016,7 +2018,7 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
             store.state,
             sourceURL: sourceURL,
             sourceContext: sourceContext,
-            sourceDraftContext: dirtySourceContext,
+            sourceDraftContext: sourceContext,
             expectedHistory: expectedHistory,
         )
     }
@@ -2269,6 +2271,62 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
         XCTAssertEqual(navigation.context, baseline)
     }
 
+    /// RCL-002-alert_unsaved_collection_filter_changes: Collection file open also uses the unsaved guard.
+    /// Opening another saved Collection must not discard a dirty source draft before the user's decision.
+    func testAlertUnsavedCollectionFilterChanges_openCollectionFileCancelPreservesCurrentDraft() async throws {
+        let sourceURL = URL(fileURLWithPath: "/VoyagerFixtures/Collections/source.voycoll")
+        let targetURL = URL(fileURLWithPath: "/VoyagerFixtures/Collections/target.voycoll")
+        let baseline = CollectionContext(
+            query: "baseline",
+            scopes: ["/"],
+            conditions: [],
+        )
+        let current = CollectionContext(
+            query: "changed",
+            scopes: baseline.scopes,
+            conditions: [],
+        )
+        var state = makeOpenedCollectionState(url: sourceURL, context: baseline)
+        state.content.collection.collectionContext = current
+        state.content.composer.collectionContext = current
+        let activeTabID = try XCTUnwrap(state.contentTabs.activeTabID)
+        state.contentTabs.tabs[id: activeTabID]?.page = .collection
+        state.contentTabs.tabs[id: activeTabID]?.anchor = .collectionFile(url: sourceURL)
+        let alertCount = LockIsolated(0)
+        let loadCount = LockIsolated(0)
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.collectionAlertClient.showUnsavedNavigationAlert = {
+                alertCount.withValue { $0 += 1 }
+                return .cancel
+            }
+            $0.collectionFileClient.load = { _ in
+                loadCount.withValue { $0 += 1 }
+                throw NSError(domain: "RCL002", code: 1)
+            }
+        }
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.navigation(.view(.openCollectionFile(targetURL))))
+        await store.skipReceivedActions(strict: false)
+        await store.finish()
+
+        XCTAssertEqual(alertCount.value, 1)
+        XCTAssertEqual(loadCount.value, 0)
+        XCTAssertEqual(store.state.content.collection.collectionContext, current)
+        XCTAssertEqual(
+            store.state.contentTabs.tabs[id: activeTabID]?.anchor,
+            .collectionFile(url: sourceURL),
+        )
+        guard case let .collection(navigation) = store.state.content.navigation.navigationState else {
+            return XCTFail("cancelled Collection open must preserve the current route")
+        }
+        XCTAssertEqual(navigation.kind, .file(url: sourceURL, name: "source"))
+        XCTAssertEqual(navigation.context, baseline)
+        XCTAssertNil(store.state.content.navigation.pendingNavigation)
+    }
+
     /// RCL-002-alert_unsaved_collection_filter_changes: cancel does not install a navigation reveal.
     /// Cancelled dirty navigation must not create a pending entry ID or destination guard.
     /// - 검증 내용: unsaved alert cancel leaves both pending-selection fields empty.
@@ -2517,7 +2575,7 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
         XCTAssertNil(state.pendingCollectionOpenRequest, file: file, line: line)
         XCTAssertFalse(state.content.entryViewLayout.isCollectionContentLoading, file: file, line: line)
         XCTAssertTrue(state.content.entryViewLayout.isCollectionMode, file: file, line: line)
-        XCTAssertTrue(state.content.canSaveCollection, file: file, line: line)
+        XCTAssertFalse(state.content.canSaveCollection, file: file, line: line)
         XCTAssertEqual(state.content.collection.collectionSession.document?.url, sourceURL, file: file, line: line)
         XCTAssertEqual(
             state.content.collection.collectionSession.metadata.baseline?.context,
