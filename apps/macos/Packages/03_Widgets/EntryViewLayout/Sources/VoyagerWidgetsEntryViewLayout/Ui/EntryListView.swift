@@ -217,6 +217,12 @@ final class EntryListSelectionRowView: NSTableRowView {
             return
         }
 
+        guard let backgroundColor = unselectedBackgroundColor() else { return }
+        backgroundColor.setFill()
+        dirtyRect.fill()
+    }
+
+    func unselectedBackgroundColor() -> NSColor? {
         let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
 
         if isGroupRow {
@@ -225,19 +231,15 @@ final class EntryListSelectionRowView: NSTableRowView {
                 ? entryListTableView?.groupRowDarkOpacity ?? 0.065
                 : entryListTableView?.groupRowLightOpacity ?? 0.035
             let backgroundColor = isDark ? NSColor.white : NSColor.black
-            backgroundColor.withAlphaComponent(opacity).setFill()
-            dirtyRect.fill()
-            return
+            return backgroundColor.withAlphaComponent(opacity)
         }
 
         guard let tableView,
-              tableView.row(for: self) % 2 == 1 else { return }
+              tableView.row(for: self) % 2 == 1 else { return nil }
 
-        let backgroundColor = isDark
+        return isDark
             ? NSColor.white.withAlphaComponent(0.035)
             : NSColor.black.withAlphaComponent(0.055)
-        backgroundColor.setFill()
-        dirtyRect.fill()
     }
 }
 
