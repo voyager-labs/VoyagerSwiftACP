@@ -43,7 +43,8 @@ final class EntryCorePropertyProtocolFlowTests: XCTestCase {
         let unknownCapability = Data(propertyJSON(
             #"{"request_id":"id","ok":true,"result":{"definitions":[{"#,
             #""property_id":"00000000-0000-0000-8000-000000000001","key":"k","name":"n","#,
-            #""value_type":"text","cardinality":"one","state":"active","revision":1,"options":[],"#,
+            #""value_type":"text","cardinality":"one","state":"active","origin":"user_defined","#,
+            #""revision":1,"options":[],"#,
             #""condition_capability":{"supported":false,"reason":"future"}}],"has_more":false}}"#,
         ).utf8)
         XCTAssertThrowsError(
@@ -73,6 +74,83 @@ final class EntryCorePropertyProtocolFlowTests: XCTestCase {
             ],
         )
         assertProtocolMismatch(wire)
+    }
+
+    /// source_runtime_unavailable은 built-in origin에서만 유도되는 사유다.
+    /// wire가 origin을 함께 검증하지 않으면 query 가능한 user-defined property가
+    /// unsupported로 숨겨진다.
+    func testDefinitionRejectsRuntimeUnavailableReasonForUserDefinedOrigin() throws {
+        let wire = try propertyDefinitionPageResponse(
+            valueType: "text",
+            cardinality: "one",
+            nativeType: "string",
+            operators: PropertyConditionRelation.operators(for: .string).map(\.rawValue),
+            conditionCapability: ["supported": false, "reason": "source_runtime_unavailable"],
+        )
+        assertProtocolMismatch(wire)
+    }
+
+    func testDefinitionAcceptsRuntimeUnavailableReasonForBuiltInOrigin() throws {
+        let wire = try propertyDefinitionPageResponse(
+            valueType: "text",
+            cardinality: "one",
+            nativeType: "string",
+            operators: PropertyConditionRelation.operators(for: .string).map(\.rawValue),
+            origin: "built_in",
+            conditionCapability: ["supported": false, "reason": "source_runtime_unavailable"],
+        )
+        _ = try EntryCorePropertyResponseDecoder.decode(
+            Array(wire),
+            method: .propertyDefinitionList,
+            expectedRequestID: "id",
+        )
+    }
+
+    /// built-in 정의는 source runtime 의존 때문에 supported capability를 가질 수 없다.
+    func testDefinitionRejectsSupportedCapabilityForBuiltInOrigin() throws {
+        let wire = try propertyDefinitionPageResponse(
+            valueType: "text",
+            cardinality: "one",
+            nativeType: "string",
+            operators: PropertyConditionRelation.operators(for: .string).map(\.rawValue),
+            origin: "built_in",
+        )
+        assertProtocolMismatch(wire)
+    }
+
+    /// operator/relation table은 고정 catalog 버전을 미러링하므로 다른 버전의
+    /// capability와 query result는 fail closed로 거절한다.
+    func testDefinitionRejectsForeignCatalogVersion() throws {
+        let wire = try propertyDefinitionPageResponse(
+            valueType: "text",
+            cardinality: "one",
+            nativeType: "string",
+            operators: PropertyConditionRelation.operators(for: .string).map(\.rawValue),
+            conditionCapability: [
+                "supported": true,
+                "evaluation_scope": "local_assignment",
+                "catalog_version": "3.0.0",
+                "native_type": "string",
+                "allowed_operators": PropertyConditionRelation.operators(for: .string).map(\.rawValue),
+            ],
+        )
+        assertProtocolMismatch(wire)
+    }
+
+    func testQueryPageRejectsForeignCatalogVersion() throws {
+        let wire = Data(propertyJSON(
+            #"{"request_id":"id","ok":true,"result":{"items":[],"unresolved_candidate_indices":[],"#,
+            #""catalog_version":"3.0.0","has_more":false}}"#,
+        ).utf8)
+        XCTAssertThrowsError(
+            try EntryCorePropertyResponseDecoder.decode(
+                Array(wire),
+                method: .propertyConditionQuery,
+                expectedRequestID: "id",
+            ),
+        ) {
+            XCTAssertEqual($0 as? EntryCoreClientError, .protocolMismatch)
+        }
     }
 
     func testPrepareRejectsBeforeIdentityMismatch() throws {
@@ -269,6 +347,7 @@ final class EntryCorePropertyProtocolFlowTests: XCTestCase {
             cardinality: "one",
             nativeType: "string",
             operators: [],
+            origin: "built_in",
             conditionCapability: [
                 "supported": false,
                 "reason": "source_runtime_unavailable",
@@ -328,6 +407,7 @@ private func propertyDefinitionPageResponse(
     nativeType: String,
     operators: [String],
     state: String = "active",
+    origin: String = "user_defined",
     conditionCapability: [String: Any]? = nil,
     options: [[String: Any]] = [],
 ) throws -> Data {
@@ -345,6 +425,7 @@ private func propertyDefinitionPageResponse(
         "value_type": valueType,
         "cardinality": cardinality,
         "state": state,
+        "origin": origin,
         "revision": 1,
         "options": options,
         "condition_capability": capability,

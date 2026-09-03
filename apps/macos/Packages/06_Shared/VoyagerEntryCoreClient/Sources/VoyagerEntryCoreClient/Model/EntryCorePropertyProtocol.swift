@@ -110,6 +110,7 @@ nonisolated public struct PropertyDefinition: Equatable, Sendable {
     public let valueType: PropertyValueType
     public let cardinality: PropertyCardinality
     public let state: PropertyDefinitionState
+    public let origin: PropertyDefinitionOrigin
     public let revision: Int64
     public let options: [PropertyOption]
     public let conditionCapability: PropertyConditionCapability

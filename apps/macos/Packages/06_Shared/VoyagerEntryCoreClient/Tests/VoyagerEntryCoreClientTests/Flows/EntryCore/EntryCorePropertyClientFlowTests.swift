@@ -676,6 +676,7 @@ private func propertyDefinitionJSON(
       "value_type":"\(valueType)",
       "cardinality":"\(cardinality)",
       "state":"\(state)",
+      "origin":"user_defined",
       "revision":\(revision),
       "options":\(options),
       "condition_capability":{

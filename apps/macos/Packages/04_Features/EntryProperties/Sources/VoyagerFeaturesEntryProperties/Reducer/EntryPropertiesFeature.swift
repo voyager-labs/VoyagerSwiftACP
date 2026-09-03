@@ -64,7 +64,12 @@ public struct EntryPropertiesFeature: Sendable {
                     return selectionChangeOutcomeEffect(outcome)
                 }
                 state.status = .idle
-                state.lastOutcome = nil
+                // 보존된 pending read-back이 있으면 복구 사유 outcome을 유지한다.
+                // 지우면 prepare는 busy로 막히면서 공개 상태는 사유 없는 idle이
+                // 되어 caller가 read-only retry 경로를 안내할 수 없다.
+                if preservedPendingReadBack == nil {
+                    state.lastOutcome = nil
+                }
                 return .cancel(id: CancelID.flow)
 
             case .discoverCapabilities, .reconnect:

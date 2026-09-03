@@ -213,6 +213,7 @@ func testDefinitionView(idText string, active bool) applicationproperty.Definiti
 			Lifecycle:     lifecycle,
 			ValueType:     domainentry.PropertyTypeText,
 			Cardinality:   domainentry.PropertyCardinalityOne,
+			Origin:        domainentry.PropertyOriginUserDefined,
 			DefinitionRev: 1,
 		},
 	}

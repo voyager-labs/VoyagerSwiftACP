@@ -52,6 +52,57 @@ extension EPR006CoordinatePropertyChangesTests {
         XCTAssertNil(store.state.pendingReadBack)
     }
 
+    /// EPR-006-read_back_property_change_result: 반복 selection 변경에도 pending 복구 상태는 유지된다.
+    /// - 검증 내용: 두 번째 selection 변경에서 pendingReadBack과 복구 outcome 보존
+    /// - 사전 조건: 첫 selection 변경이 ambiguous proposal을 pendingReadBack으로 옮긴 상태
+    /// - 기대 결과: 공개 상태가 복구 사유를 유지하고 prepare는 busy로 거절됨
+    func testRepeatedSelectionChangePreservesPendingRecoveryOutcome() async {
+        let fixture = Fixture()
+        let firstSelection = EntryPropertiesSelection(
+            targets: [.init(localPath: "/tmp/first")],
+            propertyID: fixture.selection.propertyID,
+        )
+        let secondSelection = EntryPropertiesSelection(
+            targets: [.init(localPath: "/tmp/second")],
+            propertyID: fixture.selection.propertyID,
+        )
+        var state = fixture.readyState
+        state.status = .ambiguous
+        state.proposal = fixture.proposal
+        let store = TestStore(initialState: state) {
+            EntryPropertiesFeature()
+        }
+
+        await store.send(.selectionChanged(firstSelection)) {
+            $0.generation = 1
+            $0.selection = firstSelection
+            $0.capabilityReport = nil
+            $0.targetSnapshot = nil
+            $0.proposal = nil
+            $0.appliedProposal = nil
+            $0.pendingReadBack = fixture.proposal
+            $0.canonicalResult = nil
+            $0.activePhase = nil
+            $0.readBackProposal = nil
+            $0.status = .idle
+            $0.lastOutcome = .propertyChangeRejected(.ambiguousExecution)
+        }
+        await store.receive(.init(kind: .outcome(.propertyChangeRejected(.ambiguousExecution))))
+
+        await store.send(.selectionChanged(secondSelection)) {
+            $0.generation = 2
+            $0.selection = secondSelection
+        }
+        XCTAssertEqual(store.state.lastOutcome, .propertyChangeRejected(.ambiguousExecution))
+        XCTAssertEqual(store.state.pendingReadBack, fixture.proposal)
+
+        await store.send(.prepare(fixture.intent)) {
+            $0.lastOutcome = .propertyChangeRejected(.busy)
+        }
+        await store.receive(.init(kind: .outcome(.propertyChangeRejected(.busy))))
+        XCTAssertEqual(store.state.pendingReadBack, fixture.proposal)
+    }
+
     /// EPR-006-prepare_property_change: identity 보강 전 snapshot의 unset target
     /// revision은 local path로 대응한다.
     /// - 검증 내용: 일부 target만 assignment를 가진 변경에서 prepare before == nil 수용

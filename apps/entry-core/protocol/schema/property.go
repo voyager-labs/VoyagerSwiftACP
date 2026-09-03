@@ -86,6 +86,7 @@ type PropertyDefinition struct {
 	ValueType           string                      `json:"value_type"`
 	Cardinality         string                      `json:"cardinality"`
 	State               string                      `json:"state"`
+	Origin              string                      `json:"origin"`
 	Revision            int64                       `json:"revision"`
 	Options             []PropertyOption            `json:"options"`
 	ConditionCapability PropertyConditionCapability `json:"condition_capability"`
@@ -1158,8 +1159,8 @@ func decodePropertyConditionOperand(value jsonValue) (PropertyConditionOperand, 
 // --- 결과 디코딩 ---
 
 func decodePropertyDefinition(value jsonValue) (PropertyDefinition, bool) {
-	fields, ok := objectFields(value, "property_id", "key", "name", "value_type", "cardinality", "state", "revision", "options", "condition_capability")
-	if !ok || !allStrings(fields, "property_id", "key", "name", "value_type", "cardinality", "state") || fields["options"].kind != jsonArray {
+	fields, ok := objectFields(value, "property_id", "key", "name", "value_type", "cardinality", "state", "origin", "revision", "options", "condition_capability")
+	if !ok || !allStrings(fields, "property_id", "key", "name", "value_type", "cardinality", "state", "origin") || fields["options"].kind != jsonArray {
 		return PropertyDefinition{}, false
 	}
 	revision, valid := decodeExpectedRevision(fields["revision"])
@@ -1173,6 +1174,7 @@ func decodePropertyDefinition(value jsonValue) (PropertyDefinition, bool) {
 		ValueType:   fields["value_type"].text,
 		Cardinality: fields["cardinality"].text,
 		State:       fields["state"].text,
+		Origin:      fields["origin"].text,
 		Revision:    revision,
 		Options:     make([]PropertyOption, len(fields["options"].items)),
 	}

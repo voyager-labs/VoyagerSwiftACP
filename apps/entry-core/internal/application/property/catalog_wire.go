@@ -38,6 +38,7 @@ func DefinitionViewToWire(view DefinitionView) (schema.PropertyDefinition, schem
 		ValueType:           string(view.Definition.ValueType),
 		Cardinality:         string(view.Definition.Cardinality),
 		State:               state,
+		Origin:              string(view.Definition.Origin),
 		Revision:            int64(view.Definition.DefinitionRev),
 		Options:             options,
 		ConditionCapability: conditionCapabilityToWire(ConditionCapabilityFor(view.Definition)),

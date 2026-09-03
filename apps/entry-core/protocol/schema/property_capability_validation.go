@@ -12,10 +12,13 @@ import (
 // evaluator가 항상 false로 평가하는 operator를 광고하면 client가 잘못된
 // operand UI를 구성할 수 있으므로 fail-closed로 거절한다. application의
 // ConditionCapabilityFor가 capability를 발행할 때 쓰는 것과 동일한 domain
-// derivation을 공유한다. unsupported capability도 definition lifecycle 및
-// value contract에서 유도되는 사유와 정확히 일치해야 한다.
+// derivation을 공유한다. unsupported capability도 definition lifecycle,
+// origin 및 value contract에서 유도되는 사유와 정확히 일치해야 한다 — 특히
+// source_runtime_unavailable은 built-in 정의에만, 나머지 결과는 user-defined
+// 정의에만 나타날 수 있다.
 func validConditionCapabilityForDefinition(definition PropertyDefinition) bool {
 	capability := definition.ConditionCapability
+	origin := domainentry.PropertyOrigin(definition.Origin)
 	nativeType, valueContractSupported := domainentry.ConditionNativeTypeForContract(
 		domainentry.PropertyType(definition.ValueType),
 		domainentry.PropertyCardinality(definition.Cardinality),
@@ -25,14 +28,19 @@ func validConditionCapabilityForDefinition(definition PropertyDefinition) bool {
 		case "definition_disabled":
 			return definition.State == "disabled"
 		case "source_runtime_unavailable":
-			return definition.State == "active"
+			return definition.State == "active" && origin == domainentry.PropertyOriginBuiltIn
 		case "unsupported_value_contract":
-			return definition.State == "active" && !valueContractSupported
+			return definition.State == "active" &&
+				origin == domainentry.PropertyOriginUserDefined &&
+				!valueContractSupported
 		default:
 			return false
 		}
 	}
-	if definition.State != "active" || !valueContractSupported || capability.NativeType != string(nativeType) {
+	if definition.State != "active" ||
+		origin != domainentry.PropertyOriginUserDefined ||
+		!valueContractSupported ||
+		capability.NativeType != string(nativeType) {
 		return false
 	}
 	expected := append([]string(nil), domainentry.ConditionCatalogData.OperatorsForType(nativeType)...)

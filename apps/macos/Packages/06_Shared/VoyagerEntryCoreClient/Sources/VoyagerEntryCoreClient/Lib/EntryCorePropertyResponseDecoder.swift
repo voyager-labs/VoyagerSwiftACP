@@ -100,6 +100,7 @@ private extension EntryCorePropertyResponseDecoder {
             "value_type",
             "cardinality",
             "state",
+            "origin",
             "revision",
             "options",
             "condition_capability",
@@ -108,11 +109,13 @@ private extension EntryCorePropertyResponseDecoder {
             case let .string(name)? = fields["name"],
             case let .string(typeRaw)? = fields["value_type"],
             case let .string(cardinalityRaw)? = fields["cardinality"],
-            case let .string(stateRaw)? = fields["state"], let revision = integer(fields["revision"]), revision >= 1,
+            case let .string(stateRaw)? = fields["state"],
+            case let .string(originRaw)? = fields["origin"], let revision = integer(fields["revision"]), revision >= 1,
             case let .array(optionValues)? = fields["options"], optionValues.count <= 256,
             let type = PropertyValueType(rawValue: typeRaw),
             let cardinality = PropertyCardinality(rawValue: cardinalityRaw),
-            let state = PropertyDefinitionState(rawValue: stateRaw), PropertyWireValidation.short(key),
+            let state = PropertyDefinitionState(rawValue: stateRaw),
+            let origin = PropertyDefinitionOrigin(rawValue: originRaw), PropertyWireValidation.short(key),
             PropertyWireValidation.short(name) else { throw mismatch }
         let options = try optionValues.map(option)
         guard type == .select || options.isEmpty, Set(options.map(\.id)).count == options.count,
@@ -123,6 +126,7 @@ private extension EntryCorePropertyResponseDecoder {
             matchesValueType: type,
             cardinality: cardinality,
             state: state,
+            origin: origin,
         )
         return try PropertyDefinition(
             id: PropertyID(rawValue: id),
@@ -131,27 +135,30 @@ private extension EntryCorePropertyResponseDecoder {
             valueType: type,
             cardinality: cardinality,
             state: state,
+            origin: origin,
             revision: revision,
             options: options,
             conditionCapability: conditionCapability,
         )
     }
 
-    /// capability가 definition lifecycle과 value contract에서 유도되는 native
-    /// type 및 Registry relation의 전체 operator 집합과 정확히 일치하는지 검증한다
-    /// (Go protocol/schema/property_capability_validation.go와 같은 경계). evaluator가
-    /// 항상 false로 평가하는 operator를 광고하거나 definition lifecycle과 모순되는
-    /// 지원 상태를 반환하면 client가 잘못된 operand UI·기능 상태를 구성할 수 있으므로
-    /// fail-closed로 거절한다.
+    /// capability가 definition origin·lifecycle과 value contract에서 유도되는
+    /// native type 및 Registry relation의 전체 operator 집합과 정확히 일치하는지
+    /// 검증한다 (Go protocol/schema/property_capability_validation.go와 같은 경계).
+    /// evaluator가 항상 false로 평가하는 operator를 광고하거나 origin·lifecycle과
+    /// 모순되는 지원 상태를 반환하면 client가 잘못된 operand UI·기능 상태를 구성할
+    /// 수 있으므로 fail-closed로 거절한다.
     static func validate(
         _ capability: PropertyConditionCapability,
         matchesValueType valueType: PropertyValueType,
         cardinality: PropertyCardinality,
         state: PropertyDefinitionState,
+        origin: PropertyDefinitionOrigin,
     ) throws {
         switch capability {
         case let .supported(_, nativeType, allowedOperators):
-            guard state == .active,
+            guard origin == .userDefined,
+                  state == .active,
                   let expectedNativeType = PropertyConditionRelation.nativeType(
                       for: valueType,
                       cardinality: cardinality,
@@ -161,13 +168,15 @@ private extension EntryCorePropertyResponseDecoder {
             else { throw mismatch }
         case let .unsupported(reason):
             switch (state, reason) {
-            case (.disabled, .definitionDisabled),
-                 (.active, .sourceRuntimeUnavailable):
+            case (.disabled, .definitionDisabled):
                 break
+            case (.active, .sourceRuntimeUnavailable):
+                // ConditionCapabilityFor는 built-in 정의에만 이 사유를 발행한다.
+                guard origin == .builtIn else { throw mismatch }
             case (.active, .unsupportedValueContract):
-                guard PropertyConditionRelation.nativeType(for: valueType, cardinality: cardinality) == nil else {
-                    throw mismatch
-                }
+                guard origin == .userDefined,
+                      PropertyConditionRelation.nativeType(for: valueType, cardinality: cardinality) == nil
+                else { throw mismatch }
             default:
                 throw mismatch
             }
@@ -200,7 +209,9 @@ private extension EntryCorePropertyResponseDecoder {
                 "allowed_operators",
             ]),
                 fields["evaluation_scope"] == .string("local_assignment"),
-                case let .string(version)? = fields["catalog_version"], !version.isEmpty,
+                // relation table은 고정 catalog 버전을 미러링하므로 다른 버전의
+                // semantics는 승인하지 않는다.
+                fields["catalog_version"] == .string(PropertyConditionCatalog.version),
                 case let .string(nativeRaw)? = fields["native_type"],
                 let native = PropertyConditionNativeType(rawValue: nativeRaw),
                 case let .array(rawOperators)? = fields["allowed_operators"] else { throw mismatch }
@@ -209,7 +220,11 @@ private extension EntryCorePropertyResponseDecoder {
                     return try PropertyConditionOperator(rawValue: raw)
                 }
             guard operators == operators.sorted(), Set(operators).count == operators.count else { throw mismatch }
-            return .supported(catalogVersion: version, nativeType: native, allowedOperators: operators)
+            return .supported(
+                catalogVersion: PropertyConditionCatalog.version,
+                nativeType: native,
+                allowedOperators: operators,
+            )
         }
         guard let fields = value.objectFields(exactly: ["supported", "reason"]),
               case let .string(raw)? = fields["reason"],
@@ -373,7 +388,7 @@ private extension EntryCorePropertyResponseDecoder {
         )),
             case let .array(rawItems)? = fields["items"],
             case let .array(rawUnresolved)? = fields["unresolved_candidate_indices"],
-            case let .string(version)? = fields["catalog_version"], !version.isEmpty,
+            fields["catalog_version"] == .string(PropertyConditionCatalog.version),
             case let .bool(hasMore)? = fields["has_more"] else { throw mismatch }
         let items = try rawItems.map(queryItem)
         let unresolved = try rawUnresolved.map { guard let value = integer($0), value >= 0 else { throw mismatch }
@@ -386,7 +401,7 @@ private extension EntryCorePropertyResponseDecoder {
         return PropertyConditionQueryPage(
             items: items,
             unresolvedCandidateIndices: unresolved,
-            catalogVersion: version,
+            catalogVersion: PropertyConditionCatalog.version,
             nextPageToken: token,
             hasMore: hasMore,
         )

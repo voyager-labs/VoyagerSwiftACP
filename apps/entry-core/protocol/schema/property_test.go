@@ -40,7 +40,7 @@ func ascendingUUID(n int) string {
 }
 
 func fixtureDefinitionJSON(id string) string {
-	return `{"property_id":"` + id + `","key":"k","name":"n","value_type":"text","cardinality":"one","state":"active","revision":1,"options":[],"condition_capability":` + fixtureConditionCapabilityJSON() + `}`
+	return `{"property_id":"` + id + `","key":"k","name":"n","value_type":"text","cardinality":"one","state":"active","origin":"user_defined","revision":1,"options":[],"condition_capability":` + fixtureConditionCapabilityJSON() + `}`
 }
 
 func fixtureConditionCapabilityJSON() string {
@@ -550,7 +550,7 @@ func TestPropertyResultEncodeShapeAndRoundTrip(t *testing.T) {
 
 	pid := fixturePropertyID(t, 500)
 	entryID := fixtureEntryID(1)
-	definition := PropertyDefinition{PropertyID: pid, Key: "k", Name: "n", ValueType: "text", Cardinality: "one", State: "active", Revision: 1, Options: []PropertyOption{}, ConditionCapability: fixtureConditionCapability()}
+	definition := PropertyDefinition{PropertyID: pid, Key: "k", Name: "n", ValueType: "text", Cardinality: "one", State: "active", Origin: "user_defined", Revision: 1, Options: []PropertyOption{}, ConditionCapability: fixtureConditionCapability()}
 	assignment := PropertyAssignment{PropertyID: pid, EntryID: entryID, ValueType: "text", Cardinality: "one", State: "value", Revision: 1, Payload: &PropertyPayload{kind: "text", one: "v"}}
 	prepared := PropertyPreparedChange{
 		Target:     PropertyTargetSelector{Kind: "local_path", LocalPath: "/a"},
@@ -679,7 +679,7 @@ func TestPropertyCapabilityExactnessAgainstValueContract(t *testing.T) {
 
 	pid := fixturePropertyID(t, 610)
 	base := func(valueType, cardinality string) PropertyDefinition {
-		return PropertyDefinition{PropertyID: pid, Key: "k", Name: "n", ValueType: valueType, Cardinality: cardinality, State: "active", Revision: 1, Options: []PropertyOption{}, ConditionCapability: fixtureConditionCapabilityForContract(valueType, cardinality)}
+		return PropertyDefinition{PropertyID: pid, Key: "k", Name: "n", ValueType: valueType, Cardinality: cardinality, State: "active", Origin: "user_defined", Revision: 1, Options: []PropertyOption{}, ConditionCapability: fixtureConditionCapabilityForContract(valueType, cardinality)}
 	}
 
 	if definition := base("text", "one"); definition.Validate() != nil {
@@ -725,7 +725,7 @@ func TestPropertyCapabilityExactnessAgainstValueContract(t *testing.T) {
 		t.Fatal("datetime definition with supported capability accepted")
 	}
 
-	unsupported := PropertyDefinition{PropertyID: pid, Key: "k", Name: "n", ValueType: "datetime", Cardinality: "one", State: "active", Revision: 1, Options: []PropertyOption{}, ConditionCapability: PropertyConditionCapability{Reason: "unsupported_value_contract"}}
+	unsupported := PropertyDefinition{PropertyID: pid, Key: "k", Name: "n", ValueType: "datetime", Cardinality: "one", State: "active", Origin: "user_defined", Revision: 1, Options: []PropertyOption{}, ConditionCapability: PropertyConditionCapability{Reason: "unsupported_value_contract"}}
 	if unsupported.Validate() != nil {
 		t.Fatal("datetime definition with unsupported capability rejected")
 	}
@@ -741,6 +741,30 @@ func TestPropertyCapabilityExactnessAgainstValueContract(t *testing.T) {
 	disabledRuntimeUnavailable.ConditionCapability = PropertyConditionCapability{Reason: "source_runtime_unavailable"}
 	if disabledRuntimeUnavailable.Validate() == nil {
 		t.Fatal("disabled definition with runtime-unavailable capability accepted")
+	}
+
+	builtInRuntimeUnavailable := base("text", "one")
+	builtInRuntimeUnavailable.Origin = "built_in"
+	builtInRuntimeUnavailable.ConditionCapability = PropertyConditionCapability{Reason: "source_runtime_unavailable"}
+	if builtInRuntimeUnavailable.Validate() != nil {
+		t.Fatal("built-in definition with runtime-unavailable capability rejected")
+	}
+
+	userDefinedRuntimeUnavailable := base("text", "one")
+	userDefinedRuntimeUnavailable.ConditionCapability = PropertyConditionCapability{Reason: "source_runtime_unavailable"}
+	if userDefinedRuntimeUnavailable.Validate() == nil {
+		t.Fatal("user-defined definition with runtime-unavailable capability accepted")
+	}
+
+	builtInSupported := base("text", "one")
+	builtInSupported.Origin = "built_in"
+	if builtInSupported.Validate() == nil {
+		t.Fatal("built-in definition with supported capability accepted")
+	}
+
+	builtInUnsupportedContract := PropertyDefinition{PropertyID: pid, Key: "k", Name: "n", ValueType: "datetime", Cardinality: "one", State: "active", Origin: "built_in", Revision: 1, Options: []PropertyOption{}, ConditionCapability: PropertyConditionCapability{Reason: "unsupported_value_contract"}}
+	if builtInUnsupportedContract.Validate() == nil {
+		t.Fatal("built-in definition with unsupported-value-contract capability accepted")
 	}
 
 	activeDefinitionDisabled := base("text", "one")
@@ -792,7 +816,7 @@ func TestEncodedSuccessBytesExactness(t *testing.T) {
 	t.Parallel()
 
 	pid := fixturePropertyID(t, 700)
-	definition := PropertyDefinition{PropertyID: pid, Key: "k", Name: "n", ValueType: "text", Cardinality: "one", State: "active", Revision: 1, Options: []PropertyOption{}, ConditionCapability: fixtureConditionCapability()}
+	definition := PropertyDefinition{PropertyID: pid, Key: "k", Name: "n", ValueType: "text", Cardinality: "one", State: "active", Origin: "user_defined", Revision: 1, Options: []PropertyOption{}, ConditionCapability: fixtureConditionCapability()}
 	result := PropertyDefinitionResult{Definition: definition}
 
 	size, fits := EncodedSuccessBytes("id", result)
@@ -809,7 +833,7 @@ func TestEncodedSuccessBytesExactness(t *testing.T) {
 	for index := range options {
 		options[index] = PropertyOption{OptionID: fixtureOptionID(1000 + index), Label: strings.Repeat("l", 256), Position: int64(index), State: "active"}
 	}
-	fat := PropertyDefinitionListResult{Definitions: []PropertyDefinition{{PropertyID: pid, Key: "k", Name: "n", ValueType: "select", Cardinality: "one", State: "active", Revision: 1, Options: options, ConditionCapability: fixtureConditionCapabilityForContract("select", "one")}}, HasMore: false}
+	fat := PropertyDefinitionListResult{Definitions: []PropertyDefinition{{PropertyID: pid, Key: "k", Name: "n", ValueType: "select", Cardinality: "one", State: "active", Origin: "user_defined", Revision: 1, Options: options, ConditionCapability: fixtureConditionCapabilityForContract("select", "one")}}, HasMore: false}
 	fatSize, fatFits := EncodedSuccessBytes("id", fat)
 	if fatFits || fatSize <= MaxWireBytes {
 		t.Fatalf("oversized read-back not flagged: size=%d fits=%v", fatSize, fatFits)

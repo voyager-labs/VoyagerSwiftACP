@@ -57,3 +57,17 @@ enum PropertyConditionRelation {
         }
     }
 }
+
+/// definition origin은 ConditionCapabilityFor의 사유 유도 조건과 대응되는
+/// wire 정본 값이다 (Go domainentry.PropertyOrigin과 동일 inventory).
+nonisolated public enum PropertyDefinitionOrigin: String, Codable, Sendable {
+    case builtIn = "built_in"
+    case userDefined = "user_defined"
+}
+
+/// Registry catalog version that the operator/relation table mirrors. Go의
+/// ConditionCatalogVersion과 shared fixture가 함께 소유하는 값이다. 다른
+/// 버전의 semantics는 fail closed로 거절한다.
+nonisolated public enum PropertyConditionCatalog {
+    public static let version = "2.2.0"
+}
