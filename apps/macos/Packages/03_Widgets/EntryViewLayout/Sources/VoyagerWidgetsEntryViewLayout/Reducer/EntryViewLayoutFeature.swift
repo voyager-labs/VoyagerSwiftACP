@@ -635,15 +635,59 @@ public struct EntryViewLayoutFeature {
             guard previousSelection != state.selectedIds else { return .none }
             return .send(.delegate(.selectionChanged))
 
-        case let .settle(id, _):
-            guard state.identityReplacement?.plan.transactionID == id else { return .none }
-            let previousSelection = state.selectedIds
-            state.identityReplacement = nil
-            state.hierarchy.commitDeferredFolderReplacementsOnCancel()
-            state.reconcileSelectionWithVisibleEntries()
-            guard previousSelection != state.selectedIds else { return .none }
-            return .send(.delegate(.selectionChanged))
+        case let .settle(id, outcome):
+            return settleIdentityReplacement(id: id, outcome: outcome, state: &state)
         }
+    }
+
+    private func settleIdentityReplacement(
+        id: UUID,
+        outcome: EntryIdentityReplacementOutcome,
+        state: inout State,
+    ) -> Effect<Action> {
+        guard let replacement = state.identityReplacement,
+              replacement.plan.transactionID == id
+        else { return .none }
+        let previousSelection = state.selectedIds
+        let previousLastSelectedID = state.lastSelectedId
+        let previousRangeAnchorID = state.rangeAnchorId
+        let previousShouldScrollToSelection = state.shouldScrollToSelection
+        let completedDestinationPaths: Set<String> = if case .completed = outcome {
+            Set(replacement.plan.pairs.map { pair in
+                standardizedPath(pair.afterLexicalPath.isEmpty ? pair.afterPath : pair.afterLexicalPath)
+            })
+        } else {
+            []
+        }
+        let completedDestinationIDs = previousSelection.filter {
+            completedDestinationPaths.contains(standardizedPath($0))
+        }
+
+        state.identityReplacement = nil
+        state.hierarchy.commitDeferredFolderReplacementsOnCancel()
+        state.reconcileSelectionWithVisibleEntries()
+        // A root reload migrates canonical selection before its projection effect applies.
+        // Preserve only proven destination identities across that short stale-row window;
+        // all unrelated stale selection remains subject to normal reconciliation.
+        state.selectedIds.formUnion(completedDestinationIDs)
+        if !completedDestinationIDs.isEmpty {
+            state.shouldScrollToSelection = previousShouldScrollToSelection
+        }
+        if let previousLastSelectedID,
+           completedDestinationIDs.contains(previousLastSelectedID)
+        {
+            state.lastSelectedId = previousLastSelectedID
+        }
+        if let previousRangeAnchorID,
+           completedDestinationIDs.contains(previousRangeAnchorID)
+        {
+            state.rangeAnchorId = previousRangeAnchorID
+        }
+        guard previousSelection != state.selectedIds
+            || previousLastSelectedID != state.lastSelectedId
+            || previousRangeAnchorID != state.rangeAnchorId
+        else { return .none }
+        return .send(.delegate(.selectionChanged))
     }
 
     private func handleIdentityReplacementEntryOperationsAction(
