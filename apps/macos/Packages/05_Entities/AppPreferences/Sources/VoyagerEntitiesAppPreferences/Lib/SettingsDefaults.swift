@@ -30,16 +30,16 @@ public enum SettingsDefaults {
             if let legacyPath, !legacyPath.isEmpty {
                 return .directory(legacyPath)
             }
-            fallthrough
         default:
-            let migratedPage: StartPage = if let legacyPath, !legacyPath.isEmpty, persistedType == nil {
-                .directory(legacyPath)
-            } else {
-                .home
-            }
-            userDefaultsClient.setString(migratedPage.persistenceValue, SettingsKeys.defaultStartPageType)
-            return migratedPage
+            break
         }
+        let migratedPage: StartPage = if let legacyPath, !legacyPath.isEmpty, persistedType == nil {
+            .directory(legacyPath)
+        } else {
+            .home
+        }
+        userDefaultsClient.setString(migratedPage.persistenceValue, SettingsKeys.defaultStartPageType)
+        return migratedPage
     }
 }
 

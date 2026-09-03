@@ -112,8 +112,8 @@ extension WindowManagerFeature {
         requestID: UUID,
         path: String?,
         selectEntryID: String?,
-        resolvedStartPage: StartPage? = nil,
         state: inout State,
+        resolvedStartPage: StartPage? = nil,
     ) -> Effect<Action> {
         guard state.authorizedTrackedSingletonRequestID == requestID else {
             return trackedSingletonCompletionEffect(requestID)
@@ -507,8 +507,8 @@ extension WindowManagerFeature {
     private func openWindowSession(
         path: String?,
         selectEntryID: String?,
-        resolvedStartPage: StartPage? = nil,
         state: inout State,
+        resolvedStartPage: StartPage? = nil,
     ) -> Effect<Action> {
         if onboardingWindowClient.showIfNeeded() { return .none }
         var startPage: StartPage?
@@ -564,15 +564,15 @@ extension WindowManagerFeature {
                 requestID: requestID,
                 path: nil,
                 selectEntryID: selectEntryID,
-                resolvedStartPage: startPage,
                 state: &state,
+                resolvedStartPage: startPage,
             )
         }
         return openWindowSession(
             path: nil,
             selectEntryID: selectEntryID,
-            resolvedStartPage: startPage,
             state: &state,
+            resolvedStartPage: startPage,
         )
     }
 

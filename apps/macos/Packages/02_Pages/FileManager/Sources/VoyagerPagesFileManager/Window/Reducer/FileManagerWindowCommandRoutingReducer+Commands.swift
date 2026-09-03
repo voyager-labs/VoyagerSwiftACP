@@ -648,14 +648,12 @@ extension FileManagerWindowCommandRoutingReducer {
 
         var effects: [Effect<Action>] = []
 
-        // ContentPane AI Chat forwarding: active tab이 .aiChat일 때 전송
         if let activeTabID = state.contentTabs.activeTabID,
            case .aiChat = state.contentTabs.tabs[id: activeTabID]?.anchor
         {
             effects.append(.send(.tabContent(tabID: activeTabID, action: .aiChat(.providerConnectionsUpdated(file)))))
         }
 
-        // Inspector AI Chat forwarding (기존 동작 유지)
         if state.inspector.inspectorVisible,
            state.inspector.inspectorPaneExists,
            state.inspector.activeMode == .chat
@@ -787,7 +785,6 @@ extension FileManagerWindowCommandRoutingReducer {
             return .none
         }
         guard let expectedTarget = state.validatedUndoRedoTarget(for: direction) else { return .none }
-
         let requestID = uuid()
         let windowID = state.windowID
         state.undoRedoPhase = .invoking(requestID: requestID, direction: direction)

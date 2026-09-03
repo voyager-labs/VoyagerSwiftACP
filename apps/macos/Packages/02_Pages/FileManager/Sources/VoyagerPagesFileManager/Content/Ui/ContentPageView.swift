@@ -53,14 +53,25 @@ enum ContentPagePresentationPolicy: Equatable {
 
 struct ContentPageView: View {
     let store: StoreOf<FileManagerContentFeature>
+    let onGoBack: () -> Void
+    let onGoForward: () -> Void
+    let onSwipeProgress: (EntryHistorySwipeProgress?) -> Void
 
     @StateObject private var contextMenuCoordinatorHolder: ContentPaneContextMenuCoordinatorHolder
 
     @Environment(\.fileManagerKeyCommandFocusCoordinator)
     private var keyCommandFocusCoordinator
 
-    init(store: StoreOf<FileManagerContentFeature>) {
+    init(
+        store: StoreOf<FileManagerContentFeature>,
+        onGoBack: @escaping () -> Void = {},
+        onGoForward: @escaping () -> Void = {},
+        onSwipeProgress: @escaping (EntryHistorySwipeProgress?) -> Void = { _ in },
+    ) {
         self.store = store
+        self.onGoBack = onGoBack
+        self.onGoForward = onGoForward
+        self.onSwipeProgress = onSwipeProgress
         _contextMenuCoordinatorHolder = StateObject(
             wrappedValue: ContentPaneContextMenuCoordinatorHolder(store: store),
         )
@@ -95,9 +106,21 @@ struct ContentPageView: View {
             let menuProvider = makeBlankSpaceMenuProvider()
             switch store.entryViewLayout.mode {
             case .list:
-                EntryListViewRepresentable(store: entryViewLayoutStore, blankSpaceMenuProvider: menuProvider)
+                EntryListViewRepresentable(
+                    store: entryViewLayoutStore,
+                    blankSpaceMenuProvider: menuProvider,
+                    onGoBack: onGoBack,
+                    onGoForward: onGoForward,
+                    onSwipeProgress: onSwipeProgress,
+                )
             case .grid:
-                EntryGridViewRepresentable(store: entryViewLayoutStore, blankSpaceMenuProvider: menuProvider)
+                EntryGridViewRepresentable(
+                    store: entryViewLayoutStore,
+                    blankSpaceMenuProvider: menuProvider,
+                    onGoBack: onGoBack,
+                    onGoForward: onGoForward,
+                    onSwipeProgress: onSwipeProgress,
+                )
             }
         }
     }
@@ -177,6 +200,9 @@ struct ContentPageView: View {
 
     private func handleKeyboardEvent(_ event: NSEvent) {
         guard presentationPolicy.allowsKeyboardCommandDispatch else { return }
+        if keyCommandFocusCoordinator?.routeEntryListKeyDown(event) == true {
+            return
+        }
 
         let command = KeyCommand(
             keyCode: event.keyCode,

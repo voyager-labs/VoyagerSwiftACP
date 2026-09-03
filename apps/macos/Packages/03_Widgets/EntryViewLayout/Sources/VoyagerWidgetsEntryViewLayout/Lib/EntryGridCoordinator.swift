@@ -143,10 +143,10 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
         collectionView.addGestureRecognizer(doubleClick)
     }
 
-    /// snapshot rebuild 뒤 section을 재구성하고 reload한다.
+    /// render 경로는 emission snapshot presentation을, bind 경로는 현재 state presentation을 소비한다.
     /// selection scroll이 성공하면 saved offset 복원보다 우선하므로 복원을 건너뛴다.
-    func rebuildSectionsAndReload() -> Bool {
-        updateSectionsFromState()
+    func rebuildSectionsAndReload(presentation: EntryViewLayoutPresentation? = nil) -> Bool {
+        updateSections(presentation: presentation ?? state.presentation)
         let hadDropTarget = dropTargetEntryId != nil || validatedDropDestinationPath != nil || state.isDropTargeted
         clearDropTargetState()
         if hadDropTarget {
@@ -174,8 +174,8 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
         return scrolledToSelection
     }
 
-    func updateSectionsFromState() {
-        sections = makeSections(state: state)
+    func updateSections(presentation: EntryViewLayoutPresentation) {
+        sections = makeSections(presentation: presentation)
         indexPathByEntryId = [:]
         for (sectionIndex, section) in sections.enumerated() {
             for (itemIndex, entry) in section.items.enumerated() {
@@ -184,8 +184,8 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
         }
     }
 
-    func makeSections(state: EntryViewLayoutState) -> [Section] {
-        state.presentation.sections.map { section in
+    func makeSections(presentation: EntryViewLayoutPresentation) -> [Section] {
+        presentation.sections.map { section in
             Section(
                 title: section.title,
                 colorCode: section.colorCode,
@@ -194,6 +194,10 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
                 isCollapsed: section.isCollapsed,
             )
         }
+    }
+
+    func makeSections(state: EntryViewLayoutState) -> [Section] {
+        makeSections(presentation: state.presentation)
     }
 
     func updateLayout(for width: CGFloat) {

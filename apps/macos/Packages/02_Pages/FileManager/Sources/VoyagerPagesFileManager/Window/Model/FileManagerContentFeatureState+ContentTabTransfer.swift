@@ -13,6 +13,8 @@ extension FileManagerContentFeature.State {
             && pendingSelectEntryID == baseline.pendingSelectEntryID
             && pendingSelectEntryDestinationPath == baseline.pendingSelectEntryDestinationPath
             && pendingSelectEntryLoadGeneration == baseline.pendingSelectEntryLoadGeneration
+            && pendingIdentityTransition == baseline.pendingIdentityTransition
+            && pendingExternalRefresh == baseline.pendingExternalRefresh
             && homeFavoriteItems == baseline.homeFavoriteItems
             && homeLocationItems == baseline.homeLocationItems
             && homeDirectoryItemCounts == baseline.homeDirectoryItemCounts

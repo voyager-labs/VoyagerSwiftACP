@@ -678,7 +678,7 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         XCTAssertTrue(savedInFlightSnapshot.entryViewLayout.entries.isEmpty)
         await gate.resume(with: .entries([lateEntry]))
         await store.skipReceivedActions()
-        XCTAssertTrue(store.state.tabContentStates[directoryID]?.entryViewLayout.entries.isEmpty == true)
+        XCTAssertEqual(store.state.tabContentStates[directoryID]?.entryViewLayout.entries.isEmpty, true)
 
         await store.send(.contentTabs(.setCurrent(directoryID)))
         await store.receiveTabContent(\.internal.applyNavigationState, .folder(secondPath))
@@ -872,6 +872,11 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         await store.finish()
     }
 
+    /// CTM-005-independent_content_tab_session: tab handoff는 outgoing Composer 작업과 늦은 응답을 격리함
+    /// 실제 tab 전환 경로가 public Composer process state를 정리하고 visible draft를 보존하는지 검증한다.
+    /// - 검증 내용: loading/IDs/feedback cleanup, visible text policy, late search/filter public no-op
+    /// - 사전 조건: outgoing Home tab Composer에 in-flight search/filter와 synthetic visible draft가 있음
+    /// - 기대 결과: 저장 session은 idle이며 늦은 이전 response 뒤에도 text/feedback가 변하지 않음
     func testSwitchingTabsClearsInFlightComposerStateBeforeSavingPreviousSession() async {
         let searchID = UUID()
         let filtersID = UUID()
@@ -887,6 +892,7 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         homeContent.composer.lastAcceptedSearchRequestID = searchID
         homeContent.composer.lastAcceptedFiltersRequestID = filtersID
         homeContent.composer.pendingSearchQuery = "tag:important"
+        homeContent.composer.text = "VOY589_SYNTHETIC_HANDOFF_DRAFT"
         homeContent.composer.queryRenderPhase = .searching
         homeContent.composer.searchStartedAt = Date(timeIntervalSince1970: 1_700_000_000)
         homeContent.composer.filtersStartedAt = Date(timeIntervalSince1970: 1_700_000_001)
@@ -954,6 +960,26 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         XCTAssertNil(savedHomeComposer.filtersStartedAt)
         XCTAssertNil(savedHomeComposer.transientFeedback)
         XCTAssertEqual(savedHomeComposer.queryRenderPhase, .idle)
+        XCTAssertEqual(savedHomeComposer.text, "VOY589_SYNTHETIC_HANDOFF_DRAFT")
+
+        let expectedText = savedHomeComposer.text
+        let expectedFeedback = savedHomeComposer.transientFeedback
+        await store.send(.tabContent(
+            tabID: homeID,
+            action: .composer(.internal(.searchResponse(
+                searchID,
+                .failure(NSError(domain: "VOY589Synthetic", code: 1)),
+            ))),
+        ))
+        await store.send(.tabContent(
+            tabID: homeID,
+            action: .composer(.internal(.filtersResponse(
+                filtersID,
+                .failure(NSError(domain: "VOY589Synthetic", code: 2)),
+            ))),
+        ))
+        XCTAssertEqual(store.state.tabContentStates[homeID]?.composer.text, expectedText)
+        XCTAssertEqual(store.state.tabContentStates[homeID]?.composer.transientFeedback, expectedFeedback)
         await store.finish()
     }
 

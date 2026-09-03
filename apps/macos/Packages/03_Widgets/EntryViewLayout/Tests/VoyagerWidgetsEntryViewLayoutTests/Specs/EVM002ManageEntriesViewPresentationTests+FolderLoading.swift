@@ -2,10 +2,67 @@ import AppKit
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesEntry
+import VoyagerFeaturesEntryOperations
 @testable import VoyagerWidgetsEntryViewLayout
 import XCTest
 
 extension EVM002ManageEntriesViewPresentationTests {
+    // MARK: - EVM-002-update_entry_selection
+
+    /// EVM-002-update_entry_selection: hierarchy entry replacement selects only the destination entry.
+    /// 계층 outline에서 하위 folder row를 선택해도 해당 folder의 subtree가 canonical selection에 섞이지 않는지 검증한다.
+    /// - 검증 내용: native keyboard replacement가 destination folder ID 하나만 selectedIds와 focus/anchor로 투영한다.
+    /// - 사전 조건: expanded root folder 아래 expanded child folder와 그 하위 file이 list projection에 있다.
+    /// - 기대 결과: child folder row 선택 결과가 child folder 하나이고 nested file은 선택되지 않는다.
+    func testHierarchyEntryReplacementSelectsOnlyDestinationEntry() throws {
+        let root = hierarchyFolder(id: "/root/root", name: "root")
+        let childFolder = hierarchyFolder(id: "/root/root/child", name: "child")
+        let nestedFile = hierarchyFile(id: "/root/root/child/item.txt", name: "item.txt")
+        var hierarchy = EntryListHierarchyState(rootPath: "/root")
+        hierarchy.setExpandedIDs([root.id, childFolder.id])
+        hierarchy.nodesByID[root.id] = .init(
+            folder: .init(children: [childFolder], coreFinished: true),
+            expansionIntent: true,
+            generation: 1,
+            loadPhase: .loaded,
+        )
+        hierarchy.nodesByID[childFolder.id] = .init(
+            folder: .init(children: [nestedFile], coreFinished: true),
+            expansionIntent: true,
+            generation: 1,
+            loadPhase: .loaded,
+        )
+        let projection = hierarchyProjection(folder: root, hierarchy: hierarchy)
+        var state = hierarchyState(roots: [root])
+        state.hierarchy = hierarchy
+        state.outlineProjectionRevision = projection.revision
+        let store = Store(initialState: state) { EntryViewLayoutFeature() }
+        let coordinator = EntryListCoordinator(store: store)
+        coordinator.bind(to: EntryListView(frame: .zero))
+        coordinator.applyStoreProjection(projection)
+
+        let childItem = try XCTUnwrap(coordinator.entryItemById[childFolder.id])
+        let childRow = coordinator.tableView.row(forItem: childItem)
+        let event = try XCTUnwrap(NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            characters: "a",
+            charactersIgnoringModifiers: "a",
+            isARepeat: false,
+            keyCode: 125,
+        ))
+
+        XCTAssertTrue(coordinator.handleSelectionKeyDown(forRow: childRow, event: event))
+        XCTAssertEqual(store.state.selectedIds, Set([childFolder.id]))
+        XCTAssertEqual(store.state.lastSelectedId, childFolder.id)
+        XCTAssertEqual(store.state.rangeAnchorId, childFolder.id)
+        XCTAssertEqual(coordinator.tableView.selectedRowIndexes, IndexSet(integer: childRow))
+    }
+
     // MARK: - EVM-002-toggle_directory_expansion_in_list
 
     /// EVM-002-toggle_directory_expansion_in_list: loading folder는 수신한 children과 parent spinner를 함께 유지한다.
@@ -260,7 +317,12 @@ extension EVM002ManageEntriesViewPresentationTests {
         XCTAssertEqual(
             state.hierarchy.nodesByID[folder.id as String],
             FolderNodeState(
-                folder: FolderSnapshot(children: [cachedChild], expectedBatchIndex: 1, coreFinished: true),
+                folder: FolderSnapshot(
+                    children: [cachedChild],
+                    expectedBatchIndex: 1,
+                    coreFinished: true,
+                    hasAppliedContentBatch: true,
+                ),
                 expansionIntent: true,
                 generation: 4,
                 loadPhase: .loaded,
@@ -279,7 +341,11 @@ extension EVM002ManageEntriesViewPresentationTests {
         var state = hierarchyState(roots: [folder])
         state.hierarchy.setExpandedIDs([folder.id as String])
         state.hierarchy.nodesByID[folder.id as String] = .init(
-            children: [cachedChild], loadPhase: .loaded, generation: 4, expectedBatchIndex: 1, coreFinished: true,
+            children: [cachedChild],
+            loadPhase: .loaded,
+            generation: 4,
+            expectedBatchIndex: 1,
+            coreFinished: true,
         )
 
         _ = EntryListHierarchyReducer().reduce(
@@ -467,6 +533,7 @@ extension EVM002ManageEntriesViewPresentationTests {
             generation: 1,
             expectedBatchIndex: 1,
             coreFinished: true,
+            hasAppliedContentBatch: true,
         )
 
         _ = EntryListHierarchyReducer().reduce(into: &state, action: folderResponse(
@@ -689,6 +756,51 @@ extension EVM002ManageEntriesViewPresentationTests {
         XCTAssertEqual(state.hierarchy.nodesByID[folder.id]?.loadPhase, .loadingCore)
     }
 
+    /// EVM-002-command_external_refresh_correlation: root 밖 target symlink의 source move도 전이를 시작한다.
+    /// 표시된 alias child의 lexical 경로는 current root 안에 있으므로 canonical target 위치와
+    /// 무관하게 identity replacement와 source hold를 설치해야 한다.
+    /// - 검증 내용: lexical source containment가 identity replacement plan과 source hold로 이어지는지 검증
+    /// - 사전 조건: root 내부 alias folder가 root 밖 directory를 가리키고 alias child가 선택됨
+    /// - 기대 결과: plan의 lexical before와 alias sourceFolderID가 보존됨
+    func testDirectorySymlinkSourceMoveStartsIdentityReplacement() throws {
+        let container = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let root = container.appendingPathComponent("root", isDirectory: true)
+        let target = container.appendingPathComponent("outside", isDirectory: true)
+        let link = root.appendingPathComponent("link", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+        defer { try? FileManager.default.removeItem(at: container) }
+
+        let folder = hierarchyFolder(id: link.path, name: "link")
+        let beforePath = link.appendingPathComponent("before.txt").path
+        let afterPath = root.appendingPathComponent("after.txt").path
+        var state = hierarchyState(roots: [folder])
+        state.hierarchy = .init(rootPath: root.path)
+        state.hierarchy.nodesByID[folder.id] = .init(
+            folder: .init(children: [hierarchyFile(id: beforePath, name: "before.txt")]),
+            expansionIntent: true,
+            generation: 1,
+            loadPhase: .loaded,
+        )
+        state.hierarchy.setExpandedIDs([folder.id])
+        state.selectedIds = [beforePath]
+        let record = EntryActionRecord(
+            operationKind: .rename,
+            targets: [.init(beforePath: beforePath, afterPath: afterPath)],
+        )
+
+        _ = EntryViewLayoutFeature().reduce(
+            into: &state,
+            action: .entryOperations(.lifecycle(.entryActionCompleted(record))),
+        )
+
+        XCTAssertEqual(state.identityReplacement?.plan.pairs.first?.beforeLexicalPath, beforePath)
+        XCTAssertTrue(state.identityReplacement?.sourceFolderIDs.contains(folder.id) ?? false)
+        XCTAssertNotNil(state.hierarchy.deferredFolderReplacement(folderID: folder.id))
+    }
+
     /// EVM-002-toggle_directory_expansion_in_list: depth-2 expansion과 완료된 child data가 3회의 parent collapse/re-expand
     /// cycle에서도 생존하며 outline projection revision이 안정적으로 유지된다.
     ///
@@ -729,6 +841,809 @@ extension EVM002ManageEntriesViewPresentationTests {
         XCTAssertEqual(state.outlineProjectionRevision, baselineRevision)
     }
 
+    // MARK: - EVM-002-replacement_reload_snapshot_retention
+
+    /// EVM-002-replacement_reload_snapshot_retention: 새 세대의 첫 core batch는 보존된 스냅샷을 한 번에 교체한다.
+    /// 이전 데이터와 새 데이터가 섞이지 않는지 검증한다.
+    /// - 검증 내용: 보존 재로드 뒤 batchIndex 0 수신 시 children이 새 배치로 대체되고 이후 배치는 append된다.
+    /// - 사전 조건: 완료 스냅샷을 보존한 채 재로드가 시작된 loadingCore 폴더.
+    /// - 기대 결과: 첫 배치 뒤 children은 정확히 새 배치뿐이다.
+    func testReplacementFirstCoreBatchReplacesRetainedChildren() {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let old1 = hierarchyFile(id: "/root/a/old-1", name: "old-1")
+        let new1 = hierarchyFile(id: "/root/a/new-1", name: "new-1")
+        let new2 = hierarchyFile(id: "/root/a/new-2", name: "new-2")
+        var state = hierarchyState(roots: [folder])
+        state.hierarchy.nodesByID[folder.id as String] = .init(
+            children: [old1], loadPhase: .loaded, generation: 3,
+        )
+        state.hierarchy.setExpandedIDs([folder.id as String])
+        let reducer = EntryListHierarchyReducer()
+
+        _ = reducer.reduce(
+            into: &state,
+            action: .hierarchy(.hierarchyInvalidated(affectedPaths: [folder.id as String], removedPrefixes: [])),
+        )
+        XCTAssertEqual(state.hierarchy.nodesByID[folder.id as String]?.folder.children, [old1])
+
+        _ = reducer.reduce(
+            into: &state,
+            action: folderResponse(
+                folder.id,
+                .event(.coreBatch(items: [new1], batchIndex: 0)),
+                folderGeneration: 4,
+            ),
+        )
+        XCTAssertEqual(state.hierarchy.nodesByID[folder.id as String]?.folder.children, [new1], "첫 배치는 보존 데이터를 교체한다")
+
+        _ = reducer.reduce(
+            into: &state,
+            action: folderResponse(
+                folder.id,
+                .event(.coreBatch(items: [new2], batchIndex: 1)),
+                folderGeneration: 4,
+            ),
+        )
+        XCTAssertEqual(state.hierarchy.nodesByID[folder.id as String]?.folder.children, [new1, new2])
+    }
+
+    /// EVM-002-replacement_reload_snapshot_retention: 빈 중간 배치는 보존된 children을 지우지 않고 커서만 소진한다.
+    /// 생산자는 빈 배치도 커서를 올리므로, 빈 배치 뒤 다음 내용 배치는 batchIndex 1로 온다.
+    /// - 검증 내용: coreBatch([], 0) 뒤 children과 cursor(=1)가 유지되고, 이어지는 batchIndex 1 배치가 교체한다.
+    /// - 사전 조건: 완료 스냅샷을 보존한 채 재로드가 시작된 loadingCore 폴더.
+    /// - 기대 결과: 빈 배치 후에도 children은 [old1]이고 cursor는 1이며, batchIndex 1 배치 뒤 정확히 새 배치뿐이다.
+    func testReplacementEmptyInterimBatchRetainsChildrenUntilFirstNonEmptyBatch() {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let old1 = hierarchyFile(id: "/root/a/old-1", name: "old-1")
+        let new1 = hierarchyFile(id: "/root/a/new-1", name: "new-1")
+        var state = hierarchyState(roots: [folder])
+        state.hierarchy.nodesByID[folder.id as String] = .init(
+            children: [old1], loadPhase: .loaded, generation: 3,
+        )
+        state.hierarchy.setExpandedIDs([folder.id as String])
+        let reducer = EntryListHierarchyReducer()
+
+        _ = reducer.reduce(
+            into: &state,
+            action: .hierarchy(.hierarchyInvalidated(affectedPaths: [folder.id as String], removedPrefixes: [])),
+        )
+        XCTAssertEqual(state.hierarchy.nodesByID[folder.id as String]?.folder.children, [old1])
+
+        _ = reducer.reduce(
+            into: &state,
+            action: folderResponse(
+                folder.id,
+                .event(.coreBatch(items: [], batchIndex: 0)),
+                folderGeneration: 4,
+            ),
+        )
+        XCTAssertEqual(
+            state.hierarchy.nodesByID[folder.id as String]?.folder.children,
+            [old1],
+            "빈 중간 배치는 보존된 children을 지우지 않는다",
+        )
+        XCTAssertEqual(
+            state.hierarchy.nodesByID[folder.id as String]?.folder.expectedBatchIndex,
+            1,
+            "빈 배치도 커서를 소진한다(생산자 계약)",
+        )
+
+        _ = reducer.reduce(
+            into: &state,
+            action: folderResponse(
+                folder.id,
+                .event(.coreBatch(items: [new1], batchIndex: 1)),
+                folderGeneration: 4,
+            ),
+        )
+        XCTAssertEqual(
+            state.hierarchy.nodesByID[folder.id as String]?.folder.children,
+            [new1],
+            "첫 non-empty 배치는 원자적으로 교체한다",
+        )
+    }
+
+    /// EVM-002-replacement_reload_snapshot_retention: 배치 없이 온 coreFinished(0)는 실제 빈 스냅샷으로 커밋한다.
+    /// 진짜 빈 폴더로의 대체 재로드가 이전 세대 행을 남기지 않는지 검증한다.
+    /// - 검증 내용: batchCount 0 수신 시 retained children이 비우고 coreFinished로 전환된다.
+    /// - 사전 조건: 완료 스냅샷을 보존한 채 재로드가 시작된 loadingCore 폴더.
+    /// - 기대 결과: children은 []이고 coreFinished는 true, loadPhase는 enriching이다.
+    func testBatchlessCoreFinishedCommitsActualEmptySnapshot() {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let old1 = hierarchyFile(id: "/root/a/old-1", name: "old-1")
+        let old2 = hierarchyFile(id: "/root/a/old-2", name: "old-2")
+        var state = hierarchyState(roots: [folder])
+        state.hierarchy.nodesByID[folder.id as String] = .init(
+            children: [old1, old2], loadPhase: .loaded, generation: 3,
+        )
+        state.hierarchy.setExpandedIDs([folder.id as String])
+        let reducer = EntryListHierarchyReducer()
+
+        _ = reducer.reduce(
+            into: &state,
+            action: .hierarchy(.hierarchyInvalidated(affectedPaths: [folder.id as String], removedPrefixes: [])),
+        )
+        XCTAssertEqual(state.hierarchy.nodesByID[folder.id as String]?.folder.children, [old1, old2])
+
+        _ = reducer.reduce(
+            into: &state,
+            action: folderResponse(
+                folder.id,
+                .event(.coreFinished(batchCount: 0)),
+                folderGeneration: 4,
+            ),
+        )
+        XCTAssertEqual(
+            state.hierarchy.nodesByID[folder.id as String]?.folder.children,
+            [],
+            "배치 없는 완료는 실제 빈 스냅샷으로 커밋한다",
+        )
+        XCTAssertTrue(state.hierarchy.nodesByID[folder.id as String]?.folder.coreFinished ?? false)
+        XCTAssertEqual(state.hierarchy.nodesByID[folder.id as String]?.loadPhase, .enriching)
+    }
+
+    /// EVM-002-replacement_reload_snapshot_retention: identity migration staging도 연속 batch 계약을 지킨다.
+    /// - 검증 내용: expected index를 건너뛴 staged batch가 cursor와 staging을 변경하지 않는다.
+    /// - 사전 조건: 완료 스냅샷을 보존하고 lexical after 행을 기다리는 loadingCore 폴더.
+    /// - 기대 결과: retained children, cursor, deferred replacement가 그대로 유지된다.
+    func testStagedCoreBatchRejectsOutOfOrderBatchWithoutConsumingCursor() {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let old = hierarchyFile(id: "/root/a/old", name: "old")
+        let before = hierarchyFile(id: "/root/a/before", name: "before")
+        var state = hierarchyState(roots: [folder])
+        state.hierarchy.nodesByID[folder.id as String] = .init(
+            children: [old], loadPhase: .loaded, generation: 3,
+        )
+        state.hierarchy.setExpandedIDs([folder.id as String])
+        let reducer = EntryListHierarchyReducer()
+
+        _ = reducer.reduce(
+            into: &state,
+            action: .hierarchy(.hierarchyInvalidated(affectedPaths: [folder.id as String], removedPrefixes: [])),
+        )
+        state.hierarchy.beginDeferredFolderReplacement(
+            folderID: folder.id as String,
+            untilEntryID: "/root/a/after",
+        )
+
+        _ = reducer.reduce(
+            into: &state,
+            action: folderResponse(
+                folder.id,
+                .event(.coreBatch(items: [before], batchIndex: 1)),
+                folderGeneration: 4,
+            ),
+        )
+
+        let node = state.hierarchy.nodesByID[folder.id as String]
+        XCTAssertEqual(node?.folder.children, [old])
+        XCTAssertEqual(node?.folder.expectedBatchIndex, 0)
+        XCTAssertFalse(node?.folder.hasAppliedContentBatch ?? true)
+        XCTAssertFalse(node?.folder.coreFinished ?? true)
+        XCTAssertEqual(node?.loadPhase, .loadingCore)
+        XCTAssertEqual(
+            state.hierarchy.deferredFolderReplacements[folder.id as String]?.stagedChildren,
+            [],
+        )
+        XCTAssertEqual(
+            state.hierarchy.deferredFolderReplacements[folder.id as String]?.untilEntryID,
+            "/root/a/after",
+        )
+    }
+
+    /// EVM-002-replacement_reload_snapshot_retention: staged terminal도 수신 cursor와 batch count가 일치해야 한다.
+    /// - 검증 내용: 불일치 coreFinished가 retained snapshot과 staged children을 커밋하지 않는다.
+    /// - 사전 조건: 유효한 staged batch 하나를 받아 expected index가 1인 loadingCore 폴더.
+    /// - 기대 결과: cursor와 staging은 유지되고 coreFinished와 loadPhase는 진행되지 않는다.
+    func testStagedCoreFinishedRejectsMismatchedBatchCountWithoutCommitting() {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let old = hierarchyFile(id: "/root/a/old", name: "old")
+        let before = hierarchyFile(id: "/root/a/before", name: "before")
+        var state = hierarchyState(roots: [folder])
+        state.hierarchy.nodesByID[folder.id as String] = .init(
+            children: [old], loadPhase: .loaded, generation: 3,
+        )
+        state.hierarchy.setExpandedIDs([folder.id as String])
+        let reducer = EntryListHierarchyReducer()
+
+        _ = reducer.reduce(
+            into: &state,
+            action: .hierarchy(.hierarchyInvalidated(affectedPaths: [folder.id as String], removedPrefixes: [])),
+        )
+        state.hierarchy.beginDeferredFolderReplacement(
+            folderID: folder.id as String,
+            untilEntryID: "/root/a/after",
+        )
+        _ = reducer.reduce(
+            into: &state,
+            action: folderResponse(
+                folder.id,
+                .event(.coreBatch(items: [before], batchIndex: 0)),
+                folderGeneration: 4,
+            ),
+        )
+
+        _ = reducer.reduce(
+            into: &state,
+            action: folderResponse(
+                folder.id,
+                .event(.coreFinished(batchCount: 0)),
+                folderGeneration: 4,
+            ),
+        )
+
+        let node = state.hierarchy.nodesByID[folder.id as String]
+        XCTAssertEqual(node?.folder.children, [old])
+        XCTAssertEqual(node?.folder.expectedBatchIndex, 1)
+        XCTAssertFalse(node?.folder.coreFinished ?? true)
+        XCTAssertEqual(node?.loadPhase, .loadingCore)
+        XCTAssertEqual(
+            state.hierarchy.deferredFolderReplacements[folder.id as String]?.stagedChildren,
+            [before],
+        )
+        XCTAssertEqual(
+            state.hierarchy.deferredFolderReplacements[folder.id as String]?.untilEntryID,
+            "/root/a/after",
+        )
+    }
+
+    /// EVM-002-replacement_reload_snapshot_retention: 새 folder 세대 재시작 시 이전 deferred staging을 초기화한다.
+    /// - 검증 내용: staged batch가 남은 상태에서 hierarchyInvalidated가 세대를 재시작하면 staging이 비워진다.
+    /// - 사전 조건: deferred replacement가 batch 0을 staging한 loadingCore 폴더가 다시 invalidation된다.
+    /// - 기대 결과: 재시작 후 deferred staging이 비워지고 새 세대가 첫 batch를 재초기화한다.
+    func testGenerationRestartClearsStaleDeferredStaging() {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let old = hierarchyFile(id: "/root/a/old", name: "old")
+        let before = hierarchyFile(id: "/root/a/before", name: "before")
+        var state = hierarchyState(roots: [folder])
+        state.hierarchy.nodesByID[folder.id as String] = .init(
+            children: [old], loadPhase: .loaded, generation: 3,
+        )
+        state.hierarchy.setExpandedIDs([folder.id as String])
+        let reducer = EntryListHierarchyReducer()
+
+        _ = reducer.reduce(
+            into: &state,
+            action: .hierarchy(.hierarchyInvalidated(affectedPaths: [folder.id as String], removedPrefixes: [])),
+        )
+        state.hierarchy.beginDeferredFolderReplacement(
+            folderID: folder.id as String,
+            untilEntryID: "/root/a/after",
+        )
+        _ = reducer.reduce(
+            into: &state,
+            action: folderResponse(
+                folder.id,
+                .event(.coreBatch(items: [before], batchIndex: 0)),
+                folderGeneration: 4,
+            ),
+        )
+        XCTAssertEqual(
+            state.hierarchy.deferredFolderReplacements[folder.id as String]?.stagedChildren,
+            [before],
+            "재시작 전에는 staging이 유지된다",
+        )
+
+        _ = reducer.reduce(
+            into: &state,
+            action: .hierarchy(.hierarchyInvalidated(affectedPaths: [folder.id as String], removedPrefixes: [])),
+        )
+
+        XCTAssertNil(
+            state.hierarchy.deferredFolderReplacements[folder.id as String],
+            "새 세대 재시작 시 이전 staging을 초기화한다",
+        )
+    }
+
+    /// EVM-002-replacement_reload_snapshot_retention: root 완료 재시작도 이전 deferred staging을 폐기한다.
+    /// - 검증 내용: deferred batch가 남은 상태에서 rootSnapshotCompleted가 세대를 재시작하면 staging이 비워진다.
+    /// - 사전 조건: deferred replacement가 batch 0을 staging한 expanded folder가 root 재시작된다.
+    /// - 기대 결과: 재시작 후 deferred staging이 비워지고 새 세대가 첫 batch를 재초기화한다.
+    func testRootSnapshotRestartClearsStaleDeferredStaging() {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let old = hierarchyFile(id: "/root/a/old", name: "old")
+        let before = hierarchyFile(id: "/root/a/before", name: "before")
+        var state = hierarchyState(roots: [folder])
+        state.hierarchy.nodesByID[folder.id as String] = .init(
+            children: [old], loadPhase: .loaded, generation: 3,
+        )
+        state.hierarchy.setExpandedIDs([folder.id as String])
+        let reducer = EntryListHierarchyReducer()
+
+        _ = reducer.reduce(
+            into: &state,
+            action: .hierarchy(.hierarchyInvalidated(affectedPaths: [folder.id as String], removedPrefixes: [])),
+        )
+        state.hierarchy.beginDeferredFolderReplacement(
+            folderID: folder.id as String,
+            untilEntryID: "/root/a/after",
+        )
+        _ = reducer.reduce(
+            into: &state,
+            action: folderResponse(
+                folder.id,
+                .event(.coreBatch(items: [before], batchIndex: 0)),
+                folderGeneration: 4,
+            ),
+        )
+        XCTAssertEqual(
+            state.hierarchy.deferredFolderReplacements[folder.id as String]?.stagedChildren,
+            [before],
+            "root 재시작 전에는 staging이 유지된다",
+        )
+
+        _ = reducer.reduce(
+            into: &state,
+            action: .hierarchy(.rootSnapshotCompleted(rootContextGeneration: 0, rootFolders: [folder])),
+        )
+
+        XCTAssertNil(
+            state.hierarchy.deferredFolderReplacements[folder.id as String],
+            "root 완료 재시작 시 이전 staging을 초기화한다",
+        )
+    }
+
+    /// EVM-002-replacement_reload_snapshot_retention: 보류(migration 보류) 소유자 폴더는 terminal에서도 retained projection을 유지한다.
+    /// - 검증 내용: holdsUntilMigration 스테이징 폴더의 coreFinished가 retained children과 staging을 보류한다.
+    /// - 사전 조건: retained before 행을 가진 폴더가 holdsUntilMigration 스테이징 batch를 받고 coreFinished에 도달한다.
+    /// - 기대 결과: children은 retained before 행을 유지하고 staging은 보류되며 coreFinished만 기록된다.
+    func testHeldStagingTerminalRetainsProjection() {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let before = hierarchyFile(id: "/root/a/before", name: "before")
+        let kept = hierarchyFile(id: "/root/a/kept", name: "kept")
+        var state = hierarchyState(roots: [folder])
+        state.hierarchy.nodesByID[folder.id as String] = .init(
+            children: [before], loadPhase: .loaded, generation: 3,
+        )
+        state.hierarchy.setExpandedIDs([folder.id as String])
+        let reducer = EntryListHierarchyReducer()
+
+        _ = reducer.reduce(
+            into: &state,
+            action: .hierarchy(.hierarchyInvalidated(affectedPaths: [folder.id as String], removedPrefixes: [])),
+        )
+        state.hierarchy.beginDeferredFolderReplacement(
+            folderID: folder.id as String,
+            untilEntryID: "/root/a/after",
+            holdsUntilMigration: true,
+        )
+        _ = reducer.reduce(
+            into: &state,
+            action: folderResponse(
+                folder.id,
+                .event(.coreBatch(items: [kept], batchIndex: 0)),
+                folderGeneration: 4,
+            ),
+        )
+        XCTAssertEqual(
+            state.hierarchy.nodesByID[folder.id as String]?.folder.children,
+            [before],
+            "보류 batch는 retained before 행을 유지한다",
+        )
+        XCTAssertEqual(
+            state.hierarchy.deferredFolderReplacements[folder.id as String]?.stagedChildren,
+            [kept],
+            "보류 batch는 staging을 누적한다",
+        )
+
+        _ = reducer.reduce(
+            into: &state,
+            action: folderResponse(
+                folder.id,
+                .event(.coreFinished(batchCount: 1)),
+                folderGeneration: 4,
+            ),
+        )
+
+        let node = state.hierarchy.nodesByID[folder.id as String]
+        XCTAssertEqual(node?.folder.children, [before], "보류 terminal에서도 retained before 행을 유지한다")
+        XCTAssertEqual(node?.folder.coreFinished, true)
+        XCTAssertFalse(node?.folder.hasAppliedContentBatch ?? true, "provenance 전환은 migration이 소유한다")
+        XCTAssertEqual(
+            state.hierarchy.deferredFolderReplacements[folder.id as String]?.stagedChildren,
+            [kept],
+            "보류 terminal에서도 staging을 migration까지 보류한다",
+        )
+        XCTAssertEqual(
+            state.hierarchy.deferredFolderReplacements[folder.id as String]?.holdsUntilMigration,
+            true,
+        )
+    }
+
+    /// EVM-002-replacement_reload_snapshot_retention: 취소된 partial source staging은 후속 batch까지 누적한다.
+    /// 사용자가 before 선택을 해제해 identity 전이가 취소되어도 이미 소비한 source batch를 잃지 않는지 검증한다.
+    /// - 검증 내용: nonterminal holdsUntilMigration staging을 취소 시 migration 완료로 해제하고 후속 batch와 coreFinished까지 누적한다.
+    /// - 사전 조건: retained before children, batch 0 staging, 아직 완료되지 않은 generation 4 folder stream이다.
+    /// - 기대 결과: staging이 유지되고 batch 1이 기존 staging에 추가된 뒤 coreFinished에서 전체 snapshot으로 커밋된다.
+    func testNonterminalPartialCancellationKeepsStagingForSubsequentBatches() {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let before = hierarchyFile(id: "/root/a/before", name: "before")
+        let first = hierarchyFile(id: "/root/a/first", name: "first")
+        let second = hierarchyFile(id: "/root/a/second", name: "second")
+        var state = hierarchyState(roots: [folder])
+        state.hierarchy.nodesByID[folder.id as String] = .init(
+            children: [before],
+            loadPhase: .loadingCore,
+            generation: 4,
+            expectedBatchIndex: 1,
+            coreFinished: false,
+            hasAppliedContentBatch: false,
+        )
+        state.hierarchy.setExpandedIDs([folder.id as String])
+        state.hierarchy.deferredFolderReplacements[folder.id as String] = .init(
+            untilEntryID: "/root/destination/moved",
+            stagedChildren: [first],
+            holdsUntilMigration: true,
+        )
+        let reducer = EntryListHierarchyReducer()
+
+        state.hierarchy.commitDeferredFolderReplacementsOnCancel()
+
+        XCTAssertEqual(
+            state.hierarchy.deferredFolderReplacements[folder.id as String]?.stagedChildren,
+            [first],
+            "취소 시 이미 수신한 partial staging을 유지한다",
+        )
+        XCTAssertEqual(
+            state.hierarchy.deferredFolderReplacements[folder.id as String]?.migrationCompleted,
+            true,
+            "취소 시 source staging을 terminal commit 가능한 상태로 해제한다",
+        )
+
+        _ = reducer.reduce(
+            into: &state,
+            action: folderResponse(
+                folder.id,
+                .event(.coreBatch(items: [second], batchIndex: 1)),
+                folderGeneration: 4,
+            ),
+        )
+        XCTAssertEqual(
+            state.hierarchy.deferredFolderReplacements[folder.id as String]?.stagedChildren,
+            [first, second],
+            "후속 batch는 기존 staging 뒤에 누적된다",
+        )
+        XCTAssertEqual(state.hierarchy.nodesByID[folder.id as String]?.folder.children, [before])
+
+        _ = reducer.reduce(
+            into: &state,
+            action: folderResponse(
+                folder.id,
+                .event(.coreFinished(batchCount: 2)),
+                folderGeneration: 4,
+            ),
+        )
+
+        XCTAssertEqual(state.hierarchy.nodesByID[folder.id as String]?.folder.children, [first, second])
+        XCTAssertTrue(state.hierarchy.nodesByID[folder.id as String]?.folder.coreFinished ?? false)
+        XCTAssertNil(state.hierarchy.deferredFolderReplacements[folder.id as String])
+    }
+
+    /// EVM-002-replacement_reload_snapshot_retention: migration 완료 후 지연된 source terminal은 stale selection을 정산한다.
+    /// destination migration이 먼저 끝난 뒤 source terminal이 deferred children을 커밋할 때 visible selection을 재조정하는지 검증한다.
+    /// - 검증 내용: deferred commit 뒤 사라진 before 선택에 대해 `.delegate(.selectionChanged)`가 발행된다.
+    /// - 사전 조건: retained before와 staged kept를 가진 holdsUntilMigration replacement가 migration 완료 상태다.
+    /// - 기대 결과: source children은 staged snapshot으로 교체되고 before selection과 anchor는 제거된다.
+    func testDeferredMigrationCommitReconcilesSelection() async {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let before = hierarchyFile(id: "/root/a/before", name: "before")
+        let kept = hierarchyFile(id: "/root/a/kept", name: "kept")
+        var state = hierarchyState(roots: [folder])
+        state.hierarchy.nodesByID[folder.id as String] = .init(
+            children: [before],
+            loadPhase: .enriching,
+            generation: 4,
+            expectedBatchIndex: 1,
+            coreFinished: false,
+            hasAppliedContentBatch: false,
+        )
+        state.hierarchy.setExpandedIDs([folder.id as String])
+        state.hierarchy.deferredFolderReplacements[folder.id as String] = .init(
+            untilEntryID: "/root/a/after",
+            stagedChildren: [kept],
+            holdsUntilMigration: true,
+            migrationCompleted: true,
+        )
+        state.selectedIds = [before.id]
+        state.lastSelectedId = before.id
+        state.rangeAnchorId = before.id
+        let store = TestStore(initialState: state) { EntryListHierarchyReducer() }
+        // store.exhaustivity = .off: deferred commit의 selection reconcile과 delegate만 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(folderResponse(
+            folder.id,
+            .event(.coreFinished(batchCount: 1)),
+            folderGeneration: 4,
+        ))
+        await store.receive(\.delegate.selectionChanged)
+
+        XCTAssertEqual(store.state.hierarchy.nodesByID[folder.id as String]?.folder.children, [kept])
+        XCTAssertTrue(store.state.selectedIds.isEmpty)
+        XCTAssertNil(store.state.lastSelectedId)
+        XCTAssertNil(store.state.rangeAnchorId)
+    }
+
+    /// EVM-002-replacement_reload_snapshot_retention: non-hold terminal commit도 stale selection을 정산한다.
+    /// after 행이 필터링된 일반 deferred replacement가 terminal에서 커밋될 때 visible selection을 재조정하는지 검증한다.
+    /// - 검증 내용: non-hold deferred commit 뒤 사라진 before 선택에 대해 `.delegate(.selectionChanged)`가 발행된다.
+    /// - 사전 조건: retained before와 staged kept를 가진 non-hold replacement가 loadingCore terminal에 도달한다.
+    /// - 기대 결과: source children은 staged snapshot으로 교체되고 before selection과 anchor는 제거된다.
+    func testNonHoldDeferredCommitReconcilesSelection() async {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let before = hierarchyFile(id: "/root/a/before", name: "before")
+        let kept = hierarchyFile(id: "/root/a/kept", name: "kept")
+        var state = hierarchyState(roots: [folder])
+        state.hierarchy.nodesByID[folder.id as String] = .init(
+            children: [before],
+            loadPhase: .enriching,
+            generation: 4,
+            expectedBatchIndex: 1,
+            coreFinished: false,
+            hasAppliedContentBatch: false,
+        )
+        state.hierarchy.setExpandedIDs([folder.id as String])
+        state.hierarchy.deferredFolderReplacements[folder.id as String] = .init(
+            untilEntryID: "/root/a/after",
+            stagedChildren: [kept],
+        )
+        state.selectedIds = [before.id]
+        state.lastSelectedId = before.id
+        state.rangeAnchorId = before.id
+        let store = TestStore(initialState: state) { EntryListHierarchyReducer() }
+        // store.exhaustivity = .off: non-hold deferred commit의 selection reconcile과 delegate만 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(folderResponse(
+            folder.id,
+            .event(.coreFinished(batchCount: 1)),
+            folderGeneration: 4,
+        ))
+        await store.receive(\.delegate.selectionChanged)
+
+        XCTAssertEqual(store.state.hierarchy.nodesByID[folder.id as String]?.folder.children, [kept])
+        XCTAssertTrue(store.state.selectedIds.isEmpty)
+        XCTAssertNil(store.state.lastSelectedId)
+        XCTAssertNil(store.state.rangeAnchorId)
+    }
+
+    /// EVM-002-replacement_reload_snapshot_retention: 교체 스트림 실패는 보존된 children을 유지한다.
+    /// - 검증 내용: failed 응답 뒤에도 retained children과 미완료 상태가 유지된다.
+    /// - 사전 조건: 완료 스냅샷을 보존한 채 재로드가 시작된 loadingCore 폴더.
+    /// - 기대 결과: children은 그대로고 loadPhase는 failed다.
+    func testReplacementStreamFailurePreservesRetainedChildren() {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let old1 = hierarchyFile(id: "/root/a/old-1", name: "old-1")
+        var state = hierarchyState(roots: [folder])
+        state.hierarchy.nodesByID[folder.id as String] = .init(
+            children: [old1], loadPhase: .loaded, generation: 3,
+        )
+        state.hierarchy.setExpandedIDs([folder.id as String])
+        let reducer = EntryListHierarchyReducer()
+
+        _ = reducer.reduce(
+            into: &state,
+            action: .hierarchy(.hierarchyInvalidated(affectedPaths: [folder.id as String], removedPrefixes: [])),
+        )
+
+        _ = reducer.reduce(
+            into: &state,
+            action: folderResponse(folder.id, .failed(.permissionDenied), folderGeneration: 4),
+        )
+        XCTAssertEqual(
+            state.hierarchy.nodesByID[folder.id as String]?.folder.children,
+            [old1],
+            "실패 시 보존된 children이 유지된다",
+        )
+        XCTAssertEqual(state.hierarchy.nodesByID[folder.id as String]?.loadPhase, .failed(.permissionDenied))
+        XCTAssertFalse(state.hierarchy.nodesByID[folder.id as String]?.folder.coreFinished ?? true)
+    }
+
+    /// EVM-002-replacement_reload_snapshot_retention: 완전 세대 기원의 retained children은 첫 배치 전 실패 뒤에도
+    /// 재시도가 유지한다.
+    /// 교체 재로드가 완전 스냅샷을 커서 0으로 보존한 채 첫 배치 전에 실패하면, 이는 부분 수신(커서 > 0)이 아니라
+    /// 완전 세대 기원이므로 재시도가 children을 비우지 않아야 한다.
+    /// - 검증 내용: 커서 0 + children 존재인 실패 노드의 retry가 children과 커서를 유지한 loadingCore 시작으로 전환된다.
+    /// - 사전 조건: 완료 스냅샷을 커서 0으로 보존한 채 첫 배치 전에 실패한 loadingCore 폴더.
+    /// - 기대 결과: 재시도 뒤에도 children은 그대로이고 expectedBatchIndex는 0, coreFinished는 false, loadPhase는 loadingCore다.
+    func testRetryAfterReplacementFailureRetainsCompleteOriginChildren() {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let old1 = hierarchyFile(id: "/root/a/old-1", name: "old-1")
+        let old2 = hierarchyFile(id: "/root/a/old-2", name: "old-2")
+        var state = hierarchyState(roots: [folder])
+        state.hierarchy.nodesByID[folder.id as String] = .init(
+            children: [old1, old2], loadPhase: .loaded, generation: 3,
+        )
+        state.hierarchy.setExpandedIDs([folder.id as String])
+        let reducer = EntryListHierarchyReducer()
+
+        _ = reducer.reduce(
+            into: &state,
+            action: .hierarchy(.hierarchyInvalidated(affectedPaths: [folder.id as String], removedPrefixes: [])),
+        )
+        XCTAssertEqual(state.hierarchy.nodesByID[folder.id as String]?.folder.children, [old1, old2])
+
+        _ = reducer.reduce(
+            into: &state,
+            action: folderResponse(folder.id, .failed(.permissionDenied), folderGeneration: 4),
+        )
+        XCTAssertEqual(state.hierarchy.nodesByID[folder.id as String]?.loadPhase, .failed(.permissionDenied))
+        XCTAssertEqual(state.hierarchy.nodesByID[folder.id as String]?.folder.expectedBatchIndex, 0)
+
+        _ = reducer.reduce(into: &state, action: .hierarchy(.folderRetryRequested(id: folder.id)))
+        let node = state.hierarchy.nodesByID[folder.id as String]
+        XCTAssertEqual(
+            node?.folder.children,
+            [old1, old2],
+            "완전 세대 기원 children은 첫 배치 전 실패 뒤 재시도에도 유지된다",
+        )
+        XCTAssertEqual(node?.folder.expectedBatchIndex, 0)
+        XCTAssertFalse(node?.folder.coreFinished ?? true)
+        XCTAssertEqual(node?.loadPhase, .loadingCore)
+        XCTAssertEqual(node?.generation, 5)
+    }
+
+    /// EVM-002-replacement_reload_snapshot_retention: 빈 core batch를 소진한 retained snapshot도 실패 재시도에 유지한다.
+    /// batch cursor가 증가했어도 content provenance가 없으면 이전 완전 세대 children임을 검증한다.
+    /// - 검증 내용: coreBatch([], 0) → failed → retry 뒤 children, selection, 새 generation 상태
+    /// - 사전 조건: 선택된 child를 가진 완료 snapshot이 교체 재로드에서 빈 batch 하나만 수신한다.
+    /// - 기대 결과: hasAppliedContentBatch=false provenance가 children/selection을 유지하고 cursor만 0으로 초기화한다.
+    func testRetryAfterRetainedEmptyBatchFailureKeepsCompleteSnapshotAndSelection() {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let retainedChild = hierarchyFile(id: "/root/a/retained", name: "retained")
+        var state = hierarchyState(roots: [folder])
+        state.hierarchy.nodesByID[folder.id as String] = .init(
+            children: [retainedChild], loadPhase: .loaded, generation: 3,
+        )
+        state.hierarchy.setExpandedIDs([folder.id as String])
+        state.selectedIds = [retainedChild.id]
+        state.lastSelectedId = retainedChild.id
+        state.rangeAnchorId = retainedChild.id
+        let reducer = EntryListHierarchyReducer()
+
+        _ = reducer.reduce(
+            into: &state,
+            action: .hierarchy(.hierarchyInvalidated(affectedPaths: [folder.id as String], removedPrefixes: [])),
+        )
+        _ = reducer.reduce(
+            into: &state,
+            action: folderResponse(
+                folder.id,
+                .event(.coreBatch(items: [], batchIndex: 0)),
+                folderGeneration: 4,
+            ),
+        )
+        XCTAssertEqual(state.hierarchy.nodesByID[folder.id as String]?.folder.expectedBatchIndex, 1)
+        XCTAssertFalse(state.hierarchy.nodesByID[folder.id as String]?.folder.hasAppliedContentBatch ?? true)
+
+        _ = reducer.reduce(
+            into: &state,
+            action: folderResponse(folder.id, .failed(.permissionDenied), folderGeneration: 4),
+        )
+        _ = reducer.reduce(into: &state, action: .hierarchy(.folderRetryRequested(id: folder.id)))
+
+        let node = state.hierarchy.nodesByID[folder.id as String]
+        XCTAssertEqual(node?.folder.children, [retainedChild])
+        XCTAssertEqual(node?.folder.expectedBatchIndex, 0)
+        XCTAssertFalse(node?.folder.hasAppliedContentBatch ?? true)
+        XCTAssertEqual(node?.loadPhase, .loadingCore)
+        XCTAssertEqual(node?.generation, 5)
+        XCTAssertEqual(state.selectedIds, [retainedChild.id])
+        XCTAssertEqual(state.lastSelectedId, retainedChild.id)
+        XCTAssertEqual(state.rangeAnchorId, retainedChild.id)
+    }
+
+    /// EVM-002-replacement_reload_snapshot_retention: 초기 확장과 실패 재시도는 여전히 빈 스냅샷으로 시작한다.
+    /// 보존 정책이 캐시 없는 확장 동작을 바꾸지 않는지 검증한다.
+    /// - 검증 내용: idle 노드의 startLoad와 failed 노드의 retry startLoad 모두 children을 비운다.
+    /// - 사전 조건: 캐시 없는 idle 폴더와 partial children을 가진 failed 폴더.
+    /// - 기대 결과: 두 경우 모두 children 없이 loadingCore로 시작한다.
+    func testInitialExpansionAndRetryStillStartEmpty() {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let staleChild = hierarchyFile(id: "/root/a/stale", name: "stale")
+        let reducer = EntryListHierarchyReducer()
+
+        var freshState = hierarchyState(roots: [folder])
+        _ = reducer.reduce(into: &freshState, action: .hierarchy(.folderExpansionRequested(id: folder.id)))
+        XCTAssertEqual(freshState.hierarchy.nodesByID[folder.id as String]?.folder.children, [])
+        XCTAssertEqual(freshState.hierarchy.nodesByID[folder.id as String]?.loadPhase, .loadingCore)
+
+        var failedState = hierarchyState(roots: [folder])
+        failedState.hierarchy.setExpandedIDs([folder.id as String])
+        failedState.hierarchy.nodesByID[folder.id as String] = .init(
+            children: [staleChild],
+            loadPhase: .failed(.permissionDenied),
+            generation: 2,
+            expectedBatchIndex: 1,
+            hasAppliedContentBatch: true,
+        )
+        _ = reducer.reduce(into: &failedState, action: .hierarchy(.folderRetryRequested(id: folder.id)))
+        XCTAssertEqual(failedState.hierarchy.nodesByID[folder.id as String]?.folder.children, [], "재시도는 부분 결과를 버린다")
+        XCTAssertEqual(failedState.hierarchy.nodesByID[folder.id as String]?.loadPhase, .loadingCore)
+    }
+
+    /// EVM-002-replacement_reload_snapshot_retention: root 완료 재시작도 완전 child snapshot을 유지한다.
+    /// root coreFinished가 확장 폴더 응답보다 먼저 도착하는 root-first 순서에서,
+    /// enriching 폴더 재시작이 retained children을 비우지 않는지 검증한다.
+    /// - 검증 내용: rootSnapshotCompleted 재시작 뒤 children 유지 + cursor/provenance 초기화
+    /// - 사전 조건: coreFinished=true인 enriching 폴더가 expanded 상태
+    /// - 기대 결과: generation 증가·loadingCore 전환과 함께 children 유지, 첫 새 배치가 교체
+    func testRootSnapshotRestartRetainsCompleteChildSnapshot() {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let old1 = hierarchyFile(id: "/root/a/old-1", name: "old-1")
+        let old2 = hierarchyFile(id: "/root/a/old-2", name: "old-2")
+        var state = hierarchyState(roots: [folder])
+        state.hierarchy.nodesByID[folder.id as String] = .init(
+            children: [old1, old2],
+            loadPhase: .enriching,
+            generation: 3,
+            expectedBatchIndex: 1,
+            coreFinished: true,
+            hasAppliedContentBatch: true,
+        )
+        state.hierarchy.setExpandedIDs([folder.id as String])
+        let reducer = EntryListHierarchyReducer()
+
+        _ = reducer.reduce(
+            into: &state,
+            action: .hierarchy(.rootSnapshotCompleted(rootContextGeneration: 0, rootFolders: [folder])),
+        )
+
+        guard let node = state.hierarchy.nodesByID[folder.id as String] else {
+            return XCTFail("restarted node is missing")
+        }
+        XCTAssertEqual(node.generation, 4)
+        XCTAssertEqual(node.loadPhase, .loadingCore)
+        XCTAssertEqual(node.folder.children, [old1, old2], "root-first 재시작은 retained children을 유지한다")
+        XCTAssertFalse(node.folder.coreFinished)
+        XCTAssertEqual(node.folder.expectedBatchIndex, 0)
+        XCTAssertFalse(node.folder.hasAppliedContentBatch)
+
+        // cursor 리셋 검증: 첫 새 내용 배치가 retained children을 한 번에 교체한다.
+        _ = reducer.reduce(into: &state, action: folderResponse(
+            folder.id,
+            .event(.coreBatch(items: [hierarchyFile(id: "/root/a/new-1", name: "new-1")], batchIndex: 0)),
+            folderGeneration: 4,
+        ))
+        XCTAssertEqual(
+            state.hierarchy.nodesByID[folder.id as String]?.folder.children.map(\.id),
+            ["/root/a/new-1"],
+        )
+    }
+
+    /// EVM-002-replacement_reload_snapshot_retention: root 완료 재시작은 부분 수신 중인 스냅샷은 여전히 비운다.
+    /// 보존 정책이 이번 세대 부분 결과까지 유지하지 않는 경계를 검증한다.
+    /// - 검증 내용: loadingCore에서 내용 배치를 이미 적용한 폴더의 root 재시작
+    /// - 사전 조건: coreFinished=false, hasAppliedContentBatch=true인 loadingCore 폴더
+    /// - 기대 결과: children이 비우고 loadingCore로 재시작한다
+    func testRootSnapshotRestartStillClearsPartialMidStreamChildren() {
+        let folder = EntryModel.temporaryFolder(id: "/root/a", name: "a")
+        let partialChild = hierarchyFile(id: "/root/a/partial", name: "partial")
+        var state = hierarchyState(roots: [folder])
+        state.hierarchy.nodesByID[folder.id as String] = .init(
+            children: [partialChild],
+            loadPhase: .loadingCore,
+            generation: 2,
+            expectedBatchIndex: 1,
+            hasAppliedContentBatch: true,
+        )
+        state.hierarchy.setExpandedIDs([folder.id as String])
+        let reducer = EntryListHierarchyReducer()
+
+        _ = reducer.reduce(
+            into: &state,
+            action: .hierarchy(.rootSnapshotCompleted(rootContextGeneration: 0, rootFolders: [folder])),
+        )
+
+        guard let node = state.hierarchy.nodesByID[folder.id as String] else {
+            return XCTFail("restarted node is missing")
+        }
+        XCTAssertEqual(node.generation, 3)
+        XCTAssertEqual(node.loadPhase, .loadingCore)
+        XCTAssertEqual(node.folder.children, [], "부분 수신 결과는 재시작 시 버려진다")
+        XCTAssertFalse(node.folder.hasAppliedContentBatch)
+    }
+
     private func hierarchyState(roots: [EntryModel]) -> EntryViewLayoutState {
         var state = EntryViewLayoutState()
         state.entries = roots
@@ -739,11 +1654,12 @@ extension EVM002ManageEntriesViewPresentationTests {
     private func folderResponse(
         _ folderID: EntryModel.ID,
         _ response: EntryListFolderChildrenResponse,
+        folderGeneration: Int = 1,
     ) -> EntryViewLayoutAction {
         .hierarchy(.folderChildrenResponse(
             rootContextGeneration: 0,
             folderID: folderID,
-            folderGeneration: 1,
+            folderGeneration: folderGeneration,
             response,
         ))
     }

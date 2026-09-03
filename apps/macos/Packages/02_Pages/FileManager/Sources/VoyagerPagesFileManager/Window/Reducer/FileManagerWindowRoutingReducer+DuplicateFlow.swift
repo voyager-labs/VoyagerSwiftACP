@@ -235,11 +235,7 @@ extension FileManagerWindowRoutingReducer {
             state.restoreContentStateForActiveTab()
             removeBackgroundAiChatOwnersPromotedToActiveContent(state: &state)
             state.restoreInspectorStateForActiveTab()
-            if let restoredRoute = state.recentlyClosedNavigationRoute {
-                state.content.navigation.navigationState = restoredRoute
-                state.syncActiveTabContentState()
-                state.recentlyClosedNavigationRoute = nil
-            }
+            restoreRecentlyClosedNavigationRoute(state: &state)
         }
         syncDashboardProjections(state: &state)
         syncSidebarSelectionForActiveContentTab(state: &state)
@@ -254,6 +250,13 @@ extension FileManagerWindowRoutingReducer {
             closeInspectorForActiveAiChatEffect(state: state),
             restoredTabID.map { activateUndoManagerScopeEffect(tabID: $0, state: state) } ?? .none,
         )
+    }
+
+    private func restoreRecentlyClosedNavigationRoute(state: inout State) {
+        guard let restoredRoute = state.recentlyClosedNavigationRoute else { return }
+        state.content.navigation.navigationState = restoredRoute
+        state.syncActiveTabContentState()
+        state.recentlyClosedNavigationRoute = nil
     }
 
     func duplicateSelectedContentTabsReduced(
