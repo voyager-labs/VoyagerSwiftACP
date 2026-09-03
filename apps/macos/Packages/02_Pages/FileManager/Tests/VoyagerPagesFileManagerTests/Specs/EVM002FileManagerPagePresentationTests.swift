@@ -618,6 +618,133 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
 
     // MARK: - VOY-578-ordinary_directory_loading
 
+    /// EVM-002-set_entries_view_as_list_table: draft가 아닌 기존 content presentation을 보존한다.
+    /// Collection draft guidance 추가 전 entries와 loading surface의 기존 projection을 고정한다.
+    /// - 검증 내용: idle Collection, ordinary directory loading, Collection loading의 기존 policy case
+    /// - 사전 조건: draft provenance를 구분하지 않는 기존 presentation policy 입력
+    /// - 기대 결과: idle은 entries이고 두 loading 입력은 각각 기존 loading policy를 유지한다.
+    func testCollectionDraftGuidanceBaselinePreservesExistingEntriesAndLoadingPolicies() {
+        let policies = [
+            ContentPagePresentationPolicy.resolve(
+                isCollectionSearching: false,
+                isCollectionContentLoading: false,
+                isEntryLoading: false,
+                isCollectionMode: true,
+            ),
+            ContentPagePresentationPolicy.resolve(
+                isCollectionSearching: false,
+                isCollectionContentLoading: false,
+                isEntryLoading: true,
+                isCollectionMode: false,
+            ),
+            ContentPagePresentationPolicy.resolve(
+                isCollectionSearching: true,
+                isCollectionContentLoading: false,
+                isEntryLoading: false,
+                isCollectionMode: true,
+            ),
+        ]
+
+        XCTAssertEqual(policies, [.entries, .ordinaryDirectoryLoadingOverlay, .collectionReplacementLoading])
+        XCTAssertTrue(policies[0].allowsEntryInteraction)
+        XCTAssertTrue(policies[0].allowsKeyboardCommandDispatch)
+    }
+
+    /// EVM-002-set_entries_view_as_list_table: pre-execution Collection draft에 전용 guidance를 표시한다.
+    /// content presentation policy가 실행 전 draft만 exact copy와 accessibility identity로 projection하는지 검증한다.
+    /// - 검증 내용: draft policy case와 기존 entry interaction/focus/context policy 보존
+    /// - 사전 조건: file-backed Collection이 idle이고 query, execution-ready condition, accepted response가 없음
+    /// - 기대 결과: collectionEmptyDraft policy가 선택되고 entries policy와 다른 guidance surface를 제공한다.
+    func testCollectionEmptyDraftPolicyShowsGuidanceOnlyBeforeExecution() {
+        let policy = ContentPagePresentationPolicy.resolve(
+            isCollectionSearching: false,
+            isCollectionContentLoading: false,
+            isEntryLoading: false,
+            isCollectionMode: true,
+            isFileBackedCollection: true,
+        )
+
+        XCTAssertEqual(policy, .collectionEmptyDraft)
+        XCTAssertEqual(policy.emptyDraftGuidance, .collectionDraft)
+        XCTAssertEqual(policy.emptyDraftGuidance?.title, "Build your collection")
+        XCTAssertEqual(
+            policy.emptyDraftGuidance?.description,
+            "Add a query or complete condition to search. You can add a scope to narrow where Voyager searches.",
+        )
+        XCTAssertEqual(policy.emptyDraftGuidance?.titleAccessibilityIdentifier, "collection-empty-draft-title")
+        XCTAssertEqual(
+            policy.emptyDraftGuidance?.descriptionAccessibilityIdentifier,
+            "collection-empty-draft-description",
+        )
+        XCTAssertTrue(policy.allowsEntryInteraction)
+        XCTAssertTrue(policy.allowsKeyboardCommandDispatch)
+        XCTAssertFalse(policy.showsInputBlocker)
+        XCTAssertFalse(policy.hidesEntriesFromAccessibility)
+        XCTAssertFalse(policy.requiresKeyCommandFocus)
+
+        let excludedPolicies = [
+            ContentPagePresentationPolicy.resolve(
+                isCollectionSearching: false,
+                isCollectionContentLoading: false,
+                isEntryLoading: false,
+                isCollectionMode: false,
+                isFileBackedCollection: false,
+            ),
+            ContentPagePresentationPolicy.resolve(
+                isCollectionSearching: false,
+                isCollectionContentLoading: false,
+                isEntryLoading: false,
+                isCollectionMode: true,
+                isFileBackedCollection: false,
+            ),
+            ContentPagePresentationPolicy.resolve(
+                isCollectionSearching: false,
+                isCollectionContentLoading: false,
+                isEntryLoading: false,
+                isCollectionMode: true,
+                isFileBackedCollection: true,
+                hasExecutableCollectionDefinition: true,
+            ),
+            ContentPagePresentationPolicy.resolve(
+                isCollectionSearching: false,
+                isCollectionContentLoading: false,
+                isEntryLoading: false,
+                isCollectionMode: true,
+                isFileBackedCollection: true,
+                hasCollectionResponse: true,
+            ),
+            ContentPagePresentationPolicy.resolve(
+                isCollectionSearching: false,
+                isCollectionContentLoading: false,
+                isEntryLoading: false,
+                isCollectionMode: true,
+                isFileBackedCollection: true,
+                hasCollectionEntries: true,
+            ),
+            ContentPagePresentationPolicy.resolve(
+                isCollectionSearching: false,
+                isCollectionContentLoading: false,
+                isEntryLoading: false,
+                isCollectionMode: true,
+                isFileBackedCollection: true,
+                hasCollectionFailure: true,
+            ),
+            ContentPagePresentationPolicy.resolve(
+                isCollectionSearching: false,
+                isCollectionContentLoading: false,
+                isEntryLoading: false,
+                isCollectionMode: true,
+                isFileBackedCollection: true,
+                hasInFlightCollectionRequest: true,
+            ),
+        ]
+
+        for excludedPolicy in excludedPolicies {
+            XCTAssertEqual(excludedPolicy, .entries)
+            XCTAssertNil(excludedPolicy.emptyDraftGuidance)
+        }
+    }
+
     /// VOY-578-ordinary_directory_loading: 일반 Directory 로딩은 엔트리를 유지하고 투명 input blocker로 입력을 차단한다.
     /// 새 경로 로딩 중 기존 list/grid를 시각적으로 그대로 유지하면서 stale entry 조작을 막는 시나리오를 검증한다.
     /// - 검증 내용: ordinary loading presentation의 retained entries, loading indicator, input blocker, pointer, keyboard 정책

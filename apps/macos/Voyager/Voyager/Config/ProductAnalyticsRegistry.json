@@ -426,6 +426,12 @@
       "posthog_event_name": "voyager_file_manager_entry_action",
       "identity_policy": "device",
       "property_allowlist": ["result_status", "source_surface"]
+    },
+    {
+      "metric_key": "collection.open",
+      "posthog_event_name": "voyager_collection_open",
+      "identity_policy": "device",
+      "property_allowlist": ["result_status", "failure_reason"]
     }
   ],
   "records": [

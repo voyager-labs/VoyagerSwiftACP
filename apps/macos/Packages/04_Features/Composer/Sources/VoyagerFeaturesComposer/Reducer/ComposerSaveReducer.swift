@@ -37,19 +37,23 @@ private func makeSavePayload(from state: ComposerState, currentDate: Date) -> Sa
     let scopes: [String] = context?.scopes ?? []
     let excludedScopes: [String] = context?.excludedScopes ?? []
     let conditions: [Condition] = context?.conditions ?? []
+    let definitionFingerprint = CollectionSnapshotHydration.definitionFingerprint(
+        query: query,
+        scopes: scopes,
+        excludedScopes: excludedScopes,
+        includeSubfolders: context?.includeSubfolders ?? true,
+        includeDirectories: context?.includeDirectories ?? false,
+        conditions: conditions,
+    )
+    let snapshotItems = state.lastFiltersResponseDefinitionFingerprint == definitionFingerprint
+        ? CollectionSnapshotHydration.snapshotItems(from: state.lastFiltersResponse?.items)
+        : nil
     return SaveRequestPayload(
         context: context,
         isSearchLoading: state.isLoadingSearch,
         isFiltersLoading: state.isLoadingFilters,
-        snapshotItems: CollectionSnapshotHydration.snapshotItems(from: state.lastFiltersResponse?.items),
-        definitionFingerprint: CollectionSnapshotHydration.definitionFingerprint(
-            query: query,
-            scopes: scopes,
-            excludedScopes: excludedScopes,
-            includeSubfolders: context?.includeSubfolders ?? true,
-            includeDirectories: context?.includeDirectories ?? false,
-            conditions: conditions,
-        ),
+        snapshotItems: snapshotItems,
+        definitionFingerprint: definitionFingerprint,
         capturedAt: currentDate,
         relevanceRoots: scopes.map(standardizedPath).sorted(),
         openedCompatibility: state.openedCollectionCompatibility,

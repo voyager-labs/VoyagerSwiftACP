@@ -52,6 +52,37 @@ struct FileManagerFixtureSandbox {
         )
     }
 
+    static func copyingDirectory(from repoRelativePath: String) throws -> FileManagerFixtureSandbox {
+        let repoRoot = try resolveRepoRoot()
+        let original = repoRoot.appendingPathComponent(repoRelativePath, isDirectory: true)
+        var isDirectory: ObjCBool = false
+
+        guard FileManager.default.fileExists(atPath: original.path, isDirectory: &isDirectory),
+              isDirectory.boolValue
+        else {
+            throw FileManagerFixtureSandboxError.fixtureNotFound(
+                path: original.path,
+                repoRelative: repoRelativePath,
+            )
+        }
+
+        let sandboxRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("VoyagerFileManagerFixtureSandbox-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: sandboxRoot, withIntermediateDirectories: true)
+        let copiedDirectory = sandboxRoot.appendingPathComponent(original.lastPathComponent, isDirectory: true)
+        try FileManager.default.copyItem(at: original, to: copiedDirectory)
+
+        assert(FileManager.default.fileExists(atPath: original.path))
+        assert(FileManager.default.fileExists(atPath: copiedDirectory.path))
+
+        return FileManagerFixtureSandbox(
+            root: sandboxRoot,
+            originalFixture: original,
+            fileURL: copiedDirectory,
+            symlinkedFileURL: copiedDirectory,
+        )
+    }
+
     /// 읽기 전용 reducer 입력에 사용할 실제 fixture 디렉토리를 반환한다.
     static func readOnlyDirectory(from repoRelativePath: String) throws -> URL {
         let original = try resolveRepoRoot().appendingPathComponent(repoRelativePath)

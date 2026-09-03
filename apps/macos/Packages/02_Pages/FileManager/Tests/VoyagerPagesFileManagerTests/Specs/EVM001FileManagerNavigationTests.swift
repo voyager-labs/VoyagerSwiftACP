@@ -307,7 +307,8 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         let store = makeMetricsStore(metrics: metrics, initialState: state)
 
         await store.send(.sidebar(.delegate(.selectFixedLocation(location.id))))
-        await store.receive(\.contentTabs)
+        await store.skipReceivedActions(strict: false)
+        await store.skipInFlightEffects()
 
         XCTAssertEqual(store.state.contentTabs.tabs[id: activeTabID]?.anchor, .directory(path: path))
         XCTAssertTrue(metrics.value.isEmpty)

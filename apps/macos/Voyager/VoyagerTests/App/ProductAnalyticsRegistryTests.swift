@@ -4,6 +4,39 @@ import XCTest
 
 @MainActor
 final class ProductAnalyticsRegistryTests: XCTestCase {
+    func testBundledMetadataOnlyMetricsPreserveBaselinePrivacyAsRegistryGrows() throws {
+        let appBundle = VoyagerTestSupport.hostApplicationBundle()
+        let registryURL = try XCTUnwrap(appBundle.url(forResource: "ProductAnalyticsRegistry", withExtension: "json"))
+        let document = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(contentsOf: registryURL)) as? [String: Any],
+        )
+        let metadataOnlyMetrics = try XCTUnwrap(document["metadata_only_metrics"] as? [[String: Any]])
+        let registry = ProductAnalyticsRegistry.load(bundle: appBundle)
+
+        XCTAssertEqual(metadataOnlyMetrics.count, 3)
+        XCTAssertEqual(registry.metadataOnlyMetricCount, 3)
+        XCTAssertEqual(registry.records.count, 378)
+        XCTAssertEqual(
+            registry.resolve(
+                metricKey: "dau.navigation",
+                identity: .device("test-device-id"),
+                properties: [
+                    "source_surface": .string("file_manager"),
+                    "raw_path": .string("/private/secret.txt"),
+                ],
+            ),
+            .drop(.privacyRejected),
+        )
+        XCTAssertEqual(
+            registry.resolve(
+                metricKey: "dau.navigation",
+                identity: .device("test-device-id"),
+                properties: ["source_surface": .string("token_value")],
+            ),
+            .drop(.privacyRejected),
+        )
+    }
+
     func testBundledRegistryLoadsCurrent378Records() {
         let appBundle = VoyagerTestSupport.hostApplicationBundle()
         XCTAssertEqual(ProductAnalyticsRegistry.load(bundle: appBundle).records.count, 378)
@@ -60,6 +93,54 @@ final class ProductAnalyticsRegistryTests: XCTestCase {
             ),
             .drop(.privacyRejected),
         )
+    }
+
+    func testBundledCollectionOpenMetricCapturesOnlyBoundedOutcomeProperties() {
+        let registry = ProductAnalyticsRegistry.load(bundle: VoyagerTestSupport.hostApplicationBundle())
+        let deviceID = "test-device-id"
+        let outcomes: [[String: ProductAnalyticsPropertyValue]] = [
+            ["result_status": .string("valid_empty")],
+            ["result_status": .string("load_failure"), "failure_reason": .string("unsupported_schema")],
+            ["result_status": .string("load_failure"), "failure_reason": .string("invalid_definition")],
+            ["result_status": .string("load_failure"), "failure_reason": .string("malformed")],
+            ["result_status": .string("load_failure"), "failure_reason": .string("access")],
+            ["result_status": .string("load_failure"), "failure_reason": .string("unknown")],
+        ]
+
+        for properties in outcomes {
+            guard case let .capture(request) = registry.resolve(
+                metricKey: "collection.open",
+                identity: .device(deviceID),
+                properties: properties,
+            ) else {
+                return XCTFail("expected collection.open capture for \(properties)")
+            }
+            XCTAssertEqual(request.event.eventName.rawValue, "voyager_collection_open")
+            XCTAssertEqual(request.event.distinctID, deviceID)
+            XCTAssertEqual(request.event.properties, properties)
+            XCTAssertNil(request.event.identifiers)
+        }
+
+        let privacyRejectedProperties: [[String: ProductAnalyticsPropertyValue]] = [
+            ["raw_path": .string("/private/secret.voycoll")],
+            ["url": .string("file:///private/secret.voycoll")],
+            ["query": .string("private invoice")],
+            ["filter": .string("tag_names contains secret")],
+            ["error_text": .string("failed to read /private/secret.voycoll")],
+            ["result_status": .string("valid_empty"), "additional": .string("safe_token")],
+            ["result_status": .string("token_value")],
+            ["failure_reason": .string("/private/secret.voycoll")],
+        ]
+        for properties in privacyRejectedProperties {
+            XCTAssertEqual(
+                registry.resolve(
+                    metricKey: "collection.open",
+                    identity: .device(deviceID),
+                    properties: properties,
+                ),
+                .drop(.privacyRejected),
+            )
+        }
     }
 
     func testBundledQueryResultCapturesRepresentativeSnakeCaseOutcome() {
