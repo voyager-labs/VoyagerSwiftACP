@@ -2659,14 +2659,16 @@ extension FMW001FileManagerWindowTests {
         XCTAssertIdentical(fixture.window.firstResponder, textView)
     }
 
-    /// FMW-001-type_scroll_mounted_content_page: mounted host의 insertText가 handleTextInput으로 라우팅돼 pending target을 설정한다.
+    /// FMW-001-type_scroll_mounted_content_page: mounted host의 insertText가 handleTextInput으로 라우팅돼
+    /// target 단일 선택과 pending reveal을 설정한다.
     /// 실제 mounted ContentPage의 KeyCommandHostingView에 한 글자를 커밋하면 host→handleTextInput→typeScrollEffect→
-    /// setTypeScrollTarget 체인으로 entryViewLayout.pendingTypeScrollTargetId가 첫 매칭 id로 설정되는지 검증한다.
+    /// selectTypeScrollTarget 체인으로 selection tuple과 pendingTypeScrollTargetId가 첫 매칭 id로 설정되는지 검증한다.
     /// (list/grid 소비·reset은 위젯 테스트가 소유하므로 여기서는 host→action→state 체인만 검증한다.)
-    /// - 검증 내용: host.insertText("가") 후 entryViewLayout.pendingTypeScrollTargetId == 첫 매칭 id
+    /// - 검증 내용: host.insertText("가") 후 entryViewLayout.pendingTypeScrollTargetId와
+    ///   selectedIds/lastSelectedId/rangeAnchorId가 모두 첫 매칭 id가 된다.
     /// - 사전 조건: /root 폴더 페이지에 "가나다" 엔트리가 있고 host가 first responder
-    /// - 기대 결과: pendingTypeScrollTargetId가 "가"로 시작하는 첫 엔트리 id로 설정됨
-    func testMountedContentPageHostInsertTextSetsPendingTypeScrollTarget() async {
+    /// - 기대 결과: pending target과 selection tuple이 "가"로 시작하는 첫 엔트리 id로 설정됨
+    func testMountedContentPageHostInsertTextSelectsTypeScrollTarget() async {
         let perceptionCheckingWasEnabled = disablePerceptionChecking()
         defer { PerceptionCore.isPerceptionCheckingEnabled = perceptionCheckingWasEnabled }
         let target = EntryModel.temporaryFolder(id: "/root/가나다", name: "가나다")
@@ -2686,6 +2688,10 @@ extension FMW001FileManagerWindowTests {
 
         host.insertText("가", replacementRange: NSRange(location: 0, length: 0))
         await waitForMountedTypeScrollTarget(target.id, in: fixture.store)
+        XCTAssertEqual(fixture.store.state.entryViewLayout.pendingTypeScrollTargetId, target.id)
+        XCTAssertEqual(fixture.store.state.entryViewLayout.selectedIds, [target.id])
+        XCTAssertEqual(fixture.store.state.entryViewLayout.lastSelectedId, target.id)
+        XCTAssertEqual(fixture.store.state.entryViewLayout.rangeAnchorId, target.id)
     }
 
     private func makeMountedTypeScrollContentPageFixture(

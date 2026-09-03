@@ -209,9 +209,17 @@ public struct EntryViewLayoutFeature {
             case .view(.resetScrollFlag):
                 return .send(.internal(.resetScrollFlag))
 
-            case let .view(.setTypeScrollTarget(id)):
+            case let .internal(.selectTypeScrollTarget(id)):
+                // 문자 탐색은 selection navigation이다. pending target은 물리 reveal 소비 경로만 소유하고
+                // tuple 교체와 selectionChanged 발행은 setSelectionState 단일 owner에 위임한다.
                 state.pendingTypeScrollTargetId = id
-                return .none
+                return setSelectionState(
+                    ids: [id],
+                    lastSelectedId: id,
+                    rangeAnchorId: id,
+                    shouldScrollToSelection: false,
+                    state: &state,
+                )
 
             case .view(.resetTypeScrollTarget):
                 state.pendingTypeScrollTargetId = nil

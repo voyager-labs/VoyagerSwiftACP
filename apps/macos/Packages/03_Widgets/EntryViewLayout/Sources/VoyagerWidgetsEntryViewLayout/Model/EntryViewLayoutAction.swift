@@ -117,7 +117,6 @@ public enum EntryViewLayoutAction: ViewAction, CasePathable, Sendable {
         case moveListColumn(from: Int, to: Int)
         case resetListVisibleColumns
         case resetScrollFlag
-        case setTypeScrollTarget(EntryModel.ID)
         case resetTypeScrollTarget
         case setDropTargeted(Bool)
         case startDrag(paths: [String])
@@ -192,6 +191,7 @@ public enum EntryViewLayoutAction: ViewAction, CasePathable, Sendable {
         case applySelectAll(orderedItemIds: [EntryModel.ID])
         case applyClearSelection
         case applySelectionOffset(offset: Int, isShiftPressed: Bool, orderedItemIds: [EntryModel.ID])
+        case selectTypeScrollTarget(EntryModel.ID)
         case updateGridColumnCount(Int)
         case setMode(EntryViewLayoutState.Mode)
         case setListVisibleColumns([EntryListColumn])
