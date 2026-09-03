@@ -463,7 +463,6 @@ private func handleApplyFilters(
     state.activeFiltersRequestID = filtersRequestID
     state.lastAcceptedFiltersRequestID = nil
     applyQueryPhaseTransition(.reset, state: &state)
-    state.filtersStartedAt = Date()
     return .concatenate(
         .cancel(id: ComposerFeature.CancelID.search(ownerID: state.cancellationOwnerID)),
         applyFiltersIfNeeded(state: &state, searchClient: searchClient, requestID: filtersRequestID),

@@ -463,9 +463,11 @@ func applyFiltersIfNeeded(
         state.isFilteringInFlight = false
         state.activeFiltersRequestID = nil
         state.activeFiltersMetricSource = nil
+        state.filtersStartedAt = nil
         state.pendingSearchQuery = nil
         return .cancel(id: ComposerFeature.CancelID.filters(ownerID: state.cancellationOwnerID))
     }
+    state.filtersStartedAt = Date()
     state.markScopeChangeFeedbackPending(.filters(requestID))
     return .run { send in
         do {

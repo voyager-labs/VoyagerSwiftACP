@@ -410,6 +410,66 @@ final class RCL004ComposeCollectionFilterTests: XCTestCase {
 
     // MARK: - RCL-004-apply_generated_filter_changes
 
+    /// RCL-004-apply_generated_filter_changes: nonempty automatic apply starts timing at the common boundary
+    /// condition/history initiated applies must establish one timing origin before launching filter execution.
+    /// - 검증 내용: common apply helper records a start and terminal duration for a nonempty filter payload
+    /// - 사전 조건: execution-ready condition exists and no prior filter timing is present
+    /// - 기대 결과: filter apply emits a nonnil nonnegative bounded duration
+    func testApplyGeneratedFilterChanges_withNonemptyAutomaticApply_startsTimingAtCommonBoundary() throws {
+        let recorder = RCL004MetricRecorder()
+        var state = makeGeneratedFilterStageState(rawText: "VOY589_SYNTHETIC_TIMING")
+        state.filtersStartedAt = nil
+        let requestID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000029"))
+
+        withDependencies {
+            $0.composerMetricClient = ComposerMetricClient(recordProductMetric: recorder.record)
+        } operation: {
+            _ = applyFiltersIfNeeded(
+                state: &state,
+                searchClient: .testValue,
+                requestID: requestID,
+            )
+            let startedAt = state.filtersStartedAt
+            XCTAssertNotNil(startedAt)
+            _ = ComposerFeature().reduce(
+                into: &state,
+                action: .filtersResponse(requestID, .success(SearchResponsePayload(itemCount: 1))),
+            )
+        }
+
+        let call = try XCTUnwrap(recorder.calls.first)
+        let duration = try XCTUnwrap(Int(call.tags?["duration_ms"] ?? ""))
+        XCTAssertGreaterThanOrEqual(duration, 0)
+    }
+
+    /// RCL-004-apply_generated_filter_changes: empty apply clears stale timing without an event
+    /// clearing the last condition is a no-op and must not leave a timer origin for a future terminal.
+    /// - 검증 내용: empty filter guard clears lifecycle/timing state without starting an effect
+    /// - 사전 조건: no execution-ready conditions and stale active filter timing/request metadata
+    /// - 기대 결과: timing and active apply ownership are cleared without emitting a metric
+    func testApplyGeneratedFilterChanges_withEmptyFilters_clearsStaleTimingWithoutMetric() {
+        var state = ComposerState()
+        state.isLoadingFilters = true
+        state.isFilteringInFlight = true
+        state.activeFiltersRequestID = UUID()
+        state.activeFiltersMetricSource = ComposerCollectionFilterMetrics.sourceManualApply
+        state.filtersStartedAt = Date(timeIntervalSince1970: 1_700_000_123)
+
+        let recorder = RCL004MetricRecorder()
+        withDependencies {
+            $0.composerMetricClient = ComposerMetricClient(recordProductMetric: recorder.record)
+        } operation: {
+            _ = applyFiltersIfNeeded(state: &state, searchClient: .testValue)
+        }
+
+        XCTAssertFalse(state.isLoadingFilters)
+        XCTAssertFalse(state.isFilteringInFlight)
+        XCTAssertNil(state.activeFiltersRequestID)
+        XCTAssertNil(state.activeFiltersMetricSource)
+        XCTAssertNil(state.filtersStartedAt)
+        XCTAssertTrue(recorder.calls.isEmpty)
+    }
+
     /// RCL-004-apply_generated_filter_changes: generated scope-only 변경은 filter 실행 요청으로 이어지지 않음
     /// query 변환 결과가 condition 없이 scope만 변경할 때 검색 실행을 시작하지 않는지 검증한다.
     /// - 검증 내용: 변경된 scope response 수락, filters in-flight 미시작, active filters request 정리 확인
