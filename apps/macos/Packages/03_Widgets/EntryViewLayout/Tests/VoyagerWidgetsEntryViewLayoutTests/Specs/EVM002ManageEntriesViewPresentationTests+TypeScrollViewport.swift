@@ -77,11 +77,10 @@ extension EVM002ManageEntriesViewPresentationTests {
         store: StoreOf<EntryViewLayoutFeature>,
         coordinator: EntryGridCoordinator,
     ) {
-        store.send(.view(.setTypeScrollTarget(targetID)))
+        store.send(.internal(.selectTypeScrollTarget(targetID)))
         var previousState = state
         previousState.pendingTypeScrollTargetId = nil
-        var currentState = state
-        currentState.pendingTypeScrollTargetId = targetID
+        let currentState = store.state
         coordinator.handleSnapshotChanges(
             previous: EntryGridRenderSnapshot(state: previousState),
             snapshot: EntryGridRenderSnapshot(state: currentState),
