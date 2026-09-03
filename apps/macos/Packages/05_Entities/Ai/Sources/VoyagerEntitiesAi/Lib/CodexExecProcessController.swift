@@ -155,18 +155,6 @@ actor CodexExecRunSession {
     }
 }
 
-private final class CodexExecLifecycleIterator: @unchecked Sendable {
-    private var iterator: AsyncThrowingStream<CodexExecLifecycleEvent, Error>.Iterator
-
-    init(_ stream: AsyncThrowingStream<CodexExecLifecycleEvent, Error>) {
-        iterator = stream.makeAsyncIterator()
-    }
-
-    func next() async throws -> CodexExecLifecycleEvent? {
-        try await iterator.next()
-    }
-}
-
 struct CodexExecProcessReceipt {
     let threadID: String
     let events: AsyncThrowingStream<CodexExecDecodedEvent, Error>
@@ -369,13 +357,158 @@ struct CodexExecRestartBinding: Hashable {
     }
 }
 
+struct CodexExecAcquisition {
+    let receipt: CodexExecProcessReceipt
+    let ownsEntry: Bool
+}
+
 actor CodexExecProcessRegistry {
     static let maximumRetainedCompletedSessions = 512
     /// launch 없는 restart probe가 메모리를 계속 점유하지 않도록 완료 세션과 같은 상한을 사용합니다.
     static let maximumRetainedStagedBindings = 512
 
-    private var entries: [String: Task<CodexExecProcessReceipt, Error>] = [:]
-    private var resumeEntries: [String: Task<CodexExecProcessReceipt, Error>] = [:]
+    final class Entry: @unchecked Sendable {
+        let task: Task<CodexExecProcessReceipt, Error>
+        private let lock = NSLock()
+        private var session: CodexExecRunSession?
+        private var cancellationSink: (@Sendable () -> Void)?
+        private var cancellationRequested = false
+        private var completed = false
+        private var cancellationTask: Task<Void, Never>?
+        private var waiterObserver: Task<Void, Never>?
+        private var waiters: [UUID: CheckedContinuation<CodexExecProcessReceipt, Error>] = [:]
+        private var completionResult: Result<CodexExecProcessReceipt, Error>?
+
+        init(
+            operation: @escaping @Sendable () async throws -> CodexExecProcessReceipt,
+        ) {
+            task = Task { try await operation() }
+        }
+
+        func install(session: CodexExecRunSession) {
+            lock.lock()
+            guard !completed else {
+                lock.unlock()
+                Task { await session.cancel() }
+                return
+            }
+            self.session = session
+            lock.unlock()
+        }
+
+        func installCancellationSink(_ sink: @escaping @Sendable () -> Void) {
+            lock.lock()
+            cancellationSink = sink
+            let shouldCancel = cancellationRequested
+            lock.unlock()
+            if shouldCancel { sink() }
+        }
+
+        func markCompleted() {
+            lock.lock()
+            completed = true
+            lock.unlock()
+        }
+
+        func requestCancellation() {
+            task.cancel()
+        }
+
+        func wait() async throws -> CodexExecProcessReceipt {
+            let waiterID = UUID()
+            startWaiterObserverIfNeeded()
+            return try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { continuation in
+                    lock.lock()
+                    if Task.isCancelled {
+                        lock.unlock()
+                        continuation.resume(throwing: CancellationError())
+                    } else if let completionResult {
+                        lock.unlock()
+                        continuation.resume(with: completionResult)
+                    } else {
+                        waiters[waiterID] = continuation
+                        lock.unlock()
+                    }
+                }
+            } onCancel: {
+                cancelWaiter(waiterID)
+            }
+        }
+
+        func cancelAndWait() async {
+            let cancellationTask = cancellationTaskOrCreate()
+            await cancellationTask.value
+        }
+
+        private func cancellationTaskOrCreate() -> Task<Void, Never> {
+            lock.lock()
+            if let cancellationTask {
+                lock.unlock()
+                return cancellationTask
+            }
+            cancellationRequested = true
+            let cancellationSink = cancellationSink
+            task.cancel()
+            let cancellationTask = Task { [self] in
+                cancellationSink?()
+                let session = sessionOrCompletion()
+                await session?.cancel()
+                _ = try? await task.value
+                let lateSession = sessionOrCompletion()
+                if lateSession !== session {
+                    await lateSession?.cancel()
+                }
+            }
+            self.cancellationTask = cancellationTask
+            lock.unlock()
+            return cancellationTask
+        }
+
+        private func sessionOrCompletion() -> CodexExecRunSession? {
+            lock.lock()
+            let session = session
+            lock.unlock()
+            return session
+        }
+
+        private func startWaiterObserverIfNeeded() {
+            lock.lock()
+            guard waiterObserver == nil else {
+                lock.unlock()
+                return
+            }
+            waiterObserver = Task { [self] in
+                let result: Result<CodexExecProcessReceipt, Error>
+                do {
+                    result = try await .success(task.value)
+                } catch {
+                    result = .failure(error)
+                }
+                finishWaiters(with: result)
+            }
+            lock.unlock()
+        }
+
+        private func finishWaiters(with result: Result<CodexExecProcessReceipt, Error>) {
+            lock.lock()
+            let waiters = waiters.values
+            completionResult = result
+            self.waiters.removeAll()
+            lock.unlock()
+            waiters.forEach { $0.resume(with: result) }
+        }
+
+        private func cancelWaiter(_ waiterID: UUID) {
+            lock.lock()
+            let waiter = waiters.removeValue(forKey: waiterID)
+            lock.unlock()
+            waiter?.resume(throwing: CancellationError())
+        }
+    }
+
+    private var entries: [String: Entry] = [:]
+    private var resumeEntries: [String: Entry] = [:]
     private var stagedBindings: [String: CodexExecRestartBinding] = [:]
     private var stagedBindingOrder: [String] = []
     private var consumedBindingRuns: Set<String> = []
@@ -390,19 +523,43 @@ actor CodexExecProcessRegistry {
 
     func acquire(
         runID: String,
+        cancellationHandle: CodexExecInvocationCancellationHandle? = nil,
         operation: @escaping @Sendable () async throws -> CodexExecProcessReceipt,
     ) async throws -> CodexExecProcessReceipt {
-        if let entry = entries[runID] { return try await entry.value }
-        let entry = Task { try await operation() }
+        try await acquireWithOwnership(
+            runID: runID,
+            cancellationHandle: cancellationHandle,
+            operation: operation,
+        ).receipt
+    }
+
+    func acquireWithOwnership(
+        runID: String,
+        cancellationHandle: CodexExecInvocationCancellationHandle? = nil,
+        operation: @escaping @Sendable () async throws -> CodexExecProcessReceipt,
+    ) async throws -> CodexExecAcquisition {
+        if let entry = entries[runID] {
+            cancellationHandle?.markNonOwningWaiter()
+            return try await CodexExecAcquisition(receipt: entry.wait(), ownsEntry: false)
+        }
+        let entry = Entry(operation: operation)
         entries[runID] = entry
+        cancellationHandle?.install(entry: entry) { [weak self, weak entry] in
+            guard let entry else { return }
+            await self?.removeFreshEntry(runID: runID, matching: entry)
+        }
         do {
-            return try await withTaskCancellationHandler {
-                try await entry.value
+            let receipt = try await withTaskCancellationHandler {
+                try await entry.task.value
             } onCancel: {
-                entry.cancel()
+                entry.requestCancellation()
             }
+            entry.markCompleted()
+            return CodexExecAcquisition(receipt: receipt, ownsEntry: true)
         } catch {
-            entries[runID] = nil
+            entry.markCompleted()
+            await entry.cancelAndWait()
+            removeFreshEntry(runID: runID, matching: entry)
             throw error
         }
     }
@@ -422,7 +579,7 @@ actor CodexExecProcessRegistry {
               let oldest = retainedCompletions.min(by: { $0.value < $1.value })
         else { return }
         retainedCompletions[oldest.key] = nil
-        if let entry = entries[oldest.key], let receipt = try? await entry.value {
+        if let entry = entries[oldest.key], let receipt = try? await entry.task.value {
             await receipt.cancel()
         }
         entries[oldest.key] = nil
@@ -481,27 +638,71 @@ actor CodexExecProcessRegistry {
     func acquireRestart(
         runID: String,
         binding: CodexExecRestartBinding,
+        cancellationHandle: CodexExecInvocationCancellationHandle? = nil,
         operation: @escaping @Sendable () async throws -> CodexExecProcessReceipt,
         onBindingEvicted: @escaping @Sendable (CodexExecRestartBinding) async -> Void = { _ in },
     ) async throws -> CodexExecProcessReceipt {
+        try await acquireRestartWithOwnership(
+            runID: runID,
+            binding: binding,
+            cancellationHandle: cancellationHandle,
+            operation: operation,
+            onBindingEvicted: onBindingEvicted,
+        ).receipt
+    }
+
+    func acquireRestartWithOwnership(
+        runID: String,
+        binding: CodexExecRestartBinding,
+        cancellationHandle: CodexExecInvocationCancellationHandle? = nil,
+        operation: @escaping @Sendable () async throws -> CodexExecProcessReceipt,
+        onBindingEvicted: @escaping @Sendable (CodexExecRestartBinding) async -> Void = { _ in },
+    ) async throws -> CodexExecAcquisition {
         guard runID == binding.runReference else { throw CodexExecRestartFailure.invalidBinding }
         guard resumeEntries[runID] == nil else { throw CodexExecRestartFailure.invalidBinding }
         try consume(binding)
-        let entry = Task { try await operation() }
+        let entry = Entry(operation: operation)
         resumeEntries[runID] = entry
-        defer { resumeEntries[runID] = nil }
+        cancellationHandle?.install(entry: entry) { [weak self, weak entry] in
+            guard let entry else { return }
+            await self?.removeResumeEntry(runID: runID, matching: entry)
+        }
         do {
-            return try await withTaskCancellationHandler {
-                try await entry.value
+            let receipt = try await withTaskCancellationHandler {
+                try await entry.task.value
             } onCancel: {
-                entry.cancel()
+                entry.requestCancellation()
             }
+            entry.markCompleted()
+            resumeEntries[runID] = nil
+            return CodexExecAcquisition(receipt: receipt, ownsEntry: true)
         } catch {
+            entry.markCompleted()
+            await entry.cancelAndWait()
+            removeResumeEntry(runID: runID, matching: entry)
             if let evicted = releaseConsumedBinding(binding) {
                 await onBindingEvicted(evicted)
             }
             throw error
         }
+    }
+
+    private func removeFreshEntry(runID: String) {
+        entries[runID] = nil
+    }
+
+    private func removeFreshEntry(runID: String, matching entry: Entry) {
+        guard entries[runID] === entry else { return }
+        entries[runID] = nil
+    }
+
+    private func removeResumeEntry(runID: String) {
+        resumeEntries[runID] = nil
+    }
+
+    private func removeResumeEntry(runID: String, matching entry: Entry) {
+        guard resumeEntries[runID] === entry else { return }
+        resumeEntries[runID] = nil
     }
 
     func debugCounts() -> CodexExecDebugRegistryCounts {
@@ -543,10 +744,11 @@ struct CodexExecProcessController {
     func acquire(
         runID: String,
         command: CodexExecCommand,
+        cancellationHandle: CodexExecInvocationCancellationHandle? = nil,
         onProducerFinished: @escaping @Sendable () async -> Void,
         rawEventsEnabled: Bool = true,
     ) async throws -> CodexExecProcessReceipt {
-        try await registry.acquire(runID: runID) { [runner, registry] in
+        try await registry.acquire(runID: runID, cancellationHandle: cancellationHandle) { [runner, registry] in
             try await Self.start(
                 runID: runID,
                 command: command,
@@ -554,6 +756,30 @@ struct CodexExecProcessController {
                 registry: registry,
                 onProducerFinished: onProducerFinished,
                 rawEventsEnabled: rawEventsEnabled,
+                cancellationHandle: cancellationHandle,
+            )
+        }
+    }
+
+    func acquireWithOwnership(
+        runID: String,
+        command: CodexExecCommand,
+        cancellationHandle: CodexExecInvocationCancellationHandle? = nil,
+        onProducerFinished: @escaping @Sendable () async -> Void,
+        rawEventsEnabled: Bool = true,
+    ) async throws -> CodexExecAcquisition {
+        try await registry.acquireWithOwnership(runID: runID, cancellationHandle: cancellationHandle) { [
+            runner,
+            registry,
+        ] in
+            try await Self.start(
+                runID: runID,
+                command: command,
+                runner: runner,
+                registry: registry,
+                onProducerFinished: onProducerFinished,
+                rawEventsEnabled: rawEventsEnabled,
+                cancellationHandle: cancellationHandle,
             )
         }
     }
@@ -604,6 +830,7 @@ struct CodexExecProcessController {
         runID: String,
         command: CodexExecCommand,
         restartBinding: CodexExecRestartBinding,
+        cancellationHandle: CodexExecInvocationCancellationHandle? = nil,
         onProducerFinished: @escaping @Sendable () async -> Void = {},
         onBindingEvicted: @escaping @Sendable (CodexExecRestartBinding) async -> Void = { _ in },
         rawEventsEnabled: Bool = true,
@@ -616,6 +843,7 @@ struct CodexExecProcessController {
         return try await registry.acquireRestart(
             runID: runID,
             binding: restartBinding,
+            cancellationHandle: cancellationHandle,
             operation: { [runner, registry] in
                 try await Self.start(
                     runID: runID,
@@ -624,6 +852,40 @@ struct CodexExecProcessController {
                     registry: registry,
                     onProducerFinished: onProducerFinished,
                     rawEventsEnabled: rawEventsEnabled,
+                    cancellationHandle: cancellationHandle,
+                )
+            },
+            onBindingEvicted: onBindingEvicted,
+        )
+    }
+
+    func acquireWithOwnership(
+        runID: String,
+        command: CodexExecCommand,
+        restartBinding: CodexExecRestartBinding,
+        cancellationHandle: CodexExecInvocationCancellationHandle? = nil,
+        onProducerFinished: @escaping @Sendable () async -> Void = {},
+        onBindingEvicted: @escaping @Sendable (CodexExecRestartBinding) async -> Void = { _ in },
+        rawEventsEnabled: Bool = true,
+    ) async throws -> CodexExecAcquisition {
+        guard runID == restartBinding.runReference,
+              command.arguments.contains("resume"), command.arguments.contains(restartBinding.providerReference)
+        else {
+            throw CodexExecRestartFailure.invalidBinding
+        }
+        return try await registry.acquireRestartWithOwnership(
+            runID: runID,
+            binding: restartBinding,
+            cancellationHandle: cancellationHandle,
+            operation: { [runner, registry] in
+                try await Self.start(
+                    runID: runID,
+                    command: command,
+                    runner: runner,
+                    registry: registry,
+                    onProducerFinished: onProducerFinished,
+                    rawEventsEnabled: rawEventsEnabled,
+                    cancellationHandle: cancellationHandle,
                 )
             },
             onBindingEvicted: onBindingEvicted,
@@ -641,6 +903,7 @@ struct CodexExecProcessController {
         registry: CodexExecProcessRegistry,
         onProducerFinished: @escaping @Sendable () async -> Void = {},
         rawEventsEnabled: Bool = true,
+        cancellationHandle: CodexExecInvocationCancellationHandle? = nil,
     ) async throws -> CodexExecProcessReceipt {
         let process: CodexExecProcess
         do {
@@ -650,7 +913,6 @@ struct CodexExecProcessController {
         } catch {
             throw CodexExecProcessFailure.launchFailed
         }
-
         process.writeStdin(Data(command.stdin.utf8))
         process.closeStdin()
         let terminationGate = CodexExecTerminationGate()
@@ -682,7 +944,9 @@ struct CodexExecProcessController {
                 onProducerFinished: onProducerFinished,
             ),
         )
+        cancellationHandle?.install(session: session)
         installLifecycleTermination(lifecyclePair.continuation, session: session)
+        try Task.checkCancellation()
         let context = CodexExecStartContext(
             process: process,
             events: streamPair,
@@ -693,7 +957,7 @@ struct CodexExecProcessController {
             terminate: terminate,
             rawEventsEnabled: rawEventsEnabled,
         )
-        return try await Self.finishStart(context)
+        return try await Self.finishStart(context, cancellationHandle: cancellationHandle)
     }
 
     private static func consume(_ context: CodexExecConsumeContext) async throws -> String {
@@ -956,7 +1220,7 @@ struct CodexExecProcessController {
         let events: AsyncThrowingStream<CodexExecDecodedEvent, Error>.Continuation
         let lifecycle: AsyncThrowingStream<CodexExecLifecycleEvent, Error>.Continuation
         let runID: String
-        let handshake: CheckedContinuation<String, Error>
+        let handshake: CodexExecHandshakeGate
         let recordPreEventStreamEvent: @Sendable (Int) async throws -> Void
         let rawEventsEnabled: Bool
     }
@@ -981,9 +1245,17 @@ struct CodexExecProcessController {
         let rawEventsEnabled: Bool
     }
 
-    private static func finishStart(_ context: CodexExecStartContext) async throws -> CodexExecProcessReceipt {
-        try await withTaskCancellationHandler {
+    private static func finishStart(
+        _ context: CodexExecStartContext,
+        cancellationHandle: CodexExecInvocationCancellationHandle? = nil,
+    ) async throws -> CodexExecProcessReceipt {
+        let handshakeGate = CodexExecHandshakeGate()
+        cancellationHandle?.installCancellationSink {
+            handshakeGate.resume(throwing: CancellationError())
+        }
+        return try await withTaskCancellationHandler {
             let threadID = try await withCheckedThrowingContinuation { handshake in
+                handshakeGate.install(handshake)
                 Task {
                     do {
                         _ = try await Self.consume(CodexExecConsumeContext(
@@ -992,7 +1264,7 @@ struct CodexExecProcessController {
                             lifecycle: context.lifecycle.continuation,
                             result: context.result.continuation,
                             runID: context.runID,
-                            handshake: handshake,
+                            handshake: handshakeGate,
                             onEventStreamFinished: { await context.session.eventStreamFinished() },
                             recordPreEventStreamEvent: { bytes in
                                 try await context.session.recordPreEventStreamEvent(encodedBytes: bytes)
@@ -1011,13 +1283,14 @@ struct CodexExecProcessController {
                         ))
                     } catch {
                         context.events.continuation.finish(throwing: error)
-                        handshake.resume(throwing: error)
+                        handshakeGate.resume(throwing: error)
                     }
                 }
             }
             return CodexExecProcessReceipt(threadID: threadID, events: context.events.stream, session: context.session)
         } onCancel: {
             context.process.finishRawStreams(CancellationError())
+            handshakeGate.resume(throwing: CancellationError())
             Task { await context.session.cancel() }
         }
     }
@@ -1212,125 +1485,6 @@ struct CodexExecProcessController {
     }
 }
 
-private final class CodexExecStderrCollector: @unchecked Sendable {
-    private static let maximumRetainedBytes = CodexExecDiagnosticsBuilder.maximumStderrBytes * 2
-    private let lock = NSLock()
-    private var prefix = Data()
-    private var suffix = Data()
-    private var isTruncated = false
-
-    var value: String {
-        lock.lock()
-        defer { lock.unlock() }
-        guard isTruncated else {
-            return CodexExecDiagnosticsBuilder.redactAndBoundStderr(Self.decodePrefix(prefix))
-        }
-        let marker = "\n[TRUNCATED]\n"
-        let head = CodexExecDiagnosticsBuilder.redactAndBoundStderr(
-            Self.completePrefixLines(Self.decodePrefix(prefix)),
-        )
-        let tail = CodexExecDiagnosticsBuilder.redactAndBoundStderr(
-            Self.completeSuffixLines(Self.decodeSuffix(suffix)),
-        )
-        let tailBudget = CodexExecDiagnosticsBuilder.maximumStderrBytes - marker.utf8.count
-        let boundedTail = Self.prefixUTF8(tail, maximumBytes: tailBudget)
-        let headBudget = tailBudget - boundedTail.utf8.count
-        return Self.prefixUTF8(head, maximumBytes: headBudget) + marker + boundedTail
-    }
-
-    func append(_ data: Data) {
-        lock.lock()
-        if !isTruncated {
-            let available = max(0, Self.maximumRetainedBytes - prefix.count)
-            prefix.append(data.prefix(available))
-            let overflow = data.dropFirst(available)
-            if !overflow.isEmpty {
-                isTruncated = true
-                appendToSuffix(overflow)
-            }
-        } else {
-            appendToSuffix(data)
-        }
-        lock.unlock()
-    }
-
-    private func appendToSuffix(_ bytes: some Collection<UInt8>) {
-        let retained = bytes.suffix(Self.maximumRetainedBytes)
-        let overflow = max(0, suffix.count + retained.count - Self.maximumRetainedBytes)
-        suffix.removeFirst(overflow)
-        suffix.append(contentsOf: retained)
-    }
-
-    private static func decodePrefix(_ data: Data) -> String {
-        var bytes = data
-        while !bytes.isEmpty {
-            if let value = String(data: bytes, encoding: .utf8) { return value }
-            bytes.removeLast()
-        }
-        return ""
-    }
-
-    private static func decodeSuffix(_ data: Data) -> String {
-        var bytes = data
-        while !bytes.isEmpty {
-            if let value = String(data: bytes, encoding: .utf8) { return value }
-            bytes.removeFirst()
-        }
-        return ""
-    }
-
-    private static func completePrefixLines(_ value: String) -> String {
-        guard let newline = value.lastIndex(of: "\n") else { return "" }
-        return String(value[...newline])
-    }
-
-    private static func completeSuffixLines(_ value: String) -> String {
-        guard let newline = value.firstIndex(of: "\n") else { return "" }
-        return String(value[value.index(after: newline)...])
-    }
-
-    private static func prefixUTF8(_ value: String, maximumBytes: Int) -> String {
-        var bytes = Data(value.utf8.prefix(max(0, maximumBytes)))
-        while !bytes.isEmpty {
-            if let value = String(data: bytes, encoding: .utf8) { return value }
-            bytes.removeLast()
-        }
-        return ""
-    }
-}
-
-private final class CodexExecTerminationGate: @unchecked Sendable {
-    private let lock = NSLock()
-    private var terminated = false
-
-    func run(_ action: () -> Void) {
-        lock.lock()
-        guard !terminated else {
-            lock.unlock()
-            return
-        }
-        terminated = true
-        lock.unlock()
-        action()
-    }
-}
-
-private final class CodexExecStreamFinishGate: @unchecked Sendable {
-    private let lock = NSLock()
-    private var finished = false
-
-    func run(_ action: () -> Void) {
-        lock.lock()
-        guard !finished else {
-            lock.unlock()
-            return
-        }
-        finished = true
-        lock.unlock()
-        action()
-    }
-}
-
 struct CodexExecDebugRegistryCounts {
     let fresh: Int
     let resume: Int
@@ -1341,20 +1495,4 @@ struct CodexExecRestartStageResult {
     let compatibility: CodexExecRestartCompatibility
     let evictedRunReference: String?
     let evictedBinding: CodexExecRestartBinding?
-}
-
-private struct CodexExecConsumeContext: @unchecked Sendable {
-    let process: CodexExecProcess
-    let events: AsyncThrowingStream<CodexExecDecodedEvent, Error>.Continuation
-    let lifecycle: AsyncThrowingStream<CodexExecLifecycleEvent, Error>.Continuation
-    let result: AsyncThrowingStream<CodexExecTerminalResult, Error>.Continuation
-    let runID: String
-    let handshake: CheckedContinuation<String, Error>
-    let onEventStreamFinished: @Sendable () async -> Void
-    let recordPreEventStreamEvent: @Sendable (Int) async throws -> Void
-    let rawEventsEnabled: Bool
-    let terminate: @Sendable () -> Void
-    let onProducerFinished: @Sendable () async -> Void
-    let cancelSession: @Sendable () async -> Void
-    let onRawFailure: @Sendable (Error) -> Void
 }

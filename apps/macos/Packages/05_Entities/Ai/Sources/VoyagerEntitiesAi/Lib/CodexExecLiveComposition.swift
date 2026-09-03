@@ -30,6 +30,7 @@ struct CodexExecLiveComposition {
             readinessProbe: readinessProbe,
             executableURL: executableURL,
             codexHome: codexHome,
+            legacySessionPreparer: legacySessionPreparer,
         )
     }
 

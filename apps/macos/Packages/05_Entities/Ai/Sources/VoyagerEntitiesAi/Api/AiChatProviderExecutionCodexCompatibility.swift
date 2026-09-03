@@ -5,16 +5,13 @@ extension CodexExecLiveComposition {
         request: CodexExecutionRequest,
         onEvent: @escaping @Sendable (CodexAppServerEvent) -> Void,
     ) async throws -> String {
-        let workingDirectory: URL
-        if let requestDirectory = request.workingDirectory {
-            workingDirectory = requestDirectory
-        } else {
-            do {
-                workingDirectory = try await legacySessionPreparer.prepare(codexHome: codexHome)
-            } catch {
-                throw CodexCLIExecutionError.launchFailed
-            }
+        let preparedSession: URL
+        do {
+            preparedSession = try await legacySessionPreparer.prepare(codexHome: codexHome)
+        } catch {
+            throw CodexCLIExecutionError.launchFailed
         }
+        let workingDirectory = request.workingDirectory ?? preparedSession
 
         let readiness: CodexExecReadiness
         do {

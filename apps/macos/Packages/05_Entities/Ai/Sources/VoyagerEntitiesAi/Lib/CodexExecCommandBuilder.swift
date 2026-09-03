@@ -69,7 +69,10 @@ enum CodexExecCommandBuilder {
             throw CodexExecCommandError.writableRootOutsideWorkingDirectory(primaryWritableRoot.path)
         }
         let additionalWritableRoots = request.sandbox == .workspaceWrite
-            ? try canonicalWritableRoots(request.additionalWritableRoots)
+            ? try canonicalWritableRoots(
+                (primaryWritableRoot == workingDirectory ? [] : [primaryWritableRoot])
+                    + request.additionalWritableRoots,
+            )
             : []
         guard request.threadID == nil || !(request.threadID ?? "").isEmpty else {
             throw CodexExecCommandError.emptyThreadID

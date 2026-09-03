@@ -2,6 +2,12 @@ import CryptoKit
 import Foundation
 import VoyagerExternalAgentRuntime
 
+private struct CodexExecAdapterStateToken: Equatable {
+    let runReference: RuntimeRunReference
+    let providerReference: String
+    let operationID: RuntimeOperationID
+}
+
 public actor CodexExecRuntimeAdapter: ExternalAgentRuntimeAdapter {
     nonisolated public let descriptor: RuntimeAdapterDescriptor
 
@@ -9,6 +15,8 @@ public actor CodexExecRuntimeAdapter: ExternalAgentRuntimeAdapter {
     private let readinessProbe: CodexExecReadinessProbe
     private let executableURL: URL?
     private let codexHome: URL
+    private let legacySessionPreparer: CodexLegacySessionPreparer
+    private var launchingRuns: Set<RuntimeRunReference> = []
     private var receipts: [RuntimeRunReference: CodexExecProcessReceipt] = [:]
     private var restartBindings: [RuntimeRunReference: CodexExecRestartBinding] = [:]
     private var restartBindingOrder: [RuntimeRunReference] = []
@@ -16,6 +24,7 @@ public actor CodexExecRuntimeAdapter: ExternalAgentRuntimeAdapter {
     private var evictedRestartBindingOrder: [RuntimeRunReference] = []
     private var hosts: [RuntimeRunReference: ExternalAgentSessionReference] = [:]
     private var sequenceBases: [RuntimeRunReference: UInt64] = [:]
+    private var operationIDs: [RuntimeRunReference: RuntimeOperationID] = [:]
     private var eventFinished: Set<RuntimeRunReference> = []
     private var resultFinished: Set<RuntimeRunReference> = []
     private var retainedCompletions: [RuntimeRunReference: UInt64] = [:]
@@ -29,6 +38,7 @@ public actor CodexExecRuntimeAdapter: ExternalAgentRuntimeAdapter {
         readinessProbe: CodexExecReadinessProbe = CodexExecReadinessProbe(),
         executableURL: URL? = nil,
         codexHome: URL = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".codex"),
+        legacySessionPreparer: CodexLegacySessionPreparer = CodexLegacySessionPreparer(),
         retentionCapacity: Int = CodexExecProcessRegistry.maximumRetainedCompletedSessions,
     ) {
         let capabilities = RuntimeCapabilities(
@@ -58,11 +68,13 @@ public actor CodexExecRuntimeAdapter: ExternalAgentRuntimeAdapter {
         self.readinessProbe = readinessProbe
         self.executableURL = executableURL
         self.codexHome = codexHome
+        self.legacySessionPreparer = legacySessionPreparer
         precondition(retentionCapacity > 0)
         self.retentionCapacity = retentionCapacity
     }
 
     public func discoveryMetadata() async throws -> RuntimeDiscoveryMetadata {
+        try await prepareSession()
         do {
             _ = try readinessProbe.check(
                 executableURL: executableURL,
@@ -79,26 +91,86 @@ public actor CodexExecRuntimeAdapter: ExternalAgentRuntimeAdapter {
         }
     }
 
-    public func launch(_ request: RuntimeLaunchRequest) async throws -> RuntimeLaunchReceipt {
+    public func startLaunch(_ request: RuntimeLaunchRequest) async -> RuntimeLaunchOperation {
+        let cancellationHandle = CodexExecInvocationCancellationHandle()
+        let operationID = RuntimeOperationID(UUID().uuidString)
+        let receiptTask: Task<RuntimeLaunchReceipt, Error>
+        if launchingRuns.contains(request.runReference) || receipts[request.runReference] != nil {
+            cancellationHandle.completeWithoutEntry()
+            receiptTask = Task { throw RuntimeHostError.invalidEvent }
+        } else {
+            launchingRuns.insert(request.runReference)
+            receiptTask = Task.detached { [self] in
+                try await performLaunch(
+                    request,
+                    operationID: operationID,
+                    cancellationHandle: cancellationHandle,
+                )
+            }
+        }
+        return RuntimeLaunchOperation(
+            receiptTask: receiptTask,
+            cancelBeforeReceipt: { await cancellationHandle.cancelAndWait() },
+            cancelReceipt: { [self] receipt in
+                await cancelLaunchReceipt(receipt, operationID: operationID)
+            },
+        )
+    }
+
+    private func performLaunch(
+        _ request: RuntimeLaunchRequest,
+        operationID: RuntimeOperationID,
+        cancellationHandle: CodexExecInvocationCancellationHandle,
+    ) async throws -> RuntimeLaunchReceipt {
+        defer {
+            cancellationHandle.completeWithoutEntry()
+            launchingRuns.remove(request.runReference)
+        }
         guard request.adapterID == descriptor.id,
               request.contextPolicy.workingDirectory != nil
         else { throw RuntimeHostError.malformedAdapterResponse }
+        try await prepareSession()
         try checkReadiness()
         let resumeBinding = restartBindings[request.runReference]
         try await validateRestartBinding(resumeBinding, for: request)
         let command = try makeLaunchCommand(request: request, threadID: resumeBinding?.providerReference)
-        let receipt = try await acquireReceipt(command, for: request, restartBinding: resumeBinding)
+        let acquisition = try await acquireReceipt(
+            command,
+            for: request,
+            restartBinding: resumeBinding,
+            cancellationHandle: cancellationHandle,
+        )
+        let receipt = acquisition.receipt
         guard !receipt.threadID.isEmpty, receipt.threadID.unicodeScalars.count <= 4096 else {
             await receipt.cancel()
             throw RuntimeHostError.malformedAdapterResponse
         }
-        receipts[request.runReference] = receipt
-        hosts[request.runReference] = request.externalAgentSessionReference
-        sequenceBases[request.runReference] = resumeBinding?.providerEventSequence ?? 0
+        if acquisition.ownsEntry {
+            receipts[request.runReference] = receipt
+            hosts[request.runReference] = request.externalAgentSessionReference
+            sequenceBases[request.runReference] = resumeBinding?.providerEventSequence ?? 0
+            operationIDs[request.runReference] = operationID
+        } else {
+            throw RuntimeHostError.invalidEvent
+        }
         return RuntimeLaunchReceipt(
             runReference: request.runReference,
             providerInternalSessionReference: ProviderInternalSessionReference(receipt.threadID),
         )
+    }
+
+    private func cancelLaunchReceipt(
+        _ receipt: RuntimeLaunchReceipt,
+        operationID: RuntimeOperationID,
+    ) async {
+        if let processReceipt = receipts[receipt.runReference],
+           processReceipt.threadID == receipt.providerInternalSessionReference.rawValue,
+           operationIDs[receipt.runReference] == operationID
+        {
+            await processReceipt.cancel()
+            guard operationIDs[receipt.runReference] == operationID else { return }
+            abandon(receipt.runReference)
+        }
     }
 
     public func eventStream(
@@ -106,6 +178,12 @@ public actor CodexExecRuntimeAdapter: ExternalAgentRuntimeAdapter {
     ) async throws -> AsyncThrowingStream<RuntimeEventEnvelope, any Error> {
         guard let receipt = receipts[runReference] else { throw RuntimeHostError.invalidEvent }
         guard let host = hosts[runReference] else { throw RuntimeHostError.invalidEvent }
+        guard let operationID = operationIDs[runReference] else { throw RuntimeHostError.invalidEvent }
+        let token = CodexExecAdapterStateToken(
+            runReference: runReference,
+            providerReference: receipt.threadID,
+            operationID: operationID,
+        )
         let source = try await eventSource(from: receipt)
         return AsyncThrowingStream(bufferingPolicy: .bufferingOldest(CodexExecProcessController
                 .maximumBufferedEvents))
@@ -116,14 +194,14 @@ public actor CodexExecRuntimeAdapter: ExternalAgentRuntimeAdapter {
                     host: host,
                     runReference: runReference,
                     receipt: receipt,
+                    token: token,
                     continuation: continuation,
                 )
             }
             continuation.onTermination = { @Sendable termination in
                 guard case .cancelled = termination else { return }
                 Task {
-                    await receipt.cancel()
-                    await self.abandon(runReference)
+                    await self.cancelIfCurrent(token, receipt: receipt)
                 }
             }
         }
@@ -139,6 +217,14 @@ public actor CodexExecRuntimeAdapter: ExternalAgentRuntimeAdapter {
             throw RuntimeHostError.adapterFailure(.processExit, RuntimeDiagnosticCode(Self.diagnosticCode(for: error)))
         } catch {
             throw RuntimeHostError.adapterFailure(.processExit, RuntimeDiagnosticCode("readiness_probe_failed"))
+        }
+    }
+
+    private func prepareSession() async throws {
+        do {
+            _ = try await legacySessionPreparer.prepare(codexHome: codexHome)
+        } catch {
+            throw RuntimeHostError.adapterFailure(.processExit, RuntimeDiagnosticCode("session_prepare_failed"))
         }
     }
 
@@ -180,20 +266,25 @@ public actor CodexExecRuntimeAdapter: ExternalAgentRuntimeAdapter {
         _ command: CodexExecCommand,
         for request: RuntimeLaunchRequest,
         restartBinding: CodexExecRestartBinding?,
-    ) async throws -> CodexExecProcessReceipt {
+        cancellationHandle: CodexExecInvocationCancellationHandle,
+    ) async throws -> CodexExecAcquisition {
         do {
             let receipt: CodexExecProcessReceipt
+            var ownsEntry = false
             if let restartBinding {
-                receipt = try await controller.acquire(
+                let acquisition = try await controller.acquireWithOwnership(
                     runID: request.runReference.rawValue,
                     command: command,
                     restartBinding: restartBinding,
+                    cancellationHandle: cancellationHandle,
                     onProducerFinished: { await self.markProducerFinished(request.runReference) },
                     onBindingEvicted: { evicted in
                         await self.removeRestartBindingIfMatching(evicted)
                     },
                     rawEventsEnabled: false,
                 )
+                receipt = acquisition.receipt
+                ownsEntry = acquisition.ownsEntry
                 if restartBindings[request.runReference] == restartBinding {
                     removeRestartBinding(request.runReference)
                 }
@@ -203,14 +294,17 @@ public actor CodexExecRuntimeAdapter: ExternalAgentRuntimeAdapter {
                     throw CodexExecRestartFailure.incompatibleBinding
                 }
             } else {
-                receipt = try await controller.acquire(
+                let acquisition = try await controller.acquireWithOwnership(
                     runID: request.runReference.rawValue,
                     command: command,
+                    cancellationHandle: cancellationHandle,
                     onProducerFinished: { await self.markProducerFinished(request.runReference) },
                     rawEventsEnabled: false,
                 )
+                receipt = acquisition.receipt
+                ownsEntry = acquisition.ownsEntry
             }
-            return receipt
+            return CodexExecAcquisition(receipt: receipt, ownsEntry: ownsEntry)
         } catch CodexExecProcessFailure.emptyThreadID {
             throw RuntimeHostError.malformedAdapterResponse
         } catch let error as CodexExecProcessFailure {
@@ -235,6 +329,7 @@ public actor CodexExecRuntimeAdapter: ExternalAgentRuntimeAdapter {
         host: ExternalAgentSessionReference,
         runReference: RuntimeRunReference,
         receipt: CodexExecProcessReceipt,
+        token: CodexExecAdapterStateToken,
         continuation: AsyncThrowingStream<RuntimeEventEnvelope, any Error>.Continuation,
     ) async {
         do {
@@ -246,8 +341,7 @@ public actor CodexExecRuntimeAdapter: ExternalAgentRuntimeAdapter {
                         .processExit,
                         RuntimeDiagnosticCode("event_sequence_overflow"),
                     )
-                    await receipt.cancel()
-                    abandon(runReference)
+                    await cancelIfCurrent(token, receipt: receipt)
                     continuation.finish(throwing: error)
                     return
                 }
@@ -259,29 +353,25 @@ public actor CodexExecRuntimeAdapter: ExternalAgentRuntimeAdapter {
                         .transportLoss,
                         RuntimeDiagnosticCode("event_buffer_overflow"),
                     )
-                    await receipt.cancel()
-                    abandon(runReference)
+                    await cancelIfCurrent(token, receipt: receipt)
                     continuation.finish(throwing: error)
                     return
                 case .terminated:
-                    await receipt.cancel()
-                    abandon(runReference)
+                    await cancelIfCurrent(token, receipt: receipt)
                     return
                 @unknown default:
-                    await receipt.cancel()
-                    abandon(runReference)
+                    await cancelIfCurrent(token, receipt: receipt)
                     return
                 }
             }
-            if Task.isCancelled { abandon(runReference)
+            if Task.isCancelled { await cancelIfCurrent(token, receipt: receipt, cancelReceipt: false)
                 return
             }
-            await markEventFinished(runReference)
+            await markEventFinished(token)
             continuation.finish()
         } catch {
             continuation.finish(throwing: Self.map(error))
-            await receipt.cancel()
-            abandon(runReference)
+            await cancelIfCurrent(token, receipt: receipt)
         }
     }
 
@@ -302,8 +392,15 @@ public actor CodexExecRuntimeAdapter: ExternalAgentRuntimeAdapter {
 
     public func terminalResult(for runReference: RuntimeRunReference) async throws -> RuntimeResult {
         guard let receipt = receipts[runReference] else { throw RuntimeHostError.invalidEvent }
+        guard let operationID = operationIDs[runReference] else { throw RuntimeHostError.invalidEvent }
+        let token = CodexExecAdapterStateToken(
+            runReference: runReference,
+            providerReference: receipt.threadID,
+            operationID: operationID,
+        )
         do {
             let result = try await receipt.terminalResult()
+            guard isCurrent(token) else { throw RuntimeHostError.invalidEvent }
             resultFinished.insert(runReference)
             await retainCompletedIfOneSided(runReference)
             evictIfFinished(runReference)
@@ -314,16 +411,33 @@ public actor CodexExecRuntimeAdapter: ExternalAgentRuntimeAdapter {
                 failure: result.failure.map(Self.mapFailure),
             )
         } catch {
-            await receipt.cancel()
-            abandon(runReference)
+            await cancelIfCurrent(token, receipt: receipt)
             throw Self.map(error)
         }
     }
 
-    private func markEventFinished(_ runReference: RuntimeRunReference) async {
-        eventFinished.insert(runReference)
-        await retainCompletedIfOneSided(runReference)
-        evictIfFinished(runReference)
+    private func markEventFinished(_ token: CodexExecAdapterStateToken) async {
+        guard isCurrent(token) else { return }
+        eventFinished.insert(token.runReference)
+        await retainCompletedIfOneSided(token.runReference)
+        evictIfFinished(token.runReference)
+    }
+
+    private func isCurrent(_ token: CodexExecAdapterStateToken) -> Bool {
+        guard let receipt = receipts[token.runReference] else { return false }
+        return receipt.threadID == token.providerReference
+            && operationIDs[token.runReference] == token.operationID
+    }
+
+    private func cancelIfCurrent(
+        _ token: CodexExecAdapterStateToken,
+        receipt: CodexExecProcessReceipt,
+        cancelReceipt: Bool = true,
+    ) async {
+        guard isCurrent(token) else { return }
+        if cancelReceipt { await receipt.cancel() }
+        guard isCurrent(token) else { return }
+        abandon(token.runReference)
     }
 
     private func markProducerFinished(_ runReference: RuntimeRunReference) async {
@@ -334,6 +448,7 @@ public actor CodexExecRuntimeAdapter: ExternalAgentRuntimeAdapter {
         receipts[runReference] = nil
         hosts[runReference] = nil
         sequenceBases[runReference] = nil
+        operationIDs[runReference] = nil
         eventFinished.remove(runReference)
         resultFinished.remove(runReference)
         retainedCompletions[runReference] = nil
@@ -366,6 +481,7 @@ public actor CodexExecRuntimeAdapter: ExternalAgentRuntimeAdapter {
         receipts[oldest.key] = nil
         hosts[oldest.key] = nil
         sequenceBases[oldest.key] = nil
+        operationIDs[oldest.key] = nil
         eventFinished.remove(oldest.key)
         resultFinished.remove(oldest.key)
         retainedCompletions[oldest.key] = nil
@@ -376,6 +492,7 @@ public actor CodexExecRuntimeAdapter: ExternalAgentRuntimeAdapter {
         receipts[runReference] = nil
         hosts[runReference] = nil
         sequenceBases[runReference] = nil
+        operationIDs[runReference] = nil
         removeRestartBinding(runReference)
         eventFinished.remove(runReference)
         resultFinished.remove(runReference)

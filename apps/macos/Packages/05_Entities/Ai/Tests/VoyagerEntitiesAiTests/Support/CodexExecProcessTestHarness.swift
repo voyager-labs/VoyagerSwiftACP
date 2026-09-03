@@ -59,6 +59,7 @@ final class CodexExecControlledRunner: @unchecked Sendable {
     private let stdoutFinisher = CodexExecRawStreamFinisher()
     private let stderrFinisher = CodexExecRawStreamFinisher()
     private let calls = Counter()
+    private var runCountWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
     var initialLines: [String] = []
     private(set) var rawStreamsFinished = false
 
@@ -68,6 +69,10 @@ final class CodexExecControlledRunner: @unchecked Sendable {
 
     func waitUntilReady() async {
         await ready.waitUntilStarted()
+    }
+
+    func waitUntilReady(forRunCount count: Int) async {
+        await ready.waitUntilStarted(count: count)
     }
 
     func send(_ line: String) {
@@ -87,8 +92,16 @@ final class CodexExecControlledRunner: @unchecked Sendable {
         calls.value
     }
 
+    func waitForRunCount(_ minimum: Int) async {
+        guard runCount < minimum else { return }
+        await withCheckedContinuation { runCountWaiters.append((minimum, $0)) }
+    }
+
     func run(_: CodexExecCommand) async throws -> CodexExecProcess {
         calls.increment()
+        let readyWaiters = runCountWaiters.filter { $0.0 <= calls.value }
+        runCountWaiters.removeAll { $0.0 <= calls.value }
+        readyWaiters.forEach { $0.1.resume() }
         return CodexExecProcess(
             stdout: AsyncThrowingStream { continuation in
                 self.stdoutContinuation = continuation
@@ -170,21 +183,30 @@ actor CodexExecCommandRecorder {
 }
 
 actor CodexExecRunnerGate {
-    private var started = false
+    private var startedCount = 0
     private var released = false
     private var startedWaiters: [CheckedContinuation<Void, Never>] = []
     private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+    private var startedCountWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
 
     func signalStarted() {
-        started = true
+        startedCount += 1
         let continuations = startedWaiters
         startedWaiters.removeAll()
         continuations.forEach { $0.resume() }
+        let countContinuations = startedCountWaiters.filter { $0.0 <= startedCount }
+        startedCountWaiters.removeAll { $0.0 <= startedCount }
+        countContinuations.forEach { $0.1.resume() }
     }
 
     func waitUntilStarted() async {
-        guard !started else { return }
+        guard startedCount == 0 else { return }
         await withCheckedContinuation { startedWaiters.append($0) }
+    }
+
+    func waitUntilStarted(count: Int) async {
+        guard startedCount < count else { return }
+        await withCheckedContinuation { startedCountWaiters.append((count, $0)) }
     }
 
     func release() {

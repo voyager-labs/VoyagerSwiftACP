@@ -663,6 +663,281 @@ final class ATI006CoordinateExternalAgentSessionsTests: XCTestCase {
         XCTAssertEqual(counts.tombstones, 0)
     }
 
+    /// ATI-006-coordinate_external_agent_sessions: active runtime cancellation cancels and abandons its receipt.
+    /// shared post-launch rollback이 active receipt와 adapter/controller storage를 함께 정리하는지 검증합니다.
+    /// - 검증 내용: cancel/cleanup 각 1회, adapter/controller storage zero, no-active cancellation의 capabilityUnknown을 확인합니다.
+    /// - 사전 조건: handshake 이후에도 열린 controlled fake process와 injected session preparer가 있습니다.
+    /// - 기대 결과: active run은 성공적으로 취소되고 storage가 비워지며 이후 no-active 요청은 기존 unknown capability를 유지합니다.
+    func testAdapterCancellation_activeReceiptCancelsOnceAndAbandonsStorage() async throws {
+        let codexHome = URL(fileURLWithPath: "/tmp/voyager-ati006-codex-home", isDirectory: true)
+        let preparedSession = codexHome.appendingPathComponent("session")
+        let preparer = CodexLegacySessionPreparer { _, arguments, _ in
+            try FileManager.default.createDirectory(at: preparedSession, withIntermediateDirectories: true)
+            if arguments.first == "init" {
+                try FileManager.default.createDirectory(
+                    at: preparedSession.appendingPathComponent(".git"),
+                    withIntermediateDirectories: true,
+                )
+                return ""
+            }
+            return arguments.contains("--is-inside-work-tree")
+                ? "true\n"
+                : preparedSession.appendingPathComponent(".git").path + "\n"
+        }
+        let process = CodexExecFakeProcess(stdout: [], stderr: [], terminationStatus: 0)
+        let runner = CodexExecControlledRunner(process: process)
+        let controller = CodexExecProcessController(runner: runner.run)
+        let adapter = CodexExecRuntimeAdapter(
+            controller: controller,
+            readinessProbe: CodexExecReadinessProbe { _, arguments, _ in
+                arguments == ["--version"]
+                    ? .init(exitCode: 0, stdout: "codex-cli 0.148.0\n", stderr: "")
+                    : .init(exitCode: 0, stdout: "", stderr: "")
+            },
+            executableURL: URL(fileURLWithPath: "/tmp/codex"),
+            codexHome: codexHome,
+            legacySessionPreparer: preparer,
+        )
+        let request = RuntimeLaunchRequest(
+            externalAgentSessionReference: .init("host"),
+            runReference: .init("active-cancel"),
+            adapterID: adapter.descriptor.id,
+            contextPolicy: .init(
+                branchReference: "branch",
+                authorizationGeneration: 0,
+                localCorrelation: "correlation",
+                workingDirectory: codexHome.path,
+            ),
+            input: .init("prompt"),
+        )
+
+        let operation = await adapter.startLaunch(request)
+        let launch = Task { try await operation.receipt() }
+        await runner.waitUntilReady()
+        runner.send(#"{"type":"thread.started","thread_id":"thread-cancel"}"#)
+        _ = try await launch.value
+
+        await operation.cancel()
+
+        let adapterCounts = await adapter.debugStorageCounts()
+        let controllerCounts = await controller.debugRegistryCounts()
+        XCTAssertEqual(process.terminationCount, 1)
+        XCTAssertEqual(process.cleanupCount, 1)
+        XCTAssertEqual(adapterCounts.receipts + adapterCounts.hosts, 0)
+        XCTAssertEqual(controllerCounts.fresh, 0)
+        XCTAssertEqual(controllerCounts.resume, 0)
+        XCTAssertEqual(controllerCounts.staged, 0)
+        do {
+            try await adapter.requestCancellation(
+                RuntimeCancellationRequest(
+                    operationID: RuntimeOperationID("no-active-operation"),
+                    runReference: request.runReference,
+                ),
+            )
+            XCTFail("no-active cancellation should retain unknown capability")
+        } catch {
+            XCTAssertEqual(error as? RuntimeHostError, .capabilityUnknown(.cancellation))
+        }
+    }
+
+    /// ATI-006-launch_operation: blocked Codex launch cancellation owns one process attempt.
+    /// - 검증 내용: pre-handshake CancellationError, one termination/cleanup, and a later same-run launch.
+    /// - 사전 조건: first controlled Codex process never sends a handshake before cancellation.
+    /// - 기대 결과: first operation cleans up exactly once and second operation receives its own handshake receipt.
+    func testLaunchOperation_blockedPreHandshakeCancellationCleansExactAttempt() async throws {
+        let codexHome = URL(fileURLWithPath: "/tmp/voyager-ati006-operation-codex-home", isDirectory: true)
+        let preparedSession = codexHome.appendingPathComponent("session")
+        let preparer = CodexLegacySessionPreparer { _, arguments, _ in
+            if arguments.first == "init" {
+                try FileManager.default.createDirectory(
+                    at: preparedSession.appendingPathComponent(".git"),
+                    withIntermediateDirectories: true,
+                )
+                return ""
+            }
+            return arguments.contains("--is-inside-work-tree")
+                ? "true\n"
+                : preparedSession.appendingPathComponent(".git").path + "\n"
+        }
+        let process = CodexExecFakeProcess(stdout: [], stderr: [], terminationStatus: 0)
+        let runner = CodexExecControlledRunner(process: process)
+        let adapter = CodexExecRuntimeAdapter(
+            controller: CodexExecProcessController(runner: runner.run),
+            readinessProbe: CodexExecReadinessProbe { _, _, _ in
+                .init(exitCode: 0, stdout: "codex-cli 0.148.0\n", stderr: "")
+            },
+            executableURL: URL(fileURLWithPath: "/tmp/codex"),
+            codexHome: codexHome,
+            legacySessionPreparer: preparer,
+        )
+        let request = RuntimeLaunchRequest(
+            externalAgentSessionReference: "host",
+            runReference: RuntimeRunReference("operation-run"),
+            adapterID: adapter.descriptor.id,
+            contextPolicy: .init(
+                branchReference: "branch",
+                authorizationGeneration: 0,
+                localCorrelation: "correlation",
+                workingDirectory: codexHome.path,
+            ),
+            input: RuntimeSensitiveInput("prompt"),
+        )
+        let first = await adapter.startLaunch(request)
+        await runner.waitUntilReady()
+        async let firstCancellation: Void = first.cancel()
+        await firstCancellation
+        do {
+            _ = try await first.receipt()
+            XCTFail("cancelled launch must not return a receipt")
+        } catch is CancellationError {}
+        XCTAssertEqual(process.terminationCount, 1)
+        XCTAssertEqual(process.cleanupCount, 1)
+
+        let second = await adapter.startLaunch(request)
+        await runner.waitForRunCount(2)
+        await runner.waitUntilReady(forRunCount: 2)
+        runner.send(#"{"type":"thread.started","thread_id":"second-thread"}"#)
+        let receipt = try await second.receipt()
+        XCTAssertEqual(receipt.providerInternalSessionReference.rawValue, "second-thread")
+        await second.cancel()
+    }
+
+    /// ATI-006-launch_operation: public launch forwards caller cancellation to its exact operation.
+    /// - 검증 내용: public launch caller cancellation, one termination/cleanup, and a later same-run launch.
+    /// - 사전 조건: first controlled Codex process never sends a handshake before cancellation.
+    /// - 기대 결과: public launch returns CancellationError after exact cleanup and the second launch succeeds.
+    func testPublicLaunch_blockedPreHandshakeCancellationCleansExactAttempt() async throws {
+        let codexHome = URL(fileURLWithPath: "/tmp/voyager-ati006-public-launch-codex-home", isDirectory: true)
+        let preparedSession = codexHome.appendingPathComponent("session")
+        let preparer = CodexLegacySessionPreparer { _, arguments, _ in
+            if arguments.first == "init" {
+                try FileManager.default.createDirectory(
+                    at: preparedSession.appendingPathComponent(".git"),
+                    withIntermediateDirectories: true,
+                )
+                return ""
+            }
+            return arguments.contains("--is-inside-work-tree")
+                ? "true\n"
+                : preparedSession.appendingPathComponent(".git").path + "\n"
+        }
+        let process = CodexExecFakeProcess(stdout: [], stderr: [], terminationStatus: 0)
+        let runner = CodexExecControlledRunner(process: process)
+        let adapter = CodexExecRuntimeAdapter(
+            controller: CodexExecProcessController(runner: runner.run),
+            readinessProbe: CodexExecReadinessProbe { _, _, _ in
+                .init(exitCode: 0, stdout: "codex-cli 0.148.0\n", stderr: "")
+            },
+            executableURL: URL(fileURLWithPath: "/tmp/codex"),
+            codexHome: codexHome,
+            legacySessionPreparer: preparer,
+        )
+        let request = RuntimeLaunchRequest(
+            externalAgentSessionReference: "host",
+            runReference: RuntimeRunReference("public-operation-run"),
+            adapterID: adapter.descriptor.id,
+            contextPolicy: .init(
+                branchReference: "branch",
+                authorizationGeneration: 0,
+                localCorrelation: "correlation",
+                workingDirectory: codexHome.path,
+            ),
+            input: RuntimeSensitiveInput("prompt"),
+        )
+
+        let first = Task { try await adapter.launch(request) }
+        await runner.waitUntilReady()
+        first.cancel()
+        do {
+            _ = try await first.value
+            XCTFail("cancelled public launch must not return a receipt")
+        } catch is CancellationError {}
+        XCTAssertEqual(process.terminationCount, 1)
+        XCTAssertEqual(process.cleanupCount, 1)
+
+        let secondOperation = await adapter.startLaunch(request)
+        let second = Task { try await secondOperation.receipt() }
+        await runner.waitForRunCount(2)
+        await runner.waitUntilReady(forRunCount: 2)
+        runner.send(#"{"type":"thread.started","thread_id":"second-public-thread"}"#)
+        let receipt = try await second.value
+        XCTAssertEqual(receipt.providerInternalSessionReference.rawValue, "second-public-thread")
+        await secondOperation.cancel()
+    }
+
+    /// ATI-006-launch_operation: one adapter launch owns each active run.
+    /// - 검증 내용: concurrent same-run rejection, zero extra spawn, owner survival, and post-cleanup retry.
+    /// - 사전 조건: first Codex launch is blocked before its handshake.
+    /// - 기대 결과: second launch fails closed without affecting the first, and a later retry succeeds.
+    func testAdapterLaunch_concurrentSameRunRejectsWithoutAffectingOwner() async throws {
+        let codexHome = URL(fileURLWithPath: "/tmp/voyager-ati006-single-owner-codex-home", isDirectory: true)
+        let preparedSession = codexHome.appendingPathComponent("session")
+        let preparer = CodexLegacySessionPreparer { _, arguments, _ in
+            if arguments.first == "init" {
+                try FileManager.default.createDirectory(
+                    at: preparedSession.appendingPathComponent(".git"),
+                    withIntermediateDirectories: true,
+                )
+                return ""
+            }
+            return arguments.contains("--is-inside-work-tree")
+                ? "true\n"
+                : preparedSession.appendingPathComponent(".git").path + "\n"
+        }
+        let process = CodexExecFakeProcess(stdout: [], stderr: [], terminationStatus: 0)
+        let runner = CodexExecControlledRunner(process: process)
+        let adapter = CodexExecRuntimeAdapter(
+            controller: CodexExecProcessController(runner: runner.run),
+            readinessProbe: CodexExecReadinessProbe { _, _, _ in
+                .init(exitCode: 0, stdout: "codex-cli 0.148.0\n", stderr: "")
+            },
+            executableURL: URL(fileURLWithPath: "/tmp/codex"),
+            codexHome: codexHome,
+            legacySessionPreparer: preparer,
+        )
+        let request = RuntimeLaunchRequest(
+            externalAgentSessionReference: "host",
+            runReference: RuntimeRunReference("single-owner-run"),
+            adapterID: adapter.descriptor.id,
+            contextPolicy: .init(
+                branchReference: "branch",
+                authorizationGeneration: 0,
+                localCorrelation: "correlation",
+                workingDirectory: codexHome.path,
+            ),
+            input: RuntimeSensitiveInput("prompt"),
+        )
+
+        let owner = await adapter.startLaunch(request)
+        await runner.waitUntilReady()
+        let rejected = await adapter.startLaunch(request)
+        do {
+            _ = try await rejected.receipt()
+            XCTFail("concurrent same-run launch must fail closed")
+        } catch {
+            XCTAssertEqual(error as? RuntimeHostError, .invalidEvent)
+        }
+        await rejected.cancel()
+        XCTAssertEqual(runner.runCount, 1)
+        XCTAssertEqual(process.terminationCount, 0)
+        XCTAssertEqual(process.cleanupCount, 0)
+
+        runner.send(#"{"type":"thread.started","thread_id":"owner-thread"}"#)
+        let ownerReceipt = try await owner.receipt()
+        XCTAssertEqual(ownerReceipt.providerInternalSessionReference.rawValue, "owner-thread")
+        await owner.cancel()
+        XCTAssertEqual(process.terminationCount, 1)
+        XCTAssertEqual(process.cleanupCount, 1)
+
+        let retry = await adapter.startLaunch(request)
+        await runner.waitForRunCount(2)
+        await runner.waitUntilReady(forRunCount: 2)
+        runner.send(#"{"type":"thread.started","thread_id":"retry-thread"}"#)
+        let retryReceipt = try await retry.receipt()
+        XCTAssertEqual(retryReceipt.providerInternalSessionReference.rawValue, "retry-thread")
+        await retry.cancel()
+    }
+
     /// ATI-006-exact_restart_binding: public resume mismatch discards only the exact staged binding.
     /// adapter가 request context mismatch를 fresh launch로 우회하지 않고 staged state를 폐기하는지 검증합니다.
     /// - 검증 내용: host, branch, authorization, correlation, working directory, roots 변경이 restartIncompatible와 zero spawn을

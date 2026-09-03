@@ -106,7 +106,7 @@ final class ATI004ManageExternalAgentRuntimesTests: XCTestCase {
                 workingDirectory: working,
                 sandbox: .workspaceWrite,
                 primaryWritableRoot: primary,
-                additionalWritableRoots: [external],
+                additionalWritableRoots: [external, primary],
                 codexHome: root,
             ),
             executableURL: URL(fileURLWithPath: "/tmp/codex"),
@@ -116,9 +116,10 @@ final class ATI004ManageExternalAgentRuntimesTests: XCTestCase {
             [
                 "exec", "--model", "model", "--json", "--color", "never", "--strict-config", "--ignore-user-config",
                 "--sandbox",
-                "workspace-write", "-C", working.path, "--add-dir", external.path, "-",
+                "workspace-write", "-C", working.path, "--add-dir", external.path, "--add-dir", primary.path, "-",
             ],
         )
+        XCTAssertEqual(command.arguments.count(where: { $0 == "--add-dir" }), 2)
     }
 
     func testWorkspaceWriteRoots_reversedPrimaryRelationIsRejected() throws {
@@ -688,6 +689,70 @@ final class ATI004ManageExternalAgentRuntimesTests: XCTestCase {
         XCTAssertEqual(harness.mainExecutionSpawnCount, 1)
     }
 
+    /// ATI-004-manage_external_agent_runtimes: direct runtime discovery and launch prepare the provider session.
+    /// legacy composition과 동일하게 runtime adapter도 provider-owned session을 readiness보다 먼저 준비합니다.
+    /// - 검증 내용: discovery/launch preparation count, readiness TMPDIR, launch command TMPDIR 및 request directory -C를
+    /// 확인합니다.
+    /// - 사전 조건: folder working directory, counting preparer, ready probe와 handshake fake process가 제공됩니다.
+    /// - 기대 결과: 두 경로 모두 session을 준비하고 provider session은 환경에만 사용되며 -C는 request directory를 유지합니다.
+    func testAdapterDiscoveryAndLaunch_prepareProviderSessionBeforeReadinessAndSpawn() async throws {
+        let codexHome = root.appendingPathComponent("codex-home")
+        let preparedSession = codexHome.appendingPathComponent("session")
+        let preparationCount = CodexExecInvocationCounter()
+        let preparer = CodexLegacySessionPreparer { _, arguments, _ in
+            try FileManager.default.createDirectory(at: preparedSession, withIntermediateDirectories: true)
+            if arguments.first == "init" {
+                preparationCount.increment()
+                try FileManager.default.createDirectory(
+                    at: preparedSession.appendingPathComponent(".git"),
+                    withIntermediateDirectories: true,
+                )
+                return ""
+            }
+            return arguments.contains("--is-inside-work-tree")
+                ? "true\n"
+                : preparedSession.appendingPathComponent(".git").path + "\n"
+        }
+        nonisolated(unsafe) var readinessEnvironments: [[String: String]] = []
+        let readinessProbe = CodexExecReadinessProbe { _, arguments, environment in
+            readinessEnvironments.append(environment)
+            return arguments == ["--version"]
+                ? CodexExecProbeResult(exitCode: 0, stdout: "codex-cli 0.148.0\n", stderr: "")
+                : CodexExecProbeResult(exitCode: 0, stdout: "", stderr: "")
+        }
+        let process = CodexExecFakeProcess(
+            stdout: [Data(#"{"type":"thread.started","thread_id":"thread-prepared"}"#.utf8)],
+            stderr: [],
+            terminationStatus: 0,
+        )
+        let harness = CodexExecCommandTestHarness()
+        let commandRecorder = CodexExecCommandRecorder()
+        let controller = CodexExecProcessController { command in
+            await commandRecorder.record(command)
+            return try await harness.processRunner(process: process)(command)
+        }
+        let adapter = CodexExecRuntimeAdapter(
+            controller: controller,
+            readinessProbe: readinessProbe,
+            executableURL: URL(fileURLWithPath: "/tmp/codex"),
+            codexHome: codexHome,
+            legacySessionPreparer: preparer,
+        )
+
+        _ = try await adapter.discoveryMetadata()
+        let request = makeRuntimeRequest()
+        _ = try await adapter.launch(request)
+
+        XCTAssertEqual(preparationCount.value, 2)
+        XCTAssertEqual(readinessEnvironments.count, 4)
+        XCTAssertTrue(readinessEnvironments.allSatisfy { $0["TMPDIR"] == preparedSession.path })
+        let commands = await commandRecorder.commands
+        XCTAssertEqual(commands.first?.environment["TMPDIR"], preparedSession.path)
+        let arguments = try XCTUnwrap(commands.first?.arguments)
+        let directoryIndex = try XCTUnwrap(arguments.firstIndex(of: "-C"))
+        XCTAssertEqual(arguments[directoryIndex + 1], root.path)
+    }
+
     /// ATI-004-manage_external_agent_runtimes: provider thread IDs are admitted only within the opaque handle boundary.
     /// receipt acquisition 이후 provider thread ID를 저장하기 전에 Unicode scalar 경계를 적용합니다.
     /// - 검증 내용: empty ID 거부, combining scalar를 포함한 정확히 4096 scalar ID 수락, 4097 scalar ID 거부와 receipt 취소/상태 비저장을 확인합니다.
@@ -862,9 +927,10 @@ final class ATI004ManageExternalAgentRuntimesTests: XCTestCase {
                 "exec", "--model", "gpt-5-codex", "--json", "--color", "never", "--strict-config",
                 "--ignore-user-config",
                 "--sandbox",
-                "workspace-write", "-C", nested.path, "--add-dir", extra.path, "-",
+                "workspace-write", "-C", nested.path, "--add-dir", authorized.path, "--add-dir", extra.path, "-",
             ],
         )
+        XCTAssertEqual(command.arguments.count(where: { $0 == "--add-dir" }), 2)
     }
 
     /// ATI-004-manage_external_agent_runtimes: duplicate event stream is a public invalidEvent.

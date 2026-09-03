@@ -626,6 +626,86 @@ extension CBW003ProviderExecutionResolutionTests {
         XCTAssertTrue(FileManager.default.fileExists(atPath: codexHome.appendingPathComponent("session").path))
     }
 
+    /// CBW-003-prepare_contextual_chat_request: folder-based legacy Codex execution prepares the provider session
+    /// first.
+    /// The requested folder remains the process working directory while provider-owned session state is prepared before
+    /// readiness.
+    /// - 검증 내용: preparer 호출 1회, 준비된 session TMPDIR, 요청 folder `-C`, secret-free environment, process spawn 1회를 확인합니다.
+    /// - 사전 조건: 실제 folder working directory와 fake Codex process, readiness probe, legacy session preparer가 주입되어 있습니다.
+    /// - 기대 결과: credential 접근/복사 없이 provider-owned session이 준비되고 folder scope로 legacy 실행이 완료됩니다.
+    func testCodexLegacyWithFolder_preparesProviderSessionBeforeLaunch() async throws {
+        let suffix = UUID().uuidString
+        let codexHome = URL(fileURLWithPath: "/tmp/voyager-cbw003-folder-codex-home-", isDirectory: true)
+            .appendingPathComponent(suffix, isDirectory: true)
+        let workingDirectory = URL(fileURLWithPath: "/tmp/voyager-cbw003-folder-working-directory-", isDirectory: true)
+            .appendingPathComponent(suffix, isDirectory: true)
+        try FileManager.default.createDirectory(at: workingDirectory, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(at: codexHome)
+            try? FileManager.default.removeItem(at: workingDirectory)
+        }
+
+        let process = CodexExecFakeProcess(stdout: [
+            Data(#"{"type":"thread.started","thread_id":"legacy-folder"}"#.utf8),
+            Data(#"{"type":"item.completed","item":{"id":"message","type":"agentMessage","text":"folder answer"}}"#
+                .utf8),
+            Data(#"{"type":"turn.completed","turn_id":"turn","status":"completed"}"#.utf8),
+        ], stderr: [], terminationStatus: 0)
+        let runner = CodexExecFakeRunner(process: process)
+        let recorder = CodexExecCommandRecorder()
+        let preparerCalls = CodexExecInvocationCounter()
+        let preparer = CodexLegacySessionPreparer { _, arguments, _ in
+            if arguments.first == "init" {
+                preparerCalls.increment()
+                try FileManager.default.createDirectory(
+                    at: codexHome.appendingPathComponent("session/.git"),
+                    withIntermediateDirectories: true,
+                )
+                return ""
+            }
+            if arguments.contains("--is-inside-work-tree") {
+                return "true\n"
+            }
+            return codexHome.appendingPathComponent("session/.git").path + "\n"
+        }
+        let probe = CodexExecCommandTestHarness()
+        let composition = CodexExecLiveComposition(
+            controller: CodexExecProcessController(runner: { command in
+                await recorder.record(command)
+                return try await runner.run(command)
+            }),
+            executableURL: URL(fileURLWithPath: "/tmp/codex"),
+            codexHome: codexHome,
+            readinessProbe: CodexExecReadinessProbe(runner: probe.runner),
+            legacySessionPreparer: preparer,
+        )
+
+        let result = try await composition.executeLegacy(
+            request: CodexExecutionRequest(
+                runID: "legacy-folder", model: "gpt-5-codex", prompt: "prompt", thinking: .effort(.high),
+                workingDirectory: workingDirectory,
+            ),
+            onEvent: { _ in },
+        )
+
+        XCTAssertEqual(result, "folder answer")
+        XCTAssertEqual(preparerCalls.value, 1)
+        XCTAssertEqual(runner.runCount, 1)
+        let recordedCommands = await recorder.commands
+        let command = try XCTUnwrap(recordedCommands.last)
+        XCTAssertEqual(command.arguments.suffix(2), [workingDirectory.path, "-"])
+        XCTAssertEqual(
+            try command.arguments[XCTUnwrap(command.arguments.firstIndex(of: "-C")) + 1],
+            workingDirectory.path,
+        )
+        XCTAssertEqual(command.environment["TMPDIR"], codexHome.appendingPathComponent("session").path)
+        XCTAssertEqual(Set(command.environment.keys), ["CODEX_HOME", "HOME", "LANG", "PATH", "SHELL", "TMPDIR"])
+        XCTAssertTrue(probe.invocations
+            .allSatisfy { $0.environment["TMPDIR"] == codexHome.appendingPathComponent("session").path })
+        XCTAssertNil(command.environment["OPENAI_API_KEY"])
+        XCTAssertNil(command.environment["CODEX_ACCESS_TOKEN"])
+    }
+
     /// CBW-003-stream_contextual_chat_response: legacy execution preserves a duplicate after completion.
     /// raw event stream failure가 cached completed result보다 우선하는지 검증합니다.
     /// - 검증 내용: first terminal completed 뒤 duplicate terminal이 legacy transportError로 매핑되는지 확인합니다.
