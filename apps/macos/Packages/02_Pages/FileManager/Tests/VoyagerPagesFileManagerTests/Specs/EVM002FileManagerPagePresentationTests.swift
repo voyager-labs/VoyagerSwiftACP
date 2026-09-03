@@ -587,6 +587,8 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
         state.entryViewLayout.rangeAnchorId = first.id
         let store = Store(initialState: state) {
             FileManagerContentFeature()
+        } withDependencies: {
+            $0.entryQuickLookClient = .previewValue
         }
         let listCoordinator = EntryListCoordinator(store: store.scope(
             state: \.entryViewLayout,

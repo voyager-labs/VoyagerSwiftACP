@@ -454,7 +454,10 @@ extension EVM002FileManagerPagePresentationTests {
         state.navigation.seedInitialFolderPath(rootPath)
         state.entryViewLayout.mode = .list
         state.entryViewLayout.entries = [destinationC, EntryModel.temporaryFolder(id: "/root/a", name: "a")]
-        state.entryViewLayout.entryOperations.items = [destinationC]
+        state.entryViewLayout.entryOperations.items = [
+            destinationC,
+            EntryModel.temporaryFolder(id: "/root/a", name: "a"),
+        ]
         state.entryViewLayout.entryOperations.loadingContext.generation = 1
         state.entryViewLayout.hierarchy = .init(rootPath: rootPath)
         state.entryViewLayout.hierarchy.nodesByID[destinationC.id] = .init(
