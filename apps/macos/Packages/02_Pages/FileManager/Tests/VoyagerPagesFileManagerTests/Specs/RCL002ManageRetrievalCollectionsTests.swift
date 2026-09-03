@@ -2041,6 +2041,69 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
 
     // MARK: - RCL-002-alert_unsaved_collection_filter_changes
 
+    /// RCL-002-save_collection_filter_changes: undo는 제거한 condition draft를 canonical owner에 복원한다.
+    /// Composer history가 conditionEditors를 되돌린 뒤 CollectionState/Composer context도 함께 복원되는지 검증한다.
+    func testEditFileBackedCollection_undoRestoresConditionToCanonicalDraft() async {
+        let targetURL = URL(fileURLWithPath: "/VoyagerFixtures/Collections/undo-condition.voycoll")
+        let condition = makeEditCondition(values: nil)
+        let baseline = CollectionContext(query: "baseline", scopes: ["/tmp"], conditions: [condition])
+        let requests = LockIsolated<[String]>([])
+        var state = makeFileBackedEmptyCollectionContentState(targetURL: targetURL)
+        state.collection.collectionContext = baseline
+        state.collection.collectionSession.metadata.baseline = .init(context: baseline)
+        state.composer.collectionContext = baseline
+        state.composer.scopes = baseline.scopes
+        state.composer.conditionEditors = [ConditionEditorState(id: UUID(952), condition: condition)]
+        let store = makeCollectionEditStore(initialState: state, requests: requests)
+
+        await store.send(.composer(.view(.removeCondition(id: UUID(952)))))
+        await store.skipReceivedActions(strict: false)
+        XCTAssertEqual(store.state.collection.collectionContext?.conditions, [])
+        XCTAssertTrue(store.state.collection.isDirty)
+
+        await store.send(.composer(.view(.undo)))
+        await store.skipReceivedActions(strict: false)
+        await store.finish()
+
+        XCTAssertEqual(store.state.composer.conditions, [condition])
+        XCTAssertEqual(store.state.collection.collectionContext?.conditions, [condition])
+        XCTAssertEqual(store.state.composer.collectionContext?.conditions, [condition])
+        XCTAssertFalse(store.state.collection.isDirty)
+        XCTAssertTrue(requests.value.isEmpty)
+    }
+
+    /// RCL-002-alert_unsaved_collection_filter_changes: 직접 탐색도 unsaved alert 경계를 거친다.
+    /// sidebar의 Recents 등 direct navigation이 history 탐색과 같은 draft 동기화와 경고 경계를 공유하는지 검증한다.
+    func testAlertUnsavedCollectionFilterChanges_directNavigationSyncsDraftAndPrompts() async {
+        let baseline = CollectionContext(query: "", scopes: [], conditions: [])
+        var state = makeOpenedCollectionState(
+            url: URL(fileURLWithPath: "/VoyagerFixtures/Collections/direct-navigation.voycoll"),
+            context: baseline,
+        )
+        state.content.composer.collectionContext = baseline
+        state.content.composer.conditionEditors = [
+            ConditionEditorState(id: UUID(953), condition: makeEditCondition(values: nil)),
+        ]
+        let collectionRoute = state.content.navigation.navigationState
+        let store = TestStore(initialState: state) {
+            FileManagerNavigationActionReducer()
+        } withDependencies: {
+            $0.collectionAlertClient.showUnsavedNavigationAlert = { .cancel }
+        }
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.navigation(.view(.showRecents)))
+        await store.receive(\.navigation.internal.showUnsavedNavigationAlert)
+        await store.receive(\.navigation.internal.unsavedNavigationAlertResponse)
+        await store.finish()
+
+        let condition = state.content.composer.conditions[0]
+        XCTAssertEqual(store.state.content.collection.collectionContext?.conditions, [condition])
+        XCTAssertEqual(store.state.content.composer.collectionContext?.conditions, [condition])
+        XCTAssertTrue(store.state.content.collection.isDirty)
+        XCTAssertEqual(store.state.content.navigation.navigationState, collectionRoute)
+    }
+
     /// RCL-002-alert_unsaved_collection_filter_changes: cancel does not install a navigation reveal.
     /// Cancelled dirty navigation must not create a pending entry ID or destination guard.
     /// - 검증 내용: unsaved alert cancel leaves both pending-selection fields empty.

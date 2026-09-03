@@ -1052,7 +1052,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
             return receivedPath == path
         }
         await store.receive { action in
-            guard case let .navigation(.internal(.performNavigateToPath(receivedPath))) = action else { return false }
+            guard case let .navigation(.internal(.performNavigation(.navigateToPath(receivedPath)))) = action
+            else { return false }
             return receivedPath == path
         }
         await store.receive { action in
@@ -6459,7 +6460,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
             return true
         }
         await store.receive { action in
-            guard case let .navigation(.internal(.performShowAiChat(receivedSessionID))) = action else {
+            guard case let .navigation(.internal(.performNavigation(.showAiChat(receivedSessionID)))) = action else {
                 return false
             }
             return receivedSessionID == sessionID

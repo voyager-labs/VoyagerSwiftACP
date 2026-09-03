@@ -5008,7 +5008,8 @@ extension CTM005IndependentContentTabSessionTests {
 
         await store.send(.navigation(.view(.showAiChatSessions(sessionID))))
         await store.receive { action in
-            guard case let .navigation(.internal(.performShowAiChatSessions(receivedSessionID))) = action else {
+            guard case let .navigation(.internal(.performNavigation(.showAiChatSessions(receivedSessionID)))) = action
+            else {
                 return false
             }
             return receivedSessionID == sessionID
@@ -5199,7 +5200,7 @@ extension CTM005IndependentContentTabSessionTests {
 
         await store.send(.navigation(.view(.showAiChat(currentSessionID))))
         await store.receive { action in
-            guard case let .navigation(.internal(.performShowAiChat(receivedSessionID))) = action else {
+            guard case let .navigation(.internal(.performNavigation(.showAiChat(receivedSessionID)))) = action else {
                 return false
             }
             return receivedSessionID == currentSessionID
@@ -5301,7 +5302,7 @@ extension CTM005IndependentContentTabSessionTests {
             return receivedTabID == tabID && receivedSessionID == newSessionID
         }
         await store.receive { action in
-            guard case let .navigation(.internal(.performShowAiChat(receivedSessionID))) = action else {
+            guard case let .navigation(.internal(.performNavigation(.showAiChat(receivedSessionID)))) = action else {
                 return false
             }
             return receivedSessionID == newSessionID
@@ -5566,7 +5567,7 @@ extension CTM005IndependentContentTabSessionTests {
             return receivedTabID == tabID && receivedSessionID == selectedSessionID
         }
         await store.receive { action in
-            guard case let .navigation(.internal(.performShowAiChat(receivedSessionID))) = action else {
+            guard case let .navigation(.internal(.performNavigation(.showAiChat(receivedSessionID)))) = action else {
                 return false
             }
             return receivedSessionID == selectedSessionID
@@ -5775,7 +5776,9 @@ extension CTM005IndependentContentTabSessionTests {
             return receivedTabID == tabID && receivedSessionID == currentSessionID
         }
         await store.receive { action in
-            guard case let .navigation(.internal(.performShowAiChat(receivedSessionID))) = action else { return false }
+            guard case let .navigation(.internal(.performNavigation(.showAiChat(receivedSessionID)))) = action else {
+                return false
+            }
             return receivedSessionID == currentSessionID
         }
         await store.receive { action in

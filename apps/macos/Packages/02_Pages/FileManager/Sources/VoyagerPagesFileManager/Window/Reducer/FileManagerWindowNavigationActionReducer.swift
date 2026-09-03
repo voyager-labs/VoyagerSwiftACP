@@ -91,12 +91,16 @@ struct FileManagerNavigationActionReducer {
              .showAiChat,
              .showAiChatSessions:
             let failedPinnedReturnTabID = state.pendingPinnedCollectionReturnTabID
+            let cancelEffect = cancelPendingCollectionOpen(
+                state: &state,
+                failedPinnedReturnTabID: failedPinnedReturnTabID,
+            )
+            guard let pending = directNavigationPending(action, state: state) else {
+                return cancelEffect
+            }
             return .concatenate(
-                cancelPendingCollectionOpen(
-                    state: &state,
-                    failedPinnedReturnTabID: failedPinnedReturnTabID,
-                ),
-                handleDirectNavigationAction(action, state: &state),
+                cancelEffect,
+                handleNavigationRequest(pending, state: &state),
             )
 
         case .goBack,
@@ -155,38 +159,6 @@ struct FileManagerNavigationActionReducer {
         }
     }
 
-    private func handleDirectNavigationAction(
-        _ action: ContentPageNavigationAction.View,
-        state: inout State,
-    ) -> Effect<Action> {
-        switch action {
-        case let .navigateToPath(path):
-            let computerName = fileManagerClient.displayName("/")
-            if path == computerName, state.content.navigation.currentPath == computerName {
-                return .none
-            }
-            return .send(.navigation(.internal(.performNavigateToPath(path))))
-
-        case .showRecents:
-            return .send(.navigation(.internal(.performShowRecents)))
-
-        case .showComputer:
-            return .send(.navigation(.internal(.performShowComputer)))
-
-        case let .showTag(tagName):
-            return .send(.navigation(.internal(.performShowTag(tagName))))
-
-        case let .showAiChat(sessionID):
-            return .send(.navigation(.internal(.performShowAiChat(sessionID))))
-
-        case let .showAiChatSessions(sessionID):
-            return .send(.navigation(.internal(.performShowAiChatSessions(sessionID))))
-
-        default:
-            return .none
-        }
-    }
-
     private func handleCollectionNavigationAction(
         _ action: ContentPageNavigationAction.Internal,
         state: inout State,
@@ -233,6 +205,39 @@ struct FileManagerNavigationActionReducer {
         default:
             .none
         }
+    }
+
+    /// 직접 탐색 view 요청을 unsaved 경계가 처리할 수 있는 pending으로 변환한다.
+    /// no-op 요청(현재 route와 동일한 대상, computerName 특례)은 nil로 유지해 기존 무시 동작을 보존한다.
+    private func directNavigationPending(
+        _ action: ContentPageNavigationAction.View,
+        state: State,
+    ) -> ContentPageNavigationPending? {
+        let pending: ContentPageNavigationPending
+        switch action {
+        case let .navigateToPath(path):
+            let computerName = fileManagerClient.displayName("/")
+            if path == computerName, state.content.navigation.currentPath == computerName {
+                return nil
+            }
+            pending = .navigateToPath(path)
+        case .showRecents:
+            pending = .showRecents
+        case .showComputer:
+            pending = .showComputer
+        case let .showTag(tagName):
+            pending = .showTag(tagName)
+        case let .showAiChat(sessionID):
+            pending = .showAiChat(sessionID)
+        case let .showAiChatSessions(sessionID):
+            pending = .showAiChatSessions(sessionID)
+        default:
+            return nil
+        }
+        guard !pending.isSameDirectRoute(as: state.content.navigation.navigationState) else {
+            return nil
+        }
+        return pending
     }
 
     private func handleNavigationRequest(

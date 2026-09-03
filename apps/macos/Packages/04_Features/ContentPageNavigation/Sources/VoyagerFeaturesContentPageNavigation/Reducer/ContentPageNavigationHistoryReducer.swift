@@ -37,6 +37,8 @@ struct ContentPageNavigationHistoryReducer {
             )
         case .enclosingDirectory:
             performEnclosingDirectoryNavigation(state: &state)
+        case .navigateToPath, .showRecents, .showComputer, .showTag, .showAiChat, .showAiChatSessions:
+            ContentPageNavigationDirectTransition.perform(pending, state: &state)
         }
     }
 
