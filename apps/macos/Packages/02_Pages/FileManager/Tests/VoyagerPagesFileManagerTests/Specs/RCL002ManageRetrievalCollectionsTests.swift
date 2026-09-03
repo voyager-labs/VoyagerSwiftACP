@@ -604,6 +604,48 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
         await store.finish()
     }
 
+    /// RCL-002-alert_unsaved_collection_filter_changes: 저장 차단 피드백은 대기 중 이탈 의도를 해제함
+    /// 경고의 Save 선택은 저장이 성공한 뒤에만 이탈을 계속하므로, 저장이 차단되면 pending navigation이
+    /// 남아 이후 별도 저장의 write-back에서 소비되어 사용자가 다시 요청하지 않은 목적지로 이동해서는 안 된다.
+    /// - 검증 내용: saveFeedback(saveBlocked) 수신 뒤 pendingNavigation 해제, saveBlocked feedback 표시
+    /// - 사전 조건: unsaved navigation 경고의 Save 선택으로 pendingNavigation이 설정된 상태에서 저장이 차단됨
+    /// - 기대 결과: pendingNavigation은 nil이 되고 composer에 saveBlocked feedback이 표시됨
+    func testSaveBlockedFeedbackReleasesPendingNavigationIntent() async {
+        let targetURL = URL(fileURLWithPath: "/VoyagerFixtures/Collections/blocked-edit.voycoll")
+        var state = makeOpenedCollectionState(
+            url: targetURL,
+            context: CollectionContext(query: "", scopes: [], conditions: []),
+        )
+        state.content.navigation.pendingNavigation = .navigateToPath("/VoyagerFixtures/Documents")
+        let alertCount = LockIsolated(0)
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.collectionAlertClient.showUnsavedNavigationAlert = {
+                alertCount.withValue { $0 += 1 }
+                return .cancel
+            }
+            $0.continuousClock = ContinuousClock()
+        }
+        store.exhaustivity = .off(showSkippedAssertions: false)
+        let feedback = CollectionSaveFeedback(
+            stage: .saveBlocked,
+            category: .incompleteCondition,
+            title: "Unable to Save Collection",
+            message: "Complete the condition before saving.",
+            recoveryHint: "Fill in the condition value and try again.",
+            isRetryable: false,
+        )
+
+        await store.send(.content(.collection(.delegate(.saveFeedback(feedback)))))
+        await store.skipReceivedActions(strict: false)
+        await store.finish()
+
+        XCTAssertEqual(alertCount.value, 0)
+        XCTAssertNil(store.state.content.navigation.pendingNavigation)
+        XCTAssertEqual(store.state.content.composer.transientFeedback?.category, .saveBlocked)
+    }
+
     /// RCL-002-save_collection_filter_changes: file-backed navigation이 opened collection 상태로 파생 (session document lag
     /// 허용)
     /// session document가 없어도 file-backed collection navigation이 opened collection URL과 dirty 상태를 올바르게 파생하는지 검증.

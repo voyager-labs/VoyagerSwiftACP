@@ -336,7 +336,12 @@ extension FileManagerContentFeature {
         )
         state.composer.isPresented = true
         state.composer.transientFeedback = feedback
-        return .send(.composer(.internal(.presentTransientFeedback(feedback))))
+        // 저장이 거부되면 경고의 Save-이탈 의도는 소멸한다. pending을 남기면 이후 별도 저장의
+        // write-back이 이를 소비해 사용자가 다시 요청하지 않은 목적지로 이동한다.
+        return .concatenate(
+            .send(.internal(.requestNavigation(.internal(.setPendingNavigation(nil))))),
+            .send(.composer(.internal(.presentTransientFeedback(feedback)))),
+        )
     }
 
     private func handleCollectionSearchResultPrepared(
