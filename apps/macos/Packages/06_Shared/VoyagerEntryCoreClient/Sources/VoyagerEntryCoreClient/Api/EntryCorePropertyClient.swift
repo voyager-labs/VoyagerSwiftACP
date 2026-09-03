@@ -360,9 +360,37 @@ extension EntryCorePropertyClient {
     ) -> Bool {
         guard assignments.count == request.changes.count else { return false }
         return zip(assignments, request.changes).allSatisfy { assignment, change in
-            guard let entryID = change.entryID else { return false }
-            return assignment.entryID == entryID
-                && assignment.propertyID == change.propertyID
+            executeAssignmentMatchesChange(assignment, change: change)
+        }
+    }
+
+    nonisolated private static func executeAssignmentMatchesChange(
+        _ assignment: PropertyAssignment,
+        change: PropertyChangeTarget,
+    ) -> Bool {
+        // daemon 계약상 execute 응답 assignment는 요청 change로 완전히 결정된다:
+        // revision은 expected + 1이고 state·payload는 desired를 그대로 반영한다.
+        // identity만 비교하면 stale revision이나 다른 값의 응답도 승인되므로
+        // 전부 대조해 protocolMismatch로 거절한다.
+        guard let entryID = change.entryID,
+              assignment.entryID == entryID,
+              assignment.propertyID == change.propertyID,
+              change.expectedAssignmentRevision >= 0,
+              change.expectedAssignmentRevision < Int64.max,
+              assignment.revision == change.expectedAssignmentRevision + 1
+        else { return false }
+        switch change.desired {
+        case .null:
+            return assignment.state == .null && assignment.value == nil
+        case .unknown:
+            return assignment.state == .unknown && assignment.value == nil
+        case .notApplicable:
+            return false
+        case let .value(valueType, cardinality, value):
+            return assignment.state == .value
+                && assignment.valueType == valueType
+                && assignment.cardinality == cardinality
+                && assignment.value == value
         }
     }
 

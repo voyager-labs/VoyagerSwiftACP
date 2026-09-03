@@ -572,6 +572,7 @@ extension EPR006CoordinatePropertyChangesTests {
 
         await executingStore.send(.cancel) {
             $0.generation = 1
+            $0.pendingReadBack = fixture.proposal
             $0.activePhase = nil
             $0.status = .ambiguous
             $0.lastOutcome = .propertyChangeRejected(.ambiguousExecution)

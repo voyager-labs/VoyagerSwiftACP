@@ -315,6 +315,10 @@ public struct EntryPropertiesFeature: Sendable {
                 let cancellationEffect: Effect<Action> = .cancel(id: CancelID.flow)
                 var cancellationOutcomeEffect: Effect<Action> = .none
                 if state.activePhase == .executing {
+                    // 실행 중 취소도 전송 경계 ambiguity다. mutation이 적용되었을
+                    // 수 있으므로 executeCompleted(.ambiguousExecution)과 동일하게
+                    // proposal을 read-only read-back 복구 대상으로 보존한다.
+                    state.pendingReadBack = state.proposal
                     state.status = .ambiguous
                     cancellationOutcomeEffect = emit(
                         &state,

@@ -327,8 +327,12 @@ public enum EntryPropertiesClientFactory {
         for target: EntryPropertiesTarget,
         snapshot: EntryPropertiesTargetSnapshot,
     ) -> Int64 {
+        // validatePreparedBefore는 identity 보강 전 snapshot과 보강된 prepared
+        // target을 비교한다. localPath가 snapshot 내 유일하므로 entryID가 채워진
+        // target도 원래 revision 키와 대응되며, 못 찾을 때만 canonicalRevision
+        // fallback이 동작한다.
         snapshot.assignmentRevisions
-            .first(where: { $0.target == target })?.revision ?? snapshot.canonicalRevision
+            .first(where: { $0.target.localPath == target.localPath })?.revision ?? snapshot.canonicalRevision
     }
 
     private static func makeWireChanges(
