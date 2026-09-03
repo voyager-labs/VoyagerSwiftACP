@@ -1,6 +1,6 @@
 import Foundation
 
-private enum RuntimeRestorationHeartbeatPersistenceError: Error {
+enum RuntimeRestorationHeartbeatPersistenceError: Error {
     case persistenceFailure
 }
 
@@ -79,14 +79,34 @@ public extension RuntimeControlPlane {
         ) {
             return terminal
         }
-        let launchedClaim = try await launchValidatedRestore(claim, host: hostReference)
-        guard let adapter = adapters[claim.adapterID] else { throw RuntimeHostError.invalidEvent }
-        return try await finishRestoredResumeAttempt(
-            launchedClaim,
-            from: adapter,
+        let launchOutcome = await launchRestoredClaimWithHeartbeat(
+            claim,
             host: hostReference,
             restoredContext: restoredContext,
         )
+        switch launchOutcome {
+        case let .terminal(terminal):
+            return terminal
+        case let .failure(failure):
+            if case .cancellation = failure {
+                try? await restoreResumptionClaimIfNeeded(
+                    hostReference,
+                    lease: claim.lease,
+                    restoredContext: restoredContext,
+                )
+            }
+            try throwRestoredResumeRaceFailure(failure)
+        case .cancelled:
+            throw CancellationError()
+        case let .launched(launchedClaim):
+            guard let adapter = adapters[claim.adapterID] else { throw RuntimeHostError.invalidEvent }
+            return try await finishRestoredResumeAttempt(
+                launchedClaim,
+                from: adapter,
+                host: hostReference,
+                restoredContext: restoredContext,
+            )
+        }
     }
 
     internal func finishRestoredResumeAttempt(
@@ -474,7 +494,7 @@ public extension RuntimeControlPlane {
         }
     }
 
-    private func finalizeVisibleResumptionTerminal(
+    internal func finalizeVisibleResumptionTerminal(
         host: ExternalAgentSessionReference,
         runReference: RuntimeRunReference,
         lease: UInt64,
@@ -809,31 +829,6 @@ public extension RuntimeControlPlane {
         )
     }
 
-    private func mapRestoredResumeRaceFailure(_ error: any Error) -> RuntimeRestoredResumeRaceFailure {
-        if error is CancellationError {
-            return .cancellation
-        }
-        if error is RuntimeRestoredResumeAttemptError {
-            return .attemptLost
-        }
-        if error is RuntimeTerminalEventPersistenceError {
-            return .terminalEventPersistence
-        }
-        if error is RuntimeRestorationHeartbeatPersistenceError {
-            return .heartbeatPersistence
-        }
-        if error is RuntimeProviderTerminalAdmissionError {
-            return .providerTerminalAdmission
-        }
-        if let error = error as? RuntimeHostError {
-            return .host(error)
-        }
-        if let error = error as? RuntimeAdapterFailure {
-            return .host(.adapterFailure(error.kind, error.diagnosticCode))
-        }
-        return .host(.adapterUnavailable)
-    }
-
     private func throwRestoredResumeRaceFailure(
         _ failure: RuntimeRestoredResumeRaceFailure,
     ) throws -> Never {
@@ -904,7 +899,7 @@ public extension RuntimeControlPlane {
         }
     }
 
-    private func resolveHeartbeatFailure(
+    internal func resolveHeartbeatFailure(
         _ error: any Error,
         host: ExternalAgentSessionReference,
         runReference: RuntimeRunReference,
@@ -1036,7 +1031,7 @@ public extension RuntimeControlPlane {
         return sessions[host]?.stored.restorationClaim == nil
     }
 
-    private func renewRestorationClaim(
+    internal func renewRestorationClaim(
         _ host: ExternalAgentSessionReference,
         runReference: RuntimeRunReference,
         lease: UInt64,
@@ -1320,7 +1315,7 @@ public extension RuntimeControlPlane {
         throw error
     }
 
-    func restoreResumptionClaimIfNeeded(
+    internal func restoreResumptionClaimIfNeeded(
         _ hostReference: ExternalAgentSessionReference,
         lease: UInt64,
         fencePersistedOwner shouldFencePersistedOwner: Bool = false,
@@ -1366,6 +1361,15 @@ public extension RuntimeControlPlane {
                 plane.restoreLocalResumptionClaimIfNeeded(hostReference, lease: lease)
             }
         }.value
+    }
+
+    internal func restoreResumptionClaimIfNeeded(
+        _ hostReference: ExternalAgentSessionReference,
+        lease: UInt64,
+        restoredContext: RuntimeRestoredResumeContext,
+    ) async throws {
+        guard activeRestoredResumeAttempts[hostReference] == restoredContext.attemptID else { return }
+        try await restoreResumptionClaimIfNeeded(hostReference, lease: lease)
     }
 
     private func fencePersistedOwner(
