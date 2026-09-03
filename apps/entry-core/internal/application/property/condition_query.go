@@ -35,39 +35,13 @@ func ConditionCapabilityFor(definition domainentry.WorkspacePropertyDefinition) 
 	if definition.Origin == domainentry.PropertyOriginBuiltIn {
 		return ConditionCapability{Reason: "source_runtime_unavailable"}
 	}
-	nativeType, ok := conditionNativeType(definition.ValueType, definition.Cardinality)
+	nativeType, ok := domainentry.ConditionNativeTypeForContract(definition.ValueType, definition.Cardinality)
 	if !ok {
 		return ConditionCapability{Reason: "unsupported_value_contract"}
 	}
 	operators := append([]string(nil), domainentry.ConditionCatalogData.OperatorsForType(nativeType)...)
 	sort.Strings(operators)
 	return ConditionCapability{Supported: true, NativeType: nativeType, AllowedOperators: operators}
-}
-
-func conditionNativeType(valueType domainentry.PropertyType, cardinality domainentry.PropertyCardinality) (domainentry.ConditionNativeType, bool) {
-	if cardinality == domainentry.PropertyCardinalityMany {
-		if valueType == domainentry.PropertyTypeText {
-			return domainentry.ConditionNativeTypeStringList, true
-		}
-		if valueType == domainentry.PropertyTypeSelect {
-			return domainentry.ConditionNativeTypeCategorical, true
-		}
-		return "", false
-	}
-	switch valueType {
-	case domainentry.PropertyTypeText:
-		return domainentry.ConditionNativeTypeString, true
-	case domainentry.PropertyTypeNumber:
-		return domainentry.ConditionNativeTypeNumber, true
-	case domainentry.PropertyTypeDate:
-		return domainentry.ConditionNativeTypeDate, true
-	case domainentry.PropertyTypeBoolean:
-		return domainentry.ConditionNativeTypeBoolean, true
-	case domainentry.PropertyTypeSelect:
-		return domainentry.ConditionNativeTypeCategorical, true
-	default:
-		return "", false
-	}
 }
 
 type ConditionOperand struct {

@@ -470,6 +470,9 @@ func (definition PropertyDefinition) Validate() error {
 		definition.Revision < 1 || definition.Options == nil || len(definition.Options) > maximumPropertyIDs || definition.ConditionCapability.Validate() != nil {
 		return ErrInvalidResponse
 	}
+	if !validConditionCapabilityForDefinition(definition) {
+		return ErrInvalidResponse
+	}
 	if definition.ValueType != "select" && len(definition.Options) > 0 {
 		return ErrInvalidResponse
 	}

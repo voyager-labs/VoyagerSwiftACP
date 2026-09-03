@@ -314,7 +314,13 @@ public struct EntryPropertiesFeature: Sendable {
                         state.status = .idle
                     }
                 } else {
-                    state.status = .idle
+                    // 취소할 active effect가 없어도 recovery 상태(ambiguous,
+                    // applied-unverified)는 유지한다. status를 idle로 덮으면
+                    // read-only retry 경계와 mutation busy guard가 모두 열리고
+                    // 기존 mutation의 적용 여부 복구 경로가 사라진다.
+                    if state.status != .ambiguous, state.status != .appliedUnverified {
+                        state.status = .idle
+                    }
                 }
                 state.activePhase = nil
                 return .merge(cancellationEffect, cancellationOutcomeEffect)

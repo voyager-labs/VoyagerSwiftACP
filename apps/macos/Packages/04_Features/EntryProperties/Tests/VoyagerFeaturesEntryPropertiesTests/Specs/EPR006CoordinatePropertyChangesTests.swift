@@ -585,4 +585,34 @@ extension EPR006CoordinatePropertyChangesTests {
             .init(kind: .outcome(.propertyChangeAppliedUnverified(fixture.snapshot))),
         )
     }
+
+    /// EPR-006-execute_property_change: 취소할 active effect가 없으면 recovery 상태를 유지한다.
+    /// - 검증 내용: applied-unverified/ambiguous 상태에서 cancel의 status 보존
+    /// - 사전 조건: execute ambiguity 또는 read-back 실패가 이미 완료됨 (activePhase == nil)
+    /// - 기대 결과: status가 idle로 덮이지 않아 read-only retry 경계와 busy guard가 유지됨
+    func testCancelWithoutActiveEffectPreservesRecoveryStatus() async {
+        let fixture = Fixture()
+
+        var unverifiedState = fixture.readyState
+        unverifiedState.appliedProposal = fixture.proposal
+        unverifiedState.status = .appliedUnverified
+        let unverifiedStore = TestStore(initialState: unverifiedState) { EntryPropertiesFeature() }
+
+        await unverifiedStore.send(.cancel) {
+            $0.generation = 1
+        }
+        XCTAssertEqual(unverifiedStore.state.status, .appliedUnverified)
+        XCTAssertEqual(unverifiedStore.state.appliedProposal, fixture.proposal)
+
+        var ambiguousState = fixture.readyState
+        ambiguousState.proposal = fixture.proposal
+        ambiguousState.status = .ambiguous
+        let ambiguousStore = TestStore(initialState: ambiguousState) { EntryPropertiesFeature() }
+
+        await ambiguousStore.send(.cancel) {
+            $0.generation = 1
+        }
+        XCTAssertEqual(ambiguousStore.state.status, .ambiguous)
+        XCTAssertEqual(ambiguousStore.state.proposal, fixture.proposal)
+    }
 }

@@ -52,6 +52,38 @@ func (nativeType ConditionNativeType) valid() bool {
 	}
 }
 
+// ConditionNativeTypeForContract는 불변 value contract(Workspace value_type과
+// cardinality)를 condition-side native type으로 유도한다. query capability는
+// 오직 이 value contract에서만 파생되므로, application capability derivation과
+// wire capability 검증이 같은 이 함수를 공유해야 한다. 평가 불가능한 계약은
+// ("", false)를 반환하고 caller는 unsupported_value_contract로 분류한다.
+func ConditionNativeTypeForContract(valueType PropertyType, cardinality PropertyCardinality) (ConditionNativeType, bool) {
+	if cardinality == PropertyCardinalityMany {
+		switch valueType {
+		case PropertyTypeText:
+			return ConditionNativeTypeStringList, true
+		case PropertyTypeSelect:
+			return ConditionNativeTypeCategorical, true
+		default:
+			return "", false
+		}
+	}
+	switch valueType {
+	case PropertyTypeText:
+		return ConditionNativeTypeString, true
+	case PropertyTypeNumber:
+		return ConditionNativeTypeNumber, true
+	case PropertyTypeDate:
+		return ConditionNativeTypeDate, true
+	case PropertyTypeBoolean:
+		return ConditionNativeTypeBoolean, true
+	case PropertyTypeSelect:
+		return ConditionNativeTypeCategorical, true
+	default:
+		return "", false
+	}
+}
+
 // ConditionValueShape은 operator가 소비하는 operand 수를 분류한다.
 type ConditionValueShape string
 

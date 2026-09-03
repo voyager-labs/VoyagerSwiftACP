@@ -318,6 +318,63 @@ extension EPR006CoordinatePropertyChangesTests {
             XCTAssertEqual(error as? EntryPropertiesFailure, .validation)
         }
     }
+
+    /// EPR-006-read_back_property_change_result: assignment은 catalog value contract와 대조된다.
+    /// - 검증 내용: definition-derived catalog와 다른 value type assignment 거절
+    /// - 사전 조건: text/one snapshot 계약에 number/one assignment를 반환하는 Core stub
+    /// - 기대 결과: 모순된 canonical baseline을 만들지 않고 validation으로 fail closed
+    func testReadBackRejectsAssignmentViolatingCatalogContract() async throws {
+        let propertyID = try PropertyID(rawValue: "00000000-0000-0000-8000-000000000001")
+        let entryID = try EntryCoreEntryID(rawValue: "ent:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
+        let mismatched = PropertyAssignment(
+            propertyID: propertyID,
+            entryID: entryID,
+            valueType: .number,
+            cardinality: .one,
+            state: .value,
+            revision: 1,
+            value: .number("42"),
+        )
+        let propertyClient = contractViolatingAssignmentClient(
+            page: PropertyAssignmentPage(assignments: [mismatched], nextPageToken: nil, hasMore: false),
+        )
+        let endpoint = try EntryCoreEndpoint(path: "/tmp/entry-properties-review.sock")
+        let client = EntryPropertiesClientFactory.live(
+            propertyClient: propertyClient,
+            endpoint: endpoint,
+            capabilityDiscovery: { _ in throw EntryPropertiesFailure.unavailable },
+        )
+        let snapshot = EntryPropertiesTargetSnapshot(
+            targets: [.init(localPath: "/a")],
+            propertyID: .init(rawValue: propertyID.rawValue),
+            catalogVersion: "2.2.0",
+            canonicalRevision: 0,
+        )
+
+        do {
+            _ = try await client.readBack(.init(snapshot: snapshot))
+            XCTFail("catalog-violating assignment should be rejected")
+        } catch {
+            XCTAssertEqual(error as? EntryPropertiesFailure, .validation)
+        }
+    }
+}
+
+private func contractViolatingAssignmentClient(page: PropertyAssignmentPage) -> EntryCorePropertyClient {
+    EntryCorePropertyClient(
+        definitionList: { _, _ in throw EntryCoreClientError.daemonUnavailable },
+        definitionCreate: { _, _ in throw EntryCoreClientError.daemonUnavailable },
+        definitionUpdate: { _, _ in throw EntryCoreClientError.daemonUnavailable },
+        definitionDisable: { _, _ in throw EntryCoreClientError.daemonUnavailable },
+        optionCreate: { _, _ in throw EntryCoreClientError.daemonUnavailable },
+        optionUpdate: { _, _ in throw EntryCoreClientError.daemonUnavailable },
+        optionReorder: { _, _ in throw EntryCoreClientError.daemonUnavailable },
+        optionDisable: { _, _ in throw EntryCoreClientError.daemonUnavailable },
+        assignmentList: { _, _ in page },
+        changePrepare: { _, _ in throw EntryCoreClientError.daemonUnavailable },
+        changeExecute: { _, _ in throw EntryCoreClientError.daemonUnavailable },
+        conditionQuery: { _, _ in throw EntryCoreClientError.daemonUnavailable },
+    )
 }
 
 private func mismatchedPropertyClient(response: PropertyChangeProposal) -> EntryCorePropertyClient {

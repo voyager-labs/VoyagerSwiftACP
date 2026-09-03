@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
@@ -47,6 +48,20 @@ func fixtureConditionCapabilityJSON() string {
 }
 func fixtureConditionCapability() PropertyConditionCapability {
 	return PropertyConditionCapability{Supported: true, EvaluationScope: "local_assignment", CatalogVersion: "2.2.0", NativeType: "string", AllowedOperators: []string{"all", "any", "cn", "empty", "eq", "ew", "exists", "nc", "neq", "rx", "sw"}}
+}
+
+// fixtureConditionCapabilityForContract는 value contract에서 유도되는 정확한
+// native type과 Registry operator 집합을 담은 capability를 만든다. capability
+// exactness 검사가 definition value contract와의 일치를 강제하므로 text가 아닌
+// definition fixture는 이 helper로 capability를 만들어야 한다.
+func fixtureConditionCapabilityForContract(valueType, cardinality string) PropertyConditionCapability {
+	nativeType, ok := domainentry.ConditionNativeTypeForContract(domainentry.PropertyType(valueType), domainentry.PropertyCardinality(cardinality))
+	if !ok {
+		panic("fixture value contract is not condition-queryable")
+	}
+	operators := append([]string(nil), domainentry.ConditionCatalogData.OperatorsForType(nativeType)...)
+	sort.Strings(operators)
+	return PropertyConditionCapability{Supported: true, EvaluationScope: "local_assignment", CatalogVersion: domainentry.ConditionCatalogVersion, NativeType: string(nativeType), AllowedOperators: operators}
 }
 
 func fixtureAssignmentJSON(id, entryID string) string {
@@ -657,6 +672,59 @@ func TestPropertyResultRejectsInvalidUnions(t *testing.T) {
 	}
 }
 
+// --- 11a. capability exactness: native type과 operator 집합은 value contract에서 유도된 것과 정확히 일치해야 한다 ---
+
+func TestPropertyCapabilityExactnessAgainstValueContract(t *testing.T) {
+	t.Parallel()
+
+	pid := fixturePropertyID(t, 610)
+	base := func(valueType, cardinality string) PropertyDefinition {
+		return PropertyDefinition{PropertyID: pid, Key: "k", Name: "n", ValueType: valueType, Cardinality: cardinality, State: "active", Revision: 1, Options: []PropertyOption{}, ConditionCapability: fixtureConditionCapabilityForContract(valueType, cardinality)}
+	}
+
+	if definition := base("text", "one"); definition.Validate() != nil {
+		t.Fatal("text/one with derived capability rejected")
+	}
+	if definition := base("boolean", "one"); definition.Validate() != nil {
+		t.Fatal("boolean/one with derived capability rejected")
+	}
+	if definition := base("text", "many"); definition.Validate() != nil {
+		t.Fatal("text/many with derived capability rejected")
+	}
+
+	mismatchedNative := base("text", "one")
+	mismatchedNative.ConditionCapability.NativeType = "date"
+	if mismatchedNative.Validate() == nil {
+		t.Fatal("text definition with date capability accepted")
+	}
+
+	wrongOperators := base("boolean", "one")
+	wrongOperators.ConditionCapability.AllowedOperators = []string{"rx"}
+	if wrongOperators.Validate() == nil {
+		t.Fatal("boolean capability advertising rx accepted")
+	}
+
+	full := fixtureConditionCapabilityForContract("boolean", "one")
+	if len(full.AllowedOperators) < 2 {
+		t.Fatalf("boolean relation inventory unexpectedly small: %d", len(full.AllowedOperators))
+	}
+	partialOperators := base("boolean", "one")
+	partialOperators.ConditionCapability.AllowedOperators = full.AllowedOperators[:len(full.AllowedOperators)-1]
+	if partialOperators.Validate() == nil {
+		t.Fatal("boolean capability missing a relation operator accepted")
+	}
+
+	unevaluable := PropertyDefinition{PropertyID: pid, Key: "k", Name: "n", ValueType: "datetime", Cardinality: "one", State: "active", Revision: 1, Options: []PropertyOption{}, ConditionCapability: fixtureConditionCapability()}
+	if unevaluable.Validate() == nil {
+		t.Fatal("datetime definition with supported capability accepted")
+	}
+
+	unsupported := PropertyDefinition{PropertyID: pid, Key: "k", Name: "n", ValueType: "datetime", Cardinality: "one", State: "active", Revision: 1, Options: []PropertyOption{}, ConditionCapability: PropertyConditionCapability{Reason: "unsupported_value_contract"}}
+	if unsupported.Validate() != nil {
+		t.Fatal("datetime definition with unsupported capability rejected")
+	}
+}
+
 func oidBad() string { return "not-a-uuid" }
 
 // --- 12. 에러 코드 계약: 신규 2종 + 전체 코드 고정 메시지 완전성 ---
@@ -716,7 +784,7 @@ func TestEncodedSuccessBytesExactness(t *testing.T) {
 	for index := range options {
 		options[index] = PropertyOption{OptionID: fixtureOptionID(1000 + index), Label: strings.Repeat("l", 256), Position: int64(index), State: "active"}
 	}
-	fat := PropertyDefinitionListResult{Definitions: []PropertyDefinition{{PropertyID: pid, Key: "k", Name: "n", ValueType: "select", Cardinality: "one", State: "active", Revision: 1, Options: options, ConditionCapability: fixtureConditionCapability()}}, HasMore: false}
+	fat := PropertyDefinitionListResult{Definitions: []PropertyDefinition{{PropertyID: pid, Key: "k", Name: "n", ValueType: "select", Cardinality: "one", State: "active", Revision: 1, Options: options, ConditionCapability: fixtureConditionCapabilityForContract("select", "one")}}, HasMore: false}
 	fatSize, fatFits := EncodedSuccessBytes("id", fat)
 	if fatFits || fatSize <= MaxWireBytes {
 		t.Fatalf("oversized read-back not flagged: size=%d fits=%v", fatSize, fatFits)

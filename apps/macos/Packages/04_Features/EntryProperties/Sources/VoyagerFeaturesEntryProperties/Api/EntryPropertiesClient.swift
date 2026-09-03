@@ -204,7 +204,7 @@ public enum EntryPropertiesClientFactory {
         propertyClient: EntryCorePropertyClient,
         endpoint: EntryCoreEndpoint,
         selection: EntryPropertiesSelection,
-        catalog _: EntryPropertiesCatalog,
+        catalog: EntryPropertiesCatalog,
     ) async throws -> EntryPropertiesAssignments {
         let propertyID = try PropertyID(rawValue: selection.propertyID.rawValue)
         var values: [EntryPropertiesCanonicalValue] = []
@@ -227,6 +227,14 @@ public enum EntryPropertiesClientFactory {
             } while pageToken != nil
 
             if let resolved {
+                // daemon이 정확한 property ID를 담아도 catalog value contract와
+                // 다른 value type/cardinality를 반환하면 snapshot 계약과 모순되는
+                // canonical baseline이 만들어지므로 fail-closed로 거절한다.
+                guard semanticValueKind(resolved.valueType) == catalog.valueKind,
+                      semanticCardinality(resolved.cardinality) == catalog.cardinality
+                else {
+                    throw EntryPropertiesFailure.validation
+                }
                 try values.append(
                     .init(
                         target: target,
