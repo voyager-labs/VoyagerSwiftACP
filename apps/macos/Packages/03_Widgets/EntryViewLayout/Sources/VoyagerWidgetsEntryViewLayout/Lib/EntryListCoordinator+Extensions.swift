@@ -250,6 +250,12 @@ extension EntryListCoordinator: NSOutlineViewDelegate {
             return
         }
         guard !selectedIndexes.isEmpty else {
+            // Command toggle로 마지막 항목을 비운 callback은 pending context를 먼저 정산해
+            // 명시적 clear intent로 귀속한다. 먼저 복원하면 사용자 deselect가 되돌려진다.
+            if let context = tableView.takeNativeCommandEntrySelectionContext() {
+                normalizeNativeSelection(physicalRows: selectedIndexes, context: context)
+                return
+            }
             // 출처 없는 lifecycle empty callback: store 선택을 해석하지 않고 native 복원만 수행한다.
             syncListSelectionFromStore()
             return

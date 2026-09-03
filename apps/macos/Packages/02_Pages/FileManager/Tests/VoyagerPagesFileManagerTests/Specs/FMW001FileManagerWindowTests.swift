@@ -2358,13 +2358,17 @@ extension FMW001FileManagerWindowTests {
             $0.entryQuickLookClient = quickLookClient
             $0.fileOperationUndoManagerClient = .live(registry: registry)
         }
-        let coordinator = FileManagerWindowCoordinator(
-            windowID: windowID,
-            store: store,
-            fileOperationUndoManagerRegistry: registry,
-            onResignedKey: { id in resignedWindowIDs.withValue { $0.append(id) } },
-            makeContentViewController: { _, _ in NSViewController() },
-        )
+        let coordinator = withDependencies {
+            $0.entryQuickLookClient = quickLookClient
+        } operation: {
+            FileManagerWindowCoordinator(
+                windowID: windowID,
+                store: store,
+                fileOperationUndoManagerRegistry: registry,
+                onResignedKey: { id in resignedWindowIDs.withValue { $0.append(id) } },
+                makeContentViewController: { _, _ in NSViewController() },
+            )
+        }
         defer { coordinator.close() }
 
         coordinator.beginPreviewPanelControl(panel)
@@ -2373,6 +2377,33 @@ extension FMW001FileManagerWindowTests {
         XCTAssertEqual(beginCount.value, 1)
         XCTAssertEqual(endCount.value, 1)
         XCTAssertEqual(resignedWindowIDs.value, [windowID])
+    }
+
+    /// FMW-001-key_command_focus: resign 정산은 document가 key로 돌아왔거나 유지 조건이 성립할 때 생략한다.
+    func testShouldSettleRetainedResignKeyOnlyWhenDocumentNotKeyAndNotRetained() throws {
+        _ = NSApplication.shared
+        let panel = try XCTUnwrap(QLPreviewPanel.shared())
+
+        XCTAssertFalse(FileManagerWindowCoordinator.shouldSettleRetainedResignKey(
+            documentIsKey: true,
+            documentIsMain: false,
+            keyWindow: nil,
+        ))
+        XCTAssertFalse(FileManagerWindowCoordinator.shouldSettleRetainedResignKey(
+            documentIsKey: false,
+            documentIsMain: true,
+            keyWindow: panel,
+        ))
+        XCTAssertTrue(FileManagerWindowCoordinator.shouldSettleRetainedResignKey(
+            documentIsKey: false,
+            documentIsMain: true,
+            keyWindow: NSWindow(),
+        ))
+        XCTAssertTrue(FileManagerWindowCoordinator.shouldSettleRetainedResignKey(
+            documentIsKey: false,
+            documentIsMain: false,
+            keyWindow: nil,
+        ))
     }
 
     /// FMW-001-key_command_focus: mounted ContentPage restore가 편집 중인 NSTextView를 교체하지 않는다.

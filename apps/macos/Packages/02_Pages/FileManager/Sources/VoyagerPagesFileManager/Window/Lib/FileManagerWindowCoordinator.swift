@@ -318,6 +318,18 @@ public extension FileManagerWindowCoordinator {
         documentIsMain && keyWindow is QLPreviewPanel
     }
 
+    /// Quick Look 제어 중 보류한 resign을 이 시점에 정산해야 하는지 판정한다.
+    /// document가 key로 돌아왔으면 정산이 불필요하고, QL이 여전히 key이고 document가
+    /// main인 동안에는 logical focus 유지 조건을 존중한다.
+    static func shouldSettleRetainedResignKey(
+        documentIsKey: Bool,
+        documentIsMain: Bool,
+        keyWindow: NSWindow?,
+    ) -> Bool {
+        guard !documentIsKey else { return false }
+        return !shouldRetainLogicalFocus(documentIsMain: documentIsMain, keyWindow: keyWindow)
+    }
+
     /// QuickLookUI의 NSObject hooks는 nonisolated로 import되지만 AppKit responder dispatch는 main thread에서 실행된다.
     override nonisolated func acceptsPreviewPanelControl(_: QLPreviewPanel!) -> Bool {
         MainActor.assumeIsolated {
@@ -336,7 +348,22 @@ public extension FileManagerWindowCoordinator {
         MainActor.assumeIsolated {
             guard let panel else { return }
             entryQuickLookClient.endPreviewPanelControl(panel, self)
+            settleRetainedResignKeyIfNeeded()
         }
+    }
+
+    /// Quick Look이 key를 비-FileManager window에 넘기거나 앱이 비활성화되면 document는
+    /// 두 번째 resignKey를 받지 못한다. 제어 종료 시점에 보류한 resign을 정산해
+    /// `focusedWindowID`/`isFocused`가 이전 document에 머무르지 않게 한다.
+    private func settleRetainedResignKeyIfNeeded() {
+        guard let window,
+              Self.shouldSettleRetainedResignKey(
+                  documentIsKey: window.isKeyWindow,
+                  documentIsMain: window.isMainWindow,
+                  keyWindow: NSApp.keyWindow,
+              )
+        else { return }
+        onResignedKey?(windowID)
     }
 
     func handleQuickLookPanelEvent(_ event: NSEvent) -> Bool {

@@ -436,6 +436,18 @@ public final class EntryListView: NSView {
             return pendingNativeSelectionContext
         }
 
+        /// Command toggle로 비워진 empty callback 정산에만 쓰이는 context를 소비한다.
+        /// Command context가 아니면 소비하지 않아 lifecycle empty 복원 경로의 pending 상태를 유지한다.
+        func takeNativeCommandEntrySelectionContext() -> EntryListNativeSelectionContext? {
+            guard let context = pendingNativeSelectionContext,
+                  context.modifierFlags.contains(.command),
+                  let destination = context.destinationOccurrence as? EntryListOutlineItem,
+                  case .entry = destination.kind
+            else { return nil }
+            pendingNativeSelectionContext = nil
+            return context
+        }
+
         override func mouseDown(with event: NSEvent) {
             cancelPendingNativeSelection()
             guard let hit = pointerHit(for: event) else {
