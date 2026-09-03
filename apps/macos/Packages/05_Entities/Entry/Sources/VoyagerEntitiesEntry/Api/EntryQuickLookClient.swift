@@ -3,16 +3,42 @@ import ComposableArchitecture
 import Foundation
 import QuickLookUI
 
+@MainActor
+public protocol EntryQuickLookPanelEventHandling: AnyObject {
+    func handleQuickLookPanelEvent(_ event: NSEvent) -> Bool
+}
+
 public struct EntryQuickLookClient: Sendable {
     public var quickLook: @Sendable (_ urls: [URL], _ initialIndex: Int) async throws -> Void
     public var syncQuickLookSelection: @Sendable (_ urls: [URL], _ selectedIndex: Int) async -> Void
+    public var acceptsPreviewPanelControl: @MainActor @Sendable () -> Bool
+    public var beginPreviewPanelControl: @MainActor @Sendable (
+        _ panel: QLPreviewPanel,
+        _ eventHandler: any EntryQuickLookPanelEventHandling,
+    ) -> Void
+    public var endPreviewPanelControl: @MainActor @Sendable (
+        _ panel: QLPreviewPanel,
+        _ eventHandler: any EntryQuickLookPanelEventHandling,
+    ) -> Void
 
     nonisolated public init(
         quickLook: @escaping @Sendable (_ urls: [URL], _ initialIndex: Int) async throws -> Void,
         syncQuickLookSelection: @escaping @Sendable (_ urls: [URL], _ selectedIndex: Int) async -> Void = { _, _ in },
+        acceptsPreviewPanelControl: @escaping @MainActor @Sendable () -> Bool = { false },
+        beginPreviewPanelControl: @escaping @MainActor @Sendable (
+            _ panel: QLPreviewPanel,
+            _ eventHandler: any EntryQuickLookPanelEventHandling,
+        ) -> Void = { _, _ in },
+        endPreviewPanelControl: @escaping @MainActor @Sendable (
+            _ panel: QLPreviewPanel,
+            _ eventHandler: any EntryQuickLookPanelEventHandling,
+        ) -> Void = { _, _ in },
     ) {
         self.quickLook = quickLook
         self.syncQuickLookSelection = syncQuickLookSelection
+        self.acceptsPreviewPanelControl = acceptsPreviewPanelControl
+        self.beginPreviewPanelControl = beginPreviewPanelControl
+        self.endPreviewPanelControl = endPreviewPanelControl
     }
 }
 
@@ -30,6 +56,15 @@ extension EntryQuickLookClient: DependencyKey {
                 await MainActor.run {
                     coordinator.syncQuickLookSelection(urls: urls, selectedIndex: selectedIndex)
                 }
+            },
+            acceptsPreviewPanelControl: {
+                coordinator.acceptsPreviewPanelControl
+            },
+            beginPreviewPanelControl: { panel, eventHandler in
+                coordinator.attach(to: panel, eventHandler: eventHandler)
+            },
+            endPreviewPanelControl: { panel, eventHandler in
+                coordinator.detach(from: panel, eventHandler: eventHandler)
             },
         )
     }
@@ -80,14 +115,17 @@ struct RealSecurityScopedAccessBoundary: SecurityScopedAccessBoundary {
 
 extension EntryQuickLookClient {
     /// 테스트용 live client를 만든다. 주입된 panel provider로 coordinator를 구성하고,
-    /// 두 클로저(quickLook/syncQuickLookSelection)를 같은 coordinator에 연결한 뒤
+    /// 표시·동기화·responder-chain control을 같은 coordinator에 연결한 뒤
     /// client와 coordinator를 함께 반환한다.
     @MainActor
     static func makeLiveClient(
         panelProvider: @escaping @Sendable () -> (any EntryQuickLookPanelUpdating)?,
         boundary: any SecurityScopedAccessBoundary = RealSecurityScopedAccessBoundary(),
     ) -> (client: EntryQuickLookClient, coordinator: EntryQuickLookPanelCoordinator) {
-        let coordinator = EntryQuickLookPanelCoordinator(panelProvider: panelProvider, boundary: boundary)
+        let coordinator = EntryQuickLookPanelCoordinator(
+            panelProvider: panelProvider,
+            boundary: boundary,
+        )
         let client = EntryQuickLookClient(
             quickLook: { urls, initialIndex in
                 await MainActor.run {
@@ -98,6 +136,15 @@ extension EntryQuickLookClient {
                 await MainActor.run {
                     coordinator.syncQuickLookSelection(urls: urls, selectedIndex: selectedIndex)
                 }
+            },
+            acceptsPreviewPanelControl: {
+                coordinator.acceptsPreviewPanelControl
+            },
+            beginPreviewPanelControl: { panel, eventHandler in
+                coordinator.attach(to: panel, eventHandler: eventHandler)
+            },
+            endPreviewPanelControl: { panel, eventHandler in
+                coordinator.detach(from: panel, eventHandler: eventHandler)
             },
         )
         return (client, coordinator)
@@ -110,16 +157,27 @@ protocol EntryQuickLookPanelUpdating: AnyObject {
     var isVisible: Bool { get }
     var currentPreviewItemIndex: Int { get set }
     func reloadData()
+    func makeKeyAndOrderFront()
+    func orderOut()
 }
 
-extension QLPreviewPanel: @preconcurrency EntryQuickLookPanelUpdating {}
+extension QLPreviewPanel: @preconcurrency EntryQuickLookPanelUpdating {
+    func makeKeyAndOrderFront() {
+        makeKeyAndOrderFront(nil)
+    }
+
+    func orderOut() {
+        orderOut(nil)
+    }
+}
 
 @MainActor
 final class EntryQuickLookPanelCoordinator: NSObject, @preconcurrency QLPreviewPanelDataSource,
-    QLPreviewPanelDelegate
+    @preconcurrency QLPreviewPanelDelegate
 {
     private let panelProvider: () -> (any EntryQuickLookPanelUpdating)?
     private let boundary: any SecurityScopedAccessBoundary
+    private weak var eventHandler: (any EntryQuickLookPanelEventHandling)?
     private var currentURLs: [URL] = []
     private var currentIndex: Int = 0
     private var scopeTokens: [EntryQuickLookSecurityScopedURLToken] = []
@@ -133,8 +191,53 @@ final class EntryQuickLookPanelCoordinator: NSObject, @preconcurrency QLPreviewP
         super.init()
     }
 
+    var acceptsPreviewPanelControl: Bool {
+        !currentURLs.isEmpty
+    }
+
+    func attach(
+        to panel: QLPreviewPanel,
+        eventHandler: any EntryQuickLookPanelEventHandling,
+    ) {
+        self.eventHandler = eventHandler
+        panel.dataSource = self
+        panel.delegate = self
+        panel.currentPreviewItemIndex = currentIndex
+        panel.reloadData()
+    }
+
+    func detach(
+        from panel: QLPreviewPanel,
+        eventHandler: any EntryQuickLookPanelEventHandling,
+    ) {
+        guard self.eventHandler === eventHandler else { return }
+        if panel.dataSource === self {
+            panel.dataSource = nil
+        }
+        if panel.delegate === self {
+            panel.delegate = nil
+        }
+        self.eventHandler = nil
+    }
+
     func present(urls: [URL], initialIndex: Int) {
         guard !urls.isEmpty else { return }
+        // 패널이 이미 보이는 동안의 재요청은 토글/동기화로 해석한다.
+        // 같은 선택이면 패널을 닫고(Finder의 Space 토글), 다른 선택이면 미리보기 대상만 갱신한다.
+        if !currentURLs.isEmpty, let panel = panelProvider(), panel.isVisible {
+            if currentURLs == urls {
+                panel.orderOut()
+                Task { @MainActor in
+                    scopeTokens.forEach { $0.invalidate() }
+                    scopeTokens = []
+                    currentURLs = []
+                    currentIndex = 0
+                }
+                return
+            }
+            syncQuickLookSelection(urls: urls, selectedIndex: initialIndex)
+            return
+        }
         let tokens = urls.map { EntryQuickLookSecurityScopedURLToken(url: $0, boundary: boundary) }
         present(urls: urls, scopeTokens: tokens, initialIndex: initialIndex)
     }
@@ -158,7 +261,7 @@ final class EntryQuickLookPanelCoordinator: NSObject, @preconcurrency QLPreviewP
         currentURLs = urls
         currentIndex = max(0, min(initialIndex, max(urls.count - 1, 0)))
 
-        guard let panel = QLPreviewPanel.shared() else {
+        guard let panel = panelProvider() else {
             scopeTokens.forEach { $0.invalidate() }
             self.scopeTokens = []
             currentURLs = []
@@ -166,11 +269,9 @@ final class EntryQuickLookPanelCoordinator: NSObject, @preconcurrency QLPreviewP
             return
         }
 
-        panel.dataSource = self
-        panel.delegate = self
-        panel.makeKeyAndOrderFront(nil)
         panel.currentPreviewItemIndex = currentIndex
         panel.reloadData()
+        panel.makeKeyAndOrderFront()
     }
 
     func numberOfPreviewItems(in _: QLPreviewPanel!) -> Int {
@@ -181,6 +282,11 @@ final class EntryQuickLookPanelCoordinator: NSObject, @preconcurrency QLPreviewP
         guard !currentURLs.isEmpty else { return nil }
         let safeIndex = max(0, min(index, currentURLs.count - 1))
         return currentURLs[safeIndex] as NSURL
+    }
+
+    func previewPanel(_: QLPreviewPanel!, handle event: NSEvent!) -> Bool {
+        guard let event else { return false }
+        return eventHandler?.handleQuickLookPanelEvent(event) ?? false
     }
 
     func previewPanel(_: QLPreviewPanel!, didChangeTo item: QLPreviewItem!) {

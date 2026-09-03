@@ -54,6 +54,9 @@ struct FileManagerWindowCommandRoutingReducer {
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
+            case let .view(.quickLookKeyCommand(command)):
+                return .send(.content(.view(.handleKeyCommand(command))))
+
             case .onAppear:
                 state.syncHomeFavoriteItems()
                 guard state.fixedLocationsLoadPhase == .idle else { return .none }

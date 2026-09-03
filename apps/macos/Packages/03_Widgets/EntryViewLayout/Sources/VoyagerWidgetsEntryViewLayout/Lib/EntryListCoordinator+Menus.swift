@@ -209,12 +209,15 @@ extension EntryListCoordinator {
             preserving: selectedIDs.contains(entry.id) ? destination : nil,
         )
         preloadOpenWithApplications(selectedEntries: presentationEntries.filter { selectedIDs.contains($0.id) })
-        applySelectionPlan(EntryListSelectionPlan(
-            canonical: EntryListCanonicalSelection(ids: selectedIDs, focus: focus, anchor: focus),
-            physicalRows: physicalSelectionRows(for: selectedIDs),
-            activeOccurrence: activeOccurrence,
-            anchorOccurrence: activeOccurrence,
-        ))
+        applySelectionPlan(
+            EntryListSelectionPlan(
+                canonical: EntryListCanonicalSelection(ids: selectedIDs, focus: focus, anchor: focus),
+                physicalRows: physicalSelectionRows(for: selectedIDs),
+                activeOccurrence: activeOccurrence,
+                anchorOccurrence: activeOccurrence,
+            ),
+            sendsClearIntent: true,
+        )
     }
 
     func physicalSelectionRows(
@@ -395,7 +398,7 @@ extension EntryListCoordinator {
         ))
     }
 
-    private func applySelectionPlan(_ plan: EntryListSelectionPlan) {
+    func applySelectionPlan(_ plan: EntryListSelectionPlan, sendsClearIntent: Bool = false) {
         isUpdatingSelectionFromStore = true
         defer { isUpdatingSelectionFromStore = false }
         tableView.applyCanonicalSelection(
@@ -407,6 +410,11 @@ extension EntryListCoordinator {
             || plan.canonical.focus != state.lastSelectedId
             || plan.canonical.anchor != state.rangeAnchorId
         else { return }
+        if sendsClearIntent, plan.canonical.ids.isEmpty {
+            // 사용자 제스처로 선택을 비웠음을 명시적 view intent로 전달한다.
+            store.send(.view(.clearSelection))
+            return
+        }
         store.send(.view(.updateSelection(
             ids: plan.canonical.ids,
             lastSelectedId: plan.canonical.focus,
