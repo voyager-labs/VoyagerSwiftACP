@@ -269,9 +269,15 @@ public struct ExternalDropActiveSession: Equatable, Sendable {
     public let stagingDirectory: String
     public let immediateURLPaths: [String]
     public let immediateOrdinals: [Int]
+    public let command: EntryCommandMetadata
+    public let logicalItemCount: Int
     public var receivedFiles: [ExternalDropReceivedFile]
 
-    public init(request: ExternalDropAcceptedRequest) {
+    public init(
+        request: ExternalDropAcceptedRequest,
+        command: EntryCommandMetadata,
+        logicalItemCount: Int,
+    ) {
         sessionID = request.sessionID
         destination = request.destination
         orderedPromisedNames = request.orderedPromisedNames
@@ -280,6 +286,8 @@ public struct ExternalDropActiveSession: Equatable, Sendable {
         stagingDirectory = request.stagingDirectory
         immediateURLPaths = request.immediateURLPaths
         immediateOrdinals = request.immediateOrdinals
+        self.command = command
+        self.logicalItemCount = logicalItemCount
         receivedFiles = []
     }
 }
@@ -300,6 +308,9 @@ public enum ExternalObjectImportStatus: Equatable, Sendable {
 public struct ExternalDropImportPlacementState: Equatable, Sendable {
     public let sessionID: ExternalDropSessionID
     public let destination: String
+    public let command: EntryCommandMetadata
+    public let logicalItemCount: Int
+    public var isCopyStarted: Bool
     public var pendingPaths: Set<String>
     /// source(staging) 경로 → 실제 복사된 destination 경로 매핑.
     public var destinationBySource: [String: String]
@@ -309,10 +320,15 @@ public struct ExternalDropImportPlacementState: Equatable, Sendable {
     public init(
         sessionID: ExternalDropSessionID,
         destination: String,
+        command: EntryCommandMetadata,
+        logicalItemCount: Int,
         pendingPaths: Set<String>,
     ) {
         self.sessionID = sessionID
         self.destination = destination
+        self.command = command
+        self.logicalItemCount = logicalItemCount
+        isCopyStarted = false
         self.pendingPaths = pendingPaths
         destinationBySource = [:]
         succeededPaths = []
@@ -330,6 +346,8 @@ public struct ExternalDropImportPlacementState: Equatable, Sendable {
 public struct ExternalDropImportPlan: Equatable, Sendable {
     public let sessionID: ExternalDropSessionID
     public let destination: String
+    public let command: EntryCommandMetadata
+    public let logicalItemCount: Int
     public let forcedCopy: Bool
     public let orderedPromisedNames: [String]
     public let promisedOrdinals: [Int]
@@ -342,6 +360,10 @@ public struct ExternalDropImportPlan: Equatable, Sendable {
     public init(
         sessionID: ExternalDropSessionID,
         destination: String,
+        command: EntryCommandMetadata = EntryCommandMetadata(
+            id: UUID(), interaction: .copyEntries, source: .dragAndDrop,
+        ),
+        logicalItemCount: Int = 1,
         forcedCopy: Bool,
         orderedPromisedNames: [String],
         promisedOrdinals: [Int],
@@ -351,6 +373,8 @@ public struct ExternalDropImportPlan: Equatable, Sendable {
     ) {
         self.sessionID = sessionID
         self.destination = destination
+        self.command = command
+        self.logicalItemCount = logicalItemCount
         self.forcedCopy = forcedCopy
         self.orderedPromisedNames = orderedPromisedNames
         self.promisedOrdinals = promisedOrdinals

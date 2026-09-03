@@ -232,8 +232,15 @@ public struct EntryViewLayoutFeature {
                     isOptionDrag: isOptionDrag,
                 )))
 
-            case let .view(.externalDropAccepted(request)):
-                return .send(.entryOperations(.externalDrop(.accepted(request: request))))
+            case let .view(.externalDropAccepted(request, command, logicalItemCount)):
+                return .send(.entryOperations(.acceptedCommand(
+                    metadata: command,
+                    action: .externalDrop(.accepted(
+                        request: request,
+                        command: command,
+                        logicalItemCount: logicalItemCount,
+                    )),
+                )))
 
             case let .view(.externalDropCancelSession(sessionID)):
                 return .send(.entryOperations(.externalDrop(.cancelSession(sessionID))))

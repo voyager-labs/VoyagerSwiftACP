@@ -27,7 +27,11 @@ public enum EntryOperationsAction: CasePathable, Sendable {
     @CasePathable
     public enum ExternalDrop: CasePathable, Sendable {
         /// Grid/List `acceptDrop`이 동기적으로 받아들인 획득 요청. 배리어 세션을 연다.
-        case accepted(request: ExternalDropAcceptedRequest)
+        case accepted(
+            request: ExternalDropAcceptedRequest,
+            command: EntryCommandMetadata,
+            logicalItemCount: Int,
+        )
         /// reducer가 구독한 획득 이벤트 스트림에서 온 이벤트.
         case event(ExternalDropAcquisitionEvent)
         /// 정확한 세션을 취소한다 (멱등).

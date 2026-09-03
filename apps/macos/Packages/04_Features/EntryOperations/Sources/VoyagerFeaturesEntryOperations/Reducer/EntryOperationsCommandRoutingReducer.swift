@@ -225,6 +225,8 @@ struct EntryOperationsCommandRoutingReducer {
             .acceptedCommand(metadata: metadata, action: action)
         case .lifecycle, .delegate, .outcome:
             action
+        case .externalDrop:
+            action
         default:
             .acceptedCommand(metadata: metadata, action: action)
         }

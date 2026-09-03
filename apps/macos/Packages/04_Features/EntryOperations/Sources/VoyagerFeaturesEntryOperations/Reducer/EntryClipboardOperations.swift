@@ -551,7 +551,7 @@ private enum EntryClipboardOperationsSupport {
         ) async {
             // 전체 실패 배치도 실패 aggregate를 담은 terminal로 마무리한다.
             // undo 등록은 소비자가 successful targets 존재로 게이트한다.
-            if operationKind.isUndoable {
+            if operationKind.isUndoable || operationKind == .externalObjectImportItem {
                 let record = EntryActionRecord(
                     operationKind: operationKind,
                     targets: targets,

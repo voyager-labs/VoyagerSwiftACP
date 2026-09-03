@@ -7,6 +7,12 @@ import VoyagerEntitiesEntry
 import VoyagerShared
 import XCTest
 
+private let externalDropTestCommand = EntryCommandMetadata(
+    id: UUID(),
+    interaction: .copyEntries,
+    source: .dragAndDrop,
+)
+
 // StagingDirectory가 provider에 공개되지 않은 보관 디렉터리 경로를 재현한다.
 // 세션 구현과 동일한 파생 규칙(`<parent>/.voyager-claimed-<rootName>`)을 쓴다.
 
@@ -5105,8 +5111,12 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             sessionID: request.sessionID, itemOrdinal: 1, callbackOrdinal: 0, stagedPath: "/staging/a.txt",
         )
 
-        await store.send(.externalDrop(.accepted(request: request))) {
-            $0.activeExternalDrop = .init(request: request)
+        await store.send(.externalDrop(.accepted(
+            request: request,
+            command: externalDropTestCommand,
+            logicalItemCount: 2,
+        ))) {
+            $0.activeExternalDrop = .init(request: request, command: externalDropTestCommand, logicalItemCount: 2)
             $0.externalObjectImportStatus = .pending
         }
         await store.send(.externalDrop(.event(.received(file)))) {
@@ -5131,8 +5141,12 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             sessionID: request.sessionID, itemOrdinal: 1, callbackOrdinal: 0, stagedPath: "/staging/a.txt",
         )
 
-        await store.send(.externalDrop(.accepted(request: request))) {
-            $0.activeExternalDrop = .init(request: request)
+        await store.send(.externalDrop(.accepted(
+            request: request,
+            command: externalDropTestCommand,
+            logicalItemCount: 2,
+        ))) {
+            $0.activeExternalDrop = .init(request: request, command: externalDropTestCommand, logicalItemCount: 2)
             $0.externalObjectImportStatus = .pending
         }
         await store.send(.externalDrop(.event(.received(file)))) {
@@ -5142,6 +5156,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             $0.activeExternalDrop = nil
             $0.externalObjectImportStatus = .failed
         }
+        await store.receive(\.lifecycle.entryActionCompleted)
         await store.finish()
 
         XCTAssertEqual(store.state.externalObjectImportStatus, .failed)
@@ -5165,8 +5180,12 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             sessionID: request.sessionID, itemOrdinal: 2, callbackOrdinal: 1, stagedPath: "/staging/b.txt",
         )
 
-        await store.send(.externalDrop(.accepted(request: request))) {
-            $0.activeExternalDrop = .init(request: request)
+        await store.send(.externalDrop(.accepted(
+            request: request,
+            command: externalDropTestCommand,
+            logicalItemCount: 2,
+        ))) {
+            $0.activeExternalDrop = .init(request: request, command: externalDropTestCommand, logicalItemCount: 2)
             $0.externalObjectImportStatus = .pending
         }
         await store.send(.externalDrop(.event(.received(fileA)))) {
@@ -5181,6 +5200,8 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         let expectedPlan = ExternalDropImportPlan(
             sessionID: request.sessionID,
             destination: request.destination,
+            command: externalDropTestCommand,
+            logicalItemCount: 2,
             forcedCopy: request.forcedCopy,
             orderedPromisedNames: request.orderedPromisedNames,
             promisedOrdinals: request.promisedOrdinals,
@@ -5204,8 +5225,12 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         let request = makeMixedAcceptedRequest()
         let otherSession = ExternalDropSessionID(rawValue: "other-session")
 
-        await store.send(.externalDrop(.accepted(request: request))) {
-            $0.activeExternalDrop = .init(request: request)
+        await store.send(.externalDrop(.accepted(
+            request: request,
+            command: externalDropTestCommand,
+            logicalItemCount: 2,
+        ))) {
+            $0.activeExternalDrop = .init(request: request, command: externalDropTestCommand, logicalItemCount: 2)
             $0.externalObjectImportStatus = .pending
         }
         await store.send(.externalDrop(.event(.received(ExternalDropReceivedFile(
@@ -5230,14 +5255,19 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         let (store, recorder) = makeExternalDropBarrierHarness()
         let request = makeMixedAcceptedRequest()
 
-        await store.send(.externalDrop(.accepted(request: request))) {
-            $0.activeExternalDrop = .init(request: request)
+        await store.send(.externalDrop(.accepted(
+            request: request,
+            command: externalDropTestCommand,
+            logicalItemCount: 2,
+        ))) {
+            $0.activeExternalDrop = .init(request: request, command: externalDropTestCommand, logicalItemCount: 2)
             $0.externalObjectImportStatus = .pending
         }
         await store.send(.externalDrop(.cancelSession(request.sessionID))) {
             $0.activeExternalDrop = nil
             $0.externalObjectImportStatus = nil
         }
+        await store.receive(\.lifecycle.entryActionCompleted)
         await store.finish()
 
         XCTAssertEqual(recorder.cancels.count, 1)
@@ -5257,8 +5287,12 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         let request = makeMixedAcceptedRequest()
         let newWindowID = UUID()
 
-        await store.send(.externalDrop(.accepted(request: request))) {
-            $0.activeExternalDrop = .init(request: request)
+        await store.send(.externalDrop(.accepted(
+            request: request,
+            command: externalDropTestCommand,
+            logicalItemCount: 2,
+        ))) {
+            $0.activeExternalDrop = .init(request: request, command: externalDropTestCommand, logicalItemCount: 2)
             $0.externalObjectImportStatus = .pending
         }
         await store.send(.lifecycle(.windowIDChanged(newWindowID))) {
@@ -5266,6 +5300,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             $0.activeExternalDrop = nil
             $0.externalObjectImportStatus = nil
         }
+        await store.receive(\.lifecycle.entryActionCompleted)
         await store.finish()
 
         XCTAssertNil(store.state.activeExternalDrop)
@@ -5295,8 +5330,12 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         let request = makeMixedAcceptedRequest()
         let newWindowID = UUID()
 
-        await store.send(.externalDrop(.accepted(request: request))) {
-            $0.activeExternalDrop = .init(request: request)
+        await store.send(.externalDrop(.accepted(
+            request: request,
+            command: externalDropTestCommand,
+            logicalItemCount: 2,
+        ))) {
+            $0.activeExternalDrop = .init(request: request, command: externalDropTestCommand, logicalItemCount: 2)
             $0.externalObjectImportStatus = .pending
         }
         await store.send(.lifecycle(.resetForDuplicate(windowID: newWindowID))) {
@@ -6303,6 +6342,52 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertEqual(store.state.externalObjectImportStatus, .applied)
         XCTAssertEqual(cleanup.finishes, [sessionID])
         XCTAssertTrue(cleanup.cancels.isEmpty)
+    }
+
+    /// EOP-002-import_external_objects: stale importFinished는 newer placement를 지우지 않는다.
+    /// - 검증 내용: old session 결과는 newer placement/command를 유지하고 matching 결과만 clear한다.
+    /// - 사전 조건: newer session의 placement state가 이미 설치되어 있다.
+    /// - 기대 결과: stale/duplicate 결과는 no-op이고 matching 결과는 정확히 한 번 clear한다.
+    func testExternalDropImport_staleImportFinishedCannotClearNewerPlacement() {
+        let oldSessionID = ExternalDropSessionID(rawValue: "old-session")
+        let newSessionID = ExternalDropSessionID(rawValue: "new-session")
+        let command = EntryCommandMetadata(
+            id: UUID(),
+            interaction: .copyEntries,
+            source: .dragAndDrop,
+        )
+        var state = EntryOperationsState()
+        state.externalDropImportPlacement = ExternalDropImportPlacementState(
+            sessionID: newSessionID,
+            destination: "/destination",
+            command: command,
+            logicalItemCount: 1,
+            pendingPaths: ["/staging/item"],
+        )
+        let staleResult = ExternalDropImportResult(
+            sessionID: oldSessionID,
+            succeededPaths: [],
+            failedPaths: [],
+            status: .failed,
+        )
+        let matchingResult = ExternalDropImportResult(
+            sessionID: newSessionID,
+            succeededPaths: ["/destination/item"],
+            failedPaths: [],
+            status: .applied,
+        )
+        let reducer = EntryExternalDropOperationsReducer()
+
+        _ = reducer.reduce(into: &state, action: .externalDrop(.importFinished(staleResult)))
+        XCTAssertEqual(state.externalDropImportPlacement?.sessionID, newSessionID)
+        XCTAssertEqual(state.externalDropImportPlacement?.command, command)
+
+        _ = reducer.reduce(into: &state, action: .externalDrop(.importFinished(matchingResult)))
+        XCTAssertNil(state.externalDropImportPlacement)
+
+        _ = reducer.reduce(into: &state, action: .externalDrop(.importFinished(staleResult)))
+        _ = reducer.reduce(into: &state, action: .externalDrop(.importFinished(matchingResult)))
+        XCTAssertNil(state.externalDropImportPlacement)
     }
 }
 
