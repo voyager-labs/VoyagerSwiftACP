@@ -19,6 +19,7 @@ func protocolCodeForPropertyError(err error) schema.ErrorCode {
 	switch {
 	case errors.Is(err, applicationproperty.ErrStaleDefinitionRevision),
 		errors.Is(err, applicationproperty.ErrStaleAssignmentRevision),
+		errors.Is(err, applicationproperty.ErrStaleTargetIdentity),
 		errors.Is(err, applicationproperty.ErrDuplicateDefinitionKey),
 		errors.Is(err, applicationproperty.ErrDefinitionInactive),
 		errors.Is(err, applicationproperty.ErrOptionInactive),

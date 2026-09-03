@@ -490,7 +490,7 @@ extension EPR006CoordinatePropertyChangesTests {
         )
         XCTAssertEqual(
             proposal.differences,
-            [.init(target: .init(localPath: "/a"), before: .text("before"), after: .text("after"))],
+            [.init(target: .init(localPath: "/a", entryID: entryID), before: .text("before"), after: .text("after"))],
         )
     }
 
@@ -531,6 +531,86 @@ extension EPR006CoordinatePropertyChangesTests {
             XCTFail("catalog-violating assignment should be rejected")
         } catch {
             XCTAssertEqual(error as? EntryPropertiesFailure, .validation)
+        }
+    }
+
+    /// Ambiguous execute는 동일 proposal로 read-back만 재시도하고 mutation을
+    /// 재전송하지 않는다.
+    func testAmbiguousRetryUsesReadBackOnly() async {
+        let recorder = OperationRecorder()
+        let fixture = Fixture()
+        var state = fixture.readyState
+        state.proposal = fixture.proposal
+        state.pendingReadBack = fixture.proposal
+        state.status = .ambiguous
+        let store = TestStore(initialState: state) {
+            EntryPropertiesFeature()
+        } withDependencies: {
+            $0.entryPropertiesClient = fixture.client(
+                execute: { _ in
+                    await recorder.record("execute")
+                    return .init(snapshot: fixture.snapshot)
+                },
+                readBack: { _ in
+                    await recorder.record("readBack")
+                    return fixture.canonicalResult
+                },
+            )
+        }
+
+        await store.send(.retryReadBack) {
+            $0.activePhase = .applied
+            $0.readBackProposal = fixture.proposal
+        }
+        await store.receive(.init(kind: .readBackCompleted(0, .success(fixture.canonicalResult)))) {
+            $0.activePhase = nil
+            $0.pendingReadBack = nil
+            $0.readBackProposal = nil
+            $0.appliedProposal = fixture.proposal
+            $0.canonicalResult = fixture.canonicalResult
+            $0.targetSnapshot = fixture.verifiedSnapshot
+            $0.status = .verified
+            $0.lastOutcome = .propertyChangeVerified(fixture.canonicalResult)
+        }
+        await store.receive(.init(kind: .outcome(.propertyChangeVerified(fixture.canonicalResult))))
+        let recordedOperations = await recorder.values()
+        XCTAssertEqual(recordedOperations, ["readBack"])
+    }
+
+    /// read-back이 동일 path를 다른 canonical entry로 해석하면 stable identity
+    /// conflict로 닫고 값을 채택하지 않는다.
+    func testReadBackRejectsTargetIdentityDrift() async throws {
+        let propertyID = try PropertyID(rawValue: "00000000-0000-0000-8000-000000000001")
+        let expectedEntryID = try EntryCoreEntryID(rawValue: "ent:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
+        let replacementEntryID = try EntryCoreEntryID(rawValue: "ent:UCqcybbCfAKpfjndstZqrNVefCWIjYqySFylQRoTDGw")
+        let assignment = PropertyAssignment(
+            propertyID: propertyID,
+            entryID: replacementEntryID,
+            valueType: .text,
+            cardinality: .one,
+            state: .value,
+            revision: 1,
+            value: .text("replacement"),
+        )
+        let client = try EntryPropertiesClientFactory.live(
+            propertyClient: contractViolatingAssignmentClient(
+                page: PropertyAssignmentPage(assignments: [assignment], nextPageToken: nil, hasMore: false),
+            ),
+            endpoint: EntryCoreEndpoint(path: "/tmp/entry-properties-review.sock"),
+            capabilityDiscovery: { _ in throw EntryPropertiesFailure.unavailable },
+        )
+        let snapshot = EntryPropertiesTargetSnapshot(
+            targets: [.init(localPath: "/a", entryID: expectedEntryID)],
+            propertyID: .init(rawValue: propertyID.rawValue),
+            catalogVersion: "2.2.0",
+            canonicalRevision: 0,
+        )
+
+        do {
+            _ = try await client.readBack(.init(snapshot: snapshot))
+            XCTFail("target identity drift should be rejected")
+        } catch {
+            XCTAssertEqual(error as? EntryPropertiesFailure, .conflict)
         }
     }
 

@@ -330,6 +330,7 @@ extension EntryCorePropertyClient {
         guard proposal.changes.count == request.changes.count else { return false }
         return zip(proposal.changes, request.changes).allSatisfy { prepared, requested in
             prepared.target == requested.target
+                && (requested.entryID == nil || prepared.entryID == requested.entryID)
                 && prepared.propertyID == requested.propertyID
                 && prepared.after == requested.desired
         }
@@ -340,6 +341,9 @@ extension EntryCorePropertyClient {
         _ makeTransport: @escaping @Sendable () -> EntryCoreTransportRequest,
     ) -> @Sendable (EntryCoreEndpoint, PropertyChangeRequest) async throws -> [PropertyAssignment] {
         { endpoint, request in
+            guard request.changes.allSatisfy({ $0.entryID != nil }) else {
+                throw EntryCoreClientError.localValidation
+            }
             guard case let .assignments(value) = try await call(
                 .propertyChangeExecute, endpoint, request, requestID, makeTransport,
             ) else { throw EntryCoreClientError.protocolMismatch }
@@ -356,7 +360,9 @@ extension EntryCorePropertyClient {
     ) -> Bool {
         guard assignments.count == request.changes.count else { return false }
         return zip(assignments, request.changes).allSatisfy { assignment, change in
-            assignment.propertyID == change.propertyID
+            guard let entryID = change.entryID else { return false }
+            return assignment.entryID == entryID
+                && assignment.propertyID == change.propertyID
         }
     }
 

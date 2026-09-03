@@ -70,7 +70,8 @@ public struct EntryPropertiesFeature: Sendable {
             case .discoverCapabilities, .reconnect:
                 guard state.activePhase != .executing,
                       state.activePhase != .applied,
-                      state.status != .appliedUnverified
+                      state.status != .appliedUnverified,
+                      state.status != .ambiguous
                 else {
                     return rejectBusy(&state)
                 }
@@ -100,7 +101,9 @@ public struct EntryPropertiesFeature: Sendable {
                             throw EntryPropertiesFailure.unavailable
                         }
                         let snapshot = EntryPropertiesTargetSnapshot(
-                            reconcilingTargets: selection.targets,
+                            // Assignment loading resolves each path to its canonical
+                            // identity, including targets with an implicit unset.
+                            reconcilingTargets: assignments.values.map(\.target),
                             propertyID: selection.propertyID,
                             catalogVersion: catalogVersion,
                             canonicalRevision: assignments.canonicalRevision,
@@ -169,7 +172,18 @@ public struct EntryPropertiesFeature: Sendable {
                 state.activePhase = nil
                 switch result {
                 case let .success(proposal):
-                    guard proposal.snapshot == state.targetSnapshot else { return reject(&state, .stale) }
+                    guard let snapshot = state.targetSnapshot,
+                          snapshot.propertyID == proposal.snapshot.propertyID,
+                          targetIdentityCompatible(snapshot.targets, proposal.snapshot.targets),
+                          snapshot.catalogVersion == proposal.snapshot.catalogVersion,
+                          snapshot.canonicalRevision == proposal.snapshot.canonicalRevision,
+                          snapshot.definitionRevision == proposal.snapshot.definitionRevision,
+                          snapshot.valueKind == proposal.snapshot.valueKind,
+                          snapshot.cardinality == proposal.snapshot.cardinality
+                    else { return reject(&state, .stale) }
+                    // Prepare resolves and returns the canonical identity. Promote
+                    // it into the state snapshot before execute can rebuild changes.
+                    state.targetSnapshot = proposal.snapshot
                     guard proposal.validation.isValid else {
                         return reject(&state, proposal.validation.failure ?? .validation)
                     }
@@ -227,6 +241,9 @@ public struct EntryPropertiesFeature: Sendable {
                     let outcomeEffect = emit(&state, .propertyChangeApplied(receipt.snapshot))
                     return .merge(outcomeEffect, readBackEffect(state: &state, proposal: proposal))
                 case .failure(.ambiguousExecution):
+                    // The write may have committed. Preserve the exact proposal as
+                    // a read-only recovery target instead of forcing a new prepare.
+                    state.pendingReadBack = state.proposal
                     state.status = .ambiguous
                     state.lastOutcome = .propertyChangeRejected(.ambiguousExecution)
                     return .send(.init(kind: .outcome(.propertyChangeRejected(.ambiguousExecution))))
@@ -248,18 +265,18 @@ public struct EntryPropertiesFeature: Sendable {
                 guard generation == state.generation, state.activePhase == .applied else { return .none }
                 state.activePhase = nil
                 let proposal = state.readBackProposal ?? state.appliedProposal
-                let isPendingReadBack = state.pendingReadBack == proposal
+                let wasPendingReadBack = state.pendingReadBack == proposal
                 state.readBackProposal = nil
                 guard let proposal else { return reject(&state, .stale) }
                 let currentSelection = snapshotMatchesSelection(proposal.snapshot, selection: state.selection)
-                if isPendingReadBack, currentSelection {
-                    state.pendingReadBack = nil
-                }
                 switch result {
                 case let .success(canonicalResult):
                     guard canonicalResultMatchesProposal(canonicalResult, proposal: proposal) else {
                         if currentSelection {
                             state.appliedProposal = proposal
+                            if wasPendingReadBack {
+                                state.pendingReadBack = proposal
+                            }
                             state.status = .appliedUnverified
                         } else {
                             state.pendingReadBack = proposal
@@ -267,6 +284,7 @@ public struct EntryPropertiesFeature: Sendable {
                         return emit(&state, .propertyChangeAppliedUnverified(proposal.snapshot))
                     }
                     if currentSelection {
+                        state.pendingReadBack = nil
                         state.appliedProposal = proposal
                         state.canonicalResult = canonicalResult
                         // verified 전이에서 실행 전 assignment revision으로 남은
@@ -282,6 +300,9 @@ public struct EntryPropertiesFeature: Sendable {
                 case .failure:
                     if currentSelection {
                         state.appliedProposal = proposal
+                        if wasPendingReadBack {
+                            state.pendingReadBack = proposal
+                        }
                         state.status = .appliedUnverified
                     } else {
                         state.pendingReadBack = proposal
@@ -337,27 +358,6 @@ public struct EntryPropertiesFeature: Sendable {
                 return .none
             }
         }
-    }
-
-    private func readBackEffect(
-        state: inout State,
-        proposal: EntryPropertiesProposal,
-    ) -> Effect<Action> {
-        let snapshot = proposal.snapshot
-        let generation = state.generation
-        state.activePhase = .applied
-        state.readBackProposal = proposal
-        let client = client
-        return .run { send in
-            let result: Result<EntryPropertiesCanonicalResult, EntryPropertiesFailure>
-            do {
-                result = try await .success(client.readBack(.init(snapshot: snapshot)))
-            } catch {
-                result = .failure(mappedFailure(error))
-            }
-            await send(.init(kind: .readBackCompleted(generation, result)))
-        }
-        .cancellable(id: CancelID.flow, cancelInFlight: false)
     }
 
     private func emit(_ state: inout State, _ outcome: EntryPropertiesOutcome) -> Effect<Action> {
@@ -431,7 +431,8 @@ public struct EntryPropertiesFeature: Sendable {
         _ snapshot: EntryPropertiesTargetSnapshot,
         selection: EntryPropertiesSelection,
     ) -> Bool {
-        snapshot.targets == selection.targets && snapshot.propertyID == selection.propertyID
+        snapshot.targets.map(\.localPath) == selection.targets.map(\.localPath)
+            && snapshot.propertyID == selection.propertyID
     }
 }
 
@@ -441,6 +442,38 @@ private extension EntryPropertiesFeature {
             .cancel(id: CancelID.flow),
             .send(.init(kind: .outcome(outcome))),
         )
+    }
+
+    func readBackEffect(
+        state: inout State,
+        proposal: EntryPropertiesProposal,
+    ) -> Effect<Action> {
+        let snapshot = proposal.snapshot
+        let generation = state.generation
+        state.activePhase = .applied
+        state.readBackProposal = proposal
+        let client = client
+        return .run { send in
+            let result: Result<EntryPropertiesCanonicalResult, EntryPropertiesFailure>
+            do {
+                result = try await .success(client.readBack(.init(snapshot: snapshot)))
+            } catch {
+                result = .failure(mappedFailure(error))
+            }
+            await send(.init(kind: .readBackCompleted(generation, result)))
+        }
+        .cancellable(id: CancelID.flow, cancelInFlight: false)
+    }
+}
+
+private func targetIdentityCompatible(
+    _ current: [EntryPropertiesTarget],
+    _ prepared: [EntryPropertiesTarget],
+) -> Bool {
+    guard current.count == prepared.count else { return false }
+    return zip(current, prepared).allSatisfy { pair in
+        pair.0.localPath == pair.1.localPath
+            && (pair.0.entryID == nil || pair.0.entryID == pair.1.entryID)
     }
 }
 
@@ -496,7 +529,7 @@ private func mappedServerFailure(_ code: EntryCoreServerErrorCode) -> EntryPrope
     case .requestTooLarge, .invalidRequest, .invalidPath, .invalidSelector, .contextMismatch,
          .scopeTooLarge, .invalidPageToken, .propertyNotFound, .responseTooLarge:
         .validation
-    case .mountNotFound, .sourceNotFound, .sourceUnavailable, .sourceDeleted, .entryNotFound,
+    case .mountNotFound, .sourceNotFound, .sourceUnavailable, .sourceRuntimeUnavailable, .sourceDeleted, .entryNotFound,
          .adapterFailure, .internalError:
         .unavailable
     }

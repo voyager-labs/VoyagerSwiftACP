@@ -32,6 +32,37 @@ extension EntryCorePropertyClientFlowTests {
             await assertPrepareResponseRejected(name, request: request, response: response, endpoint: endpoint)
         }
     }
+
+    func testExecuteRequiresStableTargetIdentityBeforeTransport() async throws {
+        let propertyID = try PropertyID(rawValue: "00000000-0000-0000-8000-000000000001")
+        let change = try PropertyChangeTarget(
+            target: PropertyTarget(localPath: "/a"),
+            propertyID: propertyID,
+            expectedDefinitionRevision: 1,
+            expectedAssignmentRevision: 0,
+            desired: .null,
+        )
+        let request = try PropertyChangeRequest(changes: [change])
+        let recorder =
+            PropertyTransportRecorder(
+                response: Data(#"{"request_id":"execute-id","ok":true,"result":{"assignments":[]}}"#
+                    .utf8),
+            )
+        let client = EntryCorePropertyClient.makeLive(
+            requestID: { "execute-id" },
+            makeTransport: recorder.makeTransport,
+        )
+        let endpoint = try EntryCoreEndpoint(path: "/tmp/property-client.sock")
+
+        do {
+            _ = try await client.changeExecute(endpoint, request)
+            XCTFail("missing target identity should be rejected")
+        } catch {
+            XCTAssertEqual(error as? EntryCoreClientError, .localValidation)
+        }
+        XCTAssertEqual(recorder.creationCount, 0)
+        XCTAssertEqual(recorder.requests.count, 0)
+    }
 }
 
 private func prepareResponseCases(

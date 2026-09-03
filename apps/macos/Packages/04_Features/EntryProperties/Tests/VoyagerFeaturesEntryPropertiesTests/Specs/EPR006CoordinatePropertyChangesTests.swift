@@ -240,12 +240,21 @@ final class EPR006CoordinatePropertyChangesTests: XCTestCase {
 
         await store.send(.init(kind: .executeCompleted(0, .failure(.ambiguousExecution)))) {
             $0.activePhase = nil
+            $0.pendingReadBack = fixture.proposal
             $0.status = .ambiguous
             $0.lastOutcome = .propertyChangeRejected(.ambiguousExecution)
         }
         await store.receive(.init(kind: .outcome(.propertyChangeRejected(.ambiguousExecution))))
         XCTAssertEqual(store.state.proposal, fixture.proposal)
+        XCTAssertEqual(store.state.pendingReadBack, fixture.proposal)
         XCTAssertNil(store.state.canonicalResult)
+
+        await store.send(.reconnect) {
+            $0.lastOutcome = .propertyChangeRejected(.busy)
+        }
+        await store.receive(.init(kind: .outcome(.propertyChangeRejected(.busy))))
+        XCTAssertEqual(store.state.status, .ambiguous)
+        XCTAssertEqual(store.state.pendingReadBack, fixture.proposal)
     }
 
     /// EPR-006-execute_property_change: Entry Core 오류 의미를 lifecycle failure로 보존한다.

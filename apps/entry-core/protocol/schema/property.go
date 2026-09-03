@@ -69,11 +69,14 @@ type PropertyDesiredState struct {
 
 // PropertyChangeTarget은 prepare/execute가 공유하는 경계 대상이다.
 type PropertyChangeTarget struct {
-	Target                     PropertyTargetSelector `json:"target"`
-	PropertyID                 string                 `json:"property_id"`
-	ExpectedDefinitionRevision int64                  `json:"expected_definition_revision"`
-	ExpectedAssignmentRevision int64                  `json:"expected_assignment_revision"`
-	Desired                    PropertyDesiredState   `json:"desired"`
+	Target PropertyTargetSelector `json:"target"`
+	// EntryID is optional for prepare, which resolves the stable identity and
+	// returns it in PropertyPreparedChange. Execute must provide it.
+	EntryID                    string               `json:"entry_id,omitempty"`
+	PropertyID                 string               `json:"property_id"`
+	ExpectedDefinitionRevision int64                `json:"expected_definition_revision"`
+	ExpectedAssignmentRevision int64                `json:"expected_assignment_revision"`
+	Desired                    PropertyDesiredState `json:"desired"`
 }
 
 type PropertyDefinition struct {
@@ -455,7 +458,9 @@ func (target PropertyTargetSelector) Validate() error {
 }
 
 func (change PropertyChangeTarget) Validate() error {
-	if change.Target.Validate() != nil || !validPropertyIDText(change.PropertyID) ||
+	if change.Target.Validate() != nil ||
+		(change.EntryID != "" && !validEntryID(change.EntryID)) ||
+		!validPropertyIDText(change.PropertyID) ||
 		change.ExpectedDefinitionRevision < 1 || change.ExpectedAssignmentRevision < 0 ||
 		change.Desired.Validate() != nil {
 		return ErrInvalidResponse
@@ -785,17 +790,28 @@ func decodePropertyChangePayload(value jsonValue, valueType, cardinality string)
 }
 
 func decodePropertyChangeTarget(value jsonValue) (PropertyChangeTarget, bool) {
-	fields, ok := objectFields(value, "target", "property_id", "expected_definition_revision", "expected_assignment_revision", "desired")
+	fields, ok := objectFieldsWithOptional(value,
+		[]string{"target", "property_id", "expected_definition_revision", "expected_assignment_revision", "desired"},
+		[]string{"entry_id"},
+	)
 	if !ok {
 		return PropertyChangeTarget{}, false
 	}
 	target, targetCode := decodePropertyTargetSelector(fields["target"])
+	entryID := ""
+	entryIDValid := true
+	if field, exists := fields["entry_id"]; exists {
+		entryIDValid = field.kind == jsonString && validEntryID(field.text)
+		if entryIDValid {
+			entryID = field.text
+		}
+	}
 	propertyID, b := decodePropertyIDField(fields["property_id"])
 	definitionRevision, c := decodeExpectedRevision(fields["expected_definition_revision"])
 	assignmentRevision, d := decodeExpectedAssignmentRevision(fields["expected_assignment_revision"])
 	desired, e := decodePropertyDesiredState(fields["desired"])
-	change := PropertyChangeTarget{Target: target, PropertyID: propertyID, ExpectedDefinitionRevision: definitionRevision, ExpectedAssignmentRevision: assignmentRevision, Desired: desired}
-	return change, targetCode == "" && b && c && d && e && change.Validate() == nil
+	change := PropertyChangeTarget{Target: target, EntryID: entryID, PropertyID: propertyID, ExpectedDefinitionRevision: definitionRevision, ExpectedAssignmentRevision: assignmentRevision, Desired: desired}
+	return change, targetCode == "" && entryIDValid && b && c && d && e && change.Validate() == nil
 }
 
 func decodePropertyDefinitionListParams(value jsonValue) (PropertyDefinitionListParams, ErrorCode) {

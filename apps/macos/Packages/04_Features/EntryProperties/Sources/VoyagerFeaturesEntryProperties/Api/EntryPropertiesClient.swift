@@ -104,7 +104,11 @@ public enum EntryPropertiesClientFactory {
         endpoint: EntryCoreEndpoint,
         request: EntryPropertiesPrepareRequest,
     ) async throws -> EntryPropertiesProposal {
-        let changes = try makeWireChanges(snapshot: request.snapshot, intent: request.intent)
+        let changes = try makeWireChanges(
+            snapshot: request.snapshot,
+            intent: request.intent,
+            requireStableIdentity: false,
+        )
         let proposal = try await propertyClient.changePrepare(endpoint, PropertyChangeRequest(changes: changes))
         guard proposal.changes.count == changes.count,
               zip(proposal.changes, changes).allSatisfy({ prepared, requested in
@@ -115,17 +119,17 @@ public enum EntryPropertiesClientFactory {
         else {
             throw EntryPropertiesFailure.validation
         }
-        let differences = try proposal.changes.map { change in
-            let target = EntryPropertiesTarget(localPath: change.target.localPath)
-            try validatePreparedBefore(change.before, target: target, snapshot: request.snapshot)
-            return try EntryPropertiesDifference(
-                target: target,
-                before: semanticValue(change.before),
-                after: semanticValue(change.after),
-            )
-        }
-        return EntryPropertiesProposal(
+        let differences = try makePreparedDifferences(
+            proposal.changes,
+            snapshotTargets: request.snapshot.targets,
             snapshot: request.snapshot,
+        )
+        let snapshot = makeReconciledSnapshot(
+            from: request.snapshot,
+            differences: differences,
+        )
+        return EntryPropertiesProposal(
+            snapshot: snapshot,
             intent: request.intent,
             differences: differences,
             affectedTargetCount: differences.count,
@@ -136,12 +140,56 @@ public enum EntryPropertiesClientFactory {
         )
     }
 
+    private static func makePreparedDifferences(
+        _ changes: [PropertyPreparedChange],
+        snapshotTargets: [EntryPropertiesTarget],
+        snapshot: EntryPropertiesTargetSnapshot,
+    ) throws -> [EntryPropertiesDifference] {
+        try zip(changes, snapshotTargets).map { change, snapshotTarget in
+            guard change.target.localPath == snapshotTarget.localPath,
+                  snapshotTarget.entryID == nil || snapshotTarget.entryID == change.entryID
+            else { throw EntryPropertiesFailure.conflict }
+            let target = EntryPropertiesTarget(localPath: change.target.localPath, entryID: change.entryID)
+            try validatePreparedBefore(change.before, target: target, snapshot: snapshot)
+            return try EntryPropertiesDifference(
+                target: target,
+                before: semanticValue(change.before),
+                after: semanticValue(change.after),
+            )
+        }
+    }
+
+    private static func makeReconciledSnapshot(
+        from snapshot: EntryPropertiesTargetSnapshot,
+        differences: [EntryPropertiesDifference],
+    ) -> EntryPropertiesTargetSnapshot {
+        EntryPropertiesTargetSnapshot(
+            reconcilingTargets: differences.map(\.target),
+            propertyID: snapshot.propertyID,
+            catalogVersion: snapshot.catalogVersion,
+            canonicalRevision: snapshot.canonicalRevision,
+            definitionRevision: snapshot.definitionRevision,
+            valueKind: snapshot.valueKind,
+            cardinality: snapshot.cardinality,
+            assignmentRevisions: differences.compactMap { difference in
+                guard let revision = snapshot.assignmentRevisions.first(
+                    where: { $0.target.localPath == difference.target.localPath },
+                ) else { return nil }
+                return .init(target: difference.target, revision: revision.revision)
+            },
+        )
+    }
+
     private static func execute(
         propertyClient: EntryCorePropertyClient,
         endpoint: EntryCoreEndpoint,
         proposal: EntryPropertiesProposal,
     ) async throws -> EntryPropertiesExecutionReceipt {
-        let changes = try makeWireChanges(snapshot: proposal.snapshot, intent: proposal.intent)
+        let changes = try makeWireChanges(
+            snapshot: proposal.snapshot,
+            intent: proposal.intent,
+            requireStableIdentity: true,
+        )
         _ = try await propertyClient.changeExecute(endpoint, PropertyChangeRequest(changes: changes))
         return EntryPropertiesExecutionReceipt(snapshot: proposal.snapshot)
     }
@@ -232,13 +280,15 @@ public enum EntryPropertiesClientFactory {
                 // 다른 value type/cardinality를 반환하면 snapshot 계약과 모순되는
                 // canonical baseline이 만들어지므로 fail-closed로 거절한다.
                 guard semanticValueKind(resolved.valueType) == catalog.valueKind,
-                      semanticCardinality(resolved.cardinality) == catalog.cardinality
+                      semanticCardinality(resolved.cardinality) == catalog.cardinality,
+                      target.entryID == nil || target.entryID == resolved.entryID
                 else {
-                    throw EntryPropertiesFailure.validation
+                    throw target.entryID == nil ? EntryPropertiesFailure.validation : .conflict
                 }
+                let canonicalTarget = EntryPropertiesTarget(localPath: target.localPath, entryID: resolved.entryID)
                 try values.append(
                     .init(
-                        target: target,
+                        target: canonicalTarget,
                         value: semanticValue(resolved),
                         revision: resolved.revision,
                     ),
@@ -264,6 +314,7 @@ public enum EntryPropertiesClientFactory {
             return
         }
         guard before.propertyID.rawValue == snapshot.propertyID.rawValue,
+              target.entryID == before.entryID,
               semanticValueKind(before.valueType) == snapshot.valueKind,
               semanticCardinality(before.cardinality) == snapshot.cardinality,
               before.revision == expectedRevision
@@ -283,11 +334,15 @@ public enum EntryPropertiesClientFactory {
     private static func makeWireChanges(
         snapshot: EntryPropertiesTargetSnapshot,
         intent: EntryPropertiesChangeIntent,
+        requireStableIdentity: Bool,
     ) throws -> [PropertyChangeTarget] {
         do {
             let propertyID = try PropertyID(rawValue: snapshot.propertyID.rawValue)
             let desired = try wireDesiredState(intent.change, snapshot: snapshot)
             return try snapshot.targets.map { target in
+                if requireStableIdentity, target.entryID == nil {
+                    throw EntryCoreClientError.protocolMismatch
+                }
                 let assignmentRevision = expectedAssignmentRevision(for: target, snapshot: snapshot)
                 return try PropertyChangeTarget(
                     target: PropertyTarget(localPath: target.localPath),
@@ -295,6 +350,7 @@ public enum EntryPropertiesClientFactory {
                     expectedDefinitionRevision: snapshot.definitionRevision,
                     expectedAssignmentRevision: assignmentRevision,
                     desired: desired,
+                    entryID: target.entryID,
                 )
             }
         } catch let error as EntryCoreClientError {

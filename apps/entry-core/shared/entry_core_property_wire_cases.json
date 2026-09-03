@@ -34,5 +34,5 @@
     "result": {"items": [], "unresolved_candidate_indices": [0], "catalog_version": "2.2.0", "has_more": false}
   },
   "bounds": {"targets": 256, "conditions": 256, "projection_property_ids": 256, "page_size": 256, "structural_work_units": 4096, "snapshot_value_members": 16384},
-  "stable_errors": ["invalid_request", "scope_too_large", "invalid_page_token", "context_mismatch", "response_too_large", "source_unavailable"]
+  "stable_errors": ["invalid_request", "scope_too_large", "invalid_page_token", "context_mismatch", "response_too_large", "source_runtime_unavailable"]
 }

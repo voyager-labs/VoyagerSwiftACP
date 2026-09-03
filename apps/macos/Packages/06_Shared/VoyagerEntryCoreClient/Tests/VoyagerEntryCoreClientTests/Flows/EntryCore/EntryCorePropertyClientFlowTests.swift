@@ -74,8 +74,10 @@ final class EntryCorePropertyClientFlowTests: XCTestCase {
         let propertyID1 = try PropertyID(rawValue: "00000000-0000-0000-8000-000000000001")
         let propertyID2 = try PropertyID(rawValue: "00000000-0000-0000-8000-000000000002")
         let propertyID3 = try PropertyID(rawValue: "00000000-0000-0000-8000-000000000003")
+        let entryID = try EntryCoreEntryID(rawValue: "ent:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
         let change1 = try PropertyChangeTarget(
             target: PropertyTarget(localPath: "/a"),
+            entryID: entryID,
             propertyID: propertyID1,
             expectedDefinitionRevision: 1,
             expectedAssignmentRevision: 0,
@@ -83,6 +85,7 @@ final class EntryCorePropertyClientFlowTests: XCTestCase {
         )
         let change2 = try PropertyChangeTarget(
             target: PropertyTarget(localPath: "/b"),
+            entryID: entryID,
             propertyID: propertyID2,
             expectedDefinitionRevision: 1,
             expectedAssignmentRevision: 0,

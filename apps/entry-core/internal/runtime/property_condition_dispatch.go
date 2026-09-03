@@ -7,10 +7,12 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"sort"
 
 	applicationproperty "github.com/voyager-labs/voyager-app/apps/entry-core/internal/application/property"
 	domainentry "github.com/voyager-labs/voyager-app/apps/entry-core/internal/domain/entry"
+	"github.com/voyager-labs/voyager-app/apps/entry-core/internal/source"
 	"github.com/voyager-labs/voyager-app/apps/entry-core/protocol/schema"
 )
 
@@ -47,7 +49,7 @@ func dispatchPropertyConditionQuery(ctx context.Context, request schema.Request,
 	}
 	result, err := service.Query(ctx, workspace, query)
 	if err != nil {
-		return dispatchError(request, protocolCodeForPropertyError(err))
+		return dispatchError(request, protocolCodeForConditionQueryError(err))
 	}
 	wireItems := make([]schema.PropertyConditionQueryItem, 0, len(result.Items))
 	for _, item := range result.Items {
@@ -69,6 +71,13 @@ func dispatchPropertyConditionQuery(ctx context.Context, request schema.Request,
 	}
 	wireResult := schema.PropertyConditionQueryResult{Items: wireItems, UnresolvedCandidateIndices: result.UnresolvedCandidateIndices, CatalogVersion: domainentry.ConditionCatalogVersion, NextPageToken: nextToken, HasMore: result.HasMore}
 	return dispatchPropertySuccess(request, wireResult)
+}
+
+func protocolCodeForConditionQueryError(err error) schema.ErrorCode {
+	if errors.Is(err, source.ErrSourceUnavailable) {
+		return schema.ErrorSourceRuntimeUnavailable
+	}
+	return protocolCodeForPropertyError(err)
 }
 
 func conditionQueryFromWire(params *schema.PropertyConditionQueryParams) (applicationproperty.ConditionQuery, schema.ErrorCode) {

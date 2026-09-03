@@ -11,6 +11,20 @@ import (
 	"github.com/voyager-labs/voyager-app/apps/entry-core/protocol/schema"
 )
 
+func TestPropertyDispatchExecuteRequiresStableIdentity(t *testing.T) {
+	service := newRecordingPropertyService()
+	request := executeRequest(changeTarget("/a", 0, schema.PropertyDesiredState{State: "null"}))
+	request.PropertyChangeExecuteParams.Changes[0].EntryID = ""
+
+	response := newPropertyRuntime(service).Dispatch(context.Background(), request)
+	if response.Error == nil || response.Error.Code != schema.ErrorInvalidRequest {
+		t.Fatalf("response error = %#v, want %q", response.Error, schema.ErrorInvalidRequest)
+	}
+	if service.calls["execute"] != 0 {
+		t.Fatalf("execute service called %d times", service.calls["execute"])
+	}
+}
+
 func TestPropertyDispatchMethodGate(t *testing.T) {
 	view := testDefinitionView(testPropertyID, true)
 	for _, method := range propertyMethods {

@@ -177,7 +177,7 @@ private extension EntryCorePropertyResponseDecoder {
     static func option(_ value: StrictJSONValue) throws -> PropertyOption {
         guard let fields = value.objectFields(exactly: ["option_id", "label", "position", "state"]),
               case let .string(id)? = fields["option_id"], case let .string(label)? = fields["label"],
-              let position = integer(fields["position"]), position >= 0, case let .string(stateRaw)? = fields["state"],
+              let position = integer(fields["position"]), position >= 1, case let .string(stateRaw)? = fields["state"],
               let state = PropertyDefinitionState(rawValue: stateRaw),
               PropertyWireValidation.short(label) else { throw mismatch }
         return try PropertyOption(

@@ -147,6 +147,9 @@ nonisolated public enum PropertyDesiredState: Equatable, Sendable {
 
 nonisolated public struct PropertyChangeTarget: Equatable, Sendable {
     public let target: PropertyTarget
+    /// The canonical entry resolved during discovery/prepare. It is optional for
+    /// prepare requests and required by the execute operation.
+    public let entryID: EntryCoreEntryID?
     public let propertyID: PropertyID
     public let expectedDefinitionRevision: Int64
     public let expectedAssignmentRevision: Int64
@@ -158,10 +161,12 @@ nonisolated public struct PropertyChangeTarget: Equatable, Sendable {
         expectedDefinitionRevision: Int64,
         expectedAssignmentRevision: Int64,
         desired: PropertyDesiredState,
+        entryID: EntryCoreEntryID? = nil,
     ) throws {
         guard expectedDefinitionRevision >= 1, expectedAssignmentRevision >= 0,
               PropertyWireValidation.desired(desired) else { throw EntryCoreClientError.protocolMismatch }
         self.target = target
+        self.entryID = entryID
         self.propertyID = propertyID
         self.expectedDefinitionRevision = expectedDefinitionRevision
         self.expectedAssignmentRevision = expectedAssignmentRevision
@@ -542,7 +547,7 @@ extension PropertyDesiredState: Encodable {
 extension PropertyChangeTarget: Encodable {
     enum CodingKeys: String,
         CodingKey
-    { case target, propertyID = "property_id",
+    { case target, entryID = "entry_id", propertyID = "property_id",
            expectedDefinitionRevision = "expected_definition_revision",
            expectedAssignmentRevision = "expected_assignment_revision", desired
     }
@@ -550,6 +555,7 @@ extension PropertyChangeTarget: Encodable {
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(target, forKey: .target)
+        try container.encodeIfPresent(entryID, forKey: .entryID)
         try container.encode(propertyID, forKey: .propertyID)
         try container.encode(expectedDefinitionRevision, forKey: .expectedDefinitionRevision)
         try container.encode(expectedAssignmentRevision, forKey: .expectedAssignmentRevision)

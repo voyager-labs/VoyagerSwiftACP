@@ -1,10 +1,15 @@
 import Foundation
+import VoyagerEntryCoreClient
 
 public struct EntryPropertiesTarget: Equatable, Hashable, Sendable {
     public let localPath: String
+    /// The canonical entry identity fixed for a mutation snapshot. Selection
+    /// callers may omit it before discovery, but mutation assembly requires it.
+    public let entryID: EntryCoreEntryID?
 
-    public init(localPath: String) {
+    public init(localPath: String, entryID: EntryCoreEntryID? = nil) {
         self.localPath = localPath
+        self.entryID = entryID
     }
 }
 

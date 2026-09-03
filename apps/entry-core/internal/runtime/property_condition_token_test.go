@@ -1,8 +1,12 @@
 package runtime
 
 import (
+	"context"
 	"testing"
 
+	applicationproperty "github.com/voyager-labs/voyager-app/apps/entry-core/internal/application/property"
+	"github.com/voyager-labs/voyager-app/apps/entry-core/internal/domain/entry"
+	"github.com/voyager-labs/voyager-app/apps/entry-core/internal/source"
 	"github.com/voyager-labs/voyager-app/apps/entry-core/protocol/schema"
 )
 
@@ -36,5 +40,34 @@ func TestPropertyConditionQueryTokenAuthenticatesOffsetAndContext(t *testing.T) 
 	changedDigest, _ := propertyQueryContextDigest("ws", &changed)
 	if decoded == changedDigest {
 		t.Fatal("combinator omitted from context")
+	}
+}
+
+type conditionQueryErrorService struct {
+	*recordingPropertyService
+	err error
+}
+
+func (service conditionQueryErrorService) Query(context.Context, entry.WorkspaceContext, applicationproperty.ConditionQuery) (applicationproperty.ConditionQueryResult, error) {
+	return applicationproperty.ConditionQueryResult{}, service.err
+}
+
+func TestConditionQueryMapsSourceRuntimeUnavailableToCanonicalCode(t *testing.T) {
+	params := &schema.PropertyConditionQueryParams{
+		Targets:               []schema.PropertyTargetSelector{{Kind: "local_path", LocalPath: "/a"}},
+		Combinator:            "all",
+		Conditions:            []schema.PropertyCondition{{PropertyID: "00000000-0000-0000-8000-000000000001", Operator: "exists", Operand: schema.PropertyConditionOperand{Kind: "none"}}},
+		ProjectionPropertyIDs: []string{}, EvaluationDate: "2026-09-01", PageSize: 1,
+	}
+	response := NewWithPropertyService(testWorkspaceText, conditionQueryErrorService{
+		recordingPropertyService: newRecordingPropertyService(),
+		err:                      source.ErrSourceUnavailable,
+	}).Dispatch(context.Background(), schema.Request{
+		RequestID:                    "condition-error",
+		Method:                       schema.MethodPropertyConditionQuery,
+		PropertyConditionQueryParams: params,
+	})
+	if response.Error == nil || response.Error.Code != schema.ErrorSourceRuntimeUnavailable {
+		t.Fatalf("response error = %#v, want %q", response.Error, schema.ErrorSourceRuntimeUnavailable)
 	}
 }

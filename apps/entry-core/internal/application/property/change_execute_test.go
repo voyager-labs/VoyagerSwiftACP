@@ -23,6 +23,7 @@ func TestExecuteAppliesMultiTargetChangesAtomicallyWithCanonicalReadBack(t *test
 	readBack, err := harness.service.Execute(context.Background(), harness.workspace, "req-execute-happy", []ChangeTarget{
 		{
 			LocalPath:                  "/fixture/a.txt",
+			EntryID:                    harness.pathA.EntryRef.EntryID,
 			PropertyID:                 harness.text.Definition.PropertyID,
 			ExpectedDefinitionRevision: 1,
 			ExpectedAssignmentRevision: 0,
@@ -30,6 +31,7 @@ func TestExecuteAppliesMultiTargetChangesAtomicallyWithCanonicalReadBack(t *test
 		},
 		{
 			LocalPath:                  "/fixture/b.txt",
+			EntryID:                    harness.pathB.EntryRef.EntryID,
 			PropertyID:                 harness.multi.Definition.PropertyID,
 			ExpectedDefinitionRevision: 1,
 			ExpectedAssignmentRevision: 0,
@@ -37,6 +39,7 @@ func TestExecuteAppliesMultiTargetChangesAtomicallyWithCanonicalReadBack(t *test
 		},
 		{
 			LocalPath:                  "/fixture/b.txt",
+			EntryID:                    harness.pathB.EntryRef.EntryID,
 			PropertyID:                 harness.text.Definition.PropertyID,
 			ExpectedDefinitionRevision: 1,
 			ExpectedAssignmentRevision: 1,
@@ -82,6 +85,32 @@ func TestExecuteAppliesMultiTargetChangesAtomicallyWithCanonicalReadBack(t *test
 	}
 }
 
+// TestExecuteRejectsStableIdentityDriftWithoutWriting은 prepare 때 확정한
+// canonical entry와 execute 시점의 같은 경로 해석이 달라지면 conflict로
+// 닫히고 mutation이 시작되지 않음을 증명한다.
+func TestExecuteRejectsStableIdentityDriftWithoutWriting(t *testing.T) {
+	harness := mustChangeHarness(t)
+	service, runner := mustChangeService(t, harness.catalog, harness.facts, stubPathResolver{paths: map[string]ResolvedTarget{
+		"/fixture/a.txt": harness.pathB,
+	}})
+	before := harness.facts.snapshot()
+	_, err := service.Execute(context.Background(), harness.workspace, "req-identity-drift", []ChangeTarget{{
+		LocalPath:                  "/fixture/a.txt",
+		EntryID:                    harness.pathA.EntryRef.EntryID,
+		PropertyID:                 harness.text.Definition.PropertyID,
+		ExpectedDefinitionRevision: 1,
+		ExpectedAssignmentRevision: 0,
+		Desired:                    DesiredAssignment{State: domainentry.AssignmentStateValue, Scalar: textValue("must-not-write")},
+	}})
+	if !errors.Is(err, ErrStaleTargetIdentity) {
+		t.Fatalf("error = %v, want %v", err, ErrStaleTargetIdentity)
+	}
+	if runner.calls != 0 || harness.facts.saveCalls != 0 {
+		t.Fatalf("identity drift started mutation: tx calls=%d save calls=%d", runner.calls, harness.facts.saveCalls)
+	}
+	mustEqualFactSnapshot(t, before, harness.facts.snapshot())
+}
+
 // TestExecuteIsAllOrNoneWhenRepositoryFailsMidBatch는 저장소가 앞선 쓰기 뒤
 // 실패하면 아무 것도 커밋되지 않음을 증명한다.
 func TestExecuteIsAllOrNoneWhenRepositoryFailsMidBatch(t *testing.T) {
@@ -104,10 +133,24 @@ func TestExecuteIsAllOrNoneWhenRepositoryFailsMidBatch(t *testing.T) {
 func textTarget(harness changeHarness, path string, value string) ChangeTarget {
 	return ChangeTarget{
 		LocalPath:                  path,
+		EntryID:                    entryIDForPath(harness, path),
 		PropertyID:                 harness.text.Definition.PropertyID,
 		ExpectedDefinitionRevision: 1,
 		ExpectedAssignmentRevision: 0,
 		Desired:                    DesiredAssignment{State: domainentry.AssignmentStateValue, Scalar: textValue(value)},
+	}
+}
+
+func entryIDForPath(harness changeHarness, path string) string {
+	switch path {
+	case "/fixture/a.txt":
+		return harness.pathA.EntryRef.EntryID
+	case "/fixture/b.txt":
+		return harness.pathB.EntryRef.EntryID
+	case "/fixture/c.txt":
+		return harness.pathC.EntryRef.EntryID
+	default:
+		return ""
 	}
 }
 
@@ -126,6 +169,7 @@ func TestExecuteRejectsResponseBudgetBeforeAnyWrite(t *testing.T) {
 		entryIDs = append(entryIDs, target.EntryRef.EntryID)
 		targets = append(targets, ChangeTarget{
 			LocalPath:                  path,
+			EntryID:                    target.EntryRef.EntryID,
 			PropertyID:                 harness.text.Definition.PropertyID,
 			ExpectedDefinitionRevision: 1,
 			ExpectedAssignmentRevision: 0,
@@ -182,6 +226,7 @@ func TestExecuteRejectsMinimalListEnvelopeOverflow(t *testing.T) {
 	_, err = service.Execute(context.Background(), harness.workspace, "r", []ChangeTarget{
 		{
 			LocalPath:                  "/fixture/list-budget.txt",
+			EntryID:                    target.EntryRef.EntryID,
 			PropertyID:                 textMany.Definition.PropertyID,
 			ExpectedDefinitionRevision: 1,
 			ExpectedAssignmentRevision: 0,
@@ -246,6 +291,7 @@ func TestExecuteEmptyManyPersistsAsValueWithoutMembers(t *testing.T) {
 	harness := mustChangeHarness(t)
 	readBack, err := harness.service.Execute(context.Background(), harness.workspace, "req-empty-many", []ChangeTarget{{
 		LocalPath:                  "/fixture/a.txt",
+		EntryID:                    harness.pathA.EntryRef.EntryID,
 		PropertyID:                 harness.multi.Definition.PropertyID,
 		ExpectedDefinitionRevision: 1,
 		ExpectedAssignmentRevision: 0,

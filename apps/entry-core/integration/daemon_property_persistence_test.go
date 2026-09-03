@@ -232,10 +232,13 @@ func mustTextPayload(t *testing.T, value string) *schema.PropertyPayload {
 	return &payload
 }
 
+const fallbackPropertyEntryID = "ent:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+
 func textChangeTarget(t *testing.T, localPath, propertyID string, definitionRevision, assignmentRevision int64, value string) schema.PropertyChangeTarget {
 	t.Helper()
 	return schema.PropertyChangeTarget{
 		Target:                     schema.PropertyTargetSelector{Kind: "local_path", LocalPath: localPath},
+		EntryID:                    entryIDForChangeTarget(t, localPath),
 		PropertyID:                 propertyID,
 		ExpectedDefinitionRevision: definitionRevision,
 		ExpectedAssignmentRevision: assignmentRevision,
@@ -243,14 +246,28 @@ func textChangeTarget(t *testing.T, localPath, propertyID string, definitionRevi
 	}
 }
 
-func stateChangeTarget(localPath, propertyID string, definitionRevision, assignmentRevision int64, state string) schema.PropertyChangeTarget {
+func stateChangeTarget(t *testing.T, localPath, propertyID string, definitionRevision, assignmentRevision int64, state string) schema.PropertyChangeTarget {
+	t.Helper()
 	return schema.PropertyChangeTarget{
 		Target:                     schema.PropertyTargetSelector{Kind: "local_path", LocalPath: localPath},
+		EntryID:                    entryIDForChangeTarget(t, localPath),
 		PropertyID:                 propertyID,
 		ExpectedDefinitionRevision: definitionRevision,
 		ExpectedAssignmentRevision: assignmentRevision,
 		Desired:                    schema.PropertyDesiredState{State: state},
 	}
+}
+
+func entryIDForChangeTarget(t *testing.T, localPath string) string {
+	t.Helper()
+	oracle := newEntryIDOracle(t)
+	ref, err := oracle.adapter.ResolveLocalPath(context.Background(), localPath)
+	if err != nil {
+		// Execute tests for deleted/inaccessible paths still model a prepared
+		// stable identity; the daemon must reject on source resolution first.
+		return fallbackPropertyEntryID
+	}
+	return ref.EntryID
 }
 
 func prepareChanges(t *testing.T, socketPath, requestID string, changes []schema.PropertyChangeTarget) schema.PropertyChangePrepareResult {
@@ -607,7 +624,7 @@ func runPropertyAtomicPersistence(t *testing.T, env propertyPersistenceEnv) {
 
 	clearChanges := make([]schema.PropertyChangeTarget, len(lifecyclePaths))
 	for index, path := range lifecyclePaths {
-		clearChanges[index] = stateChangeTarget(path, textDef.PropertyID, renamedText.Revision, 2, "unknown")
+		clearChanges[index] = stateChangeTarget(t, path, textDef.PropertyID, renamedText.Revision, 2, "unknown")
 	}
 	clearRows := executeChanges(t, env.socketPath, "exec-clear", clearChanges)
 	for index, row := range clearRows {

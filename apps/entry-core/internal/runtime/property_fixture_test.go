@@ -229,6 +229,7 @@ func localPathTarget(path string) schema.PropertyTargetSelector {
 func changeTarget(path string, assignmentRevision int64, desired schema.PropertyDesiredState) schema.PropertyChangeTarget {
 	return schema.PropertyChangeTarget{
 		Target:                     localPathTarget(path),
+		EntryID:                    testEntryID(),
 		PropertyID:                 testPropertyID,
 		ExpectedDefinitionRevision: 1,
 		ExpectedAssignmentRevision: assignmentRevision,

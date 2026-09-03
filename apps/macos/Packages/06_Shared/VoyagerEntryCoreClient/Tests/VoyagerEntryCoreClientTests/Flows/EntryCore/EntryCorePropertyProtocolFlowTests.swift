@@ -57,6 +57,24 @@ final class EntryCorePropertyProtocolFlowTests: XCTestCase {
         }
     }
 
+    func testPropertyDefinitionRejectsZeroBasedOptionPosition() throws {
+        let wire = try propertyDefinitionPageResponse(
+            valueType: "select",
+            cardinality: "one",
+            nativeType: "categorical",
+            operators: PropertyConditionRelation.operators(for: .categorical).map(\.rawValue),
+            options: [
+                [
+                    "option_id": "00000000-0000-7000-8000-000000000001",
+                    "label": "Zero",
+                    "position": 0,
+                    "state": "active",
+                ],
+            ],
+        )
+        assertProtocolMismatch(wire)
+    }
+
     func testPrepareRejectsBeforeIdentityMismatch() throws {
         let propertyID = "00000000-0000-0000-8000-000000000001"
         let otherPropertyID = "00000000-0000-0000-8000-000000000002"
@@ -311,6 +329,7 @@ private func propertyDefinitionPageResponse(
     operators: [String],
     state: String = "active",
     conditionCapability: [String: Any]? = nil,
+    options: [[String: Any]] = [],
 ) throws -> Data {
     let capability = conditionCapability ?? [
         "supported": true,
@@ -327,7 +346,7 @@ private func propertyDefinitionPageResponse(
         "cardinality": cardinality,
         "state": state,
         "revision": 1,
-        "options": [],
+        "options": options,
         "condition_capability": capability,
     ]
     let object: [String: Any] = [

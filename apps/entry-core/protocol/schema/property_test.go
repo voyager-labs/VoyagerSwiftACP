@@ -768,7 +768,7 @@ func TestPropertyErrorCodeContract(t *testing.T) {
 		ErrorRequestTooLarge, ErrorInvalidRequest, ErrorUnknownMethod, ErrorInvalidPath,
 		ErrorMountNotFound, ErrorSourceNotFound, ErrorInvalidSelector, ErrorContextMismatch,
 		ErrorScopeTooLarge, ErrorInvalidPageToken, ErrorPermissionDenied, ErrorSourceUnavailable,
-		ErrorSourceDeleted, ErrorEntryNotFound, ErrorUnsupported, ErrorConflict,
+		ErrorSourceRuntimeUnavailable, ErrorSourceDeleted, ErrorEntryNotFound, ErrorUnsupported, ErrorConflict,
 		ErrorAdapterFailure, ErrorInternal, ErrorPropertyNotFound, ErrorResponseTooLarge,
 	}
 	for _, code := range allCodes {

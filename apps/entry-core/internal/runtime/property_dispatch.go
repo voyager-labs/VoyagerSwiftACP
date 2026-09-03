@@ -94,6 +94,18 @@ func propertyParamsMissing(request schema.Request) bool {
 	}
 }
 
+// anyMissingStableIdentity는 mutation execute가 경로만으로 대상을 다시
+// 해석하는 우회를 차단한다. prepare는 아직 identity를 응답으로 확정하기
+// 전이므로 이 검사를 적용하지 않는다.
+func anyMissingStableIdentity(changes []schema.PropertyChangeTarget) bool {
+	for _, change := range changes {
+		if change.EntryID == "" {
+			return true
+		}
+	}
+	return false
+}
+
 // propertyDispatchGuard는 공통 실패 닫기 전제를 검사하고 주입된 워크스페이스
 // 컨텍스트를 돌려준다.
 func propertyDispatchGuard(ctx context.Context, workspaceID string, service PropertyService) (domainentry.WorkspaceContext, bool) {
@@ -178,6 +190,9 @@ func dispatchPropertyChangeExecute(ctx context.Context, request schema.Request, 
 	changes, code := changeTargetsFromWire(request.PropertyChangeExecuteParams.Changes)
 	if code != "" {
 		return dispatchError(request, code)
+	}
+	if anyMissingStableIdentity(request.PropertyChangeExecuteParams.Changes) {
+		return dispatchError(request, schema.ErrorInvalidRequest)
 	}
 	executed, err := service.Execute(ctx, workspace, request.RequestID, changes)
 	if err != nil {

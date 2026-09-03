@@ -59,6 +59,7 @@ nonisolated public enum EntryCoreServerErrorCode: String, CaseIterable, Equatabl
     case invalidPageToken = "invalid_page_token"
     case permissionDenied = "permission_denied"
     case sourceUnavailable = "source_unavailable"
+    case sourceRuntimeUnavailable = "source_runtime_unavailable"
     case sourceDeleted = "source_deleted"
     case entryNotFound = "entry_not_found"
     case unsupported
@@ -94,6 +95,8 @@ nonisolated public enum EntryCoreServerErrorCode: String, CaseIterable, Equatabl
             "permission was denied"
         case .sourceUnavailable:
             "source is unavailable"
+        case .sourceRuntimeUnavailable:
+            "source runtime is unavailable"
         case .sourceDeleted:
             "source was deleted"
         case .entryNotFound:
