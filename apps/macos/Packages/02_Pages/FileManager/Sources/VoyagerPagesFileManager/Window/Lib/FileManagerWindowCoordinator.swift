@@ -1,13 +1,17 @@
 import AppKit
 import Combine
 import ComposableArchitecture
+import QuickLookUI
 import VoyagerEntitiesCollection
+import VoyagerEntitiesEntry
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
 import VoyagerShared
 
 @MainActor
-public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDelegate {
+public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDelegate,
+    EntryQuickLookPanelEventHandling
+{
     public let windowID: UUID
     public let store: StoreOf<FileManagerFeature>
     private let fileOperationUndoManagerRegistry: FileOperationUndoManagerRegistry
@@ -15,6 +19,8 @@ public final class FileManagerWindowCoordinator: NSWindowController, NSWindowDel
     private let onResignedKey: (@MainActor (UUID) -> Void)?
     private let onWillClose: (@MainActor (UUID) -> Void)?
     private let initialWindowSizeProvider: (() -> NSSize?)?
+    @Dependency(\.entryQuickLookClient)
+    private var entryQuickLookClient
     private weak var windowSplitCoordinator: FileManagerWindowSplitCoordinator?
     private var cancellables: Set<AnyCancellable> = []
 
@@ -294,10 +300,58 @@ public extension FileManagerWindowCoordinator {
         }
     }
 
-    func windowDidResignKey(_: Notification) {
+    func windowDidResignKey(_ notification: Notification) {
+        let documentWindow = notification.object as? NSWindow ?? window
+        guard !Self.shouldRetainLogicalFocus(
+            documentIsMain: documentWindow?.isMainWindow == true,
+            keyWindow: NSApp.keyWindow,
+        ) else { return }
         if let onResignedKey {
             onResignedKey(windowID)
         }
+    }
+
+    static func shouldRetainLogicalFocus(
+        documentIsMain: Bool,
+        keyWindow: NSWindow?,
+    ) -> Bool {
+        documentIsMain && keyWindow is QLPreviewPanel
+    }
+
+    /// QuickLookUI의 NSObject hooks는 nonisolated로 import되지만 AppKit responder dispatch는 main thread에서 실행된다.
+    override nonisolated func acceptsPreviewPanelControl(_: QLPreviewPanel!) -> Bool {
+        MainActor.assumeIsolated {
+            entryQuickLookClient.acceptsPreviewPanelControl()
+        }
+    }
+
+    override nonisolated func beginPreviewPanelControl(_ panel: QLPreviewPanel!) {
+        MainActor.assumeIsolated {
+            guard let panel else { return }
+            entryQuickLookClient.beginPreviewPanelControl(panel, self)
+        }
+    }
+
+    override nonisolated func endPreviewPanelControl(_ panel: QLPreviewPanel!) {
+        MainActor.assumeIsolated {
+            guard let panel else { return }
+            entryQuickLookClient.endPreviewPanelControl(panel, self)
+        }
+    }
+
+    func handleQuickLookPanelEvent(_ event: NSEvent) -> Bool {
+        guard event.type == .keyDown,
+              event.modifierFlags.isDisjoint(with: [.command, .option, .control]),
+              (123 ... 126).contains(event.keyCode)
+        else { return false }
+
+        store.send(.view(.quickLookKeyCommand(KeyCommand(
+            keyCode: event.keyCode,
+            modifiers: KeyModifiers(event.modifierFlags),
+            characters: event.characters,
+            charactersIgnoringModifiers: event.charactersIgnoringModifiers,
+        ))))
+        return true
     }
 
     func window(

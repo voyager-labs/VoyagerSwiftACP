@@ -244,6 +244,7 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
         case activateContentTabSwitcherCandidate(ContentTabID)
         case dismissContentTabMoveFailure(requestID: UUID)
         case dismissContentTabSwitcher
+        case quickLookKeyCommand(KeyCommand)
     }
 
     @CasePathable
