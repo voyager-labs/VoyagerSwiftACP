@@ -372,6 +372,45 @@ func TestConditionEvaluatorNormalizesLegacyWildcardAliases(t *testing.T) {
 	}
 }
 
+func TestConditionEvaluatorKeepsQuestionMarkLiteral(t *testing.T) {
+	propertyID, err := domainentry.RegistryPropertyID("condition.query.question-mark")
+	if err != nil {
+		t.Fatal(err)
+	}
+	view := DefinitionView{Definition: domainentry.WorkspacePropertyDefinition{
+		PropertyID:  propertyID,
+		Origin:      domainentry.PropertyOriginUserDefined,
+		ValueType:   domainentry.PropertyTypeText,
+		Cardinality: domainentry.PropertyCardinalityOne,
+		Lifecycle:   domainentry.PropertyLifecycleActive,
+	}}
+	condition := QueryCondition{
+		PropertyID: propertyID,
+		Operator:   "rx",
+		Operand:    ConditionOperand{Kind: "text", Values: []string{"file?.txt"}},
+	}
+	for _, test := range []struct {
+		name  string
+		value string
+		want  bool
+	}{
+		{name: "literal question mark", value: "file?.txt", want: true},
+		{name: "different character", value: "file1.txt", want: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			value := test.value
+			fact := domainentry.EntryPropertyAssignment{
+				PropertyID: propertyID,
+				State:      domainentry.AssignmentStateValue,
+				Scalar:     &domainentry.AssignmentValue{Text: &value},
+			}
+			if got := evaluateCondition(view, fact, condition, "2026-09-01"); got != test.want {
+				t.Fatalf("rx pattern %q with value %q = %v, want %v", condition.Operand.Values[0], value, got, test.want)
+			}
+		})
+	}
+}
+
 type conditionQueryResolverStub struct {
 	targets map[string]ResolvedTarget
 	errors  map[string]error

@@ -208,6 +208,41 @@ extension EPR006CoordinatePropertyChangesTests {
         XCTAssertEqual(store.state.status, .idle)
     }
 
+    /// EPR-006-read_back_property_change_result: 완료된 ambiguous proposal도 selection 변경 뒤 pending read-back으로 보존한다.
+    /// - 검증 내용: ambiguous proposal의 pending 보존과 ambiguity outcome 재게시
+    /// - 사전 조건: execute completion이 ambiguous로 종료되어 proposal만 남아 있음
+    /// - 기대 결과: 새 selection은 idle이지만 이전 snapshot은 read-only retry 대상으로 남음
+    func testSelectionChangeAfterAmbiguousExecutionPreservesPendingReadBack() async {
+        let fixture = Fixture()
+        let replacement = EntryPropertiesSelection(
+            targets: [.init(localPath: "/tmp/replacement")],
+            propertyID: fixture.selection.propertyID,
+        )
+        var state = fixture.readyState
+        state.status = .ambiguous
+        state.proposal = fixture.proposal
+        let store = TestStore(initialState: state) { EntryPropertiesFeature() }
+
+        await store.send(.selectionChanged(replacement)) {
+            $0.generation = 1
+            $0.selection = replacement
+            $0.capabilityReport = nil
+            $0.targetSnapshot = nil
+            $0.proposal = nil
+            $0.appliedProposal = nil
+            $0.pendingReadBack = fixture.proposal
+            $0.canonicalResult = nil
+            $0.activePhase = nil
+            $0.readBackProposal = nil
+            $0.status = .idle
+            $0.lastOutcome = .propertyChangeRejected(.ambiguousExecution)
+        }
+        await store.receive(.init(kind: .outcome(.propertyChangeRejected(.ambiguousExecution))))
+        XCTAssertEqual(store.state.pendingReadBack, fixture.proposal)
+        XCTAssertEqual(store.state.status, .idle)
+        XCTAssertNil(store.state.proposal)
+    }
+
     /// EPR-006-prepare_property_change: ambiguous 상태에서는 새 mutation을 시작하지 않는다.
     /// - 검증 내용: ambiguity 보존 중 prepare busy rejection과 dependency 호출 0회
     /// - 사전 조건: execute 전송 결과가 ambiguous이고 기존 proposal이 남아 있음

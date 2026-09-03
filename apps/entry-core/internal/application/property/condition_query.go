@@ -459,7 +459,6 @@ func compareText(values []string, condition QueryCondition) bool {
 		operand = normalizeWildcardPattern(operand)
 		pattern := regexp.QuoteMeta(operand)
 		pattern = strings.ReplaceAll(pattern, `\*`, `.*`)
-		pattern = strings.ReplaceAll(pattern, `\?`, `.`)
 		matched, err := regexp.MatchString("^(?:"+pattern+")$", value)
 		return err == nil && matched
 	}

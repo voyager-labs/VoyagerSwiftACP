@@ -18,6 +18,7 @@ public struct EntryPropertiesFeature: Sendable {
             case let .selectionChanged(selection):
                 let interruptedExecution = state.activePhase == .executing
                 let interruptedExecutionProposal = interruptedExecution ? state.proposal : nil
+                let ambiguousProposal = state.status == .ambiguous ? state.proposal : nil
                 let interruptedReadBack = state.activePhase == .applied
                 let interruptedReadBackProposal = state.readBackProposal ?? state.appliedProposal
                 let preservedPendingReadBack = state.pendingReadBack
@@ -28,7 +29,7 @@ public struct EntryPropertiesFeature: Sendable {
                 state.targetSnapshot = nil
                 state.proposal = nil
                 state.appliedProposal = nil
-                state.pendingReadBack = interruptedExecutionProposal ?? appliedUnverifiedProposal
+                state.pendingReadBack = interruptedExecutionProposal ?? ambiguousProposal ?? appliedUnverifiedProposal
                 state.pendingReadBack = state.pendingReadBack ?? preservedPendingReadBack
                 state.readBackProposal = nil
                 state.canonicalResult = nil
@@ -37,10 +38,7 @@ public struct EntryPropertiesFeature: Sendable {
                     let outcome = EntryPropertiesOutcome.propertyChangeRejected(.ambiguousExecution)
                     state.status = .ambiguous
                     state.lastOutcome = outcome
-                    return .merge(
-                        .cancel(id: CancelID.flow),
-                        .send(.init(kind: .outcome(outcome))),
-                    )
+                    return selectionChangeOutcomeEffect(outcome)
                 }
                 if interruptedReadBack, let interruptedReadBackProposal {
                     state.pendingReadBack = interruptedReadBackProposal
@@ -49,10 +47,13 @@ public struct EntryPropertiesFeature: Sendable {
                     )
                     state.status = .idle
                     state.lastOutcome = outcome
-                    return .merge(
-                        .cancel(id: CancelID.flow),
-                        .send(.init(kind: .outcome(outcome))),
-                    )
+                    return selectionChangeOutcomeEffect(outcome)
+                }
+                if ambiguousProposal != nil {
+                    let outcome = EntryPropertiesOutcome.propertyChangeRejected(.ambiguousExecution)
+                    state.status = .idle
+                    state.lastOutcome = outcome
+                    return selectionChangeOutcomeEffect(outcome)
                 }
                 if let appliedUnverifiedProposal {
                     let outcome = EntryPropertiesOutcome.propertyChangeAppliedUnverified(
@@ -60,10 +61,7 @@ public struct EntryPropertiesFeature: Sendable {
                     )
                     state.status = .idle
                     state.lastOutcome = outcome
-                    return .merge(
-                        .cancel(id: CancelID.flow),
-                        .send(.init(kind: .outcome(outcome))),
-                    )
+                    return selectionChangeOutcomeEffect(outcome)
                 }
                 state.status = .idle
                 state.lastOutcome = nil
@@ -432,6 +430,15 @@ public struct EntryPropertiesFeature: Sendable {
         selection: EntryPropertiesSelection,
     ) -> Bool {
         snapshot.targets == selection.targets && snapshot.propertyID == selection.propertyID
+    }
+}
+
+private extension EntryPropertiesFeature {
+    func selectionChangeOutcomeEffect(_ outcome: EntryPropertiesOutcome) -> Effect<Action> {
+        .merge(
+            .cancel(id: CancelID.flow),
+            .send(.init(kind: .outcome(outcome))),
+        )
     }
 }
 
