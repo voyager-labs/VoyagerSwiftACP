@@ -7594,7 +7594,10 @@ private enum ExternalTabReservationTestFixture {
             tabID: tabID,
             action: .entryViewLayout(.entryOperations(.lifecycle(.operationFinished(
                 operationPath,
-                .rename,
+                // Rename completion defers its reload until entryActionCompleted so selection
+                // identity can be recorded first. This fixture needs the completion-owned
+                // reload path to exercise cancellation ownership across content tabs.
+                .pasteFileCopy,
                 .success(()),
             )))),
         )

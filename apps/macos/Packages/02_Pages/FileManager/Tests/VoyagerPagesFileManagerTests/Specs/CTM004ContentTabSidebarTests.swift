@@ -5566,7 +5566,12 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         store.send(.content(.entryViewLayout(.entryOperations(.lifecycle(.entryActionCompleted(record))))))
         try await waitUntilUndoReplayCondition {
             store.withState { $0.undoManagerAvailability.canUndo }
+                && store.withState {
+                    !$0.content.entryViewLayout.entryOperations.itemStates.values.contains(where: \.isBusy)
+                }
+                && listingLoads.value.count == 1
         }
+        listingLoads.withValue { $0.removeAll() }
         store.send(.request(.requestUndo))
         await gate.waitUntilSuspended()
 
@@ -5804,12 +5809,11 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         await store.finish()
     }
 
-    /// CTM-004-directory_reload_lifecycle: 일반 clipboard paste만 즉시 listing reload를 유지함
-    /// drop-origin completion은 per-item reload를 만들지 않고 aggregate outcome에 refresh를 맡기는지 검증한다.
-    /// - 검증 내용: clipboard `operationFinished` load 1회, drop completion load 0회
+    /// CTM-004-directory_reload_lifecycle: clipboard paste move와 drop completion 모두 record/aggregate outcome을 기다린다.
+    /// - 검증 내용: identity record 없이 `operationFinished`만 도착하면 clipboard와 drop 모두 per-item load 0회
     /// - 사전 조건: `fixtures/fixtures/texts/plain/11.txt`의 temp copy를 표시하는 Directory content
-    /// - 기대 결과: 동일 paste operation kind라도 origin에 따라 reload ownership이 분리됨
-    func testClipboardPasteCompletionReloadsWhileDropCompletionWaitsForAggregateOutcome() async throws {
+    /// - 기대 결과: selection migration owner가 entryActionCompleted 또는 entriesMutated outcome에서 단일 reload를 연다.
+    func testClipboardPasteCompletionDefersToIdentityRecordLikeDropCompletion() async throws {
         let sandbox = try FileManagerFixtureSandbox.copyingFileWithDirectorySymlink(
             from: "fixtures/fixtures/texts/plain/11.txt",
         )
@@ -5826,13 +5830,6 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             .pasteFileMove,
             .success(()),
         )))))
-        let isExpectedReload: (FileManagerContentAction) -> Bool = { action in
-            guard case let .entryViewLayout(.entryOperations(.loading(.loadItems(path, showHidden, _)))) = action else {
-                return false
-            }
-            return path == directoryPath && !showHidden
-        }
-        await clipboardStore.receive(isExpectedReload)
         await clipboardStore.finish()
 
         let dropStore = TestStore(initialState: contentState) {

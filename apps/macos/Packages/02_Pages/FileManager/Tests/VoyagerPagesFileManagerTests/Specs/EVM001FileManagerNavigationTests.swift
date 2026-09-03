@@ -4394,6 +4394,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             .event(.coreFinished(batchCount: 1)),
         ))))
         XCTAssertNil(store.state.pendingIdentityTransition, "owning folder terminal이 전이를 소비한다")
+        await store.finish()
     }
 
     /// EVM-001-reload_directory_page_on_external_change: content-tab transfer의 folder restart가 pending owner를 재기준화한다.
@@ -4477,6 +4478,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             [unrelated.id, fixture.after.id],
             "after-path migration 전 staged batch까지 최종 folder snapshot에 유지한다",
         )
+        await store.finish()
     }
 
     /// EVM-001-command_external_refresh_correlation: 거부된 folder terminal은 전이와 staged batch를 보존한다.
@@ -4529,6 +4531,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             store.state.entryViewLayout.hierarchy.nodesByID[fixture.folder.id]?.folder.children.map(\.id),
             [unrelated.id, fixture.after.id],
         )
+        await store.finish()
     }
 
     /// EVM-001-command_external_refresh_correlation: 교차 폴더 move는 소스 폴더 배치에서 before 선택을 보존한다.
@@ -4632,6 +4635,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         ))))
         XCTAssertEqual(store.state.entryViewLayout.selectedIds, [fixture.after.id])
         XCTAssertNil(store.state.pendingIdentityTransition, "stale sibling은 전이를 되살리거나 다시 소비하지 않는다")
+        await store.finish()
     }
 
     /// EVM-001-reload_directory_page_on_external_change: symlink 이동의 projection owner는 lexical 부모로 판정한다.
