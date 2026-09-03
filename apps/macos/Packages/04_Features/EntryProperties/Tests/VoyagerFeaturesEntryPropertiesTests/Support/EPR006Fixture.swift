@@ -61,6 +61,21 @@ struct Fixture {
         )
     }
 
+    /// 검증 성공 뒤 reducer가 canonical result revision으로 갱신하는 snapshot이다.
+    /// 같은 selection 연속 편집이 이 revision을 CAS 토큰으로 사용한다.
+    var verifiedSnapshot: EntryPropertiesTargetSnapshot {
+        .init(
+            reconcilingTargets: selection.targets,
+            propertyID: selection.propertyID,
+            catalogVersion: catalog.version ?? "2.2.0",
+            canonicalRevision: 8,
+            definitionRevision: catalog.definitionRevision,
+            valueKind: catalog.valueKind,
+            cardinality: catalog.cardinality,
+            assignmentRevisions: selection.targets.map { .init(target: $0, revision: 8) },
+        )
+    }
+
     var readyState: EntryPropertiesState {
         var state = EntryPropertiesState(selection: selection, status: .ready)
         state.targetSnapshot = snapshot

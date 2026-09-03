@@ -267,6 +267,11 @@ public struct EntryPropertiesFeature: Sendable {
                     if currentSelection {
                         state.appliedProposal = proposal
                         state.canonicalResult = canonicalResult
+                        // verified 전이에서 실행 전 assignment revision으로 남은
+                        // snapshot을 정본 result revision으로 갱신한다. 갱신하지
+                        // 않으면 같은 selection 연속 편집의 prepare가 이전 revision을
+                        // CAS 토큰으로 보내 정상 daemon에서도 conflict가 난다.
+                        state.targetSnapshot = verifiedSnapshot(proposal.snapshot, canonicalResult: canonicalResult)
                         state.status = .verified
                     } else {
                         state.pendingReadBack = nil
@@ -426,6 +431,26 @@ public struct EntryPropertiesFeature: Sendable {
     ) -> Bool {
         snapshot.targets == selection.targets && snapshot.propertyID == selection.propertyID
     }
+}
+
+/// 검증 성공 뒤 같은 selection의 연속 편집이 정본 revision을 CAS 토큰으로
+/// 쓰도록 snapshot의 assignment revision을 canonical result로 갱신한다.
+private func verifiedSnapshot(
+    _ snapshot: EntryPropertiesTargetSnapshot,
+    canonicalResult: EntryPropertiesCanonicalResult,
+) -> EntryPropertiesTargetSnapshot {
+    EntryPropertiesTargetSnapshot(
+        reconcilingTargets: snapshot.targets,
+        propertyID: snapshot.propertyID,
+        catalogVersion: snapshot.catalogVersion,
+        canonicalRevision: canonicalResult.values.map(\.revision).max() ?? snapshot.canonicalRevision,
+        definitionRevision: snapshot.definitionRevision,
+        valueKind: snapshot.valueKind,
+        cardinality: snapshot.cardinality,
+        assignmentRevisions: canonicalResult.values.map {
+            .init(target: $0.target, revision: $0.revision)
+        },
+    )
 }
 
 func mappedFailure(_ error: any Error) -> EntryPropertiesFailure {

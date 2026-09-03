@@ -346,12 +346,38 @@ final class EPR006CoordinatePropertyChangesTests: XCTestCase {
             $0.activePhase = nil
             $0.readBackProposal = nil
             $0.canonicalResult = fixture.canonicalResult
+            $0.targetSnapshot = fixture.verifiedSnapshot
             $0.status = .verified
             $0.lastOutcome = .propertyChangeVerified(fixture.canonicalResult)
         }
         await store.receive(.init(kind: .outcome(.propertyChangeVerified(fixture.canonicalResult))))
         let recordedOperations = await recorder.values()
         XCTAssertEqual(recordedOperations, ["execute", "readBack"])
+    }
+
+    /// EPR-006-prepare_property_change: 검증 완료 뒤 snapshot revision을 갱신한다.
+    /// - 검증 내용: canonical read-back 성공 뒤 정본 assignment revision 보존
+    /// - 사전 조건: current selection의 applied proposal과 성공한 read-back
+    /// - 기대 결과: verified snapshot이 실행 후 revision을 보유함
+    func testVerifiedReadBackRefreshesSnapshotRevisions() async {
+        let fixture = Fixture()
+        var state = fixture.readyState
+        state.activePhase = .applied
+        state.status = .applied
+        state.readBackProposal = fixture.proposal
+        state.appliedProposal = fixture.proposal
+        let store = TestStore(initialState: state) { EntryPropertiesFeature() }
+
+        await store.send(.init(kind: .readBackCompleted(0, .success(fixture.canonicalResult)))) {
+            $0.activePhase = nil
+            $0.readBackProposal = nil
+            $0.canonicalResult = fixture.canonicalResult
+            $0.targetSnapshot = fixture.verifiedSnapshot
+            $0.status = .verified
+            $0.lastOutcome = .propertyChangeVerified(fixture.canonicalResult)
+        }
+        await store.receive(.init(kind: .outcome(.propertyChangeVerified(fixture.canonicalResult))))
+        XCTAssertEqual(store.state.targetSnapshot, fixture.verifiedSnapshot)
     }
 
     /// EPR-006-read_back_property_change_result: proposal after와 다른 정본은 verified가 아니다.
@@ -443,6 +469,7 @@ final class EPR006CoordinatePropertyChangesTests: XCTestCase {
             $0.activePhase = nil
             $0.readBackProposal = nil
             $0.canonicalResult = fixture.canonicalResult
+            $0.targetSnapshot = fixture.verifiedSnapshot
             $0.status = .verified
             $0.lastOutcome = .propertyChangeVerified(fixture.canonicalResult)
         }

@@ -1,5 +1,5 @@
 import Foundation
-import VoyagerEntryCoreClient
+@testable import VoyagerEntryCoreClient
 import XCTest
 
 final class EntryCorePropertyPublicContractFlowTests: XCTestCase {
@@ -31,7 +31,12 @@ final class EntryCorePropertyPublicContractFlowTests: XCTestCase {
         )
         XCTAssertEqual(object["methods"] as? [String], EntryCoreMethod.allCases.dropFirst(3).map(\.rawValue))
         XCTAssertEqual(object["operators"] as? [String], PropertyConditionOperator.canonicalValues)
-        XCTAssertEqual((object["relations"] as? [String])?.count, 42)
+        let fixtureRelations = try XCTUnwrap(object["relations"] as? [String])
+        let swiftRelations = PropertyConditionRelation.nativeTypes.flatMap { nativeType in
+            PropertyConditionRelation.operators(for: nativeType).map { "\($0.rawValue)/\(nativeType.rawValue)" }
+        }
+        XCTAssertEqual(swiftRelations.sorted(), fixtureRelations.sorted())
+        XCTAssertEqual(fixtureRelations.count, 42)
         XCTAssertEqual((object["stable_errors"] as? [String])?.count, 6)
     }
 

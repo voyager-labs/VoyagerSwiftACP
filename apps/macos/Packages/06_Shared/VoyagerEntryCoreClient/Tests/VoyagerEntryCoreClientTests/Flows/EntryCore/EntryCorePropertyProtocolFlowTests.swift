@@ -135,6 +135,100 @@ final class EntryCorePropertyProtocolFlowTests: XCTestCase {
             XCTAssertEqual($0 as? EntryCoreClientError, .protocolMismatch)
         }
     }
+
+    func testCapabilityAcceptsExactDefinitionValueContract() throws {
+        let wire = try propertyDefinitionPageResponse(
+            valueType: "text",
+            cardinality: "one",
+            nativeType: "string",
+            operators: PropertyConditionRelation.operators(for: .string).map(\.rawValue),
+        )
+        XCTAssertNoThrow(
+            try EntryCorePropertyResponseDecoder.decode(
+                Array(wire),
+                method: .propertyDefinitionList,
+                expectedRequestID: "id",
+            ),
+        )
+    }
+
+    func testCapabilityRejectsDefinitionContractMismatch() throws {
+        let wrongNative = try propertyDefinitionPageResponse(
+            valueType: "text",
+            cardinality: "one",
+            nativeType: "boolean",
+            operators: PropertyConditionRelation.operators(for: .boolean).map(\.rawValue),
+        )
+        assertProtocolMismatch(wrongNative)
+
+        let wrongOperators = try propertyDefinitionPageResponse(
+            valueType: "text",
+            cardinality: "one",
+            nativeType: "string",
+            operators: ["rx"],
+        )
+        assertProtocolMismatch(wrongOperators)
+
+        let unsupportedValueContract = try propertyDefinitionPageResponse(
+            valueType: "datetime",
+            cardinality: "one",
+            nativeType: "date",
+            operators: PropertyConditionRelation.operators(for: .date).map(\.rawValue),
+        )
+        assertProtocolMismatch(unsupportedValueContract)
+    }
+}
+
+private func assertProtocolMismatch(
+    _ wire: Data,
+    file: StaticString = #filePath,
+    line: UInt = #line,
+) {
+    XCTAssertThrowsError(
+        try EntryCorePropertyResponseDecoder.decode(
+            Array(wire),
+            method: .propertyDefinitionList,
+            expectedRequestID: "id",
+        ),
+        file: file,
+        line: line,
+    ) {
+        XCTAssertEqual($0 as? EntryCoreClientError, .protocolMismatch, file: file, line: line)
+    }
+}
+
+private func propertyDefinitionPageResponse(
+    valueType: String,
+    cardinality: String,
+    nativeType: String,
+    operators: [String],
+) throws -> Data {
+    let definition: [String: Any] = [
+        "property_id": "00000000-0000-0000-8000-000000000001",
+        "key": "k",
+        "name": "n",
+        "value_type": valueType,
+        "cardinality": cardinality,
+        "state": "active",
+        "revision": 1,
+        "options": [],
+        "condition_capability": [
+            "supported": true,
+            "evaluation_scope": "local_assignment",
+            "catalog_version": "2.2.0",
+            "native_type": nativeType,
+            "allowed_operators": operators,
+        ],
+    ]
+    let object: [String: Any] = [
+        "request_id": "id",
+        "ok": true,
+        "result": [
+            "definitions": [definition],
+            "has_more": false,
+        ],
+    ]
+    return try JSONSerialization.data(withJSONObject: object)
 }
 
 private func prepareResponse(beforePropertyID: String, beforeEntryID: String) -> Data {
