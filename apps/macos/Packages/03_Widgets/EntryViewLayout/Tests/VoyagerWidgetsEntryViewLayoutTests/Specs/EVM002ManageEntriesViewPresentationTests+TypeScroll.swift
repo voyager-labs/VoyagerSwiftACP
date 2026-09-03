@@ -8,32 +8,67 @@ import XCTest
 extension EVM002ManageEntriesViewPresentationTests {
     // MARK: - EVM-002-manage_entries_view_type_scroll
 
-    /// EVM-002-manage_entries_view_type_scroll: setTypeScrollTarget은 pending target을 기록하고 selection은 바꾸지 않는다.
+    /// EVM-002-manage_entries_view_type_scroll: selectTypeScrollTarget은 target 단일 선택으로 교체하고
+    /// pending reveal을 arm하며 selectionChanged를 정확히 한 번 발행한다.
     ///
-    /// - 검증 내용: `.view(.setTypeScrollTarget(id))`이 pendingTypeScrollTargetId를 설정하고
-    ///   selectedIds/lastSelectedId/rangeAnchorId/shouldScrollToSelection은 그대로 유지된다.
-    /// - 사전 조건: 초기 selection 상태(selectedIds, lastSelectedId, rangeAnchorId, shouldScrollToSelection)가 설정돼 있다.
-    /// - 기대 결과: pendingTypeScrollTargetId == id이고 selection 4개 필드는 모두 불변이다.
-    func testSetTypeScrollTargetRecordsTargetAndPreservesSelection() async {
-        let id: EntryModel.ID = "/root/target"
+    /// - 검증 내용: `.internal(.selectTypeScrollTarget(target))`이 pendingTypeScrollTargetId를 설정하고
+    ///   selectedIds/lastSelectedId/rangeAnchorId를 target으로 교체하며 shouldScrollToSelection은 false로 유지하고
+    ///   `.delegate(.selectionChanged)`를 한 번 발행한다.
+    /// - 사전 조건: 다른 엔트리가 단일 선택돼 있고 shouldScrollToSelection이 true다.
+    /// - 기대 결과: target tuple 교체 + pending arm + selectionChanged 1회.
+    func testSelectTypeScrollTargetReplacesSelectionArmsPendingAndEmitsSelectionChanged() async {
+        let other: EntryModel.ID = "/root/other"
+        let target: EntryModel.ID = "/root/target"
         var state = EntryViewLayoutState()
-        state.selectedIds = [id]
-        state.lastSelectedId = id
-        state.rangeAnchorId = id
+        state.selectedIds = [other]
+        state.lastSelectedId = other
+        state.rangeAnchorId = other
         state.shouldScrollToSelection = true
 
         let store = TestStore(initialState: state) {
             EntryViewLayoutFeature()
         }
 
-        await store.send(.view(.setTypeScrollTarget(id))) {
-            $0.pendingTypeScrollTargetId = id
+        await store.send(.internal(.selectTypeScrollTarget(target))) {
+            $0.pendingTypeScrollTargetId = target
+            $0.selectedIds = [target]
+            $0.lastSelectedId = target
+            $0.rangeAnchorId = target
+            $0.shouldScrollToSelection = false
+        }
+        await store.receive(\.delegate.selectionChanged)
+
+        XCTAssertEqual(store.state.pendingTypeScrollTargetId, target)
+        XCTAssertEqual(store.state.selectedIds, [target])
+        XCTAssertFalse(store.state.shouldScrollToSelection)
+    }
+
+    /// EVM-002-manage_entries_view_type_scroll: 유일한 match가 이미 선택된 유일 항목이면 같은 입력도
+    /// selection을 유지한 채 pending reveal만 다시 arm하고 selectionChanged를 발행하지 않는다.
+    ///
+    /// - 검증 내용: target == 현재 유일 선택이면 tuple은 불변이고 pendingTypeScrollTargetId만 설정되며
+    ///   delegate가 없음을 TestStore exhaustivity로 검증한다.
+    /// - 사전 조건: target이 이미 유일 선택이다.
+    /// - 기대 결과: pending arm만 발생, selectionChanged 0회.
+    func testSelectTypeScrollTargetSameSoleTargetArmsRevealWithoutSelectionChanged() async {
+        let target: EntryModel.ID = "/root/target"
+        var state = EntryViewLayoutState()
+        state.selectedIds = [target]
+        state.lastSelectedId = target
+        state.rangeAnchorId = target
+
+        let store = TestStore(initialState: state) {
+            EntryViewLayoutFeature()
         }
 
-        XCTAssertEqual(store.state.selectedIds, [id])
-        XCTAssertEqual(store.state.lastSelectedId, id)
-        XCTAssertEqual(store.state.rangeAnchorId, id)
-        XCTAssertTrue(store.state.shouldScrollToSelection)
+        await store.send(.internal(.selectTypeScrollTarget(target))) {
+            $0.pendingTypeScrollTargetId = target
+        }
+
+        XCTAssertEqual(store.state.selectedIds, [target])
+        XCTAssertEqual(store.state.lastSelectedId, target)
+        XCTAssertEqual(store.state.rangeAnchorId, target)
+        XCTAssertFalse(store.state.shouldScrollToSelection)
     }
 
     /// EVM-002-manage_entries_view_type_scroll: resetTypeScrollTarget은 pending target을 nil로 되돌린다.
@@ -57,24 +92,32 @@ extension EVM002ManageEntriesViewPresentationTests {
         XCTAssertNil(store.state.pendingTypeScrollTargetId)
     }
 
-    /// EVM-002-manage_entries_view_type_scroll: reset 후 같은 id를 다시 set하면 다시 설정된다.
+    /// EVM-002-manage_entries_view_type_scroll: reset으로 소모된 pending reveal은 같은 target 재입력으로
+    /// 다시 arm된다(consume-once 재사용). 첫 입력은 selection 교체로 selectionChanged를 발행하고,
+    /// reset 뒤 같은 target 재입력은 sole target이라 selectionChanged 없이 pending만 다시 arm한다.
     ///
-    /// - 검증 내용: reset으로 소모된 후 동일 id를 재설정하면 pending target이 다시 채워진다(consume-once 재사용).
+    /// - 검증 내용: select → reset → 동일 id 재select 순서에서 pending이 nil → id → nil → id로 순환한다.
     /// - 사전 조건: 초기 상태의 pendingTypeScrollTargetId가 nil이다.
-    /// - 기대 결과: set → reset → 동일 id 재set 순서로 nil → id → id를 순회한다.
-    func testTypeScrollTargetIsReSettableAfterReset() async {
+    /// - 기대 결과: 첫 select에서 selectionChanged 1회, 재select에서 0회.
+    func testSelectTypeScrollTargetIsReArmableAfterReset() async {
         let id: EntryModel.ID = "/root/target"
         let store = TestStore(initialState: EntryViewLayoutState()) {
             EntryViewLayoutFeature()
         }
 
-        await store.send(.view(.setTypeScrollTarget(id))) {
+        await store.send(.internal(.selectTypeScrollTarget(id))) {
             $0.pendingTypeScrollTargetId = id
+            $0.selectedIds = [id]
+            $0.lastSelectedId = id
+            $0.rangeAnchorId = id
         }
+        await store.receive(\.delegate.selectionChanged)
+
         await store.send(.view(.resetTypeScrollTarget)) {
             $0.pendingTypeScrollTargetId = nil
         }
-        await store.send(.view(.setTypeScrollTarget(id))) {
+
+        await store.send(.internal(.selectTypeScrollTarget(id))) {
             $0.pendingTypeScrollTargetId = id
         }
 
@@ -155,133 +198,325 @@ extension EVM002ManageEntriesViewPresentationTests {
     // MARK: - EVM-002-manage_entries_view_type_scroll_matcher
 
     /// EVM-002-manage_entries_view_type_scroll: '가'는 '가나다.txt' 이름의 첫 그래프와 일치해 해당 id를 반환한다.
-    func testFirstMatchIDHangulPrecomposed() {
+    func testSelectionTargetIDHangulPrecomposed() {
         let entry = EntryModel.temporaryFolder(id: "/a", name: "가나다.txt")
-        let id = EntryViewLayoutTypeScrollMatcher.firstMatchID(in: [entry], inputText: "가")
+        let id = EntryViewLayoutTypeScrollMatcher.selectionTargetID(
+            in: [entry],
+            inputText: "가",
+            currentSelectionID: nil,
+        )
         XCTAssertEqual(id, entry.id)
     }
 
     /// EVM-002-manage_entries_view_type_scroll: 'A'는 'apple' 이름의 첫 그래프와 대소문자 무시로 일치한다.
-    func testFirstMatchIDCaseInsensitive() {
+    func testSelectionTargetIDCaseInsensitive() {
         let entry = EntryModel.temporaryFolder(id: "/b", name: "apple")
-        let id = EntryViewLayoutTypeScrollMatcher.firstMatchID(in: [entry], inputText: "A")
+        let id = EntryViewLayoutTypeScrollMatcher.selectionTargetID(
+            in: [entry],
+            inputText: "A",
+            currentSelectionID: nil,
+        )
         XCTAssertEqual(id, entry.id)
     }
 
     /// EVM-002-manage_entries_view_type_scroll: 'a'는 'Apple' 이름의 첫 그래프와 대소문자 무시로 일치한다.
-    func testFirstMatchIDCaseInsensitiveReverse() {
+    func testSelectionTargetIDCaseInsensitiveReverse() {
         let entry = EntryModel.temporaryFolder(id: "/c", name: "Apple")
-        let id = EntryViewLayoutTypeScrollMatcher.firstMatchID(in: [entry], inputText: "a")
+        let id = EntryViewLayoutTypeScrollMatcher.selectionTargetID(
+            in: [entry],
+            inputText: "a",
+            currentSelectionID: nil,
+        )
         XCTAssertEqual(id, entry.id)
     }
 
     /// EVM-002-manage_entries_view_type_scroll: 'é'는 'Été' 이름의 첫 그래프와 발음구별부호 무시로 일치한다.
-    func testFirstMatchIDDiacriticInsensitive() {
+    func testSelectionTargetIDDiacriticInsensitive() {
         let entry = EntryModel.temporaryFolder(id: "/d", name: "Été")
-        let id = EntryViewLayoutTypeScrollMatcher.firstMatchID(in: [entry], inputText: "é")
+        let id = EntryViewLayoutTypeScrollMatcher.selectionTargetID(
+            in: [entry],
+            inputText: "é",
+            currentSelectionID: nil,
+        )
         XCTAssertEqual(id, entry.id)
     }
 
     /// EVM-002-manage_entries_view_type_scroll: 전각 'Ａ'는 반각 'Apple' 이름의 첫 그래프와 폭 무시로 일치한다.
-    func testFirstMatchIDWidthInsensitive() {
+    func testSelectionTargetIDWidthInsensitive() {
         let entry = EntryModel.temporaryFolder(id: "/e", name: "Apple")
-        let id = EntryViewLayoutTypeScrollMatcher.firstMatchID(in: [entry], inputText: "Ａ")
+        let id = EntryViewLayoutTypeScrollMatcher.selectionTargetID(
+            in: [entry],
+            inputText: "Ａ",
+            currentSelectionID: nil,
+        )
         XCTAssertEqual(id, entry.id)
     }
 
     /// EVM-002-manage_entries_view_type_scroll: 'あ'는 'あさひ' 이름의 첫 그래프와 일치한다.
-    func testFirstMatchIDHiragana() {
+    func testSelectionTargetIDHiragana() {
         let entry = EntryModel.temporaryFolder(id: "/f", name: "あさひ")
-        let id = EntryViewLayoutTypeScrollMatcher.firstMatchID(in: [entry], inputText: "あ")
+        let id = EntryViewLayoutTypeScrollMatcher.selectionTargetID(
+            in: [entry],
+            inputText: "あ",
+            currentSelectionID: nil,
+        )
         XCTAssertEqual(id, entry.id)
     }
 
     /// EVM-002-manage_entries_view_type_scroll: '中'은 '中文字.txt' 이름의 첫 그래프와 일치한다 (한자).
-    func testFirstMatchIDHan() {
+    func testSelectionTargetIDHan() {
         let entry = EntryModel.temporaryFolder(id: "/g", name: "中文字.txt")
-        let id = EntryViewLayoutTypeScrollMatcher.firstMatchID(in: [entry], inputText: "中")
+        let id = EntryViewLayoutTypeScrollMatcher.selectionTargetID(
+            in: [entry],
+            inputText: "中",
+            currentSelectionID: nil,
+        )
         XCTAssertEqual(id, entry.id)
     }
 
     /// EVM-002-manage_entries_view_type_scroll: NFD로 분해된 '가'(U+1100 U+1161)는 미리 조합된 '가'(U+AC00) 입력과 일치한다.
-    func testFirstMatchIDHangulNFDEquivalence() {
+    func testSelectionTargetIDHangulNFDEquivalence() {
         let entry = EntryModel.temporaryFolder(id: "/h", name: "\u{1100}\u{1161}나다.txt")
-        let id = EntryViewLayoutTypeScrollMatcher.firstMatchID(in: [entry], inputText: "가")
+        let id = EntryViewLayoutTypeScrollMatcher.selectionTargetID(
+            in: [entry],
+            inputText: "가",
+            currentSelectionID: nil,
+        )
         XCTAssertEqual(id, entry.id)
     }
 
     /// EVM-002-manage_entries_view_type_scroll: 'e\u{0301}'(e + 결합 악상)는 입력 'é'와 발음구별부호 무시로 일치한다.
-    func testFirstMatchIDCombiningAcuteEquivalence() {
+    func testSelectionTargetIDCombiningAcuteEquivalence() {
         let entry = EntryModel.temporaryFolder(id: "/i", name: "e\u{0301}té")
-        let id = EntryViewLayoutTypeScrollMatcher.firstMatchID(in: [entry], inputText: "é")
+        let id = EntryViewLayoutTypeScrollMatcher.selectionTargetID(
+            in: [entry],
+            inputText: "é",
+            currentSelectionID: nil,
+        )
         XCTAssertEqual(id, entry.id)
     }
 
     /// EVM-002-manage_entries_view_type_scroll: folding으로 확장되는 입력 그래프는 이름의 다른 원본 그래프와 일치하지 않는다.
-    func testFirstMatchIDDoesNotMatchExpandedInputGraphemeToLatinInitial() {
+    func testSelectionTargetIDDoesNotMatchExpandedInputGraphemeToLatinInitial() {
         let entry = EntryModel.temporaryFolder(id: "/song", name: "Song")
-        let id = EntryViewLayoutTypeScrollMatcher.firstMatchID(in: [entry], inputText: "ß")
+        let id = EntryViewLayoutTypeScrollMatcher.selectionTargetID(
+            in: [entry],
+            inputText: "ß",
+            currentSelectionID: nil,
+        )
         XCTAssertNil(id)
     }
 
     /// EVM-002-manage_entries_view_type_scroll: 이름의 첫 원본 그래프가 folding으로 확장돼도 입력의 일부와 일치하지 않는다.
-    func testFirstMatchIDDoesNotMatchLatinInputToExpandedNameGrapheme() {
+    func testSelectionTargetIDDoesNotMatchLatinInputToExpandedNameGrapheme() {
         let entry = EntryModel.temporaryFolder(id: "/beta", name: "ßeta")
-        let id = EntryViewLayoutTypeScrollMatcher.firstMatchID(in: [entry], inputText: "s")
+        let id = EntryViewLayoutTypeScrollMatcher.selectionTargetID(
+            in: [entry],
+            inputText: "s",
+            currentSelectionID: nil,
+        )
         XCTAssertNil(id)
     }
 
-    /// EVM-002-manage_entries_view_type_scroll: 전달된 entries 순서에서 첫 매칭 항목의 id를 반환한다.
-    func testFirstMatchIDReturnsFirstInGivenOrder() {
+    /// EVM-002-manage_entries_view_type_scroll: selection이 없으면 전달된 entries 순서에서 첫 매칭 항목의 id를 반환한다.
+    func testSelectionTargetIDReturnsFirstWithoutSelection() {
         let beta = EntryModel.temporaryFolder(id: "/B", name: "Beta")
         let alpha = EntryModel.temporaryFolder(id: "/A", name: "Alpha")
         let charlie = EntryModel.temporaryFolder(id: "/C", name: "Charlie")
-        let id = EntryViewLayoutTypeScrollMatcher.firstMatchID(in: [beta, alpha, charlie], inputText: "a")
+        let id = EntryViewLayoutTypeScrollMatcher.selectionTargetID(
+            in: [beta, alpha, charlie],
+            inputText: "a",
+            currentSelectionID: nil,
+        )
         XCTAssertEqual(id, alpha.id)
     }
 
     /// EVM-002-manage_entries_view_type_scroll: 빈 entries는 nil을 반환한다.
-    func testFirstMatchIDEmptyEntries() {
-        let id = EntryViewLayoutTypeScrollMatcher.firstMatchID(in: [], inputText: "a")
+    func testSelectionTargetIDEmptyEntries() {
+        let id = EntryViewLayoutTypeScrollMatcher.selectionTargetID(
+            in: [],
+            inputText: "a",
+            currentSelectionID: nil,
+        )
         XCTAssertNil(id)
     }
 
     /// EVM-002-manage_entries_view_type_scroll: 매칭이 없으면 nil을 반환한다.
-    func testFirstMatchIDNoMatch() {
+    func testSelectionTargetIDNoMatch() {
         let entry = EntryModel.temporaryFolder(id: "/z", name: "beta")
-        let id = EntryViewLayoutTypeScrollMatcher.firstMatchID(in: [entry], inputText: "a")
+        let id = EntryViewLayoutTypeScrollMatcher.selectionTargetID(
+            in: [entry],
+            inputText: "a",
+            currentSelectionID: nil,
+        )
         XCTAssertNil(id)
     }
 
     /// EVM-002-manage_entries_view_type_scroll: 다중 그래프 입력 'ab'는 nil을 반환한다.
-    func testFirstMatchIDMultiGraphemeInput() {
+    func testSelectionTargetIDMultiGraphemeInput() {
         let entry = EntryModel.temporaryFolder(id: "/m", name: "alpha")
-        let id = EntryViewLayoutTypeScrollMatcher.firstMatchID(in: [entry], inputText: "ab")
+        let id = EntryViewLayoutTypeScrollMatcher.selectionTargetID(
+            in: [entry],
+            inputText: "ab",
+            currentSelectionID: nil,
+        )
         XCTAssertNil(id)
     }
 
     /// EVM-002-manage_entries_view_type_scroll: 빈 입력은 nil을 반환한다.
-    func testFirstMatchIDEmptyInput() {
+    func testSelectionTargetIDEmptyInput() {
         let entry = EntryModel.temporaryFolder(id: "/n", name: "alpha")
-        let id = EntryViewLayoutTypeScrollMatcher.firstMatchID(in: [entry], inputText: "")
+        let id = EntryViewLayoutTypeScrollMatcher.selectionTargetID(
+            in: [entry],
+            inputText: "",
+            currentSelectionID: nil,
+        )
         XCTAssertNil(id)
     }
 
     /// EVM-002-manage_entries_view_type_scroll: 다중 그래프 입력 '가나'는 nil을 반환한다.
-    func testFirstMatchIDMultiGraphemeHangulInput() {
+    func testSelectionTargetIDMultiGraphemeHangulInput() {
         let entry = EntryModel.temporaryFolder(id: "/o", name: "가나다.txt")
-        let id = EntryViewLayoutTypeScrollMatcher.firstMatchID(in: [entry], inputText: "가나")
+        let id = EntryViewLayoutTypeScrollMatcher.selectionTargetID(
+            in: [entry],
+            inputText: "가나",
+            currentSelectionID: nil,
+        )
         XCTAssertNil(id)
+    }
+
+    // MARK: - EVM-002-manage_entries_view_type_scroll_matcher_selection_cycle
+
+    /// EVM-002-manage_entries_view_type_scroll: 현재 selection이 match 목록에 있으면 다음 match를 반환한다.
+    func testSelectionTargetIDMatchingSelectionAnchorAdvancesToNext() {
+        let alpha = EntryModel.temporaryFolder(id: "/alpha", name: "Alpha")
+        let archive = EntryModel.temporaryFolder(id: "/archive", name: "Archive")
+        let asset = EntryModel.temporaryFolder(id: "/asset", name: "Asset")
+        let beta = EntryModel.temporaryFolder(id: "/beta", name: "Beta")
+        let id = EntryViewLayoutTypeScrollMatcher.selectionTargetID(
+            in: [beta, alpha, archive, asset],
+            inputText: "a",
+            currentSelectionID: alpha.id,
+        )
+        XCTAssertEqual(id, archive.id)
+    }
+
+    /// EVM-002-manage_entries_view_type_scroll: 마지막 match가 anchor면 첫 match로 wrap한다.
+    func testSelectionTargetIDLastAnchorWrapsToFirst() {
+        let alpha = EntryModel.temporaryFolder(id: "/alpha", name: "Alpha")
+        let archive = EntryModel.temporaryFolder(id: "/archive", name: "Archive")
+        let asset = EntryModel.temporaryFolder(id: "/asset", name: "Asset")
+        let id = EntryViewLayoutTypeScrollMatcher.selectionTargetID(
+            in: [alpha, archive, asset],
+            inputText: "A",
+            currentSelectionID: asset.id,
+        )
+        XCTAssertEqual(id, alpha.id)
+    }
+
+    /// EVM-002-manage_entries_view_type_scroll: match가 하나뿐이고 anchor와 같으면 같은 id를 반환한다.
+    func testSelectionTargetIDSoleMatchReturnsSameID() {
+        let alpha = EntryModel.temporaryFolder(id: "/alpha", name: "Alpha")
+        let beta = EntryModel.temporaryFolder(id: "/beta", name: "Beta")
+        let id = EntryViewLayoutTypeScrollMatcher.selectionTargetID(
+            in: [beta, alpha],
+            inputText: "a",
+            currentSelectionID: alpha.id,
+        )
+        XCTAssertEqual(id, alpha.id)
+    }
+
+    /// EVM-002-manage_entries_view_type_scroll: match 목록에 없는 anchor는 첫 match부터 시작한다.
+    func testSelectionTargetIDAbsentAnchorStartsFromFirst() {
+        let alpha = EntryModel.temporaryFolder(id: "/alpha", name: "Alpha")
+        let archive = EntryModel.temporaryFolder(id: "/archive", name: "Archive")
+        let id = EntryViewLayoutTypeScrollMatcher.selectionTargetID(
+            in: [alpha, archive],
+            inputText: "a",
+            currentSelectionID: "/root/vanished",
+        )
+        XCTAssertEqual(id, alpha.id)
+    }
+
+    /// EVM-002-manage_entries_view_type_scroll: 입력 문자와 일치하지 않는 anchor는 무시되고 첫 match부터 시작한다.
+    func testSelectionTargetIDNonmatchingAnchorStartsFromFirst() {
+        let alpha = EntryModel.temporaryFolder(id: "/alpha", name: "Alpha")
+        let archive = EntryModel.temporaryFolder(id: "/archive", name: "Archive")
+        let id = EntryViewLayoutTypeScrollMatcher.selectionTargetID(
+            in: [alpha, archive],
+            inputText: "a",
+            currentSelectionID: "/beta",
+        )
+        XCTAssertEqual(id, alpha.id)
+    }
+
+    /// EVM-002-manage_entries_view_type_scroll: 다른 문자를 입력하면 이전 sequence와 무관하게 새 문자의 첫 match를 반환한다.
+    func testSelectionTargetIDChangedCharacterStartsFirstOfNewInput() {
+        let alpha = EntryModel.temporaryFolder(id: "/alpha", name: "Alpha")
+        let beta = EntryModel.temporaryFolder(id: "/beta", name: "Beta")
+        let id = EntryViewLayoutTypeScrollMatcher.selectionTargetID(
+            in: [alpha, beta],
+            inputText: "b",
+            currentSelectionID: alpha.id,
+        )
+        XCTAssertEqual(id, beta.id)
+    }
+
+    /// EVM-002-manage_entries_view_type_scroll: 같은 logical ID가 projection에 중복돼도 first visible occurrence 기준으로
+    /// 한 번만 참여한다.
+    /// - [A(id1), A(id1), A(id2)]: nil anchor → id1, id1 anchor → id2, id2 anchor → id1(wrap).
+    func testSelectionTargetIDDeduplicatesRepeatedIDsInProjection() {
+        let first = EntryModel.temporaryFolder(id: "/dup-a", name: "Alpha")
+        let second = EntryModel.temporaryFolder(id: "/dup-a", name: "Alpha")
+        let other = EntryModel.temporaryFolder(id: "/dup-b", name: "Aurora")
+
+        XCTAssertEqual(
+            EntryViewLayoutTypeScrollMatcher.selectionTargetID(
+                in: [first, second, other],
+                inputText: "a",
+                currentSelectionID: nil,
+            ),
+            first.id,
+        )
+        XCTAssertEqual(
+            EntryViewLayoutTypeScrollMatcher.selectionTargetID(
+                in: [first, second, other],
+                inputText: "a",
+                currentSelectionID: first.id,
+            ),
+            other.id,
+        )
+        XCTAssertEqual(
+            EntryViewLayoutTypeScrollMatcher.selectionTargetID(
+                in: [first, second, other],
+                inputText: "a",
+                currentSelectionID: other.id,
+            ),
+            first.id,
+        )
+    }
+
+    /// EVM-002-manage_entries_view_type_scroll: 유일한 logical ID가 중복 투영돼도 같은 id를 유지한다.
+    func testSelectionTargetIDSoleDuplicateIDWrapsToItself() {
+        let first = EntryModel.temporaryFolder(id: "/dup", name: "Alpha")
+        let second = EntryModel.temporaryFolder(id: "/dup", name: "Alpha")
+        let id = EntryViewLayoutTypeScrollMatcher.selectionTargetID(
+            in: [first, second],
+            inputText: "a",
+            currentSelectionID: first.id,
+        )
+        XCTAssertEqual(id, first.id)
     }
 
     // MARK: - EVM-002-manage_entries_view_type_scroll_list_consume
 
-    /// EVM-002-manage_entries_view_type_scroll: list는 pending target을 첫 유효 row로 소비해 offscreen 항목을 visible로 스크롤하고
-    /// reset한다.
-    /// - 검증 내용: pendingTypeScrollTargetId가 설정된 snapshot edge에서 scrollRowToVisible이 첫 매칭 row를 visible로 만들고
-    ///   resetTypeScrollTarget이 발행되어 pending이 nil로 소비된다. selection은 불변이다.
-    /// - 사전 조건: 좁은 list view에 많은 entry가 있어 target row가 화면 밖에 있고, pending target이 그 row의 id다.
-    /// - 기대 결과: consume 후 target row가 visible rect에 포함되고 pendingTypeScrollTargetId == nil, selectedIds 불변.
+    /// EVM-002-manage_entries_view_type_scroll: list는 selectTypeScrollTarget으로 target 단일 선택과 함께
+    /// pending target을 소비해 offscreen 항목을 visible로 스크롤하고 reset한다.
+    /// - 검증 내용: `.internal(.selectTypeScrollTarget(target))` 전송 뒤 canonical snapshot 엣지에서 target row가
+    ///   visible이 되고 pendingTypeScrollTargetId가 nil로 소비된다. reducer tuple과 네이티브 selected row가 같은 target이다.
+    /// - 사전 조건: 좁은 list view에 많은 entry가 있어 target row가 화면 밖에 있고 selection은 다른 entry다.
+    /// - 기대 결과: consume 후 target row visible, pending == nil, selectedIds/lastSelectedId/rangeAnchorId == [target],
+    ///   tableView.selectedRowIndexes == target row, shouldScrollToSelection == false.
     func testListConsumesTypeScrollTargetScrollingOffscreenMatchIntoView() throws {
         let entries = (0 ..< 60).map { index in
             EntryModel.temporaryFolder(id: "/root/\(index)", name: "file\(index)")
@@ -290,6 +525,8 @@ extension EVM002ManageEntriesViewPresentationTests {
         var state = EntryViewLayoutState()
         state.entries = entries
         state.selectedIds = [entries[0].id]
+        state.lastSelectedId = entries[0].id
+        state.rangeAnchorId = entries[0].id
         let store = Store(initialState: state) { EntryViewLayoutFeature() }
         let coordinator = EntryListCoordinator(store: store)
         let view = EntryListView(frame: NSRect(x: 0, y: 0, width: 400, height: 40))
@@ -302,19 +539,26 @@ extension EVM002ManageEntriesViewPresentationTests {
         let beforeVisible = coordinator.tableView.rows(in: coordinator.tableView.visibleRect)
         XCTAssertFalse(NSLocationInRange(targetRow, beforeVisible), "target row must start offscreen")
 
+        store.send(.internal(.selectTypeScrollTarget(target.id)))
         var previousState = state
         previousState.pendingTypeScrollTargetId = nil
-        var currentState = state
-        currentState.pendingTypeScrollTargetId = target.id
         coordinator.handleSnapshotChanges(
             previous: EntryListCoordinatorRenderSnapshot(state: previousState),
-            snapshot: EntryListCoordinatorRenderSnapshot(state: currentState),
+            snapshot: EntryListCoordinatorRenderSnapshot(state: store.state),
         )
 
         let afterVisible = coordinator.tableView.rows(in: coordinator.tableView.visibleRect)
         XCTAssertTrue(NSLocationInRange(targetRow, afterVisible), "target row must become visible after consume")
         XCTAssertNil(store.state.pendingTypeScrollTargetId, "pending target must be reset after consume")
-        XCTAssertEqual(store.state.selectedIds, [entries[0].id], "selection must be unchanged")
+        XCTAssertEqual(store.state.selectedIds, [target.id], "reducer must target the sole selection")
+        XCTAssertEqual(store.state.lastSelectedId, target.id)
+        XCTAssertEqual(store.state.rangeAnchorId, target.id)
+        XCTAssertFalse(store.state.shouldScrollToSelection)
+        XCTAssertEqual(
+            coordinator.tableView.selectedRowIndexes,
+            IndexSet(integer: targetRow),
+            "native highlight must match the reducer target",
+        )
     }
 
     /// EVM-002-manage_entries_view_type_scroll: list는 stale/unknown target이면 스크롤하지 않고 reset만 한다.
@@ -525,13 +769,14 @@ extension EVM002ManageEntriesViewPresentationTests {
         view.scrollView.contentView.bounds.origin
     }
 
-    /// EVM-002-manage_entries_view_type_scroll: grid는 pending target을 소비해 reset하고 selection은 유지한다.
-    /// - 검증 내용: 실제 대상 id가 index 경로로 매핑 가능하고 consume 후 reset이 발행된다. unmounted NSCollectionView에서는
-    ///   scrollToItems가 layout 없이는 clip offset을 이동시키지 않아 scroll geometry는 단위 테스트로 검증할 수 없으므로
-    ///   저장 scroll 복원 테스트와 동일하게 offset은 관찰하지 않고 consume 계약(reset + selection 불변)만 단언한다.
-    /// - 사전 조건: 작은 grid view에 많은 entry가 있고 pending target이 실제 entry의 id다.
-    /// - 기대 결과: target이 매핑 가능하고 pendingTypeScrollTargetId == nil, selectedIds 불변.
-    func testGridConsumesTypeScrollTargetScrollingOffscreenMatchIntoView() {
+    /// EVM-002-manage_entries_view_type_scroll: grid는 selectTypeScrollTarget으로 target 단일 선택과 함께
+    /// pending target을 소비하고 네이티브 selectionIndexPaths가 같은 target을 가리킨다.
+    /// - 검증 내용: mounted grid에서 `.internal(.selectTypeScrollTarget(target))` 전송 뒤 canonical snapshot 엣지가
+    ///   consume되어 pending이 nil이 되고 reducer tuple과 collectionView.selectionIndexPaths가 target 하나로 일치한다.
+    /// - 사전 조건: mounted grid에 target이 존재하고 selection은 다른 entry다.
+    /// - 기대 결과: pending == nil, selectedIds/lastSelectedId/rangeAnchorId == [target],
+    ///   selectionIndexPaths == target indexPath, shouldScrollToSelection == false.
+    func testGridConsumesTypeScrollTargetWithSelectionAndNativeHighlight() {
         let entries = (0 ..< 80).map { index in
             EntryModel.temporaryFolder(id: "/root/\(index)", name: "file\(index)")
         }
@@ -539,23 +784,43 @@ extension EVM002ManageEntriesViewPresentationTests {
         var state = EntryViewLayoutState()
         state.entries = entries
         state.selectedIds = [entries[0].id]
+        state.lastSelectedId = entries[0].id
+        state.rangeAnchorId = entries[0].id
         let store = Store(initialState: state) { EntryViewLayoutFeature() }
         let coordinator = EntryGridCoordinator(store: store)
-        coordinator.bind(to: EntryGridView(frame: NSRect(x: 0, y: 0, width: 320, height: 240)))
+        let view = EntryGridView(frame: NSRect(x: 0, y: 0, width: 320, height: 240))
+        coordinator.bind(to: view)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 320, height: 240),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false,
+        )
+        window.contentView = view
+        view.layoutSubtreeIfNeeded()
 
-        // 실제 대상 id가 scrollToTypeScrollTarget에서 소비될 수 있도록 index 경로로 매핑 가능해야 한다.
-        XCTAssertNotNil(coordinator.indexPathByEntryId[target.id], "target must be mappable to an indexPath")
+        store.send(.internal(.selectTypeScrollTarget(target.id)))
         var previousState = state
         previousState.pendingTypeScrollTargetId = nil
-        var currentState = state
-        currentState.pendingTypeScrollTargetId = target.id
         coordinator.handleSnapshotChanges(
             previous: EntryGridRenderSnapshot(state: previousState),
-            snapshot: EntryGridRenderSnapshot(state: currentState),
+            snapshot: EntryGridRenderSnapshot(state: store.state),
         )
 
+        let targetIndexPath = coordinator.indexPathByEntryId[target.id]
+        XCTAssertNotNil(targetIndexPath, "target must be mappable to an indexPath")
         XCTAssertNil(store.state.pendingTypeScrollTargetId, "pending target must be reset after consume")
-        XCTAssertEqual(store.state.selectedIds, [entries[0].id], "selection must be unchanged")
+        XCTAssertEqual(store.state.selectedIds, [target.id], "reducer must target the sole selection")
+        XCTAssertEqual(store.state.lastSelectedId, target.id)
+        XCTAssertEqual(store.state.rangeAnchorId, target.id)
+        XCTAssertFalse(store.state.shouldScrollToSelection)
+        var expectedSelection = Set<IndexPath>()
+        if let targetIndexPath { expectedSelection.insert(targetIndexPath) }
+        XCTAssertEqual(
+            view.collectionView.selectionIndexPaths,
+            expectedSelection,
+            "native highlight must match the reducer target",
+        )
     }
 
     /// EVM-002-manage_entries_view_type_scroll: grid는 stale/unknown target이면 스크롤하지 않고 reset만 한다.
@@ -877,9 +1142,8 @@ extension EVM002ManageEntriesViewPresentationTests {
         coordinator.isRenderObservationEnabled = false
 
         let beforeOrigin = gridClipOrigin(view)
-        store.send(.view(.setTypeScrollTarget(target.id)))
-        var currentState = state
-        currentState.pendingTypeScrollTargetId = target.id
+        store.send(.internal(.selectTypeScrollTarget(target.id)))
+        let currentState = store.state
         coordinator.handleSnapshotChanges(
             previous: EntryGridRenderSnapshot(state: state),
             snapshot: EntryGridRenderSnapshot(state: currentState),
@@ -887,7 +1151,7 @@ extension EVM002ManageEntriesViewPresentationTests {
 
         XCTAssertEqual(store.state.pendingTypeScrollTargetId, target.id, "pending target must survive before layout")
         XCTAssertEqual(gridClipOrigin(view), beforeOrigin, "pre-layout target must not move the grid")
-        XCTAssertEqual(store.state.selectedIds, [entries[0].id], "selection must stay unchanged before layout")
+        XCTAssertEqual(store.state.selectedIds, [target.id], "selection must already target the entry before layout")
 
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 320, height: 240),
@@ -901,7 +1165,7 @@ extension EVM002ManageEntriesViewPresentationTests {
         let consumedOrigin = gridClipOrigin(view)
         XCTAssertNil(store.state.pendingTypeScrollTargetId, "first physical layout must reset after scrolling")
         XCTAssertNotEqual(consumedOrigin, beforeOrigin, "first physical layout must scroll to the target")
-        XCTAssertEqual(store.state.selectedIds, [entries[0].id], "selection must stay unchanged after consume")
+        XCTAssertEqual(store.state.selectedIds, [target.id], "selection must stay on the target after consume")
 
         view.needsLayout = true
         view.layoutSubtreeIfNeeded()
