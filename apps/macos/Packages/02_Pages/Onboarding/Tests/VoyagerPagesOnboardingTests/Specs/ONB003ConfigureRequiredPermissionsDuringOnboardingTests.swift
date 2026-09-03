@@ -225,6 +225,36 @@ final class ONB003ConfigureRequiredPermissionsDuringOnboardingTests: XCTestCase 
         await store.finish()
     }
 
+    /// ONB-003-refresh_onboarding_permission_status: FDA 설정 후 미허용 상태는 사용자 거부 실패로 기록한다.
+    /// 정규화된 FDA 상태와 Product metric 결과가 동일한 사용자 의도를 나타내는지 검증합니다.
+    /// - 검증 내용: attempted 상태의 needsAction refresh가 denied 상태와 failure terminal을 생성합니다.
+    /// - 사전 조건: FDA 설정 열기 operation과 matching refresh generation이 pending입니다.
+    /// - 기대 결과: 원 operation ID로 failure metric을 한 번 기록하고 correlation을 소비합니다.
+    func testFullDiskAccessNeedsActionAfterAttemptRecordsFailure() async throws {
+        let operationID = try XCTUnwrap(UUID(uuidString: "99999999-9999-9999-9999-999999999999"))
+        var initialState = PermissionsFeature.State()
+        initialState.hasAttemptedFullDiskAccessEnable = true
+        initialState.pendingFullDiskAccessOperationID = operationID
+        initialState.pendingFullDiskAccessGeneration = 7
+        initialState.latestAppActiveRefreshGeneration = 7
+        let metrics = LockIsolated<[OnboardingProductMetric]>([])
+        let store = TestStore(initialState: initialState) {
+            PermissionsFeature()
+        } withDependencies: {
+            $0.onboardingProductMetricsClient = Self.metricsClient(metrics)
+        }
+
+        await store.send(.fullDiskAccessRefreshResponse(7, .needsAction)) { state in
+            state.fullDiskAccessStatus = .denied
+        }
+
+        XCTAssertNil(store.state.pendingFullDiskAccessOperationID)
+        XCTAssertNil(store.state.pendingFullDiskAccessGeneration)
+        XCTAssertEqual(metrics.value, [
+            .fullDiskAccess(operationID: operationID, result: .failure),
+        ])
+    }
+
     // MARK: - ONB-003-show_onboarding_permission_status
 
     // 온보딩 권한 구성 화면(ONB-003)의 첫 번째 스펙 인터랙션입니다.

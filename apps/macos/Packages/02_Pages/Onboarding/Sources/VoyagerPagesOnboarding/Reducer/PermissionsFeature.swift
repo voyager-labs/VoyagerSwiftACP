@@ -90,11 +90,19 @@ struct PermissionsFeature {
                 if let operationID = state.pendingFullDiskAccessOperationID,
                    state.pendingFullDiskAccessGeneration == generation
                 {
+                    let metricResult: OnboardingProductMetric.PermissionResult = switch resolvedStatus {
+                    case .granted:
+                        .success
+                    case .denied:
+                        .failure
+                    case .needsAction, .unknown:
+                        .unavailable
+                    }
                     state.pendingFullDiskAccessOperationID = nil
                     state.pendingFullDiskAccessGeneration = nil
                     metricsClient.record(.fullDiskAccess(
                         operationID: operationID,
-                        result: status == .granted ? .success : .unavailable,
+                        result: metricResult,
                     ))
                 }
                 return .none
