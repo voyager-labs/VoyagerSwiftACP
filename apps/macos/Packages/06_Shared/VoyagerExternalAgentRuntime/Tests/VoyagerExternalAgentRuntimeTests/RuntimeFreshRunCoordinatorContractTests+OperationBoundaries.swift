@@ -449,6 +449,7 @@ extension RuntimeFreshRunCoordinatorContractTests {
         store: InMemoryRuntimeStateStore,
         baseline: DetachedOwnerBaseline,
     ) async throws {
+        let providerBaseline = await adapter.counts()
         await #expect(throws: RuntimeHostError.invalidEvent) {
             try await plane.respondToApproval(
                 hostReference: host,
@@ -473,7 +474,7 @@ extension RuntimeFreshRunCoordinatorContractTests {
         let counts = await adapter.counts()
         #expect(counts.approval == 0)
         #expect(counts.input == 0)
-        #expect(counts.cancellation == 0)
+        #expect(counts.cancellation == providerBaseline.cancellation)
         #expect(await plane.sessions[host] == baseline.session)
         #expect(await store.currentState()?.sessions
             .first(where: { $0.externalAgentSessionReference == host }) == baseline.persisted)

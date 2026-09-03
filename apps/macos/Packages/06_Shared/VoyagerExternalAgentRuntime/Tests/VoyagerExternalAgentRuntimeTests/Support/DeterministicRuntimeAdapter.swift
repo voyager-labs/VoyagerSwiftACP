@@ -21,9 +21,11 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
     private let clock: DeterministicRuntimeClock
     private let IDs: DeterministicRuntimeIDs
     private let launchDelay: Duration
-    private let launchGate: RuntimeTestGate?
+    private var launchGate: RuntimeTestGate?
     private let launchReceiptRunReference: RuntimeRunReference?
     private let launchReceiptProviderReference: ProviderInternalSessionReference?
+    private let onLaunchReceiptReady: (@Sendable () -> Void)?
+    private let ignoresLaunchCancellation: Bool
     private let eventStreamDelay: Duration
     private let eventStreamInvocationGate: RuntimeTestGate?
     private let eventStreamGate: RuntimeTestGate?
@@ -43,11 +45,14 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
     private let failsRestart: Bool
     private var remainingLaunchFailures: Int
     private var launchCount = 0
+    private var nextLaunchOperationID = 0
     private var launchRequests: [RuntimeLaunchRequest] = []
     private var launchCountWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
     private var eventStreamCount = 0
     private var eventStreamCountWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
     private var cancellationCount = 0
+    private var cancellationRequests: [RuntimeCancellationRequest] = []
+    private var cancellationCountWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
     private var terminalResultCount = 0
     private var terminalResultCountWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
     private var approvalCount = 0
@@ -71,6 +76,8 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
         launchGate: RuntimeTestGate? = nil,
         launchReceiptRunReference: RuntimeRunReference? = nil,
         launchReceiptProviderReference: ProviderInternalSessionReference? = nil,
+        onLaunchReceiptReady: (@Sendable () -> Void)? = nil,
+        ignoresLaunchCancellation: Bool = false,
         eventStreamDelay: Duration = .zero,
         eventStreamInvocationGate: RuntimeTestGate? = nil,
         eventStreamGate: RuntimeTestGate? = nil,
@@ -108,6 +115,8 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
         self.launchGate = launchGate
         self.launchReceiptRunReference = launchReceiptRunReference
         self.launchReceiptProviderReference = launchReceiptProviderReference
+        self.onLaunchReceiptReady = onLaunchReceiptReady
+        self.ignoresLaunchCancellation = ignoresLaunchCancellation
         self.eventStreamDelay = eventStreamDelay
         self.eventStreamInvocationGate = eventStreamInvocationGate
         self.eventStreamGate = eventStreamGate
@@ -132,7 +141,27 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
         RuntimeDiscoveryMetadata(readiness: .ready, diagnosticCode: nil)
     }
 
-    func launch(_ request: RuntimeLaunchRequest) async throws -> RuntimeLaunchReceipt {
+    func startLaunch(_ request: RuntimeLaunchRequest) async -> RuntimeLaunchOperation {
+        nextLaunchOperationID += 1
+        let operationID = RuntimeOperationID("launch-operation-\(nextLaunchOperationID)")
+        let invocationGate = launchGate
+        launchGate = nil
+        let receiptTask = Task { [self] in
+            try await performLaunch(request, gate: invocationGate)
+        }
+        return RuntimeLaunchOperation(
+            receiptTask: receiptTask,
+            cancelBeforeReceipt: { [self] in
+                await invocationGate?.open()
+                await recordLaunchCancellation(request, operationID: operationID)
+            },
+            cancelReceipt: { [self] receipt in await cancelLaunchReceipt(receipt, operationID: operationID) },
+        )
+    }
+
+    private func performLaunch(_ request: RuntimeLaunchRequest,
+                               gate: RuntimeTestGate?) async throws -> RuntimeLaunchReceipt
+    {
         launchCount += 1
         launchRequests.append(request)
         resumeLaunchCountWaiters()
@@ -146,20 +175,47 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
         if launchDelay != .zero {
             try await clock.sleep(launchDelay)
         }
-        await launchGate?.wait()
-        try Task.checkCancellation()
+        await gate?.wait()
+        if !ignoresLaunchCancellation { try Task.checkCancellation() }
         if failsLaunchAfterGate {
             throw InjectedFailure.launch
         }
         let restoredProviderReference = restartBindings.last(where: {
             $0.runReference == request.runReference
         })?.providerInternalSessionReference
-        return RuntimeLaunchReceipt(
+        let receipt = RuntimeLaunchReceipt(
             runReference: launchReceiptRunReference ?? request.runReference,
             providerInternalSessionReference: launchReceiptProviderReference
                 ?? restoredProviderReference
                 ?? IDs.providerSession(launchCount),
         )
+        onLaunchReceiptReady?()
+        return receipt
+    }
+
+    private func cancelLaunchReceipt(_ receipt: RuntimeLaunchReceipt, operationID: RuntimeOperationID) async {
+        if let index = cancellationRequests.firstIndex(where: { $0.operationID == operationID }) {
+            cancellationRequests[index] = RuntimeCancellationRequest(
+                operationID: operationID,
+                runReference: receipt.runReference,
+            )
+        } else {
+            cancellationCount += 1
+            cancellationRequests.append(RuntimeCancellationRequest(
+                operationID: operationID,
+                runReference: receipt.runReference,
+            ))
+            resumeCancellationCountWaiters()
+        }
+    }
+
+    private func recordLaunchCancellation(_ request: RuntimeLaunchRequest, operationID: RuntimeOperationID) {
+        cancellationCount += 1
+        cancellationRequests.append(RuntimeCancellationRequest(
+            operationID: operationID,
+            runReference: request.runReference,
+        ))
+        resumeCancellationCountWaiters()
     }
 
     func eventStream(
@@ -210,10 +266,12 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
         try await clock.sleep(operationDelay)
     }
 
-    func requestCancellation(_: RuntimeCancellationRequest) async throws {
+    func requestCancellation(_ request: RuntimeCancellationRequest) async throws {
         cancellationCount += 1
+        cancellationRequests.append(request)
         await operationGate?.wait()
         try await clock.sleep(operationDelay)
+        resumeCancellationCountWaiters()
     }
 
     func enqueueInput(_: RuntimeQueuedInputRequest) async throws {
@@ -266,6 +324,10 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
         )
     }
 
+    func receivedCancellationRequests() -> [RuntimeCancellationRequest] {
+        cancellationRequests
+    }
+
     func receivedRestartBindings() -> [RuntimeRestartBinding] {
         restartBindings
     }
@@ -290,6 +352,19 @@ actor DeterministicRuntimeAdapter: ExternalAgentRuntimeAdapter {
         await withCheckedContinuation { continuation in
             launchCountWaiters.append((minimumCount, continuation))
         }
+    }
+
+    func waitForCancellationCount(_ minimumCount: Int) async {
+        guard cancellationCount < minimumCount else { return }
+        await withCheckedContinuation { continuation in
+            cancellationCountWaiters.append((minimumCount, continuation))
+        }
+    }
+
+    private func resumeCancellationCountWaiters() {
+        let ready = cancellationCountWaiters.filter { $0.0 <= cancellationCount }
+        cancellationCountWaiters.removeAll { $0.0 <= cancellationCount }
+        ready.forEach { $0.1.resume() }
     }
 
     func waitForTerminalResultCount(_ minimumCount: Int) async {
