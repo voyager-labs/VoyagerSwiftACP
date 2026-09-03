@@ -272,7 +272,7 @@ struct ComposerSearchLifecycleReducer {
                         ?? state.pendingSearchQuery
                         ?? state.collectionContext?.query
                         ?? ""
-                    if let submittedQuery = state.queryRecoveryRawText(for: .filters(requestID)) {
+                    if let submittedQuery = state.uneditedQueryRecoveryRawText(for: .filters(requestID)) {
                         let trimmedQuery = submittedQuery.trimmingCharacters(in: .whitespacesAndNewlines)
                         state.pendingSearchQuery = trimmedQuery.isEmpty ? nil : trimmedQuery
                     }

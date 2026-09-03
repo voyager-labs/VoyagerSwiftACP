@@ -510,12 +510,15 @@ final class RCL004ComposeCollectionFilterTests: XCTestCase {
         XCTAssertFalse(state.isLoadingFilters)
     }
 
-    /// RCL-004-apply_generated_filter_changes: filter 성공 handoff는 visible draft가 아닌 제출 query를 사용함
-    /// A 처리 중 B를 입력해도 FileManager collection context에는 A가 전달되는지 검증한다.
-    /// - 검증 내용: query-owned filter response success 전 request-bound pending query projection
+    /// RCL-004-apply_generated_filter_changes: filter 성공은 제출 뒤의 최신 query 편집을 pending에 보존함
+    /// A 처리 중 B를 입력하면 revision이 불일치하므로 제출 쿼리 A가 pending/canonical draft를 덮지 않는다.
+    /// parent coordinator가 pending 값으로 canonical CollectionContext를 만드므로 unguarded 승격은
+    /// 화면의 최신 편집을 저장·닫기 경계에서 유실시킨다 (rcl.collection_filter_editing 계약의
+    /// query editing state 동기화 책임과 manual_editing_remains_available 정책).
+    /// - 검증 내용: visible draft 보존, revision 불일치 시 pending query 미승격, recovery 폐기
     /// - 사전 조건: A의 generated filter request 중 B가 visible draft와 pending query를 대체함
-    /// - 기대 결과: visible B는 유지되고 handoff query만 제출된 A로 복원됨
-    func testApplyGeneratedFilterChanges_whenVisibleDraftChanges_usesSubmittedQueryForHandoff() {
+    /// - 기대 결과: visible B와 pending B가 유지되고 제출 쿼리 A로 되돌아가지 않음
+    func testApplyGeneratedFilterChanges_whenVisibleDraftChanges_preservesEditedPendingQuery() {
         let submittedQuery = "VOY589_SYNTHETIC_SUBMITTED"
         let visibleDraft = "VOY589_SYNTHETIC_DRAFT"
         var state = makeGeneratedFilterStageState(rawText: submittedQuery)
@@ -525,6 +528,10 @@ final class RCL004ComposeCollectionFilterTests: XCTestCase {
 
         _ = ComposerFeature().reduce(into: &state, action: .setText(visibleDraft))
         state.pendingSearchQuery = visibleDraft
+        XCTAssertNotEqual(
+            state.queryRecoveryContext?.capturedInputRevision,
+            state.inputRevision,
+        )
 
         withDependencies {
             $0.registryClient = makeRegistryClient()
@@ -537,7 +544,39 @@ final class RCL004ComposeCollectionFilterTests: XCTestCase {
         }
 
         XCTAssertEqual(state.text, visibleDraft)
+        XCTAssertEqual(state.pendingSearchQuery, visibleDraft)
+        XCTAssertNil(state.queryRecoveryContext)
+    }
+
+    /// RCL-004-apply_generated_filter_changes: 제출 뒤 편집이 없으면 filters success가 제출 쿼리를 pending에 승격함
+    /// revision이 일치하는 정상 제출은 parent coordinator가 canonical CollectionContext를 만들 때
+    /// 사용하는 pending query로 승격되어야 한다.
+    /// - 검증 내용: 무편집 filters success의 pending query 승격, recovery 폐기
+    /// - 사전 조건: A의 generated filter request 동안 사용자 편집이 없음
+    /// - 기대 결과: pendingSearchQuery가 제출 쿼리 A로 승격되고 recovery는 폐기됨
+    func testApplyGeneratedFilterChanges_withoutPostSubmitEdit_promotesSubmittedQueryToPending() {
+        let submittedQuery = "VOY589_SYNTHETIC_SUBMITTED"
+        var state = makeGeneratedFilterStageState(rawText: submittedQuery)
+        guard let requestID = state.activeFiltersRequestID else {
+            return XCTFail("generated response must create an active filters request")
+        }
+        XCTAssertEqual(
+            state.queryRecoveryContext?.capturedInputRevision,
+            state.inputRevision,
+        )
+
+        withDependencies {
+            $0.registryClient = makeRegistryClient()
+            $0.uuid = .constant(UUID())
+        } operation: {
+            _ = ComposerFeature().reduce(
+                into: &state,
+                action: .filtersResponse(requestID, .success(SearchResponsePayload(itemCount: 1))),
+            )
+        }
+
         XCTAssertEqual(state.pendingSearchQuery, submittedQuery)
+        XCTAssertNil(state.queryRecoveryContext)
     }
 
     /// RCL-004-apply_generated_filter_changes: manual apply는 query 복원 context보다 우선함
