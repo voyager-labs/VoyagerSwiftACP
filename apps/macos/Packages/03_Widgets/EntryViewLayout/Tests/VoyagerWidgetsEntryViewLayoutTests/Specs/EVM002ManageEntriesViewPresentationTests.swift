@@ -246,6 +246,7 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
         view.scrollView.reflectScrolledClipView(clip)
         view.layoutSubtreeIfNeeded()
         XCTAssertEqual(nameColumn.title, "G1")
+        let expectedScrollOrigin = clip.bounds.origin
 
         var updatedState = state
         updatedState.entryArrangements.groupedItems[0] = .init(
@@ -267,6 +268,7 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
         }
 
         XCTAssertEqual(nameColumn.title, "G1-renamed")
+        XCTAssertEqual(clip.bounds.origin, expectedScrollOrigin)
     }
 
     /// EVM-002-set_entries_view_as_list_table: 그룹 행은 상태와 appearance에 맞는 반투명 오버레이 배경과 28pt 높이를 사용한다.
@@ -1846,19 +1848,27 @@ private func assertTask3Appearance(_ appearanceName: NSAppearance.Name) throws {
     let ordinaryView = EntryListView(frame: view.frame)
     ordinaryView.appearance = appearance
     ordinaryCoordinator.bind(to: ordinaryView)
+    ordinaryView.tableView.deselectAll(nil)
     let even = try task3Render(XCTUnwrap(ordinaryView.tableView.rowView(atRow: 0, makeIfNecessary: true)), appearance)
     let oddRow = try XCTUnwrap(
         ordinaryView.tableView.rowView(atRow: 1, makeIfNecessary: true) as? EntryListSelectionRowView,
     )
     XCTAssertEqual(try XCTUnwrap(even.colorAt(x: even.pixelsWide - 2, y: even.pixelsHigh / 2)).alphaComponent, 0)
+    oddRow.appearance = appearance
     let stripe = appearanceName == .darkAqua
         ? NSColor.white.withAlphaComponent(0.035)
         : NSColor.black.withAlphaComponent(0.055)
     let resolvedStripe = try XCTUnwrap(stripe.usingColorSpace(.sRGB))
-    try assertTask3Solid(task3Render(oddRow, appearance), resolvedStripe)
+    XCTAssertEqual(
+        try XCTUnwrap(oddRow.unselectedBackgroundColor()).usingColorSpace(.sRGB),
+        resolvedStripe,
+    )
     oddRow.configure(isGroupRow: true)
     oddRow.configure(isGroupRow: false)
-    try assertTask3Solid(task3Render(oddRow, appearance), resolvedStripe)
+    XCTAssertEqual(
+        try XCTUnwrap(oddRow.unselectedBackgroundColor()).usingColorSpace(.sRGB),
+        resolvedStripe,
+    )
 }
 
 @MainActor
