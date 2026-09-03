@@ -16,10 +16,6 @@ func prepareLoadedCollectionOpenState(
     )
     state.content.entryViewLayout.collectionItems = []
     state.content.entryViewLayout.entries = []
-    state.content.entryViewLayout.selectedIds = []
-    state.content.entryViewLayout.lastSelectedId = nil
-    state.content.entryViewLayout.rangeAnchorId = nil
-    state.content.entryViewLayout.shouldScrollToSelection = false
     state.content.entryViewLayout.isCollectionMode = true
     state.content.entryViewLayout.isCollectionContentLoading = false
 }
@@ -71,6 +67,10 @@ func hydrateOpenedCollectionSnapshot(
             await send(.tabContent(
                 tabID: activeTabID,
                 action: .internal(.applyNavigationState(.collection(navigation))),
+            ))
+            await send(.tabContent(
+                tabID: activeTabID,
+                action: .entryViewLayout(.internal(.applyClearSelection)),
             ))
             await send(.tabContent(
                 tabID: activeTabID,
@@ -138,24 +138,27 @@ func makeCollectionOpenFollowupEffects(
                 activeTabID: activeTabID,
                 state: state,
             ))
-        } else if payload.shouldRestoreStaleNavigation {
-            let navigation = makeWindowCollectionNavigation(navigationPayload, state: state)
-            effects.append(contentsOf: [
-                .send(.content(.internal(.requestNavigation(
-                    .internal(.setNavigationState(.collection(navigation))),
-                )))),
-                .send(.tabContent(
-                    tabID: activeTabID,
-                    action: .internal(.applyNavigationState(.collection(navigation))),
-                )),
-                .send(.content(.entryViewLayout(.internal(.setCollectionMode(true))))),
-                .send(.content(.composer(.syncCollectionState(
-                    context: navigation.context,
-                    url: collectionURL(from: navigation),
-                    compatibility: navigation.compatibility,
-                    isCollectionMode: true,
-                )))),
-            ])
+        } else {
+            if payload.shouldRestoreStaleNavigation {
+                let navigation = makeWindowCollectionNavigation(navigationPayload, state: state)
+                effects.append(contentsOf: [
+                    .send(.content(.internal(.requestNavigation(
+                        .internal(.setNavigationState(.collection(navigation))),
+                    )))),
+                    .send(.tabContent(
+                        tabID: activeTabID,
+                        action: .internal(.applyNavigationState(.collection(navigation))),
+                    )),
+                    .send(.content(.entryViewLayout(.internal(.setCollectionMode(true))))),
+                    .send(.content(.composer(.syncCollectionState(
+                        context: navigation.context,
+                        url: collectionURL(from: navigation),
+                        compatibility: navigation.compatibility,
+                        isCollectionMode: true,
+                    )))),
+                ])
+            }
+            effects.append(.send(.content(.entryViewLayout(.internal(.applyClearSelection)))))
         }
     }
 
@@ -211,6 +214,10 @@ private func makeNoTriggerCollectionNavigationEffects(
             action: .internal(.requestNavigation(.internal(.setNavigationState(.collection(navigation))))),
         )),
         .send(.tabContent(tabID: activeTabID, action: .internal(.applyNavigationState(.collection(navigation))))),
+        .send(.tabContent(
+            tabID: activeTabID,
+            action: .entryViewLayout(.internal(.applyClearSelection)),
+        )),
         .send(.tabContent(
             tabID: activeTabID,
             action: .collection(.navigationStateApplied(collectionStatePayload)),

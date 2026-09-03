@@ -1412,6 +1412,8 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
         state.content.entryViewLayout.selectedIds = [oldEntry.id]
         state.content.entryViewLayout.lastSelectedId = oldEntry.id
         state.content.entryViewLayout.rangeAnchorId = oldEntry.id
+        state.content.entryViewLayout.entryOperations.selectedEntryIDs = [oldEntry.id]
+        state.inspector.aiChat.currentContext = .init(summary: "stale selection")
         state.content.composer.collectionContext = oldContext
         state.content.composer.pendingSearchQuery = "pending old query"
         state.content.composer.activeSearchRequestID = UUID(920)
@@ -1469,6 +1471,15 @@ final class RCL002ManageRetrievalCollectionsTests: XCTestCase {
         XCTAssertTrue(store.state.content.entryViewLayout.activeCollectionAppendPaths.isEmpty)
         XCTAssertTrue(store.state.content.entryViewLayout.activeAppendExpectedBatchIndices.isEmpty)
         XCTAssertTrue(store.state.content.entryViewLayout.selectedIds.isEmpty)
+        XCTAssertTrue(
+            store.state.content.entryViewLayout.entryOperations.selectedEntryIDs.isEmpty,
+            "EntryOperations selection must be cleared through semantic action",
+        )
+        XCTAssertEqual(
+            store.state.inspector.aiChat.currentContext.summary,
+            targetFile.name,
+            "AI Inspector context must be refreshed through selectionChanged",
+        )
         XCTAssertNil(store.state.content.entryViewLayout.lastSelectedId)
         XCTAssertNil(store.state.content.entryViewLayout.rangeAnchorId)
         XCTAssertEqual(store.state.content.composer.collectionContext, .init(includeDirectories: true))
