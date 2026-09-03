@@ -195,7 +195,9 @@ public struct EntryPropertiesFeature: Sendable {
                     return reject(&state, .unsupported)
                 }
                 guard !proposal.requiresConfirmation || confirmed else {
-                    return reject(&state, .confirmationRequired)
+                    let outcome = EntryPropertiesOutcome.propertyChangeRejected(.confirmationRequired)
+                    state.lastOutcome = outcome
+                    return .send(.init(kind: .outcome(outcome)))
                 }
                 let generation = state.generation
                 state.activePhase = .executing

@@ -723,6 +723,25 @@ func TestPropertyCapabilityExactnessAgainstValueContract(t *testing.T) {
 	if unsupported.Validate() != nil {
 		t.Fatal("datetime definition with unsupported capability rejected")
 	}
+
+	derivableUnsupported := base("text", "one")
+	derivableUnsupported.ConditionCapability = PropertyConditionCapability{Reason: "unsupported_value_contract"}
+	if derivableUnsupported.Validate() == nil {
+		t.Fatal("text definition with unsupported capability accepted")
+	}
+
+	disabledRuntimeUnavailable := base("text", "one")
+	disabledRuntimeUnavailable.State = "disabled"
+	disabledRuntimeUnavailable.ConditionCapability = PropertyConditionCapability{Reason: "source_runtime_unavailable"}
+	if disabledRuntimeUnavailable.Validate() == nil {
+		t.Fatal("disabled definition with runtime-unavailable capability accepted")
+	}
+
+	activeDefinitionDisabled := base("text", "one")
+	activeDefinitionDisabled.ConditionCapability = PropertyConditionCapability{Reason: "definition_disabled"}
+	if activeDefinitionDisabled.Validate() == nil {
+		t.Fatal("active definition with definition-disabled capability accepted")
+	}
 }
 
 func oidBad() string { return "not-a-uuid" }

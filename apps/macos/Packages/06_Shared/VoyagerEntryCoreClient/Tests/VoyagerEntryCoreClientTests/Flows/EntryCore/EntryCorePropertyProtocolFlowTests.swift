@@ -176,6 +176,18 @@ final class EntryCorePropertyProtocolFlowTests: XCTestCase {
             operators: PropertyConditionRelation.operators(for: .date).map(\.rawValue),
         )
         assertProtocolMismatch(unsupportedValueContract)
+
+        let derivableUnsupported = try propertyDefinitionPageResponse(
+            valueType: "text",
+            cardinality: "one",
+            nativeType: "string",
+            operators: [],
+            conditionCapability: [
+                "supported": false,
+                "reason": "unsupported_value_contract",
+            ],
+        )
+        assertProtocolMismatch(derivableUnsupported)
     }
 
     func testCapabilityRejectsDefinitionLifecycleMismatch() throws {
@@ -247,6 +259,26 @@ final class EntryCorePropertyProtocolFlowTests: XCTestCase {
         XCTAssertNoThrow(
             try EntryCorePropertyResponseDecoder.decode(
                 Array(activeRuntimeUnavailable),
+                method: .propertyDefinitionList,
+                expectedRequestID: "id",
+            ),
+        )
+    }
+
+    func testCapabilityAcceptsUnsupportedValueContractReason() throws {
+        let unsupportedValueContract = try propertyDefinitionPageResponse(
+            valueType: "datetime",
+            cardinality: "one",
+            nativeType: "date",
+            operators: [],
+            conditionCapability: [
+                "supported": false,
+                "reason": "unsupported_value_contract",
+            ],
+        )
+        XCTAssertNoThrow(
+            try EntryCorePropertyResponseDecoder.decode(
+                Array(unsupportedValueContract),
                 method: .propertyDefinitionList,
                 expectedRequestID: "id",
             ),

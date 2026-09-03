@@ -192,35 +192,6 @@ final class EPR006CoordinatePropertyChangesTests: XCTestCase {
 
     // MARK: - EPR-006-execute_property_change
 
-    /// EPR-006-execute_property_change: 확인이 필요한 proposal은 확인 전 로컬에서 거부한다.
-    /// 정본 write dependency를 호출하지 않는 preflight를 검증한다.
-    /// - 검증 내용: confirmationRequired outcome과 execute 호출 0회
-    /// - 사전 조건: requiresConfirmation=true인 current proposal
-    /// - 기대 결과: mutation 없이 property_change_rejected
-    func testExecuteRejectsUnconfirmedProposalBeforeMutation() async {
-        let recorder = OperationRecorder()
-        let fixture = Fixture()
-        var state = fixture.readyState
-        state.proposal = fixture.proposal
-        state.status = .prepared
-        let store = TestStore(initialState: state) {
-            EntryPropertiesFeature()
-        } withDependencies: {
-            $0.entryPropertiesClient = fixture.client(execute: { proposal in
-                await recorder.record("execute")
-                return .init(snapshot: proposal.snapshot)
-            })
-        }
-
-        await store.send(.execute(confirmed: false)) {
-            $0.status = .rejected(.confirmationRequired)
-            $0.lastOutcome = .propertyChangeRejected(.confirmationRequired)
-        }
-        await store.receive(.init(kind: .outcome(.propertyChangeRejected(.confirmationRequired))))
-        let recordedOperations = await recorder.values()
-        XCTAssertEqual(recordedOperations, [])
-    }
-
     /// EPR-006-execute_property_change: busy 거부는 진행 중 mutation을 해제하지 않는다.
     /// - 검증 내용: discovery/reconnect/execute 중복 요청의 phase·status·generation 보존
     /// - 사전 조건: confirmed proposal execute가 이미 진행 중임

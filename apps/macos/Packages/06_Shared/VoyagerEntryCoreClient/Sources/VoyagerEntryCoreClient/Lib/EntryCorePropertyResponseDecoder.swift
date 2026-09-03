@@ -162,9 +162,12 @@ private extension EntryCorePropertyResponseDecoder {
         case let .unsupported(reason):
             switch (state, reason) {
             case (.disabled, .definitionDisabled),
-                 (.active, .sourceRuntimeUnavailable),
-                 (.active, .unsupportedValueContract):
+                 (.active, .sourceRuntimeUnavailable):
                 break
+            case (.active, .unsupportedValueContract):
+                guard PropertyConditionRelation.nativeType(for: valueType, cardinality: cardinality) == nil else {
+                    throw mismatch
+                }
             default:
                 throw mismatch
             }

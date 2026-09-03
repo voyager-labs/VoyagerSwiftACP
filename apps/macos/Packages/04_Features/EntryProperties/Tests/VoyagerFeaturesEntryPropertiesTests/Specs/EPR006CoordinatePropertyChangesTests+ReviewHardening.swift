@@ -5,6 +5,49 @@ import XCTest
 
 @MainActor
 extension EPR006CoordinatePropertyChangesTests {
+    /// EPR-006-execute_property_change: 확인이 필요한 proposal은 확인 전 로컬에서 거부한다.
+    /// 정본 write dependency를 호출하지 않는 preflight를 검증한다.
+    /// - 검증 내용: confirmationRequired outcome과 execute 호출 0회
+    /// - 사전 조건: requiresConfirmation=true인 current proposal
+    /// - 기대 결과: 확인 전 proposal을 보존하고 확인 후 실행을 허용함
+    func testExecuteRejectsUnconfirmedProposalBeforeMutation() async {
+        let recorder = OperationRecorder()
+        let fixture = Fixture()
+        var state = fixture.readyState
+        state.proposal = fixture.proposal
+        state.status = .prepared
+        let store = TestStore(initialState: state) {
+            EntryPropertiesFeature()
+        } withDependencies: {
+            $0.entryPropertiesClient = fixture.client(execute: { _ in
+                await recorder.record("execute")
+                throw EntryPropertiesFailure.unavailable
+            })
+        }
+
+        await store.send(.execute(confirmed: false)) {
+            $0.lastOutcome = .propertyChangeRejected(.confirmationRequired)
+        }
+        await store.receive(.init(kind: .outcome(.propertyChangeRejected(.confirmationRequired))))
+        XCTAssertEqual(store.state.status, .prepared)
+        XCTAssertEqual(store.state.proposal, fixture.proposal)
+        let initialRecordedOperations = await recorder.values()
+        XCTAssertEqual(initialRecordedOperations, [])
+
+        await store.send(.execute(confirmed: true)) {
+            $0.activePhase = .executing
+            $0.status = .executing
+        }
+        await store.receive(.init(kind: .executeCompleted(0, .failure(.unavailable)))) {
+            $0.activePhase = nil
+            $0.status = .rejected(.unavailable)
+            $0.lastOutcome = .propertyChangeRejected(.unavailable)
+        }
+        await store.receive(.init(kind: .outcome(.propertyChangeRejected(.unavailable))))
+        let recordedOperations = await recorder.values()
+        XCTAssertEqual(recordedOperations, ["execute"])
+    }
+
     /// EPR-006-read_back_property_change_result: read-back 중 selection 변경은 pending 상태를 보존한다.
     /// - 검증 내용: 기존 read-back proposal, snapshot outcome과 generation fence
     /// - 사전 조건: mutation 적용 후 canonical read-back effect가 진행 중임
