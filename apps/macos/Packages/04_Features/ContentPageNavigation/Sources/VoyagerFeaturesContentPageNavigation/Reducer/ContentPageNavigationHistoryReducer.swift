@@ -92,7 +92,7 @@ struct ContentPageNavigationHistoryReducer {
             return historyNavigationEffects(
                 previousNavigationState: previousNavigationState,
                 nextNavigationState: state.navigationState,
-                identity: .history,
+                identity: .back,
                 shouldRevealEntry: false,
             )
         }
@@ -112,7 +112,7 @@ struct ContentPageNavigationHistoryReducer {
         return historyNavigationEffects(
             previousNavigationState: previousNavigationState,
             nextNavigationState: state.navigationState,
-            identity: .history,
+            identity: .forward,
             shouldRevealEntry: false,
         )
     }

@@ -611,7 +611,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             (.goForward, .forward, { $0.content.navigation.forwardHistory = [
                 ContentPageNavigationHistorySnapshot(navigationState: .folder("/tmp/content-forward")),
             ] }),
-            (.goToHistoryIndex(0, isBackHistory: true), .history, { $0.content.navigation.backHistory = [
+            (.goToHistoryIndex(0, isBackHistory: true), .back, { $0.content.navigation.backHistory = [
                 ContentPageNavigationHistorySnapshot(navigationState: .folder("/tmp/content-history")),
             ] }),
             (
@@ -923,8 +923,11 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         )] = [
             (.goBack, .back, { $0.content.navigation.backHistory = [target] }),
             (.goForward, .forward, { $0.content.navigation.forwardHistory = [target] }),
-            (.goToHistoryIndex(0, isBackHistory: true), .history, {
+            (.goToHistoryIndex(0, isBackHistory: true), .back, {
                 $0.content.navigation.backHistory = [target]
+            }),
+            (.goToHistoryIndex(0, isBackHistory: false), .forward, {
+                $0.content.navigation.forwardHistory = [target]
             }),
             (.goToEnclosingDirectory, .enclosingDirectory, {
                 $0.content.navigation.navigationState = .folder(currentPath)

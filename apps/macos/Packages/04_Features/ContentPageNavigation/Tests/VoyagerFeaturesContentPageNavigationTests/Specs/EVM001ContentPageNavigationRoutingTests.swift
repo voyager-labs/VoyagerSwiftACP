@@ -433,7 +433,7 @@ final class EVM001ContentPageNavigationRoutingTests: XCTestCase {
         await store.receive(.delegate(.logDAUNavigation(
             previous: .folder("/a/b"),
             next: .folder("/a"),
-            identity: .history,
+            identity: .back,
         )))
         await store.receive(.delegate(.navigateToState(.folder("/a"))))
     }
@@ -483,7 +483,7 @@ final class EVM001ContentPageNavigationRoutingTests: XCTestCase {
         await store.receive(.delegate(.logDAUNavigation(
             previous: .folder("/c"),
             next: .folder("/seed"),
-            identity: .history,
+            identity: .back,
         )))
         await store.receive(.delegate(.navigateToState(.folder("/seed"))))
 
