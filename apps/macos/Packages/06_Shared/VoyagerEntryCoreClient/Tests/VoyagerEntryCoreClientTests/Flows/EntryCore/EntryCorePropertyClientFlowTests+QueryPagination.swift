@@ -58,6 +58,221 @@ extension EntryCorePropertyClientFlowTests {
         _ = try await progressiveClient.conditionQuery(endpoint, progressiveRequest)
         XCTAssertEqual(progressiveRecorder.requests.count, 1)
     }
+
+    /// definition list의 has_more 페이지도 정확히 page_size를 채우고 전진하는
+    /// token을 가져야 한다. 같은 token의 반복은 무한 요청으로 이어진다.
+    func testDefinitionListPageRejectsNonProgressiveToken() async throws {
+        let endpoint = try EntryCoreEndpoint(path: "/tmp/property-client.sock")
+        let underFilledRequest = try PropertyDefinitionListRequest(pageSize: 2, includeDisabled: true)
+        let repeatedRequest = try PropertyDefinitionListRequest(
+            pageSize: 2, includeDisabled: true, pageToken: "same",
+        )
+        let cases = [
+            DefinitionListCase(
+                name: "has_more with under-filled page",
+                request: underFilledRequest,
+                response: definitionListPageResponse(
+                    definitions: "[\(paginationDefinitionJSON(id: 1))]",
+                    hasMore: true,
+                    nextPageToken: "next",
+                ),
+            ),
+            DefinitionListCase(
+                name: "has_more with repeated token",
+                request: repeatedRequest,
+                response: definitionListPageResponse(
+                    definitions: "[\(paginationDefinitionJSON(id: 1)),\(paginationDefinitionJSON(id: 2))]",
+                    hasMore: true,
+                    nextPageToken: "same",
+                ),
+            ),
+        ]
+        try await assertListPageRejected(cases, endpoint: endpoint)
+
+        let acceptedRequest = try PropertyDefinitionListRequest(
+            pageSize: 2, includeDisabled: true, pageToken: "first",
+        )
+        let acceptedResponse = definitionListPageResponse(
+            definitions: "[\(paginationDefinitionJSON(id: 1)),\(paginationDefinitionJSON(id: 2))]",
+            hasMore: true,
+            nextPageToken: "second",
+        )
+        try await assertListPageAccepted(acceptedRequest, response: acceptedResponse, endpoint: endpoint) {
+            $0.definitions.count == 2
+        }
+    }
+
+    /// assignment list의 has_more 페이지도 정확히 page_size를 채우고 전진하는
+    /// token을 가져야 한다.
+    func testAssignmentListPageRejectsNonProgressiveToken() async throws {
+        let target = try PropertyTarget(localPath: "/a")
+        let endpoint = try EntryCoreEndpoint(path: "/tmp/property-client.sock")
+        let underFilledRequest = try PropertyAssignmentListRequest(
+            pageSize: 2, target: target, requestedPropertyIDs: [],
+        )
+        let repeatedRequest = try PropertyAssignmentListRequest(
+            pageSize: 2, target: target, pageToken: "same", requestedPropertyIDs: [],
+        )
+        let cases = [
+            AssignmentListCase(
+                name: "has_more with under-filled page",
+                request: underFilledRequest,
+                response: assignmentListPageResponse(
+                    assignments: "[\(paginationAssignmentJSON(id: 1))]",
+                    hasMore: true,
+                    nextPageToken: "next",
+                ),
+            ),
+            AssignmentListCase(
+                name: "has_more with repeated token",
+                request: repeatedRequest,
+                response: assignmentListPageResponse(
+                    assignments: "[\(paginationAssignmentJSON(id: 1)),\(paginationAssignmentJSON(id: 2))]",
+                    hasMore: true,
+                    nextPageToken: "same",
+                ),
+            ),
+        ]
+        try await assertListPageRejected(cases, endpoint: endpoint)
+
+        let acceptedRequest = try PropertyAssignmentListRequest(
+            pageSize: 2, target: target, pageToken: "first", requestedPropertyIDs: [],
+        )
+        let acceptedResponse = assignmentListPageResponse(
+            assignments: "[\(paginationAssignmentJSON(id: 1)),\(paginationAssignmentJSON(id: 2))]",
+            hasMore: true,
+            nextPageToken: "second",
+        )
+        try await assertListPageAccepted(acceptedRequest, response: acceptedResponse, endpoint: endpoint) {
+            $0.assignments.count == 2
+        }
+    }
+}
+
+private struct DefinitionListCase {
+    let name: String
+    let request: PropertyDefinitionListRequest
+    let response: String
+}
+
+private struct AssignmentListCase {
+    let name: String
+    let request: PropertyAssignmentListRequest
+    let response: String
+}
+
+private func assertListPageRejected(
+    _ cases: [DefinitionListCase],
+    endpoint: EntryCoreEndpoint,
+) async throws {
+    for paginationCase in cases {
+        let recorder = PropertyTransportRecorder(response: Data(paginationCase.response.utf8))
+        let client = EntryCorePropertyClient.makeLive(
+            requestID: { "list-id" },
+            makeTransport: recorder.makeTransport,
+        )
+        do {
+            _ = try await client.definitionList(endpoint, paginationCase.request)
+            XCTFail("\(paginationCase.name) should be rejected")
+        } catch {
+            XCTAssertEqual(error as? EntryCoreClientError, .protocolMismatch, paginationCase.name)
+        }
+        XCTAssertEqual(recorder.requests.count, 1, paginationCase.name)
+    }
+}
+
+private func assertListPageRejected(
+    _ cases: [AssignmentListCase],
+    endpoint: EntryCoreEndpoint,
+) async throws {
+    for paginationCase in cases {
+        let recorder = PropertyTransportRecorder(response: Data(paginationCase.response.utf8))
+        let client = EntryCorePropertyClient.makeLive(
+            requestID: { "list-id" },
+            makeTransport: recorder.makeTransport,
+        )
+        do {
+            _ = try await client.assignmentList(endpoint, paginationCase.request)
+            XCTFail("\(paginationCase.name) should be rejected")
+        } catch {
+            XCTAssertEqual(error as? EntryCoreClientError, .protocolMismatch, paginationCase.name)
+        }
+        XCTAssertEqual(recorder.requests.count, 1, paginationCase.name)
+    }
+}
+
+private func assertListPageAccepted(
+    _ request: PropertyDefinitionListRequest,
+    response: String,
+    endpoint: EntryCoreEndpoint,
+    assertion: (PropertyDefinitionPage) -> Bool,
+) async throws {
+    let recorder = PropertyTransportRecorder(response: Data(response.utf8))
+    let client = EntryCorePropertyClient.makeLive(
+        requestID: { "list-id" },
+        makeTransport: recorder.makeTransport,
+    )
+    let page = try await client.definitionList(endpoint, request)
+    XCTAssertTrue(assertion(page))
+    XCTAssertEqual(recorder.requests.count, 1)
+}
+
+private func assertListPageAccepted(
+    _ request: PropertyAssignmentListRequest,
+    response: String,
+    endpoint: EntryCoreEndpoint,
+    assertion: (PropertyAssignmentPage) -> Bool,
+) async throws {
+    let recorder = PropertyTransportRecorder(response: Data(response.utf8))
+    let client = EntryCorePropertyClient.makeLive(
+        requestID: { "list-id" },
+        makeTransport: recorder.makeTransport,
+    )
+    let page = try await client.assignmentList(endpoint, request)
+    XCTAssertTrue(assertion(page))
+    XCTAssertEqual(recorder.requests.count, 1)
+}
+
+private func paginationDefinitionJSON(id: Int) -> String {
+    """
+    {
+      "property_id":"00000000-0000-0000-8000-00000000000\(id)",
+      "key":"paginated-key-\(id)","name":"paginated name",
+      "value_type":"text","cardinality":"one","state":"disabled","origin":"user_defined",
+      "revision":1,"options":[],
+      "condition_capability":{"supported":false,"reason":"definition_disabled"}
+    }
+    """
+}
+
+private func paginationAssignmentJSON(id: Int) -> String {
+    """
+    {
+      "property_id":"00000000-0000-0000-8000-00000000000\(id)",
+      "entry_id":"ent:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "value_type":"text","cardinality":"one","state":"null","revision":1
+    }
+    """
+}
+
+private func definitionListPageResponse(definitions: String, hasMore: Bool, nextPageToken: String) -> String {
+    """
+    {
+      "request_id":"list-id",
+      "ok":true,
+      "result":{"definitions":\(definitions),"next_page_token":"\(nextPageToken)","has_more":\(hasMore)}
+    }
+    """
+}
+
+private func assignmentListPageResponse(assignments: String, hasMore: Bool, nextPageToken: String) -> String {
+    """
+    {
+      "request_id":"list-id",
+      "ok":true,
+      "result":{"assignments":\(assignments),"next_page_token":"\(nextPageToken)","has_more":\(hasMore)}
+    }
+    """
 }
 
 private struct PaginationCase {

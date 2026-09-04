@@ -158,7 +158,13 @@ extension EntryCorePropertyClient {
         guard request.includeDisabled == true || page.definitions.allSatisfy({ $0.state != .disabled }) else {
             return false
         }
-        return true
+        // has_more인 페이지는 page_size를 정확히 채우고 전진하는 token을 가져야
+        // 한다(저장소가 limit+1행으로 판정한다). 같은 token의 반복은 페이지
+        // 순회 caller를 끝내지 못하게 하므로 거절한다.
+        guard page.hasMore else { return true }
+        return page.definitions.count == request.pageSize
+            && page.nextPageToken != nil
+            && page.nextPageToken != request.pageToken
     }
 
     nonisolated private static func definitionOperation<Request: Encodable & Sendable>(
@@ -310,9 +316,18 @@ extension EntryCorePropertyClient {
         guard page.assignments.count <= request.pageSize else { return false }
         guard request.requestedPropertyIDs.isEmpty else {
             let requested = Set(request.requestedPropertyIDs)
-            return page.assignments.allSatisfy { requested.contains($0.propertyID) }
+            guard page.assignments.allSatisfy({ requested.contains($0.propertyID) }) else {
+                return false
+            }
+            return true
         }
-        return true
+        // has_more인 페이지는 page_size를 정확히 채우고 전진하는 token을 가져야
+        // 한다(저장소가 limit+1행으로 판정한다). 같은 token의 반복은 페이지
+        // 순회 caller를 끝내지 못하게 하므로 거절한다.
+        guard page.hasMore else { return true }
+        return page.assignments.count == request.pageSize
+            && page.nextPageToken != nil
+            && page.nextPageToken != request.pageToken
     }
 
     nonisolated private static func proposalOperation(
