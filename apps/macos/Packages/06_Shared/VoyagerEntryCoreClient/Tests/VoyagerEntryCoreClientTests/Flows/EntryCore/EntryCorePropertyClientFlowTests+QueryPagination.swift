@@ -41,6 +41,19 @@ extension EntryCorePropertyClientFlowTests {
                 ),
             ),
             PaginationCase(
+                name: "has_more cycling tokens with stale candidate index",
+                request: makePaginationQueryRequest(
+                    targets: [targetA, targetB],
+                    condition: condition,
+                    pageSize: 1,
+                    pageToken: "a",
+                    minCandidateIndex: 1,
+                ),
+                response: queryPaginationPageResponse(
+                    items: firstPageItem, unresolved: "[]", hasMore: true, nextPageToken: "b",
+                ),
+            ),
+            PaginationCase(
                 name: "has_more with unresolved beyond the last matched candidate",
                 request: makePaginationQueryRequest(
                     targets: [targetA, targetB], condition: condition, pageSize: 1,
@@ -69,10 +82,15 @@ extension EntryCorePropertyClientFlowTests {
 
         // 전진하는 token을 가진 꽉 찬 페이지는 수용된다.
         let progressiveRequest = try makePaginationQueryRequest(
-            targets: [targetA, targetB], condition: condition, pageSize: 1, pageToken: "first",
+            targets: [targetA, targetB],
+            condition: condition,
+            pageSize: 1,
+            pageToken: "first",
+            minCandidateIndex: 1,
         )
+        let progressiveItem = "[\(paginationQueryItem(index: 1))]"
         let progressiveResponse = queryPaginationPageResponse(
-            items: firstPageItem, unresolved: "[]", hasMore: true, nextPageToken: "second",
+            items: progressiveItem, unresolved: "[]", hasMore: true, nextPageToken: "second",
         )
         let progressiveRecorder = PropertyTransportRecorder(response: Data(progressiveResponse.utf8))
         let progressiveClient = EntryCorePropertyClient.makeLive(
@@ -650,6 +668,7 @@ private func makePaginationQueryRequest(
     condition: PropertyCondition,
     pageSize: Int,
     pageToken: String? = nil,
+    minCandidateIndex: Int? = nil,
 ) throws -> PropertyConditionQueryRequest {
     try PropertyConditionQueryRequest(
         targets: targets,
@@ -658,6 +677,7 @@ private func makePaginationQueryRequest(
         evaluationDate: "2026-09-01",
         pageSize: pageSize,
         pageToken: pageToken,
+        minCandidateIndex: minCandidateIndex,
     )
 }
 

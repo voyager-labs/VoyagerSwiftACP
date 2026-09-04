@@ -418,6 +418,10 @@ nonisolated public struct PropertyConditionQueryRequest: Encodable, Sendable {
     let evaluationDate: String
     let pageSize: Int
     let pageToken: String?
+    /// query cursor는 opaque token이므로 caller가 이전 페이지의 마지막 matched
+    /// index + 1을 보존하는 단조 진행 하한이다. 응답의 모든 matched·unresolved
+    /// index가 이 값 이상인지 matcher가 대조하며 wire 요청에는 포함되지 않는다.
+    let minCandidateIndex: Int?
     public init(
         targets: [PropertyTarget],
         combinator: PropertyConditionCombinator,
@@ -425,8 +429,12 @@ nonisolated public struct PropertyConditionQueryRequest: Encodable, Sendable {
         evaluationDate: String,
         pageSize: Int,
         pageToken: String? = nil,
+        minCandidateIndex: Int? = nil,
         projectionPropertyIDs: [PropertyID] = [],
     ) throws {
+        if let minCandidateIndex, minCandidateIndex < 0 {
+            throw EntryCoreClientError.protocolMismatch
+        }
         let ids = conditions.map(\.propertyID)
         let unique = Set(ids + projectionPropertyIDs).count
         guard (1 ... 256).contains(targets.count), Set(targets).count == targets.count,
@@ -444,6 +452,7 @@ nonisolated public struct PropertyConditionQueryRequest: Encodable, Sendable {
         self.evaluationDate = evaluationDate
         self.pageSize = pageSize
         self.pageToken = pageToken
+        self.minCandidateIndex = minCandidateIndex
     }
 
     enum CodingKeys: String,

@@ -668,6 +668,14 @@ extension EntryCorePropertyClient {
         guard let lastMatched = page.items.last?.candidateIndex,
               page.unresolvedCandidateIndices.allSatisfy({ $0 < lastMatched })
         else { return false }
+        // query cursor는 opaque token이므로 caller가 보존한 candidate offset
+        // 하한으로 단조 진행을 검증한다. 이를 어긋나는 응답은 같은 페이지의
+        // 재생이다(A → B → A 교체 포함).
+        if let minCandidateIndex = request.minCandidateIndex {
+            guard page.items.allSatisfy({ $0.candidateIndex >= minCandidateIndex }),
+                  page.unresolvedCandidateIndices.allSatisfy({ $0 >= minCandidateIndex })
+            else { return false }
+        }
         return page.items.count == request.pageSize
             && page.nextPageToken != nil
             && page.nextPageToken != request.pageToken
