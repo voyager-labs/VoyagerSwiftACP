@@ -425,7 +425,14 @@ extension EntryCorePropertyClient {
                 && item.projection.allSatisfy { requestedProjection.contains($0.propertyID) }
         }), page.unresolvedCandidateIndices.allSatisfy({ $0 < request.targets.count }),
         itemIndices.isDisjoint(with: unresolvedIndices) else { return false }
-        return true
+        // daemon은 item 수가 정확히 pageSize에 도달한 뒤 candidate offset을 전진시킬
+        // 때만 has_more을 설정한다(condition_query.go의 page completion 조건).
+        // 꽉 차지 않은 페이지나 같은 token의 반복은 페이지 순회 caller를 끝내지
+        // 못하게 하므로 거절한다.
+        guard page.hasMore else { return true }
+        return page.items.count == request.pageSize
+            && page.nextPageToken != nil
+            && page.nextPageToken != request.pageToken
     }
 
     nonisolated private static func call(
