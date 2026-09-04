@@ -494,6 +494,14 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
         willBeginAt _: NSPoint,
         forItemsAt indexPaths: Set<IndexPath>,
     ) {
+        beginNativeDragSession(forItemsAt: indexPaths)
+    }
+
+    func beginNativeDragSession(forItemsAt indexPaths: Set<IndexPath>) {
+        // drag가 시작되면 mouseDown의 Command toggle 기대는 확정되지 않으므로 남은
+        // 명시적 clear provenance를 폐기한다. 남겨두면 이후 lifecycle empty callback이
+        // Command-last-deselect로 오인돼 canonical selection이 비워진다.
+        consumeExplicitEmptySelectionGesture()
         let paths = indexPaths.compactMap { indexPath -> String? in
             guard let entry = entry(at: indexPath) else { return nil }
             return entry.fullPath

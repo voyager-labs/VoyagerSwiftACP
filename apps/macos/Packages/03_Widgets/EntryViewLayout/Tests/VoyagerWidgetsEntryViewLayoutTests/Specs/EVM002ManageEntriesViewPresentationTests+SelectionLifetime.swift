@@ -267,6 +267,26 @@ extension EVM002ManageEntriesViewPresentationTests {
         XCTAssertEqual(fixture.recorder.updateCount, 0)
     }
 
+    /// EVM-002-update_entry_selection: Grid drag 시작은 남은 clear provenance를 폐기한다.
+    /// - 검증 내용: Command mouseDown provenance가 남은 채 drag 세션이 시작되면 이후 lifecycle empty
+    ///   callback이 Command-last-deselect로 오인하지 않는지 확인한다.
+    /// - 사전 조건: 선택된 Entry 하나와 onCommandItemClick provenance, drag 세션 시작
+    /// - 기대 결과: empty callback은 store 복원으로 처리되고 clear action은 발행되지 않는다.
+    func testGridDragBeginDiscardsStaleClearProvenance() {
+        let entry = EntryModel.temporaryFolder(id: "/root/a.txt", name: "a.txt")
+        let fixture = SelectionLifetimeGridFixture(entries: [entry], selectedID: entry.id)
+        fixture.view.collectionView.onCommandItemClick?()
+
+        fixture.coordinator.beginNativeDragSession(forItemsAt: [IndexPath(item: 0, section: 0)])
+        fixture.clearNativeSelectionAndNotify()
+
+        XCTAssertEqual(fixture.store.state.selectedIds, [entry.id])
+        XCTAssertEqual(fixture.store.state.lastSelectedId, entry.id)
+        XCTAssertEqual(fixture.store.state.rangeAnchorId, entry.id)
+        XCTAssertEqual(fixture.recorder.clearCount, 0)
+        XCTAssertEqual(fixture.recorder.updateCount, 0)
+    }
+
     /// EVM-002-update_entry_selection: Grid empty final lasso는 명시적 clear로 종료된다.
     /// - 검증 내용: lasso가 빈 index path로 끝날 때 native empty callback과 별도로 clear intent를 발행하는지 확인한다.
     /// - 사전 조건: 선택된 Entry 하나가 있고 빈 lasso final 결과가 전달된다.
