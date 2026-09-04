@@ -286,6 +286,18 @@ extension EntryCorePropertyClientFlowTests {
         let updateRequest = try PropertyDefinitionUpdateRequest(
             propertyID: propertyID,
             expectedDefinitionRevision: 1,
+            expectedDefinition: PropertyDefinition(
+                id: propertyID,
+                key: "property-key",
+                name: "Property name",
+                valueType: .text,
+                cardinality: .one,
+                state: .active,
+                origin: .userDefined,
+                revision: 1,
+                options: [],
+                conditionCapability: .unsupported(.unsupportedValueContract),
+            ),
             name: "Renamed",
         )
 
@@ -309,6 +321,18 @@ extension EntryCorePropertyClientFlowTests {
         let disableRequest = try PropertyDefinitionDisableRequest(
             propertyID: propertyID,
             expectedDefinitionRevision: 1,
+            expectedDefinition: PropertyDefinition(
+                id: propertyID,
+                key: "property-key",
+                name: "Property name",
+                valueType: .text,
+                cardinality: .one,
+                state: .active,
+                origin: .userDefined,
+                revision: 1,
+                options: [],
+                conditionCapability: .unsupported(.unsupportedValueContract),
+            ),
         )
         await assertDefinitionMutationRejected(
             "definition disable revision mismatch",
@@ -334,6 +358,18 @@ extension EntryCorePropertyClientFlowTests {
         let updateRequest = try PropertyDefinitionUpdateRequest(
             propertyID: propertyID,
             expectedDefinitionRevision: 1,
+            expectedDefinition: PropertyDefinition(
+                id: propertyID,
+                key: "property-key",
+                name: "Property name",
+                valueType: .text,
+                cardinality: .one,
+                state: .active,
+                origin: .userDefined,
+                revision: 1,
+                options: [],
+                conditionCapability: .unsupported(.unsupportedValueContract),
+            ),
             name: "Renamed",
         )
         await assertDefinitionMutationRejected(
@@ -356,6 +392,18 @@ extension EntryCorePropertyClientFlowTests {
         let disableRequest = try PropertyDefinitionDisableRequest(
             propertyID: propertyID,
             expectedDefinitionRevision: 1,
+            expectedDefinition: PropertyDefinition(
+                id: propertyID,
+                key: "property-key",
+                name: "Property name",
+                valueType: .text,
+                cardinality: .one,
+                state: .active,
+                origin: .userDefined,
+                revision: 1,
+                options: [],
+                conditionCapability: .unsupported(.unsupportedValueContract),
+            ),
         )
         await assertDefinitionMutationRejected(
             "definition disable state mismatch",

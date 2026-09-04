@@ -205,22 +205,60 @@ extension EntryCorePropertyClient {
         _ definition: PropertyDefinition,
         request: PropertyDefinitionUpdateRequest,
     ) -> Bool {
-        definitionMutationRevisionMatches(
+        // applyDefinitionUpdate는 표시 이름 외 필드를 불변으로 강제한다. 사전
+        // definition snapshot에서 이름·revision만 바뀐 응답만 승인한다.
+        guard definitionMutationRevisionMatches(
             definition,
             propertyID: request.propertyID,
             expectedDefinitionRevision: request.expectedDefinitionRevision,
-        ) && definition.name == request.name
+        ) else { return false }
+        let expected = mutatedDefinitionSnapshot(
+            request.expectedDefinition,
+            name: request.name,
+            state: .active,
+            revision: request.expectedDefinitionRevision + 1,
+        )
+        return definition == expected
     }
 
     nonisolated private static func definitionDisableMatchesResponse(
         _ definition: PropertyDefinition,
         request: PropertyDefinitionDisableRequest,
     ) -> Bool {
-        definitionMutationRevisionMatches(
+        // DisableDefinition은 lifecycle만 변경한다. 이름·value contract·
+        // options가 함께 바뀐 응답은 정상 daemon에서 생성될 수 없다.
+        guard definitionMutationRevisionMatches(
             definition,
             propertyID: request.propertyID,
             expectedDefinitionRevision: request.expectedDefinitionRevision,
             state: .disabled,
+        ) else { return false }
+        let expected = mutatedDefinitionSnapshot(
+            request.expectedDefinition,
+            name: nil,
+            state: .disabled,
+            revision: request.expectedDefinitionRevision + 1,
+        )
+        return definition == expected
+    }
+
+    nonisolated private static func mutatedDefinitionSnapshot(
+        _ snapshot: PropertyDefinition,
+        name: String?,
+        state: PropertyDefinitionState,
+        revision: Int64,
+    ) -> PropertyDefinition {
+        PropertyDefinition(
+            id: snapshot.id,
+            key: snapshot.key,
+            name: name ?? snapshot.name,
+            valueType: snapshot.valueType,
+            cardinality: snapshot.cardinality,
+            state: state,
+            origin: snapshot.origin,
+            revision: revision,
+            options: snapshot.options,
+            conditionCapability: snapshot.conditionCapability,
         )
     }
 
@@ -233,9 +271,10 @@ extension EntryCorePropertyClient {
             propertyID: request.propertyID,
             expectedDefinitionRevision: request.expectedDefinitionRevision,
         ) else { return false }
-        // CreateOption은 기존 option을 수정하지 않고 새 option 하나만 마지막
-        // ordinal 뒤에 추가한다. 사전 option snapshot과 선행 구간을 정확히
-        // 대조해 기존 option의 label·state·position 변경까지 거절한다.
+        // CreateOption은 매번 새 UUID로 정확히 하나의 option을 마지막 ordinal
+        // 뒤에 추가한다. 기존 option이 같은 label을 가질 수 있으므로, 사전
+        // option snapshot과 대조해 정확히 하나의 새 마지막 option이 추가됐는지
+        // 확인해야 누락·치환 응답이 거절된다.
         let options = definition.options.sorted(by: { $0.position < $1.position })
         guard options.dropLast() == request.expectedOptions,
               let created = options.last,
@@ -367,8 +406,6 @@ extension EntryCorePropertyClient {
         expectedDefinitionRevision: Int64,
         state: PropertyDefinitionState = .active,
     ) -> Bool {
-        // mutateDefinition은 Voyager-issued(사용자 작성) 정의만 대상으로 한다.
-        // built-in origin 응답은 요청으로 만들 수 없는 mutation 결과다.
         guard expectedDefinitionRevision >= 1, expectedDefinitionRevision < Int64.max,
               definition.origin == .userDefined
         else { return false }

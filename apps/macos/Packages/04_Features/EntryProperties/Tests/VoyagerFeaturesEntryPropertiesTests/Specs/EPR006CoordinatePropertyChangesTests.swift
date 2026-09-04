@@ -596,4 +596,1112 @@ extension EPR006CoordinatePropertyChangesTests {
         XCTAssertEqual(ambiguousStore.state.status, .ambiguous)
         XCTAssertEqual(ambiguousStore.state.proposal, fixture.proposal)
     }
+
+    // MARK: - mutation 응답·request 계약 강화 (EPR006CoordinatePropertyChangesTests+ReviewHardening.swift)
+
+    /// EPR-006-execute_property_change: 확인이 필요한 proposal은 확인 전 로컬에서 거부한다.
+    /// 정본 write dependency를 호출하지 않는 preflight를 검증한다.
+    /// - 검증 내용: confirmationRequired outcome과 execute 호출 0회
+    /// - 사전 조건: requiresConfirmation=true인 current proposal
+    /// - 기대 결과: 확인 전 proposal을 보존하고 확인 후 실행을 허용함
+    func testExecuteRejectsUnconfirmedProposalBeforeMutation() async {
+        let recorder = OperationRecorder()
+        let fixture = Fixture()
+        var state = fixture.readyState
+        state.proposal = fixture.proposal
+        state.status = .prepared
+        let store = TestStore(initialState: state) {
+            EntryPropertiesFeature()
+        } withDependencies: {
+            $0.entryPropertiesClient = fixture.client(execute: { _ in
+                await recorder.record("execute")
+                throw EntryPropertiesFailure.unavailable
+            })
+        }
+
+        await store.send(.execute(confirmed: false)) {
+            $0.lastOutcome = .propertyChangeRejected(.confirmationRequired)
+        }
+        await store.receive(.init(kind: .outcome(.propertyChangeRejected(.confirmationRequired))))
+        XCTAssertEqual(store.state.status, .prepared)
+        XCTAssertEqual(store.state.proposal, fixture.proposal)
+        let initialRecordedOperations = await recorder.values()
+        XCTAssertEqual(initialRecordedOperations, [])
+
+        await store.send(.execute(confirmed: true)) {
+            $0.activePhase = .executing
+            $0.status = .executing
+        }
+        await store.receive(.init(kind: .executeCompleted(0, .failure(.unavailable)))) {
+            $0.activePhase = nil
+            $0.status = .rejected(.unavailable)
+            $0.lastOutcome = .propertyChangeRejected(.unavailable)
+        }
+        await store.receive(.init(kind: .outcome(.propertyChangeRejected(.unavailable))))
+        let recordedOperations = await recorder.values()
+        XCTAssertEqual(recordedOperations, ["execute"])
+    }
+
+    /// EPR-006-read_back_property_change_result: read-back 중 selection 변경은 pending 상태를 보존한다.
+    /// - 검증 내용: 기존 read-back proposal, snapshot outcome과 generation fence
+    /// - 사전 조건: mutation 적용 후 canonical read-back effect가 진행 중임
+    /// - 기대 결과: 새 selection을 초기화하면서 읽기 전용 재시도 상태를 분리해 게시함
+    func testSelectionChangeDuringReadBackPreservesPendingOutcomeAndFencesCompletion() async {
+        let fixture = Fixture()
+        let replacement = EntryPropertiesSelection(
+            targets: [.init(localPath: "/tmp/replacement")],
+            propertyID: fixture.selection.propertyID,
+        )
+        var state = fixture.readyState
+        state.appliedProposal = fixture.proposal
+        state.activePhase = .applied
+        state.status = .applied
+        let store = TestStore(initialState: state) { EntryPropertiesFeature() }
+
+        await store.send(.selectionChanged(replacement)) {
+            $0.generation = 1
+            $0.selection = replacement
+            $0.capabilityReport = nil
+            $0.targetSnapshot = nil
+            $0.proposal = nil
+            $0.canonicalResult = nil
+            $0.activePhase = nil
+            $0.appliedProposal = nil
+            $0.pendingReadBack = fixture.proposal
+            $0.readBackProposal = nil
+            $0.status = .idle
+            $0.lastOutcome = .propertyChangeAppliedUnverified(fixture.snapshot)
+        }
+        await store.receive(
+            .init(kind: .outcome(.propertyChangeAppliedUnverified(fixture.snapshot))),
+        )
+        await store.send(.init(kind: .readBackCompleted(0, .success(fixture.canonicalResult))))
+        XCTAssertEqual(store.state.selection, replacement)
+        XCTAssertEqual(store.state.status, .idle)
+        XCTAssertEqual(store.state.pendingReadBack, fixture.proposal)
+        XCTAssertNil(store.state.canonicalResult)
+    }
+
+    /// EPR-006-read_back_property_change_result: pending read-back retry는 새 selection을 오염시키지 않는다.
+    /// - 검증 내용: old snapshot의 retry 실행과 current selection 상태 격리
+    /// - 사전 조건: selection 변경으로 pending read-back proposal이 보존됨
+    /// - 기대 결과: old snapshot verified outcome은 발행하지만 current selection은 idle로 유지됨
+    func testPendingReadBackRetryDoesNotContaminateCurrentSelection() async {
+        let fixture = Fixture()
+        let currentSelection = EntryPropertiesSelection(
+            targets: [.init(localPath: "/tmp/current")],
+            propertyID: fixture.selection.propertyID,
+        )
+        var state = EntryPropertiesState(selection: currentSelection)
+        state.generation = 1
+        state.pendingReadBack = fixture.proposal
+        let store = TestStore(initialState: state) {
+            EntryPropertiesFeature()
+        } withDependencies: {
+            $0.entryPropertiesClient = fixture.client(
+                readBack: { _ in fixture.canonicalResult },
+            )
+        }
+
+        await store.send(.retryReadBack) {
+            $0.activePhase = .applied
+            $0.readBackProposal = fixture.proposal
+        }
+        await store.receive(.init(kind: .readBackCompleted(1, .success(fixture.canonicalResult)))) {
+            $0.activePhase = nil
+            $0.pendingReadBack = nil
+            $0.readBackProposal = nil
+            $0.canonicalResult = nil
+            $0.status = .idle
+            $0.lastOutcome = .propertyChangeVerified(fixture.canonicalResult)
+        }
+        await store.receive(.init(kind: .outcome(.propertyChangeVerified(fixture.canonicalResult))))
+        XCTAssertEqual(store.state.selection, currentSelection)
+        XCTAssertEqual(store.state.status, .idle)
+        XCTAssertNil(store.state.canonicalResult)
+        XCTAssertNil(store.state.pendingReadBack)
+    }
+
+    /// EPR-006-execute_property_change: prepared 상태가 아니면 execute를 재전송하지 않는다.
+    /// - 검증 내용: ambiguous/applied-unverified/verified 상태의 local rejection과 mutation 0회
+    /// - 사전 조건: proposal은 남아 있지만 실행 phase가 terminal 또는 불확실 상태임
+    /// - 기대 결과: stale outcome만 게시되고 각 상태와 proposal은 보존됨
+    func testExecuteRequiresPreparedStatus() async {
+        let fixture = Fixture()
+
+        for status in [EntryPropertiesStatus.ambiguous, .appliedUnverified, .verified] {
+            let recorder = OperationRecorder()
+            var state = fixture.readyState
+            state.proposal = fixture.proposal
+            state.status = status
+            let store = TestStore(initialState: state) {
+                EntryPropertiesFeature()
+            } withDependencies: {
+                $0.entryPropertiesClient = fixture.client(execute: { proposal in
+                    await recorder.record("execute")
+                    return .init(snapshot: proposal.snapshot)
+                })
+            }
+
+            await store.send(.execute(confirmed: true)) {
+                $0.lastOutcome = .propertyChangeRejected(.stale)
+            }
+            await store.receive(.init(kind: .outcome(.propertyChangeRejected(.stale))))
+            XCTAssertEqual(store.state.status, status)
+            XCTAssertEqual(store.state.proposal, fixture.proposal)
+            let recordedOperations = await recorder.values()
+            XCTAssertEqual(recordedOperations, [])
+        }
+    }
+
+    /// EPR-006-prepare_property_change: applied-unverified 상태에서는 새 mutation을 시작하지 않는다.
+    /// - 검증 내용: read-back 미검증 상태의 prepare busy rejection과 dependency 호출 0회
+    /// - 사전 조건: trusted apply 뒤 canonical read-back이 실패해 현재 proposal이 applied-unverified로 남음
+    /// - 기대 결과: read-only retry 경로를 보존하고 새 prepare를 시작하지 않음
+    func testAppliedUnverifiedBlocksNewPrepare() async {
+        let recorder = OperationRecorder()
+        let fixture = Fixture()
+        var state = fixture.readyState
+        state.status = .appliedUnverified
+        state.appliedProposal = fixture.proposal
+        let store = TestStore(initialState: state) {
+            EntryPropertiesFeature()
+        } withDependencies: {
+            $0.entryPropertiesClient = fixture.client(prepare: { _ in
+                await recorder.record("prepare")
+                return fixture.proposal
+            })
+        }
+
+        await store.send(.prepare(fixture.intent)) {
+            $0.lastOutcome = .propertyChangeRejected(.busy)
+        }
+        await store.receive(.init(kind: .outcome(.propertyChangeRejected(.busy))))
+        let recordedOperations = await recorder.values()
+        XCTAssertEqual(recordedOperations, [])
+        XCTAssertEqual(store.state.status, .appliedUnverified)
+        XCTAssertEqual(store.state.appliedProposal, fixture.proposal)
+    }
+
+    /// EPR-006-read_back_property_change_result: applied-unverified 상태에서는 재탐색을 시작하지 않는다.
+    /// - 검증 내용: discover/reconnect busy rejection과 applied proposal/read-back 상태 보존
+    /// - 사전 조건: trusted apply 뒤 canonical read-back이 실패해 현재 proposal이 applied-unverified로 남음
+    /// - 기대 결과: 재탐색 effect를 시작하지 않고 read-only retry 경로를 보존함
+    func testAppliedUnverifiedBlocksRediscovery() async {
+        let fixture = Fixture()
+        for action in [EntryPropertiesAction.discoverCapabilities, .reconnect] {
+            var state = fixture.readyState
+            state.status = .appliedUnverified
+            state.appliedProposal = fixture.proposal
+            let store = TestStore(initialState: state) {
+                EntryPropertiesFeature()
+            } withDependencies: {
+                $0.entryPropertiesClient = fixture.client()
+            }
+
+            await store.send(action) {
+                $0.lastOutcome = .propertyChangeRejected(.busy)
+            }
+            await store.receive(.init(kind: .outcome(.propertyChangeRejected(.busy))))
+            XCTAssertEqual(store.state.status, .appliedUnverified)
+            XCTAssertEqual(store.state.appliedProposal, fixture.proposal)
+            XCTAssertEqual(store.state.generation, 0)
+        }
+    }
+
+    /// EPR-006-read_back_property_change_result: selection 변경 후에도 applied-unverified proposal을 보존한다.
+    /// - 검증 내용: 완료된 read-back 실패의 pending 보존과 기존 outcome 재게시
+    /// - 사전 조건: applied-unverified 상태에 현재 selection용 applied proposal이 있음
+    /// - 기대 결과: 새 selection은 초기화되고 이전 proposal은 read-only retry 대상으로 남음
+    func testSelectionChangeAfterAppliedUnverifiedPreservesPendingOutcome() async {
+        let fixture = Fixture()
+        let replacement = EntryPropertiesSelection(
+            targets: [.init(localPath: "/tmp/replacement")],
+            propertyID: fixture.selection.propertyID,
+        )
+        var state = fixture.readyState
+        state.status = .appliedUnverified
+        state.appliedProposal = fixture.proposal
+        let store = TestStore(initialState: state) { EntryPropertiesFeature() }
+
+        await store.send(.selectionChanged(replacement)) {
+            $0.generation = 1
+            $0.selection = replacement
+            $0.capabilityReport = nil
+            $0.targetSnapshot = nil
+            $0.proposal = nil
+            $0.canonicalResult = nil
+            $0.activePhase = nil
+            $0.appliedProposal = nil
+            $0.pendingReadBack = fixture.proposal
+            $0.readBackProposal = nil
+            $0.status = .idle
+            $0.lastOutcome = .propertyChangeAppliedUnverified(fixture.snapshot)
+        }
+        await store.receive(
+            .init(kind: .outcome(.propertyChangeAppliedUnverified(fixture.snapshot))),
+        )
+        XCTAssertEqual(store.state.pendingReadBack, fixture.proposal)
+        XCTAssertEqual(store.state.status, .idle)
+    }
+
+    /// EPR-006-read_back_property_change_result: 완료된 ambiguous proposal도 selection 변경 뒤 pending read-back으로 보존한다.
+    /// - 검증 내용: ambiguous proposal의 pending 보존과 ambiguity outcome 재게시
+    /// - 사전 조건: execute completion이 ambiguous로 종료되어 proposal만 남아 있음
+    /// - 기대 결과: 새 selection은 idle이지만 이전 snapshot은 read-only retry 대상으로 남음
+    func testSelectionChangeAfterAmbiguousExecutionPreservesPendingReadBack() async {
+        let fixture = Fixture()
+        let replacement = EntryPropertiesSelection(
+            targets: [.init(localPath: "/tmp/replacement")],
+            propertyID: fixture.selection.propertyID,
+        )
+        var state = fixture.readyState
+        state.status = .ambiguous
+        state.proposal = fixture.proposal
+        let store = TestStore(initialState: state) { EntryPropertiesFeature() }
+
+        await store.send(.selectionChanged(replacement)) {
+            $0.generation = 1
+            $0.selection = replacement
+            $0.capabilityReport = nil
+            $0.targetSnapshot = nil
+            $0.proposal = nil
+            $0.appliedProposal = nil
+            $0.pendingReadBack = fixture.proposal
+            $0.canonicalResult = nil
+            $0.activePhase = nil
+            $0.readBackProposal = nil
+            $0.status = .idle
+            $0.lastOutcome = .propertyChangeRejected(.ambiguousExecution)
+        }
+        await store.receive(.init(kind: .outcome(.propertyChangeRejected(.ambiguousExecution))))
+        XCTAssertEqual(store.state.pendingReadBack, fixture.proposal)
+        XCTAssertEqual(store.state.status, .idle)
+        XCTAssertNil(store.state.proposal)
+    }
+
+    /// EPR-006-prepare_property_change: ambiguous 상태에서는 새 mutation을 시작하지 않는다.
+    /// - 검증 내용: ambiguity 보존 중 prepare busy rejection과 dependency 호출 0회
+    /// - 사전 조건: execute 전송 결과가 ambiguous이고 기존 proposal이 남아 있음
+    /// - 기대 결과: reconnect/read-back recovery 전까지 새 prepare를 시작하지 않음
+    func testAmbiguousBlocksNewPrepare() async {
+        let recorder = OperationRecorder()
+        let fixture = Fixture()
+        var state = fixture.readyState
+        state.status = .ambiguous
+        state.proposal = fixture.proposal
+        let store = TestStore(initialState: state) {
+            EntryPropertiesFeature()
+        } withDependencies: {
+            $0.entryPropertiesClient = fixture.client(prepare: { _ in
+                await recorder.record("prepare")
+                return fixture.proposal
+            })
+        }
+
+        await store.send(.prepare(fixture.intent)) {
+            $0.lastOutcome = .propertyChangeRejected(.busy)
+        }
+        await store.receive(.init(kind: .outcome(.propertyChangeRejected(.busy))))
+        let recordedOperations = await recorder.values()
+        XCTAssertEqual(recordedOperations, [])
+        XCTAssertEqual(store.state.status, .ambiguous)
+        XCTAssertEqual(store.state.proposal, fixture.proposal)
+    }
+
+    /// EPR-006-read_back_property_change_result: pending read-back이 있으면 새 mutation을 막는다.
+    /// - 검증 내용: prepare/execute busy rejection과 dependency 호출 0회
+    /// - 사전 조건: 이전 selection의 pending read-back proposal이 보존됨
+    /// - 기대 결과: pending verification이 해소될 때까지 새 mutation이 시작되지 않음
+    func testPendingReadBackBlocksNewMutation() async {
+        let recorder = OperationRecorder()
+        let fixture = Fixture()
+        var state = fixture.readyState
+        state.proposal = fixture.proposal
+        state.pendingReadBack = fixture.proposal
+        state.status = .prepared
+        let store = TestStore(initialState: state) {
+            EntryPropertiesFeature()
+        } withDependencies: {
+            $0.entryPropertiesClient = fixture.client(
+                prepare: { _ in
+                    await recorder.record("prepare")
+                    return fixture.proposal
+                },
+                execute: { proposal in
+                    await recorder.record("execute")
+                    return .init(snapshot: proposal.snapshot)
+                },
+            )
+        }
+
+        await store.send(.prepare(fixture.intent)) {
+            $0.lastOutcome = .propertyChangeRejected(.busy)
+        }
+        await store.receive(.init(kind: .outcome(.propertyChangeRejected(.busy))))
+        await store.send(.execute(confirmed: true))
+        await store.receive(.init(kind: .outcome(.propertyChangeRejected(.busy))))
+        let recordedOperations = await recorder.values()
+        XCTAssertEqual(recordedOperations, [])
+    }
+
+    /// EPR-006-prepare_property_change: Core proposal은 원 요청의 target/property/after를 그대로 반영해야 한다.
+    /// - 검증 내용: 응답 target 불일치의 typed validation failure
+    /// - 사전 조건: Core가 원 요청과 다른 prepared change를 반환함
+    /// - 기대 결과: caller proposal을 만들지 않고 validation으로 fail closed
+    func testPrepareRejectsMismatchedCoreProposal() async throws {
+        let propertyID = try PropertyID(rawValue: "00000000-0000-0000-8000-000000000001")
+        let entryID = try EntryCoreEntryID(rawValue: "ent:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
+        let desired = PropertyDesiredState.value(.text, .one, .text("after"))
+        let response = try PropertyChangeProposal(
+            changes: [
+                PropertyPreparedChange(
+                    target: PropertyTarget(localPath: "/wrong"),
+                    propertyID: propertyID,
+                    entryID: entryID,
+                    before: nil,
+                    after: desired,
+                ),
+            ],
+            requiresConfirmation: true,
+        )
+        let propertyClient = mismatchedPropertyClient(response: response)
+        let endpoint = try EntryCoreEndpoint(path: "/tmp/entry-properties-review.sock")
+        let client = EntryPropertiesClientFactory.live(
+            propertyClient: propertyClient,
+            endpoint: endpoint,
+            capabilityDiscovery: { _ in throw EntryPropertiesFailure.unavailable },
+        )
+        let snapshot = EntryPropertiesTargetSnapshot(
+            targets: [.init(localPath: "/a")],
+            propertyID: .init(rawValue: propertyID.rawValue),
+            catalogVersion: "2.2.0",
+            canonicalRevision: 0,
+        )
+        let request = EntryPropertiesPrepareRequest(
+            snapshot: snapshot,
+            intent: .init(change: .set(.text("after"))),
+        )
+
+        do {
+            _ = try await client.prepare(request)
+            XCTFail("mismatched proposal should be rejected")
+        } catch {
+            XCTAssertEqual(error as? EntryPropertiesFailure, .validation)
+        }
+    }
+
+    /// EPR-006-prepare_property_change: Core before는 고정 snapshot의 assignment 계약과
+    /// 일치해야 한다.
+    /// - 검증 내용: before의 value type/cardinality/revision과 암시적 unset 불일치 거절
+    /// - 사전 조건: target/property identity는 맞지만 snapshot 계약을 위반하는 Core proposal
+    /// - 기대 결과: 모순된 before를 semantic difference로 변환하지 않고 validation으로 fail closed
+    func testPrepareRejectsBeforeViolatingSnapshotContract() async throws {
+        let propertyID = try PropertyID(rawValue: "00000000-0000-0000-8000-000000000001")
+        let entryID = try EntryCoreEntryID(rawValue: "ent:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
+        let target = try PropertyTarget(localPath: "/a")
+        let snapshot = EntryPropertiesTargetSnapshot(
+            targets: [.init(localPath: target.localPath)],
+            propertyID: .init(rawValue: propertyID.rawValue),
+            catalogVersion: "2.2.0",
+            canonicalRevision: 7,
+        )
+        let request = EntryPropertiesPrepareRequest(
+            snapshot: snapshot,
+            intent: .init(change: .set(.text("after"))),
+        )
+        let desired = PropertyDesiredState.value(.text, .one, .text("after"))
+        for (name, before) in invalidPreparedBefores(propertyID: propertyID, entryID: entryID) {
+            let response = PropertyChangeProposal(
+                changes: [
+                    PropertyPreparedChange(
+                        target: target,
+                        propertyID: propertyID,
+                        entryID: entryID,
+                        before: before,
+                        after: desired,
+                    ),
+                ],
+                requiresConfirmation: true,
+            )
+            let client = try EntryPropertiesClientFactory.live(
+                propertyClient: mismatchedPropertyClient(response: response),
+                endpoint: EntryCoreEndpoint(path: "/tmp/entry-properties-review.sock"),
+                capabilityDiscovery: { _ in throw EntryPropertiesFailure.unavailable },
+            )
+
+            do {
+                _ = try await client.prepare(request)
+                XCTFail("snapshot-violating before (\(name)) should be rejected")
+            } catch {
+                XCTAssertEqual(error as? EntryPropertiesFailure, .validation, name)
+            }
+        }
+    }
+
+    /// EPR-006-prepare_property_change: snapshot과 일치하는 durable before는
+    /// semantic difference로 변환할 수 있다.
+    /// - 검증 내용: snapshot의 value type/cardinality/revision과 일치하는 before 허용
+    /// - 기대 결과: before/after를 보존한 proposal 생성
+    func testPrepareAcceptsBeforeMatchingSnapshotContract() async throws {
+        let propertyID = try PropertyID(rawValue: "00000000-0000-0000-8000-000000000001")
+        let entryID = try EntryCoreEntryID(rawValue: "ent:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
+        let target = try PropertyTarget(localPath: "/a")
+        let snapshot = EntryPropertiesTargetSnapshot(
+            targets: [.init(localPath: target.localPath)],
+            propertyID: .init(rawValue: propertyID.rawValue),
+            catalogVersion: "2.2.0",
+            canonicalRevision: 7,
+        )
+        let response = PropertyChangeProposal(
+            changes: [
+                PropertyPreparedChange(
+                    target: target,
+                    propertyID: propertyID,
+                    entryID: entryID,
+                    before: PropertyAssignment(
+                        propertyID: propertyID,
+                        entryID: entryID,
+                        valueType: .text,
+                        cardinality: .one,
+                        state: .value,
+                        revision: 7,
+                        value: .text("before"),
+                    ),
+                    after: .value(.text, .one, .text("after")),
+                ),
+            ],
+            requiresConfirmation: true,
+        )
+        let client = try EntryPropertiesClientFactory.live(
+            propertyClient: mismatchedPropertyClient(response: response),
+            endpoint: EntryCoreEndpoint(path: "/tmp/entry-properties-review.sock"),
+            capabilityDiscovery: { _ in throw EntryPropertiesFailure.unavailable },
+        )
+
+        let proposal = try await client.prepare(
+            .init(snapshot: snapshot, intent: .init(change: .set(.text("after")))),
+        )
+        XCTAssertEqual(
+            proposal.differences,
+            [.init(target: .init(localPath: "/a", entryID: entryID), before: .text("before"), after: .text("after"))],
+        )
+    }
+
+    /// EPR-006-read_back_property_change_result: assignment은 catalog value contract와 대조된다.
+    /// - 검증 내용: definition-derived catalog와 다른 value type assignment 거절
+    /// - 사전 조건: text/one snapshot 계약에 number/one assignment를 반환하는 Core stub
+    /// - 기대 결과: 모순된 canonical baseline을 만들지 않고 validation으로 fail closed
+    func testReadBackRejectsAssignmentViolatingCatalogContract() async throws {
+        let propertyID = try PropertyID(rawValue: "00000000-0000-0000-8000-000000000001")
+        let entryID = try EntryCoreEntryID(rawValue: "ent:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
+        let mismatched = PropertyAssignment(
+            propertyID: propertyID,
+            entryID: entryID,
+            valueType: .number,
+            cardinality: .one,
+            state: .value,
+            revision: 1,
+            value: .number("42"),
+        )
+        let propertyClient = contractViolatingAssignmentClient(
+            page: PropertyAssignmentPage(assignments: [mismatched], nextPageToken: nil, hasMore: false),
+        )
+        let endpoint = try EntryCoreEndpoint(path: "/tmp/entry-properties-review.sock")
+        let client = EntryPropertiesClientFactory.live(
+            propertyClient: propertyClient,
+            endpoint: endpoint,
+            capabilityDiscovery: { _ in throw EntryPropertiesFailure.unavailable },
+        )
+        let snapshot = EntryPropertiesTargetSnapshot(
+            targets: [.init(localPath: "/a")],
+            propertyID: .init(rawValue: propertyID.rawValue),
+            catalogVersion: "2.2.0",
+            canonicalRevision: 0,
+        )
+
+        do {
+            _ = try await client.readBack(.init(snapshot: snapshot))
+            XCTFail("catalog-violating assignment should be rejected")
+        } catch {
+            XCTAssertEqual(error as? EntryPropertiesFailure, .validation)
+        }
+    }
+
+    /// Ambiguous execute는 동일 proposal로 read-back만 재시도하고 mutation을
+    /// 재전송하지 않는다.
+    func testAmbiguousRetryUsesReadBackOnly() async {
+        let recorder = OperationRecorder()
+        let fixture = Fixture()
+        var state = fixture.readyState
+        state.proposal = fixture.proposal
+        state.pendingReadBack = fixture.proposal
+        state.status = .ambiguous
+        let store = TestStore(initialState: state) {
+            EntryPropertiesFeature()
+        } withDependencies: {
+            $0.entryPropertiesClient = fixture.client(
+                execute: { _ in
+                    await recorder.record("execute")
+                    return .init(snapshot: fixture.snapshot)
+                },
+                readBack: { _ in
+                    await recorder.record("readBack")
+                    return fixture.canonicalResult
+                },
+            )
+        }
+
+        await store.send(.retryReadBack) {
+            $0.activePhase = .applied
+            $0.readBackProposal = fixture.proposal
+        }
+        await store.receive(.init(kind: .readBackCompleted(0, .success(fixture.canonicalResult)))) {
+            $0.activePhase = nil
+            $0.pendingReadBack = nil
+            $0.readBackProposal = nil
+            $0.appliedProposal = fixture.proposal
+            $0.canonicalResult = fixture.canonicalResult
+            $0.targetSnapshot = fixture.verifiedSnapshot
+            $0.status = .verified
+            $0.lastOutcome = .propertyChangeVerified(fixture.canonicalResult)
+        }
+        await store.receive(.init(kind: .outcome(.propertyChangeVerified(fixture.canonicalResult))))
+        let recordedOperations = await recorder.values()
+        XCTAssertEqual(recordedOperations, ["readBack"])
+    }
+
+    /// read-back이 동일 path를 다른 canonical entry로 해석하면 stable identity
+    /// conflict로 닫고 값을 채택하지 않는다.
+    func testReadBackRejectsTargetIdentityDrift() async throws {
+        let propertyID = try PropertyID(rawValue: "00000000-0000-0000-8000-000000000001")
+        let expectedEntryID = try EntryCoreEntryID(rawValue: "ent:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
+        let replacementEntryID = try EntryCoreEntryID(rawValue: "ent:UCqcybbCfAKpfjndstZqrNVefCWIjYqySFylQRoTDGw")
+        let assignment = PropertyAssignment(
+            propertyID: propertyID,
+            entryID: replacementEntryID,
+            valueType: .text,
+            cardinality: .one,
+            state: .value,
+            revision: 1,
+            value: .text("replacement"),
+        )
+        let client = try EntryPropertiesClientFactory.live(
+            propertyClient: contractViolatingAssignmentClient(
+                page: PropertyAssignmentPage(assignments: [assignment], nextPageToken: nil, hasMore: false),
+            ),
+            endpoint: EntryCoreEndpoint(path: "/tmp/entry-properties-review.sock"),
+            capabilityDiscovery: { _ in throw EntryPropertiesFailure.unavailable },
+        )
+        let snapshot = EntryPropertiesTargetSnapshot(
+            targets: [.init(localPath: "/a", entryID: expectedEntryID)],
+            propertyID: .init(rawValue: propertyID.rawValue),
+            catalogVersion: "2.2.0",
+            canonicalRevision: 0,
+        )
+
+        do {
+            _ = try await client.readBack(.init(snapshot: snapshot))
+            XCTFail("target identity drift should be rejected")
+        } catch {
+            XCTAssertEqual(error as? EntryPropertiesFailure, .conflict)
+        }
+    }
+
+    /// EPR-006-prepare_property_change / EPR-006-execute_property_change: 전송 전
+    /// request model 검증 실패를 transport 장애나 실행 ambiguity로 분류하지 않는다.
+    /// - 검증 내용: malformed decimal·4097바이트 text의 prepare/execute 요청 0회
+    /// - 사전 조건: valid snapshot과 전송 전 검증을 실패시키는 사용자 입력
+    /// - 기대 결과: 두 API 모두 validation을 반환하고 Core mutation 경계를 호출하지 않음
+    func testRequestAssemblyValidationDoesNotBecomeTransportFailure() async throws {
+        let recorder = OperationRecorder()
+        let endpoint = try EntryCoreEndpoint(path: "/tmp/entry-properties-review.sock")
+        let client = EntryPropertiesClientFactory.live(
+            propertyClient: requestAssemblyValidationClient(recorder: recorder),
+            endpoint: endpoint,
+            capabilityDiscovery: { _ in throw EntryPropertiesFailure.unavailable },
+        )
+        let snapshot = EntryPropertiesTargetSnapshot(
+            targets: [.init(localPath: "/a")],
+            propertyID: .init(rawValue: "00000000-0000-0000-8000-000000000001"),
+            catalogVersion: "2.2.0",
+            canonicalRevision: 0,
+        )
+        let intents = [
+            EntryPropertiesChangeIntent(change: .set(.text(String(repeating: "x", count: 4097)))),
+            EntryPropertiesChangeIntent(change: .set(.number("1."))),
+        ]
+
+        for intent in intents {
+            do {
+                _ = try await client.prepare(.init(snapshot: snapshot, intent: intent))
+                XCTFail("request assembly should reject invalid intent")
+            } catch {
+                XCTAssertEqual(error as? EntryPropertiesFailure, .validation)
+            }
+
+            let proposal = EntryPropertiesProposal(
+                snapshot: snapshot,
+                intent: intent,
+                differences: [],
+                affectedTargetCount: 1,
+                validation: .init(isValid: true),
+                requiresConfirmation: false,
+            )
+            do {
+                _ = try await client.execute(proposal)
+                XCTFail("request assembly should reject invalid intent")
+            } catch {
+                XCTAssertEqual(error as? EntryPropertiesFailure, .validation)
+            }
+        }
+        let recordedOperations = await recorder.values()
+        XCTAssertEqual(recordedOperations, [])
+    }
+
+    // MARK: - identity 보강·취소 복구 (EPR006CoordinatePropertyChangesTests+IdentityRecovery.swift)
+
+    /// EPR-006-execute_property_change: 실행 중 취소도 전송 경계 ambiguity로 다룬다.
+    /// - 검증 내용: cancel 이후 proposal의 pending read-back 보존과 read-only retry 복구
+    /// - 사전 조건: execute effect 진행 중 .cancel 수신
+    /// - 기대 결과: ambiguous 상태에서 retryReadBack로 적용 여부를 확인할 수 있음
+    func testCancelDuringExecutePreservesPendingReadBackForRetry() async {
+        let fixture = Fixture()
+        var state = fixture.readyState
+        state.proposal = fixture.proposal
+        state.activePhase = .executing
+        state.status = .executing
+        let store = TestStore(initialState: state) {
+            EntryPropertiesFeature()
+        } withDependencies: {
+            $0.entryPropertiesClient = fixture.client(
+                readBack: { _ in fixture.canonicalResult },
+            )
+        }
+
+        await store.send(.cancel) {
+            $0.generation = 1
+            $0.pendingReadBack = fixture.proposal
+            $0.activePhase = nil
+            $0.status = .ambiguous
+            $0.lastOutcome = .propertyChangeRejected(.ambiguousExecution)
+        }
+        await store.receive(.init(kind: .outcome(.propertyChangeRejected(.ambiguousExecution))))
+
+        await store.send(.retryReadBack) {
+            $0.activePhase = .applied
+            $0.readBackProposal = fixture.proposal
+        }
+        await store.receive(.init(kind: .readBackCompleted(1, .success(fixture.canonicalResult)))) {
+            $0.activePhase = nil
+            $0.pendingReadBack = nil
+            $0.readBackProposal = nil
+            $0.appliedProposal = fixture.proposal
+            $0.canonicalResult = fixture.canonicalResult
+            $0.targetSnapshot = fixture.verifiedSnapshot
+            $0.status = .verified
+            $0.lastOutcome = .propertyChangeVerified(fixture.canonicalResult)
+        }
+        await store.receive(.init(kind: .outcome(.propertyChangeVerified(fixture.canonicalResult))))
+        XCTAssertEqual(store.state.status, .verified)
+        XCTAssertNil(store.state.pendingReadBack)
+    }
+
+    /// EPR-006-read_back_property_change_result: 반복 selection 변경에도 pending 복구 상태는 유지된다.
+    /// - 검증 내용: 두 번째 selection 변경에서 pendingReadBack과 복구 outcome 보존
+    /// - 사전 조건: 첫 selection 변경이 ambiguous proposal을 pendingReadBack으로 옮긴 상태
+    /// - 기대 결과: 공개 상태가 복구 사유를 유지하고 prepare는 busy로 거절됨
+    func testRepeatedSelectionChangePreservesPendingRecoveryOutcome() async {
+        let fixture = Fixture()
+        let firstSelection = EntryPropertiesSelection(
+            targets: [.init(localPath: "/tmp/first")],
+            propertyID: fixture.selection.propertyID,
+        )
+        let secondSelection = EntryPropertiesSelection(
+            targets: [.init(localPath: "/tmp/second")],
+            propertyID: fixture.selection.propertyID,
+        )
+        var state = fixture.readyState
+        state.status = .ambiguous
+        state.proposal = fixture.proposal
+        let store = TestStore(initialState: state) {
+            EntryPropertiesFeature()
+        }
+
+        await store.send(.selectionChanged(firstSelection)) {
+            $0.generation = 1
+            $0.selection = firstSelection
+            $0.capabilityReport = nil
+            $0.targetSnapshot = nil
+            $0.proposal = nil
+            $0.appliedProposal = nil
+            $0.pendingReadBack = fixture.proposal
+            $0.canonicalResult = nil
+            $0.activePhase = nil
+            $0.readBackProposal = nil
+            $0.status = .idle
+            $0.lastOutcome = .propertyChangeRejected(.ambiguousExecution)
+        }
+        await store.receive(.init(kind: .outcome(.propertyChangeRejected(.ambiguousExecution))))
+
+        await store.send(.selectionChanged(secondSelection)) {
+            $0.generation = 2
+            $0.selection = secondSelection
+        }
+        XCTAssertEqual(store.state.lastOutcome, .propertyChangeRejected(.ambiguousExecution))
+        XCTAssertEqual(store.state.pendingReadBack, fixture.proposal)
+
+        await store.send(.prepare(fixture.intent)) {
+            $0.lastOutcome = .propertyChangeRejected(.busy)
+        }
+        await store.receive(.init(kind: .outcome(.propertyChangeRejected(.busy))))
+        XCTAssertEqual(store.state.pendingReadBack, fixture.proposal)
+    }
+
+    /// EPR-006-discover_property_change_capabilities: pending recovery 중 discovery는 차단된다.
+    /// - 검증 내용: pendingReadBack 잔존 시 discover busy 거절과 복구 후 재개
+    /// - 사전 조건: selection 변경으로 ambiguous proposal이 pendingReadBack으로 이동
+    /// - 기대 결과: read-only retry로 복구되기 전까지 discovery가 시작되지 않음
+    func testPendingRecoveryBlocksDiscoveryUntilResolved() async {
+        let fixture = Fixture()
+        let replacement = EntryPropertiesSelection(
+            targets: [.init(localPath: "/tmp/replacement")],
+            propertyID: fixture.selection.propertyID,
+        )
+        var state = fixture.readyState
+        state.status = .ambiguous
+        state.proposal = fixture.proposal
+        let store = TestStore(initialState: state) {
+            EntryPropertiesFeature()
+        } withDependencies: {
+            $0.entryPropertiesClient = fixture.client(
+                readBack: { _ in fixture.canonicalResult },
+            )
+        }
+
+        await moveAmbiguousProposalToPendingReadBack(store, replacement: replacement, fixture: fixture)
+
+        await store.send(.discoverCapabilities) {
+            $0.lastOutcome = .propertyChangeRejected(.busy)
+        }
+        await store.receive(.init(kind: .outcome(.propertyChangeRejected(.busy))))
+        XCTAssertEqual(store.state.pendingReadBack, fixture.proposal)
+
+        await store.send(.retryReadBack) {
+            $0.activePhase = .applied
+            $0.readBackProposal = fixture.proposal
+        }
+        await store.receive(.init(kind: .readBackCompleted(1, .success(fixture.canonicalResult)))) {
+            $0.activePhase = nil
+            $0.pendingReadBack = nil
+            $0.readBackProposal = nil
+            $0.lastOutcome = .propertyChangeVerified(fixture.canonicalResult)
+        }
+        await store.receive(.init(kind: .outcome(.propertyChangeVerified(fixture.canonicalResult))))
+        XCTAssertNil(store.state.pendingReadBack)
+
+        await store.send(.discoverCapabilities) {
+            $0.generation = 2
+            $0.activePhase = .discovering
+            $0.status = .discovering
+            $0.capabilityReport = nil
+            $0.targetSnapshot = nil
+            $0.proposal = nil
+            $0.canonicalResult = nil
+        }
+        await store.receive(.init(kind: .discoveryCompleted(2, .failure(.unavailable)))) {
+            $0.activePhase = nil
+            $0.status = .rejected(.unavailable)
+            $0.lastOutcome = .propertyChangeRejected(.unavailable)
+        }
+        await store.receive(.init(kind: .outcome(.propertyChangeRejected(.unavailable))))
+    }
+
+    /// EPR-006-prepare_property_change: identity 보강 전 snapshot의 unset target
+    /// revision은 local path로 대응한다.
+    /// - 검증 내용: 일부 target만 assignment를 가진 변경에서 prepare before == nil 수용
+    /// - 사전 조건: /a는 revision 3의 durable assignment, /b는 암시적 unset(discovery)
+    /// - 기대 결과: canonicalRevision fallback 대신 target별 revision으로 정상 proposal 생성
+    func testPrepareMatchesUnsetTargetRevisionByLocalPath() async throws {
+        let client = try EntryPropertiesClientFactory.live(
+            propertyClient: prepareStubClient(response: mixedIdentityPreparedResponse()),
+            endpoint: EntryCoreEndpoint(path: "/tmp/entry-properties-review.sock"),
+            capabilityDiscovery: { _ in throw EntryPropertiesFailure.unavailable },
+        )
+
+        let proposal = try await client.prepare(
+            .init(snapshot: mixedIdentitySnapshot(), intent: .init(change: .set(.text("after")))),
+        )
+        XCTAssertEqual(proposal.differences, try mixedIdentityDifferences())
+    }
+
+    /// EPR-006-read_back_property_change_result: 이전 selection 검증 성공은 ambiguous 대기를 푼다.
+    /// - 검증 내용: currentSelection == false 성공 분기의 status .idle 복원과 discovery 재개
+    /// - 사전 조건: 실행 취소로 .ambiguous + pendingReadBack이 남은 뒤 selection이 변경됨
+    /// - 기대 결과: pending 제거와 함께 현재 selection이 idle로 복원되어 discovery가 다시 가능
+    func testOldSelectionVerificationResolvesAmbiguousWait() async {
+        let fixture = Fixture()
+        let replacement = EntryPropertiesSelection(
+            targets: [.init(localPath: "/tmp/replacement")],
+            propertyID: fixture.selection.propertyID,
+        )
+        var state = fixture.readyState
+        state.selection = replacement
+        state.status = .ambiguous
+        state.pendingReadBack = fixture.proposal
+        let store = TestStore(initialState: state) {
+            EntryPropertiesFeature()
+        } withDependencies: {
+            $0.entryPropertiesClient = fixture.client(
+                readBack: { _ in fixture.canonicalResult },
+            )
+        }
+
+        await store.send(.retryReadBack) {
+            $0.activePhase = .applied
+            $0.readBackProposal = fixture.proposal
+        }
+        await store.receive(.init(kind: .readBackCompleted(0, .success(fixture.canonicalResult)))) {
+            $0.activePhase = nil
+            $0.pendingReadBack = nil
+            $0.readBackProposal = nil
+            $0.status = .idle
+            $0.lastOutcome = .propertyChangeVerified(fixture.canonicalResult)
+        }
+        await store.receive(.init(kind: .outcome(.propertyChangeVerified(fixture.canonicalResult))))
+        XCTAssertEqual(store.state.status, .idle)
+        XCTAssertNil(store.state.pendingReadBack)
+
+        await store.send(.discoverCapabilities) {
+            $0.generation = 1
+            $0.activePhase = .discovering
+            $0.status = .discovering
+            $0.capabilityReport = nil
+            $0.targetSnapshot = nil
+            $0.proposal = nil
+            $0.canonicalResult = nil
+        }
+        await store.receive(.init(kind: .discoveryCompleted(1, .failure(.unavailable)))) {
+            $0.activePhase = nil
+            $0.status = .rejected(.unavailable)
+            $0.lastOutcome = .propertyChangeRejected(.unavailable)
+        }
+        await store.receive(.init(kind: .outcome(.propertyChangeRejected(.unavailable))))
+    }
+
+    /// EPR-006-read_back_property_change_result: 같은 local path에서 entry가
+    /// 교체되면 이전 proposal의 검증 결과는 현재 selection의 verified가 되지 않는다.
+    /// - 검증 내용: entry 교체 시 current-selection 분기 미채택과 pending 정리
+    /// - 사전 조건: 동일 경로에 다른 entryID를 가진 selection과 이전 proposal pending
+    /// - 기대 결과: canonical result를 채택하지 않고 idle로 복원해 재탐색을 유도함
+    func testReadBackWithReplacedEntryDoesNotAdoptVerifiedResult() async throws {
+        let fixture = try replacedEntryFixture()
+        var state = EntryPropertiesState(selection: fixture.selection)
+        state.pendingReadBack = fixture.proposal
+        let store = TestStore(initialState: state) {
+            EntryPropertiesFeature()
+        } withDependencies: {
+            $0.entryPropertiesClient = Fixture().client(readBack: { _ in fixture.canonicalResult })
+        }
+
+        await store.send(.retryReadBack) {
+            $0.activePhase = .applied
+            $0.readBackProposal = fixture.proposal
+        }
+        await store.receive(.init(kind: .readBackCompleted(0, .success(fixture.canonicalResult)))) {
+            $0.activePhase = nil
+            $0.pendingReadBack = nil
+            $0.readBackProposal = nil
+            $0.status = .idle
+            $0.lastOutcome = .propertyChangeVerified(fixture.canonicalResult)
+        }
+        await store.receive(.init(kind: .outcome(.propertyChangeVerified(fixture.canonicalResult))))
+        XCTAssertEqual(store.state.status, .idle)
+        XCTAssertNil(store.state.canonicalResult)
+        XCTAssertNil(store.state.appliedProposal)
+        XCTAssertNil(store.state.pendingReadBack)
+    }
+
+    /// ambiguous proposal을 selection 변경으로 pendingReadBack으로 옮기는 첫 단계다.
+    private func moveAmbiguousProposalToPendingReadBack(
+        _ store: TestStore<EntryPropertiesState, EntryPropertiesAction>,
+        replacement: EntryPropertiesSelection,
+        fixture: Fixture,
+    ) async {
+        await store.send(.selectionChanged(replacement)) {
+            $0.generation = 1
+            $0.selection = replacement
+            $0.capabilityReport = nil
+            $0.targetSnapshot = nil
+            $0.proposal = nil
+            $0.appliedProposal = nil
+            $0.pendingReadBack = fixture.proposal
+            $0.canonicalResult = nil
+            $0.activePhase = nil
+            $0.readBackProposal = nil
+            $0.status = .idle
+            $0.lastOutcome = .propertyChangeRejected(.ambiguousExecution)
+        }
+        await store.receive(.init(kind: .outcome(.propertyChangeRejected(.ambiguousExecution))))
+    }
+
+    // MARK: - 페이지네이션 계약 (EPR006CoordinatePropertyChangesTests+PaginationContract.swift)
+
+    /// EPR-006-discover_property_change_capabilities: catalog 로드는 두 번째 페이지를 받지 않는다.
+    /// - 검증 내용: hasMore 응답의 protocolMismatch 거절과 transport 호출 1회 종료
+    /// - 사전 조건: 빈 definition 페이지에 hasMore를 반환하는 Core stub
+    /// - 기대 결과: capability discovery가 토큰 추적 없이 즉시 실패로 종료됨
+    func testLoadCatalogRejectsSecondPageUnderSingleIDFilter() async throws {
+        let recorder = OperationRecorder()
+        let propertyID = try PropertyID(rawValue: "00000000-0000-0000-8000-000000000001")
+        let propertyClient = paginatingPropertyClient(
+            definitionList: { _, _ in
+                await recorder.record("definitionList")
+                return PropertyDefinitionPage(definitions: [], nextPageToken: "token", hasMore: true)
+            },
+            assignmentList: { _, _ in throw EntryCoreClientError.daemonUnavailable },
+        )
+        let client = try EntryPropertiesClientFactory.live(
+            propertyClient: propertyClient,
+            endpoint: EntryCoreEndpoint(path: "/tmp/entry-properties-review.sock"),
+            capabilityDiscovery: { _ in throw EntryPropertiesFailure.unavailable },
+        )
+        let selection = EntryPropertiesSelection(
+            targets: [.init(localPath: "/a")],
+            propertyID: .init(rawValue: propertyID.rawValue),
+        )
+
+        do {
+            _ = try await client.loadCatalog(selection)
+            XCTFail("second page under single-ID filter should be rejected")
+        } catch {
+            XCTAssertEqual(error as? EntryCoreClientError, .protocolMismatch)
+        }
+        let recordedOperations = await recorder.values()
+        XCTAssertEqual(recordedOperations, ["definitionList"])
+    }
+
+    /// EPR-006-discover_property_change_capabilities: assignment 로드는 두 번째 페이지를 받지 않는다.
+    /// - 검증 내용: 단일 target × ID 요청의 hasMore 거절과 transport 호출 1회 종료
+    /// - 사전 조건: 빈 assignment 페이지에 hasMore를 반환하는 Core stub
+    /// - 기대 결과: assignment 로드가 토큰 추적 없이 즉시 실패로 종료됨
+    func testLoadAssignmentsRejectsSecondPageUnderSingleTargetFilter() async throws {
+        let recorder = OperationRecorder()
+        let propertyID = try PropertyID(rawValue: "00000000-0000-0000-8000-000000000001")
+        let propertyClient = paginatingPropertyClient(
+            definitionList: { _, _ in throw EntryCoreClientError.daemonUnavailable },
+            assignmentList: { _, _ in
+                await recorder.record("assignmentList")
+                return PropertyAssignmentPage(assignments: [], nextPageToken: "token", hasMore: true)
+            },
+        )
+        let client = try EntryPropertiesClientFactory.live(
+            propertyClient: propertyClient,
+            endpoint: EntryCoreEndpoint(path: "/tmp/entry-properties-review.sock"),
+            capabilityDiscovery: { _ in throw EntryPropertiesFailure.unavailable },
+        )
+        let selection = EntryPropertiesSelection(
+            targets: [.init(localPath: "/a")],
+            propertyID: .init(rawValue: propertyID.rawValue),
+        )
+        let catalog = EntryPropertiesCatalog(version: "2.2.0")
+
+        do {
+            _ = try await client.loadAssignments(selection, catalog)
+            XCTFail("second page under single-target filter should be rejected")
+        } catch {
+            XCTAssertEqual(error as? EntryCoreClientError, .protocolMismatch)
+        }
+        let recordedOperations = await recorder.values()
+        XCTAssertEqual(recordedOperations, ["assignmentList"])
+    }
+
+    /// EPR-006-discover_property_change_capabilities: discovery 조립의 전송 전
+    /// 실패는 caller 입력 결함이므로 validation으로 분류된다.
+    /// - 검증 내용: malformed property ID·local path의 .validation 변환
+    /// - 사전 조건: wire 생성자가 거절하는 공개 selection 값
+    /// - 기대 결과: unavailable(복구 대상) 대신 validation(caller 결함)으로 fail closed
+    func testDiscoveryClassifiesMalformedSelectionAsValidation() async throws {
+        let propertyClient = paginatingPropertyClient(
+            definitionList: { _, _ in throw EntryCoreClientError.daemonUnavailable },
+            assignmentList: { _, _ in throw EntryCoreClientError.daemonUnavailable },
+        )
+        let client = try EntryPropertiesClientFactory.live(
+            propertyClient: propertyClient,
+            endpoint: EntryCoreEndpoint(path: "/tmp/entry-properties-review.sock"),
+            capabilityDiscovery: { _ in throw EntryPropertiesFailure.unavailable },
+        )
+        let catalog = EntryPropertiesCatalog(version: "2.2.0")
+
+        let badIDSelection = EntryPropertiesSelection(
+            targets: [.init(localPath: "/a")],
+            propertyID: .init(rawValue: "not-a-uuid"),
+        )
+        do {
+            _ = try await client.loadCatalog(badIDSelection)
+            XCTFail("malformed property ID should be rejected as validation")
+        } catch {
+            XCTAssertEqual(error as? EntryPropertiesFailure, .validation)
+        }
+
+        let badPathSelection = EntryPropertiesSelection(
+            targets: [.init(localPath: "")],
+            propertyID: .init(rawValue: "00000000-0000-0000-8000-000000000001"),
+        )
+        do {
+            _ = try await client.loadAssignments(badPathSelection, catalog)
+            XCTFail("malformed local path should be rejected as validation")
+        } catch {
+            XCTAssertEqual(error as? EntryPropertiesFailure, .validation)
+        }
+    }
+
+    /// EPR-006-discover_property_change_capabilities: catalog과 capability의
+    /// catalog version이 모두 있으면 일치해야 한다.
+    /// - 검증 내용: version 불일치의 stale discovery 실패
+    /// - 사전 조건: catalog 2.2.0에 3.0.0 capability를 반환하는 provider
+    /// - 기대 결과: 서로 다른 계약을 한 snapshot으로 묶지 않고 discovery 실패
+    func testDiscoveryRejectsCapabilityCatalogVersionMismatch() async {
+        let client = EntryPropertiesClient(
+            loadCatalog: { _ in EntryPropertiesCatalog(version: "2.2.0") },
+            loadAssignments: { selection, _ in
+                EntryPropertiesAssignments(
+                    canonicalRevision: 0,
+                    values: selection.targets.map { .init(target: $0, value: .unset, revision: 0) },
+                )
+            },
+            discoverCapabilities: { _ in
+                EntryPropertiesCapabilityReport(
+                    items: [.init(operation: .changeValue, capability: .supported)],
+                    supportsMultipleTargets: true,
+                    catalogVersion: "3.0.0",
+                )
+            },
+            prepare: { _ in throw EntryPropertiesFailure.unavailable },
+            execute: { _ in throw EntryPropertiesFailure.unavailable },
+            readBack: { _ in throw EntryPropertiesFailure.unavailable },
+        )
+        let fixture = Fixture()
+        let store = TestStore(initialState: fixture.readyState) {
+            EntryPropertiesFeature()
+        } withDependencies: {
+            $0.entryPropertiesClient = client
+        }
+
+        await store.send(.discoverCapabilities) {
+            $0.generation = 1
+            $0.activePhase = .discovering
+            $0.status = .discovering
+            $0.capabilityReport = nil
+            $0.targetSnapshot = nil
+            $0.proposal = nil
+            $0.canonicalResult = nil
+        }
+        await store.receive(.init(kind: .discoveryCompleted(1, .failure(.stale)))) {
+            $0.activePhase = nil
+            $0.status = .rejected(.stale)
+            $0.lastOutcome = .propertyChangeRejected(.stale)
+        }
+        await store.receive(.init(kind: .outcome(.propertyChangeRejected(.stale))))
+    }
 }

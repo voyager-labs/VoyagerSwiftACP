@@ -173,6 +173,22 @@ extension EntryCorePropertyClientFlowTests {
         let request = try PropertyDefinitionUpdateRequest(
             propertyID: PropertyID(rawValue: propertyID),
             expectedDefinitionRevision: 1,
+            expectedDefinition: PropertyDefinition(
+                id: PropertyID(rawValue: propertyID),
+                key: "created-key",
+                name: "created name",
+                valueType: .text,
+                cardinality: .one,
+                state: .active,
+                origin: .userDefined,
+                revision: 1,
+                options: [],
+                conditionCapability: .supported(
+                    catalogVersion: PropertyConditionCatalog.version,
+                    nativeType: .string,
+                    allowedOperators: PropertyConditionRelation.operators(for: .string),
+                ),
+            ),
             name: "updated name",
         )
         let endpoint = try EntryCoreEndpoint(path: "/tmp/property-client.sock")

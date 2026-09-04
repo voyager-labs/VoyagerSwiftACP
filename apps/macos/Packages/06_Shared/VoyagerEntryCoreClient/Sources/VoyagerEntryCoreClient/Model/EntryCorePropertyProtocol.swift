@@ -256,12 +256,22 @@ nonisolated public struct PropertyDefinitionCreateRequest: Encodable, Sendable {
 nonisolated public struct PropertyDefinitionUpdateRequest: Encodable, Sendable {
     let propertyID: PropertyID
     let expectedDefinitionRevision: Int64
+    /// applyDefinitionUpdate는 표시 이름 외 필드를 불변으로 강제한다. 응답이
+    /// 이 사전 definition에서 이름·revision만 바뀐 형태인지 검증하는 데 쓰이며
+    /// wire 요청에는 포함되지 않는다.
+    let expectedDefinition: PropertyDefinition
     let name: String
-    public init(propertyID: PropertyID, expectedDefinitionRevision: Int64, name: String) throws {
+    public init(
+        propertyID: PropertyID,
+        expectedDefinitionRevision: Int64,
+        expectedDefinition: PropertyDefinition,
+        name: String,
+    ) throws {
         guard expectedDefinitionRevision >= 1,
               PropertyWireValidation.short(name) else { throw EntryCoreClientError.protocolMismatch }
         self.propertyID = propertyID
         self.expectedDefinitionRevision = expectedDefinitionRevision
+        self.expectedDefinition = expectedDefinition
         self.name = name
     }
 
@@ -272,10 +282,19 @@ nonisolated public struct PropertyDefinitionUpdateRequest: Encodable, Sendable {
 nonisolated public struct PropertyDefinitionDisableRequest: Encodable, Sendable {
     let propertyID: PropertyID
     let expectedDefinitionRevision: Int64
-    public init(propertyID: PropertyID, expectedDefinitionRevision: Int64) throws {
+    /// DisableDefinition은 lifecycle만 변경한다. 응답이 이 사전 definition에서
+    /// state·revision만 바뀐 형태인지 검증하는 데 쓰이며 wire 요청에는
+    /// 포함되지 않는다.
+    let expectedDefinition: PropertyDefinition
+    public init(
+        propertyID: PropertyID,
+        expectedDefinitionRevision: Int64,
+        expectedDefinition: PropertyDefinition,
+    ) throws {
         guard expectedDefinitionRevision >= 1 else { throw EntryCoreClientError.protocolMismatch }
         self.propertyID = propertyID
         self.expectedDefinitionRevision = expectedDefinitionRevision
+        self.expectedDefinition = expectedDefinition
     }
 
     enum CodingKeys: String,
