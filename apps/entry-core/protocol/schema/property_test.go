@@ -831,6 +831,101 @@ func TestPropertyConditionQueryResultRejectsCandidateOverlap(t *testing.T) {
 	}
 }
 
+func TestPropertyConditionQueryResultRejectsOutOfBoundsCandidates(t *testing.T) {
+	t.Parallel()
+
+	validItem := PropertyConditionQueryItem{
+		CandidateIndex: 0,
+		EntryID:        "ent:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+		Projection:     []PropertyAssignment{},
+	}
+
+	outOfRangeItem := PropertyConditionQueryResult{
+		Items: []PropertyConditionQueryItem{{
+			CandidateIndex: maximumPropertyTargets,
+			EntryID:        "ent:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+			Projection:     []PropertyAssignment{},
+		}},
+		UnresolvedCandidateIndices: []int{},
+		CatalogVersion:             domainentry.ConditionCatalogVersion,
+		HasMore:                    false,
+	}
+	if outOfRangeItem.Validate() == nil {
+		t.Fatal("matched candidate index at target upper bound accepted")
+	}
+
+	outOfRangeUnresolved := PropertyConditionQueryResult{
+		Items:                      []PropertyConditionQueryItem{validItem},
+		UnresolvedCandidateIndices: []int{maximumPropertyTargets},
+		CatalogVersion:             domainentry.ConditionCatalogVersion,
+		HasMore:                    false,
+	}
+	if outOfRangeUnresolved.Validate() == nil {
+		t.Fatal("unresolved candidate index at target upper bound accepted")
+	}
+
+	tooManyItems := PropertyConditionQueryResult{
+		Items: func() []PropertyConditionQueryItem {
+			items := make([]PropertyConditionQueryItem, maximumPropertyTargets+1)
+			for index := range items {
+				items[index] = PropertyConditionQueryItem{
+					CandidateIndex: index,
+					EntryID:        "ent:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+					Projection:     []PropertyAssignment{},
+				}
+			}
+			return items
+		}(),
+		UnresolvedCandidateIndices: []int{},
+		CatalogVersion:             domainentry.ConditionCatalogVersion,
+		HasMore:                    false,
+	}
+	if tooManyItems.Validate() == nil {
+		t.Fatal("query result exceeding target count accepted")
+	}
+
+	tooManyProjection := PropertyConditionQueryResult{
+		Items: []PropertyConditionQueryItem{{
+			CandidateIndex: 0,
+			EntryID:        "ent:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+			Projection: func() []PropertyAssignment {
+				assignments := make([]PropertyAssignment, maximumPropertyIDs+1)
+				for index := range assignments {
+					assignments[index] = PropertyAssignment{
+						PropertyID:  fixturePropertyID(t, 640+index%8),
+						EntryID:     "ent:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+						ValueType:   "text",
+						Cardinality: "one",
+						State:       "value",
+						Revision:    1,
+					}
+				}
+				return assignments
+			}(),
+		}},
+		UnresolvedCandidateIndices: []int{},
+		CatalogVersion:             domainentry.ConditionCatalogVersion,
+		HasMore:                    false,
+	}
+	if tooManyProjection.Validate() == nil {
+		t.Fatal("projection exceeding property id bound accepted")
+	}
+
+	boundaryItem := PropertyConditionQueryResult{
+		Items: []PropertyConditionQueryItem{{
+			CandidateIndex: maximumPropertyTargets - 1,
+			EntryID:        "ent:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+			Projection:     []PropertyAssignment{},
+		}},
+		UnresolvedCandidateIndices: []int{},
+		CatalogVersion:             domainentry.ConditionCatalogVersion,
+		HasMore:                    false,
+	}
+	if boundaryItem.Validate() != nil {
+		t.Fatal("candidate index just below target bound rejected")
+	}
+}
+
 func TestPropertyDefinitionRejectsUnknownOrigin(t *testing.T) {
 	t.Parallel()
 

@@ -1,3 +1,4 @@
+import ComposableArchitecture
 @testable import VoyagerEntryCoreClient
 @testable import VoyagerFeaturesEntryProperties
 import XCTest
@@ -113,6 +114,55 @@ extension EPR006CoordinatePropertyChangesTests {
         } catch {
             XCTAssertEqual(error as? EntryPropertiesFailure, .validation)
         }
+    }
+
+    /// EPR-006-discover_property_change_capabilities: catalog과 capability의
+    /// catalog version이 모두 있으면 일치해야 한다.
+    /// - 검증 내용: version 불일치의 stale discovery 실패
+    /// - 사전 조건: catalog 2.2.0에 3.0.0 capability를 반환하는 provider
+    /// - 기대 결과: 서로 다른 계약을 한 snapshot으로 묶지 않고 discovery 실패
+    func testDiscoveryRejectsCapabilityCatalogVersionMismatch() async {
+        let client = EntryPropertiesClient(
+            loadCatalog: { _ in EntryPropertiesCatalog(version: "2.2.0") },
+            loadAssignments: { selection, _ in
+                EntryPropertiesAssignments(
+                    canonicalRevision: 0,
+                    values: selection.targets.map { .init(target: $0, value: .unset, revision: 0) },
+                )
+            },
+            discoverCapabilities: { _ in
+                EntryPropertiesCapabilityReport(
+                    items: [.init(operation: .changeValue, capability: .supported)],
+                    supportsMultipleTargets: true,
+                    catalogVersion: "3.0.0",
+                )
+            },
+            prepare: { _ in throw EntryPropertiesFailure.unavailable },
+            execute: { _ in throw EntryPropertiesFailure.unavailable },
+            readBack: { _ in throw EntryPropertiesFailure.unavailable },
+        )
+        let fixture = Fixture()
+        let store = TestStore(initialState: fixture.readyState) {
+            EntryPropertiesFeature()
+        } withDependencies: {
+            $0.entryPropertiesClient = client
+        }
+
+        await store.send(.discoverCapabilities) {
+            $0.generation = 1
+            $0.activePhase = .discovering
+            $0.status = .discovering
+            $0.capabilityReport = nil
+            $0.targetSnapshot = nil
+            $0.proposal = nil
+            $0.canonicalResult = nil
+        }
+        await store.receive(.init(kind: .discoveryCompleted(1, .failure(.stale)))) {
+            $0.activePhase = nil
+            $0.status = .rejected(.stale)
+            $0.lastOutcome = .propertyChangeRejected(.stale)
+        }
+        await store.receive(.init(kind: .outcome(.propertyChangeRejected(.stale))))
     }
 }
 

@@ -107,9 +107,7 @@ public struct EntryPropertiesFeature: Sendable {
                             assignments: assignments,
                         )
                         let capabilities = try await client.discoverCapabilities(request)
-                        guard let catalogVersion = capabilities.catalogVersion ?? catalog.version else {
-                            throw EntryPropertiesFailure.unavailable
-                        }
+                        let catalogVersion = try resolveDiscoveryCatalogVersion(catalog, capabilities)
                         let snapshot = EntryPropertiesTargetSnapshot(
                             // Assignment loading resolves each path to its canonical
                             // identity, including targets with an implicit unset.
@@ -492,6 +490,25 @@ private func targetIdentityCompatible(
         pair.0.localPath == pair.1.localPath
             && (pair.0.entryID == nil || pair.0.entryID == pair.1.entryID)
     }
+}
+
+/// discovery가 snapshot에 묶는 catalog version을 정한다. 두 출처가 모두 있으면
+/// 동일해야 하고, 불일치는 서로 다른 계약의 value contract와 capability를 한
+/// snapshot으로 묶는 version skew로 실패한다.
+private func resolveDiscoveryCatalogVersion(
+    _ catalog: EntryPropertiesCatalog,
+    _ capabilities: EntryPropertiesCapabilityReport,
+) throws -> String {
+    guard let catalogVersion = capabilities.catalogVersion ?? catalog.version else {
+        throw EntryPropertiesFailure.unavailable
+    }
+    if let catalogSide = catalog.version,
+       let capabilitySide = capabilities.catalogVersion,
+       catalogSide != capabilitySide
+    {
+        throw EntryPropertiesFailure.stale
+    }
+    return catalogVersion
 }
 
 /// 검증 성공 뒤 같은 selection의 연속 편집이 정본 revision을 CAS 토큰으로

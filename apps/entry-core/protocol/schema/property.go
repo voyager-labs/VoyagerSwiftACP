@@ -633,7 +633,11 @@ func (result PropertyChangeExecuteResult) Validate() error {
 }
 
 func (result PropertyConditionQueryResult) Validate() error {
-	if result.Items == nil || result.UnresolvedCandidateIndices == nil ||
+	// 모든 유효 요청의 target·projection 상한은 256이므로 결과 배열과
+	// candidate index도 같은 상한 안에 있어야 한다. 이를 벗어난 index는
+	// 어떤 요청에도 대응할 수 없는 wire 계약 위반이다.
+	if result.Items == nil || len(result.Items) > maximumPropertyTargets ||
+		result.UnresolvedCandidateIndices == nil || len(result.UnresolvedCandidateIndices) > maximumPropertyTargets ||
 		result.CatalogVersion != domainentry.ConditionCatalogVersion ||
 		result.HasMore != (result.NextPageToken != nil) {
 		return ErrInvalidResponse
@@ -644,7 +648,8 @@ func (result PropertyConditionQueryResult) Validate() error {
 	matchedIndices := make(map[int]struct{}, len(result.Items))
 	last := -1
 	for _, item := range result.Items {
-		if item.CandidateIndex <= last || !validEntryID(item.EntryID) || item.Projection == nil {
+		if item.CandidateIndex <= last || item.CandidateIndex >= maximumPropertyTargets ||
+			!validEntryID(item.EntryID) || item.Projection == nil || len(item.Projection) > maximumPropertyIDs {
 			return ErrInvalidResponse
 		}
 		matchedIndices[item.CandidateIndex] = struct{}{}
@@ -659,7 +664,7 @@ func (result PropertyConditionQueryResult) Validate() error {
 	}
 	last = -1
 	for _, index := range result.UnresolvedCandidateIndices {
-		if index <= last {
+		if index <= last || index >= maximumPropertyTargets {
 			return ErrInvalidResponse
 		}
 		// 같은 candidate가 일치 결과와 해석 실패 대상에 동시에 있으면 caller가
