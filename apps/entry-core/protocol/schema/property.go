@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"time"
+
+	domainentry "github.com/voyager-labs/voyager-app/apps/entry-core/internal/domain/entry"
 )
 
 // Property wire contract 상한은 서로 독립적인 캡이다. 어떤 캡을 통과해도
@@ -501,7 +503,11 @@ func (definition PropertyDefinition) Validate() error {
 
 func (capability PropertyConditionCapability) Validate() error {
 	if capability.Supported {
-		if capability.EvaluationScope != "local_assignment" || capability.CatalogVersion == "" ||
+		// relation table은 고정 catalog 버전을 미러링하므로 다른 버전의
+		// semantics는 fail closed로 거절한다 (Swift PropertyConditionCatalog와
+		// 동일 경계).
+		if capability.EvaluationScope != "local_assignment" ||
+			capability.CatalogVersion != domainentry.ConditionCatalogVersion ||
 			!oneOf(capability.NativeType, "string", "number", "date", "boolean", "string_list", "categorical") ||
 			capability.Reason != "" || capability.AllowedOperators == nil {
 			return ErrInvalidResponse
@@ -627,7 +633,8 @@ func (result PropertyChangeExecuteResult) Validate() error {
 }
 
 func (result PropertyConditionQueryResult) Validate() error {
-	if result.Items == nil || result.UnresolvedCandidateIndices == nil || result.CatalogVersion == "" ||
+	if result.Items == nil || result.UnresolvedCandidateIndices == nil ||
+		result.CatalogVersion != domainentry.ConditionCatalogVersion ||
 		result.HasMore != (result.NextPageToken != nil) {
 		return ErrInvalidResponse
 	}

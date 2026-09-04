@@ -774,6 +774,46 @@ func TestPropertyCapabilityExactnessAgainstValueContract(t *testing.T) {
 	}
 }
 
+// --- 11c. catalog version 고정과 origin 무결성: 다른 버전의 semantics와
+// 알 수 없는 ownership은 fail closed로 거절한다 ---
+
+func TestPropertyConditionCatalogVersionPinned(t *testing.T) {
+	t.Parallel()
+
+	pid := fixturePropertyID(t, 620)
+	foreignCapability := fixtureConditionCapability()
+	foreignCapability.CatalogVersion = "3.0.0"
+	foreignDefinition := PropertyDefinition{PropertyID: pid, Key: "k", Name: "n", ValueType: "text", Cardinality: "one", State: "active", Origin: "user_defined", Revision: 1, Options: []PropertyOption{}, ConditionCapability: foreignCapability}
+	if foreignDefinition.Validate() == nil {
+		t.Fatal("capability advertising foreign catalog version accepted")
+	}
+
+	foreignResult := PropertyConditionQueryResult{Items: []PropertyConditionQueryItem{}, UnresolvedCandidateIndices: []int{}, CatalogVersion: "3.0.0", HasMore: false}
+	if foreignResult.Validate() == nil {
+		t.Fatal("query result with foreign catalog version accepted")
+	}
+
+	canonicalResult := PropertyConditionQueryResult{Items: []PropertyConditionQueryItem{}, UnresolvedCandidateIndices: []int{}, CatalogVersion: domainentry.ConditionCatalogVersion, HasMore: false}
+	if canonicalResult.Validate() != nil {
+		t.Fatal("query result with canonical catalog version rejected")
+	}
+}
+
+func TestPropertyDefinitionRejectsUnknownOrigin(t *testing.T) {
+	t.Parallel()
+
+	pid := fixturePropertyID(t, 630)
+	disabledUnknownOrigin := PropertyDefinition{PropertyID: pid, Key: "k", Name: "n", ValueType: "text", Cardinality: "one", State: "disabled", Origin: "invalid", Revision: 1, Options: []PropertyOption{}, ConditionCapability: PropertyConditionCapability{Reason: "definition_disabled"}}
+	if disabledUnknownOrigin.Validate() == nil {
+		t.Fatal("definition with unknown origin accepted on definition_disabled branch")
+	}
+
+	activeUnknownOrigin := PropertyDefinition{PropertyID: pid, Key: "k", Name: "n", ValueType: "text", Cardinality: "one", State: "active", Origin: "curated", Revision: 1, Options: []PropertyOption{}, ConditionCapability: PropertyConditionCapability{Reason: "source_runtime_unavailable"}}
+	if activeUnknownOrigin.Validate() == nil {
+		t.Fatal("definition with unknown origin accepted on runtime-unavailable branch")
+	}
+}
+
 func oidBad() string { return "not-a-uuid" }
 
 // --- 12. 에러 코드 계약: 신규 2종 + 전체 코드 고정 메시지 완전성 ---
