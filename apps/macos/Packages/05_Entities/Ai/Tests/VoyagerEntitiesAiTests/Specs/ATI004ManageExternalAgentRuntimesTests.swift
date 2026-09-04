@@ -48,6 +48,9 @@ final class ATI004ManageExternalAgentRuntimesTests: XCTestCase {
                 "exec", "--model", "gpt-5-codex", "-c", "model_reasoning_effort=\"high\"",
                 "--json", "--color", "never", "--strict-config",
                 "--ignore-user-config",
+                "-c", "default_permissions=\"voyager-reference\"",
+                "-c",
+                "permissions.voyager-reference.filesystem={\"/tmp/voyager-codex-workspace\"=\"read\",\":minimal\"=\"read\",\":root\"=\"deny\"}",
                 "--sandbox",
                 "read-only", "-C", root.path, "-",
             ],
@@ -82,6 +85,8 @@ final class ATI004ManageExternalAgentRuntimesTests: XCTestCase {
             command.arguments,
             [
                 "exec", "--model", "model", "--json", "--color", "never", "--strict-config", "--ignore-user-config",
+                "-c", "default_permissions=\"voyager-reference\"", "-c",
+                "permissions.voyager-reference.filesystem={\"/tmp/voyager-codex-workspace\"=\"read\",\":minimal\"=\"read\",\":root\"=\"deny\"}",
                 "--sandbox",
                 "workspace-write",
                 "-C", root.path, "--add-dir", root.appendingPathComponent("a").path, "--add-dir",
@@ -90,7 +95,7 @@ final class ATI004ManageExternalAgentRuntimesTests: XCTestCase {
             ],
         )
         XCTAssertEqual(command.arguments.count(where: { $0 == "--add-dir" }), 2)
-        XCTAssertFalse(command.arguments.contains("-c"))
+        XCTAssertTrue(command.arguments.contains("default_permissions=\"voyager-reference\""))
     }
 
     func testWorkspaceWriteRoots_useDistinctPrimaryAndAdditionalSemantics() throws {
@@ -115,6 +120,8 @@ final class ATI004ManageExternalAgentRuntimesTests: XCTestCase {
             command.arguments,
             [
                 "exec", "--model", "model", "--json", "--color", "never", "--strict-config", "--ignore-user-config",
+                "-c", "default_permissions=\"voyager-reference\"", "-c",
+                "permissions.voyager-reference.filesystem={\"/tmp/voyager-codex-workspace/primary/nested\"=\"read\",\":minimal\"=\"read\",\":root\"=\"deny\"}",
                 "--sandbox",
                 "workspace-write", "-C", working.path, "--add-dir", external.path, "--add-dir", primary.path, "-",
             ],
@@ -184,9 +191,13 @@ final class ATI004ManageExternalAgentRuntimesTests: XCTestCase {
         XCTAssertEqual(
             command.arguments,
             [
-                "exec", "resume", "--model", "model", "-c", "model_reasoning_effort=\"low\"",
+                "exec", "--model", "model", "-c", "model_reasoning_effort=\"low\"",
                 "--json", "--strict-config", "--ignore-user-config",
-                "opaque/provider/thread-id", "-",
+                "-c", "default_permissions=\"voyager-reference\"",
+                "-c",
+                "permissions.voyager-reference.filesystem={\"/tmp/voyager-codex-workspace\"=\"read\",\":minimal\"=\"read\",\":root\"=\"deny\"}",
+                "--sandbox", "read-only", "-C", root.path,
+                "resume", "opaque/provider/thread-id", "-",
             ],
         )
         XCTAssertFalse(command.arguments.contains("--ephemeral"))
@@ -935,8 +946,11 @@ final class ATI004ManageExternalAgentRuntimesTests: XCTestCase {
             [
                 "exec", "--model", "gpt-5-codex", "--json", "--color", "never", "--strict-config",
                 "--ignore-user-config",
+                "-c", "default_permissions=\"voyager-reference\"", "-c",
+                "permissions.voyager-reference.filesystem={\"/tmp/voyager-codex-workspace/authorized\"=\"read\",\"/tmp/voyager-codex-workspace/authorized/project\"=\"read\",\"/tmp/voyager-codex-workspace/extra\"=\"read\",\":minimal\"=\"read\",\":root\"=\"deny\"}",
                 "--sandbox",
-                "workspace-write", "-C", nested.path, "--add-dir", authorized.path, "--add-dir", extra.path, "-",
+                "workspace-write", "-C", nested.path, "--add-dir", authorized.path, "--add-dir", extra.path,
+                "--skip-git-repo-check", "-",
             ],
         )
         XCTAssertEqual(command.arguments.count(where: { $0 == "--add-dir" }), 2)
