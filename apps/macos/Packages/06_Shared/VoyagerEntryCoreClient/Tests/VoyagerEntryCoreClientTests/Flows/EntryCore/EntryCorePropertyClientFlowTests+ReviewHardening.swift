@@ -164,6 +164,66 @@ extension EntryCorePropertyClientFlowTests {
         let created = try await acceptedClient.definitionCreate(endpoint, request)
         XCTAssertEqual(created.origin, .userDefined)
     }
+
+    /// update/disable/option mutation 응답도 user-defined origin이어야 한다.
+    /// mutateDefinition은 Voyager-issued 정의만 대상으로 하므로 built-in
+    /// origin mutation 결과는 존재할 수 없다.
+    func testDefinitionUpdateRejectsBuiltInOriginResponse() async throws {
+        let propertyID = "00000000-0000-0000-8000-000000000001"
+        let request = try PropertyDefinitionUpdateRequest(
+            propertyID: PropertyID(rawValue: propertyID),
+            expectedDefinitionRevision: 1,
+            name: "updated name",
+        )
+        let endpoint = try EntryCoreEndpoint(path: "/tmp/property-client.sock")
+
+        func updateResponse(origin: String, capability: String) -> String {
+            """
+            {
+              "request_id":"update-id",
+              "ok":true,
+              "result":{"definition":{
+                "property_id":"\(propertyID)",
+                "key":"created-key","name":"updated name",
+                "value_type":"text","cardinality":"one","state":"active","origin":"\(origin)",
+                "revision":2,"options":[],
+                "condition_capability":\(capability)
+              }}
+            }
+            """
+        }
+        let runtimeUnavailable = #"{"supported":false,"reason":"source_runtime_unavailable"}"#
+        let supported = """
+        {"supported":true,"evaluation_scope":"local_assignment","catalog_version":"2.2.0",
+        "native_type":"string","allowed_operators":["all","any","cn","empty","eq","ew","exists","nc","neq","rx","sw"]}
+        """.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // decoder 관점에서 유효한 built-in 페어링도 mutation 응답으로는 승인되지 않는다.
+        let recorder = PropertyTransportRecorder(
+            response: Data(updateResponse(origin: "built_in", capability: runtimeUnavailable).utf8),
+        )
+        let client = EntryCorePropertyClient.makeLive(
+            requestID: { "update-id" },
+            makeTransport: recorder.makeTransport,
+        )
+        do {
+            _ = try await client.definitionUpdate(endpoint, request)
+            XCTFail("built-in origin update response should be rejected")
+        } catch {
+            XCTAssertEqual(error as? EntryCoreClientError, .protocolMismatch)
+        }
+        XCTAssertEqual(recorder.requests.count, 1)
+
+        let acceptedRecorder = PropertyTransportRecorder(
+            response: Data(updateResponse(origin: "user_defined", capability: supported).utf8),
+        )
+        let acceptedClient = EntryCorePropertyClient.makeLive(
+            requestID: { "update-id" },
+            makeTransport: acceptedRecorder.makeTransport,
+        )
+        let updated = try await acceptedClient.definitionUpdate(endpoint, request)
+        XCTAssertEqual(updated.origin, .userDefined)
+    }
 }
 
 private func definitionCreateResponse(origin: String, capability: String) -> String {

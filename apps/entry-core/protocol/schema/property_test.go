@@ -799,6 +799,38 @@ func TestPropertyConditionCatalogVersionPinned(t *testing.T) {
 	}
 }
 
+func TestPropertyConditionQueryResultRejectsCandidateOverlap(t *testing.T) {
+	t.Parallel()
+
+	overlap := PropertyConditionQueryResult{
+		Items: []PropertyConditionQueryItem{{
+			CandidateIndex: 0,
+			EntryID:        "ent:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+			Projection:     []PropertyAssignment{},
+		}},
+		UnresolvedCandidateIndices: []int{0},
+		CatalogVersion:             domainentry.ConditionCatalogVersion,
+		HasMore:                    false,
+	}
+	if overlap.Validate() == nil {
+		t.Fatal("candidate present in both matched and unresolved accepted")
+	}
+
+	disjoint := PropertyConditionQueryResult{
+		Items: []PropertyConditionQueryItem{{
+			CandidateIndex: 0,
+			EntryID:        "ent:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+			Projection:     []PropertyAssignment{},
+		}},
+		UnresolvedCandidateIndices: []int{1},
+		CatalogVersion:             domainentry.ConditionCatalogVersion,
+		HasMore:                    false,
+	}
+	if disjoint.Validate() != nil {
+		t.Fatal("disjoint matched and unresolved candidates rejected")
+	}
+}
+
 func TestPropertyDefinitionRejectsUnknownOrigin(t *testing.T) {
 	t.Parallel()
 

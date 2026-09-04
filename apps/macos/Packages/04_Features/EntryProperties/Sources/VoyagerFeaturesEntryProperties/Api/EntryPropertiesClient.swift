@@ -216,12 +216,26 @@ public enum EntryPropertiesClientFactory {
         return EntryPropertiesCanonicalResult(snapshot: snapshot, values: assignments.values)
     }
 
+    /// 공개 selection 조립의 전송 전 실패는 caller 입력 결함이므로 validation으로
+    /// 분류한다. mappedFailure의 .unavailable 변환은 daemon 장애 전용이다
+    /// (makeWireChanges의 request-side 변환과 동일 경계).
+    private static func localSelectionValue<T>(_ build: () throws -> T) throws -> T {
+        do {
+            return try build()
+        } catch let error as EntryCoreClientError {
+            guard case .protocolMismatch = error else { throw error }
+            throw EntryPropertiesFailure.validation
+        }
+    }
+
     private static func loadCatalog(
         propertyClient: EntryCorePropertyClient,
         endpoint: EntryCoreEndpoint,
         selection: EntryPropertiesSelection,
     ) async throws -> EntryPropertiesCatalog {
-        let propertyID = try PropertyID(rawValue: selection.propertyID.rawValue)
+        let propertyID = try localSelectionValue {
+            try PropertyID(rawValue: selection.propertyID.rawValue)
+        }
         let request = try PropertyDefinitionListRequest(
             pageSize: 256,
             requestedPropertyIDs: [propertyID],
@@ -253,11 +267,15 @@ public enum EntryPropertiesClientFactory {
         selection: EntryPropertiesSelection,
         catalog: EntryPropertiesCatalog,
     ) async throws -> EntryPropertiesAssignments {
-        let propertyID = try PropertyID(rawValue: selection.propertyID.rawValue)
+        let propertyID = try localSelectionValue {
+            try PropertyID(rawValue: selection.propertyID.rawValue)
+        }
         var values: [EntryPropertiesCanonicalValue] = []
         values.reserveCapacity(selection.targets.count)
         for target in selection.targets {
-            let wireTarget = try PropertyTarget(localPath: target.localPath)
+            let wireTarget = try localSelectionValue {
+                try PropertyTarget(localPath: target.localPath)
+            }
             let request = try PropertyAssignmentListRequest(
                 pageSize: 256,
                 target: wireTarget,

@@ -641,11 +641,13 @@ func (result PropertyConditionQueryResult) Validate() error {
 	if result.NextPageToken != nil && !validOpaqueASCII(*result.NextPageToken, 1, maximumPageTokenBytes) {
 		return ErrInvalidResponse
 	}
+	matchedIndices := make(map[int]struct{}, len(result.Items))
 	last := -1
 	for _, item := range result.Items {
 		if item.CandidateIndex <= last || !validEntryID(item.EntryID) || item.Projection == nil {
 			return ErrInvalidResponse
 		}
+		matchedIndices[item.CandidateIndex] = struct{}{}
 		last = item.CandidateIndex
 		previousID := ""
 		for _, assignment := range item.Projection {
@@ -658,6 +660,11 @@ func (result PropertyConditionQueryResult) Validate() error {
 	last = -1
 	for _, index := range result.UnresolvedCandidateIndices {
 		if index <= last {
+			return ErrInvalidResponse
+		}
+		// 같은 candidate가 일치 결과와 해석 실패 대상에 동시에 있으면 caller가
+		// 한 경로를 두 의미로 처리하게 되므로 모순 응답을 거절한다.
+		if _, matched := matchedIndices[index]; matched {
 			return ErrInvalidResponse
 		}
 		last = index

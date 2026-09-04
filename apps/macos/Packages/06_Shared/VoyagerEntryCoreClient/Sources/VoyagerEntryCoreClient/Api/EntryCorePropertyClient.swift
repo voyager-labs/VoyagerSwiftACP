@@ -278,7 +278,11 @@ extension EntryCorePropertyClient {
         expectedDefinitionRevision: Int64,
         state: PropertyDefinitionState = .active,
     ) -> Bool {
-        guard expectedDefinitionRevision >= 1, expectedDefinitionRevision < Int64.max else { return false }
+        // mutateDefinition은 Voyager-issued(사용자 작성) 정의만 대상으로 한다.
+        // built-in origin 응답은 요청으로 만들 수 없는 mutation 결과다.
+        guard expectedDefinitionRevision >= 1, expectedDefinitionRevision < Int64.max,
+              definition.origin == .userDefined
+        else { return false }
         return definition.id == propertyID
             && definition.revision == expectedDefinitionRevision + 1
             && definition.state == state

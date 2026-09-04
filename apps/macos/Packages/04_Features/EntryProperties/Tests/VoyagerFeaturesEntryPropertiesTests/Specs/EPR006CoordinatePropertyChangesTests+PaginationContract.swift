@@ -74,6 +74,46 @@ extension EPR006CoordinatePropertyChangesTests {
         let recordedOperations = await recorder.values()
         XCTAssertEqual(recordedOperations, ["assignmentList"])
     }
+
+    /// EPR-006-discover_property_change_capabilities: discovery 조립의 전송 전
+    /// 실패는 caller 입력 결함이므로 validation으로 분류된다.
+    /// - 검증 내용: malformed property ID·local path의 .validation 변환
+    /// - 사전 조건: wire 생성자가 거절하는 공개 selection 값
+    /// - 기대 결과: unavailable(복구 대상) 대신 validation(caller 결함)으로 fail closed
+    func testDiscoveryClassifiesMalformedSelectionAsValidation() async throws {
+        let propertyClient = paginatingPropertyClient(
+            definitionList: { _, _ in throw EntryCoreClientError.daemonUnavailable },
+            assignmentList: { _, _ in throw EntryCoreClientError.daemonUnavailable },
+        )
+        let client = try EntryPropertiesClientFactory.live(
+            propertyClient: propertyClient,
+            endpoint: EntryCoreEndpoint(path: "/tmp/entry-properties-review.sock"),
+            capabilityDiscovery: { _ in throw EntryPropertiesFailure.unavailable },
+        )
+        let catalog = EntryPropertiesCatalog(version: "2.2.0")
+
+        let badIDSelection = EntryPropertiesSelection(
+            targets: [.init(localPath: "/a")],
+            propertyID: .init(rawValue: "not-a-uuid"),
+        )
+        do {
+            _ = try await client.loadCatalog(badIDSelection)
+            XCTFail("malformed property ID should be rejected as validation")
+        } catch {
+            XCTAssertEqual(error as? EntryPropertiesFailure, .validation)
+        }
+
+        let badPathSelection = EntryPropertiesSelection(
+            targets: [.init(localPath: "")],
+            propertyID: .init(rawValue: "00000000-0000-0000-8000-000000000001"),
+        )
+        do {
+            _ = try await client.loadAssignments(badPathSelection, catalog)
+            XCTFail("malformed local path should be rejected as validation")
+        } catch {
+            XCTAssertEqual(error as? EntryPropertiesFailure, .validation)
+        }
+    }
 }
 
 private func paginatingPropertyClient(
