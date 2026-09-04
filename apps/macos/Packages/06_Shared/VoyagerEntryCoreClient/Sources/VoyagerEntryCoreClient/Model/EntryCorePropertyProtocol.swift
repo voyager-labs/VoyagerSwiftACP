@@ -183,6 +183,14 @@ nonisolated public struct PropertyChangeTarget: Equatable, Sendable {
     ) throws {
         guard expectedDefinitionRevision >= 1, expectedAssignmentRevision >= 0,
               PropertyWireValidation.desired(desired) else { throw EntryCoreClientError.protocolMismatch }
+        // .value 변경의 desired와 caller 보존 contract가 어긋나면 daemon은 wire의
+        // 올바른 desired로 정상 커밋하지만 execute read-back이 로컬 contract와
+        // 대조해 실패로 보고한다. 전송 전에 거부해 이 불일치를 차단한다.
+        if case let .value(valueType, cardinality, _) = desired {
+            guard expectedValueContract.valueType == valueType,
+                  expectedValueContract.cardinality == cardinality
+            else { throw EntryCoreClientError.protocolMismatch }
+        }
         self.target = target
         self.entryID = entryID
         self.propertyID = propertyID

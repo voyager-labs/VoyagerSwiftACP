@@ -291,6 +291,8 @@ extension EntryCorePropertyClient {
         guard options.dropLast() == preOptions,
               let created = options.last,
               created.id != preOptions.last?.id,
+              // 새 ordinal은 기존 option 수로 정해지고 wire position은 1-based다.
+              created.position == preOptions.count + 1,
               created.state == .active, created.label == request.label
         else { return false }
         let expected = mutatedDefinition(

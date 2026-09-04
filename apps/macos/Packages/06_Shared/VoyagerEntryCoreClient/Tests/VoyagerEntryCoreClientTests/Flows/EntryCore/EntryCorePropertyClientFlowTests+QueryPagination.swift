@@ -549,11 +549,73 @@ func testDefinitionMutationRequestsValidateExpectedDefinitionSnapshot() throws {
     )
 }
 
+/// .value 변경의 desired와 caller 보존 contract가 어긋나면 daemon은 wire의
+/// 올바른 desired로 정상 커밋하지만 execute read-back이 로컬 contract와
+/// 대조해 실패로 보고한다. 전송 전에 거부해 이 불일치를 차단한다.
+func testChangeTargetRejectsValueContractMismatch() throws {
+    let propertyID = try PropertyID(rawValue: "00000000-0000-0000-8000-000000000001")
+    let entryID = try EntryCoreEntryID(rawValue: "ent:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
+    let target = try PropertyTarget(localPath: "/a")
+
+    let mismatched = [
+        SnapshotContractMismatchCase(
+            name: "text value with number contract",
+            contractValueType: .number,
+            contractCardinality: .one,
+        ),
+        SnapshotContractMismatchCase(
+            name: "text value with many cardinality",
+            contractValueType: nil,
+            contractCardinality: .many,
+        ),
+    ]
+    for mismatchCase in mismatched {
+        let contractValueType = mismatchCase.contractValueType
+        let contractCardinality = mismatchCase.contractCardinality
+        let resolvedValueType = contractValueType ?? .text
+        let resolvedCardinality = contractCardinality ?? .one
+        do {
+            _ = try PropertyChangeTarget(
+                target: target,
+                propertyID: propertyID,
+                expectedDefinitionRevision: 1,
+                expectedAssignmentRevision: 0,
+                desired: .value(.text, .one, .text("v")),
+                expectedValueContract: ExpectedValueContract(
+                    valueType: resolvedValueType,
+                    cardinality: resolvedCardinality,
+                ),
+                entryID: entryID,
+            )
+            XCTFail("\(mismatchCase.name) should be rejected")
+        } catch {
+            XCTAssertEqual(error as? EntryCoreClientError, .protocolMismatch, mismatchCase.name)
+        }
+    }
+
+    // 일치하는 contract는 수용된다.
+    _ = try PropertyChangeTarget(
+        target: target,
+        propertyID: propertyID,
+        expectedDefinitionRevision: 1,
+        expectedAssignmentRevision: 0,
+        desired: .value(.text, .one, .text("v")),
+        expectedValueContract: ExpectedValueContract(valueType: .text, cardinality: .one),
+        entryID: entryID,
+    )
+}
+
 private struct SnapshotMismatchCase {
     let name: String
     let snapshotPropertyID: PropertyID
     let revision: Int64
     let snapshot: PropertyDefinition
+}
+
+private struct SnapshotContractMismatchCase {
+    let name: String
+    let contractValueType: PropertyValueType?
+    let contractCardinality: PropertyCardinality?
 }
 
 private func assertListPageRejected(

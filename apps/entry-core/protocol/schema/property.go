@@ -651,6 +651,11 @@ func (result PropertyConditionQueryResult) Validate() error {
 		result.HasMore != (result.NextPageToken != nil) {
 		return ErrInvalidResponse
 	}
+	// page completion은 pageSize번째 match를 채운 뒤에만 has_more을 설정한다.
+	// 따라서 has_more 페이지에 item이 없다는 것은 생성될 수 없는 응답이다.
+	if result.HasMore && len(result.Items) == 0 {
+		return ErrInvalidResponse
+	}
 	if result.NextPageToken != nil && !validOpaqueASCII(*result.NextPageToken, 1, maximumPageTokenBytes) {
 		return ErrInvalidResponse
 	}
