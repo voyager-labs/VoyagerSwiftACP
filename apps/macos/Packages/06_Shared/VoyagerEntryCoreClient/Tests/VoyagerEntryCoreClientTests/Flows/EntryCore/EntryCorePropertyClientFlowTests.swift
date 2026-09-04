@@ -379,28 +379,22 @@ extension EntryCorePropertyClientFlowTests {
         let optionID = try PropertyOptionID(rawValue: "00000000-0000-7000-8000-000000000001")
         let endpoint = try EntryCoreEndpoint(path: "/tmp/property-client.sock")
         let existingOptions = propertyOptionJSON(id: optionID.rawValue, label: "Existing", position: 1)
+        let wrongNewOption = propertyOptionJSON(
+            id: "00000000-0000-7000-8000-000000000002", label: "Wrong label", position: 2,
+        )
 
         let optionCreateRequest = try PropertyOptionCreateRequest(
             propertyID: propertyID,
             expectedDefinitionRevision: 1,
+            expectedOptionIDs: [optionID],
             label: "Created",
         )
-        await assertDefinitionMutationRejected(
-            "option create missing requested label",
+        await assertOptionCreateLabelMismatchRejected(
             request: optionCreateRequest,
-            response: definitionResponse(
-                definition: propertyDefinitionJSON(
-                    propertyID: propertyID.rawValue,
-                    state: "active",
-                    revision: 2,
-                    valueType: "select",
-                    options: "[\(existingOptions)]",
-                ),
-            ),
+            existingOptions: existingOptions,
+            wrongNewOption: wrongNewOption,
+            propertyID: propertyID.rawValue,
             endpoint: endpoint,
-            operation: { client, endpoint, request in
-                try await client.optionCreate(endpoint, request)
-            },
         )
 
         let optionUpdateRequest = try PropertyOptionUpdateRequest(
@@ -658,7 +652,7 @@ private func definitionListContextCases(
     ]
 }
 
-private func propertyDefinitionJSON(
+func propertyDefinitionJSON(
     propertyID: String,
     state: String,
     name: String = "Property name",
@@ -687,7 +681,7 @@ private func propertyDefinitionJSON(
     """
 }
 
-private func propertyOptionJSON(id: String, label: String, position: Int, state: String = "active") -> String {
+func propertyOptionJSON(id: String, label: String, position: Int, state: String = "active") -> String {
     """
     {
       "option_id":"\(id)",
@@ -698,7 +692,7 @@ private func propertyOptionJSON(id: String, label: String, position: Int, state:
     """
 }
 
-private func definitionResponse(definition: String) -> String {
+func definitionResponse(definition: String) -> String {
     """
     {
       "request_id":"definition-id",
@@ -708,7 +702,7 @@ private func definitionResponse(definition: String) -> String {
     """
 }
 
-private func assertDefinitionMutationRejected<Request: Encodable & Sendable>(
+func assertDefinitionMutationRejected<Request: Encodable & Sendable>(
     _ name: String,
     request: Request,
     response: String,

@@ -282,24 +282,6 @@ nonisolated public struct PropertyDefinitionDisableRequest: Encodable, Sendable 
         CodingKey { case propertyID = "property_id", expectedDefinitionRevision = "expected_definition_revision" }
 }
 
-nonisolated public struct PropertyOptionCreateRequest: Encodable, Sendable {
-    let propertyID: PropertyID
-    let expectedDefinitionRevision: Int64
-    let label: String
-    public init(propertyID: PropertyID, expectedDefinitionRevision: Int64, label: String) throws {
-        guard expectedDefinitionRevision >= 1,
-              PropertyWireValidation.short(label) else { throw EntryCoreClientError.protocolMismatch }
-        self.propertyID = propertyID
-        self.expectedDefinitionRevision = expectedDefinitionRevision
-        self.label = label
-    }
-
-    enum CodingKeys: String,
-        CodingKey
-    { case propertyID = "property_id", expectedDefinitionRevision = "expected_definition_revision", label
-    }
-}
-
 nonisolated public struct PropertyOptionUpdateRequest: Encodable, Sendable {
     let propertyID: PropertyID
     let optionID: PropertyOptionID

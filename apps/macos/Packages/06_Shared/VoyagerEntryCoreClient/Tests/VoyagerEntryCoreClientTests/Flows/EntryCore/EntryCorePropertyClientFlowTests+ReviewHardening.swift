@@ -231,6 +231,7 @@ extension EntryCorePropertyClientFlowTests {
         let request = try PropertyOptionCreateRequest(
             propertyID: PropertyID(rawValue: "00000000-0000-0000-8000-000000000001"),
             expectedDefinitionRevision: 1,
+            expectedOptionIDs: [PropertyOptionID(rawValue: "00000000-0000-7000-8000-000000000001")],
             label: "new-label",
         )
         let endpoint = try EntryCoreEndpoint(path: "/tmp/property-client.sock")
@@ -239,7 +240,15 @@ extension EntryCorePropertyClientFlowTests {
             .joined(separator: ",")
 
         let replacedRecorder = PropertyTransportRecorder(
-            response: Data(optionCreateResponse(lastLabel: "other-label", operators: operators).utf8),
+            response: Data(
+                optionCreateResponse(
+                    options: [
+                        selectOptionJSON(id: "00000000-0000-7000-8000-000000000001", label: "other-label", position: 1),
+                        selectOptionJSON(id: "00000000-0000-7000-8000-000000000002", label: "other-label", position: 2),
+                    ].joined(separator: ",\n          "),
+                    operators: operators,
+                ).utf8,
+            ),
         )
         let replacedClient = EntryCorePropertyClient.makeLive(
             requestID: { "option-create-id" },
@@ -254,7 +263,15 @@ extension EntryCorePropertyClientFlowTests {
         XCTAssertEqual(replacedRecorder.requests.count, 1)
 
         let createdRecorder = PropertyTransportRecorder(
-            response: Data(optionCreateResponse(lastLabel: "new-label", operators: operators).utf8),
+            response: Data(
+                optionCreateResponse(
+                    options: [
+                        selectOptionJSON(id: "00000000-0000-7000-8000-000000000001", label: "other-label", position: 1),
+                        selectOptionJSON(id: "00000000-0000-7000-8000-000000000002", label: "new-label", position: 2),
+                    ].joined(separator: ",\n          "),
+                    operators: operators,
+                ).utf8,
+            ),
         )
         let createdClient = EntryCorePropertyClient.makeLive(
             requestID: { "option-create-id" },
@@ -262,6 +279,43 @@ extension EntryCorePropertyClientFlowTests {
         )
         let created = try await createdClient.optionCreate(endpoint, request)
         XCTAssertEqual(created.options.last?.label, "new-label")
+    }
+
+    /// 기존 마지막 option이 이미 같은 label을 가지면 option 추가 없이
+    /// revision만 올린 응답도 max(position)·label 대조를 통과한다. 사전
+    /// option IDs 대조는 이 누락 생성을 거절한다.
+    func testOptionCreateRejectsResponseWithoutNewOption() async throws {
+        let option1ID = try PropertyOptionID(rawValue: "00000000-0000-7000-8000-000000000001")
+        let request = try PropertyOptionCreateRequest(
+            propertyID: PropertyID(rawValue: "00000000-0000-0000-8000-000000000001"),
+            expectedDefinitionRevision: 1,
+            expectedOptionIDs: [option1ID],
+            label: "new-label",
+        )
+        let endpoint = try EntryCoreEndpoint(path: "/tmp/property-client.sock")
+        let operators = PropertyConditionRelation.operators(for: .categorical)
+            .map { "\"\($0.rawValue)\"" }
+            .joined(separator: ",")
+
+        let noAdditionRecorder = PropertyTransportRecorder(
+            response: Data(
+                optionCreateResponse(
+                    options: selectOptionJSON(id: option1ID.rawValue, label: "new-label", position: 1),
+                    operators: operators,
+                ).utf8,
+            ),
+        )
+        let noAdditionClient = EntryCorePropertyClient.makeLive(
+            requestID: { "option-create-id" },
+            makeTransport: noAdditionRecorder.makeTransport,
+        )
+        do {
+            _ = try await noAdditionClient.optionCreate(endpoint, request)
+            XCTFail("response without a new option should be rejected")
+        } catch {
+            XCTAssertEqual(error as? EntryCoreClientError, .protocolMismatch)
+        }
+        XCTAssertEqual(noAdditionRecorder.requests.count, 1)
     }
 
     /// prepare의 before는 요청 CAS 기준을 그대로 반영해야 한다: expected 0이면
@@ -320,6 +374,69 @@ extension EntryCorePropertyClientFlowTests {
         )
         XCTAssertEqual(matchingRecorder.requests.count, 1)
     }
+
+    /// .value 변경의 prepare에서 before revision이 같아도 요청 desired와 다른
+    /// type·cardinality의 before는 다른 CAS 기준이다.
+    func testPrepareRejectsBeforeViolatingRequestedValueContract() async throws {
+        let propertyID = try PropertyID(rawValue: "00000000-0000-0000-8000-000000000001")
+        let entryID = try EntryCoreEntryID(rawValue: "ent:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
+        let endpoint = try EntryCoreEndpoint(path: "/tmp/property-client.sock")
+        let request = try PropertyChangeRequest(changes: [
+            PropertyChangeTarget(
+                target: PropertyTarget(localPath: "/a"),
+                propertyID: propertyID,
+                expectedDefinitionRevision: 1,
+                expectedAssignmentRevision: 2,
+                desired: .value(.text, .one, .text("v")),
+                entryID: entryID,
+            ),
+        ])
+
+        let mismatchedRecorder = PropertyTransportRecorder(
+            response: Data(prepareValueContractResponse(beforeValueType: "number").utf8),
+        )
+        let mismatchedClient = EntryCorePropertyClient.makeLive(
+            requestID: { "prepare-id" },
+            makeTransport: mismatchedRecorder.makeTransport,
+        )
+        do {
+            _ = try await mismatchedClient.changePrepare(endpoint, request)
+            XCTFail("before with a different value type should be rejected")
+        } catch {
+            XCTAssertEqual(error as? EntryCoreClientError, .protocolMismatch)
+        }
+        XCTAssertEqual(mismatchedRecorder.requests.count, 1)
+
+        let matchingRecorder = PropertyTransportRecorder(
+            response: Data(prepareValueContractResponse(beforeValueType: "text").utf8),
+        )
+        let matchingClient = EntryCorePropertyClient.makeLive(
+            requestID: { "prepare-id" },
+            makeTransport: matchingRecorder.makeTransport,
+        )
+        _ = try await matchingClient.changePrepare(endpoint, request)
+        XCTAssertEqual(matchingRecorder.requests.count, 1)
+    }
+}
+
+/// .value 변경의 prepare에서 before는 요청 desired와 같은 type·cardinality의
+/// 같은 revision이어야 한다.
+private func prepareValueContractResponse(beforeValueType: String) -> String {
+    """
+    {
+      "request_id":"prepare-id",
+      "ok":true,
+      "result":{"changes":[{
+        "target":{"kind":"local_path","local_path":"/a"},
+        "property_id":"00000000-0000-0000-8000-000000000001",
+        "entry_id":"ent:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "before":{"property_id":"00000000-0000-0000-8000-000000000001",
+          "entry_id":"ent:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","value_type":"\(beforeValueType)",
+          "cardinality":"one","state":"null","revision":2},
+        "after":{"state":"value","value_type":"text","cardinality":"one","value":"v"}
+      }],"requires_confirmation":true}
+    }
+    """
 }
 
 private struct PrepareCASCase {
@@ -438,7 +555,13 @@ private func propertyChangeExecuteResponse(assignments: String) -> String {
     """
 }
 
-private func optionCreateResponse(lastLabel: String, operators: String) -> String {
+private func selectOptionJSON(id: String, label: String, position: Int) -> String {
+    """
+    {"option_id":"\(id)","label":"\(label)","position":\(position),"state":"active"}
+    """
+}
+
+private func optionCreateResponse(options: String, operators: String) -> String {
     """
     {
       "request_id":"option-create-id",
@@ -449,14 +572,39 @@ private func optionCreateResponse(lastLabel: String, operators: String) -> Strin
         "value_type":"select","cardinality":"one","state":"active","origin":"user_defined",
         "revision":2,
         "options":[
-          {"option_id":"00000000-0000-7000-8000-000000000001","label":"other-label","position":1,"state":"active"},
-          {"option_id":"00000000-0000-7000-8000-000000000002","label":"\(lastLabel)","position":2,"state":"active"}
+          \(options)
         ],
         "condition_capability":{"supported":true,"evaluation_scope":"local_assignment",
           "catalog_version":"2.2.0","native_type":"categorical","allowed_operators":[\(operators)]}
       }}
     }
     """
+}
+
+func assertOptionCreateLabelMismatchRejected(
+    request: PropertyOptionCreateRequest,
+    existingOptions: String,
+    wrongNewOption: String,
+    propertyID: String,
+    endpoint: EntryCoreEndpoint,
+) async {
+    await assertDefinitionMutationRejected(
+        "option create missing requested label",
+        request: request,
+        response: definitionResponse(
+            definition: propertyDefinitionJSON(
+                propertyID: propertyID,
+                state: "active",
+                revision: 2,
+                valueType: "select",
+                options: "[\(existingOptions),\n          \(wrongNewOption)]",
+            ),
+        ),
+        endpoint: endpoint,
+        operation: { client, endpoint, request in
+            try await client.optionCreate(endpoint, request)
+        },
+    )
 }
 
 private func prepareResponseCases(

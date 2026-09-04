@@ -233,12 +233,15 @@ extension EntryCorePropertyClient {
             propertyID: request.propertyID,
             expectedDefinitionRevision: request.expectedDefinitionRevision,
         ) else { return false }
-        // CreateOption은 새 option을 항상 마지막 ordinal 뒤에 추가한다. 기존
-        // option이 같은 label을 가질 수 있으므로 contains 대신 마지막 option을
-        // 대조해야 누락·치환 응답이 거절된다.
-        guard let created = definition.options.max(by: { $0.position < $1.position }) else {
-            return false
-        }
+        // CreateOption은 매번 새 UUID로 정확히 하나의 option을 마지막 ordinal
+        // 뒤에 추가한다. 기존 option이 같은 label을 가질 수 있으므로, 사전
+        // option IDs와 대조해 정확히 하나의 새 마지막 option이 추가됐는지
+        // 확인해야 누락·치환 응답이 거절된다.
+        let options = definition.options.sorted(by: { $0.position < $1.position })
+        guard options.dropLast().map(\.id) == request.expectedOptionIDs,
+              let created = options.last,
+              created.id != request.expectedOptionIDs.last
+        else { return false }
         return created.state == .active && created.label == request.label
     }
 
@@ -371,6 +374,7 @@ extension EntryCorePropertyClient {
                 && preparedBeforeMatchesExpectedRevision(
                     prepared.before,
                     expectedAssignmentRevision: requested.expectedAssignmentRevision,
+                    desired: requested.desired,
                 )
         }
     }
@@ -378,13 +382,18 @@ extension EntryCorePropertyClient {
     nonisolated private static func preparedBeforeMatchesExpectedRevision(
         _ before: PropertyAssignment?,
         expectedAssignmentRevision: Int64,
+        desired: PropertyDesiredState,
     ) -> Bool {
-        // expected 0은 implicit unset 첫 쓰기다 — before는 nil이어야 하고, 그
-        // 외에는 요청 CAS 기준 revision을 그대로 반영한 before가 와야 한다.
-        // 그렇지 않으면 caller가 실제 CAS 기준과 다른 이전 값을 확인한 뒤
-        // mutation을 승인하게 된다.
         guard let before else { return expectedAssignmentRevision == 0 }
-        return expectedAssignmentRevision > 0 && before.revision == expectedAssignmentRevision
+        guard expectedAssignmentRevision > 0, before.revision == expectedAssignmentRevision else {
+            return false
+        }
+        // .value 변경의 before도 요청 contract와 같은 type·cardinality여야 한다.
+        // 같은 revision이라도 다른 타입의 이전 값은 다른 CAS 기준이다.
+        if case let .value(valueType, cardinality, _) = desired {
+            return before.valueType == valueType && before.cardinality == cardinality
+        }
+        return true
     }
 
     nonisolated private static func executeOperation(
