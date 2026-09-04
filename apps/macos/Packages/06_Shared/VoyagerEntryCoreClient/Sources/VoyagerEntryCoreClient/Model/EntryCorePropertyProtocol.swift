@@ -315,55 +315,33 @@ nonisolated public struct PropertyOptionReorderRequest: Encodable, Sendable {
     let expectedDefinitionRevision: Int64
     let optionIDs: [PropertyOptionID]
     /// ReorderOptions는 활성 option 순서만 바꾸고 label·state·identity는
-    /// 보존한다. 응답 전체가 이 사전 snapshot의 순열인지 검증하는 데 쓰이며
-    /// wire 요청에는 포함되지 않는다.
-    let expectedOptions: [PropertyOption]
+    /// 보존하며 ordinal을 재번호 매긴다. 응답 definition이 이 사전 snapshot에서
+    /// 순서 변경·revision 증가 외에는 변하지 않는지 검증하는 데 쓰이며 wire
+    /// 요청에는 포함되지 않는다.
+    let expectedDefinition: PropertyDefinition
     public init(
         propertyID: PropertyID,
         expectedDefinitionRevision: Int64,
         optionIDs: [PropertyOptionID],
-        expectedOptions: [PropertyOption],
+        expectedDefinition: PropertyDefinition,
     ) throws {
         guard expectedDefinitionRevision >= 1, (1 ... 256).contains(optionIDs.count),
-              Set(optionIDs).count == optionIDs.count else { throw EntryCoreClientError.protocolMismatch }
+              Set(optionIDs).count == optionIDs.count,
+              expectedDefinition.id == propertyID,
+              expectedDefinition.revision == expectedDefinitionRevision,
+              expectedDefinition.state == .active,
+              expectedDefinition.origin == .userDefined
+        else { throw EntryCoreClientError.protocolMismatch }
         self.propertyID = propertyID
         self.expectedDefinitionRevision = expectedDefinitionRevision
         self.optionIDs = optionIDs
-        self.expectedOptions = expectedOptions
+        self.expectedDefinition = expectedDefinition
     }
 
     enum CodingKeys: String,
         CodingKey
     { case propertyID = "property_id", expectedDefinitionRevision = "expected_definition_revision",
            optionIDs = "option_ids"
-    }
-}
-
-nonisolated public struct PropertyOptionDisableRequest: Encodable, Sendable {
-    let propertyID: PropertyID
-    let optionID: PropertyOptionID
-    let expectedDefinitionRevision: Int64
-    /// DisableOption은 대상 상태만 비활성으로 바꾼다. 응답의 나머지 option이
-    /// 이 사전 snapshot과 정확히 일치하는지 검증하는 데 쓰이며 wire 요청에는
-    /// 포함되지 않는다.
-    let expectedOptions: [PropertyOption]
-    public init(
-        propertyID: PropertyID,
-        optionID: PropertyOptionID,
-        expectedDefinitionRevision: Int64,
-        expectedOptions: [PropertyOption],
-    ) throws {
-        guard expectedDefinitionRevision >= 1 else { throw EntryCoreClientError.protocolMismatch }
-        self.propertyID = propertyID
-        self.optionID = optionID
-        self.expectedDefinitionRevision = expectedDefinitionRevision
-        self.expectedOptions = expectedOptions
-    }
-
-    enum CodingKeys: String,
-        CodingKey
-    { case propertyID = "property_id", optionID = "option_id",
-           expectedDefinitionRevision = "expected_definition_revision"
     }
 }
 

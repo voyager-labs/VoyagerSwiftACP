@@ -15,10 +15,10 @@ extension EntryCorePropertyClientFlowTests {
             propertyID: PropertyID(rawValue: "00000000-0000-0000-8000-000000000001"),
             optionID: option1ID,
             expectedDefinitionRevision: 1,
-            expectedOptions: [
+            expectedDefinition: selectDefinitionSnapshot(options: [
                 PropertyOption(id: option1ID, label: "First", position: 1, state: .active),
                 PropertyOption(id: option2ID, label: "Second", position: 2, state: .active),
-            ],
+            ]),
             label: "Renamed option",
         )
         let endpoint = try EntryCoreEndpoint(path: "/tmp/property-client.sock")
@@ -51,10 +51,10 @@ extension EntryCorePropertyClientFlowTests {
             propertyID: PropertyID(rawValue: "00000000-0000-0000-8000-000000000001"),
             expectedDefinitionRevision: 1,
             optionIDs: [option2ID, option1ID],
-            expectedOptions: [
+            expectedDefinition: selectDefinitionSnapshot(options: [
                 PropertyOption(id: option1ID, label: "First", position: 1, state: .active),
                 PropertyOption(id: option2ID, label: "Second", position: 2, state: .active),
-            ],
+            ]),
         )
         let endpoint = try EntryCoreEndpoint(path: "/tmp/property-client.sock")
         let operators = PropertyConditionRelation.operators(for: .categorical)
@@ -86,10 +86,10 @@ extension EntryCorePropertyClientFlowTests {
             propertyID: PropertyID(rawValue: "00000000-0000-0000-8000-000000000001"),
             optionID: option1ID,
             expectedDefinitionRevision: 1,
-            expectedOptions: [
+            expectedDefinition: selectDefinitionSnapshot(options: [
                 PropertyOption(id: option1ID, label: "First", position: 1, state: .active),
                 PropertyOption(id: option2ID, label: "Second", position: 2, state: .active),
-            ],
+            ]),
         )
         let endpoint = try EntryCoreEndpoint(path: "/tmp/property-client.sock")
         let operators = PropertyConditionRelation.operators(for: .categorical)
@@ -111,6 +111,25 @@ extension EntryCorePropertyClientFlowTests {
             try await client.optionDisable(endpoint, request)
         }
     }
+}
+
+func selectDefinitionSnapshot(options: [PropertyOption]) throws -> PropertyDefinition {
+    try PropertyDefinition(
+        id: PropertyID(rawValue: "00000000-0000-0000-8000-000000000001"),
+        key: "select-key",
+        name: "select name",
+        valueType: .select,
+        cardinality: .one,
+        state: .active,
+        origin: .userDefined,
+        revision: 1,
+        options: options,
+        conditionCapability: .supported(
+            catalogVersion: PropertyConditionCatalog.version,
+            nativeType: .categorical,
+            allowedOperators: PropertyConditionRelation.operators(for: .categorical),
+        ),
+    )
 }
 
 private func assertOptionMutationRejected(

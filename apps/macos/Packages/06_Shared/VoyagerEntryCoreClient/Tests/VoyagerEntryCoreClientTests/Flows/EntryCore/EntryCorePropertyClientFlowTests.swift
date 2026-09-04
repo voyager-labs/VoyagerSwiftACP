@@ -434,9 +434,18 @@ extension EntryCorePropertyClientFlowTests {
         let optionCreateRequest = try PropertyOptionCreateRequest(
             propertyID: propertyID,
             expectedDefinitionRevision: 1,
-            expectedOptions: [
-                PropertyOption(id: optionID, label: "Existing", position: 1, state: .active),
-            ],
+            expectedDefinition: PropertyDefinition(
+                id: propertyID,
+                key: "property-key",
+                name: "Property name",
+                valueType: .select,
+                cardinality: .one,
+                state: .active,
+                origin: .userDefined,
+                revision: 1,
+                options: [PropertyOption(id: optionID, label: "Existing", position: 1, state: .active)],
+                conditionCapability: .unsupported(.unsupportedValueContract),
+            ),
             label: "Created",
         )
         await assertOptionCreateLabelMismatchRejected(
@@ -451,9 +460,18 @@ extension EntryCorePropertyClientFlowTests {
             propertyID: propertyID,
             optionID: optionID,
             expectedDefinitionRevision: 1,
-            expectedOptions: [
-                PropertyOption(id: optionID, label: "Existing", position: 1, state: .active),
-            ],
+            expectedDefinition: PropertyDefinition(
+                id: propertyID,
+                key: "property-key",
+                name: "Property name",
+                valueType: .select,
+                cardinality: .one,
+                state: .active,
+                origin: .userDefined,
+                revision: 1,
+                options: [PropertyOption(id: optionID, label: "Existing", position: 1, state: .active)],
+                conditionCapability: .unsupported(.unsupportedValueContract),
+            ),
             label: "Renamed option",
         )
         await assertDefinitionMutationRejected(
@@ -485,10 +503,21 @@ extension EntryCorePropertyClientFlowTests {
             propertyID: propertyID,
             expectedDefinitionRevision: 1,
             optionIDs: [optionID2, optionID1],
-            expectedOptions: [
-                PropertyOption(id: optionID1, label: "First", position: 1, state: .active),
-                PropertyOption(id: optionID2, label: "Second", position: 2, state: .active),
-            ],
+            expectedDefinition: PropertyDefinition(
+                id: propertyID,
+                key: "property-key",
+                name: "Property name",
+                valueType: .select,
+                cardinality: .one,
+                state: .active,
+                origin: .userDefined,
+                revision: 1,
+                options: [
+                    PropertyOption(id: optionID1, label: "First", position: 1, state: .active),
+                    PropertyOption(id: optionID2, label: "Second", position: 2, state: .active),
+                ],
+                conditionCapability: .unsupported(.unsupportedValueContract),
+            ),
         )
         let originalOrder = [
             propertyOptionJSON(id: optionID1.rawValue, label: "First", position: 1),
@@ -522,9 +551,18 @@ extension EntryCorePropertyClientFlowTests {
             propertyID: propertyID,
             optionID: optionID,
             expectedDefinitionRevision: 1,
-            expectedOptions: [
-                PropertyOption(id: optionID, label: "Existing", position: 1, state: .active),
-            ],
+            expectedDefinition: PropertyDefinition(
+                id: propertyID,
+                key: "property-key",
+                name: "Property name",
+                valueType: .select,
+                cardinality: .one,
+                state: .active,
+                origin: .userDefined,
+                revision: 1,
+                options: [PropertyOption(id: optionID, label: "Existing", position: 1, state: .active)],
+                conditionCapability: .unsupported(.unsupportedValueContract),
+            ),
         )
 
         await assertDefinitionMutationRejected(

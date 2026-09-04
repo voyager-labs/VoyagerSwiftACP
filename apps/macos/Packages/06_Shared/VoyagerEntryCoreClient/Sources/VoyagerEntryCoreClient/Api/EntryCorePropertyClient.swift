@@ -284,15 +284,21 @@ extension EntryCorePropertyClient {
             expectedDefinitionRevision: request.expectedDefinitionRevision,
         ) else { return false }
         // CreateOption은 매번 새 UUID로 정확히 하나의 option을 마지막 ordinal
-        // 뒤에 추가한다. 기존 option이 같은 label을 가질 수 있으므로, 사전
-        // option snapshot과 대조해 정확히 하나의 새 마지막 option이 추가됐는지
-        // 확인해야 누락·치환 응답이 거절된다.
+        // 뒤에 추가한다. 사전 definition snapshot의 option 선행 구간과 대조해
+        // 누락·치환 응답을 거절한다.
+        let preOptions = request.expectedDefinition.options
         let options = definition.options.sorted(by: { $0.position < $1.position })
-        guard options.dropLast() == request.expectedOptions,
+        guard options.dropLast() == preOptions,
               let created = options.last,
-              created.id != request.expectedOptions.last?.id
+              created.id != preOptions.last?.id,
+              created.state == .active, created.label == request.label
         else { return false }
-        return created.state == .active && created.label == request.label
+        let expected = mutatedDefinition(
+            from: request.expectedDefinition,
+            revision: request.expectedDefinitionRevision + 1,
+            options: options,
+        )
+        return definition == expected
     }
 
     nonisolated private static func optionUpdateMatchesResponse(
@@ -304,16 +310,21 @@ extension EntryCorePropertyClient {
             propertyID: request.propertyID,
             expectedDefinitionRevision: request.expectedDefinitionRevision,
         ) else { return false }
-        // RenameOption은 대상 label만 바꾼다. 다른 option의 변경·제거까지
-        // 반영한 응답은 정상 daemon에서 생성될 수 없다.
-        guard let expected = expectedOptionsAfterMutating(
-            request.expectedOptions,
+        // RenameOption은 대상 label만 바꾼다. 다른 option의 변경·제거와
+        // definition 계약 변경이 섞인 응답은 정상 daemon에서 생성될 수 없다.
+        guard let expectedOptions = expectedOptionsAfterMutating(
+            request.expectedDefinition.options,
             optionID: request.optionID,
             transform: { option in
                 PropertyOption(id: option.id, label: request.label, position: option.position, state: option.state)
             },
         ) else { return false }
-        return definition.options == expected
+        let expected = mutatedDefinition(
+            from: request.expectedDefinition,
+            revision: request.expectedDefinitionRevision + 1,
+            options: expectedOptions,
+        )
+        return definition == expected
     }
 
     nonisolated private static func optionReorderMatchesResponse(
@@ -328,11 +339,16 @@ extension EntryCorePropertyClient {
         // ReorderOptions는 활성 option 순서만 바꾸고 label·state·identity는
         // 보존하며 ordinal을 재번호 매긴다. 다른 변경이 섞인 응답은 정상
         // daemon에서 생성될 수 없다.
-        guard let expected = expectedOptionsAfterReorder(
-            request.expectedOptions,
+        guard let expectedOptions = expectedOptionsAfterReorder(
+            request.expectedDefinition.options,
             optionIDs: request.optionIDs,
         ) else { return false }
-        return definition.options == expected
+        let expected = mutatedDefinition(
+            from: request.expectedDefinition,
+            revision: request.expectedDefinitionRevision + 1,
+            options: expectedOptions,
+        )
+        return definition == expected
     }
 
     nonisolated private static func optionDisableMatchesResponse(
@@ -344,20 +360,48 @@ extension EntryCorePropertyClient {
             propertyID: request.propertyID,
             expectedDefinitionRevision: request.expectedDefinitionRevision,
         ) else { return false }
-        // DisableOption은 대상 상태만 비활성으로 바꾼다. 다른 option의
-        // 변경·제거까지 반영한 응답은 정상 daemon에서 생성될 수 없다.
-        guard let expected = expectedOptionsAfterMutating(
-            request.expectedOptions,
+        // DisableOption은 대상 option의 상태만 비활성으로 바꾼다. 다른 option의
+        // 변경·제거와 definition 계약 변경이 섞인 응답은 정상 daemon에서 생성될
+        // 수 없다.
+        guard let expectedOptions = expectedOptionsAfterMutating(
+            request.expectedDefinition.options,
             optionID: request.optionID,
             transform: { option in
                 PropertyOption(id: option.id, label: option.label, position: option.position, state: .disabled)
             },
         ) else { return false }
-        return definition.options == expected
+        let expected = mutatedDefinition(
+            from: request.expectedDefinition,
+            revision: request.expectedDefinitionRevision + 1,
+            options: expectedOptions,
+        )
+        return definition == expected
+    }
+
+    /// 사전 definition snapshot에서 revision만 증가시킨 기대 응답을 만든다.
+    /// option mutation은 definition 계약과 capability를 변경하지 않는다.
+    nonisolated private static func mutatedDefinition(
+        from snapshot: PropertyDefinition,
+        revision: Int64,
+        options: [PropertyOption],
+    ) -> PropertyDefinition {
+        PropertyDefinition(
+            id: snapshot.id,
+            key: snapshot.key,
+            name: snapshot.name,
+            valueType: snapshot.valueType,
+            cardinality: snapshot.cardinality,
+            state: snapshot.state,
+            origin: snapshot.origin,
+            revision: revision,
+            options: options,
+            conditionCapability: snapshot.conditionCapability,
+        )
     }
 
     /// 사전 option snapshot에서 대상 option 하나에만 transform을 적용한
-    /// 기대 응답을 만든다. option 생성이 실패하면 검증 불가로 nil을 반환한다.
+    /// 기대 option 배열을 만든다. option 생성이 실패하면 검증 불가로 nil을
+    /// 반환한다.
     nonisolated private static func expectedOptionsAfterMutating(
         _ expectedOptions: [PropertyOption],
         optionID: PropertyOptionID,
@@ -376,8 +420,8 @@ extension EntryCorePropertyClient {
     }
 
     /// 활성 option이 optionIDs 순서대로 오고 비활성 option이 snapshot 순서대로
-    /// 뒤에 붙는 재번호된 기대 응답을 만든다. 요청이 활성 집합의 완전한 순열이
-    /// 아니면 nil을 반환한다.
+    /// 뒤에 붙는 재번호된 기대 option 배열을 만든다. 요청이 활성 집합의 완전한
+    /// 순열이 아니면 nil을 반환한다.
     nonisolated private static func expectedOptionsAfterReorder(
         _ expectedOptions: [PropertyOption],
         optionIDs: [PropertyOptionID],
@@ -412,6 +456,39 @@ extension EntryCorePropertyClient {
         return renumbered
     }
 
+    nonisolated private static func proposalOperation(
+        _ requestID: @escaping @Sendable () -> String,
+        _ makeTransport: @escaping @Sendable () -> EntryCoreTransportRequest,
+    ) -> @Sendable (EntryCoreEndpoint, PropertyChangeRequest) async throws -> PropertyChangeProposal {
+        { endpoint, request in
+            guard case let .proposal(value) = try await call(
+                .propertyChangePrepare, endpoint, request, requestID, makeTransport,
+            ) else { throw EntryCoreClientError.protocolMismatch }
+            guard proposalMatchesRequest(value, request: request) else {
+                throw EntryCoreClientError.protocolMismatch
+            }
+            return value
+        }
+    }
+
+    nonisolated private static func executeOperation(
+        _ requestID: @escaping @Sendable () -> String,
+        _ makeTransport: @escaping @Sendable () -> EntryCoreTransportRequest,
+    ) -> @Sendable (EntryCoreEndpoint, PropertyChangeRequest) async throws -> [PropertyAssignment] {
+        { endpoint, request in
+            guard request.changes.allSatisfy({ $0.entryID != nil }) else {
+                throw EntryCoreClientError.localValidation
+            }
+            guard case let .assignments(value) = try await call(
+                .propertyChangeExecute, endpoint, request, requestID, makeTransport,
+            ) else { throw EntryCoreClientError.protocolMismatch }
+            guard executeAssignmentsMatchRequest(value, request: request) else {
+                throw EntryCoreClientError.protocolMismatch
+            }
+            return value
+        }
+    }
+
     nonisolated private static func definitionMutationRevisionMatches(
         _ definition: PropertyDefinition,
         propertyID: PropertyID,
@@ -438,6 +515,34 @@ extension EntryCorePropertyClient {
                 throw EntryCoreClientError.protocolMismatch
             }
             return value
+        }
+    }
+
+    nonisolated private static func proposalMatchesRequest(
+        _ proposal: PropertyChangeProposal,
+        request: PropertyChangeRequest,
+    ) -> Bool {
+        guard proposal.changes.count == request.changes.count else { return false }
+        return zip(proposal.changes, request.changes).allSatisfy { prepared, requested in
+            prepared.target == requested.target
+                && (requested.entryID == nil || prepared.entryID == requested.entryID)
+                && prepared.propertyID == requested.propertyID
+                && prepared.after == requested.desired
+                && preparedBeforeMatchesExpectedRevision(
+                    prepared.before,
+                    expectedAssignmentRevision: requested.expectedAssignmentRevision,
+                    desired: requested.desired,
+                )
+        }
+    }
+
+    nonisolated private static func executeAssignmentsMatchRequest(
+        _ assignments: [PropertyAssignment],
+        request: PropertyChangeRequest,
+    ) -> Bool {
+        guard assignments.count == request.changes.count else { return false }
+        return zip(assignments, request.changes).allSatisfy { assignment, change in
+            executeAssignmentMatchesChange(assignment, change: change)
         }
     }
 
@@ -477,39 +582,6 @@ extension EntryCorePropertyClient {
         return page.assignments.count == request.pageSize
     }
 
-    nonisolated private static func proposalOperation(
-        _ requestID: @escaping @Sendable () -> String,
-        _ makeTransport: @escaping @Sendable () -> EntryCoreTransportRequest,
-    ) -> @Sendable (EntryCoreEndpoint, PropertyChangeRequest) async throws -> PropertyChangeProposal {
-        { endpoint, request in
-            guard case let .proposal(value) = try await call(
-                .propertyChangePrepare, endpoint, request, requestID, makeTransport,
-            ) else { throw EntryCoreClientError.protocolMismatch }
-            guard proposalMatchesRequest(value, request: request) else {
-                throw EntryCoreClientError.protocolMismatch
-            }
-            return value
-        }
-    }
-
-    nonisolated private static func proposalMatchesRequest(
-        _ proposal: PropertyChangeProposal,
-        request: PropertyChangeRequest,
-    ) -> Bool {
-        guard proposal.changes.count == request.changes.count else { return false }
-        return zip(proposal.changes, request.changes).allSatisfy { prepared, requested in
-            prepared.target == requested.target
-                && (requested.entryID == nil || prepared.entryID == requested.entryID)
-                && prepared.propertyID == requested.propertyID
-                && prepared.after == requested.desired
-                && preparedBeforeMatchesExpectedRevision(
-                    prepared.before,
-                    expectedAssignmentRevision: requested.expectedAssignmentRevision,
-                    desired: requested.desired,
-                )
-        }
-    }
-
     nonisolated private static func preparedBeforeMatchesExpectedRevision(
         _ before: PropertyAssignment?,
         expectedAssignmentRevision: Int64,
@@ -525,34 +597,6 @@ extension EntryCorePropertyClient {
             return before.valueType == valueType && before.cardinality == cardinality
         }
         return true
-    }
-
-    nonisolated private static func executeOperation(
-        _ requestID: @escaping @Sendable () -> String,
-        _ makeTransport: @escaping @Sendable () -> EntryCoreTransportRequest,
-    ) -> @Sendable (EntryCoreEndpoint, PropertyChangeRequest) async throws -> [PropertyAssignment] {
-        { endpoint, request in
-            guard request.changes.allSatisfy({ $0.entryID != nil }) else {
-                throw EntryCoreClientError.localValidation
-            }
-            guard case let .assignments(value) = try await call(
-                .propertyChangeExecute, endpoint, request, requestID, makeTransport,
-            ) else { throw EntryCoreClientError.protocolMismatch }
-            guard executeAssignmentsMatchRequest(value, request: request) else {
-                throw EntryCoreClientError.protocolMismatch
-            }
-            return value
-        }
-    }
-
-    nonisolated private static func executeAssignmentsMatchRequest(
-        _ assignments: [PropertyAssignment],
-        request: PropertyChangeRequest,
-    ) -> Bool {
-        guard assignments.count == request.changes.count else { return false }
-        return zip(assignments, request.changes).allSatisfy { assignment, change in
-            executeAssignmentMatchesChange(assignment, change: change)
-        }
     }
 
     nonisolated private static func executeAssignmentMatchesChange(

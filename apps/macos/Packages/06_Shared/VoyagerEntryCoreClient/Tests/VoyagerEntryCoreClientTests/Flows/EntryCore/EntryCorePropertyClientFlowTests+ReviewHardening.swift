@@ -332,9 +332,24 @@ extension EntryCorePropertyClientFlowTests {
         let request = try PropertyOptionCreateRequest(
             propertyID: PropertyID(rawValue: "00000000-0000-0000-8000-000000000001"),
             expectedDefinitionRevision: 1,
-            expectedOptions: [
-                PropertyOption(id: option1ID, label: "original-label", position: 1, state: .active),
-            ],
+            expectedDefinition: PropertyDefinition(
+                id: PropertyID(rawValue: "00000000-0000-0000-8000-000000000001"),
+                key: "select-key",
+                name: "select name",
+                valueType: .select,
+                cardinality: .one,
+                state: .active,
+                origin: .userDefined,
+                revision: 1,
+                options: [
+                    PropertyOption(id: option1ID, label: "original-label", position: 1, state: .active),
+                ],
+                conditionCapability: .supported(
+                    catalogVersion: PropertyConditionCatalog.version,
+                    nativeType: .categorical,
+                    allowedOperators: PropertyConditionRelation.operators(for: .categorical),
+                ),
+            ),
             label: "new-label",
         )
         let endpoint = try EntryCoreEndpoint(path: "/tmp/property-client.sock")
@@ -620,7 +635,7 @@ private func optionCreateRequest(
     try PropertyOptionCreateRequest(
         propertyID: PropertyID(rawValue: "00000000-0000-0000-8000-000000000001"),
         expectedDefinitionRevision: 1,
-        expectedOptions: expectedOptions,
+        expectedDefinition: selectDefinitionSnapshot(options: expectedOptions),
         label: label,
     )
 }
