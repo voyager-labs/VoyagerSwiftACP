@@ -430,6 +430,7 @@ extension FileManagerWindowRoutingReducer {
                     if let metric = FileManagerProductMetricsProducer.entryTerminal(for: record) {
                         productMetricsClient.record(metric)
                     }
+                    state.pendingSidebarEntryCommands.removeValue(forKey: command.id)
                 }
                 guard record.operationKind == .moveToTrash else { return .none }
                 return handleAffectedDirectoryRefresh(

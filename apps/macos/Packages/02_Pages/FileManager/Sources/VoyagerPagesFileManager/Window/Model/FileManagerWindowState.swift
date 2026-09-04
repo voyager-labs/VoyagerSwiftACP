@@ -264,6 +264,7 @@ public struct FileManagerWindowState: Equatable {
     var recordedContentEntryCommandIDs: Set<UUID> = []
     var pendingContentEntryCommands: [UUID: FileManagerPendingEntryCommand] = [:]
     var recordedSidebarEntryCommandIDs: Set<UUID> = []
+    var pendingSidebarEntryCommands: [UUID: FileManagerPendingEntryCommand] = [:]
     public var pendingCollectionOpenRequest: ContentPageCollectionOpenRequest?
     public var pendingContentTabMove: FileManagerWindowContentTabMovePending?
     public var contentTabMoveParticipantRequestID: UUID?

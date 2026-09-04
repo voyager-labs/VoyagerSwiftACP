@@ -298,6 +298,11 @@ final class EOP003GlobalUndoCommandTests: XCTestCase {
                 path: "/tmp/move",
             ),
         ]
+        let sidebarCommand = EntryCommandCase(
+            metadata: .init(id: UUID(), interaction: .copyEntries, source: .dragAndDrop),
+            operationKind: .pasteFileCopy,
+            path: "/tmp/sidebar-success",
+        )
         for (index, commandCase) in commandCases.enumerated() {
             let metadata = commandCase.metadata
             let operationKind = commandCase.operationKind
@@ -317,14 +322,30 @@ final class EOP003GlobalUndoCommandTests: XCTestCase {
                 )))))
             }
         }
+        await store.send(.internal(.sidebarEntryDrop(.acceptedCommand(
+            metadata: sidebarCommand.metadata,
+            action: .lifecycle(.operationStarted(sidebarCommand.path, sidebarCommand.operationKind)),
+        ))))
+        await store.send(.internal(.sidebarEntryDrop(.acceptedCommand(
+            metadata: sidebarCommand.metadata,
+            action: .lifecycle(.operationFinished(sidebarCommand.path, sidebarCommand.operationKind, .success(()))),
+        ))))
+        await store.send(.internal(.sidebarEntryDrop(.acceptedCommand(
+            metadata: sidebarCommand.metadata,
+            action: .lifecycle(.operationStarted("/tmp/sidebar-pending", sidebarCommand.operationKind)),
+        ))))
         await store.send(.onDisappear)
         await store.send(.onDisappear)
 
         let entryMetrics = metrics.value.compactMap(entryActionMetric)
-        XCTAssertEqual(entryMetrics.map(\.result), [.unavailable, .unavailable])
-        XCTAssertEqual(Set(entryMetrics.map(\.operationID)), Set(commandCases.map(\.metadata.id)))
+        XCTAssertEqual(entryMetrics.map(\.result), [.unavailable, .unavailable, .unavailable])
+        XCTAssertEqual(
+            Set(entryMetrics.map(\.operationID)),
+            Set(commandCases.map(\.metadata.id) + [sidebarCommand.metadata.id]),
+        )
         XCTAssertEqual(entryMetrics.map(\.aggregate).sorted { $0.attempted < $1.attempted }, [
             .init(attempted: 1, succeeded: 0, failed: 0),
+            .init(attempted: 2, succeeded: 1, failed: 0),
             .init(attempted: 2, succeeded: 1, failed: 0),
         ])
     }

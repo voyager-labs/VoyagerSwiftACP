@@ -374,7 +374,11 @@ extension CTM004ContentTabSidebarTests {
             cancelled: 2,
         )
         let recorder = FileManagerProductMetricRecorder()
-        let store = TestStore(initialState: FileManagerFeature.State()) {
+        var initialState = FileManagerFeature.State()
+        for command in [copy, move, trash, cancelled] {
+            initialState.pendingSidebarEntryCommands[command.id] = .init(metadata: command)
+        }
+        let store = TestStore(initialState: initialState) {
             FileManagerWindowRoutingReducer()
         } withDependencies: {
             $0.fileManagerProductMetricsClient = recorder.client
@@ -382,15 +386,19 @@ extension CTM004ContentTabSidebarTests {
 
         await store.send(.internal(.sidebarEntryDrop(.lifecycle(.entryActionCompleted(trashSuccess))))) {
             $0.recordedSidebarEntryCommandIDs = [trash.id]
+            $0.pendingSidebarEntryCommands.removeValue(forKey: trash.id)
         }
         await store.send(.internal(.sidebarEntryDrop(.lifecycle(.entryActionCompleted(movePartial))))) {
             $0.recordedSidebarEntryCommandIDs = [trash.id, move.id]
+            $0.pendingSidebarEntryCommands.removeValue(forKey: move.id)
         }
         await store.send(.internal(.sidebarEntryDrop(.lifecycle(.entryActionCompleted(copyFailure))))) {
             $0.recordedSidebarEntryCommandIDs = [trash.id, move.id, copy.id]
+            $0.pendingSidebarEntryCommands.removeValue(forKey: copy.id)
         }
         await store.send(.internal(.sidebarEntryDrop(.lifecycle(.entryActionCompleted(copyCancelled))))) {
             $0.recordedSidebarEntryCommandIDs = [trash.id, move.id, copy.id, cancelled.id]
+            $0.pendingSidebarEntryCommands.removeValue(forKey: cancelled.id)
         }
         await store.send(.internal(.sidebarEntryDrop(.lifecycle(.entryActionCompleted(movePartial)))))
         await store.send(.internal(.sidebarEntryDrop(.lifecycle(.entryActionCompleted(copyCancelled)))))
@@ -421,6 +429,8 @@ extension CTM004ContentTabSidebarTests {
         } withDependencies: {
             $0.fileManagerProductMetricsClient = recorder.client
         }
+        // store.exhaustivity = .off: validation child state보다 cancellation terminal metric을 검증한다.
+        store.exhaustivity = .off
 
         await store.send(.internal(.sidebarEntryDrop(.acceptedCommand(
             metadata: command,
@@ -451,6 +461,32 @@ extension CTM004ContentTabSidebarTests {
         XCTAssertEqual(recorder.metrics(), [
             entryDropMetric(command, .cancelled, succeeded: 0, failed: 0, cancelled: 2),
         ])
+    }
+
+    /// CTM-004-sidebar_entry_drop_routing: accepted Sidebar copy command의 경로 관측은 window owner pending metadata에 보존된다.
+    /// 실제 accepted/path lifecycle이 content pending과 분리된 Sidebar pending aggregate를 만드는지 검증한다.
+    /// - 검증 내용: accepted metadata, operationStarted 경로, Sidebar pending aggregate
+    /// - 사전 조건: FileManager window에 drag-and-drop copy command가 수용된다.
+    /// - 기대 결과: operationStarted 뒤 Sidebar pending dictionary가 command metadata와 attempted 1을 보유한다.
+    func testAcceptedSidebarCommandRecordsPendingPathAtWindowOwner() async throws {
+        let command = try makeEntryDropCommand(
+            "00000000-0000-0000-0000-000000000416",
+            .copyEntries,
+        )
+        let store = TestStore(initialState: FileManagerFeature.State()) {
+            FileManagerFeature()
+        }
+        // store.exhaustivity = .off: EntryOperations child의 busy state보다 window owner pending aggregate를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.internal(.sidebarEntryDrop(.acceptedCommand(
+            metadata: command,
+            action: .lifecycle(.operationStarted("/tmp/sidebar-source", .pasteFileCopy)),
+        ))))
+        XCTAssertEqual(
+            store.state.pendingSidebarEntryCommands[command.id],
+            .init(metadata: command, pathResults: ["/tmp/sidebar-source": .pending]),
+        )
     }
 
     private struct AcceptedEntryDropScenario {

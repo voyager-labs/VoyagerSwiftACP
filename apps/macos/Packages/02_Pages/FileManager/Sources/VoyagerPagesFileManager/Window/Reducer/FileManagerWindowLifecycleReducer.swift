@@ -58,6 +58,7 @@ struct FileManagerWindowLifecycleReducer {
 
     private func teardownWindowOwnedChildOperations(state: inout State) -> Effect<Action> {
         recordPendingContentEntryMetrics(state: &state)
+        recordPendingSidebarEntryMetrics(state: &state)
         let recordedMetricKeys = LockIsolated<Set<FileManagerWindowTeardownMetricKey>>([])
         let aiChatProductMetricsClient = aiChatProductMetricsClient
         let composerMetricClient = composerMetricClient
@@ -106,6 +107,20 @@ struct FileManagerWindowLifecycleReducer {
             ))
         }
         state.pendingContentEntryCommands.removeAll()
+    }
+
+    private func recordPendingSidebarEntryMetrics(state: inout State) {
+        for (_, pending) in state.pendingSidebarEntryCommands {
+            guard state.recordedSidebarEntryCommandIDs.insert(pending.metadata.id).inserted else { continue }
+            productMetricsClient.record(FileManagerProductMetricsProducer.entryTerminal(
+                operationID: pending.metadata.id,
+                identity: pending.metadata.interaction,
+                source: pending.metadata.source,
+                result: .unavailable,
+                aggregate: pending.aggregate,
+            ))
+        }
+        state.pendingSidebarEntryCommands.removeAll()
     }
 
     private func teardownTabContentStates(state: inout State) -> [Effect<Action>] {

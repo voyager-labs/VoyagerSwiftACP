@@ -58,6 +58,14 @@ private extension FileManagerFeature {
                     )
                 }
 
+            case let .internal(.sidebarEntryDrop(entryAction)):
+                observeEntryMetricAction(
+                    entryAction,
+                    commandID: nil,
+                    pendingCommands: &state.pendingSidebarEntryCommands,
+                )
+                return .none
+
             case let .tabContent(tabID, contentAction):
                 observeContentEntryMetricAction(contentAction, state: &state)
                 recordContentEntryTerminalIfNeeded(contentAction, state: &state)
@@ -643,29 +651,37 @@ private extension FileManagerFeature {
         state: inout State,
     ) {
         guard case let .entryViewLayout(.entryOperations(entryAction)) = action else { return }
-        observeEntryMetricAction(entryAction, commandID: nil, state: &state)
+        observeEntryMetricAction(
+            entryAction,
+            commandID: nil,
+            pendingCommands: &state.pendingContentEntryCommands,
+        )
     }
 
     private func observeEntryMetricAction(
         _ action: EntryOperationsAction,
         commandID: UUID?,
-        state: inout State,
+        pendingCommands: inout [UUID: FileManagerPendingEntryCommand],
     ) {
         switch action {
         case let .acceptedCommand(metadata, nestedAction):
-            if state.pendingContentEntryCommands[metadata.id] == nil {
-                state.pendingContentEntryCommands[metadata.id] = .init(metadata: metadata)
+            if pendingCommands[metadata.id] == nil {
+                pendingCommands[metadata.id] = .init(metadata: metadata)
             }
-            observeEntryMetricAction(nestedAction, commandID: metadata.id, state: &state)
+            observeEntryMetricAction(
+                nestedAction,
+                commandID: metadata.id,
+                pendingCommands: &pendingCommands,
+            )
 
         case let .lifecycle(.operationStarted(path, _)):
             guard let commandID else { return }
-            state.pendingContentEntryCommands[commandID]?.pathResults[path] = .pending
+            pendingCommands[commandID]?.pathResults[path] = .pending
 
         case let .lifecycle(.operationFinished(path, _, result)),
              let .lifecycle(.dropOperationFinished(path, _, result)):
             guard let commandID else { return }
-            state.pendingContentEntryCommands[commandID]?.pathResults[path] = switch result {
+            pendingCommands[commandID]?.pathResults[path] = switch result {
             case .success:
                 .succeeded
             case let .failure(error) where error == .cancelled:
