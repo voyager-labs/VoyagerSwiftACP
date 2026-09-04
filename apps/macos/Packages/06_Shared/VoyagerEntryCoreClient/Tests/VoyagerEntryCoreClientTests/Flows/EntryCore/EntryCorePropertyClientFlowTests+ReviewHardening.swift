@@ -228,10 +228,15 @@ extension EntryCorePropertyClientFlowTests {
     /// CreateOption은 새 option을 항상 마지막 ordinal 뒤에 추가한다. 기존
     /// option이 같은 label을 가질 때 마지막 option이 아니면 누락·치환 응답이다.
     func testOptionCreateRejectsResponseWithoutRequestedLastOption() async throws {
-        let request = try PropertyOptionCreateRequest(
-            propertyID: PropertyID(rawValue: "00000000-0000-0000-8000-000000000001"),
-            expectedDefinitionRevision: 1,
-            expectedOptionIDs: [PropertyOptionID(rawValue: "00000000-0000-7000-8000-000000000001")],
+        let request = try optionCreateRequest(
+            expectedOptions: [
+                PropertyOption(
+                    id: PropertyOptionID(rawValue: "00000000-0000-7000-8000-000000000001"),
+                    label: "other-label",
+                    position: 1,
+                    state: .active,
+                ),
+            ],
             label: "new-label",
         )
         let endpoint = try EntryCoreEndpoint(path: "/tmp/property-client.sock")
@@ -240,15 +245,7 @@ extension EntryCorePropertyClientFlowTests {
             .joined(separator: ",")
 
         let replacedRecorder = PropertyTransportRecorder(
-            response: Data(
-                optionCreateResponse(
-                    options: [
-                        selectOptionJSON(id: "00000000-0000-7000-8000-000000000001", label: "other-label", position: 1),
-                        selectOptionJSON(id: "00000000-0000-7000-8000-000000000002", label: "other-label", position: 2),
-                    ].joined(separator: ",\n          "),
-                    operators: operators,
-                ).utf8,
-            ),
+            response: Data(twoOptionCreateResponse(lastLabel: "other-label", operators: operators).utf8),
         )
         let replacedClient = EntryCorePropertyClient.makeLive(
             requestID: { "option-create-id" },
@@ -263,15 +260,7 @@ extension EntryCorePropertyClientFlowTests {
         XCTAssertEqual(replacedRecorder.requests.count, 1)
 
         let createdRecorder = PropertyTransportRecorder(
-            response: Data(
-                optionCreateResponse(
-                    options: [
-                        selectOptionJSON(id: "00000000-0000-7000-8000-000000000001", label: "other-label", position: 1),
-                        selectOptionJSON(id: "00000000-0000-7000-8000-000000000002", label: "new-label", position: 2),
-                    ].joined(separator: ",\n          "),
-                    operators: operators,
-                ).utf8,
-            ),
+            response: Data(twoOptionCreateResponse(lastLabel: "new-label", operators: operators).utf8),
         )
         let createdClient = EntryCorePropertyClient.makeLive(
             requestID: { "option-create-id" },
@@ -286,10 +275,10 @@ extension EntryCorePropertyClientFlowTests {
     /// option IDs 대조는 이 누락 생성을 거절한다.
     func testOptionCreateRejectsResponseWithoutNewOption() async throws {
         let option1ID = try PropertyOptionID(rawValue: "00000000-0000-7000-8000-000000000001")
-        let request = try PropertyOptionCreateRequest(
-            propertyID: PropertyID(rawValue: "00000000-0000-0000-8000-000000000001"),
-            expectedDefinitionRevision: 1,
-            expectedOptionIDs: [option1ID],
+        let request = try optionCreateRequest(
+            expectedOptions: [
+                PropertyOption(id: option1ID, label: "new-label", position: 1, state: .active),
+            ],
             label: "new-label",
         )
         let endpoint = try EntryCoreEndpoint(path: "/tmp/property-client.sock")
@@ -316,6 +305,49 @@ extension EntryCorePropertyClientFlowTests {
             XCTAssertEqual(error as? EntryCoreClientError, .protocolMismatch)
         }
         XCTAssertEqual(noAdditionRecorder.requests.count, 1)
+    }
+
+    /// CreateOption은 기존 option을 수정하지 않는다. 사전 snapshot과 다른
+    /// label·state·position을 가진 선행 option이 오면 새 option이 올바르더라도
+    /// 거절된다.
+    func testOptionCreateRejectsDriftedPreMutationOptions() async throws {
+        let option1ID = try PropertyOptionID(rawValue: "00000000-0000-7000-8000-000000000001")
+        let option2ID = try PropertyOptionID(rawValue: "00000000-0000-7000-8000-000000000002")
+        let request = try PropertyOptionCreateRequest(
+            propertyID: PropertyID(rawValue: "00000000-0000-0000-8000-000000000001"),
+            expectedDefinitionRevision: 1,
+            expectedOptions: [
+                PropertyOption(id: option1ID, label: "original-label", position: 1, state: .active),
+            ],
+            label: "new-label",
+        )
+        let endpoint = try EntryCoreEndpoint(path: "/tmp/property-client.sock")
+        let operators = PropertyConditionRelation.operators(for: .categorical)
+            .map { "\"\($0.rawValue)\"" }
+            .joined(separator: ",")
+
+        let driftedRecorder = PropertyTransportRecorder(
+            response: Data(
+                optionCreateResponse(
+                    options: [
+                        selectOptionJSON(id: option1ID.rawValue, label: "changed-label", position: 1),
+                        selectOptionJSON(id: option2ID.rawValue, label: "new-label", position: 2),
+                    ].joined(separator: ",\n          "),
+                    operators: operators,
+                ).utf8,
+            ),
+        )
+        let driftedClient = EntryCorePropertyClient.makeLive(
+            requestID: { "option-create-id" },
+            makeTransport: driftedRecorder.makeTransport,
+        )
+        do {
+            _ = try await driftedClient.optionCreate(endpoint, request)
+            XCTFail("drifted pre-mutation option should be rejected")
+        } catch {
+            XCTAssertEqual(error as? EntryCoreClientError, .protocolMismatch)
+        }
+        XCTAssertEqual(driftedRecorder.requests.count, 1)
     }
 
     /// prepare의 before는 요청 CAS 기준을 그대로 반영해야 한다: expected 0이면
@@ -553,6 +585,28 @@ private func propertyChangeExecuteResponse(assignments: String) -> String {
       "result":{"assignments":\(assignments)}
     }
     """
+}
+
+private func twoOptionCreateResponse(lastLabel: String, operators: String) -> String {
+    optionCreateResponse(
+        options: [
+            selectOptionJSON(id: "00000000-0000-7000-8000-000000000001", label: "other-label", position: 1),
+            selectOptionJSON(id: "00000000-0000-7000-8000-000000000002", label: lastLabel, position: 2),
+        ].joined(separator: ",\n          "),
+        operators: operators,
+    )
+}
+
+private func optionCreateRequest(
+    expectedOptions: [PropertyOption],
+    label: String,
+) throws -> PropertyOptionCreateRequest {
+    try PropertyOptionCreateRequest(
+        propertyID: PropertyID(rawValue: "00000000-0000-0000-8000-000000000001"),
+        expectedDefinitionRevision: 1,
+        expectedOptions: expectedOptions,
+        label: label,
+    )
 }
 
 private func selectOptionJSON(id: String, label: String, position: Int) -> String {

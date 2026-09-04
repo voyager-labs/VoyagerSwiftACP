@@ -386,7 +386,9 @@ extension EntryCorePropertyClientFlowTests {
         let optionCreateRequest = try PropertyOptionCreateRequest(
             propertyID: propertyID,
             expectedDefinitionRevision: 1,
-            expectedOptionIDs: [optionID],
+            expectedOptions: [
+                PropertyOption(id: optionID, label: "Existing", position: 1, state: .active),
+            ],
             label: "Created",
         )
         await assertOptionCreateLabelMismatchRejected(

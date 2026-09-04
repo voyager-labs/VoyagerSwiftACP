@@ -233,14 +233,13 @@ extension EntryCorePropertyClient {
             propertyID: request.propertyID,
             expectedDefinitionRevision: request.expectedDefinitionRevision,
         ) else { return false }
-        // CreateOption은 매번 새 UUID로 정확히 하나의 option을 마지막 ordinal
-        // 뒤에 추가한다. 기존 option이 같은 label을 가질 수 있으므로, 사전
-        // option IDs와 대조해 정확히 하나의 새 마지막 option이 추가됐는지
-        // 확인해야 누락·치환 응답이 거절된다.
+        // CreateOption은 기존 option을 수정하지 않고 새 option 하나만 마지막
+        // ordinal 뒤에 추가한다. 사전 option snapshot과 선행 구간을 정확히
+        // 대조해 기존 option의 label·state·position 변경까지 거절한다.
         let options = definition.options.sorted(by: { $0.position < $1.position })
-        guard options.dropLast().map(\.id) == request.expectedOptionIDs,
+        guard options.dropLast() == request.expectedOptions,
               let created = options.last,
-              created.id != request.expectedOptionIDs.last
+              created.id != request.expectedOptions.last?.id
         else { return false }
         return created.state == .active && created.label == request.label
     }
