@@ -1,6 +1,8 @@
 <!--
 릴리즈 PR 전용 template.
 일반 코드 변경 PR은 default.md를 사용하세요.
+GitHub Release 본문은 이 PR template과 별도로 `.github/RELEASE_NOTES_TEMPLATE.md`를 사용하세요.
+PR 본문과 Release 본문을 그대로 복사하지 말고, Release 게시 시 실제 검증 결과와 최종 artifact 상태로 갱신하세요.
 -->
 
 ## 릴리즈 개요
