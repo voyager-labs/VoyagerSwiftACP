@@ -1347,6 +1347,141 @@ extension RCL004ComposeCollectionFilterTests {
         XCTAssertTrue(state.scopeEditor.hasPendingScopeRuleChanges)
     }
 
+    // MARK: - RCL-004-apply_generated_filter_changes
+
+    /// RCL-004-apply_generated_filter_changes: active undo replaces an apply with a terminal cancellation
+    /// Undoing a filter change must finish the superseded apply before starting its replacement.
+    /// - 검증 내용: A cancelled terminal의 ID/duration 1회, B distinct active ID, late A response no-op
+    /// - 사전 조건: execution-ready filter A와 filters가 달라지는 undo snapshot이 active 상태에 존재함
+    /// - 기대 결과: 실제 view undo가 A를 취소하고 B를 auto-apply하며 A 응답은 상태를 바꾸지 않음
+    func testApplyGeneratedFilterChanges_whenUndoDuringActiveApply_terminalizesA_beforeStartingB() throws {
+        let applyA = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000031"))
+        let applyB = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000032"))
+        let recorder = RCL004MetricRecorder()
+        var state = makeGeneratedFilterStageState(rawText: "VOY589_SYNTHETIC_UNDO")
+        state.activeFiltersRequestID = applyA
+        state.filtersStartedAt = Date(timeIntervalSince1970: 4_000_000_000)
+        state.activeFiltersMetricSource = ComposerCollectionFilterMetrics.sourceManualApply
+        state.queryRecoveryContext = nil
+        state.history = [
+            FilterSnapshot(
+                scopeSelection: .rootOnly,
+                conditionEditors: state.conditionEditors,
+                includeSubfolders: state.scopeEditor.includeSubfolders,
+                includeDirectories: state.includeDirectories,
+            ),
+        ]
+
+        withDependencies {
+            $0.uuid = .constant(applyB)
+            $0.registryClient = makeRegistryClient()
+            $0.composerMetricClient = ComposerMetricClient(recordProductMetric: recorder.record)
+        } operation: {
+            _ = ComposerFeature().reduce(into: &state, action: .view(.undo))
+        }
+
+        XCTAssertEqual(state.activeFiltersRequestID, applyB)
+        XCTAssertTrue(state.isLoadingFilters)
+        XCTAssertTrue(state.isFilteringInFlight)
+        XCTAssertEqual(recorder.calls.map(\.name), [ComposerCollectionFilterMetrics.applyResult])
+        let cancellation = try XCTUnwrap(recorder.calls.first)
+        XCTAssertEqual(cancellation.tags?["result_status"], "cancelled")
+        XCTAssertEqual(cancellation.tags?["operation_id"], applyA.uuidString.lowercased())
+        XCTAssertEqual(cancellation.tags?["duration_ms"], "0")
+
+        let stateAfterUndo = state
+        let feature = ComposerFeature()
+        _ = feature.reduce(
+            into: &state,
+            action: .filtersResponse(applyA, .success(SearchResponsePayload(itemCount: 1))),
+        )
+        _ = feature.reduce(into: &state, action: .filtersResponse(applyA, .failure(MockLocalizedError("late A"))))
+        _ = feature.reduce(
+            into: &state,
+            action: .filtersResponse(applyA, .success(SearchResponsePayload(itemCount: 2))),
+        )
+        XCTAssertEqual(state, stateAfterUndo)
+    }
+
+    /// RCL-004-apply_generated_filter_changes: active redo replaces an apply with a terminal cancellation
+    /// Redoing a filter change must use the same terminal ordering and stale-response guard as undo.
+    /// - 검증 내용: A cancelled terminal의 ID/duration 1회, B distinct active ID, late A response no-op
+    /// - 사전 조건: execution-ready filter A와 filters가 달라지는 redo snapshot이 active 상태에 존재함
+    /// - 기대 결과: 실제 view redo가 A를 취소하고 B를 auto-apply하며 A 응답은 상태를 바꾸지 않음
+    func testApplyGeneratedFilterChanges_whenRedoDuringActiveApply_terminalizesA_beforeStartingB() throws {
+        let applyA = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000033"))
+        let applyB = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000034"))
+        let recorder = RCL004MetricRecorder()
+        var state = makeGeneratedFilterStageState(rawText: "VOY589_SYNTHETIC_REDO")
+        state.activeFiltersRequestID = applyA
+        state.filtersStartedAt = Date(timeIntervalSince1970: 4_000_000_000)
+        state.activeFiltersMetricSource = ComposerCollectionFilterMetrics.sourceManualApply
+        state.queryRecoveryContext = nil
+        state.redoHistory = [
+            FilterSnapshot(
+                scopeSelection: .rootOnly,
+                conditionEditors: state.conditionEditors,
+                includeSubfolders: state.scopeEditor.includeSubfolders,
+                includeDirectories: state.includeDirectories,
+            ),
+        ]
+
+        withDependencies {
+            $0.uuid = .constant(applyB)
+            $0.registryClient = makeRegistryClient()
+            $0.composerMetricClient = ComposerMetricClient(recordProductMetric: recorder.record)
+        } operation: {
+            _ = ComposerFeature().reduce(into: &state, action: .view(.redo))
+        }
+
+        XCTAssertEqual(state.activeFiltersRequestID, applyB)
+        XCTAssertTrue(state.isLoadingFilters)
+        XCTAssertTrue(state.isFilteringInFlight)
+        XCTAssertEqual(recorder.calls.map(\.name), [ComposerCollectionFilterMetrics.applyResult])
+        let cancellation = try XCTUnwrap(recorder.calls.first)
+        XCTAssertEqual(cancellation.tags?["result_status"], "cancelled")
+        XCTAssertEqual(cancellation.tags?["operation_id"], applyA.uuidString.lowercased())
+        XCTAssertEqual(cancellation.tags?["duration_ms"], "0")
+
+        let stateAfterRedo = state
+        let feature = ComposerFeature()
+        _ = feature.reduce(
+            into: &state,
+            action: .filtersResponse(applyA, .success(SearchResponsePayload(itemCount: 1))),
+        )
+        _ = feature.reduce(into: &state, action: .filtersResponse(applyA, .failure(MockLocalizedError("late A"))))
+        _ = feature.reduce(
+            into: &state,
+            action: .filtersResponse(applyA, .success(SearchResponsePayload(itemCount: 2))),
+        )
+        XCTAssertEqual(state, stateAfterRedo)
+    }
+
+    /// RCL-004-apply_generated_filter_changes: empty undo/redo history does not cancel an active apply
+    /// A history guard must reject both actions before touching the active filter lifecycle.
+    /// - 검증 내용: undo/no-history와 redo/no-redo에서 상태와 metric이 모두 유지되는지 확인
+    /// - 사전 조건: active apply A만 있고 각 opposite history stack은 비어 있음
+    /// - 기대 결과: 두 accepted-pop 실패 action 모두 no-op이며 A cancellation terminal이 없음
+    func testApplyGeneratedFilterChanges_whenUndoOrRedoHistoryIsEmpty_preservesActiveApply() throws {
+        let applyA = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000035"))
+        let recorder = RCL004MetricRecorder()
+        var state = makeFiltersLoadingState(activeRequestID: applyA)
+        state.filtersStartedAt = Date(timeIntervalSince1970: 4_000_000_000)
+        let initialState = state
+
+        withDependencies {
+            $0.composerMetricClient = ComposerMetricClient(recordProductMetric: recorder.record)
+        } operation: {
+            let feature = ComposerFeature()
+            _ = feature.reduce(into: &state, action: .view(.undo))
+            XCTAssertEqual(state, initialState)
+            _ = feature.reduce(into: &state, action: .view(.redo))
+        }
+
+        XCTAssertEqual(state, initialState)
+        XCTAssertTrue(recorder.calls.isEmpty)
+    }
+
     /// RCL-004-show_query_execution_failure_feedback: collection cleanup은 실행 중 effect를 함께 취소함
     /// semantic cleanup이 search client 작업과 transient feedback timer를 모두 종료하는지 검증한다.
     /// - 검증 내용: search cancellation handler 실행 및 feedback dismiss action 미발생

@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import Foundation
 
 @Reducer
 struct ComposerHistoryReducer {
@@ -9,6 +10,10 @@ struct ComposerHistoryReducer {
     var searchClient
     @Dependency(\.registryClient)
     var registryClient
+    @Dependency(\.uuid)
+    var uuid
+    @Dependency(\.composerMetricClient)
+    var composerMetricClient
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
@@ -24,6 +29,17 @@ struct ComposerHistoryReducer {
                     includeDirectories: state.includeDirectories,
                 )
                 state.redoHistory.append(current)
+                let hadActiveFiltersRequest = state.activeFiltersRequestID != nil
+                let cancellationEffect: Effect<ComposerFeature.Action> = if state.activeFiltersRequestID != nil {
+                    handleCancelFilters(
+                        state: &state,
+                        registryClient: registryClient,
+                        uuid: { uuid() },
+                        composerMetricClient: composerMetricClient,
+                    )
+                } else {
+                    .none
+                }
                 state.scopeEditor.selection = previous.scopeSelection
                 state.conditionEditors = IdentifiedArray(uniqueElements: previous.conditionEditors.map { editor in
                     var editor = editor
@@ -34,9 +50,16 @@ struct ComposerHistoryReducer {
                 state.includeDirectories = previous.includeDirectories
                 let after = buildFilters(from: state)
                 if before != after, state.shouldAutoApplyScopeChange {
-                    return applyFiltersIfNeeded(state: &state, searchClient: searchClient)
+                    return .concatenate(
+                        cancellationEffect,
+                        applyFiltersIfNeeded(
+                            state: &state,
+                            searchClient: searchClient,
+                            requestID: hadActiveFiltersRequest ? uuid() : UUID(),
+                        ),
+                    )
                 }
-                return .none
+                return cancellationEffect
 
             case .view(.redo):
                 guard !state.isLoadingSearch else { return .none }
@@ -49,6 +72,17 @@ struct ComposerHistoryReducer {
                     includeDirectories: state.includeDirectories,
                 )
                 state.history.append(current)
+                let hadActiveFiltersRequest = state.activeFiltersRequestID != nil
+                let cancellationEffect: Effect<ComposerFeature.Action> = if state.activeFiltersRequestID != nil {
+                    handleCancelFilters(
+                        state: &state,
+                        registryClient: registryClient,
+                        uuid: { uuid() },
+                        composerMetricClient: composerMetricClient,
+                    )
+                } else {
+                    .none
+                }
                 state.scopeEditor.selection = next.scopeSelection
                 state.conditionEditors = IdentifiedArray(uniqueElements: next.conditionEditors.map { editor in
                     var editor = editor
@@ -59,9 +93,16 @@ struct ComposerHistoryReducer {
                 state.includeDirectories = next.includeDirectories
                 let after = buildFilters(from: state)
                 if before != after, state.shouldAutoApplyScopeChange {
-                    return applyFiltersIfNeeded(state: &state, searchClient: searchClient)
+                    return .concatenate(
+                        cancellationEffect,
+                        applyFiltersIfNeeded(
+                            state: &state,
+                            searchClient: searchClient,
+                            requestID: hadActiveFiltersRequest ? uuid() : UUID(),
+                        ),
+                    )
                 }
-                return .none
+                return cancellationEffect
 
             default:
                 return .none
