@@ -609,13 +609,13 @@ private func optionCreateRequest(
     )
 }
 
-private func selectOptionJSON(id: String, label: String, position: Int) -> String {
+func selectOptionJSON(id: String, label: String, position: Int, state: String = "active") -> String {
     """
-    {"option_id":"\(id)","label":"\(label)","position":\(position),"state":"active"}
+    {"option_id":"\(id)","label":"\(label)","position":\(position),"state":"\(state)"}
     """
 }
 
-private func optionCreateResponse(options: String, operators: String) -> String {
+func optionCreateResponse(options: String, operators: String) -> String {
     """
     {
       "request_id":"option-create-id",

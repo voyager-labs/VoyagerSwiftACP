@@ -248,41 +248,117 @@ extension EntryCorePropertyClient {
         _ definition: PropertyDefinition,
         request: PropertyOptionUpdateRequest,
     ) -> Bool {
-        definitionMutationRevisionMatches(
+        guard definitionMutationRevisionMatches(
             definition,
             propertyID: request.propertyID,
             expectedDefinitionRevision: request.expectedDefinitionRevision,
-        ) && definition.options.contains { option in
-            option.id == request.optionID
-                && option.state == .active
-                && option.label == request.label
-        }
+        ) else { return false }
+        // RenameOption은 대상 label만 바꾼다. 다른 option의 변경·제거까지
+        // 반영한 응답은 정상 daemon에서 생성될 수 없다.
+        guard let expected = expectedOptionsAfterMutating(
+            request.expectedOptions,
+            optionID: request.optionID,
+            transform: { option in
+                PropertyOption(id: option.id, label: request.label, position: option.position, state: option.state)
+            },
+        ) else { return false }
+        return definition.options == expected
     }
 
     nonisolated private static func optionReorderMatchesResponse(
         _ definition: PropertyDefinition,
         request: PropertyOptionReorderRequest,
     ) -> Bool {
-        definitionMutationRevisionMatches(
+        guard definitionMutationRevisionMatches(
             definition,
             propertyID: request.propertyID,
             expectedDefinitionRevision: request.expectedDefinitionRevision,
-        ) && definition.options
-            .filter { $0.state == .active }
-            .map(\.id) == request.optionIDs
+        ) else { return false }
+        // ReorderOptions는 활성 option 순서만 바꾸고 label·state·identity는
+        // 보존하며 ordinal을 재번호 매긴다. 다른 변경이 섞인 응답은 정상
+        // daemon에서 생성될 수 없다.
+        guard let expected = expectedOptionsAfterReorder(
+            request.expectedOptions,
+            optionIDs: request.optionIDs,
+        ) else { return false }
+        return definition.options == expected
     }
 
     nonisolated private static func optionDisableMatchesResponse(
         _ definition: PropertyDefinition,
         request: PropertyOptionDisableRequest,
     ) -> Bool {
-        definitionMutationRevisionMatches(
+        guard definitionMutationRevisionMatches(
             definition,
             propertyID: request.propertyID,
             expectedDefinitionRevision: request.expectedDefinitionRevision,
-        ) && definition.options.contains { option in
-            option.id == request.optionID && option.state == .disabled
+        ) else { return false }
+        // DisableOption은 대상 상태만 비활성으로 바꾼다. 다른 option의
+        // 변경·제거까지 반영한 응답은 정상 daemon에서 생성될 수 없다.
+        guard let expected = expectedOptionsAfterMutating(
+            request.expectedOptions,
+            optionID: request.optionID,
+            transform: { option in
+                PropertyOption(id: option.id, label: option.label, position: option.position, state: .disabled)
+            },
+        ) else { return false }
+        return definition.options == expected
+    }
+
+    /// 사전 option snapshot에서 대상 option 하나에만 transform을 적용한
+    /// 기대 응답을 만든다. option 생성이 실패하면 검증 불가로 nil을 반환한다.
+    nonisolated private static func expectedOptionsAfterMutating(
+        _ expectedOptions: [PropertyOption],
+        optionID: PropertyOptionID,
+        transform: (PropertyOption) throws -> PropertyOption,
+    ) -> [PropertyOption]? {
+        var expected: [PropertyOption] = []
+        expected.reserveCapacity(expectedOptions.count)
+        for option in expectedOptions {
+            do {
+                try expected.append(option.id == optionID ? transform(option) : option)
+            } catch {
+                return nil
+            }
         }
+        return expected
+    }
+
+    /// 활성 option이 optionIDs 순서대로 오고 비활성 option이 snapshot 순서대로
+    /// 뒤에 붙는 재번호된 기대 응답을 만든다. 요청이 활성 집합의 완전한 순열이
+    /// 아니면 nil을 반환한다.
+    nonisolated private static func expectedOptionsAfterReorder(
+        _ expectedOptions: [PropertyOption],
+        optionIDs: [PropertyOptionID],
+    ) -> [PropertyOption]? {
+        var activeByID: [PropertyOptionID: PropertyOption] = [:]
+        var inactive: [PropertyOption] = []
+        for option in expectedOptions {
+            if option.state == .active {
+                activeByID[option.id] = option
+            } else {
+                inactive.append(option)
+            }
+        }
+        var expected: [PropertyOption] = []
+        for id in optionIDs {
+            guard let option = activeByID.removeValue(forKey: id) else { return nil }
+            expected.append(option)
+        }
+        // 요청에 없는 활성 option이 남으면 완전한 순열이 아니다.
+        guard activeByID.isEmpty else { return nil }
+        expected.append(contentsOf: inactive)
+        var renumbered: [PropertyOption] = []
+        for (index, option) in expected.enumerated() {
+            guard let renumberedOption = try? PropertyOption(
+                id: option.id,
+                label: option.label,
+                position: index + 1,
+                state: option.state,
+            ) else { return nil }
+            renumbered.append(renumberedOption)
+        }
+        return renumbered
     }
 
     nonisolated private static func definitionMutationRevisionMatches(

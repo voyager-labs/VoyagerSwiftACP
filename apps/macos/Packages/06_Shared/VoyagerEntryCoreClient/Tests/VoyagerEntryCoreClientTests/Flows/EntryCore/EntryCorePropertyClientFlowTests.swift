@@ -403,6 +403,9 @@ extension EntryCorePropertyClientFlowTests {
             propertyID: propertyID,
             optionID: optionID,
             expectedDefinitionRevision: 1,
+            expectedOptions: [
+                PropertyOption(id: optionID, label: "Existing", position: 1, state: .active),
+            ],
             label: "Renamed option",
         )
         await assertDefinitionMutationRejected(
@@ -434,6 +437,10 @@ extension EntryCorePropertyClientFlowTests {
             propertyID: propertyID,
             expectedDefinitionRevision: 1,
             optionIDs: [optionID2, optionID1],
+            expectedOptions: [
+                PropertyOption(id: optionID1, label: "First", position: 1, state: .active),
+                PropertyOption(id: optionID2, label: "Second", position: 2, state: .active),
+            ],
         )
         let originalOrder = [
             propertyOptionJSON(id: optionID1.rawValue, label: "First", position: 1),
@@ -467,6 +474,9 @@ extension EntryCorePropertyClientFlowTests {
             propertyID: propertyID,
             optionID: optionID,
             expectedDefinitionRevision: 1,
+            expectedOptions: [
+                PropertyOption(id: optionID, label: "Existing", position: 1, state: .active),
+            ],
         )
 
         await assertDefinitionMutationRejected(
