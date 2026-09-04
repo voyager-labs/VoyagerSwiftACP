@@ -118,7 +118,12 @@ final class CodexExecControlledRunner: @unchecked Sendable {
             closeStdin: { self.process.closeStdin() },
             wait: { self.process.terminationStatus },
             terminate: { self.process.terminate() },
-            cleanup: { self.process.cleanup() },
+            cleanup: {
+                self.rawStreamsFinished = true
+                self.stdoutFinisher.finish(with: CancellationError())
+                self.stderrFinisher.finish(with: CancellationError())
+                self.process.cleanup()
+            },
             finishRawStreams: { error in
                 self.rawStreamsFinished = true
                 self.stdoutFinisher.finish(with: error)

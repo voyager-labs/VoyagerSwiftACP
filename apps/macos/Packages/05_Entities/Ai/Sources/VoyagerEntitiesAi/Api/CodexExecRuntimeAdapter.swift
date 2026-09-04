@@ -632,6 +632,8 @@ extension CodexExecRuntimeAdapter {
                 additionalWritableRoots: additionalRoots,
                 codexHome: codexHome,
                 threadID: threadID,
+                readablePaths: [CodexPathCanonicalizer.url(URL(fileURLWithPath: directory))] + roots,
+                skipGitRepositoryCheck: true,
             ),
             executableURL: executableURL ?? Self.requireExecutable(),
         )
@@ -804,6 +806,7 @@ extension CodexExecRuntimeAdapter {
         case .writableRootOutsideWorkingDirectory: "writable_root_outside_working_directory"
         case .emptyModel: "empty_model"
         case .emptyThreadID: "empty_thread_id"
+        case .invalidReadablePath: "invalid_readable_path"
         }
     }
 

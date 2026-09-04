@@ -83,12 +83,16 @@ final class ATI006CoordinateExternalAgentSessionsTests: XCTestCase {
             commands[0].arguments,
             [
                 "exec",
-                "resume",
                 "--model",
                 "gpt-5-codex",
                 "--json",
                 "--strict-config",
                 "--ignore-user-config",
+                "-c", "default_permissions=\"voyager-reference\"",
+                "-c",
+                "permissions.voyager-reference.filesystem={\"\(root.path)\"=\"read\",\":minimal\"=\"read\",\":root\"=\"deny\"}",
+                "--sandbox", "workspace-write", "-C", context.workingDirectory,
+                "--skip-git-repo-check", "resume",
                 "thread-persisted",
                 "-",
             ],
@@ -314,11 +318,17 @@ final class ATI006CoordinateExternalAgentSessionsTests: XCTestCase {
             environment: [:],
             stdin: "prompt",
         )
+        let cancellationHandle = CodexExecInvocationCancellationHandle()
         let acquisition = Task {
-            try await controller.acquire(runID: "pre-handshake-cancel", command: command)
+            try await controller.acquire(
+                runID: "pre-handshake-cancel",
+                command: command,
+                cancellationHandle: cancellationHandle,
+                onProducerFinished: {},
+            )
         }
         await runner.waitUntilReady()
-        acquisition.cancel()
+        await cancellationHandle.cancelAndWait()
 
         do {
             _ = try await acquisition.value
@@ -1651,6 +1661,8 @@ final class ATI006CoordinateExternalAgentSessionsTests: XCTestCase {
                 terminationStatus: 0,
             ),
         ]
+        let runAEvicted = expectation(description: "completed run A is evicted")
+        processes[0].onCleanup = { runAEvicted.fulfill() }
         let calls = CodexExecInvocationCounter()
         let runner: CodexExecProcessController.Runner = { command in
             let index = calls.value
@@ -1710,6 +1722,7 @@ final class ATI006CoordinateExternalAgentSessionsTests: XCTestCase {
         let runB = request("run-b")
         _ = try await adapter.launch(runB)
         _ = try await adapter.terminalResult(for: runB.runReference)
+        await fulfillment(of: [runAEvicted], timeout: 2)
 
         let resumed = try await adapter.launch(runA)
         XCTAssertEqual(resumed.providerInternalSessionReference.rawValue, "thread-a")
@@ -2036,8 +2049,11 @@ final class ATI006CoordinateExternalAgentSessionsTests: XCTestCase {
                 XCTAssertEqual(
                     command.arguments,
                     [
-                        "exec", "resume", "--model", "gpt-5-codex", "--json", "--strict-config",
-                        "--ignore-user-config",
+                        "exec", "--model", "gpt-5-codex", "--json", "--strict-config", "--ignore-user-config",
+                        "-c", "default_permissions=\"voyager-reference\"", "-c",
+                        "permissions.voyager-reference.filesystem={\"/tmp/voyager-adapter-restore-eviction\"=\"read\",\":minimal\"=\"read\",\":root\"=\"deny\"}",
+                        "--sandbox", "read-only", "-C", "/tmp/voyager-adapter-restore-eviction",
+                        "--skip-git-repo-check", "resume",
                         "thread-0",
                         "-",
                     ],
@@ -2049,8 +2065,11 @@ final class ATI006CoordinateExternalAgentSessionsTests: XCTestCase {
             XCTAssertEqual(
                 command.arguments,
                 [
-                    "exec", "resume", "--model", "gpt-5-codex", "--json", "--strict-config",
-                    "--ignore-user-config",
+                    "exec", "--model", "gpt-5-codex", "--json", "--strict-config", "--ignore-user-config",
+                    "-c", "default_permissions=\"voyager-reference\"", "-c",
+                    "permissions.voyager-reference.filesystem={\"/tmp/voyager-adapter-restore-eviction\"=\"read\",\":minimal\"=\"read\",\":root\"=\"deny\"}",
+                    "--sandbox", "read-only", "-C", "/tmp/voyager-adapter-restore-eviction",
+                    "--skip-git-repo-check", "resume",
                     "thread-b",
                     "-",
                 ],
