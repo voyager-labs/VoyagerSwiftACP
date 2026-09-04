@@ -147,6 +147,52 @@ extension EntryCorePropertyClientFlowTests {
             $0.assignments.count == 2
         }
     }
+
+    /// 필터된 assignment-list 요청도 ID 부분집합 검사 뒤 has_more 진행 검사를
+    /// 통과해야 한다. 조기 반환은 반복 token을 승인하게 만든다.
+    func testAssignmentListPageValidatesProgressWithPropertyIDFilter() async throws {
+        let target = try PropertyTarget(localPath: "/a")
+        let propertyID1 = try PropertyID(rawValue: "00000000-0000-0000-8000-000000000001")
+        let propertyID2 = try PropertyID(rawValue: "00000000-0000-0000-8000-000000000002")
+        let endpoint = try EntryCoreEndpoint(path: "/tmp/property-client.sock")
+
+        let repeatedRequest = try PropertyAssignmentListRequest(
+            pageSize: 2,
+            target: target,
+            pageToken: "same",
+            requestedPropertyIDs: [propertyID1, propertyID2],
+        )
+        let repeatedResponse = assignmentListPageResponse(
+            assignments: "[\(paginationAssignmentJSON(id: 1)),\(paginationAssignmentJSON(id: 2))]",
+            hasMore: true,
+            nextPageToken: "same",
+        )
+        try await assertListPageRejected(
+            [
+                AssignmentListCase(
+                    name: "filtered has_more with repeated token",
+                    request: repeatedRequest,
+                    response: repeatedResponse,
+                ),
+            ],
+            endpoint: endpoint,
+        )
+
+        let progressiveRequest = try PropertyAssignmentListRequest(
+            pageSize: 2,
+            target: target,
+            pageToken: "first",
+            requestedPropertyIDs: [propertyID1, propertyID2],
+        )
+        let progressiveResponse = assignmentListPageResponse(
+            assignments: "[\(paginationAssignmentJSON(id: 1)),\(paginationAssignmentJSON(id: 2))]",
+            hasMore: true,
+            nextPageToken: "second",
+        )
+        try await assertListPageAccepted(progressiveRequest, response: progressiveResponse, endpoint: endpoint) {
+            $0.assignments.count == 2
+        }
+    }
 }
 
 private struct DefinitionListCase {

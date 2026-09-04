@@ -314,12 +314,13 @@ extension EntryCorePropertyClient {
         request: PropertyAssignmentListRequest,
     ) -> Bool {
         guard page.assignments.count <= request.pageSize else { return false }
-        guard request.requestedPropertyIDs.isEmpty else {
+        // ID 부분집합 검사 뒤에도 has_more 진행 검사를 계속 수행한다. 필터
+        // 요청에서 조기 반환하면 반복 token이 승인될 수 있다.
+        if !request.requestedPropertyIDs.isEmpty {
             let requested = Set(request.requestedPropertyIDs)
             guard page.assignments.allSatisfy({ requested.contains($0.propertyID) }) else {
                 return false
             }
-            return true
         }
         // has_more인 페이지는 page_size를 정확히 채우고 전진하는 token을 가져야
         // 한다(저장소가 limit+1행으로 판정한다). 같은 token의 반복은 페이지
