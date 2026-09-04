@@ -878,6 +878,60 @@ func TestPropertyConditionQueryResultRejectsOutOfBoundsCandidates(t *testing.T) 
 		t.Fatal("non-requested projection property accepted")
 	}
 
+	wideRequest := withPageSize(params, 2)
+
+	underFilledHasMore := PropertyConditionQueryResult{
+		Items: []PropertyConditionQueryItem{{
+			CandidateIndex: 0,
+			EntryID:        "ent:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+			Projection:     []PropertyAssignment{},
+		}},
+		UnresolvedCandidateIndices: []int{},
+		CatalogVersion:             domainentry.ConditionCatalogVersion,
+		HasMore:                    true,
+		NextPageToken:              strPtr("next"),
+	}
+	if err := ReconcileConditionQueryResult(underFilledHasMore, wideRequest); err == nil {
+		t.Fatal("has_more page with under-filled items accepted")
+	}
+
+	unresolvedAtLastMatched := PropertyConditionQueryResult{
+		Items: []PropertyConditionQueryItem{{
+			CandidateIndex: 0,
+			EntryID:        "ent:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+			Projection:     []PropertyAssignment{},
+		}},
+		UnresolvedCandidateIndices: []int{0},
+		CatalogVersion:             domainentry.ConditionCatalogVersion,
+		HasMore:                    true,
+		NextPageToken:              strPtr("next"),
+	}
+	if err := ReconcileConditionQueryResult(unresolvedAtLastMatched, wideRequest); err == nil {
+		t.Fatal("unresolved index at the last matched index accepted on has_more page")
+	}
+
+	validHasMore := PropertyConditionQueryResult{
+		Items: []PropertyConditionQueryItem{
+			{
+				CandidateIndex: 0,
+				EntryID:        "ent:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+				Projection:     []PropertyAssignment{},
+			},
+			{
+				CandidateIndex: 1,
+				EntryID:        "ent:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+				Projection:     []PropertyAssignment{},
+			},
+		},
+		UnresolvedCandidateIndices: []int{},
+		CatalogVersion:             domainentry.ConditionCatalogVersion,
+		HasMore:                    true,
+		NextPageToken:              strPtr("next"),
+	}
+	if err := ReconcileConditionQueryResult(validHasMore, wideRequest); err != nil {
+		t.Fatal("full has_more page rejected")
+	}
+
 	overSized := PropertyConditionQueryResult{
 		Items: func() []PropertyConditionQueryItem {
 			items := make([]PropertyConditionQueryItem, 3)

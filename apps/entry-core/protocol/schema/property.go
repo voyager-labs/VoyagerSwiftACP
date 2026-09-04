@@ -718,6 +718,18 @@ func ReconcileConditionQueryResult(
 			return ErrInvalidResponse
 		}
 	}
+	// page completion 조건상 has_more 페이지는 page_size를 정확히 채우고,
+	// unresolved는 마지막 matched index 이전에만 나타난다. 이를 벗어나는
+	// 응답은 다음 페이지와 모순되므로 거절한다.
+	if result.HasMore {
+		if len(result.Items) != params.PageSize {
+			return ErrInvalidResponse
+		}
+		if last := result.Items[len(result.Items)-1].CandidateIndex; len(result.UnresolvedCandidateIndices) > 0 &&
+			result.UnresolvedCandidateIndices[len(result.UnresolvedCandidateIndices)-1] >= last {
+			return ErrInvalidResponse
+		}
+	}
 	return nil
 }
 
