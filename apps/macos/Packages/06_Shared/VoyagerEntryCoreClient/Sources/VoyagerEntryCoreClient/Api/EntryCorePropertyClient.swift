@@ -158,13 +158,17 @@ extension EntryCorePropertyClient {
         guard request.includeDisabled == true || page.definitions.allSatisfy({ $0.state != .disabled }) else {
             return false
         }
-        // has_more인 페이지는 page_size를 정확히 채우고 전진하는 token을 가져야
-        // 한다(저장소가 limit+1행으로 판정한다). 같은 token의 반복은 페이지
-        // 순회 caller를 끝내지 못하게 하므로 거절한다.
+        // 저장소가 property_id 오름차순으로 조회하고 마지막 returned id를 다음
+        // cursor로 쓴다. 정렬·cursor 일치·단조 진행이 어긋나면 token 순회가
+        // 끝나지 않으므로 거절한다.
+        let ids = page.definitions.map(\.id.rawValue)
+        guard zip(ids, ids.dropFirst()).allSatisfy({ $0 < $1 }) else { return false }
         guard page.hasMore else { return true }
+        guard let nextPageToken = page.nextPageToken,
+              ids.last == nextPageToken,
+              request.pageToken.map({ $0 < nextPageToken }) ?? true
+        else { return false }
         return page.definitions.count == request.pageSize
-            && page.nextPageToken != nil
-            && page.nextPageToken != request.pageToken
     }
 
     nonisolated private static func definitionOperation<Request: Encodable & Sendable>(
@@ -248,7 +252,12 @@ extension EntryCorePropertyClient {
         state: PropertyDefinitionState,
         revision: Int64,
     ) -> PropertyDefinition {
-        PropertyDefinition(
+        // daemon은 lifecycle 변경 뒤 ConditionCapabilityFor로 capability를
+        // 재유도한다: disabled 정의는 항상 .unsupported(.definitionDisabled)다.
+        let capability: PropertyConditionCapability = state == .disabled
+            ? .unsupported(.definitionDisabled)
+            : snapshot.conditionCapability
+        return PropertyDefinition(
             id: snapshot.id,
             key: snapshot.key,
             name: name ?? snapshot.name,
@@ -258,7 +267,7 @@ extension EntryCorePropertyClient {
             origin: snapshot.origin,
             revision: revision,
             options: snapshot.options,
-            conditionCapability: snapshot.conditionCapability,
+            conditionCapability: capability,
         )
     }
 
@@ -449,13 +458,17 @@ extension EntryCorePropertyClient {
                 return false
             }
         }
-        // has_more인 페이지는 page_size를 정확히 채우고 전진하는 token을 가져야
-        // 한다(저장소가 limit+1행으로 판정한다). 같은 token의 반복은 페이지
-        // 순회 caller를 끝내지 못하게 하므로 거절한다.
+        // 저장소가 property_id 오름차순으로 조회하고 마지막 returned id를 다음
+        // cursor로 쓴다. 정렬·cursor 일치·단조 진행이 어긋나면 token 순회가
+        // 끝나지 않으므로 거절한다.
+        let ids = page.assignments.map(\.propertyID.rawValue)
+        guard zip(ids, ids.dropFirst()).allSatisfy({ $0 < $1 }) else { return false }
         guard page.hasMore else { return true }
+        guard let nextPageToken = page.nextPageToken,
+              ids.last == nextPageToken,
+              request.pageToken.map({ $0 < nextPageToken }) ?? true
+        else { return false }
         return page.assignments.count == request.pageSize
-            && page.nextPageToken != nil
-            && page.nextPageToken != request.pageToken
     }
 
     nonisolated private static func proposalOperation(

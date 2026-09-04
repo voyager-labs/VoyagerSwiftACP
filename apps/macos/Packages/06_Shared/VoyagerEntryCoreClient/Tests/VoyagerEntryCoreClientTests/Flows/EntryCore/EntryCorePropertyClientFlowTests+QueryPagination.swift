@@ -67,6 +67,11 @@ extension EntryCorePropertyClientFlowTests {
         let repeatedRequest = try PropertyDefinitionListRequest(
             pageSize: 2, includeDisabled: true, pageToken: "same",
         )
+        let id1 = "00000000-0000-0000-8000-000000000001"
+        let id2 = "00000000-0000-0000-8000-000000000002"
+        let cyclicRequest = try PropertyDefinitionListRequest(
+            pageSize: 2, includeDisabled: true, pageToken: id2,
+        )
         let cases = [
             DefinitionListCase(
                 name: "has_more with under-filled page",
@@ -86,16 +91,43 @@ extension EntryCorePropertyClientFlowTests {
                     nextPageToken: "same",
                 ),
             ),
+            DefinitionListCase(
+                name: "has_more with token not matching the last definition",
+                request: cyclicRequest,
+                response: definitionListPageResponse(
+                    definitions: "[\(paginationDefinitionJSON(id: 1)),\(paginationDefinitionJSON(id: 2))]",
+                    hasMore: true,
+                    nextPageToken: "00000000-0000-0000-8000-000000000003",
+                ),
+            ),
+            DefinitionListCase(
+                name: "has_more with non-advancing token",
+                request: cyclicRequest,
+                response: definitionListPageResponse(
+                    definitions: "[\(paginationDefinitionJSON(id: 1)),\(paginationDefinitionJSON(id: 2))]",
+                    hasMore: true,
+                    nextPageToken: id2,
+                ),
+            ),
+            DefinitionListCase(
+                name: "has_more with descending definitions",
+                request: underFilledRequest,
+                response: definitionListPageResponse(
+                    definitions: "[\(paginationDefinitionJSON(id: 2)),\(paginationDefinitionJSON(id: 1))]",
+                    hasMore: true,
+                    nextPageToken: "00000000-0000-0000-8000-000000000001",
+                ),
+            ),
         ]
         try await assertListPageRejected(cases, endpoint: endpoint)
 
         let acceptedRequest = try PropertyDefinitionListRequest(
-            pageSize: 2, includeDisabled: true, pageToken: "first",
+            pageSize: 2, includeDisabled: true, pageToken: id1,
         )
         let acceptedResponse = definitionListPageResponse(
             definitions: "[\(paginationDefinitionJSON(id: 1)),\(paginationDefinitionJSON(id: 2))]",
             hasMore: true,
-            nextPageToken: "second",
+            nextPageToken: id2,
         )
         try await assertListPageAccepted(acceptedRequest, response: acceptedResponse, endpoint: endpoint) {
             $0.definitions.count == 2
@@ -112,6 +144,11 @@ extension EntryCorePropertyClientFlowTests {
         )
         let repeatedRequest = try PropertyAssignmentListRequest(
             pageSize: 2, target: target, pageToken: "same", requestedPropertyIDs: [],
+        )
+        let id1 = "00000000-0000-0000-8000-000000000001"
+        let id2 = "00000000-0000-0000-8000-000000000002"
+        let cyclicRequest = try PropertyAssignmentListRequest(
+            pageSize: 2, target: target, pageToken: id2, requestedPropertyIDs: [],
         )
         let cases = [
             AssignmentListCase(
@@ -132,16 +169,43 @@ extension EntryCorePropertyClientFlowTests {
                     nextPageToken: "same",
                 ),
             ),
+            AssignmentListCase(
+                name: "has_more with token not matching the last assignment",
+                request: cyclicRequest,
+                response: assignmentListPageResponse(
+                    assignments: "[\(paginationAssignmentJSON(id: 1)),\(paginationAssignmentJSON(id: 2))]",
+                    hasMore: true,
+                    nextPageToken: "00000000-0000-0000-8000-000000000003",
+                ),
+            ),
+            AssignmentListCase(
+                name: "has_more with non-advancing token",
+                request: cyclicRequest,
+                response: assignmentListPageResponse(
+                    assignments: "[\(paginationAssignmentJSON(id: 1)),\(paginationAssignmentJSON(id: 2))]",
+                    hasMore: true,
+                    nextPageToken: id2,
+                ),
+            ),
+            AssignmentListCase(
+                name: "has_more with descending assignments",
+                request: underFilledRequest,
+                response: assignmentListPageResponse(
+                    assignments: "[\(paginationAssignmentJSON(id: 2)),\(paginationAssignmentJSON(id: 1))]",
+                    hasMore: true,
+                    nextPageToken: "00000000-0000-0000-8000-000000000001",
+                ),
+            ),
         ]
         try await assertListPageRejected(cases, endpoint: endpoint)
 
         let acceptedRequest = try PropertyAssignmentListRequest(
-            pageSize: 2, target: target, pageToken: "first", requestedPropertyIDs: [],
+            pageSize: 2, target: target, pageToken: id1, requestedPropertyIDs: [],
         )
         let acceptedResponse = assignmentListPageResponse(
             assignments: "[\(paginationAssignmentJSON(id: 1)),\(paginationAssignmentJSON(id: 2))]",
             hasMore: true,
-            nextPageToken: "second",
+            nextPageToken: id2,
         )
         try await assertListPageAccepted(acceptedRequest, response: acceptedResponse, endpoint: endpoint) {
             $0.assignments.count == 2
@@ -159,13 +223,13 @@ extension EntryCorePropertyClientFlowTests {
         let repeatedRequest = try PropertyAssignmentListRequest(
             pageSize: 2,
             target: target,
-            pageToken: "same",
+            pageToken: propertyID2.rawValue,
             requestedPropertyIDs: [propertyID1, propertyID2],
         )
         let repeatedResponse = assignmentListPageResponse(
             assignments: "[\(paginationAssignmentJSON(id: 1)),\(paginationAssignmentJSON(id: 2))]",
             hasMore: true,
-            nextPageToken: "same",
+            nextPageToken: propertyID2.rawValue,
         )
         try await assertListPageRejected(
             [
@@ -181,13 +245,13 @@ extension EntryCorePropertyClientFlowTests {
         let progressiveRequest = try PropertyAssignmentListRequest(
             pageSize: 2,
             target: target,
-            pageToken: "first",
+            pageToken: propertyID1.rawValue,
             requestedPropertyIDs: [propertyID1, propertyID2],
         )
         let progressiveResponse = assignmentListPageResponse(
             assignments: "[\(paginationAssignmentJSON(id: 1)),\(paginationAssignmentJSON(id: 2))]",
             hasMore: true,
-            nextPageToken: "second",
+            nextPageToken: propertyID2.rawValue,
         )
         try await assertListPageAccepted(progressiveRequest, response: progressiveResponse, endpoint: endpoint) {
             $0.assignments.count == 2
