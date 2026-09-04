@@ -441,14 +441,6 @@ public struct EntryPropertiesFeature: Sendable {
         guard previousRevision >= 0, previousRevision < Int64.max else { return nil }
         return previousRevision + 1
     }
-
-    private func snapshotMatchesSelection(
-        _ snapshot: EntryPropertiesTargetSnapshot,
-        selection: EntryPropertiesSelection,
-    ) -> Bool {
-        snapshot.targets.map(\.localPath) == selection.targets.map(\.localPath)
-            && snapshot.propertyID == selection.propertyID
-    }
 }
 
 private extension EntryPropertiesFeature {
@@ -509,6 +501,21 @@ private func resolveDiscoveryCatalogVersion(
         throw EntryPropertiesFailure.stale
     }
     return catalogVersion
+}
+
+/// 같은 local path에서 파일이 교체되면 entryID가 달라진다. selection이
+/// identity를 아직 모를(nil) 때만 경로 일치를 허용하고, 양쪽에 있으면 동일해야
+/// 현재 selection으로 인정한다(targetIdentityCompatible과 동일 규칙).
+private func snapshotMatchesSelection(
+    _ snapshot: EntryPropertiesTargetSnapshot,
+    selection: EntryPropertiesSelection,
+) -> Bool {
+    snapshot.propertyID == selection.propertyID
+        && snapshot.targets.count == selection.targets.count
+        && zip(snapshot.targets, selection.targets).allSatisfy { snapshotTarget, selectionTarget in
+            snapshotTarget.localPath == selectionTarget.localPath
+                && (selectionTarget.entryID == nil || snapshotTarget.entryID == selectionTarget.entryID)
+        }
 }
 
 /// 검증 성공 뒤 같은 selection의 연속 편집이 정본 revision을 CAS 토큰으로

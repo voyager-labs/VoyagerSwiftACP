@@ -234,6 +234,39 @@ extension EPR006CoordinatePropertyChangesTests {
         await store.receive(.init(kind: .outcome(.propertyChangeRejected(.unavailable))))
     }
 
+    /// EPR-006-read_back_property_change_result: 같은 local path에서 entry가
+    /// 교체되면 이전 proposal의 검증 결과는 현재 selection의 verified가 되지 않는다.
+    /// - 검증 내용: entry 교체 시 current-selection 분기 미채택과 pending 정리
+    /// - 사전 조건: 동일 경로에 다른 entryID를 가진 selection과 이전 proposal pending
+    /// - 기대 결과: canonical result를 채택하지 않고 idle로 복원해 재탐색을 유도함
+    func testReadBackWithReplacedEntryDoesNotAdoptVerifiedResult() async throws {
+        let fixture = try replacedEntryFixture()
+        var state = EntryPropertiesState(selection: fixture.selection)
+        state.pendingReadBack = fixture.proposal
+        let store = TestStore(initialState: state) {
+            EntryPropertiesFeature()
+        } withDependencies: {
+            $0.entryPropertiesClient = Fixture().client(readBack: { _ in fixture.canonicalResult })
+        }
+
+        await store.send(.retryReadBack) {
+            $0.activePhase = .applied
+            $0.readBackProposal = fixture.proposal
+        }
+        await store.receive(.init(kind: .readBackCompleted(0, .success(fixture.canonicalResult)))) {
+            $0.activePhase = nil
+            $0.pendingReadBack = nil
+            $0.readBackProposal = nil
+            $0.status = .idle
+            $0.lastOutcome = .propertyChangeVerified(fixture.canonicalResult)
+        }
+        await store.receive(.init(kind: .outcome(.propertyChangeVerified(fixture.canonicalResult))))
+        XCTAssertEqual(store.state.status, .idle)
+        XCTAssertNil(store.state.canonicalResult)
+        XCTAssertNil(store.state.appliedProposal)
+        XCTAssertNil(store.state.pendingReadBack)
+    }
+
     /// ambiguous proposal을 selection 변경으로 pendingReadBack으로 옮기는 첫 단계다.
     private func moveAmbiguousProposalToPendingReadBack(
         _ store: TestStore<EntryPropertiesState, EntryPropertiesAction>,
@@ -256,6 +289,51 @@ extension EPR006CoordinatePropertyChangesTests {
         }
         await store.receive(.init(kind: .outcome(.propertyChangeRejected(.ambiguousExecution))))
     }
+}
+
+private struct ReplacedEntryFixture {
+    let selection: EntryPropertiesSelection
+    let proposal: EntryPropertiesProposal
+    let canonicalResult: EntryPropertiesCanonicalResult
+}
+
+/// /a의 entry가 교체된 selection과 이전 identity의 proposal·검증 결과다.
+private func replacedEntryFixture() throws -> ReplacedEntryFixture {
+    let propertyID = try PropertyID(rawValue: "00000000-0000-0000-8000-000000000001")
+    let oldEntryID = try EntryCoreEntryID(rawValue: "ent:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
+    let newEntryID = try EntryCoreEntryID(rawValue: "ent:UCqcybbCfAKpfjndstZqrNVefCWIjYqySFylQRoTDGw")
+    let oldSnapshot = EntryPropertiesTargetSnapshot(
+        reconcilingTargets: [.init(localPath: "/a", entryID: oldEntryID)],
+        propertyID: .init(rawValue: propertyID.rawValue),
+        catalogVersion: "2.2.0",
+        canonicalRevision: 5,
+        definitionRevision: 1,
+        valueKind: .text,
+        cardinality: .one,
+        assignmentRevisions: [.init(target: .init(localPath: "/a", entryID: oldEntryID), revision: 5)],
+    )
+    let proposal = EntryPropertiesProposal(
+        snapshot: oldSnapshot,
+        intent: .init(change: .set(.text("after"))),
+        differences: [
+            .init(target: .init(localPath: "/a", entryID: oldEntryID), before: .unset, after: .text("after")),
+        ],
+        affectedTargetCount: 1,
+        validation: .init(isValid: true),
+        requiresConfirmation: false,
+    )
+    let canonicalResult = EntryPropertiesCanonicalResult(
+        snapshot: oldSnapshot,
+        values: [.init(target: .init(localPath: "/a", entryID: oldEntryID), value: .text("after"), revision: 6)],
+    )
+    return ReplacedEntryFixture(
+        selection: EntryPropertiesSelection(
+            targets: [.init(localPath: "/a", entryID: newEntryID)],
+            propertyID: .init(rawValue: propertyID.rawValue),
+        ),
+        proposal: proposal,
+        canonicalResult: canonicalResult,
+    )
 }
 
 /// discovery 시점의 혼합 identity snapshot: /a는 assignment가 있고 /b는 암시적 unset이다.
