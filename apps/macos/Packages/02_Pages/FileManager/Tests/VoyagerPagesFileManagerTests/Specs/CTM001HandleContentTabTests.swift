@@ -409,6 +409,12 @@ private struct SelectedCloseMetricPrecedenceCase {
     let expected: ContentTabActionResult
 }
 
+private struct SelectedCloseTeardownCase {
+    let aggregateResult: ContentTabActionResult?
+    let cursor: Int
+    let expectedResult: ContentTabActionResult
+}
+
 private struct SelectedGroupReorderCase {
     let anchorID: ContentTabID
     let placement: FileManagerTopNavigationReorderPlacement
@@ -6276,6 +6282,67 @@ final class CTM001HandleContentTabTests: XCTestCase {
                 operationID: operationID,
             ),
         ])
+    }
+
+    /// CTM-001-content_tab_action_metrics: selected close batch teardown은 남은 항목을 cancelled로 한 번 집계한다.
+    /// 이미 처리된 성공/실패 결과의 우선순위를 유지하면서 원래 batch correlation을 소비하는지 검증한다.
+    /// - 검증 내용: 미처리 batch는 cancelled, success+remaining은 success, failure+remaining은 failure로 기록하고 반복 teardown/late
+    /// action은 무시함
+    /// - 사전 조건: contextMenu source의 accepted selected close batch와 남은 항목
+    /// - 기대 결과: 각 batch operation ID/source의 aggregate terminal 정확히 한 건과 pending state 정리
+    func testWindowDisappearRecordsSelectedCloseAggregateForRemainingItems() async {
+        let fixture = makeSelectedContentTabCloseFixture()
+        let cases = [
+            SelectedCloseTeardownCase(aggregateResult: nil, cursor: 0, expectedResult: .cancelled),
+            SelectedCloseTeardownCase(aggregateResult: .success, cursor: 1, expectedResult: .success),
+            SelectedCloseTeardownCase(aggregateResult: .failure, cursor: 1, expectedResult: .failure),
+        ]
+
+        for (index, testCase) in cases.enumerated() {
+            let operationID = UUID(uuid: (
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, UInt8(index + 1),
+            ))
+            var state = fixture.state
+            let currentTabID = testCase.cursor == 0 ? fixture.tabA : fixture.tabB
+            state.pendingSelectedContentTabClose = PendingSelectedContentTabClose(
+                operationID: operationID,
+                orderedTargetIDs: [fixture.tabA, fixture.tabB],
+                cursor: testCase.cursor,
+                currentTabID: currentTabID,
+                originalActiveTabID: fixture.tabC,
+                preferredFallbackIDs: [fixture.tabD],
+                actionSource: .contextMenu,
+            )
+            state.pendingSelectedContentTabClose?.aggregateResult = testCase.aggregateResult
+            state.pendingContentTabClose = PendingContentTabClose(
+                tabID: currentTabID,
+                batchOperationID: operationID,
+            )
+            let recorder = FileManagerProductMetricRecorder()
+            let store = TestStore(initialState: state) { FileManagerWindowRoutingReducer() } withDependencies: {
+                $0.fileManagerProductMetricsClient = recorder.client
+            }
+            // store.exhaustivity = .off: teardown cancellation effect보다 aggregate terminal exactly-once 계약에 집중함
+            store.exhaustivity = .off
+
+            await store.send(.onDisappear)
+            await store.send(.onDisappear)
+            await store.send(.selectedContentTabCloseItemCompleted(
+                operationID: operationID,
+                tabID: currentTabID,
+                outcome: .removed,
+            ))
+
+            XCTAssertNil(store.state.pendingSelectedContentTabClose)
+            XCTAssertEqual(recorder.metrics(), [
+                .contentTabAction(
+                    result: testCase.expectedResult,
+                    identity: .closeSelectedContentTabs,
+                    source: .contextMenu,
+                    operationID: operationID,
+                ),
+            ])
+        }
     }
 
     /// CTM-001-content_tab_action_metrics: save를 시작할 수 없으면 failure terminal 메트릭 한 건을 기록한다.

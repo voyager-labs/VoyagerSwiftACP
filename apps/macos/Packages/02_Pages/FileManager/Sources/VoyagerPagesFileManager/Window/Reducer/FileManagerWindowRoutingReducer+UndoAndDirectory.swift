@@ -13,7 +13,8 @@ import VoyagerShared
 extension FileManagerWindowRoutingReducer {
     func handleWindowDisappear(state: inout State) -> Effect<Action> {
         recordPendingContentTabMoveCancellations(state: &state)
-        let closeOperationID = state.pendingSelectedContentTabClose?.operationID
+        let pendingSelectedContentTabClose = state.pendingSelectedContentTabClose
+        let closeOperationID = pendingSelectedContentTabClose?.operationID
             ?? state.pendingContentTabClose?.batchOperationID
         let pinMutationOperationID = recordPendingPinMutationCancellation(state: &state)
         if let pendingClose = state.pendingContentTabClose {
@@ -22,6 +23,9 @@ extension FileManagerWindowRoutingReducer {
         }
         if let metric = state.productContentTabCloseMetric {
             recordProductContentTabCloseMetric(for: metric.tabID, result: .cancelled, state: &state)
+        }
+        if let pendingSelectedContentTabClose {
+            recordPendingSelectedContentTabCloseCancellation(pendingSelectedContentTabClose)
         }
         recordPendingBrowsingUnavailability(state: &state)
         if let teardown = state.pendingContentTabTeardown,
@@ -51,6 +55,24 @@ extension FileManagerWindowRoutingReducer {
             ))
         }
         return .merge(cancellationEffects)
+    }
+
+    private func recordPendingSelectedContentTabCloseCancellation(
+        _ pending: PendingSelectedContentTabClose,
+    ) {
+        guard pending.cursor < pending.orderedTargetIDs.count else { return }
+        var terminalPending = pending
+        let terminalResult = aggregateSelectedContentTabCloseResult(
+            terminalPending.aggregateResult,
+            outcome: .cancelled,
+        )
+        terminalPending.aggregateResult = terminalResult
+        productMetricsClient.record(FileManagerProductMetricsProducer.contentTabTerminal(
+            operationID: terminalPending.operationID,
+            identity: .closeSelectedContentTabs,
+            source: terminalPending.actionSource,
+            result: terminalResult,
+        ))
     }
 
     private func recordPendingBrowsingUnavailability(state: inout State) {

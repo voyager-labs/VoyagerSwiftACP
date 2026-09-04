@@ -137,7 +137,7 @@ extension FileManagerWindowRoutingReducer {
         return .send(.processNextSelectedContentTabClose(operationID: operationID))
     }
 
-    private func aggregateSelectedContentTabCloseResult(
+    func aggregateSelectedContentTabCloseResult(
         _ current: ContentTabActionResult?,
         outcome: SelectedContentTabCloseOutcome,
     ) -> ContentTabActionResult {
