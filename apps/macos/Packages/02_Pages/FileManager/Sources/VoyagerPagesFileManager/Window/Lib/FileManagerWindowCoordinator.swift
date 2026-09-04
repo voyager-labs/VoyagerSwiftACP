@@ -333,13 +333,13 @@ public extension FileManagerWindowCoordinator {
     /// QuickLookUI의 NSObject hooks는 nonisolated로 import되지만 AppKit responder dispatch는 main thread에서 실행된다.
     override nonisolated func acceptsPreviewPanelControl(_: QLPreviewPanel!) -> Bool {
         MainActor.assumeIsolated {
-            entryQuickLookClient.acceptsPreviewPanelControl()
+            canControlQuickLookPanel()
         }
     }
 
     override nonisolated func beginPreviewPanelControl(_ panel: QLPreviewPanel!) {
         MainActor.assumeIsolated {
-            guard let panel else { return }
+            guard let panel, canControlQuickLookPanel() else { return }
             entryQuickLookClient.beginPreviewPanelControl(panel, self)
         }
     }
@@ -350,6 +350,13 @@ public extension FileManagerWindowCoordinator {
             entryQuickLookClient.endPreviewPanelControl(panel, self)
             settleRetainedResignKeyIfNeeded()
         }
+    }
+
+    /// Quick Look panel은 앱 전체에 하나뿐이므로 background window가 responder-chain owner가 되지 않게 한다.
+    /// `isFocused`는 WindowManager가 key transition과 Quick Look logical focus를 반영한 단일 ownership source다.
+    private func canControlQuickLookPanel() -> Bool {
+        guard store.withState(\.isFocused) else { return false }
+        return entryQuickLookClient.acceptsPreviewPanelControl()
     }
 
     /// Quick Look이 key를 비-FileManager window에 넘기거나 앱이 비활성화되면 document는
