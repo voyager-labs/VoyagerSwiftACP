@@ -119,6 +119,67 @@ extension EntryCorePropertyClientFlowTests {
         _ = try await acceptedClient.changeExecute(endpoint, request)
         XCTAssertEqual(acceptedRecorder.requests.count, 1)
     }
+
+    /// 생성 응답은 항상 user-defined origin이어야 한다. built-in origin은
+    /// 요청으로 만들 수 없는 ownership이므로 protocolMismatch로 거절한다.
+    func testDefinitionCreateRejectsBuiltInOriginResponse() async throws {
+        let request = try PropertyDefinitionCreateRequest(
+            key: "created-key",
+            name: "created name",
+            valueType: .text,
+            cardinality: .one,
+        )
+        let endpoint = try EntryCoreEndpoint(path: "/tmp/property-client.sock")
+        let runtimeUnavailable = #"{"supported":false,"reason":"source_runtime_unavailable"}"#
+        let supported = """
+        {"supported":true,"evaluation_scope":"local_assignment","catalog_version":"2.2.0",
+        "native_type":"string","allowed_operators":["all","any","cn","empty","eq","ew","exists","nc","neq","rx","sw"]}
+        """.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // decoder 관점에서는 유효한 페어링(built-in + runtime-unavailable)이라도
+        // create 응답으로는 승인되지 않는다.
+        let recorder = PropertyTransportRecorder(
+            response: Data(definitionCreateResponse(origin: "built_in", capability: runtimeUnavailable).utf8),
+        )
+        let client = EntryCorePropertyClient.makeLive(
+            requestID: { "create-id" },
+            makeTransport: recorder.makeTransport,
+        )
+
+        do {
+            _ = try await client.definitionCreate(endpoint, request)
+            XCTFail("built-in origin create response should be rejected")
+        } catch {
+            XCTAssertEqual(error as? EntryCoreClientError, .protocolMismatch)
+        }
+        XCTAssertEqual(recorder.requests.count, 1)
+
+        let acceptedRecorder = PropertyTransportRecorder(
+            response: Data(definitionCreateResponse(origin: "user_defined", capability: supported).utf8),
+        )
+        let acceptedClient = EntryCorePropertyClient.makeLive(
+            requestID: { "create-id" },
+            makeTransport: acceptedRecorder.makeTransport,
+        )
+        let created = try await acceptedClient.definitionCreate(endpoint, request)
+        XCTAssertEqual(created.origin, .userDefined)
+    }
+}
+
+private func definitionCreateResponse(origin: String, capability: String) -> String {
+    """
+    {
+      "request_id":"create-id",
+      "ok":true,
+      "result":{"definition":{
+        "property_id":"00000000-0000-0000-8000-000000000001",
+        "key":"created-key","name":"created name",
+        "value_type":"text","cardinality":"one","state":"active","origin":"\(origin)",
+        "revision":1,"options":[],
+        "condition_capability":\(capability)
+      }}
+    }
+    """
 }
 
 private func executeAssignmentMismatchCases(

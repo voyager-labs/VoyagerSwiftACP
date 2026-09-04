@@ -305,6 +305,9 @@ public struct EntryPropertiesFeature: Sendable {
                         state.status = .verified
                     } else {
                         state.pendingReadBack = nil
+                        // 이전 selection의 검증이 끝났으면 현재 selection의 대기를
+                        // 푼다. .ambiguous가 남으면 복구 대상 없이 busy guard에 갇힌다.
+                        state.status = .idle
                     }
                     return emit(&state, .propertyChangeVerified(canonicalResult))
                 case .failure:

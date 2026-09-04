@@ -180,7 +180,10 @@ extension EntryCorePropertyClient {
     ) -> Bool {
         let requestedLabels = request.options?.map(\.label) ?? []
         let responseOptions = definition.options.sorted { $0.position < $1.position }
-        return definition.state == .active
+        // 새 definition은 항상 user-defined로 생성된다(CatalogService.CreateDefinition).
+        // built-in origin 응답은 요청과 무관한 ownership이므로 승인하지 않는다.
+        return definition.origin == .userDefined
+            && definition.state == .active
             && definition.revision == 1
             && definition.key == request.key
             && definition.name == request.name

@@ -180,6 +180,60 @@ extension EPR006CoordinatePropertyChangesTests {
         XCTAssertEqual(proposal.differences, try mixedIdentityDifferences())
     }
 
+    /// EPR-006-read_back_property_change_result: 이전 selection 검증 성공은 ambiguous 대기를 푼다.
+    /// - 검증 내용: currentSelection == false 성공 분기의 status .idle 복원과 discovery 재개
+    /// - 사전 조건: 실행 취소로 .ambiguous + pendingReadBack이 남은 뒤 selection이 변경됨
+    /// - 기대 결과: pending 제거와 함께 현재 selection이 idle로 복원되어 discovery가 다시 가능
+    func testOldSelectionVerificationResolvesAmbiguousWait() async {
+        let fixture = Fixture()
+        let replacement = EntryPropertiesSelection(
+            targets: [.init(localPath: "/tmp/replacement")],
+            propertyID: fixture.selection.propertyID,
+        )
+        var state = fixture.readyState
+        state.selection = replacement
+        state.status = .ambiguous
+        state.pendingReadBack = fixture.proposal
+        let store = TestStore(initialState: state) {
+            EntryPropertiesFeature()
+        } withDependencies: {
+            $0.entryPropertiesClient = fixture.client(
+                readBack: { _ in fixture.canonicalResult },
+            )
+        }
+
+        await store.send(.retryReadBack) {
+            $0.activePhase = .applied
+            $0.readBackProposal = fixture.proposal
+        }
+        await store.receive(.init(kind: .readBackCompleted(0, .success(fixture.canonicalResult)))) {
+            $0.activePhase = nil
+            $0.pendingReadBack = nil
+            $0.readBackProposal = nil
+            $0.status = .idle
+            $0.lastOutcome = .propertyChangeVerified(fixture.canonicalResult)
+        }
+        await store.receive(.init(kind: .outcome(.propertyChangeVerified(fixture.canonicalResult))))
+        XCTAssertEqual(store.state.status, .idle)
+        XCTAssertNil(store.state.pendingReadBack)
+
+        await store.send(.discoverCapabilities) {
+            $0.generation = 1
+            $0.activePhase = .discovering
+            $0.status = .discovering
+            $0.capabilityReport = nil
+            $0.targetSnapshot = nil
+            $0.proposal = nil
+            $0.canonicalResult = nil
+        }
+        await store.receive(.init(kind: .discoveryCompleted(1, .failure(.unavailable)))) {
+            $0.activePhase = nil
+            $0.status = .rejected(.unavailable)
+            $0.lastOutcome = .propertyChangeRejected(.unavailable)
+        }
+        await store.receive(.init(kind: .outcome(.propertyChangeRejected(.unavailable))))
+    }
+
     /// ambiguous proposal을 selection 변경으로 pendingReadBack으로 옮기는 첫 단계다.
     private func moveAmbiguousProposalToPendingReadBack(
         _ store: TestStore<EntryPropertiesState, EntryPropertiesAction>,
