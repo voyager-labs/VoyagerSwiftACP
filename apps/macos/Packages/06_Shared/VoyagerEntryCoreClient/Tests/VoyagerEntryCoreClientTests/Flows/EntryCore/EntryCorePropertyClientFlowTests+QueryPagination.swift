@@ -72,7 +72,7 @@ extension EntryCorePropertyClientFlowTests {
         let cyclicRequest = try PropertyDefinitionListRequest(
             pageSize: 2, includeDisabled: true, pageToken: id2,
         )
-        let cases = [
+        var cases = [
             DefinitionListCase(
                 name: "has_more with under-filled page",
                 request: underFilledRequest,
@@ -125,12 +125,24 @@ extension EntryCorePropertyClientFlowTests {
             pageSize: 2, includeDisabled: true, pageToken: id1,
         )
         let acceptedResponse = definitionListPageResponse(
-            definitions: "[\(paginationDefinitionJSON(id: 1)),\(paginationDefinitionJSON(id: 2))]",
-            hasMore: true,
-            nextPageToken: id2,
+            definitions: "[\(paginationDefinitionJSON(id: 2))]",
+            hasMore: false,
+        )
+        let replayedTerminalRequest = try PropertyDefinitionListRequest(
+            pageSize: 2, includeDisabled: true, pageToken: id2,
+        )
+        cases.append(
+            DefinitionListCase(
+                name: "terminal page replaying the request cursor",
+                request: replayedTerminalRequest,
+                response: definitionListPageResponse(
+                    definitions: "[\(paginationDefinitionJSON(id: 1)),\(paginationDefinitionJSON(id: 2))]",
+                    hasMore: false,
+                ),
+            ),
         )
         try await assertListPageAccepted(acceptedRequest, response: acceptedResponse, endpoint: endpoint) {
-            $0.definitions.count == 2
+            $0.definitions.count == 1
         }
     }
 
@@ -203,12 +215,11 @@ extension EntryCorePropertyClientFlowTests {
             pageSize: 2, target: target, pageToken: id1, requestedPropertyIDs: [],
         )
         let acceptedResponse = assignmentListPageResponse(
-            assignments: "[\(paginationAssignmentJSON(id: 1)),\(paginationAssignmentJSON(id: 2))]",
-            hasMore: true,
-            nextPageToken: id2,
+            assignments: "[\(paginationAssignmentJSON(id: 2))]",
+            hasMore: false,
         )
         try await assertListPageAccepted(acceptedRequest, response: acceptedResponse, endpoint: endpoint) {
-            $0.assignments.count == 2
+            $0.assignments.count == 1
         }
     }
 
@@ -249,12 +260,11 @@ extension EntryCorePropertyClientFlowTests {
             requestedPropertyIDs: [propertyID1, propertyID2],
         )
         let progressiveResponse = assignmentListPageResponse(
-            assignments: "[\(paginationAssignmentJSON(id: 1)),\(paginationAssignmentJSON(id: 2))]",
-            hasMore: true,
-            nextPageToken: propertyID2.rawValue,
+            assignments: "[\(paginationAssignmentJSON(id: 2))]",
+            hasMore: false,
         )
         try await assertListPageAccepted(progressiveRequest, response: progressiveResponse, endpoint: endpoint) {
-            $0.assignments.count == 2
+            $0.assignments.count == 1
         }
     }
 
@@ -316,6 +326,148 @@ private struct AssignmentListCase {
     let name: String
     let request: PropertyAssignmentListRequest
     let response: String
+}
+
+/// definition mutation 요청의 사전 definition snapshot은 wire 인자와 정확히
+/// 대응해야 한다. 어긋난 snapshot으로 기대 응답을 만들면 정상 daemon 응답도
+/// 거절된다.
+func testDefinitionMutationRequestsValidateExpectedDefinitionSnapshot() throws {
+    let propertyID = try PropertyID(rawValue: "00000000-0000-0000-8000-000000000001")
+    let otherPropertyID = try PropertyID(rawValue: "00000000-0000-0000-8000-000000000002")
+    let validSnapshot = try PropertyDefinition(
+        id: propertyID,
+        key: "property-key",
+        name: "Property name",
+        valueType: .text,
+        cardinality: .one,
+        state: .active,
+        origin: .userDefined,
+        revision: 1,
+        options: [],
+        conditionCapability: .unsupported(.unsupportedValueContract),
+    )
+
+    func mutatedSnapshot(name: String? = nil, state: PropertyDefinitionState = .active, revision: Int64 = 1) throws
+        -> PropertyDefinition
+    {
+        try PropertyDefinition(
+            id: propertyID,
+            key: "property-key",
+            name: name ?? "Property name",
+            valueType: .text,
+            cardinality: .one,
+            state: state,
+            origin: .userDefined,
+            revision: revision,
+            options: [],
+            conditionCapability: .unsupported(.unsupportedValueContract),
+        )
+    }
+
+    let updateMismatched = try [
+        SnapshotMismatchCase(
+            name: "snapshot for another property",
+            snapshotPropertyID: otherPropertyID,
+            revision: 1,
+            snapshot: mutatedSnapshot(),
+        ),
+        SnapshotMismatchCase(
+            name: "snapshot with drifted revision",
+            snapshotPropertyID: propertyID,
+            revision: 5,
+            snapshot: mutatedSnapshot(revision: 5),
+        ),
+        SnapshotMismatchCase(
+            name: "disabled snapshot",
+            snapshotPropertyID: propertyID,
+            revision: 1,
+            snapshot: mutatedSnapshot(state: .disabled),
+        ),
+    ]
+    for mismatchCase in updateMismatched {
+        do {
+            _ = try PropertyDefinitionUpdateRequest(
+                propertyID: mismatchCase.snapshotPropertyID,
+                expectedDefinitionRevision: mismatchCase.revision,
+                expectedDefinition: mismatchCase.snapshot,
+                name: "Renamed",
+            )
+            XCTFail("\(mismatchCase.name) should be rejected")
+        } catch {
+            XCTAssertEqual(error as? EntryCoreClientError, .protocolMismatch, mismatchCase.name)
+        }
+    }
+
+    let builtInSnapshot = try PropertyDefinition(
+        id: propertyID,
+        key: "property-key",
+        name: "Property name",
+        valueType: .text,
+        cardinality: .one,
+        state: .active,
+        origin: .builtIn,
+        revision: 1,
+        options: [],
+        conditionCapability: .unsupported(.sourceRuntimeUnavailable),
+    )
+    let disableMismatched = try [
+        SnapshotMismatchCase(
+            name: "snapshot for another property",
+            snapshotPropertyID: otherPropertyID,
+            revision: 1,
+            snapshot: validSnapshot,
+        ),
+        SnapshotMismatchCase(
+            name: "snapshot with drifted revision",
+            snapshotPropertyID: propertyID,
+            revision: 5,
+            snapshot: validSnapshot,
+        ),
+        SnapshotMismatchCase(
+            name: "disabled snapshot",
+            snapshotPropertyID: propertyID,
+            revision: 1,
+            snapshot: mutatedSnapshot(state: .disabled),
+        ),
+        SnapshotMismatchCase(
+            name: "built-in snapshot",
+            snapshotPropertyID: propertyID,
+            revision: 1,
+            snapshot: builtInSnapshot,
+        ),
+    ]
+    for mismatchCase in disableMismatched {
+        do {
+            _ = try PropertyDefinitionDisableRequest(
+                propertyID: mismatchCase.snapshotPropertyID,
+                expectedDefinitionRevision: mismatchCase.revision,
+                expectedDefinition: mismatchCase.snapshot,
+            )
+            XCTFail("\(mismatchCase.name) should be rejected")
+        } catch {
+            XCTAssertEqual(error as? EntryCoreClientError, .protocolMismatch, mismatchCase.name)
+        }
+    }
+
+    // 일치하는 snapshot은 수용된다.
+    _ = try PropertyDefinitionUpdateRequest(
+        propertyID: propertyID,
+        expectedDefinitionRevision: 1,
+        expectedDefinition: validSnapshot,
+        name: "Renamed",
+    )
+    _ = try PropertyDefinitionDisableRequest(
+        propertyID: propertyID,
+        expectedDefinitionRevision: 1,
+        expectedDefinition: validSnapshot,
+    )
+}
+
+private struct SnapshotMismatchCase {
+    let name: String
+    let snapshotPropertyID: PropertyID
+    let revision: Int64
+    let snapshot: PropertyDefinition
 }
 
 private func assertListPageRejected(
@@ -412,22 +564,32 @@ private func paginationAssignmentJSON(id: Int) -> String {
     """
 }
 
-private func definitionListPageResponse(definitions: String, hasMore: Bool, nextPageToken: String) -> String {
-    """
+private func definitionListPageResponse(
+    definitions: String,
+    hasMore: Bool,
+    nextPageToken: String? = nil,
+) -> String {
+    let tokenField = nextPageToken.map { "\"next_page_token\":\"\($0)\"," } ?? ""
+    return """
     {
       "request_id":"list-id",
       "ok":true,
-      "result":{"definitions":\(definitions),"next_page_token":"\(nextPageToken)","has_more":\(hasMore)}
+      "result":{"definitions":\(definitions),\(tokenField)"has_more":\(hasMore)}
     }
     """
 }
 
-private func assignmentListPageResponse(assignments: String, hasMore: Bool, nextPageToken: String) -> String {
-    """
+private func assignmentListPageResponse(
+    assignments: String,
+    hasMore: Bool,
+    nextPageToken: String? = nil,
+) -> String {
+    let tokenField = nextPageToken.map { "\"next_page_token\":\"\($0)\"," } ?? ""
+    return """
     {
       "request_id":"list-id",
       "ok":true,
-      "result":{"assignments":\(assignments),"next_page_token":"\(nextPageToken)","has_more":\(hasMore)}
+      "result":{"assignments":\(assignments),\(tokenField)"has_more":\(hasMore)}
     }
     """
 }
@@ -498,7 +660,7 @@ private func queryPaginationPageResponse(
       "result":{
         "items":\(items),
         "unresolved_candidate_indices":\(unresolved),
-        "next_page_token":"\(nextPageToken)",
+        "next_page_token":"\(nextPageToken ?? "")",
         "catalog_version":"2.2.0",
         "has_more":\(hasMore)
       }

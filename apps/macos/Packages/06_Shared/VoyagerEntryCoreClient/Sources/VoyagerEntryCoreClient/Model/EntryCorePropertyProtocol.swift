@@ -268,6 +268,10 @@ nonisolated public struct PropertyDefinitionUpdateRequest: Encodable, Sendable {
         name: String,
     ) throws {
         guard expectedDefinitionRevision >= 1,
+              expectedDefinition.id == propertyID,
+              expectedDefinition.revision == expectedDefinitionRevision,
+              expectedDefinition.state == .active,
+              expectedDefinition.origin == .userDefined,
               PropertyWireValidation.short(name) else { throw EntryCoreClientError.protocolMismatch }
         self.propertyID = propertyID
         self.expectedDefinitionRevision = expectedDefinitionRevision
@@ -291,7 +295,12 @@ nonisolated public struct PropertyDefinitionDisableRequest: Encodable, Sendable 
         expectedDefinitionRevision: Int64,
         expectedDefinition: PropertyDefinition,
     ) throws {
-        guard expectedDefinitionRevision >= 1 else { throw EntryCoreClientError.protocolMismatch }
+        guard expectedDefinitionRevision >= 1,
+              expectedDefinition.id == propertyID,
+              expectedDefinition.revision == expectedDefinitionRevision,
+              expectedDefinition.state == .active,
+              expectedDefinition.origin == .userDefined
+        else { throw EntryCoreClientError.protocolMismatch }
         self.propertyID = propertyID
         self.expectedDefinitionRevision = expectedDefinitionRevision
         self.expectedDefinition = expectedDefinition

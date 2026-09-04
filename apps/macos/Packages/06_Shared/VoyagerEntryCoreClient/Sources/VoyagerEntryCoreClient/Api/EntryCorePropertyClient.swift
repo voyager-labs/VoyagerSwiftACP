@@ -163,11 +163,14 @@ extension EntryCorePropertyClient {
         // 끝나지 않으므로 거절한다.
         let ids = page.definitions.map(\.id.rawValue)
         guard zip(ids, ids.dropFirst()).allSatisfy({ $0 < $1 }) else { return false }
+        // 저장소는 property_id > after로 조회하므로 has_more와 무관하게 페이지의
+        // 모든 id가 요청 cursor 뒤여야 한다. 재생된 페이지를 terminal로 승인하지
+        // 않기 위함이다.
+        if let pageToken = request.pageToken {
+            guard ids.first.map({ $0 > pageToken }) == true else { return false }
+        }
         guard page.hasMore else { return true }
-        guard let nextPageToken = page.nextPageToken,
-              ids.last == nextPageToken,
-              request.pageToken.map({ $0 < nextPageToken }) ?? true
-        else { return false }
+        guard let nextPageToken = page.nextPageToken, ids.last == nextPageToken else { return false }
         return page.definitions.count == request.pageSize
     }
 
@@ -463,11 +466,14 @@ extension EntryCorePropertyClient {
         // 끝나지 않으므로 거절한다.
         let ids = page.assignments.map(\.propertyID.rawValue)
         guard zip(ids, ids.dropFirst()).allSatisfy({ $0 < $1 }) else { return false }
+        // 저장소는 property_id > after로 조회하므로 has_more와 무관하게 페이지의
+        // 모든 id가 요청 cursor 뒤여야 한다. 재생된 페이지를 terminal로 승인하지
+        // 않기 위함이다.
+        if let pageToken = request.pageToken {
+            guard ids.first.map({ $0 > pageToken }) == true else { return false }
+        }
         guard page.hasMore else { return true }
-        guard let nextPageToken = page.nextPageToken,
-              ids.last == nextPageToken,
-              request.pageToken.map({ $0 < nextPageToken }) ?? true
-        else { return false }
+        guard let nextPageToken = page.nextPageToken, ids.last == nextPageToken else { return false }
         return page.assignments.count == request.pageSize
     }
 
