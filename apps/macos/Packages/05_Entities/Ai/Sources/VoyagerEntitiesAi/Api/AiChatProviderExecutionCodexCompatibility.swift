@@ -35,6 +35,8 @@ extension CodexExecLiveComposition {
                 additionalWritableRoots: [],
                 codexHome: codexHome,
                 reasoningEffort: AiChatProviderExecutionClient.codexReasoningEffort(from: request.thinking),
+                readablePaths: request.readablePaths,
+                skipGitRepositoryCheck: request.workingDirectory != nil,
             ),
             executableURL: readiness.executableURL,
         )

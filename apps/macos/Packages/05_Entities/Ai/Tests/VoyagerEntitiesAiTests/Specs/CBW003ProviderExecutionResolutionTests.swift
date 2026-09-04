@@ -420,6 +420,57 @@ extension CBW003ProviderExecutionResolutionTests {
         XCTAssertTrue(prompt.contains("status: out_of_scope"))
     }
 
+    // MARK: - CBW-003-stream_contextual_chat_response
+
+    /// CBW-003-stream_contextual_chat_response: Codex execution request reuses one working directory snapshot.
+    /// Codex executor에 전달되는 working directory와 readable paths가 같은 scope 계산 결과를 사용하는지 검증합니다.
+    /// - 검증 내용: executor request가 canonical folder와 선택 readable path를 함께 보존하는지 확인합니다.
+    /// - 사전 조건: locked folder context와 provider-managed Codex payload가 준비되어 있습니다.
+    /// - 기대 결과: request의 workingDirectory와 readablePaths가 folder scope 계산에 일치합니다.
+    func testCodexStream_passesWorkingDirectoryAndReadablePathsTogether() async throws {
+        let folder = "/tmp/cbw003-codex-folder"
+        let selectedPath = "\(folder)/Selected.swift"
+        try FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
+        try Data("selected".utf8).write(to: URL(fileURLWithPath: selectedPath))
+        defer { try? FileManager.default.removeItem(atPath: folder) }
+        let payload = makeCodexPayload(requestContext: AiChatLockedRequestContextSnapshot(
+            currentContext: AiChatCurrentContextSnapshot(references: [
+                AiChatContextReference(
+                    kind: .reference,
+                    identifier: folder,
+                    metadata: ["route": "folder", "path": folder],
+                ),
+            ]),
+            parts: [AiChatLockedContextPartSnapshot(
+                source: .currentContext,
+                resolution: .providerNativeFile(
+                    kind: .codexPathScope,
+                    mimeType: "text/plain",
+                    metadata: ["path": selectedPath],
+                ),
+                fileKind: .file,
+                canonicalPath: selectedPath,
+                displayPath: "Selected.swift",
+            )],
+        ))
+        let preflight = AiChatProviderPreflightResult(payload: payload, credential: .providerManaged)
+        nonisolated(unsafe) var captured: CodexExecutionRequest?
+
+        let stream = AiChatProviderExecutionClient.codexStream(
+            context: payload.fallbackExecutionContext,
+            preflight: preflight,
+            now: { 1 },
+            executor: { request, _ in
+                captured = request
+                return "answer"
+            },
+        )
+        _ = try await collectCBW003Events(stream)
+
+        XCTAssertEqual(captured?.workingDirectory?.path, folder)
+        XCTAssertEqual(captured?.readablePaths.map(\.path), [selectedPath])
+    }
+
     /// CBW-003-prepare_contextual_chat_request: folder context가 없으면 Codex 파일 접근은 fail-closed 한다.
     func testCodexRequestScope_withoutLockedFolderContextIsReferenceOnly() {
         let selectedPath = "/tmp/project/Selected.swift"
@@ -618,8 +669,10 @@ extension CBW003ProviderExecutionResolutionTests {
         XCTAssertEqual(command.arguments, [
             "exec", "--model", "gpt-5-codex", "-c", "model_reasoning_effort=\"high\"",
             "--json", "--color", "never", "--strict-config", "--ignore-user-config",
-            "--sandbox",
-            "read-only", "-C", codexHome.appendingPathComponent("session").path, "-",
+            "-c", "default_permissions=\"voyager-reference\"",
+            "-c",
+            "permissions.voyager-reference.filesystem={\"/tmp/voyager-cbw003-codex-home/session\"=\"read\",\":minimal\"=\"read\",\":root\"=\"deny\"}",
+            "--sandbox", "read-only", "-C", codexHome.appendingPathComponent("session").path, "-",
         ])
         XCTAssertFalse(command.arguments.contains("--add-dir"))
         XCTAssertFalse(command.arguments.contains("danger-full-access"))
@@ -693,11 +746,12 @@ extension CBW003ProviderExecutionResolutionTests {
         XCTAssertEqual(runner.runCount, 1)
         let recordedCommands = await recorder.commands
         let command = try XCTUnwrap(recordedCommands.last)
-        XCTAssertEqual(command.arguments.suffix(2), [workingDirectory.path, "-"])
+        XCTAssertEqual(command.arguments.suffix(2), ["--skip-git-repo-check", "-"])
         XCTAssertEqual(
             try command.arguments[XCTUnwrap(command.arguments.firstIndex(of: "-C")) + 1],
             workingDirectory.path,
         )
+        XCTAssertTrue(command.arguments.contains("--skip-git-repo-check"))
         XCTAssertEqual(command.environment["TMPDIR"], codexHome.appendingPathComponent("session").path)
         XCTAssertEqual(Set(command.environment.keys), ["CODEX_HOME", "HOME", "LANG", "PATH", "SHELL", "TMPDIR"])
         XCTAssertTrue(probe.invocations
