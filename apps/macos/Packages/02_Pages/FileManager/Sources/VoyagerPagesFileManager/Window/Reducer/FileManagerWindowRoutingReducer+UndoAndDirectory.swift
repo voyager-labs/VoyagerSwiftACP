@@ -27,7 +27,6 @@ extension FileManagerWindowRoutingReducer {
         if let pendingSelectedContentTabClose {
             recordPendingSelectedContentTabCloseCancellation(pendingSelectedContentTabClose)
         }
-        recordPendingBrowsingUnavailability(state: &state)
         if let teardown = state.pendingContentTabTeardown,
            case let .tearingDownTab(requestID, ownerID) = state.undoRedoPhase,
            requestID == teardown.requestID,
@@ -73,29 +72,6 @@ extension FileManagerWindowRoutingReducer {
             source: terminalPending.actionSource,
             result: terminalResult,
         ))
-    }
-
-    private func recordPendingBrowsingUnavailability(state: inout State) {
-        if let operationID = state.content.productBrowsingOperationID,
-           let content = state.content.productBrowsingContent,
-           let identity = state.content.productBrowsingIdentity,
-           let source = state.content.productBrowsingSource,
-           let metric = FileManagerProductMetricsProducer.browsingTerminal(
-               operationID: operationID,
-               content: content,
-               identity: identity,
-               source: source,
-               entryCount: nil,
-               failure: .unavailable,
-           )
-        {
-            productMetricsClient.record(metric)
-        }
-        state.content.productBrowsingOperationID = nil
-        state.content.productBrowsingIdentity = nil
-        state.content.productBrowsingSource = nil
-        state.content.productBrowsingContent = nil
-        state.content.pendingProductBrowsingSource = nil
     }
 
     private func recordPendingContentTabMoveCancellations(state: inout State) {

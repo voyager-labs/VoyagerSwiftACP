@@ -189,6 +189,115 @@ final class FMW001FileManagerWindowTests: XCTestCase {
         XCTAssertEqual(cancelledComposerOperationIDs(composerMetrics.value), [queryOperationID, applyOperationID])
     }
 
+    /// FMW-001-close_file_manager_window: teardown terminalizes active and cached browsing correlations once.
+    /// active correlation A, cached alias A, cached inactive B가 window teardown에서 exactly-once unavailable
+    /// terminalize되는지 검증한다.
+    /// - 검증 내용: onDisappear의 A+B metric count, alias dedupe, 다섯 correlation field clear, 반복 teardown 무중복
+    /// - 사전 조건: active content A, inactive cached alias A, inactive cached content B와 기존 AiChat/Composer operation이
+    /// 존재한다.
+    /// - 기대 결과: A와 B unavailable metric만 기록되고 active/cached browsing state 및 기존 child teardown이 모두 정리된다.
+    func testOnDisappearTerminalizesActiveAndCachedBrowsingCorrelationsExactlyOnce() async throws {
+        let aliasTabID = ContentTabID(rawValue: "fmw001-browsing-alias")
+        let secondTabID = ContentTabID(rawValue: "fmw001-browsing-second")
+        let operationA = try XCTUnwrap(UUID(uuidString: "F0010000-0000-0000-0000-000000000001"))
+        let operationB = try XCTUnwrap(UUID(uuidString: "F0010000-0000-0000-0000-000000000002"))
+        var state = FileManagerWindowState()
+        state.contentTabs.tabs.append(contentsOf: [
+            ContentTabItem(
+                id: aliasTabID,
+                page: .directory,
+                anchor: .directory(path: "/tmp/alias"),
+                isPinned: false,
+                title: "Alias",
+                iconName: "folder",
+            ),
+            ContentTabItem(
+                id: secondTabID,
+                page: .directory,
+                anchor: .directory(path: "/tmp/second"),
+                isPinned: false,
+                title: "Second",
+                iconName: "folder",
+            ),
+        ])
+        let activeTabID = try XCTUnwrap(state.contentTabs.activeTabID)
+        state.content.productBrowsingOperationID = operationA
+        state.content.productBrowsingContent = .folder
+        state.content.productBrowsingIdentity = .direct
+        state.content.productBrowsingSource = .fileManagerContent
+        var alias = FileManagerContentFeature.State()
+        alias.productBrowsingOperationID = operationA
+        alias.productBrowsingContent = .folder
+        alias.productBrowsingIdentity = .direct
+        alias.productBrowsingSource = .fileManagerContent
+        state.tabContentStates[aliasTabID] = alias
+        var second = FileManagerContentFeature.State()
+        second.productBrowsingOperationID = operationB
+        second.productBrowsingContent = .folder
+        second.productBrowsingIdentity = .back
+        second.productBrowsingSource = .fileManagerSidebar
+        state.tabContentStates[secondTabID] = second
+
+        let browsingMetrics = LockIsolated<[FileManagerProductMetric]>([])
+        let aiMetrics = LockIsolated<[AiChatProductMetric]>([])
+        let composerMetrics = LockIsolated<[ComposerProductMetric]>([])
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.fileManagerProductMetricsClient = FileManagerProductMetricsClient { metric in
+                browsingMetrics.withValue { $0.append(metric) }
+            }
+            $0.aiChatProductMetricsClient = AiChatProductMetricsClient { metric in
+                aiMetrics.withValue { $0.append(metric) }
+            }
+            $0.composerMetricClient = ComposerMetricClient(recordProductMetric: { metric in
+                composerMetrics.withValue { $0.append(metric) }
+            })
+        }
+        // store.exhaustivity = .off: teardown child effects와 browsing terminal payload에 집중한다.
+        store.exhaustivity = .off
+
+        await store.send(.onDisappear)
+
+        XCTAssertEqual(browsingMetrics.value, [
+            .contentBrowsing(
+                result: .unavailable,
+                content: .folder,
+                identity: .direct,
+                source: .fileManagerContent,
+                operationID: operationA,
+            ),
+            .contentBrowsing(
+                result: .unavailable,
+                content: .folder,
+                identity: .back,
+                source: .fileManagerSidebar,
+                operationID: operationB,
+            ),
+        ])
+        for content in [store.state.content] + Array(store.state.tabContentStates.values) {
+            XCTAssertNil(content.productBrowsingOperationID)
+            XCTAssertNil(content.productBrowsingContent)
+            XCTAssertNil(content.productBrowsingIdentity)
+            XCTAssertNil(content.productBrowsingSource)
+            XCTAssertNil(content.pendingProductBrowsingSource)
+        }
+        XCTAssertEqual(store.state.contentTabs.activeTabID, activeTabID)
+
+        await store.send(.onDisappear)
+        XCTAssertEqual(browsingMetrics.value.count, 2)
+        XCTAssertTrue(aiMetrics.value.allSatisfy { metric in
+            guard case .turnResult(_, _, .cancelled, _) = metric else { return false }
+            return true
+        })
+        XCTAssertTrue(composerMetrics.value.allSatisfy { metric in
+            switch metric {
+            case .queryResult(_, .cancelled, _), .applyResult(_, .cancelled, _): true
+            default: false
+            }
+        })
+    }
+
     /// FMW-001-close_file_manager_window: window teardown은 child reducer가 반환한 cancellation effect를 실행한다.
     /// reducer state 정리만으로 끝나지 않고 실제 suspended search task가 취소되는지 검증한다.
     /// - 검증 내용: onDisappear 이후 search dependency cancellation handler 실행.

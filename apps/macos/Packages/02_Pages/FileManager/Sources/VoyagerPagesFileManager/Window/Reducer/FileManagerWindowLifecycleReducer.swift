@@ -59,6 +59,7 @@ struct FileManagerWindowLifecycleReducer {
     private func teardownWindowOwnedChildOperations(state: inout State) -> Effect<Action> {
         recordPendingContentEntryMetrics(state: &state)
         recordPendingSidebarEntryMetrics(state: &state)
+        recordBrowsingUnavailabilityDuringWindowTeardown(state: &state)
         let recordedMetricKeys = LockIsolated<Set<FileManagerWindowTeardownMetricKey>>([])
         let aiChatProductMetricsClient = aiChatProductMetricsClient
         let composerMetricClient = composerMetricClient
@@ -93,6 +94,26 @@ struct FileManagerWindowLifecycleReducer {
             effects.append(contentsOf: teardownBackgroundInspectorAiChatStates(state: &state))
         }
         return .merge(effects)
+    }
+
+    private func recordBrowsingUnavailabilityDuringWindowTeardown(state: inout State) {
+        var consumedOperationIDs = Set<UUID>()
+        if let metric = consumePendingBrowsingUnavailability(
+            state: &state.content,
+            consumedOperationIDs: &consumedOperationIDs,
+        ) {
+            productMetricsClient.record(metric)
+        }
+        for tabID in Array(state.tabContentStates.keys) {
+            guard var content = state.tabContentStates[tabID] else { continue }
+            if let metric = consumePendingBrowsingUnavailability(
+                state: &content,
+                consumedOperationIDs: &consumedOperationIDs,
+            ) {
+                productMetricsClient.record(metric)
+            }
+            state.tabContentStates[tabID] = content
+        }
     }
 
     private func recordPendingContentEntryMetrics(state: inout State) {
