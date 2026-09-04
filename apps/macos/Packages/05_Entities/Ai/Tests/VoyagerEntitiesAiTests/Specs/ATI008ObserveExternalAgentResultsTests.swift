@@ -1624,13 +1624,13 @@ final class ATI008ObserveExternalAgentResultsTests: XCTestCase {
         XCTAssertEqual(compatibility, .compatible)
         _ = try await adapter.launch(request)
         let stream = try await adapter.eventStream(for: request.runReference)
-        let consumer = Task { () -> ([RuntimeEventEnvelope], RuntimeHostError?) in
+        let consumer = Task { () -> ([RuntimeEventEnvelope], RuntimeAdapterFailure?) in
             var events: [RuntimeEventEnvelope] = []
             do {
                 for try await event in stream {
                     events.append(event)
                 }
-            } catch let error as RuntimeHostError {
+            } catch let error as RuntimeAdapterFailure {
                 return (events, error)
             } catch {
                 return (events, nil)
@@ -1640,7 +1640,7 @@ final class ATI008ObserveExternalAgentResultsTests: XCTestCase {
         runner.send(#"{"type":"turn.started","turn_id":"turn-1"}"#)
         runner.send(#"{"type":"turn.started","turn_id":"turn-2"}"#)
         let (events, error) = await consumer.value
-        XCTAssertEqual(error, .adapterFailure(.processExit, .init("event_sequence_overflow")))
+        XCTAssertEqual(error, .init(kind: .processExit, diagnosticCode: .init("event_sequence_overflow")))
         XCTAssertEqual(events.map(\.sequence), [UInt64.max - 1])
         XCTAssertFalse(events.contains { $0.sequence == UInt64.max })
         let counts = await adapter.debugStorageCounts()
@@ -1831,8 +1831,8 @@ final class ATI008ObserveExternalAgentResultsTests: XCTestCase {
         do {
             _ = try await adapter.terminalResult(for: request.runReference)
             XCTFail("129th pre-attach event should overflow")
-        } catch let error as RuntimeHostError {
-            XCTAssertEqual(error, .adapterFailure(.processExit, .init("event_buffer_overflow")))
+        } catch let error as RuntimeAdapterFailure {
+            XCTAssertEqual(error, .init(kind: .processExit, diagnosticCode: .init("event_buffer_overflow")))
         }
         await fulfillment(of: [cleanup], timeout: 1)
         let adapterCounts = await adapter.debugStorageCounts()
@@ -1896,8 +1896,8 @@ final class ATI008ObserveExternalAgentResultsTests: XCTestCase {
         do {
             _ = try await adapter.terminalResult(for: request.runReference)
             XCTFail("pre-attach encoded bytes should overflow")
-        } catch let error as RuntimeHostError {
-            XCTAssertEqual(error, .adapterFailure(.processExit, .init("encoded_event_buffer_overflow")))
+        } catch let error as RuntimeAdapterFailure {
+            XCTAssertEqual(error, .init(kind: .processExit, diagnosticCode: .init("encoded_event_buffer_overflow")))
         }
         await fulfillment(of: [cleanup], timeout: 1)
         let adapterCounts = await adapter.debugStorageCounts()
@@ -1957,8 +1957,8 @@ final class ATI008ObserveExternalAgentResultsTests: XCTestCase {
             XCTFail("controller overflow should fail")
         } catch {
             XCTAssertEqual(
-                error as? RuntimeHostError,
-                .adapterFailure(.processExit, .init("event_buffer_overflow")),
+                error as? RuntimeAdapterFailure,
+                .init(kind: .processExit, diagnosticCode: .init("event_buffer_overflow")),
             )
         }
         await fulfillment(of: [cleanup], timeout: 1)
@@ -2015,8 +2015,8 @@ final class ATI008ObserveExternalAgentResultsTests: XCTestCase {
             XCTFail("missing terminal should fail")
         } catch {
             XCTAssertEqual(
-                error as? RuntimeHostError,
-                .adapterFailure(.processExit, .init("eof_before_terminal")),
+                error as? RuntimeAdapterFailure,
+                .init(kind: .processExit, diagnosticCode: .init("eof_before_terminal")),
             )
         }
         let counts = await adapter.debugStorageCounts()
@@ -2032,8 +2032,8 @@ final class ATI008ObserveExternalAgentResultsTests: XCTestCase {
     /// - 기대 결과: transportLoss와 stream_failure가 반환됩니다.
     func testAdapterUnknownStreamFailure_mapsToTransportLoss() {
         XCTAssertEqual(
-            CodexExecRuntimeAdapter.map(ATI008UnknownStreamFailure()),
-            .adapterFailure(.transportLoss, .init("stream_failure")),
+            CodexExecRuntimeAdapter.map(ATI008UnknownStreamFailure()) as? RuntimeAdapterFailure,
+            .init(kind: .transportLoss, diagnosticCode: .init("stream_failure")),
         )
     }
 }

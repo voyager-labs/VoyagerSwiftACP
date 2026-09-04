@@ -2124,8 +2124,8 @@ final class ATI006CoordinateExternalAgentSessionsTests: XCTestCase {
         do {
             _ = try await failedResume.value
             XCTFail("failed resume should not return a receipt")
-        } catch let error as RuntimeHostError {
-            XCTAssertEqual(error, .adapterFailure(.processExit, RuntimeDiagnosticCode("launch_failed")))
+        } catch let error as RuntimeAdapterFailure {
+            XCTAssertEqual(error, .init(kind: .processExit, diagnosticCode: RuntimeDiagnosticCode("launch_failed")))
         }
         let controllerCounts = await controller.debugRegistryCounts()
         let adapterCounts = await adapter.debugStorageCounts()

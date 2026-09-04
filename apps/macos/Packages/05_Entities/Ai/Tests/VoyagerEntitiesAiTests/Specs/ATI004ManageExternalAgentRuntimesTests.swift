@@ -782,6 +782,7 @@ final class ATI004ManageExternalAgentRuntimesTests: XCTestCase {
                     adapter: adapter,
                     controller: controller,
                     process: process,
+                    providerFailure: threadID.isEmpty,
                 )
             }
         }
@@ -806,12 +807,20 @@ final class ATI004ManageExternalAgentRuntimesTests: XCTestCase {
         adapter: CodexExecRuntimeAdapter,
         controller: CodexExecProcessController,
         process: CodexExecFakeProcess,
+        providerFailure: Bool,
     ) async throws {
         do {
             _ = try await adapter.launch(makeRuntimeRequest())
             XCTFail("invalid provider thread ID must fail")
         } catch {
-            XCTAssertEqual(error as? RuntimeHostError, .malformedAdapterResponse)
+            if providerFailure {
+                XCTAssertEqual(
+                    error as? RuntimeAdapterFailure,
+                    .init(kind: .malformedFrame, diagnosticCode: .init("empty_thread_id")),
+                )
+            } else {
+                XCTAssertEqual(error as? RuntimeHostError, .malformedAdapterResponse)
+            }
         }
         let adapterCounts = await adapter.debugStorageCounts()
         XCTAssertEqual(adapterCounts.receipts, 0)
@@ -849,8 +858,8 @@ final class ATI004ManageExternalAgentRuntimesTests: XCTestCase {
             XCTFail("launch should fail readiness")
         } catch {
             XCTAssertEqual(
-                error as? RuntimeHostError,
-                .adapterFailure(.processExit, .init("unsupported_version")),
+                error as? RuntimeAdapterFailure,
+                .init(kind: .processExit, diagnosticCode: .init("unsupported_version")),
             )
         }
         XCTAssertEqual(runner.runCount, 0)

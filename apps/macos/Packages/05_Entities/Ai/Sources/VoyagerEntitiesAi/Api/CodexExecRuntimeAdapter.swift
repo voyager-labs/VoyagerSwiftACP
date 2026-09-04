@@ -87,7 +87,10 @@ public actor CodexExecRuntimeAdapter: ExternalAgentRuntimeAdapter {
                 diagnosticCode: RuntimeDiagnosticCode(Self.diagnosticCode(for: error)),
             )
         } catch {
-            throw RuntimeHostError.adapterFailure(.processExit, RuntimeDiagnosticCode("readiness_probe_failed"))
+            throw RuntimeAdapterFailure(
+                kind: .processExit,
+                diagnosticCode: RuntimeDiagnosticCode("readiness_probe_failed"),
+            )
         }
     }
 
@@ -214,9 +217,15 @@ public actor CodexExecRuntimeAdapter: ExternalAgentRuntimeAdapter {
                 environment: AiChatProviderExecutionClient.codexProcessEnvironment(codexHomeURL: codexHome),
             )
         } catch let error as CodexExecReadinessError {
-            throw RuntimeHostError.adapterFailure(.processExit, RuntimeDiagnosticCode(Self.diagnosticCode(for: error)))
+            throw RuntimeAdapterFailure(
+                kind: .processExit,
+                diagnosticCode: RuntimeDiagnosticCode(Self.diagnosticCode(for: error)),
+            )
         } catch {
-            throw RuntimeHostError.adapterFailure(.processExit, RuntimeDiagnosticCode("readiness_probe_failed"))
+            throw RuntimeAdapterFailure(
+                kind: .processExit,
+                diagnosticCode: RuntimeDiagnosticCode("readiness_probe_failed"),
+            )
         }
     }
 
@@ -224,7 +233,10 @@ public actor CodexExecRuntimeAdapter: ExternalAgentRuntimeAdapter {
         do {
             _ = try await legacySessionPreparer.prepare(codexHome: codexHome)
         } catch {
-            throw RuntimeHostError.adapterFailure(.processExit, RuntimeDiagnosticCode("session_prepare_failed"))
+            throw RuntimeAdapterFailure(
+                kind: .processExit,
+                diagnosticCode: RuntimeDiagnosticCode("session_prepare_failed"),
+            )
         }
     }
 
@@ -306,7 +318,7 @@ public actor CodexExecRuntimeAdapter: ExternalAgentRuntimeAdapter {
             }
             return CodexExecAcquisition(receipt: receipt, ownsEntry: ownsEntry)
         } catch CodexExecProcessFailure.emptyThreadID {
-            throw RuntimeHostError.malformedAdapterResponse
+            throw Self.mapProcessFailure(.emptyThreadID)
         } catch let error as CodexExecProcessFailure {
             throw Self.mapProcessFailure(error)
         } catch let error as CodexExecRestartFailure {
@@ -314,7 +326,10 @@ public actor CodexExecRuntimeAdapter: ExternalAgentRuntimeAdapter {
         } catch is CancellationError {
             throw CancellationError()
         } catch {
-            throw RuntimeHostError.adapterUnavailable
+            throw RuntimeAdapterFailure(
+                kind: .transportLoss,
+                diagnosticCode: RuntimeDiagnosticCode("acquisition_failed"),
+            )
         }
     }
 
@@ -337,9 +352,9 @@ public actor CodexExecRuntimeAdapter: ExternalAgentRuntimeAdapter {
             for try await event in source {
                 let next = sequence.addingReportingOverflow(1)
                 guard !next.overflow, next.partialValue != UInt64.max else {
-                    let error = RuntimeHostError.adapterFailure(
-                        .processExit,
-                        RuntimeDiagnosticCode("event_sequence_overflow"),
+                    let error = RuntimeAdapterFailure(
+                        kind: .processExit,
+                        diagnosticCode: RuntimeDiagnosticCode("event_sequence_overflow"),
                     )
                     await cancelIfCurrent(token, receipt: receipt)
                     continuation.finish(throwing: error)
@@ -349,9 +364,9 @@ public actor CodexExecRuntimeAdapter: ExternalAgentRuntimeAdapter {
                 switch continuation.yield(Self.map(event, host: host, runReference: runReference, sequence: sequence)) {
                 case .enqueued: break
                 case .dropped:
-                    let error = RuntimeHostError.adapterFailure(
-                        .transportLoss,
-                        RuntimeDiagnosticCode("event_buffer_overflow"),
+                    let error = RuntimeAdapterFailure(
+                        kind: .transportLoss,
+                        diagnosticCode: RuntimeDiagnosticCode("event_buffer_overflow"),
                     )
                     await cancelIfCurrent(token, receipt: receipt)
                     continuation.finish(throwing: error)
@@ -743,8 +758,8 @@ extension CodexExecRuntimeAdapter {
         )
     }
 
-    static func mapProcessFailure(_ failure: CodexExecProcessFailure) -> RuntimeHostError {
-        .adapterFailure(mapFailure(failure).kind, mapFailure(failure).diagnosticCode)
+    static func mapProcessFailure(_ failure: CodexExecProcessFailure) -> RuntimeAdapterFailure {
+        mapFailure(failure)
     }
 
     static func mapRestartFailure(_ failure: CodexExecRestartFailure) -> RuntimeHostError {
@@ -755,21 +770,31 @@ extension CodexExecRuntimeAdapter {
         }
     }
 
-    static func map(_ error: Error) -> RuntimeHostError {
+    static func map(_ error: Error) -> any Error {
         if let error = error as? RuntimeHostError { return error }
+        if let error = error as? RuntimeAdapterFailure { return error }
         if let error = error as? CodexExecProcessFailure { return mapProcessFailure(error) }
         if let error = error as? CodexExecRestartFailure { return mapRestartFailure(error) }
-        if error is CodexExecConsumptionFailure { return .invalidEvent }
+        if error is CodexExecConsumptionFailure { return RuntimeHostError.invalidEvent }
         if let error = error as? CodexExecCommandError {
-            return .adapterFailure(.sdkException, RuntimeDiagnosticCode(Self.commandDiagnosticCode(error)))
+            return RuntimeHostError.adapterFailure(
+                .sdkException,
+                RuntimeDiagnosticCode(Self.commandDiagnosticCode(error)),
+            )
         }
         if let error = error as? CodexExecReadinessError {
-            return .adapterFailure(.processExit, RuntimeDiagnosticCode(Self.diagnosticCode(for: error)))
+            return RuntimeAdapterFailure(
+                kind: .processExit,
+                diagnosticCode: RuntimeDiagnosticCode(Self.diagnosticCode(for: error)),
+            )
         }
         if let error = error as? CodexExecDecodeError {
-            return .adapterFailure(.malformedFrame, RuntimeDiagnosticCode(Self.decodeDiagnosticCode(error)))
+            return RuntimeAdapterFailure(
+                kind: .malformedFrame,
+                diagnosticCode: RuntimeDiagnosticCode(Self.decodeDiagnosticCode(error)),
+            )
         }
-        return .adapterFailure(.transportLoss, RuntimeDiagnosticCode("stream_failure"))
+        return RuntimeAdapterFailure(kind: .transportLoss, diagnosticCode: RuntimeDiagnosticCode("stream_failure"))
     }
 
     static func commandDiagnosticCode(_ error: CodexExecCommandError) -> String {
