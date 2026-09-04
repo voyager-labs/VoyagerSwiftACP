@@ -2,16 +2,26 @@ import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesCollection
 
+public enum ContentPageNavigationErrorCategory: String, Equatable, Sendable {
+    case unsupportedSchema
+    case invalidDefinition
+    case malformed
+    case access
+    case unknown
+}
+
 public struct ContentPageNavigationErrorFingerprint: Equatable, Sendable {
     public let domain: String
     public let code: Int
     public let message: String
+    public let category: ContentPageNavigationErrorCategory
 
-    public init(error: Error) {
+    public init(error: Error, category: ContentPageNavigationErrorCategory = .unknown) {
         let nsError = error as NSError
         domain = nsError.domain
         code = nsError.code
         message = nsError.localizedDescription
+        self.category = category
     }
 }
 
@@ -87,6 +97,7 @@ public enum ContentPageNavigationAction: ViewAction, Equatable, Sendable {
             result: ContentPageCollectionFileLoadResult,
         )
         case navigateToCollection(ContentPageCollectionNavigation)
+        case navigateToCollectionWithoutSearch(ContentPageCollectionNavigation)
         case performNavigation(ContentPageNavigationPending)
         case showUnsavedNavigationAlert(ContentPageNavigationPending)
         case unsavedNavigationAlertResponse(ContentPageNavigationPending, CollectionNavigationChoice)

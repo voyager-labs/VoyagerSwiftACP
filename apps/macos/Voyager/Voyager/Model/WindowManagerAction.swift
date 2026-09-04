@@ -747,9 +747,11 @@ private extension FileManagerWindowState {
         guard isExternalOpenLifecycleEligible,
               let pendingCollectionOpenRequest
         else { return isExternalOpenLifecycleEligible }
+        // Collection open은 파일 로드가 완료될 때까지 pendingCollectionOpenRequest를 유지한다.
+        // pending URL과 같은 컬렉션으로의 external open(신규 open 포함)은 이 window의 activation을
+        // 기다리는 것이 맞으므로, pinned 복귀가 아니어도 pending URL과 일치하면 자격을 유지한다.
         return items.contains { item in
-            guard item.requiresPinnedAnchorReturn,
-                  case let .collectionFile(expectedURL) = item.anchor
+            guard case let .collectionFile(expectedURL) = item.anchor
             else { return false }
             return pendingCollectionOpenRequest.url.standardizedFileURL == expectedURL.standardizedFileURL
         }

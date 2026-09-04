@@ -318,6 +318,9 @@ public final class EntryListView: NSView {
         private var didBeginNativeDrag = false
         private var pendingNativeSelectionContext: EntryListNativeSelectionContext?
         private var pendingNativeSelectionOwner: UInt?
+        /// blank 클릭 등 사용자가 명시적으로 선택을 비웠다는 1회성 provenance.
+        /// 다음 selection callback에서 소비되며, 출처 없는 lifecycle empty callback과 구분한다.
+        private var pendingExplicitUserClear = false
 
         @discardableResult
         func applyCanonicalSelection(
@@ -397,6 +400,17 @@ public final class EntryListView: NSView {
             pendingNativeSelectionContext = nil
         }
 
+        /// 사용자 제스처(blank 클릭 등)가 만든 명시적 clear provenance를 표시한다.
+        func noteExplicitUserClearGesture() {
+            pendingExplicitUserClear = true
+        }
+
+        /// 표시된 explicit clear provenance를 소비한다. 어떤 callback 경로에서든 한 번만 유효하다.
+        func consumeExplicitUserClearGesture() -> Bool {
+            defer { pendingExplicitUserClear = false }
+            return pendingExplicitUserClear
+        }
+
         func performDisclosureSelectionTransaction(_ operation: () -> Void) {
             isApplyingDisclosureSelectionTransaction = true
             prepareDisclosureSelectionCallbacks()
@@ -424,11 +438,24 @@ public final class EntryListView: NSView {
             return pendingNativeSelectionContext
         }
 
+        /// Command toggle로 비워진 empty callback 정산에만 쓰이는 context를 소비한다.
+        /// Command context가 아니면 소비하지 않아 lifecycle empty 복원 경로의 pending 상태를 유지한다.
+        func takeNativeCommandEntrySelectionContext() -> EntryListNativeSelectionContext? {
+            guard let context = pendingNativeSelectionContext,
+                  context.modifierFlags.contains(.command),
+                  let destination = context.destinationOccurrence as? EntryListOutlineItem,
+                  case .entry = destination.kind
+            else { return nil }
+            pendingNativeSelectionContext = nil
+            return context
+        }
+
         override func mouseDown(with event: NSEvent) {
             cancelPendingNativeSelection()
             guard let hit = pointerHit(for: event) else {
                 let isAdditive = event.modifierFlags.contains(.command) || event.modifierFlags.contains(.shift)
                 if !isAdditive {
+                    noteExplicitUserClearGesture()
                     deselectAll(nil)
                 }
                 super.mouseDown(with: event)
@@ -559,6 +586,7 @@ public final class EntryListView: NSView {
             let row = row(at: location)
 
             if row == -1 {
+                noteExplicitUserClearGesture()
                 deselectAll(nil)
                 if let menu = blankSpaceContextMenuProvider?() {
                     NSMenu.popUpContextMenu(menu, with: event, for: self)
@@ -816,6 +844,7 @@ private extension EntryListView.EntryListTableView {
         if let owner, pendingNativeSelectionOwner != owner { return }
         didBeginNativeDrag = false
         pendingNativeSelectionOwner = nil
+        pendingExplicitUserClear = false
         guard pendingNativeSelectionContext != nil else { return }
         selectionTransactionGeneration &+= 1
         endNativeSelection()

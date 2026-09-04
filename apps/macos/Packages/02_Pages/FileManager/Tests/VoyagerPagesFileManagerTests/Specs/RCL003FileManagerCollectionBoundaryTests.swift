@@ -1,7 +1,9 @@
 @_spi(Internals) import ComposableArchitecture
 import Foundation
-import VoyagerEntitiesCollection
-import VoyagerFeaturesComposer
+@_spi(Testing)
+@testable import VoyagerEntitiesCollection
+import VoyagerEntitiesEntry
+@testable import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 @testable import VoyagerPagesFileManager
 import VoyagerShared
@@ -258,6 +260,225 @@ final class RCL003FileManagerCollectionBoundaryTests: XCTestCase {
         await store.finish()
     }
 
+    /// RCL-003-update_collection_results_on_filter_change: file-backed empty Collection의 빈 입력은 Collection mode를 종료하지
+    /// 않는다.
+    /// query를 지웠을 때 temporary Collection 전용 exit 경로가 저장된 문서의 편집 상태를 파괴하지 않는지 검증한다.
+    /// - 검증 내용: 빈 입력 후 Collection mode, document URL, context 보존
+    /// - 사전 조건: root-only file-backed empty Collection에 query를 입력한 뒤 다시 지움
+    /// - 기대 결과: query는 비워지지만 Collection Page와 file identity가 유지됨
+    func testEditCollection_clearingQueryKeepsFileBackedDraftOpen() async {
+        let targetURL = URL(fileURLWithPath: "/VoyagerFixtures/Collections/empty-input.voycoll")
+        let store = TestStore(initialState: makeFileBackedCollectionContentState(targetURL: targetURL)) {
+            FileManagerContentFeature()
+        }
+        // Production composition emits child state transitions for the routed composer actions.
+        store.exhaustivity = .off
+
+        await store.send(.composer(.setText("invoice")))
+        await store.receive(\.composer.internal.setPendingSearchQuery)
+        await store.send(.composer(.setText("")))
+        await store.receive(\.composer.internal.setPendingSearchQuery)
+        await store.finish()
+
+        XCTAssertTrue(store.state.entryViewLayout.isCollectionMode)
+        XCTAssertEqual(store.state.collection.collectionSession.document?.url, targetURL)
+        XCTAssertEqual(store.state.collection.collectionContext, .init())
+    }
+
+    /// RCL-003-update_collection_results_on_filter_change: 검색 취소로 복구된 query는 file-backed Collection owner에 반영된다.
+    /// Composer의 recovery text와 Collection canonical context가 분리되지 않아 dirty/save 보호가 유지되는지 검증한다.
+    /// - 검증 내용: 복구 query, Collection context, dirty/canSave, document URL
+    /// - 사전 조건: file-backed Collection에서 query search가 진행 중이고 recovery 원문이 보관됨
+    /// - 기대 결과: 취소 후 query가 복구되고 동일 파일의 Collection draft가 dirty/save 가능 상태가 됨
+    func testCancelCollectionSearchSynchronizesRecoveredQueryToOpenedDraft() async {
+        let targetURL = URL(fileURLWithPath: "/VoyagerFixtures/Collections/cancel-search.voycoll")
+        let requestID = UUID(970)
+        let baselineContext = CollectionContext(
+            query: "",
+            scopes: ["/VoyagerFixtures/Documents"],
+            conditions: [],
+        )
+        var state = makeFileBackedCollectionContentState(
+            targetURL: targetURL,
+            context: baselineContext,
+        )
+        state.composer.captureQueryRecovery(rawText: "invoice", requestID: requestID)
+        state.composer.activeSearchRequestID = requestID
+        state.composer.isLoadingSearch = true
+        state.composer.queryRenderPhase = .searching
+        let store = TestStore(initialState: state) {
+            FileManagerContentFeature()
+        }
+        // Recovery and cancellation cleanup are owned by the nested Composer reducer.
+        store.exhaustivity = .off
+
+        await store.send(.composer(.cancelSearch))
+        await store.receive(\.composer.internal.clearPendingSearchQuery)
+        await store.finish()
+
+        XCTAssertEqual(store.state.composer.text, "invoice")
+        XCTAssertEqual(
+            store.state.collection.collectionContext,
+            CollectionContext(
+                query: "invoice",
+                scopes: ["/VoyagerFixtures/Documents"],
+                conditions: [],
+            ),
+        )
+        XCTAssertTrue(store.state.collection.isDirty)
+        XCTAssertTrue(store.state.collection.canSave(isCollectionMode: true))
+        XCTAssertEqual(store.state.collection.collectionSession.document?.url, targetURL)
+    }
+
+    /// RCL-003-update_collection_results_on_filter_change: post-query filter 취소로 복구된 query와 baseline filters를 owner에
+    /// 반영한다.
+    /// query recovery와 generated condition rollback이 함께 일어난 뒤에도 file-backed draft의 저장 보호가 유지되는지 검증한다.
+    /// - 검증 내용: query/condition 복구, Collection context, dirty/canSave, filter request cleanup
+    /// - 사전 조건: query 후 generated condition applyFilters가 진행 중이며 submitted filters가 원래 definition임
+    /// - 기대 결과: 취소 후 원래 filters와 query가 복구되고 Collection owner가 dirty/save 가능 상태가 됨
+    func testCancelCollectionFiltersSynchronizesRecoveredQueryAndFiltersToOpenedDraft() async {
+        let targetURL = URL(fileURLWithPath: "/VoyagerFixtures/Collections/cancel-filters.voycoll")
+        let searchRequestID = UUID(971)
+        let filtersRequestID = UUID(972)
+        let baselineContext = CollectionContext(
+            query: "",
+            scopes: ["/VoyagerFixtures/Documents"],
+            conditions: [],
+        )
+        let generatedCondition = makeExecutionReadyCondition()
+        var state = makeFileBackedCollectionContentState(
+            targetURL: targetURL,
+            context: baselineContext,
+        )
+        state.composer.captureQueryRecovery(rawText: "invoice", requestID: searchRequestID)
+        state.composer.retargetQueryRecovery(from: searchRequestID, to: filtersRequestID)
+        state.composer.submittedSearchFilters = .init(
+            scopes: baselineContext.scopes,
+            excludedScopes: baselineContext.excludedScopes,
+            includeSubfolders: baselineContext.includeSubfolders,
+            conditions: [],
+        )
+        state.composer.conditionEditors = [
+            .init(id: UUID(973), condition: generatedCondition),
+        ]
+        state.composer.activeFiltersRequestID = filtersRequestID
+        state.composer.activeFiltersMetricSource = ComposerCollectionFilterMetrics.sourcePostQueryApply
+        state.composer.isLoadingFilters = true
+        state.composer.isFilteringInFlight = true
+        let store = TestStore(initialState: state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.registryClient = .testValue
+        }
+        // Recovery and cancellation cleanup are owned by the nested Composer reducer.
+        store.exhaustivity = .off
+
+        await store.send(.composer(.cancelFilters))
+        await store.receive(\.composer.internal.clearPendingSearchQuery)
+        await store.finish()
+
+        XCTAssertEqual(store.state.composer.text, "invoice")
+        XCTAssertTrue(store.state.composer.conditions.isEmpty)
+        XCTAssertEqual(
+            store.state.collection.collectionContext,
+            CollectionContext(
+                query: "invoice",
+                scopes: ["/VoyagerFixtures/Documents"],
+                conditions: [],
+            ),
+        )
+        XCTAssertTrue(store.state.collection.isDirty)
+        XCTAssertTrue(store.state.collection.canSave(isCollectionMode: true))
+        XCTAssertEqual(store.state.collection.collectionSession.document?.url, targetURL)
+    }
+
+    /// RCL-003-update_collection_results_on_filter_change: already-open query failure preserves the collection draft
+    /// 이미 열린 file-backed Collection의 query 실행 실패가 Composer draft를 Collection owner에 반영하는지 검증한다.
+    /// - 검증 내용: query context, dirty/save 상태, 기존 결과 보존 확인
+    /// - 사전 조건: ready 상태의 file-backed Collection에 새 query가 pending이고 search 요청이 실패함
+    /// - 기대 결과: 실패 feedback 경계는 유지하면서 query draft가 dirty/save 가능한 Collection context로 동기화됨
+    func testExecuteCollectionRetrieval_searchFailureSynchronizesOpenedCollectionDraft() async {
+        let requestID = UUID()
+        let draftQuery = "invoice"
+        var state = makeReadyContentState()
+        let baselineContext = state.collection.collectionContext
+        state.composer.isCollectionMode = true
+        state.composer.collectionContext = baselineContext
+        state.composer.scopes = baselineContext?.scopes ?? []
+        state.composer.pendingSearchQuery = draftQuery
+        state.composer.activeSearchRequestID = requestID
+        state.composer.isLoadingSearch = true
+        let previousEntry = makeEntry(path: "/VoyagerFixtures/Documents/report.md")
+        state.entryViewLayout.collectionItems = [previousEntry]
+        let store = TestStore(initialState: state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.continuousClock = ImmediateClock()
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        // store.exhaustivity = .off: failure boundary의 delegate와 draft 소유권을 함께 검증하고 child 내부 effect는 제외한다.
+        store.exhaustivity = .off
+
+        await store.send(.composer(.searchResponse(requestID, .failure(RCL003BoundaryFailure.thrown))))
+        await store.receive(\.delegate.composerCollectionSearchFailed)
+        await store.finish()
+
+        XCTAssertEqual(
+            store.state.collection.collectionContext,
+            CollectionContext(query: draftQuery, scopes: ["/VoyagerFixtures/Documents"], conditions: []),
+        )
+        XCTAssertTrue(store.state.collection.isDirty, "failed search draft must remain dirty")
+        XCTAssertTrue(store.state.collection.canSave(isCollectionMode: true))
+        XCTAssertEqual(store.state.entryViewLayout.collectionItems.map(\.id), [previousEntry.id])
+        XCTAssertNotNil(store.state.composer.transientFeedback)
+    }
+
+    /// RCL-003-update_collection_results_on_filter_change: already-open filter failure preserves the condition draft
+    /// 이미 열린 file-backed Collection의 execution-ready condition 실행 실패가 Collection owner에 반영되는지 검증한다.
+    /// - 검증 내용: condition context, dirty/save 상태, 기존 결과 보존 확인
+    /// - 사전 조건: ready 상태의 file-backed Collection에 execution-ready condition이 있고 filter 요청이 실패함
+    /// - 기대 결과: 실패 feedback 경계는 유지하면서 condition draft가 dirty/save 가능한 Collection context로 동기화됨
+    func testExecuteCollectionRetrieval_filterFailureSynchronizesOpenedCollectionDraft() async {
+        let requestID = UUID()
+        let condition = makeExecutionReadyCondition()
+        var state = makeReadyContentState()
+        let baselineContext = state.collection.collectionContext
+        state.composer.isCollectionMode = true
+        state.composer.collectionContext = baselineContext
+        state.composer.scopes = baselineContext?.scopes ?? []
+        state.composer.conditionEditors = [ConditionEditorState(id: UUID(951), condition: condition)]
+        state.composer.activeFiltersRequestID = requestID
+        state.composer.isLoadingFilters = true
+        state.composer.isFilteringInFlight = true
+        let previousEntry = makeEntry(path: "/VoyagerFixtures/Documents/report.md")
+        state.entryViewLayout.collectionItems = [previousEntry]
+        let store = TestStore(initialState: state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.continuousClock = ImmediateClock()
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        // store.exhaustivity = .off: failure boundary의 delegate와 draft 소유권을 함께 검증하고 child 내부 effect는 제외한다.
+        store.exhaustivity = .off
+
+        await store.send(.composer(.filtersResponse(requestID, .failure(RCL003BoundaryFailure.thrown))))
+        await store.receive(\.delegate.composerCollectionSearchFailed)
+        await store.finish()
+
+        XCTAssertEqual(
+            store.state.collection.collectionContext,
+            CollectionContext(
+                query: "report",
+                scopes: ["/VoyagerFixtures/Documents"],
+                conditions: [condition],
+            ),
+        )
+        XCTAssertTrue(store.state.collection.isDirty, "failed filter draft must remain dirty")
+        XCTAssertTrue(store.state.collection.canSave(isCollectionMode: true))
+        XCTAssertEqual(store.state.entryViewLayout.collectionItems.map(\.id), [previousEntry.id])
+        XCTAssertNotNil(store.state.composer.transientFeedback)
+    }
+
     /// Definition-only Collection 재열기 검색은 snapshot refresh로 오인하지 않아야 한다.
     /// - 검증 내용: 일반 filters response 이후 refresh feedback과 write-back 상태가 생성되지 않음
     /// - 사전 조건: canonical built-in과 동일한 definition-only compatibility로 열린 ready Collection
@@ -285,10 +506,220 @@ final class RCL003FileManagerCollectionBoundaryTests: XCTestCase {
         await store.finish()
 
         XCTAssertNil(store.state.composer.transientFeedback)
+        XCTAssertEqual(store.state.composer.lastAcceptedFiltersRequestID, requestID)
+        XCTAssertNil(store.state.composer.lastFailedFiltersRequestID)
         XCTAssertEqual(
             store.state.collection.collectionSession.phase,
             .opened(kind: .definition, base: .ready, inflight: .none),
         )
+    }
+
+    /// RCL-003-update_collection_results_on_filter_change: embedded filter error uses only the failure boundary
+    /// Composer must reject the payload before FileManager can apply results or emit a success delegate.
+    /// - 검증 내용: previous accepted response/context preservation and failure delegate delivery
+    /// - 사전 조건: an active filter request after a previously accepted Collection result
+    /// - 기대 결과: FileManager routes one failure and never applies the malformed zero response as success
+    func testExecuteFilteredCollectionRetrieval_filterResponseEmbeddedErrorUsesFailurePath() async {
+        let previousRequestID = UUID()
+        let requestID = UUID()
+        let previousResponse = SearchResponsePayload(
+            itemCount: 1,
+            appliedFilters: .init(scopes: ["/VoyagerFixtures/Documents"], includeSubfolders: true),
+            items: [.string("/VoyagerFixtures/Documents/report.md")],
+        )
+        var state = makeReadyContentState()
+        state.composer.isCollectionMode = true
+        state.composer.collectionContext = state.collection.collectionContext
+        state.composer.scopes = ["/VoyagerFixtures/Documents"]
+        state.composer.lastAcceptedFiltersRequestID = previousRequestID
+        state.composer.lastFiltersResponse = previousResponse
+        state.composer.activeFiltersRequestID = requestID
+        state.composer.isLoadingFilters = true
+        state.composer.isFilteringInFlight = true
+        let previousEntry = makeEntry(path: "/VoyagerFixtures/Documents/report.md")
+        state.entryViewLayout.collectionItems = [previousEntry]
+        let store = TestStore(initialState: state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.continuousClock = ImmediateClock()
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.registryClient = .testValue
+        }
+        // store.exhaustivity = .off: production composition의 child cleanup 이후 boundary delegate만 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.composer(.filtersResponse(
+            requestID,
+            .success(.init(
+                itemCount: 0,
+                appliedFilters: .init(scopes: ["/VoyagerFixtures/Mutated"], includeSubfolders: false),
+                items: [],
+                error: .init(code: "filter_execution_failed", details: "malformed response"),
+            )),
+        )))
+        await store.receive(\.delegate.composerCollectionSearchFailed)
+        await store.finish()
+
+        XCTAssertEqual(store.state.composer.lastAcceptedFiltersRequestID, previousRequestID)
+        XCTAssertEqual(store.state.composer.lastFiltersResponse, previousResponse)
+        XCTAssertNil(store.state.composer.lastFailedFiltersRequestID)
+        XCTAssertEqual(store.state.composer.scopes, ["/VoyagerFixtures/Documents"])
+        XCTAssertEqual(store.state.collection.collectionContext?.scopes, ["/VoyagerFixtures/Documents"])
+        XCTAssertEqual(store.state.entryViewLayout.collectionItems.map(\.id), [previousEntry.id])
+    }
+
+    /// RCL-003-update_collection_results_on_filter_change: thrown failure is consumed once with search title
+    /// Repeated terminal delivery must not repeat FileManager presentation after Composer clears the active request.
+    /// - 검증 내용: dynamic pending-query title, one alert/delegate route, consumed marker
+    /// - 사전 조건: an opening Collection with a pending query and active filter request
+    /// - 기대 결과: one search failure route is presented and duplicate delivery has no effect
+    func testExecuteFilteredCollectionRetrieval_thrownFailureConsumesMarkerOnceWithSearchTitle() async {
+        let requestID = UUID()
+        let alerts = LockIsolated<[(String, String)]>([])
+        var state = makeReadyContentState()
+        state.collection.collectionSession.phase = .reopening(
+            kind: .definition,
+            base: .ready,
+            inflight: .none,
+        )
+        state.composer.pendingSearchQuery = "report"
+        state.composer.activeFiltersRequestID = requestID
+        state.composer.isLoadingFilters = true
+        state.composer.isFilteringInFlight = true
+        let store = TestStore(initialState: state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.collectionAlertClient.showCollectionOpenErrorAlert = { title, message in
+                alerts.withValue { $0.append((title, message)) }
+            }
+            $0.continuousClock = ImmediateClock()
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        // store.exhaustivity = .off: opening failure rollback의 내부 action보다 단일 failure delegate를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.composer(.filtersResponse(requestID, .failure(RCL003BoundaryFailure.thrown))))
+        await store.receive(\.delegate.composerCollectionSearchFailed)
+        await store.send(.composer(.filtersResponse(requestID, .failure(RCL003BoundaryFailure.thrown))))
+        await store.finish()
+
+        XCTAssertNil(store.state.composer.lastFailedFiltersRequestID)
+        XCTAssertEqual(alerts.value.map(\.0), ["Unable to Run Collection Search"])
+    }
+
+    /// RCL-003-update_collection_results_on_filter_change: stale filter terminal action is a complete no-op
+    /// A mismatched request identifier must not create accepted or failed correlation at either reducer level.
+    /// - 검증 내용: active lifecycle, accepted response, context, and failed marker remain unchanged
+    /// - 사전 조건: one active request and one stale embedded-error response
+    /// - 기대 결과: no failure or success routing occurs and the active request remains in flight
+    func testExecuteFilteredCollectionRetrieval_staleEmbeddedErrorMutatesNothing() async {
+        let requestID = UUID()
+        let staleRequestID = UUID()
+        let previousResponse = SearchResponsePayload(itemCount: 2)
+        var state = makeReadyContentState()
+        state.composer.activeFiltersRequestID = requestID
+        state.composer.lastFiltersResponse = previousResponse
+        state.composer.isLoadingFilters = true
+        state.composer.isFilteringInFlight = true
+        let store = TestStore(initialState: state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.continuousClock = ImmediateClock()
+        }
+        // store.exhaustivity = .off: stale terminal action의 production composition no-op 상태만 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.composer(.filtersResponse(
+            staleRequestID,
+            .success(.init(itemCount: 0, error: .init(code: "stale"))),
+        )))
+        await store.finish()
+
+        XCTAssertEqual(store.state.composer.activeFiltersRequestID, requestID)
+        XCTAssertTrue(store.state.composer.isLoadingFilters)
+        XCTAssertTrue(store.state.composer.isFilteringInFlight)
+        XCTAssertNil(store.state.composer.lastFailedFiltersRequestID)
+        XCTAssertEqual(store.state.composer.lastFiltersResponse, previousResponse)
+    }
+
+    /// RCL-003-update_collection_results_on_filter_change: post-child boundary emits failure-only actions
+    /// The consumed failure marker must produce refresh failure and the failure delegate without success or
+    /// persistence actions.
+    /// - 검증 내용: exact boundary action sequence and marker consumption
+    /// - 사전 조건: Composer has already classified one active embedded-error response
+    /// - 기대 결과: only refreshFailed, pending-query cleanup, and failure delegate are emitted
+    func testExecuteFilteredCollectionRetrieval_postChildFailureBoundaryEmitsNoSuccessOrWriteBack() async {
+        let requestID = UUID()
+        var state = makeReadyContentState()
+        state.composer.lastFailedFiltersRequestID = requestID
+        let dependencies = FileManagerContentComposerCoordinator.Dependencies(
+            collectionAlertClient: .testValue,
+            metricsClient: .testValue,
+            searchClient: .testValue,
+        )
+        let store = TestStore(initialState: state) {
+            Reduce<FileManagerContentState, FileManagerContentAction> { state, action in
+                guard case let .composer(composerAction) = action else { return .none }
+                return FileManagerContentComposerCoordinator.reduce(
+                    composerAction,
+                    state: &state,
+                    dependencies: dependencies,
+                )
+            }
+        }
+        let response = SearchResponsePayload(
+            itemCount: 0,
+            error: .init(code: "filter_execution_failed"),
+        )
+
+        await store.send(.composer(.filtersResponse(requestID, .success(response)))) {
+            $0.composer.lastFailedFiltersRequestID = nil
+        }
+        await store.receive(\.collection.refreshFailed)
+        await store.receive(\.composer.internal.clearPendingSearchQuery)
+        await store.receive(\.delegate.composerCollectionSearchFailed)
+        await store.finish()
+    }
+
+    /// RCL-003-update_collection_results_on_filter_change: embedded failure without query uses filter title
+    /// FileManager presentation must distinguish manual filter application from the post-query apply phase.
+    /// - 검증 내용: filter-specific alert title and consumed marker
+    /// - 사전 조건: an opening Collection with no pending query and active embedded-error response
+    /// - 기대 결과: one filter failure alert is presented and no duplicate route remains
+    func testExecuteFilteredCollectionRetrieval_embeddedFailureUsesFilterTitle() async {
+        let requestID = UUID()
+        let alerts = LockIsolated<[(String, String)]>([])
+        var state = makeReadyContentState()
+        state.collection.collectionSession.phase = .reopening(
+            kind: .definition,
+            base: .ready,
+            inflight: .none,
+        )
+        state.composer.pendingSearchQuery = nil
+        state.composer.activeFiltersRequestID = requestID
+        state.composer.isLoadingFilters = true
+        state.composer.isFilteringInFlight = true
+        let store = TestStore(initialState: state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.collectionAlertClient.showCollectionOpenErrorAlert = { title, message in
+                alerts.withValue { $0.append((title, message)) }
+            }
+            $0.continuousClock = ImmediateClock()
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        // store.exhaustivity = .off: opening rollback의 내부 action보다 filter-specific title을 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.composer(.filtersResponse(
+            requestID,
+            .success(.init(itemCount: 0, error: .init(code: "filter_execution_failed"))),
+        )))
+        await store.receive(\.delegate.composerCollectionSearchFailed)
+        await store.finish()
+
+        XCTAssertNil(store.state.composer.lastFailedFiltersRequestID)
+        XCTAssertEqual(alerts.value.map(\.0), ["Unable to Apply Collection Filters"])
     }
 
     /// Definition-only Collection의 명시적 refresh는 snapshot 저장 생략을 실패로 표시하지 않아야 한다.
@@ -367,6 +798,45 @@ final class RCL003FileManagerCollectionBoundaryTests: XCTestCase {
         XCTAssertFalse(state.canSaveCollection)
     }
 
+    private func makeFileBackedCollectionContentState(
+        targetURL: URL,
+        context: CollectionContext = .init(),
+    ) -> FileManagerContentState {
+        let name = targetURL.deletingPathExtension().lastPathComponent
+        let compatibility = makeAllowedCompatibility()
+        var state = FileManagerContentState()
+        state.entryViewLayout.isCollectionMode = true
+        state.collection.collectionContext = context
+        state.collection.collectionSession.document = .init(
+            url: targetURL,
+            name: name,
+            compatibility: compatibility,
+        )
+        state.collection.collectionSession.metadata.baseline = .init(context: context)
+        state.collection.collectionSession.phase = .opened(
+            kind: .definition,
+            base: .ready,
+            inflight: .none,
+        )
+        state.navigation.navigationState = .collection(.init(
+            kind: .file(url: targetURL, name: name),
+            context: context,
+            sortKey: .name,
+            sortOrder: .ascending,
+            viewLayout: .list,
+            compatibility: compatibility,
+        ))
+        state.composer.collectionContext = context
+        state.composer.openedCollectionURL = targetURL
+        state.composer.openedCollectionCompatibility = compatibility
+        state.composer.isCollectionMode = true
+        state.composer.scopes = context.scopes
+        state.composer.scopeEditor.includeSubfolders = context.includeSubfolders
+        state.composer.includeDirectories = context.includeDirectories
+        state.composer.text = context.query
+        return state
+    }
+
     private func makeReadyContentState() -> FileManagerContentState {
         let url = URL(fileURLWithPath: "/VoyagerFixtures/Collections/report.voycoll")
         let context = CollectionContext(query: "report", scopes: ["/VoyagerFixtures/Documents"], conditions: [])
@@ -427,6 +897,26 @@ final class RCL003FileManagerCollectionBoundaryTests: XCTestCase {
         return state
     }
 
+    private func makeExecutionReadyCondition() -> Condition {
+        Condition(
+            property: .init(
+                key: "kind",
+                label: "Kind",
+                type: .string,
+                unitContract: nil,
+                operatorOptions: [.init(code: "eq", label: "Equals")],
+            ),
+            operation: .init(
+                code: "eq",
+                label: "Equals",
+                valueContract: .init(shape: .single, count: .fixed(1), input: .singleText),
+            ),
+            values: ["pdf"],
+            availability: .available,
+            opaqueSource: nil,
+        )
+    }
+
     private func makeAllowedCompatibility() -> CollectionFileCompatibilityMetadata {
         .init(
             sourceSchemaVersion: CollectionFileSchemaVersion.snapshotBearingCurrent,
@@ -448,4 +938,29 @@ final class RCL003FileManagerCollectionBoundaryTests: XCTestCase {
             writeBackReason: .allowed,
         )
     }
+
+    private func makeEntry(path: String) -> EntryModel {
+        EntryModel(
+            name: URL(fileURLWithPath: path).lastPathComponent,
+            fullPath: path,
+            isFolder: false,
+            isHidden: false,
+            size: 1,
+            modifiedDate: Date(timeIntervalSince1970: 1_700_000_000),
+            fileExtension: URL(fileURLWithPath: path).pathExtension,
+            facets: .init(
+                createdDate: Date(timeIntervalSince1970: 1_700_000_000),
+                addedDate: Date(timeIntervalSince1970: 1_700_000_000),
+                lastOpenedDate: nil,
+                kind: "Text",
+                creatorApplication: nil,
+                tags: nil,
+                supplementaryMetadata: nil,
+            ),
+        )
+    }
+}
+
+private enum RCL003BoundaryFailure: Error {
+    case thrown
 }

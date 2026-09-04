@@ -102,23 +102,25 @@ extension FileManagerContentFeature {
     ) -> Effect<Action>? {
         switch action {
         case let .collection(.delegate(.draftRestorePrepared(payload))):
-            .concatenate(
+            let skipRestoreSearch = state.skipCollectionRestoreSearchOnNextDiscard
+            state.skipCollectionRestoreSearchOnNextDiscard = false
+            return .concatenate(
                 .send(.composer(.applyCollectionDraftRestore(payload))),
                 syncComposerCollectionStateEffect(state),
-                restoredCollectionSearchEffect(payload: payload),
+                skipRestoreSearch ? .none : restoredCollectionSearchEffect(payload: payload),
             )
 
         case let .collection(.delegate(.writeBackNavigationPrepared(payload))):
-            handleCollectionWriteBackPrepared(payload: payload, state: &state)
+            return handleCollectionWriteBackPrepared(payload: payload, state: &state)
 
         case let .collection(.delegate(.saveFeedback(payload))):
-            handleCollectionSaveFeedback(payload: payload, state: &state)
+            return handleCollectionSaveFeedback(payload: payload, state: &state)
 
         case let .collection(.delegate(delegateAction)):
-            handleCollectionDelegateAction(delegateAction, state: &state)
+            return handleCollectionDelegateAction(delegateAction, state: &state)
 
         default:
-            nil
+            return nil
         }
     }
 
@@ -157,6 +159,7 @@ extension FileManagerContentFeature {
         guard state.isCollectionMode,
               state.isOpenedCollectionDirty
         else {
+            state.skipCollectionRestoreSearchOnNextDiscard = false
             return .none
         }
 
@@ -333,7 +336,12 @@ extension FileManagerContentFeature {
         )
         state.composer.isPresented = true
         state.composer.transientFeedback = feedback
-        return .send(.composer(.internal(.presentTransientFeedback(feedback))))
+        // 저장이 거부되면 경고의 Save-이탈 의도는 소멸한다. pending을 남기면 이후 별도 저장의
+        // write-back이 이를 소비해 사용자가 다시 요청하지 않은 목적지로 이동한다.
+        return .concatenate(
+            .send(.internal(.requestNavigation(.internal(.setPendingNavigation(nil))))),
+            .send(.composer(.internal(.presentTransientFeedback(feedback)))),
+        )
     }
 
     private func handleCollectionSearchResultPrepared(

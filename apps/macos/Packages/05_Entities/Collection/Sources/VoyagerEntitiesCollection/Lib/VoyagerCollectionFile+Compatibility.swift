@@ -176,17 +176,9 @@ public enum VoyagerCollectionFileCompatibilityOwner {
             )
         }
 
+        let decodedFile: VoyagerCollectionFile
         do {
-            let decodedFile = try PropertyListDecoder().decode(VoyagerCollectionFile.self, from: data)
-            let snapshotDecision = evaluateDecodedSnapshotPair(decodedFile)
-            let file = normalizeForRead(snapshotDecision.file, schemaProbe: schemaProbe)
-            return makeLoadResult(
-                file: file,
-                containerFormat: containerFormat,
-                sourceSchemaVersion: schemaProbe.sourceSchemaVersion,
-                warning: snapshotDecision.warning,
-                usedDefinitionFallback: snapshotDecision.usedDefinitionFallback,
-            )
+            decodedFile = try PropertyListDecoder().decode(VoyagerCollectionFile.self, from: data)
         } catch {
             return try decodeDroppingSnapshotIfPossible(
                 data,
@@ -194,6 +186,15 @@ public enum VoyagerCollectionFileCompatibilityOwner {
                 containerFormat: containerFormat,
             )
         }
+        let snapshotDecision = evaluateDecodedSnapshotPair(decodedFile)
+        let file = normalizeForRead(snapshotDecision.file, schemaProbe: schemaProbe)
+        return try makeDecodedLoadResult(
+            file: file,
+            containerFormat: containerFormat,
+            sourceSchemaVersion: schemaProbe.sourceSchemaVersion,
+            warning: snapshotDecision.warning,
+            usedDefinitionFallback: snapshotDecision.usedDefinitionFallback,
+        )
     }
 
     public static func normalizeForSave(_ file: VoyagerCollectionFile) -> VoyagerCollectionFile {
@@ -332,11 +333,10 @@ public enum VoyagerCollectionFileCompatibilityOwner {
         let payload: CompatibilityPayload
         do {
             payload = try PropertyListDecoder().decode(CompatibilityPayload.self, from: data)
+        } catch let DecodingError.keyNotFound(key, _) where key.stringValue == "id" {
+            throw CollectionFileCompatibilityError.invalidDefinitionPayload
         } catch {
             throw CollectionFileCompatibilityError.unrecoverableDocumentCorruption
-        }
-        guard payload.id.isEmpty == false else {
-            throw CollectionFileCompatibilityError.invalidDefinitionPayload
         }
 
         let snapshotPair = decodeSnapshotPair(from: payload)
@@ -357,12 +357,31 @@ public enum VoyagerCollectionFileCompatibilityOwner {
             appVersion: payload.appVersion,
         ), schemaProbe: schemaProbe)
 
-        return makeLoadResult(
+        return try makeDecodedLoadResult(
             file: file,
             containerFormat: containerFormat,
             sourceSchemaVersion: schemaProbe.sourceSchemaVersion,
             warning: snapshotPair.warnings.first,
             usedDefinitionFallback: snapshotPair.usedDefinitionFallback,
+        )
+    }
+
+    private static func makeDecodedLoadResult(
+        file: VoyagerCollectionFile,
+        containerFormat: CollectionFileContainerFormat,
+        sourceSchemaVersion: SchemaVersion?,
+        warning: CollectionFileCompatibilityWarning?,
+        usedDefinitionFallback: Bool,
+    ) throws -> CollectionFileLoadResult {
+        guard file.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else {
+            throw CollectionFileCompatibilityError.invalidDefinitionPayload
+        }
+        return makeLoadResult(
+            file: file,
+            containerFormat: containerFormat,
+            sourceSchemaVersion: sourceSchemaVersion,
+            warning: warning,
+            usedDefinitionFallback: usedDefinitionFallback,
         )
     }
 

@@ -169,7 +169,11 @@ extension EntryGridCoordinator {
     }
 
     func syncSelectionIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
-        if previous.selectedIds != snapshot.selectedIds { syncSelectionFromStore() }
+        let expectedIndexPaths = Set(snapshot.selectedIds.compactMap { indexPathByEntryId[$0] })
+        guard previous.selectedIds != snapshot.selectedIds
+            || collectionView.selectionIndexPaths != expectedIndexPaths
+        else { return }
+        syncSelectionFromStore()
     }
 
     func reloadVisibleItemsIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
@@ -490,6 +494,14 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
         willBeginAt _: NSPoint,
         forItemsAt indexPaths: Set<IndexPath>,
     ) {
+        beginNativeDragSession(forItemsAt: indexPaths)
+    }
+
+    func beginNativeDragSession(forItemsAt indexPaths: Set<IndexPath>) {
+        // drag가 시작되면 mouseDown의 Command toggle 기대는 확정되지 않으므로 남은
+        // 명시적 clear provenance를 폐기한다. 남겨두면 이후 lifecycle empty callback이
+        // Command-last-deselect로 오인돼 canonical selection이 비워진다.
+        consumeExplicitEmptySelectionGesture()
         let paths = indexPaths.compactMap { indexPath -> String? in
             guard let entry = entry(at: indexPath) else { return nil }
             return entry.fullPath
@@ -655,6 +667,18 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
     public func updateSelectionFromCollectionView(_ collectionView: NSCollectionView) {
         guard !isUpdatingSelectionFromStore else { return }
         let selectedIndexPaths = collectionView.selectionIndexPaths
+        guard !selectedIndexPaths.isEmpty else {
+            if consumeExplicitEmptySelectionGesture() {
+                // blank/Command-last-deselect는 명시적 user-clear intent로 전달한다.
+                store.send(.view(.clearSelection))
+            } else {
+                // 출처 없는 lifecycle empty callback은 store selection만 native로 복원한다.
+                syncSelectionFromStore()
+            }
+            return
+        }
+        // non-empty callback이 먼저 오면 stale provenance를 폐기한다.
+        consumeExplicitEmptySelectionGesture()
         let selectedIds: Set<EntryModel.ID> = Set(selectedIndexPaths.compactMap { indexPath in
             entry(at: indexPath)?.id
         })

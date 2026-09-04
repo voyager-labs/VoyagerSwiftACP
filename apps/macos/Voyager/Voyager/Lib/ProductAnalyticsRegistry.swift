@@ -360,6 +360,10 @@ public struct ProductAnalyticsRegistry: Equatable, Sendable {
     private let byMetricKey: [String: Record]
     private let byMetadataMetricKey: [String: MetadataOnlyMetric]
 
+    var metadataOnlyMetricCount: Int {
+        byMetadataMetricKey.count
+    }
+
     public init(records: [Record], metadataOnlyMetrics: [MetadataOnlyMetric] = []) {
         self.records = records
         byMetricKey = Self.index(records)

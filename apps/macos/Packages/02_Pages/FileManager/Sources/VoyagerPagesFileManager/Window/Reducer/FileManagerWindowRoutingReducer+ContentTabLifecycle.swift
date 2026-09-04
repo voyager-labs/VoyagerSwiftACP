@@ -453,19 +453,20 @@ extension FileManagerWindowRoutingReducer {
         }
 
         let isActiveTarget = tabID == state.contentTabs.activeTabID
-        let targetState: FileManagerContentState
-        if isActiveTarget {
-            targetState = state.content
-        } else {
-            guard let inactiveState = state.tabContentStates[tabID] else {
-                return routeContentTabCloseMutation(
-                    tabID: tabID,
-                    batchOperationID: batchOperationID,
-                    action: .requestClose(tabID),
-                )
-            }
-            targetState = inactiveState
+        guard var targetState = contentStateForClose(tabID: tabID, state: state) else {
+            return routeContentTabCloseMutation(
+                tabID: tabID,
+                batchOperationID: batchOperationID,
+                action: .requestClose(tabID),
+            )
         }
+
+        synchronizePendingCollectionDraftBeforeClose(
+            tabID: tabID,
+            isActiveTarget: isActiveTarget,
+            targetState: &targetState,
+            windowState: &state,
+        )
 
         if let unsavedCloseEffect = routeUnsavedContentTabClose(
             tabID: tabID,
@@ -482,6 +483,36 @@ extension FileManagerWindowRoutingReducer {
             batchOperationID: batchOperationID,
             action: .requestClose(tabID),
         )
+    }
+
+    private func contentStateForClose(
+        tabID: ContentTabID,
+        state: State,
+    ) -> FileManagerContentState? {
+        if tabID == state.contentTabs.activeTabID {
+            return state.content
+        }
+        return state.tabContentStates[tabID]
+    }
+
+    private func synchronizePendingCollectionDraftBeforeClose(
+        tabID: ContentTabID,
+        isActiveTarget: Bool,
+        targetState: inout FileManagerContentState,
+        windowState: inout State,
+    ) {
+        guard targetState.isCollectionMode,
+              targetState.collection.collectionSession.document?.url != nil
+        else {
+            return
+        }
+        FileManagerContentComposerCoordinator.synchronizeOpenedCollectionDraftFromComposer(state: &targetState)
+        if isActiveTarget {
+            windowState.content = targetState
+            windowState.syncActiveTabContentState()
+        } else {
+            windowState.tabContentStates[tabID] = targetState
+        }
     }
 
     private func routeUnsavedContentTabClose(

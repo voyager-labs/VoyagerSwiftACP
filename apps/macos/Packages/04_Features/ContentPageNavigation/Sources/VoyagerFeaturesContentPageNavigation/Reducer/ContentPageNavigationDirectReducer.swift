@@ -12,22 +12,22 @@ struct ContentPageNavigationDirectReducer {
         Reduce { state, action in
             switch action {
             case let .internal(.performNavigateToPath(path)):
-                performNavigateToPath(path, state: &state)
+                ContentPageNavigationDirectTransition.perform(.navigateToPath(path), state: &state)
 
             case .internal(.performShowRecents):
-                performShowRecents(state: &state)
+                ContentPageNavigationDirectTransition.perform(.showRecents, state: &state)
 
             case .internal(.performShowComputer):
-                performShowComputer(state: &state)
+                ContentPageNavigationDirectTransition.perform(.showComputer, state: &state)
 
             case let .internal(.performShowTag(tagName)):
-                performShowTag(tagName, state: &state)
+                ContentPageNavigationDirectTransition.perform(.showTag(tagName), state: &state)
 
             case let .internal(.performShowAiChat(sessionID)):
-                performShowAiChat(sessionID, state: &state)
+                ContentPageNavigationDirectTransition.perform(.showAiChat(sessionID), state: &state)
 
             case let .internal(.performShowAiChatSessions(sessionID)):
-                performShowAiChatSessions(sessionID, state: &state)
+                ContentPageNavigationDirectTransition.perform(.showAiChatSessions(sessionID), state: &state)
 
             case let .internal(.prepareCollectionFileOpen(url)):
                 performPrepareCollectionFileOpen(url, state: &state)
@@ -36,137 +36,6 @@ struct ContentPageNavigationDirectReducer {
                 .none
             }
         }
-    }
-
-    private func performNavigateToPath(
-        _ path: String,
-        state: inout State,
-    ) -> Effect<Action> {
-        let currentSnapshot = state.makeContentPageNavigationHistorySnapshot()
-        let previousNavigationState = state.navigationState
-        let shouldRecordHistory = path != state.currentPath
-
-        if shouldRecordHistory {
-            state.appendBackHistory(currentSnapshot)
-            state.forwardHistory = []
-        }
-
-        state.navigationState = .folder(path)
-
-        return directNavigationEffect(
-            previousNavigationState: previousNavigationState,
-            nextNavigationState: state.navigationState,
-            shouldResetComposer: shouldRecordHistory,
-        )
-    }
-
-    private func performShowRecents(
-        state: inout State,
-    ) -> Effect<Action> {
-        if case .recents = state.navigationState {
-            return .none
-        }
-
-        let currentSnapshot = state.makeContentPageNavigationHistorySnapshot()
-        let previousNavigationState = state.navigationState
-        state.appendBackHistory(currentSnapshot)
-        state.forwardHistory = []
-        state.navigationState = .recents
-
-        return directNavigationEffect(
-            previousNavigationState: previousNavigationState,
-            nextNavigationState: state.navigationState,
-            shouldResetComposer: true,
-        )
-    }
-
-    private func performShowComputer(
-        state: inout State,
-    ) -> Effect<Action> {
-        if case .computer = state.navigationState {
-            return .none
-        }
-
-        let currentSnapshot = state.makeContentPageNavigationHistorySnapshot()
-        let previousNavigationState = state.navigationState
-        state.appendBackHistory(currentSnapshot)
-        state.forwardHistory = []
-        state.navigationState = .computer
-
-        return directNavigationEffect(
-            previousNavigationState: previousNavigationState,
-            nextNavigationState: state.navigationState,
-            shouldResetComposer: true,
-        )
-    }
-
-    private func performShowTag(
-        _ tagName: String,
-        state: inout State,
-    ) -> Effect<Action> {
-        if case let .tags(currentTagName) = state.navigationState,
-           currentTagName == tagName
-        {
-            return .none
-        }
-
-        let currentSnapshot = state.makeContentPageNavigationHistorySnapshot()
-        let previousNavigationState = state.navigationState
-        state.appendBackHistory(currentSnapshot)
-        state.forwardHistory = []
-        state.navigationState = .tags(tagName)
-
-        return directNavigationEffect(
-            previousNavigationState: previousNavigationState,
-            nextNavigationState: state.navigationState,
-            shouldResetComposer: true,
-        )
-    }
-
-    private func performShowAiChat(
-        _ sessionID: String,
-        state: inout State,
-    ) -> Effect<Action> {
-        if case let .aiChat(currentSessionID) = state.navigationState,
-           currentSessionID == sessionID
-        {
-            return .none
-        }
-
-        let currentSnapshot = state.makeContentPageNavigationHistorySnapshot()
-        let previousNavigationState = state.navigationState
-        state.appendBackHistory(currentSnapshot)
-        state.forwardHistory = []
-        state.navigationState = .aiChat(sessionID)
-
-        return directNavigationEffect(
-            previousNavigationState: previousNavigationState,
-            nextNavigationState: state.navigationState,
-            shouldResetComposer: true,
-        )
-    }
-
-    private func performShowAiChatSessions(
-        _ sessionID: String,
-        state: inout State,
-    ) -> Effect<Action> {
-        if case let .aiChatSessions(currentSessionID) = state.navigationState,
-           currentSessionID == sessionID
-        {
-            return .none
-        }
-
-        let currentSnapshot = state.makeContentPageNavigationHistorySnapshot()
-        let previousNavigationState = state.navigationState
-        state.appendBackHistory(currentSnapshot)
-        state.forwardHistory = []
-        state.navigationState = .aiChatSessions(sessionID)
-
-        return directNavigationEffect(
-            previousNavigationState: previousNavigationState,
-            nextNavigationState: state.navigationState,
-            shouldResetComposer: true,
-        )
     }
 
     private func performPrepareCollectionFileOpen(
@@ -181,24 +50,5 @@ struct ContentPageNavigationDirectReducer {
         state.appendBackHistory(previousSnapshot)
         state.forwardHistory = []
         return .none
-    }
-
-    private func directNavigationEffect(
-        previousNavigationState: ContentPageNavigationRoute,
-        nextNavigationState: ContentPageNavigationRoute,
-        shouldResetComposer: Bool,
-    ) -> Effect<Action> {
-        var effects: [Effect<Action>] = []
-
-        if shouldResetComposer {
-            effects.append(.send(.delegate(.resetComposer)))
-        }
-
-        effects.append(
-            .send(.delegate(.logDAUNavigation(previous: previousNavigationState, next: nextNavigationState))),
-        )
-        effects.append(.send(.delegate(.navigateToState(nextNavigationState))))
-
-        return .concatenate(effects)
     }
 }

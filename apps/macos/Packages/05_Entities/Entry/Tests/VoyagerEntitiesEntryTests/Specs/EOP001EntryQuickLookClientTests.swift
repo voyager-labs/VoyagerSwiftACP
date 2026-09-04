@@ -1,4 +1,5 @@
 import Foundation
+import QuickLookUI
 @testable import VoyagerEntitiesEntry
 import XCTest
 
@@ -16,9 +17,29 @@ final class EOP001EntryQuickLookClientTests: XCTestCase {
         var isVisible = true
         var currentPreviewItemIndex = 0
         private(set) var reloadDataCallCount = 0
+        private(set) var makeKeyAndOrderFrontCallCount = 0
+        private(set) var orderOutCallCount = 0
 
         func reloadData() {
             reloadDataCallCount += 1
+        }
+
+        func makeKeyAndOrderFront() {
+            makeKeyAndOrderFrontCallCount += 1
+            isVisible = true
+        }
+
+        func orderOut() {
+            orderOutCallCount += 1
+        }
+    }
+
+    private final class RecordingQuickLookEventHandler: EntryQuickLookPanelEventHandling {
+        private(set) var events: [NSEvent] = []
+
+        func handleQuickLookPanelEvent(_ event: NSEvent) -> Bool {
+            events.append(event)
+            return true
         }
     }
 
@@ -189,5 +210,143 @@ final class EOP001EntryQuickLookClientTests: XCTestCase {
         XCTAssertEqual(fake.reloadDataCallCount, 0)
         XCTAssertEqual(fake.currentPreviewItemIndex, 0)
         XCTAssertEqual(coordinator.numberOfPreviewItems(in: nil), 0)
+    }
+
+    // MARK: - EOP-001-quick_look_panel_focus
+
+    /// EOP-001-quick_look_panel_focus: 최초 표시는 AppKit의 canonical key-panel 경로를 사용한다.
+    /// - 검증 내용: hidden panel에 quickLook을 요청하면 makeKeyAndOrderFront가 호출된다.
+    /// - 사전 조건: hidden fake panel과 단일 URL
+    /// - 기대 결과: makeKeyAndOrderFront가 정확히 한 번 호출된다.
+    func testPresentMakesPreviewPanelKeyAndFront() async throws {
+        let fake = FakeQuickLookPanel()
+        fake.isVisible = false
+        let (client, _) = EntryQuickLookClient.makeLiveClient(panelProvider: { fake })
+
+        try await client.quickLook([URL(fileURLWithPath: "/tmp/a.txt")], 0)
+
+        XCTAssertEqual(fake.makeKeyAndOrderFrontCallCount, 1)
+    }
+
+    /// EOP-001-quick_look_panel_focus: responder-chain control은 data source/delegate와 event sink를 함께 연결한다.
+    /// - 검증 내용: begin control 후 panel delegate로 들어온 방향키가 등록된 handler에 전달된다.
+    /// - 사전 조건: URL이 준비된 coordinator, shared QL panel, recording event handler
+    /// - 기대 결과: coordinator가 panel data source/delegate이고 handler가 이벤트를 한 번 받는다.
+    func testBeginPreviewPanelControlRoutesUnhandledEvent() async throws {
+        _ = NSApplication.shared
+        let fake = FakeQuickLookPanel()
+        fake.isVisible = false
+        let (client, coordinator) = EntryQuickLookClient.makeLiveClient(panelProvider: { fake })
+        try await client.quickLook([
+            URL(fileURLWithPath: "/tmp/a.txt"),
+            URL(fileURLWithPath: "/tmp/b.txt"),
+        ], 1)
+        let panel = try XCTUnwrap(QLPreviewPanel.shared())
+        panel.currentPreviewItemIndex = 0
+        let handler = RecordingQuickLookEventHandler()
+        let event = try XCTUnwrap(NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            characters: "\u{F701}",
+            charactersIgnoringModifiers: "\u{F701}",
+            isARepeat: false,
+            keyCode: 125,
+        ))
+
+        coordinator.attach(to: panel, eventHandler: handler)
+        let handled = coordinator.previewPanel(panel, handle: event)
+
+        XCTAssertIdentical(panel.dataSource, coordinator)
+        XCTAssertIdentical(panel.delegate, coordinator)
+        XCTAssertEqual(panel.currentPreviewItemIndex, 1)
+        XCTAssertTrue(handled)
+        XCTAssertEqual(handler.events, [event])
+
+        coordinator.detach(from: panel, eventHandler: handler)
+        XCTAssertNil(panel.dataSource)
+        XCTAssertNil(panel.delegate)
+    }
+
+    /// EOP-001-quick_look_panel_focus: 이전 window의 stale end는 최신 panel owner를 해제하지 않는다.
+    func testStaleEndPreviewPanelControlPreservesLatestOwner() async throws {
+        _ = NSApplication.shared
+        let fake = FakeQuickLookPanel()
+        fake.isVisible = false
+        let (client, coordinator) = EntryQuickLookClient.makeLiveClient(panelProvider: { fake })
+        try await client.quickLook([URL(fileURLWithPath: "/tmp/a.txt")], 0)
+        let panel = try XCTUnwrap(QLPreviewPanel.shared())
+        let firstHandler = RecordingQuickLookEventHandler()
+        let latestHandler = RecordingQuickLookEventHandler()
+        let event = try XCTUnwrap(NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            characters: "\u{F701}",
+            charactersIgnoringModifiers: "\u{F701}",
+            isARepeat: false,
+            keyCode: 125,
+        ))
+
+        coordinator.attach(to: panel, eventHandler: firstHandler)
+        coordinator.attach(to: panel, eventHandler: latestHandler)
+        coordinator.detach(from: panel, eventHandler: firstHandler)
+
+        XCTAssertIdentical(panel.dataSource, coordinator)
+        XCTAssertIdentical(panel.delegate, coordinator)
+        XCTAssertTrue(coordinator.previewPanel(panel, handle: event))
+        XCTAssertTrue(firstHandler.events.isEmpty)
+        XCTAssertEqual(latestHandler.events, [event])
+
+        coordinator.detach(from: panel, eventHandler: latestHandler)
+        XCTAssertNil(panel.dataSource)
+        XCTAssertNil(panel.delegate)
+    }
+
+    /// EOP-001-quick_look_panel_focus: 가시 패널에 같은 선택으로 Space를 누르면 패널을 닫는다.
+    /// 이미 패널이 보이는 상태에서 같은 선택으로 다시 열기를 요청하면 토글로 닫히는지 검증한다.
+    /// - 검증 내용: 같은 URL 목록으로 두 번째 quickLook 호출 시 orderOut이 호출되고 상태가 정리된다.
+    /// - 사전 조건: 가시 fake panel에 [url1]이 표시되어 있다.
+    /// - 기대 결과: `orderOutCallCount == 1`이고 coordinator 데이터 소스는 비워진다.
+    func testPresentSameSelectionTogglesVisiblePanelClosed() async throws {
+        let fake = FakeQuickLookPanel()
+        let (client, coordinator) = EntryQuickLookClient.makeLiveClient(panelProvider: { fake })
+        let url1 = URL(fileURLWithPath: "/tmp/a.txt")
+
+        try await client.quickLook([url1], 0)
+        try await client.quickLook([url1], 0)
+        for _ in 0 ..< 100 where coordinator.numberOfPreviewItems(in: nil) != 0 {
+            await Task.yield()
+        }
+
+        XCTAssertEqual(fake.orderOutCallCount, 1)
+        XCTAssertEqual(coordinator.numberOfPreviewItems(in: nil), 0)
+    }
+
+    /// EOP-001-quick_look_panel_focus: 가시 패널에 다른 선택으로 열기를 요청하면 닫지 않고 동기화한다.
+    /// 패널이 보이는 동안 선택이 바뀐 상태로 quickLook을 호출하면 재표시가 아니라 동기화인지 검증한다.
+    /// - 검증 내용: [url1] 표시 중 [url2]로 quickLook 호출 시 orderOut 없이 reload와 인덱스 갱신만 수행한다.
+    /// - 사전 조건: 가시 fake panel에 [url1]이 표시되어 있다.
+    /// - 기대 결과: `orderOutCallCount == 0`, `currentPreviewItemIndex == 0`, reload는 추가 1회.
+    func testPresentDifferentSelectionWhileVisibleSyncsInsteadOfReopening() async throws {
+        let fake = FakeQuickLookPanel()
+        let (client, coordinator) = EntryQuickLookClient.makeLiveClient(panelProvider: { fake })
+        let url1 = URL(fileURLWithPath: "/tmp/a.txt")
+        let url2 = URL(fileURLWithPath: "/tmp/b.txt")
+
+        try await client.quickLook([url1], 0)
+        let reloadCountAfterFirst = fake.reloadDataCallCount
+        try await client.quickLook([url2], 0)
+
+        XCTAssertEqual(fake.orderOutCallCount, 0)
+        XCTAssertEqual(fake.currentPreviewItemIndex, 0)
+        XCTAssertEqual(fake.reloadDataCallCount - reloadCountAfterFirst, 1)
+        XCTAssertEqual(coordinator.numberOfPreviewItems(in: nil), 1)
     }
 }

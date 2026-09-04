@@ -2,6 +2,7 @@ import AppKit
 import ComposableArchitecture
 import Foundation
 import PerceptionCore
+import QuickLookUI
 import SwiftUI
 import UniformTypeIdentifiers
 import VoyagerEntitiesAppPreferences
@@ -2216,6 +2217,202 @@ extension FMW001FileManagerWindowTests {
         XCTAssertIdentical(window.firstResponder, keyCommandView)
     }
 
+    /// FMW-001-key_command_focus: Quick Look 방향키는 Window view action을 거쳐 canonical selection을 갱신한다.
+    /// - 검증 내용: responder-chain control begin 후 down-arrow를 전달하면 FileManager reducer가 다음 entry를 선택하고 Quick Look sync를
+    /// 요청한다.
+    /// - 사전 조건: 첫 entry가 선택된 focused window와 panel-control recording client
+    /// - 기대 결과: begin/end가 호출되고 선택과 Quick Look sync 대상이 두 번째 entry로 이동한다.
+    func testQuickLookPanelControlRoutesArrowThroughWindowViewAction() async throws {
+        let first = EntryModel.temporaryFolder(id: "/root/first", name: "first")
+        let second = EntryModel.temporaryFolder(id: "/root/second", name: "second")
+        var state = FileManagerFeature.State()
+        state.isFocused = true
+        state.content.navigation.seedInitialFolderPath("/root")
+        state.content.entryViewLayout.entries = [first, second]
+        state.content.entryViewLayout.selectedIds = [first.id]
+        state.content.entryViewLayout.lastSelectedId = first.id
+        state.content.entryViewLayout.rangeAnchorId = first.id
+        state.syncActiveTabContentState()
+
+        let beginCount = LockIsolated(0)
+        let endCount = LockIsolated(0)
+        let syncCalls = LockIsolated<[[String]]>([])
+        let syncCalled = expectation(description: "Quick Look selection synchronized")
+        let quickLookClient = EntryQuickLookClient(
+            quickLook: { _, _ in },
+            syncQuickLookSelection: { urls, _ in
+                syncCalls.withValue { $0.append(urls.map(\.path)) }
+                syncCalled.fulfill()
+            },
+            acceptsPreviewPanelControl: { true },
+            beginPreviewPanelControl: { _, _ in beginCount.withValue { $0 += 1 } },
+            endPreviewPanelControl: { _, _ in endCount.withValue { $0 += 1 } },
+        )
+        let registry = FileOperationUndoManagerRegistry()
+        let undoClient = FileOperationUndoManagerClient.live(registry: registry)
+        let store = Store(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.entryQuickLookClient = quickLookClient
+            $0.fileOperationUndoManagerClient = undoClient
+        }
+        let coordinator = withDependencies {
+            $0.entryQuickLookClient = quickLookClient
+        } operation: {
+            FileManagerWindowCoordinator(
+                windowID: UUID(),
+                store: store,
+                fileOperationUndoManagerRegistry: registry,
+                makeContentViewController: { _, _ in NSViewController() },
+            )
+        }
+        defer { coordinator.close() }
+        let panel = try XCTUnwrap(QLPreviewPanel.shared())
+        let event = try makeDownArrowEvent(windowNumber: panel.windowNumber)
+
+        XCTAssertTrue(coordinator.acceptsPreviewPanelControl(panel))
+        coordinator.beginPreviewPanelControl(panel)
+        XCTAssertTrue(coordinator.handleQuickLookPanelEvent(event))
+        for _ in 0 ..< 100 where store.withState({ $0.content.entryViewLayout.selectedIds }) != [second.id] {
+            await Task.yield()
+        }
+        await fulfillment(of: [syncCalled], timeout: 2)
+        coordinator.endPreviewPanelControl(panel)
+
+        XCTAssertEqual(beginCount.value, 1)
+        XCTAssertEqual(endCount.value, 1)
+        XCTAssertEqual(store.withState { $0.content.entryViewLayout.selectedIds }, [second.id])
+        XCTAssertEqual(syncCalls.value, [[second.fullPath]])
+    }
+
+    /// FMW-001-key_command_focus: Space와 Escape는 Voyager가 삼키지 않고 Quick Look에 남긴다.
+    func testQuickLookPanelEventHandlerRejectsNonArrowKeys() throws {
+        let registry = FileOperationUndoManagerRegistry()
+        let coordinator = makeCoordinator(
+            windowID: UUID(),
+            fileOperationUndoManagerRegistry: registry,
+            fileOperationUndoManagerClient: .live(registry: registry),
+        )
+        defer { coordinator.close() }
+
+        for keyCode in [UInt16(49), UInt16(53)] {
+            let event = try XCTUnwrap(NSEvent.keyEvent(
+                with: .keyDown,
+                location: .zero,
+                modifierFlags: [],
+                timestamp: 0,
+                windowNumber: 0,
+                context: nil,
+                characters: keyCode == 49 ? " " : "\u{1B}",
+                charactersIgnoringModifiers: keyCode == 49 ? " " : "\u{1B}",
+                isARepeat: false,
+                keyCode: keyCode,
+            ))
+            XCTAssertFalse(coordinator.handleQuickLookPanelEvent(event))
+        }
+    }
+
+    /// FMW-001-key_command_focus: QL이 key이고 document가 main이면 논리적 window ownership을 유지한다.
+    func testQuickLookKeyTransitionRetainsLogicalDocumentFocusOnlyForMainWindow() throws {
+        _ = NSApplication.shared
+        let panel = try XCTUnwrap(QLPreviewPanel.shared())
+
+        XCTAssertTrue(FileManagerWindowCoordinator.shouldRetainLogicalFocus(
+            documentIsMain: true,
+            keyWindow: panel,
+        ))
+        XCTAssertFalse(FileManagerWindowCoordinator.shouldRetainLogicalFocus(
+            documentIsMain: false,
+            keyWindow: panel,
+        ))
+        XCTAssertFalse(FileManagerWindowCoordinator.shouldRetainLogicalFocus(
+            documentIsMain: true,
+            keyWindow: NSWindow(),
+        ))
+    }
+
+    /// FMW-001-key_command_focus: 제어 종료 후 document가 key로 돌아오지 않으면 보류된 resign을 정산한다.
+    /// Quick Look이 key를 비-FileManager window에 넘기거나 앱이 비활성화되면 document는 두 번째
+    /// resignKey를 받지 못하므로 panel control 종료 시점에 정산해야 한다.
+    /// - 검증 내용: begin으로 logical focus를 유지한 뒤 document가 non-key인 채 control을 끝내면
+    ///   `onResignedKey`가 windowID로 한 번 호출되는지 확인한다.
+    /// - 사전 조건: panel-control recording client와 onResignedKey recorder를 단 coordinator
+    /// - 기대 결과: endPreviewPanelControl에서 resign이 정산된다.
+    func testEndPreviewPanelControlSettlesRetainedResignKeyWhenDocumentNotKeyAgain() throws {
+        _ = NSApplication.shared
+        let panel = try XCTUnwrap(QLPreviewPanel.shared())
+        let windowID = UUID()
+        let beginCount = LockIsolated(0)
+        let endCount = LockIsolated(0)
+        let resignedWindowIDs = LockIsolated<[UUID]>([])
+        let quickLookClient = EntryQuickLookClient(
+            quickLook: { _, _ in },
+            acceptsPreviewPanelControl: { true },
+            beginPreviewPanelControl: { _, _ in beginCount.withValue { $0 += 1 } },
+            endPreviewPanelControl: { _, _ in endCount.withValue { $0 += 1 } },
+        )
+        let entry = EntryModel.temporaryFolder(id: "/root/preview", name: "preview")
+        var state = FileManagerFeature.State()
+        state.isFocused = true
+        state.content.entryViewLayout.entries = [entry]
+        state.content.entryViewLayout.selectedIds = [entry.id]
+        state.syncActiveTabContentState()
+
+        let registry = FileOperationUndoManagerRegistry()
+        let store = Store(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.entryQuickLookClient = quickLookClient
+            $0.fileOperationUndoManagerClient = .live(registry: registry)
+        }
+        let coordinator = withDependencies {
+            $0.entryQuickLookClient = quickLookClient
+        } operation: {
+            FileManagerWindowCoordinator(
+                windowID: windowID,
+                store: store,
+                fileOperationUndoManagerRegistry: registry,
+                onResignedKey: { id in resignedWindowIDs.withValue { $0.append(id) } },
+                makeContentViewController: { _, _ in NSViewController() },
+            )
+        }
+        defer { coordinator.close() }
+
+        coordinator.beginPreviewPanelControl(panel)
+        coordinator.endPreviewPanelControl(panel)
+
+        XCTAssertEqual(beginCount.value, 1)
+        XCTAssertEqual(endCount.value, 1)
+        XCTAssertEqual(resignedWindowIDs.value, [windowID])
+    }
+
+    /// FMW-001-key_command_focus: resign 정산은 document가 key로 돌아왔거나 유지 조건이 성립할 때 생략한다.
+    func testShouldSettleRetainedResignKeyOnlyWhenDocumentNotKeyAndNotRetained() throws {
+        _ = NSApplication.shared
+        let panel = try XCTUnwrap(QLPreviewPanel.shared())
+
+        XCTAssertFalse(FileManagerWindowCoordinator.shouldSettleRetainedResignKey(
+            documentIsKey: true,
+            documentIsMain: false,
+            keyWindow: nil,
+        ))
+        XCTAssertFalse(FileManagerWindowCoordinator.shouldSettleRetainedResignKey(
+            documentIsKey: false,
+            documentIsMain: true,
+            keyWindow: panel,
+        ))
+        XCTAssertTrue(FileManagerWindowCoordinator.shouldSettleRetainedResignKey(
+            documentIsKey: false,
+            documentIsMain: true,
+            keyWindow: NSWindow(),
+        ))
+        XCTAssertTrue(FileManagerWindowCoordinator.shouldSettleRetainedResignKey(
+            documentIsKey: false,
+            documentIsMain: false,
+            keyWindow: nil,
+        ))
+    }
+
     /// FMW-001-key_command_focus: mounted ContentPage restore가 편집 중인 NSTextView를 교체하지 않는다.
     /// selectedIds 변경으로 실제 ContentPage restore caller가 실행되어도 Inspector 텍스트 입력이 유지되는지 검증한다.
     /// - 검증 내용: mounted ContentPage의 selectedIds onChange 이후 firstResponder identity
@@ -2448,6 +2645,21 @@ extension FMW001FileManagerWindowTests {
             await drainMainQueue()
             await Task.yield()
         }
+    }
+
+    private func makeDownArrowEvent(windowNumber: Int) throws -> NSEvent {
+        try XCTUnwrap(NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: windowNumber,
+            context: nil,
+            characters: "\u{F701}",
+            charactersIgnoringModifiers: "\u{F701}",
+            isARepeat: false,
+            keyCode: 125,
+        ))
     }
 
     private func makeFocusWindow(containing views: [NSView]) -> NSWindow {

@@ -10,6 +10,12 @@ enum ContentPagePresentationPolicy: Equatable {
     case entries
     case ordinaryDirectoryLoadingOverlay
     case collectionReplacementLoading
+    case collectionEmptyDraft
+
+    var emptyDraftGuidance: ContentPageEmptyDraftGuidance? {
+        guard self == .collectionEmptyDraft else { return nil }
+        return .collectionDraft
+    }
 
     var replacesEntriesWithLoading: Bool {
         self == .collectionReplacementLoading
@@ -40,6 +46,12 @@ enum ContentPagePresentationPolicy: Equatable {
         isCollectionContentLoading: Bool,
         isEntryLoading: Bool,
         isCollectionMode: Bool,
+        isFileBackedCollection: Bool = false,
+        hasExecutableCollectionDefinition: Bool = false,
+        hasCollectionResponse: Bool = false,
+        hasCollectionEntries: Bool = false,
+        hasCollectionFailure: Bool = false,
+        hasInFlightCollectionRequest: Bool = false,
     ) -> Self {
         if isCollectionSearching || isCollectionContentLoading {
             return .collectionReplacementLoading
@@ -47,8 +59,63 @@ enum ContentPagePresentationPolicy: Equatable {
         if isEntryLoading, !isCollectionMode {
             return .ordinaryDirectoryLoadingOverlay
         }
+        if isCollectionMode,
+           isFileBackedCollection,
+           !hasExecutableCollectionDefinition,
+           !hasCollectionResponse,
+           !hasCollectionEntries,
+           !hasCollectionFailure,
+           !hasInFlightCollectionRequest
+        {
+            return .collectionEmptyDraft
+        }
         return .entries
     }
+
+    static func resolve(state: FileManagerContentState) -> Self {
+        let context = state.collection.collectionContext ?? state.composer.collectionContext
+        let hasExecutableDefinition = context.map { context in
+            !context.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                || context.conditions.contains(where: \.isExecutionReady)
+        } ?? false
+        let hasResponse = state.composer.lastSearchResponse != nil
+            || state.composer.lastFiltersResponse != nil
+        let hasEntries = !state.entryViewLayout.displayItems.isEmpty
+        let hasFailure = state.composer.transientFeedback?.kind == .error
+            || state.composer.lastFailedFiltersRequestID != nil
+        let hasInFlightRequest = state.composer.isFilteringInFlight
+            || state.composer.activeSearchRequestID != nil
+            || state.composer.activeFiltersRequestID != nil
+            || (state.isCollectionMode && state.entryViewLayout.entryOperations.isLoading)
+
+        return resolve(
+            isCollectionSearching: state.composer.isCollectionSearching,
+            isCollectionContentLoading: state.entryViewLayout.isCollectionContentLoading,
+            isEntryLoading: state.entryViewLayout.entryOperations.isLoading,
+            isCollectionMode: state.isCollectionMode,
+            isFileBackedCollection: state.openedCollectionURLExists && context != nil,
+            hasExecutableCollectionDefinition: hasExecutableDefinition,
+            hasCollectionResponse: hasResponse,
+            hasCollectionEntries: hasEntries,
+            hasCollectionFailure: hasFailure,
+            hasInFlightCollectionRequest: hasInFlightRequest,
+        )
+    }
+}
+
+struct ContentPageEmptyDraftGuidance: Equatable {
+    let title: String
+    let description: String
+    let titleAccessibilityIdentifier: String
+    let descriptionAccessibilityIdentifier: String
+
+    static let collectionDraft = Self(
+        title: "Build your collection",
+        description: "Add a query or complete condition to search. "
+            + "You can add a scope to narrow where Voyager searches.",
+        titleAccessibilityIdentifier: "collection-empty-draft-title",
+        descriptionAccessibilityIdentifier: "collection-empty-draft-description",
+    )
 }
 
 struct ContentPageView: View {
@@ -78,12 +145,7 @@ struct ContentPageView: View {
     }
 
     private var presentationPolicy: ContentPagePresentationPolicy {
-        .resolve(
-            isCollectionSearching: store.composer.isCollectionSearching,
-            isCollectionContentLoading: store.entryViewLayout.isCollectionContentLoading,
-            isEntryLoading: store.entryViewLayout.entryOperations.isLoading,
-            isCollectionMode: store.isCollectionMode,
-        )
+        .resolve(state: store.state)
     }
 
     private var mainContent: some View {
@@ -101,6 +163,8 @@ struct ContentPageView: View {
     @ViewBuilder private var entryView: some View {
         if presentationPolicy.replacesEntriesWithLoading {
             loadingView
+        } else if let guidance = presentationPolicy.emptyDraftGuidance {
+            emptyDraftView(guidance)
         } else {
             let entryViewLayoutStore = store.scope(state: \.entryViewLayout, action: \.entryViewLayout)
             let menuProvider = makeBlankSpaceMenuProvider()
@@ -173,6 +237,23 @@ struct ContentPageView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .allowsHitTesting(false)
         }
+    }
+
+    private func emptyDraftView(_ guidance: ContentPageEmptyDraftGuidance) -> some View {
+        VStack(spacing: 8) {
+            Text(guidance.title)
+                .font(.title2.weight(.semibold))
+                .accessibilityIdentifier(guidance.titleAccessibilityIdentifier)
+            Text(guidance.description)
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .accessibilityIdentifier(guidance.descriptionAccessibilityIdentifier)
+        }
+        .frame(maxWidth: 460)
+        .padding(40)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .allowsHitTesting(false)
     }
 
     var body: some View {

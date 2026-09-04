@@ -80,10 +80,8 @@ extension FileManagerWindowCommandRoutingReducer {
     func handleHomeChatHistorySessionSelected(
         _ sessionID: AiChatSessionID,
         activeTabID: ContentTabID,
-        state: State,
     ) -> Effect<Action> {
         let sessionString = sessionID.rawValue.uuidString
-        let anchor = ContentTabPageAnchor.aiChat(sessionID: sessionString)
         let setup = AiChatSetupState(
             restoreSessionID: sessionID,
             sessionID: nil,
@@ -105,7 +103,6 @@ extension FileManagerWindowCommandRoutingReducer {
 
         return .concatenate(
             .send(.inspector(.closeChat)),
-            updateContentTabPageAnchorEffect(tabID: activeTabID, anchor: anchor, state: state),
             .send(.navigation(.view(.showAiChat(sessionString)))),
             .send(.tabContent(tabID: activeTabID, action: .aiChat(.setup(setup)))),
             providerLoadEffect,
@@ -119,10 +116,7 @@ extension FileManagerWindowCommandRoutingReducer {
     ) -> Effect<Action> {
         switch anchor {
         case let .directory(path):
-            return .concatenate(
-                updateContentTabPageAnchorEffect(tabID: activeTabID, anchor: anchor, state: state),
-                .send(.navigation(.view(.navigateToPath(path)))),
-            )
+            return .send(.navigation(.view(.navigateToPath(path))))
 
         case let .collectionFile(url):
             return .send(.navigation(.view(.openCollectionFile(url))))
@@ -155,11 +149,10 @@ extension FileManagerWindowCommandRoutingReducer {
 
             return .concatenate(
                 .send(.inspector(.closeChat)),
-                updateContentTabPageAnchorEffect(tabID: activeTabID, anchor: anchor, state: state),
-                .send(.internal(.aiChatTabTitleUpdated(sessionID: sessionUUID, title: "New Chat"))),
                 .send(.navigation(.view(.showAiChat(sessionID)))),
                 .send(.tabContent(tabID: activeTabID, action: .aiChat(.setup(setup)))),
                 providerLoadEffect,
+                .send(.internal(.aiChatTabTitleUpdated(sessionID: sessionUUID, title: "New Chat"))),
                 .send(.internal(.homeAiChatNewChatSeedRequested(sessionID: sessionUUID))),
             )
         }

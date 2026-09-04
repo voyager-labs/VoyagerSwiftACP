@@ -32,7 +32,7 @@ struct VoyagerApp: App {
         let fileManager: MetricsClient
     }
 
-    private struct ProductAnalyticsCaptureContext {
+    struct ProductAnalyticsCaptureContext {
         let client: ProductAnalyticsClient
         let environment: EnvironmentLoader.AppEnv
     }
@@ -48,8 +48,7 @@ struct VoyagerApp: App {
         let fileOperationUndoManagerRegistry = FileOperationUndoManagerRegistry()
         let workspaceClient = WorkspaceClient.liveValue
         let fileManagerWindowClient = makeFileManagerWindowClientLive(
-            fileOperationUndoManagerRegistry: fileOperationUndoManagerRegistry,
-            workspaceClient: workspaceClient,
+            fileOperationUndoManagerRegistry: fileOperationUndoManagerRegistry, workspaceClient: workspaceClient,
         )
         try? EnvironmentLoader.loadEnvFiles()
         let analytics = Self.makeProductAnalyticsDependencies(environment: EnvironmentLoader.detectAppEnv())
@@ -84,10 +83,7 @@ struct VoyagerApp: App {
                         guard let window = state.windowManager.windows[id: windowID]?.window,
                               let activeTabID = window.contentTabs.activeTabID
                         else { return nil }
-                        return UndoManagerScope(
-                            windowID: windowID,
-                            contentTabID: activeTabID.rawValue,
-                        )
+                        return UndoManagerScope(windowID: windowID, contentTabID: activeTabID.rawValue)
                     }
                 },
             )
@@ -153,7 +149,7 @@ struct VoyagerApp: App {
         }
     }
 
-    private static func makeFileManagerMetricsClient(
+    static func makeFileManagerMetricsClient(
         context: ProductAnalyticsCaptureContext,
     ) -> MetricsClient {
         .init(
@@ -229,6 +225,14 @@ struct VoyagerApp: App {
         }
         for (key, value) in tags ?? [:] {
             guard key != "identity" else { continue }
+            if key == "error_category" {
+                let failureReason = [
+                    "unsupportedSchema": "unsupported_schema",
+                    "invalidDefinition": "invalid_definition",
+                ][value] ?? value
+                properties["failure_reason"] = .string(failureReason)
+                continue
+            }
             let mappedKey: String? = switch key {
             case "source", "source_surface": "source_surface"
             case "outcome", "result", "result_status": "result_status"

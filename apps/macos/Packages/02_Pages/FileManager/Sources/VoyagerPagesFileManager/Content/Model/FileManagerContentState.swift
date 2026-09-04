@@ -129,6 +129,8 @@ public struct FileManagerContentState: Equatable {
 
     /// 컴포저 관련
     var resetComposerOnNextDirectoryNavigation: Bool = false
+    /// 이탈을 위한 discard에서는 이전 Collection query를 다시 실행하지 않는다.
+    var skipCollectionRestoreSearchOnNextDiscard: Bool = false
     var suppressAutomaticRefreshFeedback: Bool = false
 
     var isCollectionMode: Bool {
