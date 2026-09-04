@@ -2351,8 +2351,15 @@ extension FMW001FileManagerWindowTests {
             beginPreviewPanelControl: { _, _ in beginCount.withValue { $0 += 1 } },
             endPreviewPanelControl: { _, _ in endCount.withValue { $0 += 1 } },
         )
+        let entry = EntryModel.temporaryFolder(id: "/root/preview", name: "preview")
+        var state = FileManagerFeature.State()
+        state.isFocused = true
+        state.content.entryViewLayout.entries = [entry]
+        state.content.entryViewLayout.selectedIds = [entry.id]
+        state.syncActiveTabContentState()
+
         let registry = FileOperationUndoManagerRegistry()
-        let store = Store(initialState: FileManagerFeature.State()) {
+        let store = Store(initialState: state) {
             FileManagerFeature()
         } withDependencies: {
             $0.entryQuickLookClient = quickLookClient

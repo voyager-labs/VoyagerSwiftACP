@@ -355,7 +355,9 @@ public extension FileManagerWindowCoordinator {
     /// Quick Look panel은 앱 전체에 하나뿐이므로 background window가 responder-chain owner가 되지 않게 한다.
     /// `isFocused`는 WindowManager가 key transition과 Quick Look logical focus를 반영한 단일 ownership source다.
     private func canControlQuickLookPanel() -> Bool {
-        guard store.withState(\.isFocused) else { return false }
+        guard store.withState({ $0.isFocused && !$0.content.entryViewLayout.selectedIds.isEmpty }) else {
+            return false
+        }
         return entryQuickLookClient.acceptsPreviewPanelControl()
     }
 
