@@ -81,6 +81,7 @@ final class EntryCorePropertyClientFlowTests: XCTestCase {
             expectedDefinitionRevision: 1,
             expectedAssignmentRevision: 0,
             desired: .null,
+            expectedValueContract: ExpectedValueContract(valueType: .text, cardinality: .one),
             entryID: entryID,
         )
         let change2 = try PropertyChangeTarget(
@@ -89,6 +90,7 @@ final class EntryCorePropertyClientFlowTests: XCTestCase {
             expectedDefinitionRevision: 1,
             expectedAssignmentRevision: 0,
             desired: .null,
+            expectedValueContract: ExpectedValueContract(valueType: .text, cardinality: .one),
             entryID: entryID,
         )
         let request = try PropertyChangeRequest(changes: [change1, change2])
@@ -242,6 +244,7 @@ final class EntryCorePropertyClientFlowTests: XCTestCase {
                 expectedDefinitionRevision: 1,
                 expectedAssignmentRevision: 0,
                 desired: desired,
+                expectedValueContract: ExpectedValueContract(valueType: .text, cardinality: .one),
             ))
         }
         XCTAssertEqual(recorder.creationCount, 0)
@@ -264,6 +267,7 @@ final class EntryCorePropertyClientFlowTests: XCTestCase {
             expectedDefinitionRevision: 1,
             expectedAssignmentRevision: 0,
             desired: desired,
+            expectedValueContract: ExpectedValueContract(valueType: .text, cardinality: .one),
         )
         let request = try PropertyChangeRequest(changes: [change])
 

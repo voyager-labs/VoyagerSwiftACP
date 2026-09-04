@@ -13,6 +13,7 @@ extension EntryCorePropertyClientFlowTests {
             expectedDefinitionRevision: 1,
             expectedAssignmentRevision: 0,
             desired: .null,
+            expectedValueContract: ExpectedValueContract(valueType: .text, cardinality: .one),
         )
         let change2 = try PropertyChangeTarget(
             target: PropertyTarget(localPath: "/b"),
@@ -20,6 +21,7 @@ extension EntryCorePropertyClientFlowTests {
             expectedDefinitionRevision: 1,
             expectedAssignmentRevision: 0,
             desired: .null,
+            expectedValueContract: ExpectedValueContract(valueType: .text, cardinality: .one),
         )
         let request = try PropertyChangeRequest(changes: [change1, change2])
         let endpoint = try EntryCoreEndpoint(path: "/tmp/property-client.sock")
@@ -41,6 +43,7 @@ extension EntryCorePropertyClientFlowTests {
             expectedDefinitionRevision: 1,
             expectedAssignmentRevision: 0,
             desired: .null,
+            expectedValueContract: ExpectedValueContract(valueType: .text, cardinality: .one),
         )
         let request = try PropertyChangeRequest(changes: [change])
         let recorder =
@@ -76,6 +79,7 @@ extension EntryCorePropertyClientFlowTests {
             expectedDefinitionRevision: 1,
             expectedAssignmentRevision: 2,
             desired: .value(.text, .one, .text("after")),
+            expectedValueContract: ExpectedValueContract(valueType: .text, cardinality: .one),
             entryID: entryID,
         )
         let request = try PropertyChangeRequest(changes: [change])
@@ -518,6 +522,7 @@ extension EntryCorePropertyClientFlowTests {
                 expectedDefinitionRevision: 1,
                 expectedAssignmentRevision: 2,
                 desired: .value(.text, .one, .text("v")),
+                expectedValueContract: ExpectedValueContract(valueType: .text, cardinality: .one),
                 entryID: entryID,
             ),
         ])
@@ -587,6 +592,7 @@ private func prepareCASRequest(
             expectedDefinitionRevision: 1,
             expectedAssignmentRevision: expectedAssignmentRevision,
             desired: .null,
+            expectedValueContract: ExpectedValueContract(valueType: .text, cardinality: .one),
             entryID: entryID,
         ),
     ])

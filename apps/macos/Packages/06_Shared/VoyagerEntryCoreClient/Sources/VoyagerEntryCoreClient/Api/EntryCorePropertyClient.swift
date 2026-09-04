@@ -541,6 +541,7 @@ extension EntryCorePropertyClient {
                     prepared.before,
                     expectedAssignmentRevision: requested.expectedAssignmentRevision,
                     desired: requested.desired,
+                    expectedValueContract: requested.expectedValueContract,
                 )
         }
     }
@@ -595,15 +596,20 @@ extension EntryCorePropertyClient {
         _ before: PropertyAssignment?,
         expectedAssignmentRevision: Int64,
         desired: PropertyDesiredState,
+        expectedValueContract: ExpectedValueContract,
     ) -> Bool {
         guard let before else { return expectedAssignmentRevision == 0 }
         guard expectedAssignmentRevision > 0, before.revision == expectedAssignmentRevision else {
             return false
         }
-        // .value 변경의 before도 요청 contract와 같은 type·cardinality여야 한다.
-        // 같은 revision이라도 다른 타입의 이전 값은 다른 CAS 기준이다.
-        if case let .value(valueType, cardinality, _) = desired {
-            return before.valueType == valueType && before.cardinality == cardinality
+        // before는 definition이 유도한 value contract를 그대로 반영한다. 같은
+        // revision이라도 다른 type·cardinality의 이전 값은 다른 CAS 기준이다.
+        // (.value desired의 type·cardinality는 contract와 동일하다.)
+        guard before.valueType == expectedValueContract.valueType,
+              before.cardinality == expectedValueContract.cardinality
+        else { return false }
+        if case let .value(valueType, _, _) = desired {
+            return before.valueType == valueType
         }
         return true
     }
@@ -616,9 +622,14 @@ extension EntryCorePropertyClient {
         // revision은 expected + 1이고 state·payload는 desired를 그대로 반영한다.
         // identity만 비교하면 stale revision이나 다른 값의 응답도 승인되므로
         // 전부 대조해 protocolMismatch로 거절한다.
+        // null·unknown 응답에도 daemon은 definition이 유도한 value type·
+        // cardinality를 그대로 실어 반환하므로 contract 대조가 유효하다.
+        let contract = change.expectedValueContract
         guard let entryID = change.entryID,
               assignment.entryID == entryID,
               assignment.propertyID == change.propertyID,
+              assignment.valueType == contract.valueType,
+              assignment.cardinality == contract.cardinality,
               change.expectedAssignmentRevision >= 0,
               change.expectedAssignmentRevision < Int64.max,
               assignment.revision == change.expectedAssignmentRevision + 1

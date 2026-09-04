@@ -34,7 +34,11 @@ extension EntryCorePropertyClientFlowTests {
             PaginationCase(
                 name: "has_more with repeated token",
                 request: makePaginationQueryRequest(
-                    targets: [targetA, targetB], condition: condition, pageSize: 1, pageToken: "same",
+                    targets: [targetA, targetB],
+                    condition: condition,
+                    pageSize: 1,
+                    pageToken: "same",
+                    minCandidateIndex: 0,
                 ),
                 response: queryPaginationPageResponse(
                     items: firstPageItem, unresolved: "[]", hasMore: true, nextPageToken: "same",

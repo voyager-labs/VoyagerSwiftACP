@@ -146,6 +146,18 @@ nonisolated public enum PropertyDesiredState: Equatable, Sendable {
     case value(PropertyValueType, PropertyCardinality, PropertyValue)
 }
 
+/// definition이 유도하는 assignment value contract다. mutation 요청에 caller가
+/// 보존해 응답·before의 value type·cardinality를 대조하는 데 쓰이며 wire 요청에는
+/// 포함되지 않는다.
+nonisolated public struct ExpectedValueContract: Equatable, Sendable {
+    public let valueType: PropertyValueType
+    public let cardinality: PropertyCardinality
+    public init(valueType: PropertyValueType, cardinality: PropertyCardinality) {
+        self.valueType = valueType
+        self.cardinality = cardinality
+    }
+}
+
 nonisolated public struct PropertyChangeTarget: Equatable, Sendable {
     public let target: PropertyTarget
     /// The canonical entry resolved during discovery/prepare. It is optional for
@@ -155,6 +167,10 @@ nonisolated public struct PropertyChangeTarget: Equatable, Sendable {
     public let expectedDefinitionRevision: Int64
     public let expectedAssignmentRevision: Int64
     public let desired: PropertyDesiredState
+    /// definition이 유도하는 value contract다. null·unknown 응답에도 daemon이
+    /// 이 contract를 그대로 실어 반환하므로, 응답·before 대조에 쓰이며 wire
+    /// 요청에는 포함되지 않는다.
+    public let expectedValueContract: ExpectedValueContract
 
     public init(
         target: PropertyTarget,
@@ -162,6 +178,7 @@ nonisolated public struct PropertyChangeTarget: Equatable, Sendable {
         expectedDefinitionRevision: Int64,
         expectedAssignmentRevision: Int64,
         desired: PropertyDesiredState,
+        expectedValueContract: ExpectedValueContract,
         entryID: EntryCoreEntryID? = nil,
     ) throws {
         guard expectedDefinitionRevision >= 1, expectedAssignmentRevision >= 0,
@@ -172,6 +189,7 @@ nonisolated public struct PropertyChangeTarget: Equatable, Sendable {
         self.expectedDefinitionRevision = expectedDefinitionRevision
         self.expectedAssignmentRevision = expectedAssignmentRevision
         self.desired = desired
+        self.expectedValueContract = expectedValueContract
     }
 }
 
@@ -310,41 +328,6 @@ nonisolated public struct PropertyDefinitionDisableRequest: Encodable, Sendable 
         CodingKey { case propertyID = "property_id", expectedDefinitionRevision = "expected_definition_revision" }
 }
 
-nonisolated public struct PropertyOptionReorderRequest: Encodable, Sendable {
-    let propertyID: PropertyID
-    let expectedDefinitionRevision: Int64
-    let optionIDs: [PropertyOptionID]
-    /// ReorderOptions는 활성 option 순서만 바꾸고 label·state·identity는
-    /// 보존하며 ordinal을 재번호 매긴다. 응답 definition이 이 사전 snapshot에서
-    /// 순서 변경·revision 증가 외에는 변하지 않는지 검증하는 데 쓰이며 wire
-    /// 요청에는 포함되지 않는다.
-    let expectedDefinition: PropertyDefinition
-    public init(
-        propertyID: PropertyID,
-        expectedDefinitionRevision: Int64,
-        optionIDs: [PropertyOptionID],
-        expectedDefinition: PropertyDefinition,
-    ) throws {
-        guard expectedDefinitionRevision >= 1, (1 ... 256).contains(optionIDs.count),
-              Set(optionIDs).count == optionIDs.count,
-              expectedDefinition.id == propertyID,
-              expectedDefinition.revision == expectedDefinitionRevision,
-              expectedDefinition.state == .active,
-              expectedDefinition.origin == .userDefined
-        else { throw EntryCoreClientError.protocolMismatch }
-        self.propertyID = propertyID
-        self.expectedDefinitionRevision = expectedDefinitionRevision
-        self.optionIDs = optionIDs
-        self.expectedDefinition = expectedDefinition
-    }
-
-    enum CodingKeys: String,
-        CodingKey
-    { case propertyID = "property_id", expectedDefinitionRevision = "expected_definition_revision",
-           optionIDs = "option_ids"
-    }
-}
-
 nonisolated public struct PropertyAssignmentListRequest: Encodable, Sendable {
     let pageSize: Int
     let requestedPropertyIDs: [PropertyID]
@@ -433,6 +416,11 @@ nonisolated public struct PropertyConditionQueryRequest: Encodable, Sendable {
         projectionPropertyIDs: [PropertyID] = [],
     ) throws {
         if let minCandidateIndex, minCandidateIndex < 0 {
+            throw EntryCoreClientError.protocolMismatch
+        }
+        // 후속 페이지 요청에는 반드시 candidate offset 하한이 함께 온다. 생략하면
+        // token 교체 순환(A → B → A)에 대한 단조 진행 검증이 실행되지 않는다.
+        if (pageToken == nil) != (minCandidateIndex == nil) {
             throw EntryCoreClientError.protocolMismatch
         }
         let ids = conditions.map(\.propertyID)
