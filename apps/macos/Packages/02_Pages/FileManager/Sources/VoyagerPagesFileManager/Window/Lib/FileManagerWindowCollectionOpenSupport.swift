@@ -189,21 +189,6 @@ private func makeNoTriggerCollectionNavigationEffects(
     state: FileManagerWindowState,
 ) -> [Effect<FileManagerWindowAction>] {
     let navigation = makeWindowCollectionNavigation(navigationPayload, state: state)
-    let collectionStatePayload = CollectionNavigationStatePayload(
-        context: navigation.context,
-        document: collectionURL(from: navigation).map {
-            CollectionOpenedDocumentState(
-                url: $0,
-                name: navigationPayloadName(navigationPayload),
-                compatibility: navigation.compatibility,
-            )
-        },
-        baseline: CollectionBaseline(context: navigation.context),
-        composerText: navigation.context.query,
-        scopes: navigation.context.scopes,
-        excludedScopes: navigation.context.excludedScopes,
-        conditions: navigation.context.conditions,
-    )
     return [
         .send(.tabContent(
             tabID: activeTabID,
@@ -214,26 +199,7 @@ private func makeNoTriggerCollectionNavigationEffects(
             action: .internal(.requestNavigation(.internal(.setNavigationState(.collection(navigation))))),
         )),
         .send(.tabContent(tabID: activeTabID, action: .internal(.applyNavigationState(.collection(navigation))))),
-        .send(.tabContent(
-            tabID: activeTabID,
-            action: .entryViewLayout(.internal(.applyClearSelection)),
-        )),
-        .send(.tabContent(
-            tabID: activeTabID,
-            action: .collection(.navigationStateApplied(collectionStatePayload)),
-        )),
-        .send(.tabContent(
-            tabID: activeTabID,
-            action: .composer(.applyCollectionNavigationComposer(collectionStatePayload)),
-        )),
-        .send(.tabContent(tabID: activeTabID, action: .entryViewLayout(.internal(.setCollectionMode(true))))),
-        .send(.tabContent(tabID: activeTabID, action: .composer(.syncCollectionState(
-            context: navigation.context,
-            url: collectionURL(from: navigation),
-            compatibility: navigation.compatibility,
-            isCollectionMode: true,
-        )))),
-        .send(.tabContent(tabID: activeTabID, action: .entryViewLayout(.entryArrangements(.reapply)))),
+        .send(.navigation(.internal(.navigateToCollectionWithoutSearch(navigation)))),
     ]
 }
 
@@ -242,15 +208,6 @@ private func collectionURL(from navigation: ContentPageCollectionNavigation) -> 
         return url
     }
     return nil
-}
-
-private func navigationPayloadName(_ payload: CollectionNavigationPresentationPayload) -> String {
-    switch payload.kind {
-    case .temporary:
-        ""
-    case let .file(_, name):
-        name
-    }
 }
 
 enum CollectionOpenMetricResultStatus: String {

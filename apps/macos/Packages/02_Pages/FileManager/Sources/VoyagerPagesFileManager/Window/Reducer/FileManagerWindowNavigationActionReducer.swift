@@ -125,7 +125,8 @@ struct FileManagerNavigationActionReducer {
     ) -> Effect<Action> {
         switch action {
         case .collectionFileLoaded,
-             .navigateToCollection:
+             .navigateToCollection,
+             .navigateToCollectionWithoutSearch:
             handleCollectionNavigationAction(action, state: &state)
 
         case .showUnsavedNavigationAlert,
@@ -170,7 +171,10 @@ struct FileManagerNavigationActionReducer {
             )
 
         case let .navigateToCollection(navigation):
-            handleNavigateToCollection(navigation, state: &state)
+            handleNavigateToCollection(navigation, startsSearch: true, state: &state)
+
+        case let .navigateToCollectionWithoutSearch(navigation):
+            handleNavigateToCollection(navigation, startsSearch: false, state: &state)
 
         default:
             .none
@@ -499,6 +503,7 @@ private func prepareLoadedCollectionOpenStaleness(
 
 private func handleNavigateToCollection(
     _ navigation: ContentPageCollectionNavigation,
+    startsSearch: Bool,
     state: inout FileManagerWindowState,
 ) -> Effect<FileManagerWindowAction> {
     guard let activeTabID = state.contentTabs.activeTabID else { return .none }
@@ -525,11 +530,11 @@ private func handleNavigateToCollection(
         conditions: navigation.context.conditions,
     )
 
-    let trimmedQuery = navigation.context.query.trimmingCharacters(in: .whitespacesAndNewlines)
-    let queryAction: FileManagerContentAction = trimmedQuery.isEmpty
-        ? .composer(.applyFilters)
-        : .composer(.submit)
-    return .concatenate(
+    var effects: [Effect<FileManagerWindowAction>] = [
+        .send(.tabContent(
+            tabID: activeTabID,
+            action: .entryViewLayout(.internal(.applyClearSelection)),
+        )),
         .send(.tabContent(tabID: activeTabID, action: .collection(.navigationStateApplied(payload)))),
         .send(.tabContent(tabID: activeTabID, action: .composer(.applyCollectionNavigationComposer(payload)))),
         .send(.tabContent(
@@ -543,8 +548,15 @@ private func handleNavigateToCollection(
             isCollectionMode: true,
         )))),
         .send(.tabContent(tabID: activeTabID, action: .entryViewLayout(.entryArrangements(.reapply)))),
-        .send(.tabContent(tabID: activeTabID, action: queryAction)),
-    )
+    ]
+    if startsSearch {
+        let trimmedQuery = navigation.context.query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let queryAction: FileManagerContentAction = trimmedQuery.isEmpty
+            ? .composer(.applyFilters)
+            : .composer(.submit)
+        effects.append(.send(.tabContent(tabID: activeTabID, action: queryAction)))
+    }
+    return .concatenate(effects)
 }
 
 private func handleCollectionFileLoadedSuccess(
