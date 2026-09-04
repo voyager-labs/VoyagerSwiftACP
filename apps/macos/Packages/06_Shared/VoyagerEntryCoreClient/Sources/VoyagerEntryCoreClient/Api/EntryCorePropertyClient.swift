@@ -368,7 +368,23 @@ extension EntryCorePropertyClient {
                 && (requested.entryID == nil || prepared.entryID == requested.entryID)
                 && prepared.propertyID == requested.propertyID
                 && prepared.after == requested.desired
+                && preparedBeforeMatchesExpectedRevision(
+                    prepared.before,
+                    expectedAssignmentRevision: requested.expectedAssignmentRevision,
+                )
         }
+    }
+
+    nonisolated private static func preparedBeforeMatchesExpectedRevision(
+        _ before: PropertyAssignment?,
+        expectedAssignmentRevision: Int64,
+    ) -> Bool {
+        // expected 0은 implicit unset 첫 쓰기다 — before는 nil이어야 하고, 그
+        // 외에는 요청 CAS 기준 revision을 그대로 반영한 before가 와야 한다.
+        // 그렇지 않으면 caller가 실제 CAS 기준과 다른 이전 값을 확인한 뒤
+        // mutation을 승인하게 된다.
+        guard let before else { return expectedAssignmentRevision == 0 }
+        return expectedAssignmentRevision > 0 && before.revision == expectedAssignmentRevision
     }
 
     nonisolated private static func executeOperation(

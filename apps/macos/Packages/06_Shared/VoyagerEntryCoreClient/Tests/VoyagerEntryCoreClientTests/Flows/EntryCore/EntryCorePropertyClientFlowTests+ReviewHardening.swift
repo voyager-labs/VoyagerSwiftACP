@@ -263,6 +263,114 @@ extension EntryCorePropertyClientFlowTests {
         let created = try await createdClient.optionCreate(endpoint, request)
         XCTAssertEqual(created.options.last?.label, "new-label")
     }
+
+    /// prepare의 before는 요청 CAS 기준을 그대로 반영해야 한다: expected 0이면
+    /// nil, 양수면 같은 revision. 그렇지 않으면 caller가 실제 CAS 기준과 다른
+    /// 이전 값을 확인한 뒤 mutation을 승인하게 된다.
+    func testPrepareRejectsBeforeViolatingExpectedRevision() async throws {
+        let propertyID = try PropertyID(rawValue: "00000000-0000-0000-8000-000000000001")
+        let entryID = try EntryCoreEntryID(rawValue: "ent:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
+        let endpoint = try EntryCoreEndpoint(path: "/tmp/property-client.sock")
+
+        let cases = try [
+            PrepareCASCase(
+                name: "expected 0 with non-nil before",
+                request: prepareCASRequest(propertyID: propertyID, entryID: entryID, expectedAssignmentRevision: 0),
+                response: prepareCASResponse(propertyID: propertyID, entryID: entryID, beforeRevision: 0),
+            ),
+            PrepareCASCase(
+                name: "expected 2 with nil before",
+                request: prepareCASRequest(propertyID: propertyID, entryID: entryID, expectedAssignmentRevision: 2),
+                response: prepareCASResponse(propertyID: propertyID, entryID: entryID, beforeRevision: nil),
+            ),
+            PrepareCASCase(
+                name: "expected 2 with revision 3 before",
+                request: prepareCASRequest(propertyID: propertyID, entryID: entryID, expectedAssignmentRevision: 2),
+                response: prepareCASResponse(propertyID: propertyID, entryID: entryID, beforeRevision: 3),
+            ),
+        ]
+        for prepareCase in cases {
+            let recorder = PropertyTransportRecorder(response: Data(prepareCase.response.utf8))
+            let client = EntryCorePropertyClient.makeLive(
+                requestID: { "prepare-id" },
+                makeTransport: recorder.makeTransport,
+            )
+
+            do {
+                _ = try await client.changePrepare(endpoint, prepareCase.request)
+                XCTFail("\(prepareCase.name) should be rejected")
+            } catch {
+                XCTAssertEqual(error as? EntryCoreClientError, .protocolMismatch, prepareCase.name)
+            }
+            XCTAssertEqual(recorder.requests.count, 1, prepareCase.name)
+        }
+
+        let matchingRecorder = try PropertyTransportRecorder(
+            response: Data(
+                prepareCASResponse(propertyID: propertyID, entryID: entryID, beforeRevision: 2).utf8,
+            ),
+        )
+        let matchingClient = EntryCorePropertyClient.makeLive(
+            requestID: { "prepare-id" },
+            makeTransport: matchingRecorder.makeTransport,
+        )
+        _ = try await matchingClient.changePrepare(
+            endpoint,
+            prepareCASRequest(propertyID: propertyID, entryID: entryID, expectedAssignmentRevision: 2),
+        )
+        XCTAssertEqual(matchingRecorder.requests.count, 1)
+    }
+}
+
+private struct PrepareCASCase {
+    let name: String
+    let request: PropertyChangeRequest
+    let response: String
+}
+
+private func prepareCASRequest(
+    propertyID: PropertyID,
+    entryID: EntryCoreEntryID,
+    expectedAssignmentRevision: Int64,
+) throws -> PropertyChangeRequest {
+    try PropertyChangeRequest(changes: [
+        PropertyChangeTarget(
+            target: PropertyTarget(localPath: "/a"),
+            propertyID: propertyID,
+            expectedDefinitionRevision: 1,
+            expectedAssignmentRevision: expectedAssignmentRevision,
+            desired: .null,
+            entryID: entryID,
+        ),
+    ])
+}
+
+private func prepareCASResponse(
+    propertyID: PropertyID,
+    entryID: EntryCoreEntryID,
+    beforeRevision: Int64?,
+) throws -> String {
+    let before = if let beforeRevision {
+        """
+        "before":{"property_id":"\(propertyID.rawValue)","entry_id":"\(entryID
+            .rawValue)","value_type":"text","cardinality":"one","state":"null","revision":\(beforeRevision)},
+        """
+    } else {
+        "\"before\":null,"
+    }
+    return """
+    {
+      "request_id":"prepare-id",
+      "ok":true,
+      "result":{"changes":[{
+        "target":{"kind":"local_path","local_path":"/a"},
+        "property_id":"\(propertyID.rawValue)",
+        "entry_id":"\(entryID.rawValue)",
+        \(before)
+        "after":{"state":"null"}
+      }],"requires_confirmation":true}
+    }
+    """
 }
 
 private func definitionCreateResponse(origin: String, capability: String) -> String {
