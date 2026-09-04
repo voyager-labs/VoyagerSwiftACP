@@ -97,6 +97,7 @@ public enum ContentPageNavigationAction: ViewAction, Equatable, Sendable {
             result: ContentPageCollectionFileLoadResult,
         )
         case navigateToCollection(ContentPageCollectionNavigation)
+        case navigateToCollectionWithoutSearch(ContentPageCollectionNavigation)
         case performNavigation(ContentPageNavigationPending)
         case showUnsavedNavigationAlert(ContentPageNavigationPending)
         case unsavedNavigationAlertResponse(ContentPageNavigationPending, CollectionNavigationChoice)
