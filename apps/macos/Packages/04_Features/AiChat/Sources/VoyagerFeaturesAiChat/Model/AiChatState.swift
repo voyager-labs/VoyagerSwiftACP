@@ -277,6 +277,9 @@ public struct AiChatState: Equatable, Sendable {
     public var backgroundPendingRequestStarts: [UUID: AiChatPendingRequestStart]
     public var executionPhase: AiChatExecutionPhase
     public var backgroundExecutionPhases: [AiChatRequestID: AiChatExecutionPhase]
+    public var productMetricOperations: [AiChatRequestID: AiChatProductMetricOperation]
+    /// 이 state가 표현하는 chat surface의 product metric source. Inspector 구성 경계에서만 .aiChatInspector로 설정된다.
+    public var productMetricSourceSurface: AiChatProductMetricSourceSurface
     public var modelListRequestID: UUID?
     public var modelListProvider: AiProvider?
     public var modelListProviderOrder: [AiProvider]
@@ -431,6 +434,8 @@ public struct AiChatState: Equatable, Sendable {
         backgroundPendingRequestStarts: [UUID: AiChatPendingRequestStart] = [:],
         executionPhase: AiChatExecutionPhase = .idle,
         backgroundExecutionPhases: [AiChatRequestID: AiChatExecutionPhase] = [:],
+        productMetricOperations: [AiChatRequestID: AiChatProductMetricOperation] = [:],
+        productMetricSourceSurface: AiChatProductMetricSourceSurface = .aiChatContent,
         modelListRequestID: UUID? = nil,
         modelListProvider: AiProvider? = nil,
         modelListProviderOrder: [AiProvider] = [],
@@ -475,6 +480,8 @@ public struct AiChatState: Equatable, Sendable {
         self.backgroundPendingRequestStarts = backgroundPendingRequestStarts
         self.executionPhase = executionPhase
         self.backgroundExecutionPhases = backgroundExecutionPhases
+        self.productMetricOperations = productMetricOperations
+        self.productMetricSourceSurface = productMetricSourceSurface
         self.modelListRequestID = modelListRequestID
         self.modelListProvider = modelListProvider
         self.modelListProviderOrder = modelListProviderOrder

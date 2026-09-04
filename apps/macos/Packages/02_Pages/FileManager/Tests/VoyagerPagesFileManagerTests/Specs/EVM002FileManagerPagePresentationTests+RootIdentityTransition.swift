@@ -65,7 +65,10 @@ extension EVM002FileManagerPagePresentationTests {
         ))))))
         XCTAssertNotNil(store.state.pendingIdentityTransition)
 
-        await store.send(.entryViewLayout(.entryOperations(.loading(.streamFailed(generation: 1)))))
+        await store.send(.entryViewLayout(.entryOperations(.loading(.streamFailed(
+            generation: 1,
+            failure: .unavailable(description: "test"),
+        )))))
         XCTAssertNil(store.state.pendingIdentityTransition)
         await store.receive(\.entryViewLayout.internal.reconcileHierarchySelection)
     }

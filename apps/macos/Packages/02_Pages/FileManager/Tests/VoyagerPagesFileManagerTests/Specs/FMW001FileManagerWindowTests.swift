@@ -5,13 +5,51 @@ import PerceptionCore
 import QuickLookUI
 import SwiftUI
 import UniformTypeIdentifiers
+import VoyagerEntitiesAi
 import VoyagerEntitiesAppPreferences
 import VoyagerEntitiesEntry
+import VoyagerFeaturesAiChat
+import VoyagerFeaturesComposer
 import VoyagerFeaturesEntryOperations
 @testable import VoyagerPagesFileManager
 import VoyagerShared
 import VoyagerWidgetsEntryViewLayout
 import XCTest
+
+private actor FMW001SearchCancellationGate {
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var startWaiters: [CheckedContinuation<Void, Never>] = []
+    private var wasCancelled = false
+
+    func wait() async throws -> SearchResponsePayload {
+        try await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                self.continuation = continuation
+                let waiters = startWaiters
+                startWaiters.removeAll()
+                waiters.forEach { $0.resume() }
+            }
+            throw CancellationError()
+        } onCancel: {
+            Task { await self.cancel() }
+        }
+    }
+
+    func waitUntilStarted() async {
+        guard continuation == nil else { return }
+        await withCheckedContinuation { startWaiters.append($0) }
+    }
+
+    func cancellationObserved() -> Bool {
+        wasCancelled
+    }
+
+    private func cancel() {
+        wasCancelled = true
+        continuation?.resume()
+        continuation = nil
+    }
+}
 
 @MainActor
 final class FMW001FileManagerWindowTests: XCTestCase {
@@ -52,6 +90,365 @@ final class FMW001FileManagerWindowTests: XCTestCase {
             .copyURLs,
             .getInfo,
         ]
+    }
+
+    // MARK: - FMW-001-close_file_manager_window
+
+    /// FMW-001-close_file_manager_window: window teardown은 모든 child operation을 정확히 한 번 terminalize한다.
+    /// canonical child cleanup을 모든 content, inspector, tab snapshot, background AI owner에 적용한다.
+    /// - 검증 내용: unique operation별 cancelled terminal, alias dedupe, correlation 소비, 반복 teardown과 late response no-op.
+    /// - 사전 조건: accepted AiChat operation과 active Composer query/apply가 모든 합법적 window-owned 저장소에 존재한다.
+    /// - 기대 결과: unique operation마다 terminal이 1회 기록되고 모든 owner state가 idle이 된다.
+    func testOnDisappearTerminalizesEveryUniqueWindowOwnedChildOperationOnce() async throws {
+        let aiMetrics = LockIsolated<[AiChatProductMetric]>([])
+        let composerMetrics = LockIsolated<[ComposerProductMetric]>([])
+        let activeTabID = try XCTUnwrap(FileManagerWindowState().contentTabs.activeTabID)
+        let inactiveTabID = ContentTabID(rawValue: "teardown-inactive")
+        let aiOperationIDs = (0 ..< 6).map { _ in UUID() }
+        let queryOperationID = UUID()
+        let applyOperationID = UUID()
+
+        let activeAiChat = makeAcceptedAiChatState(operationID: aiOperationIDs[0], surface: .aiChatContent)
+        let inspectorAiChat = makeAcceptedAiChatState(operationID: aiOperationIDs[1], surface: .aiChatInspector)
+        let inactiveAiChat = makeAcceptedAiChatState(operationID: aiOperationIDs[2], surface: .aiChatContent)
+        let inactiveInspectorAiChat = makeAcceptedAiChatState(
+            operationID: aiOperationIDs[3],
+            surface: .aiChatInspector,
+        )
+        let backgroundAiChat = makeAcceptedAiChatState(operationID: aiOperationIDs[4], surface: .aiChatContent)
+        let backgroundInspectorAiChat = makeAcceptedAiChatState(
+            operationID: aiOperationIDs[5],
+            surface: .aiChatInspector,
+        )
+
+        var state = FileManagerWindowState()
+        state.contentTabs.tabs.append(ContentTabItem(
+            id: inactiveTabID,
+            page: .directory,
+            anchor: .directory(path: "/tmp/inactive"),
+            isPinned: false,
+            title: "Inactive",
+            iconName: "folder",
+        ))
+        state.content.aiChat = activeAiChat.state
+        state.content.composer = makeActiveComposerQuery(operationID: queryOperationID)
+        state.tabContentStates[activeTabID] = state.content
+
+        var inactiveContent = FileManagerContentFeature.State()
+        inactiveContent.aiChat = inactiveAiChat.state
+        inactiveContent.composer = makeActiveComposerApply(operationID: applyOperationID)
+        state.tabContentStates[inactiveTabID] = inactiveContent
+
+        state.inspector.aiChat = inspectorAiChat.state
+        state.tabInspectorStates[activeTabID] = state.inspector.tabSnapshot()
+        var inactiveInspector = FileManagerInspectorFeature.State()
+        inactiveInspector.aiChat = inactiveInspectorAiChat.state
+        state.tabInspectorStates[inactiveTabID] = inactiveInspector.tabSnapshot()
+
+        var backgroundContent = FileManagerContentFeature.State()
+        backgroundContent.aiChat = backgroundAiChat.state
+        let backgroundSessionID = try XCTUnwrap(backgroundAiChat.state.sessionID)
+        state.backgroundAiChatStates[backgroundSessionID] = backgroundContent
+        var backgroundInspector = FileManagerInspectorFeature.State()
+        backgroundInspector.aiChat = backgroundInspectorAiChat.state
+        let backgroundInspectorSessionID = try XCTUnwrap(backgroundInspectorAiChat.state.sessionID)
+        state.backgroundInspectorAiChatStates[backgroundInspectorSessionID] = backgroundInspector
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.aiChatProductMetricsClient = AiChatProductMetricsClient { metric in
+                aiMetrics.withValue { $0.append(metric) }
+            }
+            $0.composerMetricClient = ComposerMetricClient(recordProductMetric: { metric in
+                composerMetrics.withValue { $0.append(metric) }
+            })
+        }
+        // store.exhaustivity = .off: teardown은 기존 window close cancellation effect 전체를 함께 반환한다.
+        store.exhaustivity = .off
+
+        await store.send(.onDisappear)
+
+        XCTAssertEqual(cancelledAiChatOperationIDs(aiMetrics.value), Set(aiOperationIDs))
+        XCTAssertEqual(cancelledComposerOperationIDs(composerMetrics.value), [queryOperationID, applyOperationID])
+        assertWindowChildCorrelationsConsumed(store.state)
+
+        await store.send(.onDisappear)
+        await store.send(.content(.aiChat(.executionEvent(.final(response: AiChatResponse(
+            context: activeAiChat.context,
+            assistantMessage: AiChatMessage(role: .assistant, content: "late"),
+            completedAtMs: 1,
+        ))))))
+        await store.send(.content(.composer(.internal(.searchResponse(
+            queryOperationID,
+            .success(SearchResponsePayload(itemCount: 1)),
+        )))))
+        await store.finish()
+
+        XCTAssertEqual(cancelledAiChatOperationIDs(aiMetrics.value), Set(aiOperationIDs))
+        XCTAssertEqual(cancelledComposerOperationIDs(composerMetrics.value), [queryOperationID, applyOperationID])
+    }
+
+    /// FMW-001-close_file_manager_window: teardown terminalizes active and cached browsing correlations once.
+    /// active correlation A, cached alias A, cached inactive B가 window teardown에서 exactly-once unavailable
+    /// terminalize되는지 검증한다.
+    /// - 검증 내용: onDisappear의 A+B metric count, alias dedupe, 다섯 correlation field clear, 반복 teardown 무중복
+    /// - 사전 조건: active content A, inactive cached alias A, inactive cached content B와 기존 AiChat/Composer operation이
+    /// 존재한다.
+    /// - 기대 결과: A와 B unavailable metric만 기록되고 active/cached browsing state 및 기존 child teardown이 모두 정리된다.
+    func testOnDisappearTerminalizesActiveAndCachedBrowsingCorrelationsExactlyOnce() async throws {
+        let aliasTabID = ContentTabID(rawValue: "fmw001-browsing-alias")
+        let secondTabID = ContentTabID(rawValue: "fmw001-browsing-second")
+        let operationA = try XCTUnwrap(UUID(uuidString: "F0010000-0000-0000-0000-000000000001"))
+        let operationB = try XCTUnwrap(UUID(uuidString: "F0010000-0000-0000-0000-000000000002"))
+        var state = FileManagerWindowState()
+        state.contentTabs.tabs.append(contentsOf: [
+            ContentTabItem(
+                id: aliasTabID,
+                page: .directory,
+                anchor: .directory(path: "/tmp/alias"),
+                isPinned: false,
+                title: "Alias",
+                iconName: "folder",
+            ),
+            ContentTabItem(
+                id: secondTabID,
+                page: .directory,
+                anchor: .directory(path: "/tmp/second"),
+                isPinned: false,
+                title: "Second",
+                iconName: "folder",
+            ),
+        ])
+        let activeTabID = try XCTUnwrap(state.contentTabs.activeTabID)
+        state.content.productBrowsingOperationID = operationA
+        state.content.productBrowsingContent = .folder
+        state.content.productBrowsingIdentity = .direct
+        state.content.productBrowsingSource = .fileManagerContent
+        var alias = FileManagerContentFeature.State()
+        alias.productBrowsingOperationID = operationA
+        alias.productBrowsingContent = .folder
+        alias.productBrowsingIdentity = .direct
+        alias.productBrowsingSource = .fileManagerContent
+        state.tabContentStates[aliasTabID] = alias
+        var second = FileManagerContentFeature.State()
+        second.productBrowsingOperationID = operationB
+        second.productBrowsingContent = .folder
+        second.productBrowsingIdentity = .back
+        second.productBrowsingSource = .fileManagerSidebar
+        state.tabContentStates[secondTabID] = second
+
+        let browsingMetrics = LockIsolated<[FileManagerProductMetric]>([])
+        let aiMetrics = LockIsolated<[AiChatProductMetric]>([])
+        let composerMetrics = LockIsolated<[ComposerProductMetric]>([])
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.fileManagerProductMetricsClient = FileManagerProductMetricsClient { metric in
+                browsingMetrics.withValue { $0.append(metric) }
+            }
+            $0.aiChatProductMetricsClient = AiChatProductMetricsClient { metric in
+                aiMetrics.withValue { $0.append(metric) }
+            }
+            $0.composerMetricClient = ComposerMetricClient(recordProductMetric: { metric in
+                composerMetrics.withValue { $0.append(metric) }
+            })
+        }
+        // store.exhaustivity = .off: teardown child effects와 browsing terminal payload에 집중한다.
+        store.exhaustivity = .off
+
+        await store.send(.onDisappear)
+
+        XCTAssertEqual(browsingMetrics.value, [
+            .contentBrowsing(
+                result: .unavailable,
+                content: .folder,
+                identity: .direct,
+                source: .fileManagerContent,
+                operationID: operationA,
+            ),
+            .contentBrowsing(
+                result: .unavailable,
+                content: .folder,
+                identity: .back,
+                source: .fileManagerSidebar,
+                operationID: operationB,
+            ),
+        ])
+        for content in [store.state.content] + Array(store.state.tabContentStates.values) {
+            XCTAssertNil(content.productBrowsingOperationID)
+            XCTAssertNil(content.productBrowsingContent)
+            XCTAssertNil(content.productBrowsingIdentity)
+            XCTAssertNil(content.productBrowsingSource)
+            XCTAssertNil(content.pendingProductBrowsingSource)
+        }
+        XCTAssertEqual(store.state.contentTabs.activeTabID, activeTabID)
+
+        await store.send(.onDisappear)
+        XCTAssertEqual(browsingMetrics.value.count, 2)
+        XCTAssertTrue(aiMetrics.value.allSatisfy { metric in
+            guard case .turnResult(_, _, .cancelled, _) = metric else { return false }
+            return true
+        })
+        XCTAssertTrue(composerMetrics.value.allSatisfy { metric in
+            switch metric {
+            case .queryResult(_, .cancelled, _), .applyResult(_, .cancelled, _): true
+            default: false
+            }
+        })
+    }
+
+    /// FMW-001-close_file_manager_window: window teardown은 child reducer가 반환한 cancellation effect를 실행한다.
+    /// reducer state 정리만으로 끝나지 않고 실제 suspended search task가 취소되는지 검증한다.
+    /// - 검증 내용: onDisappear 이후 search dependency cancellation handler 실행.
+    /// - 사전 조건: active content Composer에서 accepted query effect가 대기 중이다.
+    /// - 기대 결과: teardown effect가 실행되어 suspended query가 취소된다.
+    func testOnDisappearExecutesReturnedChildCancellationEffect() async {
+        let gate = FMW001SearchCancellationGate()
+        var state = FileManagerWindowState()
+        state.content.composer.text = "find invoices"
+        state.content.composer.scopes = ["/tmp"]
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.searchClient.search = { _ in try await gate.wait() }
+        }
+        // store.exhaustivity = .off: UUID 기반 query lifecycle보다 실제 cancellation handler 실행을 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.content(.composer(.submit)))
+        await gate.waitUntilStarted()
+        await store.send(.onDisappear)
+        await store.finish()
+
+        let cancellationObserved = await gate.cancellationObserved()
+        XCTAssertTrue(cancellationObserved)
+    }
+
+    private func makeAcceptedAiChatState(
+        operationID: UUID,
+        surface: AiChatProductMetricSourceSurface,
+    ) -> (state: AiChatFeature.State, context: AiChatRequestContextSnapshot) {
+        let sessionID = AiChatSessionID(rawValue: UUID())
+        let requestID = AiChatRequestID(rawValue: UUID())
+        let runID = AiChatRunID(rawValue: UUID())
+        let modelHandle = AiModelHandle(provider: .openai, rawValue: "gpt-4.1-mini")
+        let modelRow = AiModelCatalogRow(
+            handle: modelHandle,
+            displayName: "GPT-4.1 Mini",
+            authMethod: .apiKey,
+            sortOrder: 10,
+        )
+        let context = AiChatRequestContextSnapshot(
+            sessionID: sessionID,
+            requestID: requestID,
+            runID: runID,
+            provider: .openai,
+            model: modelHandle,
+            selectedModel: AiProviderModel(
+                id: modelHandle,
+                provider: .openai,
+                rawModelID: "gpt-4.1-mini",
+                displayName: "GPT-4.1 Mini",
+                providerDisplayName: "OpenAI",
+                thinkingCapability: .unknown(reason: .init(message: "Not loaded")),
+            ),
+            selectedModelRow: modelRow,
+            sessionStatus: .active,
+            promptSummary: "teardown",
+            submittedAtMs: 0,
+        )
+        let lock = AiChatRequestLock(
+            kind: .submit,
+            requestID: requestID,
+            runID: runID,
+            context: context,
+            request: AiChatRequest(
+                context: context,
+                messages: [AiChatMessage(role: .user, content: "teardown")],
+            ),
+            selectedModelHandle: modelHandle,
+            selectedModelRow: modelRow,
+            assistantReplacementIndex: nil,
+            persistenceTranscriptHistory: nil,
+        )
+        var state = AiChatFeature.State(sessionID: sessionID, sessionStatus: .active)
+        state.executionPhase = .processing(lock)
+        state.productMetricSourceSurface = surface
+        withDependencies {
+            $0.uuid = .constant(operationID)
+        } operation: {
+            _ = AiChatFeature().reduce(
+                into: &state,
+                action: .executionEvent(.requestPrepared(context: context)),
+            )
+        }
+        return (state, context)
+    }
+
+    private func makeActiveComposerQuery(operationID: UUID) -> ComposerFeature.State {
+        var state = ComposerFeature.State()
+        state.isLoadingSearch = true
+        state.activeSearchRequestID = operationID
+        state.lastAcceptedSearchRequestID = operationID
+        state.searchStartedAt = Date(timeIntervalSince1970: 1)
+        state.queryRenderPhase = .searching
+        return state
+    }
+
+    private func makeActiveComposerApply(operationID: UUID) -> ComposerFeature.State {
+        var state = ComposerFeature.State()
+        state.isLoadingFilters = true
+        state.isFilteringInFlight = true
+        state.activeFiltersRequestID = operationID
+        state.lastAcceptedFiltersRequestID = operationID
+        state.filtersStartedAt = Date(timeIntervalSince1970: 1)
+        return state
+    }
+
+    private func cancelledAiChatOperationIDs(_ metrics: [AiChatProductMetric]) -> Set<UUID> {
+        Set(metrics.compactMap { metric in
+            guard case let .turnResult(operationID, _, result, _) = metric,
+                  result == .cancelled
+            else { return nil }
+            return operationID
+        })
+    }
+
+    private func cancelledComposerOperationIDs(_ metrics: [ComposerProductMetric]) -> Set<UUID> {
+        Set(metrics.compactMap { metric in
+            switch metric {
+            case let .queryResult(operationID, result, _) where result == .cancelled:
+                operationID
+            case let .applyResult(operationID, result, _) where result == .cancelled:
+                operationID
+            default:
+                nil
+            }
+        })
+    }
+
+    private func assertWindowChildCorrelationsConsumed(
+        _ state: FileManagerWindowState,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+    ) {
+        let contentStates = [state.content] + Array(state.tabContentStates.values)
+            + Array(state.backgroundAiChatStates.values)
+        for content in contentStates {
+            XCTAssertTrue(content.aiChat.productMetricOperations.isEmpty, file: file, line: line)
+            XCTAssertEqual(content.aiChat.executionPhase, .idle, file: file, line: line)
+        }
+        for content in [state.content] + Array(state.tabContentStates.values) {
+            XCTAssertNil(content.composer.activeSearchRequestID, file: file, line: line)
+            XCTAssertNil(content.composer.activeFiltersRequestID, file: file, line: line)
+        }
+        let inspectorStates = [state.inspector] + Array(state.tabInspectorStates.values)
+            + Array(state.backgroundInspectorAiChatStates.values)
+        for inspector in inspectorStates {
+            XCTAssertTrue(inspector.aiChat.productMetricOperations.isEmpty, file: file, line: line)
+            XCTAssertEqual(inspector.aiChat.executionPhase, .idle, file: file, line: line)
+        }
     }
 
     // MARK: - VOY-578-entry_commands
@@ -167,7 +564,10 @@ final class FMW001FileManagerWindowTests: XCTestCase {
 
         await store.send(.request(.getInfo))
         await store.receive {
-            guard case .content(.entryViewLayout(.delegate(.executeCommand("navigation.getInfoForPath")))) = $0
+            guard case .content(.entryViewLayout(.delegate(.executeCommand(
+                "navigation.getInfoForPath",
+                source: .menuCommand,
+            )))) = $0
             else { return false }
             return true
         }
@@ -190,7 +590,10 @@ final class FMW001FileManagerWindowTests: XCTestCase {
 
         await store.send(.request(.getInfo))
         await store.receive {
-            guard case .content(.entryViewLayout(.delegate(.executeCommand("navigation.getInfoForPath")))) = $0
+            guard case .content(.entryViewLayout(.delegate(.executeCommand(
+                "navigation.getInfoForPath",
+                source: .menuCommand,
+            )))) = $0
             else { return false }
             return true
         }
@@ -231,6 +634,7 @@ final class FMW001FileManagerWindowTests: XCTestCase {
         await store.receive {
             guard case .content(.entryViewLayout(.delegate(.executeCommand(
                 "navigation.getInfoForSelectedItems",
+                source: .menuCommand,
             )))) = $0 else { return false }
             return true
         }
@@ -340,7 +744,7 @@ final class FMW001FileManagerWindowTests: XCTestCase {
         await store.receive(\.navigation.view.goBack)
         await store.send(.request(.setViewLayout(.grid)))
         await store.receive(\.content.view.changeLayout)
-        await store.send(.request(.openNewContentTab))
+        await store.send(.request(.openNewContentTab(source: .contentTabBar)))
         await store.receive(\.contentTabs.open, .homeDefault)
         XCTAssertEqual(store.state.contentTabs.selectedTabIDs, [selectedTabID])
         XCTAssertEqual(store.state.contentTabs.selectionAnchorID, selectedTabID)
@@ -501,7 +905,10 @@ final class FMW001FileManagerWindowTests: XCTestCase {
 
         await store.send(.request(.openSelectedItem))
         await store.receive {
-            guard case .content(.entryViewLayout(.delegate(.executeCommand("navigation.openSelectedItem")))) = $0
+            guard case .content(.entryViewLayout(.delegate(.executeCommand(
+                "navigation.openSelectedItem",
+                source: .menuCommand,
+            )))) = $0
             else { return false }
             return true
         }
@@ -520,7 +927,10 @@ final class FMW001FileManagerWindowTests: XCTestCase {
 
         await store.send(.request(.openSelectedItem))
         await store.receive {
-            guard case .content(.entryViewLayout(.delegate(.executeCommand("navigation.openSelectedItem")))) = $0
+            guard case .content(.entryViewLayout(.delegate(.executeCommand(
+                "navigation.openSelectedItem",
+                source: .menuCommand,
+            )))) = $0
             else { return false }
             return true
         }
@@ -567,7 +977,10 @@ final class FMW001FileManagerWindowTests: XCTestCase {
 
         await store.send(.request(.quickLookSelectedItem))
         await store.receive {
-            guard case .content(.entryViewLayout(.delegate(.executeCommand("navigation.quickLookSelectedItem")))) = $0
+            guard case .content(.entryViewLayout(.delegate(.executeCommand(
+                "navigation.quickLookSelectedItem",
+                source: .menuCommand,
+            )))) = $0
             else { return false }
             return true
         }
@@ -586,7 +999,10 @@ final class FMW001FileManagerWindowTests: XCTestCase {
 
         await store.send(.request(.quickLookSelectedItem))
         await store.receive {
-            guard case .content(.entryViewLayout(.delegate(.executeCommand("navigation.quickLookSelectedItem")))) = $0
+            guard case .content(.entryViewLayout(.delegate(.executeCommand(
+                "navigation.quickLookSelectedItem",
+                source: .menuCommand,
+            )))) = $0
             else { return false }
             return true
         }
@@ -1838,18 +2254,36 @@ final class FMW001FileManagerWindowTests: XCTestCase {
         _ action: FileManagerWindowAction,
     ) -> Bool {
         switch (command, action) {
-        case (.newFolder, .content(.entryViewLayout(.entryOperations(.edit(.createNewFolder))))),
-             (
-                 .openSelectedItem,
-                 .content(.entryViewLayout(.delegate(.executeCommand("navigation.openSelectedItem")))),
-             ),
-             (
-                 .quickLookSelectedItem,
-                 .content(.entryViewLayout(.delegate(.executeCommand("navigation.quickLookSelectedItem")))),
-             ),
-             (.cut, .content(.entryViewLayout(.delegate(.executeCommand("clipboard.cutSelectedItems"))))),
-             (.copy, .content(.entryViewLayout(.delegate(.executeCommand("clipboard.copySelectedItems"))))),
-             (.paste, .content(.entryViewLayout(.delegate(.executeCommand("clipboard.pasteItems"))))):
+        case (
+            .newFolder,
+            .content(.entryViewLayout(.delegate(.executeCommand("mutation.createNewFolder", source: .menuCommand)))),
+        ),
+        (
+            .openSelectedItem,
+            .content(.entryViewLayout(.delegate(.executeCommand(
+                "navigation.openSelectedItem",
+                source: .menuCommand,
+            )))),
+        ),
+        (
+            .quickLookSelectedItem,
+            .content(.entryViewLayout(.delegate(.executeCommand(
+                "navigation.quickLookSelectedItem",
+                source: .menuCommand,
+            )))),
+        ),
+        (.cut, .content(.entryViewLayout(.delegate(.executeCommand(
+            "clipboard.cutSelectedItems",
+            source: .menuCommand,
+        ))))),
+        (.copy, .content(.entryViewLayout(.delegate(.executeCommand(
+            "clipboard.copySelectedItems",
+            source: .menuCommand,
+        ))))),
+        (.paste, .content(.entryViewLayout(.delegate(.executeCommand(
+            "clipboard.pasteItems",
+            source: .menuCommand,
+        ))))):
             true
 
         default:
@@ -1862,18 +2296,33 @@ final class FMW001FileManagerWindowTests: XCTestCase {
         _ action: FileManagerWindowAction,
     ) -> Bool {
         switch (command, action) {
-        case (.duplicate, .content(.entryViewLayout(.delegate(.executeCommand("clipboard.duplicateSelectedItems"))))),
-             (
-                 .makeAlias,
-                 .content(.entryViewLayout(.delegate(.executeCommand("mutation.createAliasForSelectedItems")))),
-             ),
-             (.selectAll, .content(.view(.selectAllEntries))),
-             (
-                 .copyAbsolutePaths,
-                 .content(.entryViewLayout(.delegate(.executeCommand("clipboard.copySelectedAbsolutePaths")))),
-             ),
-             (.copyURLs, .content(.entryViewLayout(.delegate(.executeCommand("clipboard.copySelectedURLs"))))),
-             (.getInfo, .content(.entryViewLayout(.delegate(.executeCommand("navigation.getInfoForSelectedItems"))))):
+        case (.duplicate, .content(.entryViewLayout(.delegate(.executeCommand(
+            "clipboard.duplicateSelectedItems",
+            source: .menuCommand,
+        ))))),
+        (
+            .makeAlias,
+            .content(.entryViewLayout(.delegate(.executeCommand(
+                "mutation.createAliasForSelectedItems",
+                source: .menuCommand,
+            )))),
+        ),
+        (.selectAll, .content(.view(.selectAllEntries))),
+        (
+            .copyAbsolutePaths,
+            .content(.entryViewLayout(.delegate(.executeCommand(
+                "clipboard.copySelectedAbsolutePaths",
+                source: .menuCommand,
+            )))),
+        ),
+        (.copyURLs, .content(.entryViewLayout(.delegate(.executeCommand(
+            "clipboard.copySelectedURLs",
+            source: .menuCommand,
+        ))))),
+        (.getInfo, .content(.entryViewLayout(.delegate(.executeCommand(
+            "navigation.getInfoForSelectedItems",
+            source: .menuCommand,
+        ))))):
             true
 
         default:
@@ -3393,7 +3842,10 @@ extension FMW001FileManagerWindowTests {
         )))) {
             $0.sidebar.contentTabDragSnapshot = nil
             $0.sidebar.pendingContentTabMoveRequest = fixture.request
-            $0.pendingContentTabMove = FileManagerWindowContentTabMovePending(request: fixture.request)
+            $0.pendingContentTabMove = FileManagerWindowContentTabMovePending(
+                request: fixture.request,
+                metricSource: .dragAndDrop,
+            )
         }
         await store.receive(\.sidebar.delegate.requestContentTabMove, fixture.request) {
             $0.pendingContentTabMove?.lifecycle = .inFlight

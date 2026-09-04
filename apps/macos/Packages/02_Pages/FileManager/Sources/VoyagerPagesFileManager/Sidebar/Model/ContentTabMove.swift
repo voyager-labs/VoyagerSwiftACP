@@ -315,13 +315,17 @@ public struct FileManagerWindowContentTabMovePending: Equatable, Sendable {
     }
 
     public let request: ContentTabMoveRequest
+    /// 터미널 메트릭 source 표면. menu/singleton은 contextMenu, drag batch는 dragAndDrop이다.
+    public var metricSource: ContentTabActionSource
     public var lifecycle: Lifecycle
 
     public init(
         request: ContentTabMoveRequest,
+        metricSource: ContentTabActionSource = .contextMenu,
         lifecycle: Lifecycle = .prepared,
     ) {
         self.request = request
+        self.metricSource = metricSource
         self.lifecycle = lifecycle
     }
 }

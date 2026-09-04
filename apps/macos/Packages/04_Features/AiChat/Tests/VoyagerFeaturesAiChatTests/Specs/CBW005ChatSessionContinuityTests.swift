@@ -1578,7 +1578,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         store.exhaustivity = .off(showSkippedAssertions: false)
 
         let provenance = store.state.newChatPreparationProvenance
-        await store.send(.prepareUnpersistedNewChatWithContextIfCurrent(
+        await store.send(.prepareUnpersistedNewChatIfActive(
             context,
             provenance: provenance,
             seed: seed,
@@ -1625,7 +1625,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
 
         let provenance = store.state.newChatPreparationProvenance
         await store.send(.draftTextChanged("User draft"))
-        await store.send(.prepareUnpersistedNewChatWithContextIfCurrent(
+        await store.send(.prepareUnpersistedNewChatIfActive(
             replacementContext,
             provenance: provenance,
             seed: seed,
@@ -2854,6 +2854,150 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
         XCTAssertEqual(deletedIDs.value, [deletedSessionID])
     }
 
+    /// CBW-005-delete_chat_conversation_session: 삭제된 세션의 foreground 요청은 cancelled terminal을 한 번 기록한다.
+    /// requestPrepared가 turnSubmitted를 남긴 뒤 세션 삭제가 correlation을 소비하므로 늦은 terminal callback 전에
+    /// cancelled 결과를 확정해야 합니다.
+    /// - 검증 내용: 삭제 시 cancelled result 1회와 이후 late final callback의 무시를 확인합니다.
+    /// - 사전 조건: 표시 중 세션의 processing lock에 requestPrepared correlation이 있습니다.
+    /// - 기대 결과: submitted 1회, cancelled result 1회, success/failure result 0회입니다.
+    func testDeleteSessionWithSubmittedForegroundRequestRecordsCancelledTerminal() async {
+        let catalogRows = makeCatalogRows()
+        let sessionID = makeCBW005SessionID("33333333-3333-3333-3333-333333333331")
+        let context = makeRequestContext(
+            sessionID: sessionID,
+            requestID: AiChatRequestID(rawValue: makeUUID("44444444-4444-4444-4444-444444444431")),
+            runID: AiChatRunID(rawValue: makeUUID("55555555-5555-5555-5555-555555555531")),
+            model: catalogRows[0].handle,
+            selectedRow: catalogRows[0],
+        )
+        let lock = makeRequestLock(
+            kind: .submit,
+            request: AiChatRequest(context: context, messages: []),
+            selectedHandle: catalogRows[0].handle,
+            selectedRow: catalogRows[0],
+            assistantReplacementIndex: nil,
+        )
+        let metrics = LockIsolated<[AiChatProductMetric]>([])
+        let store = makeDeleteSessionMetricStore(
+            initialState: AiChatFeature.State(
+                sessionID: sessionID,
+                sessionStatus: .active,
+                currentContext: makeContextSnapshot(),
+                catalogRows: catalogRows,
+                selectedModelHandle: catalogRows[0].handle,
+                executionPhase: .processing(lock),
+            ),
+            metrics: metrics,
+            milliseconds: 1_700_000_000_261,
+        )
+        // store.exhaustivity = .off: 삭제 경로의 metric 상관관계만 단일 소유합니다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.executionEvent(.requestPrepared(context: context))) { state in
+            state.productMetricOperations[context.requestID] = AiChatProductMetricOperation(
+                runID: context.runID,
+                operationID: makeUUID("00000000-0000-0000-0000-000000000000"),
+            )
+        }
+        await store.send(.deleteSessionTapped(sessionID))
+        await store.receive(.sessionDeleteSucceeded(sessionID))
+        await store.send(.executionEvent(.final(response: AiChatResponse(
+            context: context,
+            assistantMessage: AiChatMessage(role: .assistant, content: "late"),
+            completedAtMs: 1_700_000_000_261,
+        ))))
+
+        assertSingleSubmittedCancelledMetric(metrics.value)
+    }
+
+    /// CBW-005-delete_chat_conversation_session: 백그라운드 세션 삭제도 해당 correlation의 cancelled를 남긴다.
+    /// 다른 세션을 표시하는 동안 background execution phase의 요청이 삭제되면 그 correlation만 소비해야 합니다.
+    /// - 검증 내용: background lock 삭제 시 cancelled result 1회와 표시 세션 무영향을 확인합니다.
+    /// - 사전 조건: backgroundExecutionPhases에 삭제 대상 세션의 processing lock이 있습니다.
+    /// - 기대 결과: submitted 1회, cancelled result 1회이고 표시 세션에는 이벤트가 없습니다.
+    func testDeleteSessionWithBackgroundRequestRecordsCancelledTerminal() async {
+        let catalogRows = makeCatalogRows()
+        let visibleSessionID = makeCBW005SessionID("33333333-3333-3333-3333-333333333332")
+        let deletedSessionID = makeCBW005SessionID("33333333-3333-3333-3333-333333333333")
+        let context = makeRequestContext(
+            sessionID: deletedSessionID,
+            requestID: AiChatRequestID(rawValue: makeUUID("44444444-4444-4444-4444-444444444432")),
+            runID: AiChatRunID(rawValue: makeUUID("55555555-5555-5555-5555-555555555532")),
+            model: catalogRows[0].handle,
+            selectedRow: catalogRows[0],
+        )
+        let backgroundLock = makeRequestLock(
+            kind: .submit,
+            request: AiChatRequest(context: context, messages: []),
+            selectedHandle: catalogRows[0].handle,
+            selectedRow: catalogRows[0],
+            assistantReplacementIndex: nil,
+        )
+        var initialState = AiChatFeature.State(
+            sessionID: visibleSessionID,
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(),
+            catalogRows: catalogRows,
+            selectedModelHandle: catalogRows[0].handle,
+            executionPhase: .idle,
+        )
+        initialState.backgroundExecutionPhases[context.requestID] = .processing(backgroundLock)
+        let metrics = LockIsolated<[AiChatProductMetric]>([])
+        let store = makeDeleteSessionMetricStore(
+            initialState: initialState,
+            metrics: metrics,
+            milliseconds: 1_700_000_000_262,
+        )
+        // store.exhaustivity = .off: background correlation 소비만 단일 소유합니다.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.executionEvent(.requestPrepared(context: context))) { state in
+            state.productMetricOperations[context.requestID] = AiChatProductMetricOperation(
+                runID: context.runID,
+                operationID: makeUUID("00000000-0000-0000-0000-000000000000"),
+            )
+        }
+        await store.send(.deleteSessionTapped(deletedSessionID))
+        await store.receive(.sessionDeleteSucceeded(deletedSessionID))
+
+        assertSingleSubmittedCancelledMetric(metrics.value)
+    }
+
+    private func makeDeleteSessionMetricStore(
+        initialState: AiChatFeature.State,
+        metrics: LockIsolated<[AiChatProductMetric]>,
+        milliseconds: Int64,
+    ) -> TestStore<AiChatFeature.State, AiChatFeature.Action> {
+        TestStore(initialState: initialState) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: milliseconds))
+            $0.aiChatProductMetricsClient = AiChatProductMetricsClient { metric in
+                metrics.withValue { $0.append(metric) }
+            }
+            $0.aiChatSessionPersistenceClient = AiChatSessionPersistenceClient(
+                loadSession: { _ in nil },
+                saveSession: { snapshot in snapshot },
+                deleteSession: { _ in },
+            )
+        }
+    }
+
+    private func assertSingleSubmittedCancelledMetric(_ recorded: [AiChatProductMetric]) {
+        XCTAssertEqual(recorded.count(where: { if case .turnSubmitted = $0 { true } else { false } }), 1)
+        XCTAssertEqual(
+            recorded
+                .count(where: {
+                    if case let .turnResult(_, interaction, result, _) = $0 {
+                        interaction == .generateContextualChatResponse && result == .cancelled
+                    } else { false }
+                }),
+            1,
+        )
+        XCTAssertEqual(recorded.count(where: { if case .turnResult = $0 { true } else { false } }), 1)
+    }
+
     private var restoredTranscript: [AiChatMessage] {
         [
             AiChatMessage(role: .user, content: "Hello"),
@@ -3541,10 +3685,10 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
             runID: request.context.runID,
             context: request.context,
             request: request,
-            persistenceTranscriptHistory: [olderUser, olderAssistant, latestUser],
             selectedModelHandle: selectedHandle,
             selectedModelRow: catalogRows[0],
             assistantReplacementIndex: nil,
+            persistenceTranscriptHistory: [olderUser, olderAssistant, latestUser],
             customTitle: "Persist full transcript",
             historyTruncation: AiChatHistoryTruncationMetadata(
                 includedMessageCount: 1,
@@ -3975,6 +4119,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
             preparedRequest: AiChatPreparedRequest(
                 prompt: newUserMessage.content,
                 messages: [newUserMessage],
+                persistenceTranscriptHistory: nil,
                 assistantReplacementIndex: nil,
                 historyTruncation: AiChatHistoryTruncationMetadata(
                     includedMessageCount: 1,
@@ -4169,6 +4314,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
             preparedRequest: AiChatPreparedRequest(
                 prompt: newUserMessage.content,
                 messages: [newUserMessage],
+                persistenceTranscriptHistory: nil,
                 assistantReplacementIndex: nil,
                 historyTruncation: AiChatHistoryTruncationMetadata(
                     includedMessageCount: 1,
@@ -5769,6 +5915,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
             preparedRequest: AiChatPreparedRequest(
                 prompt: userMessage.content,
                 messages: [userMessage],
+                persistenceTranscriptHistory: nil,
                 assistantReplacementIndex: nil,
                 historyTruncation: .init(
                     includedMessageCount: 1,
@@ -6182,10 +6329,10 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
             runID: runID,
             context: request.context,
             request: request,
-            persistenceTranscriptHistory: [message],
             selectedModelHandle: providerModels[0].id,
             selectedModelRow: catalogRows[0],
             assistantReplacementIndex: nil,
+            persistenceTranscriptHistory: [message],
             historyTruncation: .init(
                 includedMessageCount: 1,
                 excludedMessageCount: 0,
@@ -6241,10 +6388,10 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
             runID: runID,
             context: request.context,
             request: request,
-            persistenceTranscriptHistory: [message],
             selectedModelHandle: providerModels[0].id,
             selectedModelRow: catalogRows[0],
             assistantReplacementIndex: nil,
+            persistenceTranscriptHistory: [message],
             historyTruncation: .init(
                 includedMessageCount: 1,
                 excludedMessageCount: 0,
@@ -6885,6 +7032,7 @@ final class CBW005ChatSessionContinuityTests: XCTestCase {
             preparedRequest: AiChatPreparedRequest(
                 prompt: prompt,
                 messages: request.messages,
+                persistenceTranscriptHistory: nil,
                 assistantReplacementIndex: nil,
                 historyTruncation: .init(
                     includedMessageCount: request.messages.count,

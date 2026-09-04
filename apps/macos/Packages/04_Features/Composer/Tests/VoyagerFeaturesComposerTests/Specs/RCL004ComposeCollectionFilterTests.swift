@@ -50,10 +50,44 @@ private final class RCL004MetricRecorder: @unchecked Sendable {
     private let lock = NSLock()
     private var recordedCalls: [Call] = []
 
+    func record(_ metric: ComposerProductMetric) {
+        let call: Call = switch metric {
+        case let .queryResult(operationID, result, durationMilliseconds):
+            .init(
+                name: ComposerCollectionFilterMetrics.queryResult,
+                tags: tags(result: result, operationID: operationID, durationMilliseconds: durationMilliseconds),
+            )
+        case let .applyResult(operationID, result, durationMilliseconds):
+            .init(
+                name: ComposerCollectionFilterMetrics.applyResult,
+                tags: tags(result: result, operationID: operationID, durationMilliseconds: durationMilliseconds),
+            )
+        }
+        lock.lock()
+        recordedCalls.append(call)
+        lock.unlock()
+    }
+
     func record(name: String, value _: Double, tags: [String: String]?, level _: ComposerMetricLevel) {
         lock.lock()
         recordedCalls.append(Call(name: name, tags: tags))
         lock.unlock()
+    }
+
+    private func tags(
+        result: ComposerProductMetricResult,
+        operationID: UUID,
+        durationMilliseconds: Int?,
+    ) -> [String: String] {
+        var tags = [
+            "result_status": result.rawValue,
+            "source_surface": ComposerCollectionFilterMetrics.sourceSurface,
+            "operation_id": operationID.uuidString.lowercased(),
+        ]
+        if let durationMilliseconds {
+            tags["duration_ms"] = String(durationMilliseconds)
+        }
+        return tags
     }
 
     var calls: [Call] {
@@ -111,34 +145,32 @@ final class RCL004ComposeCollectionFilterTests: XCTestCase {
         XCTAssertTrue(state.includeDirectories)
     }
 
-    /// RCL-004-submit_collection_filter_query: query submit metric은 최초/재제출 source를 구분함
-    /// 실제 submit reducer action이 query-result metric 대신 canonical submit metric을 한 번씩 기록하는지 검증한다.
-    /// - 검증 내용: canonical submit key 2건, source submit/resubmit 순서, query-result 및 legacy alias 미기록
+    /// RCL-004-submit_collection_filter_query: query submit 자체는 Product event를 기록하지 않음
+    /// 최초 submit은 silent하고 재제출은 submit event 없이 이전 query terminal만 기록하는지 검증한다.
+    /// - 검증 내용: 최초 submit capture 0건, 재제출 시 이전 operation의 cancelled terminal 1건
     /// - 사전 조건: 비공백 query를 최초 제출한 뒤 다른 비공백 query를 재제출함
-    /// - 기대 결과: 최초 metric은 submit, 이후 metric은 resubmit source를 가짐
-    func testSubmitCollectionFilterQuery_recordsCanonicalSubmitMetricForFirstAndResubmit() {
+    /// - 기대 결과: 별도 submit event 없이 이전 query만 종료되고 최신 원문 복구 상태가 유지됨
+    func testSubmitCollectionFilterQuery_recordsOnlySupersededTerminalOnResubmit() throws {
         let recorder = RCL004MetricRecorder()
         var state = ComposerState()
         state.text = "find invoices"
+        var firstRequestID: UUID?
 
         withDependencies {
-            $0.composerMetricClient = ComposerMetricClient { name, value, tags, level in
-                recorder.record(name: name, value: value, tags: tags, level: level)
-            }
+            $0.composerMetricClient = ComposerMetricClient(recordProductMetric: recorder.record)
         } operation: {
             _ = ComposerFeature().reduce(into: &state, action: .submit)
+            firstRequestID = state.activeSearchRequestID
+            XCTAssertTrue(recorder.calls.isEmpty)
             state.text = "find reports"
             _ = ComposerFeature().reduce(into: &state, action: .submit)
         }
 
-        let calls = recorder.calls
-        XCTAssertEqual(
-            calls.map(\.name),
-            [ComposerCollectionFilterMetrics.querySubmit, ComposerCollectionFilterMetrics.querySubmit],
-        )
-        XCTAssertEqual(calls.map { $0.tags?["source"] }, ["submit", "resubmit"])
-        XCTAssertFalse(calls.contains { $0.name == ComposerCollectionFilterMetrics.queryResult })
-        XCTAssertFalse(calls.contains { $0.name == ComposerCollectionFilterMetrics.legacyComposerSubmit })
+        let supersededRequestID = try XCTUnwrap(firstRequestID)
+        XCTAssertEqual(recorder.calls.map(\.name), [ComposerCollectionFilterMetrics.queryResult])
+        let call = try XCTUnwrap(recorder.calls.first)
+        XCTAssertEqual(call.tags?["result_status"], "cancelled")
+        XCTAssertEqual(call.tags?["operation_id"], supersededRequestID.uuidString.lowercased())
         XCTAssertEqual(state.queryRecoveryContext?.rawText, "find reports")
         XCTAssertEqual(
             state.queryRecoveryContext?.stage,
@@ -445,6 +477,66 @@ final class RCL004ComposeCollectionFilterTests: XCTestCase {
     }
 
     // MARK: - RCL-004-apply_generated_filter_changes
+
+    /// RCL-004-apply_generated_filter_changes: nonempty automatic apply starts timing at the common boundary
+    /// condition/history initiated applies must establish one timing origin before launching filter execution.
+    /// - 검증 내용: common apply helper records a start and terminal duration for a nonempty filter payload
+    /// - 사전 조건: execution-ready condition exists and no prior filter timing is present
+    /// - 기대 결과: filter apply emits a nonnil nonnegative bounded duration
+    func testApplyGeneratedFilterChanges_withNonemptyAutomaticApply_startsTimingAtCommonBoundary() throws {
+        let recorder = RCL004MetricRecorder()
+        var state = makeGeneratedFilterStageState(rawText: "VOY589_SYNTHETIC_TIMING")
+        state.filtersStartedAt = nil
+        let requestID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000029"))
+
+        withDependencies {
+            $0.composerMetricClient = ComposerMetricClient(recordProductMetric: recorder.record)
+        } operation: {
+            _ = applyFiltersIfNeeded(
+                state: &state,
+                searchClient: .testValue,
+                requestID: requestID,
+            )
+            let startedAt = state.filtersStartedAt
+            XCTAssertNotNil(startedAt)
+            _ = ComposerFeature().reduce(
+                into: &state,
+                action: .filtersResponse(requestID, .success(SearchResponsePayload(itemCount: 1))),
+            )
+        }
+
+        let call = try XCTUnwrap(recorder.calls.first)
+        let duration = try XCTUnwrap(Int(call.tags?["duration_ms"] ?? ""))
+        XCTAssertGreaterThanOrEqual(duration, 0)
+    }
+
+    /// RCL-004-apply_generated_filter_changes: empty apply clears stale timing without an event
+    /// clearing the last condition is a no-op and must not leave a timer origin for a future terminal.
+    /// - 검증 내용: empty filter guard clears lifecycle/timing state without starting an effect
+    /// - 사전 조건: no execution-ready conditions and stale active filter timing/request metadata
+    /// - 기대 결과: timing and active apply ownership are cleared without emitting a metric
+    func testApplyGeneratedFilterChanges_withEmptyFilters_clearsStaleTimingWithoutMetric() {
+        var state = ComposerState()
+        state.isLoadingFilters = true
+        state.isFilteringInFlight = true
+        state.activeFiltersRequestID = UUID()
+        state.activeFiltersMetricSource = ComposerCollectionFilterMetrics.sourceManualApply
+        state.filtersStartedAt = Date(timeIntervalSince1970: 1_700_000_123)
+
+        let recorder = RCL004MetricRecorder()
+        withDependencies {
+            $0.composerMetricClient = ComposerMetricClient(recordProductMetric: recorder.record)
+        } operation: {
+            _ = applyFiltersIfNeeded(state: &state, searchClient: .testValue)
+        }
+
+        XCTAssertFalse(state.isLoadingFilters)
+        XCTAssertFalse(state.isFilteringInFlight)
+        XCTAssertNil(state.activeFiltersRequestID)
+        XCTAssertNil(state.activeFiltersMetricSource)
+        XCTAssertNil(state.filtersStartedAt)
+        XCTAssertTrue(recorder.calls.isEmpty)
+    }
 
     /// RCL-004-apply_generated_filter_changes: generated scope-only 변경은 filter 실행 요청으로 이어지지 않음
     /// query 변환 결과가 condition 없이 scope만 변경할 때 검색 실행을 시작하지 않는지 검증한다.
@@ -1103,6 +1195,293 @@ extension RCL004ComposeCollectionFilterTests {
         XCTAssertEqual(state.conditions.map(\.property.key), ["kind"])
     }
 
+    /// RCL-004-apply_generated_filter_changes: collection cleanup은 활성 apply terminal을 한 번 기록함
+    /// cleanup 이후 반복 cleanup과 늦은 response가 중복 terminal event를 만들지 않는지 검증한다.
+    /// - 검증 내용: cancelled apply event 1건, 기존 operation ID와 duration, 활성 요청 해제
+    /// - 사전 조건: 시작 시각과 request ID가 있는 활성 filter apply
+    /// - 기대 결과: 첫 cleanup만 terminal을 기록하고 후속 cleanup/response는 무시됨
+    func testCleanupCollectionWork_withActiveApply_recordsOneCancelledTerminal() throws {
+        let recorder = RCL004MetricRecorder()
+        let requestID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000024"))
+        var state = makeFiltersLoadingState(activeRequestID: requestID)
+
+        withDependencies {
+            $0.composerMetricClient = ComposerMetricClient(recordProductMetric: recorder.record)
+        } operation: {
+            let feature = ComposerFeature()
+            _ = feature.reduce(into: &state, action: .internal(.cleanupCollectionWork))
+            _ = feature.reduce(into: &state, action: .internal(.cleanupCollectionWork))
+            _ = feature.reduce(
+                into: &state,
+                action: .internal(.filtersResponse(requestID, .success(SearchResponsePayload(itemCount: 1)))),
+            )
+        }
+
+        XCTAssertEqual(recorder.calls.map(\.name), [ComposerCollectionFilterMetrics.applyResult])
+        let call = try XCTUnwrap(recorder.calls.first)
+        XCTAssertEqual(call.tags?["result_status"], "cancelled")
+        XCTAssertEqual(call.tags?["operation_id"], requestID.uuidString.lowercased())
+        XCTAssertNotNil(Int(call.tags?["duration_ms"] ?? ""))
+        XCTAssertNil(state.activeFiltersRequestID)
+        XCTAssertFalse(state.isFilteringInFlight)
+    }
+
+    /// RCL-004-apply_generated_filter_changes: post-query apply 재제출은 복원 후 이전 apply를 종료함
+    /// 새 query의 filter snapshot 전에 query-owned generated filters를 원래 제출 filter로 복원하는지 검증한다.
+    /// - 검증 내용: 이전 apply cancelled terminal 1건, 원래 filter 복원, B request/recovery 유지, 늦은 응답 무시
+    /// - 사전 조건: query A가 generated condition을 만들고 post-query filter apply가 active임
+    /// - 기대 결과: A apply만 종료되고 복원된 filter로 query B가 active이며 submit event는 기록되지 않음
+    func testApplyGeneratedFilterChanges_resubmitDuringPostQueryApply_restoresThenTerminalizesPreviousApply() throws {
+        let recorder = RCL004MetricRecorder()
+        var state = makeGeneratedFilterStageState(rawText: "query A")
+        let requestA = try XCTUnwrap(state.activeFiltersRequestID)
+        XCTAssertEqual(state.conditions.map(\.property.key), ["kind"])
+        state.text = "  query B  "
+
+        withDependencies {
+            $0.registryClient = makeRegistryClient()
+            $0.uuid = .constant(UUID())
+            $0.composerMetricClient = ComposerMetricClient(recordProductMetric: recorder.record)
+        } operation: {
+            _ = ComposerFeature().reduce(into: &state, action: .submit)
+        }
+
+        let requestB = try XCTUnwrap(state.activeSearchRequestID)
+        XCTAssertNil(state.activeFiltersRequestID)
+        XCTAssertTrue(state.isLoadingSearch)
+        XCTAssertFalse(state.isLoadingFilters)
+        XCTAssertFalse(state.isFilteringInFlight)
+        XCTAssertTrue(state.conditions.isEmpty)
+        XCTAssertEqual(state.submittedSearchFilters?.conditions.isEmpty, true)
+        XCTAssertEqual(state.queryRecoveryContext?.rawText, "  query B  ")
+        XCTAssertEqual(state.queryRecoveryContext?.stage, .search(requestB))
+        XCTAssertEqual(recorder.calls.map(\.name), [ComposerCollectionFilterMetrics.applyResult])
+        let call = try XCTUnwrap(recorder.calls.first)
+        XCTAssertEqual(call.tags?["result_status"], "cancelled")
+        XCTAssertEqual(call.tags?["operation_id"], requestA.uuidString.lowercased())
+
+        let stateAfterResubmit = state
+        let feature = ComposerFeature()
+        _ = feature.reduce(
+            into: &state,
+            action: .filtersResponse(requestA, .failure(MockLocalizedError("synthetic"))),
+        )
+        _ = feature.reduce(
+            into: &state,
+            action: .filtersResponse(requestA, .success(SearchResponsePayload(itemCount: 1))),
+        )
+        XCTAssertEqual(state, stateAfterResubmit)
+        XCTAssertEqual(recorder.calls.map(\.name), [ComposerCollectionFilterMetrics.applyResult])
+    }
+
+    /// RCL-004-apply_generated_filter_changes: manual apply 재제출은 현재 filter를 보존하고 이전 apply를 종료함
+    /// manual filter cancellation의 no-restoration 정책 뒤 현재 filter snapshot으로 새 query를 시작하는지 검증한다.
+    /// - 검증 내용: 이전 apply cancelled terminal 1건, 현재 filter 보존, B request/recovery 유지, 늦은 응답 무시
+    /// - 사전 조건: 사용자가 만든 kind filter의 manual apply가 active이고 query B가 입력됨
+    /// - 기대 결과: manual apply만 종료되고 현재 kind filter를 포함한 B가 active이며 submit event는 기록되지 않음
+    func testApplyGeneratedFilterChanges_resubmitDuringManualApply_preservesFiltersAndTerminalizesPreviousApply(
+    ) throws {
+        let recorder = RCL004MetricRecorder()
+        var state = makeGeneratedFilterStageState(rawText: "query A")
+        let requestA = try XCTUnwrap(state.activeFiltersRequestID)
+        state.activeFiltersMetricSource = ComposerCollectionFilterMetrics.sourceManualApply
+        state.discardQueryRecovery()
+        state.text = "query B"
+
+        withDependencies {
+            $0.registryClient = makeRegistryClient()
+            $0.composerMetricClient = ComposerMetricClient(recordProductMetric: recorder.record)
+        } operation: {
+            _ = ComposerFeature().reduce(into: &state, action: .submit)
+        }
+
+        let requestB = try XCTUnwrap(state.activeSearchRequestID)
+        XCTAssertNil(state.activeFiltersRequestID)
+        XCTAssertTrue(state.isLoadingSearch)
+        XCTAssertEqual(state.conditions.map(\.property.key), ["kind"])
+        XCTAssertEqual(state.submittedSearchFilters?.conditions.map(\.propertyKey), ["kind"])
+        XCTAssertEqual(state.queryRecoveryContext?.rawText, "query B")
+        XCTAssertEqual(state.queryRecoveryContext?.stage, .search(requestB))
+        XCTAssertEqual(recorder.calls.map(\.name), [ComposerCollectionFilterMetrics.applyResult])
+        let call = try XCTUnwrap(recorder.calls.first)
+        XCTAssertEqual(call.tags?["result_status"], "cancelled")
+        XCTAssertEqual(call.tags?["operation_id"], requestA.uuidString.lowercased())
+
+        let stateAfterResubmit = state
+        let feature = ComposerFeature()
+        _ = feature.reduce(
+            into: &state,
+            action: .filtersResponse(requestA, .failure(MockLocalizedError("synthetic"))),
+        )
+        _ = feature.reduce(
+            into: &state,
+            action: .filtersResponse(requestA, .success(SearchResponsePayload(itemCount: 1))),
+        )
+        XCTAssertEqual(state, stateAfterResubmit)
+        XCTAssertEqual(recorder.calls.map(\.name), [ComposerCollectionFilterMetrics.applyResult])
+    }
+
+    /// RCL-004-apply_generated_filter_changes: Composer dismissal은 활성 filter/scope lifecycle을 보존함
+    /// scope editor 변경을 auto-apply하는 동안 Composer를 닫아도 filter lifecycle이 유지되는지 검증한다.
+    /// - 검증 내용: active filter request, loading/in-flight 상태, scope editor pending 변경 보존
+    /// - 사전 조건: filter apply가 진행 중이고 scope editor에 pending rule 변경이 있음
+    /// - 기대 결과: dismissal 후 active filter와 scope lifecycle이 유지되고 query만 종료됨
+    func testSetPresentedDismissal_withActiveFilterAndPendingScopeChange_preservesLifecycle() {
+        let filterID = UUID()
+        var state = makeFiltersLoadingState(activeRequestID: filterID)
+        state.isPresented = true
+        state.scopeEditor.isPresented = true
+        state.scopeEditor.selection = .explicit(
+            bases: [ComposerScopeBase(path: "/VoyagerFixtures/Documents")],
+            exceptions: [],
+        )
+        state.pendingSearchQuery = "find invoices"
+
+        _ = ComposerFeature().reduce(into: &state, action: .view(.setPresented(false)))
+
+        XCTAssertFalse(state.isPresented)
+        XCTAssertTrue(state.isLoadingFilters)
+        XCTAssertTrue(state.isFilteringInFlight)
+        XCTAssertEqual(state.activeFiltersRequestID, filterID)
+        XCTAssertTrue(state.scopeEditor.isPresented)
+        XCTAssertTrue(state.scopeEditor.hasPendingScopeRuleChanges)
+    }
+
+    // MARK: - RCL-004-apply_generated_filter_changes
+
+    /// RCL-004-apply_generated_filter_changes: active undo replaces an apply with a terminal cancellation
+    /// Undoing a filter change must finish the superseded apply before starting its replacement.
+    /// - 검증 내용: A cancelled terminal의 ID/duration 1회, B distinct active ID, late A response no-op
+    /// - 사전 조건: execution-ready filter A와 filters가 달라지는 undo snapshot이 active 상태에 존재함
+    /// - 기대 결과: 실제 view undo가 A를 취소하고 B를 auto-apply하며 A 응답은 상태를 바꾸지 않음
+    func testApplyGeneratedFilterChanges_whenUndoDuringActiveApply_terminalizesA_beforeStartingB() throws {
+        let applyA = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000031"))
+        let applyB = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000032"))
+        let recorder = RCL004MetricRecorder()
+        var state = makeGeneratedFilterStageState(rawText: "VOY589_SYNTHETIC_UNDO")
+        state.activeFiltersRequestID = applyA
+        state.filtersStartedAt = Date(timeIntervalSince1970: 4_000_000_000)
+        state.activeFiltersMetricSource = ComposerCollectionFilterMetrics.sourceManualApply
+        state.queryRecoveryContext = nil
+        state.history = [
+            FilterSnapshot(
+                scopeSelection: .rootOnly,
+                conditionEditors: state.conditionEditors,
+                includeSubfolders: state.scopeEditor.includeSubfolders,
+                includeDirectories: state.includeDirectories,
+            ),
+        ]
+
+        withDependencies {
+            $0.uuid = .constant(applyB)
+            $0.registryClient = makeRegistryClient()
+            $0.composerMetricClient = ComposerMetricClient(recordProductMetric: recorder.record)
+        } operation: {
+            _ = ComposerFeature().reduce(into: &state, action: .view(.undo))
+        }
+
+        XCTAssertEqual(state.activeFiltersRequestID, applyB)
+        XCTAssertTrue(state.isLoadingFilters)
+        XCTAssertTrue(state.isFilteringInFlight)
+        XCTAssertEqual(recorder.calls.map(\.name), [ComposerCollectionFilterMetrics.applyResult])
+        let cancellation = try XCTUnwrap(recorder.calls.first)
+        XCTAssertEqual(cancellation.tags?["result_status"], "cancelled")
+        XCTAssertEqual(cancellation.tags?["operation_id"], applyA.uuidString.lowercased())
+        XCTAssertEqual(cancellation.tags?["duration_ms"], "0")
+
+        let stateAfterUndo = state
+        let feature = ComposerFeature()
+        _ = feature.reduce(
+            into: &state,
+            action: .filtersResponse(applyA, .success(SearchResponsePayload(itemCount: 1))),
+        )
+        _ = feature.reduce(into: &state, action: .filtersResponse(applyA, .failure(MockLocalizedError("late A"))))
+        _ = feature.reduce(
+            into: &state,
+            action: .filtersResponse(applyA, .success(SearchResponsePayload(itemCount: 2))),
+        )
+        XCTAssertEqual(state, stateAfterUndo)
+    }
+
+    /// RCL-004-apply_generated_filter_changes: active redo replaces an apply with a terminal cancellation
+    /// Redoing a filter change must use the same terminal ordering and stale-response guard as undo.
+    /// - 검증 내용: A cancelled terminal의 ID/duration 1회, B distinct active ID, late A response no-op
+    /// - 사전 조건: execution-ready filter A와 filters가 달라지는 redo snapshot이 active 상태에 존재함
+    /// - 기대 결과: 실제 view redo가 A를 취소하고 B를 auto-apply하며 A 응답은 상태를 바꾸지 않음
+    func testApplyGeneratedFilterChanges_whenRedoDuringActiveApply_terminalizesA_beforeStartingB() throws {
+        let applyA = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000033"))
+        let applyB = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000034"))
+        let recorder = RCL004MetricRecorder()
+        var state = makeGeneratedFilterStageState(rawText: "VOY589_SYNTHETIC_REDO")
+        state.activeFiltersRequestID = applyA
+        state.filtersStartedAt = Date(timeIntervalSince1970: 4_000_000_000)
+        state.activeFiltersMetricSource = ComposerCollectionFilterMetrics.sourceManualApply
+        state.queryRecoveryContext = nil
+        state.redoHistory = [
+            FilterSnapshot(
+                scopeSelection: .rootOnly,
+                conditionEditors: state.conditionEditors,
+                includeSubfolders: state.scopeEditor.includeSubfolders,
+                includeDirectories: state.includeDirectories,
+            ),
+        ]
+
+        withDependencies {
+            $0.uuid = .constant(applyB)
+            $0.registryClient = makeRegistryClient()
+            $0.composerMetricClient = ComposerMetricClient(recordProductMetric: recorder.record)
+        } operation: {
+            _ = ComposerFeature().reduce(into: &state, action: .view(.redo))
+        }
+
+        XCTAssertEqual(state.activeFiltersRequestID, applyB)
+        XCTAssertTrue(state.isLoadingFilters)
+        XCTAssertTrue(state.isFilteringInFlight)
+        XCTAssertEqual(recorder.calls.map(\.name), [ComposerCollectionFilterMetrics.applyResult])
+        let cancellation = try XCTUnwrap(recorder.calls.first)
+        XCTAssertEqual(cancellation.tags?["result_status"], "cancelled")
+        XCTAssertEqual(cancellation.tags?["operation_id"], applyA.uuidString.lowercased())
+        XCTAssertEqual(cancellation.tags?["duration_ms"], "0")
+
+        let stateAfterRedo = state
+        let feature = ComposerFeature()
+        _ = feature.reduce(
+            into: &state,
+            action: .filtersResponse(applyA, .success(SearchResponsePayload(itemCount: 1))),
+        )
+        _ = feature.reduce(into: &state, action: .filtersResponse(applyA, .failure(MockLocalizedError("late A"))))
+        _ = feature.reduce(
+            into: &state,
+            action: .filtersResponse(applyA, .success(SearchResponsePayload(itemCount: 2))),
+        )
+        XCTAssertEqual(state, stateAfterRedo)
+    }
+
+    /// RCL-004-apply_generated_filter_changes: empty undo/redo history does not cancel an active apply
+    /// A history guard must reject both actions before touching the active filter lifecycle.
+    /// - 검증 내용: undo/no-history와 redo/no-redo에서 상태와 metric이 모두 유지되는지 확인
+    /// - 사전 조건: active apply A만 있고 각 opposite history stack은 비어 있음
+    /// - 기대 결과: 두 accepted-pop 실패 action 모두 no-op이며 A cancellation terminal이 없음
+    func testApplyGeneratedFilterChanges_whenUndoOrRedoHistoryIsEmpty_preservesActiveApply() throws {
+        let applyA = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000035"))
+        let recorder = RCL004MetricRecorder()
+        var state = makeFiltersLoadingState(activeRequestID: applyA)
+        state.filtersStartedAt = Date(timeIntervalSince1970: 4_000_000_000)
+        let initialState = state
+
+        withDependencies {
+            $0.composerMetricClient = ComposerMetricClient(recordProductMetric: recorder.record)
+        } operation: {
+            let feature = ComposerFeature()
+            _ = feature.reduce(into: &state, action: .view(.undo))
+            XCTAssertEqual(state, initialState)
+            _ = feature.reduce(into: &state, action: .view(.redo))
+        }
+
+        XCTAssertEqual(state, initialState)
+        XCTAssertTrue(recorder.calls.isEmpty)
+    }
+
     /// RCL-004-show_query_execution_failure_feedback: collection cleanup은 실행 중 effect를 함께 취소함
     /// semantic cleanup이 search client 작업과 transient feedback timer를 모두 종료하는지 검증한다.
     /// - 검증 내용: search cancellation handler 실행 및 feedback dismiss action 미발생
@@ -1344,86 +1723,123 @@ extension RCL004ComposeCollectionFilterTests {
         XCTAssertFalse(state.isCollectionMode)
     }
 
-    // MARK: - RCL-004-show_query_conversion_failure_feedback
+    /// RCL-004-apply_generated_filter_changes: reset은 활성 query와 apply terminal을 각각 한 번 기록함
+    /// Composer reset이 동시에 진행 중인 query와 filter apply를 각각 cancellation handler로 종료하는지 검증한다.
+    /// - 검증 내용: query/apply cancelled event 각 1건, reset 반복과 늦은 response의 무시
+    /// - 사전 조건: active search/filter request와 각 시작 시각이 있는 Composer
+    /// - 기대 결과: 두 canonical terminal만 기록되고 reset 후 두 request가 모두 해제됨
+    func testResetComposerAndSync_withActiveQueryAndApply_recordsBothCancelledTerminals() throws {
+        let recorder = RCL004MetricRecorder()
+        let searchID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000027"))
+        let filtersID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000028"))
+        var state = ComposerState()
+        state.isLoadingSearch = true
+        state.isLoadingFilters = true
+        state.isFilteringInFlight = true
+        state.activeSearchRequestID = searchID
+        state.activeFiltersRequestID = filtersID
+        state.searchStartedAt = Date(timeIntervalSinceNow: -0.2)
+        state.filtersStartedAt = Date(timeIntervalSinceNow: -0.1)
 
-    /// RCL-004-show_query_conversion_failure_feedback: query outcome tags use stable privacy-safe tokens
-    /// query conversion outcome별 result_status가 registry bounded-token 계약과 일치하는지 검증한다.
-    /// - 검증 내용: 모든 query conversion outcome의 명시적 snake_case result_status 확인
-    /// - 사전 조건: 각 SearchQueryConversionOutcomePayload를 query result tags에 전달함
-    /// - 기대 결과: camelCase rawValue가 아닌 안정적인 snake_case token이 기록됨
-    func testQueryResultTags_mapEveryConversionOutcomeToSnakeCaseToken() {
-        let expected: [(SearchQueryConversionOutcomePayload, String)] = [
-            (.generatedChangeSet, "generated_change_set"),
-            (.unchangedResult, "unchanged_result"),
-            (.fallbackReuse, "fallback_reuse"),
-            (.providerNotConfigured, "provider_not_configured"),
-            (.invalidCredential, "invalid_credential"),
-            (.providerUnavailable, "provider_unavailable"),
-            (.networkFailure, "network_failure"),
-            (.conversionFailure, "conversion_failure"),
-        ]
-
-        for (outcome, expectedToken) in expected {
-            let tags = ComposerCollectionFilterMetrics.queryResultTags(
-                queryConversion: SearchQueryConversionMetadataPayload(outcome: outcome),
-                openedCollectionURL: nil,
-                filters: makeSearchFilters(),
-                itemCount: 1,
+        withDependencies {
+            $0.composerMetricClient = ComposerMetricClient(recordProductMetric: recorder.record)
+        } operation: {
+            let feature = ComposerFeature()
+            _ = feature.reduce(
+                into: &state,
+                action: .internal(.resetComposerAndSync(
+                    context: nil,
+                    url: nil,
+                    compatibility: nil,
+                    isCollectionMode: false,
+                )),
             )
-
-            XCTAssertEqual(tags["outcome"], expectedToken, "unexpected token for \(outcome)")
+            _ = feature.reduce(
+                into: &state,
+                action: .internal(.resetComposerAndSync(
+                    context: nil,
+                    url: nil,
+                    compatibility: nil,
+                    isCollectionMode: false,
+                )),
+            )
+            _ = feature.reduce(
+                into: &state,
+                action: .internal(.searchResponse(searchID, .success(SearchResponsePayload(itemCount: 1)))),
+            )
+            _ = feature.reduce(
+                into: &state,
+                action: .internal(.filtersResponse(filtersID, .success(SearchResponsePayload(itemCount: 1)))),
+            )
         }
+
+        XCTAssertEqual(recorder.calls.map(\.name), [
+            ComposerCollectionFilterMetrics.queryResult,
+            ComposerCollectionFilterMetrics.applyResult,
+        ])
+        XCTAssertEqual(recorder.calls.count(where: { $0.tags?["result_status"] == "cancelled" }), 2)
+        XCTAssertNil(state.activeSearchRequestID)
+        XCTAssertNil(state.activeFiltersRequestID)
     }
 
-    /// RCL-004-show_query_conversion_failure_feedback: query duration은 canonical metric만 기록함
-    /// query duration helper가 legacy alias와 canonical event를 중복 기록하지 않는지 검증한다.
-    /// - 검증 내용: canonical query duration capture 1건, legacy capture 0건
-    /// - 사전 조건: 고정 시작 시각과 실제 Composer metric recorder
-    /// - 기대 결과: duration 호출은 canonical metric 한 건만 관찰됨
-    func testQueryDuration_recordsCanonicalMetricOnceWithoutLegacyAlias() {
-        let recorder = ComposerMetricRecorder()
-
-        logSearchDurationIfNeeded(
-            Date(timeIntervalSinceNow: -0.1),
-            composerMetricClient: ComposerMetricClient { name, value, tags, level in
-                recorder.record(name: name, value: value, tags: tags, level: level)
-            },
+    /// RCL-004-apply_generated_filter_changes: 비활성 reset은 incoming context와 owner를 보존함
+    /// active operation이 없는 reset이 metric 없이 새 collection context만 반영하는지 검증한다.
+    /// - 검증 내용: query/apply metric 0건, context/url/compatibility/mode와 cancellation owner 보존
+    /// - 사전 조건: owner가 지정되고 active request가 없는 Composer에 incoming sync payload가 전달됨
+    /// - 기대 결과: reset은 event를 기록하지 않고 모든 incoming sync 필드를 정확히 보존함
+    func testResetComposerAndSync_withoutActiveOperations_preservesIncomingState() throws {
+        let recorder = RCL004MetricRecorder()
+        let ownerID = try XCTUnwrap(UUID(uuidString: "FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF"))
+        let context = CollectionContext(
+            query: "find reports",
+            scopes: ["/VoyagerFixtures/Documents"],
+            excludedScopes: ["/VoyagerFixtures/Trash"],
+            includeSubfolders: false,
+            includeDirectories: true,
         )
+        let url = URL(fileURLWithPath: "/VoyagerFixtures/reports.voycoll")
+        let compatibility = CollectionFileCompatibilityMetadata(
+            sourceSchemaVersion: SchemaVersion(major: 1, minor: 0),
+            migrationPath: [.definitionOnlyV1],
+            warnings: [],
+            usedDefinitionFallback: false,
+            writeBackAllowed: true,
+            writeBackReason: .allowed,
+        )
+        var state = ComposerState()
+        state.cancellationOwnerID = ownerID
 
-        XCTAssertEqual(recorder.names, [ComposerCollectionFilterMetrics.queryDuration])
-        XCTAssertFalse(recorder.names.contains(ComposerCollectionFilterMetrics.legacySearchDuration))
+        withDependencies {
+            $0.composerMetricClient = ComposerMetricClient(recordProductMetric: recorder.record)
+        } operation: {
+            _ = ComposerFeature().reduce(
+                into: &state,
+                action: .internal(.resetComposerAndSync(
+                    context: context,
+                    url: url,
+                    compatibility: compatibility,
+                    isCollectionMode: true,
+                )),
+            )
+        }
+
+        XCTAssertTrue(recorder.calls.isEmpty)
+        XCTAssertEqual(state.cancellationOwnerID, ownerID)
+        XCTAssertEqual(state.collectionContext, context)
+        XCTAssertEqual(state.openedCollectionURL, url)
+        XCTAssertEqual(state.openedCollectionCompatibility, compatibility)
+        XCTAssertTrue(state.isCollectionMode)
     }
 
     // MARK: - RCL-004-apply_generated_filter_changes
 
-    /// RCL-004-apply_generated_filter_changes: apply duration은 canonical metric만 기록함
-    /// filter duration helper가 legacy alias와 canonical event를 중복 기록하지 않는지 검증한다.
-    /// - 검증 내용: canonical apply duration capture 1건, legacy capture 0건
-    /// - 사전 조건: 고정 시작 시각과 실제 Composer metric recorder
-    /// - 기대 결과: duration 호출은 canonical metric 한 건만 관찰됨
-    func testApplyDuration_recordsCanonicalMetricOnceWithoutLegacyAlias() {
-        let recorder = ComposerMetricRecorder()
-
-        logFiltersDurationIfNeeded(
-            Date(timeIntervalSinceNow: -0.1),
-            composerMetricClient: ComposerMetricClient { name, value, tags, level in
-                recorder.record(name: name, value: value, tags: tags, level: level)
-            },
-        )
-
-        XCTAssertEqual(recorder.names, [ComposerCollectionFilterMetrics.applyDuration])
-        XCTAssertFalse(recorder.names.contains(ComposerCollectionFilterMetrics.legacyApplyDuration))
-    }
-
-    // MARK: - RCL-004-apply_generated_filter_changes
-
-    /// RCL-004-apply_generated_filter_changes: filter 취소는 canonical metric만 기록함
-    /// filter 취소 action이 legacy cancel alias 없이 apply canonical event를 기록하는지 검증한다.
-    /// - 검증 내용: canonical apply capture 1건, legacy cancel capture 0건, filter 상태 초기화
+    /// RCL-004-apply_generated_filter_changes: filter 취소는 terminal apply event를 기록함
+    /// 활성 apply 취소가 bounded terminal payload를 한 번만 기록하는지 검증한다.
+    /// - 검증 내용: apply event 1건, cancelled status, opaque operation ID와 duration
     /// - 사전 조건: filter 실행 중인 Composer 상태와 실제 metric recorder
     /// - 기대 결과: 취소 후 canonical apply metric만 관찰되고 활성 요청이 해제됨
-    func testCancelFilters_recordsCanonicalApplyMetricOnceWithoutLegacyAlias() {
-        let recorder = ComposerMetricRecorder()
+    func testCancelFilters_recordsCanonicalApplyMetricOnceWithoutLegacyAlias() throws {
+        let recorder = RCL004MetricRecorder()
         let requestID = UUID()
         let visibleText = "VOY589_SYNTHETIC_MANUAL_CANCEL_NEWER"
         var state = makeFiltersLoadingState(activeRequestID: requestID)
@@ -1436,6 +1852,35 @@ extension RCL004ComposeCollectionFilterTests {
         )
 
         withDependencies {
+            $0.composerMetricClient = ComposerMetricClient(recordProductMetric: recorder.record)
+        } operation: {
+            _ = ComposerFeature().reduce(into: &state, action: .view(.cancelFilters))
+        }
+
+        XCTAssertEqual(recorder.calls.map(\.name), [ComposerCollectionFilterMetrics.applyResult])
+        let call = try XCTUnwrap(recorder.calls.first)
+        XCTAssertEqual(call.tags?["result_status"], "cancelled")
+        XCTAssertEqual(call.tags?["source_surface"], "composer")
+        XCTAssertNotNil(UUID(uuidString: call.tags?["operation_id"] ?? ""))
+        XCTAssertNotNil(Int(call.tags?["duration_ms"] ?? ""))
+        XCTAssertNil(call.tags?["query"])
+        XCTAssertNil(call.tags?["filters"])
+        XCTAssertNil(state.activeFiltersRequestID)
+        XCTAssertFalse(state.isFilteringInFlight)
+        XCTAssertEqual(state.text, visibleText)
+        XCTAssertNil(state.queryRecoveryContext)
+    }
+
+    /// RCL-004-apply_generated_filter_changes: 활성 apply 없는 취소는 event를 기록하지 않음
+    /// stale 또는 이미 종료된 apply 취소가 terminal product event를 만들지 않는지 검증한다.
+    /// - 검증 내용: active request 없는 cancel의 capture 0건
+    /// - 사전 조건: Composer에 활성 filter request가 없음
+    /// - 기대 결과: apply event가 기록되지 않음
+    func testCancelFilters_withoutActiveRequest_recordsNoMetric() {
+        let recorder = RCL004MetricRecorder()
+        var state = ComposerState()
+
+        withDependencies {
             $0.composerMetricClient = ComposerMetricClient { name, value, tags, level in
                 recorder.record(name: name, value: value, tags: tags, level: level)
             }
@@ -1443,12 +1888,7 @@ extension RCL004ComposeCollectionFilterTests {
             _ = ComposerFeature().reduce(into: &state, action: .view(.cancelFilters))
         }
 
-        XCTAssertEqual(recorder.names, [ComposerCollectionFilterMetrics.applyResult])
-        XCTAssertFalse(recorder.names.contains(ComposerCollectionFilterMetrics.legacySearchCancel))
-        XCTAssertNil(state.activeFiltersRequestID)
-        XCTAssertFalse(state.isFilteringInFlight)
-        XCTAssertEqual(state.text, visibleText)
-        XCTAssertNil(state.queryRecoveryContext)
+        XCTAssertTrue(recorder.calls.isEmpty)
     }
 
     private func makeSearchLoadingState(activeRequestID: UUID) -> ComposerState {

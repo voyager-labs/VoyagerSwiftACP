@@ -36,10 +36,12 @@ extension EVM001FileManagerNavigationTests {
             characters: nil,
             charactersIgnoringModifiers: nil,
         ))))
-        await store.receive(
-            \.entryViewLayout.delegate.executeCommand,
-            "mutation.moveSelectedItemsToTrash",
-        )
+        await store.receive { action in
+            guard case let .entryViewLayout(.delegate(.executeCommand(command, source))) = action else {
+                return false
+            }
+            return command == "mutation.moveSelectedItemsToTrash" && source == .keyboardShortcut
+        }
 
         let outputs: [EntryOperationsCommandOutput] = EntryOperationsCommandPlanner.plan(
             command: .mutation(.moveSelectedItemsToTrash),

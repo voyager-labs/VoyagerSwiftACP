@@ -65,7 +65,8 @@ struct EntryOperationsLifecycleReducer {
                 }
                 return .merge(effects)
 
-            case .loading(.itemsLoaded):
+            case let .loading(.itemsLoaded(generation, _)):
+                guard generation == state.loadingContext.generation else { return .none }
                 return refreshRestorableTrashPaths()
 
             case let .loading(.streamFinished(generation)):
@@ -99,6 +100,7 @@ struct EntryOperationsLifecycleReducer {
                 if case .rename = kind {
                     state.renamingItemId = nil
                     state.renamingText = ""
+                    state.renamingCommandSource = nil
                 }
 
                 switch result {
@@ -108,6 +110,7 @@ struct EntryOperationsLifecycleReducer {
                     if case .createFolder = kind {
                         state.renamingItemId = filePath
                         state.renamingText = URL(fileURLWithPath: filePath).lastPathComponent
+                        state.renamingCommandSource = .fileManagerContent
                     }
 
                 case let .failure(error):
@@ -157,11 +160,14 @@ struct EntryOperationsLifecycleReducer {
                 }
 
                 switch record.operationKind {
+                // 성공 사운드는 성공 semantic target이 있을 때만 재생한다(전체 실패 배치는 무음).
                 case .moveToTrash:
+                    guard !record.targets.isEmpty else { return .none }
                     return .run { [soundClient] _ in
                         await soundClient.play(.moveToTrash)
                     }
                 case .pasteFileCopy, .pasteFileMove, .pasteFileDuplicate, .putBack:
+                    guard !record.targets.isEmpty else { return .none }
                     return .run { [soundClient] _ in
                         await soundClient.play(.operationCompleted)
                     }

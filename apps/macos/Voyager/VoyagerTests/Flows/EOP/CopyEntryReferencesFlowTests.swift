@@ -39,7 +39,10 @@ final class CopyEntryReferencesFlowTests: XCTestCase {
         let initialHistory = store.state.navigation.backHistory
         let initialSelection = store.state.entryViewLayout.selectedIds
 
-        await store.send(.entryViewLayout(.delegate(.executeCommand("clipboard.copySelectedAbsolutePaths"))))
+        await store.send(.entryViewLayout(.delegate(.executeCommand(
+            "clipboard.copySelectedAbsolutePaths",
+            source: .fileManagerContent,
+        ))))
         await store.receive(\.entryViewLayout.entryOperations.routing.executeCommand)
         await store.receive { action in
             guard case let .entryViewLayout(.entryOperations(.clipboard(.copyAbsolutePaths(paths)))) = action
@@ -85,7 +88,10 @@ final class CopyEntryReferencesFlowTests: XCTestCase {
         let initialHistory = store.state.navigation.backHistory
         let initialSelection = store.state.entryViewLayout.selectedIds
 
-        await store.send(.entryViewLayout(.delegate(.executeCommand("clipboard.copySelectedAbsolutePaths"))))
+        await store.send(.entryViewLayout(.delegate(.executeCommand(
+            "clipboard.copySelectedAbsolutePaths",
+            source: .fileManagerContent,
+        ))))
         await store.finish()
 
         XCTAssertEqual(pasteboardCallCount.withValue { $0 }, 0)

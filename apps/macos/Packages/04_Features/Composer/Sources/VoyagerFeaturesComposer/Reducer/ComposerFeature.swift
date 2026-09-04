@@ -36,6 +36,8 @@ public struct ComposerFeature {
     var uuid
     @Dependency(\.continuousClock)
     var continuousClock
+    @Dependency(\.composerMetricClient)
+    var composerMetricClient
 
     nonisolated enum CancelID: Hashable {
         case search(ownerID: UUID?)
@@ -66,7 +68,11 @@ public struct ComposerFeature {
         Reduce { state, action in
             switch action {
             case let .view(.setPresented(isPresented)):
-                return handleSetPresented(state: &state, isPresented: isPresented)
+                return handleSetPresented(
+                    state: &state,
+                    isPresented: isPresented,
+                    composerMetricClient: composerMetricClient,
+                )
 
             case let .view(.setText(text)):
                 state.setTextFromUserIntent(text)
@@ -111,12 +117,16 @@ public struct ComposerFeature {
                 return .cancel(id: CancelID.feedbackDismiss(ownerID: state.cancellationOwnerID))
 
             case .internal(.cleanupCollectionWork):
-                if let requestID = state.activeSearchRequestID {
-                    state.resolveScopeChangeFeedback(.search(requestID), phase: .visible)
-                }
-                if let requestID = state.activeFiltersRequestID {
-                    state.resolveScopeChangeFeedback(.filters(requestID), phase: .visible)
-                }
+                let searchCancellation = handleCancelSearch(
+                    state: &state,
+                    composerMetricClient: composerMetricClient,
+                )
+                let filtersCancellation = handleCancelFilters(
+                    state: &state,
+                    registryClient: registryClient,
+                    uuid: { uuid() },
+                    composerMetricClient: composerMetricClient,
+                )
                 state.transientFeedback = nil
                 state.isLoadingSearch = false
                 state.isLoadingFilters = false
@@ -134,8 +144,8 @@ public struct ComposerFeature {
                 state.discardQueryRecovery()
                 applyQueryPhaseTransition(.reset, state: &state)
                 return .merge(
-                    .cancel(id: CancelID.search(ownerID: state.cancellationOwnerID)),
-                    .cancel(id: CancelID.filters(ownerID: state.cancellationOwnerID)),
+                    searchCancellation,
+                    filtersCancellation,
                     .cancel(id: CancelID.feedbackDismiss(ownerID: state.cancellationOwnerID)),
                 )
 
@@ -182,13 +192,23 @@ public struct ComposerFeature {
 
             case let .internal(.resetComposerAndSync(context, url, compatibility, isCollectionMode)):
                 let cancellationOwnerID = state.cancellationOwnerID
+                let searchCancellation = handleCancelSearch(
+                    state: &state,
+                    composerMetricClient: composerMetricClient,
+                )
+                let filtersCancellation = handleCancelFilters(
+                    state: &state,
+                    registryClient: registryClient,
+                    uuid: { uuid() },
+                    composerMetricClient: composerMetricClient,
+                )
                 state = .init()
                 state.cancellationOwnerID = cancellationOwnerID
                 state.collectionContext = context
                 state.openedCollectionURL = url
                 state.openedCollectionCompatibility = compatibility
                 state.isCollectionMode = isCollectionMode
-                return .none
+                return .merge(searchCancellation, filtersCancellation)
 
             case .view(.clearAll):
                 state.lastFailedFiltersRequestID = nil
@@ -224,6 +244,7 @@ public struct ComposerFeature {
 private func handleSetPresented(
     state: inout ComposerFeature.State,
     isPresented: Bool,
+    composerMetricClient: ComposerMetricClient,
 ) -> Effect<ComposerFeature.Action> {
     state.isPresented = isPresented
     if !isPresented {
@@ -235,20 +256,24 @@ private func handleSetPresented(
             || state.isLoadingFilters
         let shouldKeepFiltersAlive = shouldPreserveFilterLifecycle || hasActiveFilterLifecycle
         let shouldCloseScopeEditorWithoutCommit = state.scopeEditor.isPresented && !shouldPreserveFilterLifecycle
+        let hadActiveSearch = state.activeSearchRequestID != nil
+        let searchCancellation = handleCancelSearch(
+            state: &state,
+            composerMetricClient: composerMetricClient,
+        )
         let shouldRetainQueryRecovery = shouldKeepFiltersAlive
             && state.activeFiltersRequestID.map { state.queryRecoveryContext?.stage == .filters($0) } == true
 
         if !shouldRetainQueryRecovery {
             state.discardQueryRecovery()
+            if hadActiveSearch {
+                state.clearTextForSubmit()
+            }
         }
 
         state.hasSubmittedInSession = false
-        state.searchStartedAt = nil
         state.transientFeedback = nil
-        state.isLoadingSearch = false
-        state.activeSearchRequestID = nil
         state.lastAcceptedSearchRequestID = nil
-        applyQueryPhaseTransition(.reset, state: &state)
 
         if !shouldKeepFiltersAlive {
             state.filtersStartedAt = nil
@@ -262,7 +287,7 @@ private func handleSetPresented(
         }
 
         var effects: [Effect<ComposerFeature.Action>] = [
-            .cancel(id: ComposerFeature.CancelID.search(ownerID: state.cancellationOwnerID)),
+            searchCancellation,
             .cancel(id: ComposerFeature.CancelID.scopeEditorSearch),
             .cancel(id: ComposerFeature.CancelID.feedbackDismiss(ownerID: state.cancellationOwnerID)),
         ]
@@ -450,9 +475,11 @@ func applyFiltersIfNeeded(
         state.activeFiltersRequestID = nil
         state.activeFiltersRequestQuery = nil
         state.activeFiltersMetricSource = nil
+        state.filtersStartedAt = nil
         state.pendingSearchQuery = nil
         return .cancel(id: ComposerFeature.CancelID.filters(ownerID: state.cancellationOwnerID))
     }
+    state.filtersStartedAt = Date()
     state.markScopeChangeFeedbackPending(.filters(requestID))
     return .run { send in
         do {

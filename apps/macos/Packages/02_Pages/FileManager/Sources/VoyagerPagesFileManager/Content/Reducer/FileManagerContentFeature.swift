@@ -22,6 +22,8 @@ public struct FileManagerContentFeature {
     private var fileManagerClient
     @Dependency(\.entryOpenClient)
     private var entryOpenClient
+    @Dependency(\.fileManagerProductMetricsClient)
+    private var productMetricsClient
 
     public var body: some Reducer<State, Action> {
         Reduce { state, action in
@@ -31,6 +33,8 @@ public struct FileManagerContentFeature {
                 return .none
             case let .collection(.saveCompleted(result)):
                 return handleCollectionSaveCompleted(result: result, state: &state)
+            case let .internal(.requestNavigation(.view(viewAction))):
+                return handleProductBrowsingNavigation(viewAction, state: &state)
             case let .entryViewLayout(.entryOperations(.lifecycle(.windowIDChanged(windowID)))):
                 state.composer.cancellationOwnerID = windowID
                 return .none
@@ -317,7 +321,7 @@ public struct FileManagerContentFeature {
             // 선택·rename delegate를 동기화한다. 이전 generation의 stale failure는
             // EntryOperationsLoadingReducer가 무시하므로, 여기서도 현재 loading generation과
             // 일치할 때만 재조정을 발행해 진행 중인 새 batch의 선택·rename을 조기에 제거하지 않는다.
-            if case let .entryViewLayout(.entryOperations(.loading(.streamFailed(generation)))) = action,
+            if case let .entryViewLayout(.entryOperations(.loading(.streamFailed(generation, _)))) = action,
                generation == state.entryViewLayout.entryOperations.loadingContext.generation,
                !state.entryViewLayout.hierarchy.rootPath.isEmpty
             {
@@ -514,11 +518,10 @@ public struct FileManagerContentFeature {
         let entries: [EntryModel]
         let projectionOwner: FileManagerContentState.EntryIdentityTransitionProjectionOwner
         switch action {
-        case let .entryViewLayout(.entryOperations(.loading(.itemsLoaded(items)))):
+        case let .entryViewLayout(.entryOperations(.loading(.itemsLoaded(generation, items))))
+            where generation == state.entryViewLayout.entryOperations.loadingContext.generation:
             entries = items
-            projectionOwner = .root(
-                generation: state.entryViewLayout.entryOperations.loadingContext.generation,
-            )
+            projectionOwner = .root(generation: generation)
 
         case let .entryViewLayout(.entryOperations(.loading(.streamEvent(streamEvent)))):
             guard case let .coreBatch(items: items, batchIndex: batchIndex) = streamEvent.event,
@@ -539,20 +542,15 @@ public struct FileManagerContentFeature {
             folderGeneration,
             response,
         ))):
-            guard rootContextGeneration == state.entryViewLayout.hierarchy.rootContextGeneration,
-                  let node = state.entryViewLayout.hierarchy.nodesByID[folderID],
-                  node.generation == folderGeneration,
-                  node.loadPhase == .loadingCore || node.loadPhase == .enriching,
-                  case let .event(.coreBatch(items: items, batchIndex: batchIndex)) = response,
-                  batchIndex == node.folder.expectedBatchIndex
-            else { return terminalCheckEffect }
-            entries = items
-            projectionOwner = .folder(id: folderID, generation: folderGeneration)
-            FileManagerContentIdentityTransitionCoordinator.beginDeferredFolderReplacementIfNeeded(
+            guard let batch = FileManagerContentIdentityTransitionCoordinator.folderIdentityBatch(
+                rootContextGeneration: rootContextGeneration,
                 folderID: folderID,
-                items: items,
+                folderGeneration: folderGeneration,
+                response: response,
                 state: &state,
-            )
+            ) else { return terminalCheckEffect }
+            entries = batch.items
+            projectionOwner = batch.owner
 
         default:
             return terminalCheckEffect
@@ -565,8 +563,8 @@ public struct FileManagerContentFeature {
         )
         // 자체 destination owner를 가진 additional 이동이 이번 batch에서 migration됐으면
         // primary 검증 결과와 무관하게 selection 동기화를 발행한다.
-        let additionalMigrated = state.pendingIdentityTransition?.additionalMoves
-            .contains { $0.destinationOwner != nil && $0.migrated } == true
+        let additionalMigrated = FileManagerContentIdentityTransitionCoordinator
+            .hasMigratedAdditionalDestinationOwner(state.pendingIdentityTransition)
         guard identityMigrated || additionalMigrated else { return .none }
         let releasedRootSource = hadPendingRootSourceMigration
             && !FileManagerContentIdentityTransitionCoordinator.hasPendingRootSourceMigration(state)
@@ -662,7 +660,7 @@ public struct FileManagerContentFeature {
             }
             return migrated || hadRootPair || terminalized
 
-        case let .entryViewLayout(.entryOperations(.loading(.streamFailed(streamGeneration)))):
+        case let .entryViewLayout(.entryOperations(.loading(.streamFailed(streamGeneration, _)))):
             guard streamGeneration == generation,
                   state.entryViewLayout.entryOperations.loadingContext.streamTerminal,
                   state.entryViewLayout.entryOperations.loadingContext.isIncomplete
@@ -731,6 +729,8 @@ public struct FileManagerContentFeature {
             }
         }
         switch action {
+        case let .entryViewLayout(.entryOperations(.loading(.computerItemsLoadFailed(generation)))):
+            return generation == state.entryViewLayout.entryOperations.loadingContext.generation
         case .entryViewLayout(.entryOperations(.loading(.loadItems))),
              .entryViewLayout(.entryOperations(.loading(.loadRecentItems))),
              .entryViewLayout(.entryOperations(.loading(.loadTagItems))),
@@ -740,7 +740,6 @@ public struct FileManagerContentFeature {
              .entryViewLayout(.entryOperations(.loading(.streamEvent))),
              .entryViewLayout(.entryOperations(.loading(.streamFinished))),
              .entryViewLayout(.entryOperations(.loading(.streamFailed))),
-             .entryViewLayout(.entryOperations(.loading(.itemsLoadFailed))),
              .entryViewLayout(.entryOperations(.lifecycle(.operationStarted))),
              .entryViewLayout(.entryOperations(.lifecycle(.operationFinished))),
              .entryViewLayout(.entryOperations(.lifecycle(.entryActionCompleted))),
@@ -767,28 +766,6 @@ public struct FileManagerContentFeature {
              .internal(.commitRootCandidateAfterMigration),
              .internal(.clearCollectionMode),
              .internal(.exitCollectionMode):
-            return true
-        default:
-            return false
-        }
-    }
-
-    static func isRootCompletion(_ action: Action, state: inout State) -> Bool {
-        switch action {
-        case .entryViewLayout(.entryOperations(.loading(.itemsLoaded))):
-            return true
-        case let .entryViewLayout(.entryOperations(.loading(.streamEvent(streamEvent)))):
-            guard case .coreFinished = streamEvent.event,
-                  state.entryViewLayout.entryOperations.loadingContext.acceptedCoreFinishedGeneration == streamEvent
-                  .generation,
-                  !state.entryViewLayout.entryOperations.loadingContext.isBufferingPreservedDirectoryReload
-            else { return false }
-            state.entryViewLayout.entryOperations.loadingContext.acceptedCoreFinishedGeneration = nil
-            return true
-        case let .entryViewLayout(.entryOperations(.loading(.streamFinished(generation)))):
-            guard state.entryViewLayout.entryOperations.loadingContext.acceptedCoreFinishedGeneration == generation
-            else { return false }
-            state.entryViewLayout.entryOperations.loadingContext.acceptedCoreFinishedGeneration = nil
             return true
         default:
             return false

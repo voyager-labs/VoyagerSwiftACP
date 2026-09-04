@@ -30,6 +30,7 @@ extension WindowManagerFeature {
                 path: nil,
                 selectEntryID: nil,
                 state: &state,
+                resolvedStartPage: nil,
             )
 
         case let .openWindow(requestID, path, selectEntryID):
@@ -41,6 +42,7 @@ extension WindowManagerFeature {
                 path: path,
                 selectEntryID: selectEntryID,
                 state: &state,
+                resolvedStartPage: nil,
             )
         }
     }
@@ -48,13 +50,18 @@ extension WindowManagerFeature {
     func handleWindowCommand(_ action: Action, state: inout State) -> Effect<Action> {
         switch action {
         case let .file(.newWindow(path, selectEntryID)):
-            return openWindowSession(path: path, selectEntryID: selectEntryID, state: &state)
+            return openWindowSession(
+                path: path,
+                selectEntryID: selectEntryID,
+                state: &state,
+                resolvedStartPage: nil,
+            )
         case let .file(.openCollectionFile(url)):
             return openCollectionWindowSession(url: url, state: &state)
         case .file(.newTab):
             return sendContentTabCommandToFocusedWindow(
                 state,
-                .openNewContentTab,
+                .openNewContentTab(source: .menuCommand),
                 capability: \.canOpenNewContentTab,
             )
         case .window(.closeFocusedWindow):

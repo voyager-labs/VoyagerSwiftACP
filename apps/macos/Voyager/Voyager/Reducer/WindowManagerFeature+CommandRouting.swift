@@ -291,7 +291,7 @@ extension WindowManagerFeature {
                 : .pinned
             return .send(.windows(.element(
                 id: id,
-                action: .window(.requestSelectedContentTabPinMutation(target: target)),
+                action: .window(.requestSelectedContentTabPinMutation(target: target, source: .menuCommand)),
             )))
         }
 
@@ -312,10 +312,10 @@ extension WindowManagerFeature {
         let command: FileManagerWindowAction.WindowCommand
         if projection.selectedContentTabCount > 1 {
             guard projection.canCloseSelectedContentTabs else { return .none }
-            command = .closeSelectedContentTabs
+            command = .contentTabAction(.closeSelected, source: .menuCommand)
         } else {
             guard projection.canCloseActiveContentTab else { return .none }
-            command = .closeActiveContentTab
+            command = .contentTabAction(.closeActive, source: .menuCommand)
         }
         return .send(.windows(.element(id: id, action: .window(.request(command)))))
     }
@@ -330,10 +330,10 @@ extension WindowManagerFeature {
         let command: FileManagerWindowAction.WindowCommand
         if projection.selectedContentTabCount > 1 {
             guard projection.canDuplicateSelectedContentTabs else { return .none }
-            command = .duplicateSelectedContentTabs
+            command = .contentTabAction(.duplicateSelected, source: .menuCommand)
         } else {
             guard projection.canDuplicateActiveContentTab else { return .none }
-            command = .duplicateActiveContentTab
+            command = .contentTabAction(.duplicateActive, source: .menuCommand)
         }
         return .send(.windows(.element(id: id, action: .window(.request(command)))))
     }

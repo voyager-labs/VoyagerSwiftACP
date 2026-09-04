@@ -585,6 +585,31 @@ final class FMW002ManageFileManagerWindowPanesTests: XCTestCase {
         await store.finish()
     }
 
+    // MARK: - FMW-002-inspector_ai_chat_source_surface
+
+    /// FMW-002-inspector_ai_chat_source_surface: Inspector child AiChat state는 .aiChatInspector 소스로 초기화되고 복사에서 보존된다
+    /// 인스펙터 구성 경계에서 생성된 child AiChat state의 product metric source와 값 타입 복사 보존을 검증합니다.
+    /// - 검증 내용: FileManagerInspectorState 기본 생성 시 aiChat 소스가 ai_chat_inspector이고 snapshot copy 후에도 유지되는지 확인합니다.
+    /// - 사전 조건: 기본 생성자로 FileManagerInspectorState를 초기화합니다.
+    /// - 기대 결과: 초기 state와 복사된 snapshot 모두 productMetricSourceSurface rawValue가 ai_chat_inspector입니다.
+    func test_inspectorChildAiChat_initializesAndPreservesInspectorSourceSurface() {
+        let state = PaneTestSupport.makeInspectorState()
+
+        XCTAssertEqual(
+            state.aiChat.productMetricSourceSurface.rawValue,
+            "ai_chat_inspector",
+            "Inspector child AiChat state는 .aiChatInspector 소스로 초기화되어야 한다",
+        )
+
+        var snapshot = state
+        snapshot.inspectorVisible = true
+        XCTAssertEqual(
+            snapshot.aiChat.productMetricSourceSurface.rawValue,
+            "ai_chat_inspector",
+            "snapshot copy 후에도 Inspector AiChat 소스가 보존되어야 한다",
+        )
+    }
+
     // MARK: - FMW-002-sidebar_and_inspector_visibility_are_independent
 
     /// FMW-002-sidebar_and_inspector_visibility_are_independent: 사이드바 토글이 인스펙터 상태에 영향 없음

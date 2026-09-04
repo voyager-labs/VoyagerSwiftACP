@@ -125,6 +125,8 @@ struct FileManagerWindowRoutingReducer {
     var uuid
     @Dependency(\.fileOperationUndoManagerClient)
     var fileOperationUndoManagerClient
+    @Dependency(\.fileManagerProductMetricsClient)
+    var productMetricsClient
 
     func cannotPinCollectionFeedbackEffect() -> Effect<Action> {
         let collectionAlertClient = collectionAlertClient

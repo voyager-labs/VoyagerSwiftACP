@@ -45,7 +45,7 @@ public struct EntryOperationsLoadingReducer {
                         return
                     } catch {
                         guard !Task.isCancelled else { return }
-                        await send(.loading(.streamFailed(generation: generation)))
+                        await send(.loading(.streamFailed(generation: generation, failure: .from(error: error))))
                     }
                 }
                 .cancellable(
@@ -72,7 +72,7 @@ public struct EntryOperationsLoadingReducer {
                         return
                     } catch {
                         guard !Task.isCancelled else { return }
-                        await send(.loading(.streamFailed(generation: generation)))
+                        await send(.loading(.streamFailed(generation: generation, failure: .from(error: error))))
                     }
                 }
                 .cancellable(
@@ -99,7 +99,7 @@ public struct EntryOperationsLoadingReducer {
                         return
                     } catch {
                         guard !Task.isCancelled else { return }
-                        await send(.loading(.streamFailed(generation: generation)))
+                        await send(.loading(.streamFailed(generation: generation, failure: .from(error: error))))
                     }
                 }
                 .cancellable(
@@ -112,17 +112,18 @@ public struct EntryOperationsLoadingReducer {
 
             case .loading(.loadComputerItems):
                 state.loadingContext.invalidate()
+                let generation = state.loadingContext.generation
                 state.isLoading = true
                 return .run { [entryLoadingClient] send in
                     do {
                         let computerItems = try await entryLoadingClient.loadComputerItems()
                         try Task.checkCancellation()
-                        await send(.loading(.itemsLoaded(computerItems)))
+                        await send(.loading(.itemsLoaded(generation: generation, items: computerItems)))
                     } catch is CancellationError {
                         return
                     } catch {
                         guard !Task.isCancelled else { return }
-                        await send(.loading(.itemsLoaded([])))
+                        await send(.loading(.computerItemsLoadFailed(generation: generation)))
                     }
                 }
                 .cancellable(
@@ -141,6 +142,7 @@ public struct EntryOperationsLoadingReducer {
                 state.renamingItemId = nil
                 state.renamingText = ""
                 state.renamingItem = nil
+                state.renamingCommandSource = nil
                 return .cancel(
                     id: EntryOperationsLoadingCancelID.loadItems(
                         windowID: state.windowID,
@@ -148,7 +150,8 @@ public struct EntryOperationsLoadingReducer {
                     ),
                 )
 
-            case let .loading(.itemsLoaded(items)):
+            case let .loading(.itemsLoaded(generation, items)):
+                guard generation == state.loadingContext.generation else { return .none }
                 state.loadingContext.preservedDirectoryReloadItems = nil
                 state.loadingContext.items = IdentifiedArray(uniqueElements: items)
                 state.isLoading = false
@@ -236,6 +239,7 @@ public struct EntryOperationsLoadingReducer {
                         state.renamingItemId = nil
                         state.renamingText = ""
                         state.renamingItem = nil
+                        state.renamingCommandSource = nil
                     }
                     state.isLoading = false
                     state.isReloading = false
@@ -243,7 +247,7 @@ public struct EntryOperationsLoadingReducer {
                 state.loadingContext.streamTerminal = true
                 return .none
 
-            case let .loading(.streamFailed(generation)):
+            case let .loading(.streamFailed(generation, _)):
                 guard generation == state.loadingContext.generation,
                       !state.loadingContext.streamTerminal
                 else {
@@ -261,11 +265,13 @@ public struct EntryOperationsLoadingReducer {
                     state.renamingItemId = nil
                     state.renamingText = ""
                     state.renamingItem = nil
+                    state.renamingCommandSource = nil
                     return .none
                 }
                 return .none
 
-            case .loading(.itemsLoadFailed):
+            case let .loading(.computerItemsLoadFailed(generation)):
+                guard generation == state.loadingContext.generation else { return .none }
                 state.loadingContext.preservedDirectoryReloadItems = nil
                 state.loadingContext.items = []
                 state.isLoading = false
@@ -273,6 +279,7 @@ public struct EntryOperationsLoadingReducer {
                 state.renamingItemId = nil
                 state.renamingText = ""
                 state.renamingItem = nil
+                state.renamingCommandSource = nil
                 return .none
 
             default:

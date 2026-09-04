@@ -36,7 +36,10 @@ extension EVM002FileManagerPagePresentationTests {
         )
         store.exhaustivity = .off
 
-        await store.send(.entryViewLayout(.delegate(.executeCommand("navigation.quickLookSelectedItem"))))
+        await store.send(.entryViewLayout(.delegate(.executeCommand(
+            "navigation.quickLookSelectedItem",
+            source: .keyboardShortcut,
+        ))))
         await fulfillment(of: [quickLookOpened], timeout: 2)
 
         XCTAssertEqual(quickLookCalls.value, [[first.fullPath]])
@@ -73,7 +76,10 @@ extension EVM002FileManagerPagePresentationTests {
         )
         store.exhaustivity = .off
 
-        await store.send(.entryViewLayout(.delegate(.executeCommand("navigation.quickLookSelectedItem"))))
+        await store.send(.entryViewLayout(.delegate(.executeCommand(
+            "navigation.quickLookSelectedItem",
+            source: .keyboardShortcut,
+        ))))
         await fulfillment(of: [quickLookOpened], timeout: 2)
         await store.skipReceivedActions()
 

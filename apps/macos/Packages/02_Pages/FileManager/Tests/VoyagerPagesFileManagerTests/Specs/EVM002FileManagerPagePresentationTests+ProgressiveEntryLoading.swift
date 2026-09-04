@@ -91,7 +91,7 @@ extension EVM002FileManagerPagePresentationTests {
         let view = EntryListView(frame: .zero)
         coordinator.bind(to: view)
 
-        store.send(.entryViewLayout(.entryOperations(.loading(.itemsLoaded([entry])))))
+        store.send(.entryViewLayout(.entryOperations(.loading(.itemsLoaded(generation: 0, items: [entry])))))
         let renderSettled = expectation(description: "ordinary list render settled")
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
             renderSettled.fulfill()

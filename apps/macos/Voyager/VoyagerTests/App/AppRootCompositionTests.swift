@@ -5,6 +5,7 @@ import Dependencies
 import VoyagerEntitiesCollection
 import VoyagerEntryCoreClient
 import VoyagerFeaturesAccountAccess
+import VoyagerFeaturesAiChat
 import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
@@ -19,6 +20,466 @@ import XCTest
 
 @MainActor
 final class AppRootCompositionTests: XCTestCase {
+    func testOnboardingProductMetricBridgeCapturesCanonicalRequestOnce() {
+        let requests = LockIsolated<[ProductAnalyticsMetricRequest]>([])
+        let client = ProductAnalyticsClient { request in requests.withValue { $0.append(request) } }
+        let operationID = UUID()
+
+        VoyagerApp.makeOnboardingProductMetricsClient(client: client, environment: .dev)
+            .record(.completion(operationID: operationID, result: .success))
+
+        XCTAssertEqual(requests.value.count, 1)
+        XCTAssertEqual(requests.value.first?.metricKey, "voy_691_onb_001_complete_onboarding_session")
+        XCTAssertEqual(requests.value.first?.eventVersion.rawValue, "1")
+        XCTAssertEqual(requests.value.first?.operationID, operationID)
+        XCTAssertEqual(requests.value.first?.properties["result_status"], .string("success"))
+        XCTAssertEqual(requests.value.first?.properties["source_surface"], .string("onboarding"))
+    }
+
+    func testOnboardingCompletionFailureIsApprovedNoEvent() {
+        let requests = LockIsolated<[ProductAnalyticsMetricRequest]>([])
+        let client = ProductAnalyticsClient { request in requests.withValue { $0.append(request) } }
+
+        VoyagerApp.makeOnboardingProductMetricsClient(client: client, environment: .dev)
+            .record(.completion(operationID: UUID(), result: .failure))
+
+        XCTAssertTrue(requests.value.isEmpty)
+    }
+
+    /// provider-independent skipped는 start가 아니라 skip canonical key로 기록된다.
+    /// - 검증 내용: `.aiProvider(.skipped)`의 skip metricKey와 result_status/source_surface
+    /// - 사전 조건: adapter 주입 client
+    /// - 기대 결과: voy_691_onb_004_skip_ai_provider_setup_during_onboarding 1건
+    func testOnboardingSkippedAIProviderUsesSkipCanonicalKey() {
+        let requests = LockIsolated<[ProductAnalyticsMetricRequest]>([])
+        let client = ProductAnalyticsClient { request in requests.withValue { $0.append(request) } }
+        let operationID = UUID()
+
+        VoyagerApp.makeOnboardingProductMetricsClient(client: client, environment: .dev)
+            .record(.aiProvider(operationID: operationID, result: .skipped))
+
+        XCTAssertEqual(requests.value.count, 1)
+        XCTAssertEqual(
+            requests.value.first?.metricKey,
+            "voy_691_onb_004_skip_ai_provider_setup_during_onboarding",
+        )
+        XCTAssertEqual(requests.value.first?.operationID, operationID)
+        XCTAssertEqual(requests.value.first?.properties["result_status"], .string("skipped"))
+        XCTAssertEqual(requests.value.first?.properties["source_surface"], .string("onboarding"))
+    }
+
+    /// provider-nil skipped도 skip key로, success/failure는 start key를 유지한다.
+    /// - 검증 내용: WithKind nil+skipped → skip key(provider_kind 없음), kind+success → start key,
+    ///   nil+failure → 무이벤트
+    /// - 사전 조건: adapter 주입 client
+    /// - 기대 결과: 세 케이스의 key/property 계약 일치
+    func testOnboardingAIProviderWithKindSkipsMapToSkipKeyAndSuccessKeepsStartKey() {
+        let requests = LockIsolated<[ProductAnalyticsMetricRequest]>([])
+        let client = ProductAnalyticsClient { request in requests.withValue { $0.append(request) } }
+        let recordClient = VoyagerApp.makeOnboardingProductMetricsClient(client: client, environment: .dev)
+
+        recordClient.record(.aiProviderWithKind(operationID: UUID(), provider: nil, result: .skipped))
+        recordClient.record(.aiProviderWithKind(operationID: UUID(), provider: .openai, result: .success))
+        recordClient.record(.aiProviderWithKind(operationID: UUID(), provider: nil, result: .failure))
+
+        XCTAssertEqual(requests.value.count, 2)
+        XCTAssertEqual(
+            requests.value[0].metricKey,
+            "voy_691_onb_004_skip_ai_provider_setup_during_onboarding",
+        )
+        XCTAssertNil(requests.value[0].properties["provider_kind"])
+        XCTAssertEqual(requests.value[0].properties["result_status"], .string("skipped"))
+        XCTAssertEqual(
+            requests.value[1].metricKey,
+            "voy_691_onb_004_start_ai_provider_connection_from_onboarding",
+        )
+        XCTAssertEqual(requests.value[1].properties["provider_kind"], .string("openai"))
+        XCTAssertEqual(requests.value[1].properties["result_status"], .string("success"))
+    }
+
+    func testFileManagerProductMetricBridgeCapturesCanonicalRequestOnce() {
+        let requests = LockIsolated<[ProductAnalyticsMetricRequest]>([])
+        let client = ProductAnalyticsClient { request in requests.withValue { $0.append(request) } }
+        let operationID = UUID()
+
+        VoyagerApp.makeFileManagerProductMetricsClient(client: client, environment: .dev)
+            .record(.contentTabAction(
+                result: .success,
+                identity: .openNewContentTab,
+                source: .contentTabBar,
+                operationID: operationID,
+            ))
+
+        XCTAssertEqual(requests.value.count, 1)
+        XCTAssertEqual(requests.value.first?.metricKey, "voy_691_ctm_001_open_new_content_tab")
+        XCTAssertEqual(requests.value.first?.eventVersion.rawValue, "1")
+        XCTAssertEqual(requests.value.first?.operationID, operationID)
+        XCTAssertEqual(requests.value.first?.properties["result_status"], .string("success"))
+        XCTAssertEqual(requests.value.first?.properties["action_type"], .string("open"))
+        XCTAssertEqual(requests.value.first?.properties["source_surface"], .string("content_tab_bar"))
+    }
+
+    /// Content Tab identity별 canonical key 사상이 registry의 implemented key와 1:1로 대응하는지 검증한다.
+    /// action_type 단독으로는 interaction을 특정할 수 없으므로 identity가 유일한 정규 소스다.
+    /// - 검증 내용: 11개 identity 전부가 서로 다른 implemented metricKey로 기록되고 registry resolve에 성공함
+    /// - 사전 조건: host bundle registry와 adapter 주입 client
+    /// - 기대 결과: identity→key 매트릭스 일치, 모든 요소 registry capture 통과
+    func testFileManagerContentTabIdentitiesMapToDistinctCanonicalRegistryKeys() throws {
+        let expectedKeys: [ContentTabInteractionIdentity: String] = [
+            .openNewContentTab: "voy_691_ctm_001_open_new_content_tab",
+            .closeContentTab: "voy_691_ctm_001_close_content_tab",
+            .duplicateContentTab: "voy_691_ctm_001_duplicate_content_tab",
+            .duplicateSelectedContentTabs: "voy_691_ctm_001_duplicate_selected_content_tabs",
+            .restoreLastClosedTab: "voy_691_ctm_001_restore_last_closed_tab",
+            .reorderContentTab: "voy_691_ctm_001_reorder_content_tab",
+            .reorderSelectedContentTabs: "voy_691_ctm_001_reorder_selected_content_tabs",
+            .moveContentTabToAnotherWindow:
+                "voy_691_ctm_001_move_content_tab_to_another_file_manager_window",
+            .moveSelectedContentTabsToAnotherWindow:
+                "voy_691_ctm_001_move_selected_content_tabs_to_another_file_manager_window",
+            .pinContentTabs: "voy_691_ctm_003_pin_content_tab_s",
+            .unpinContentTabs: "voy_691_ctm_003_unpin_content_tab_s",
+        ]
+        let identities: [ContentTabInteractionIdentity] = [
+            .openNewContentTab,
+            .closeContentTab,
+            .duplicateContentTab,
+            .duplicateSelectedContentTabs,
+            .restoreLastClosedTab,
+            .reorderContentTab,
+            .reorderSelectedContentTabs,
+            .moveContentTabToAnotherWindow,
+            .moveSelectedContentTabsToAnotherWindow,
+            .pinContentTabs,
+            .unpinContentTabs,
+        ]
+        XCTAssertEqual(identities.count, expectedKeys.count)
+
+        let requests = LockIsolated<[ProductAnalyticsMetricRequest]>([])
+        let client = ProductAnalyticsClient { request in requests.withValue { $0.append(request) } }
+        let recordClient = VoyagerApp.makeFileManagerProductMetricsClient(client: client, environment: .dev)
+        for (index, identity) in identities.enumerated() {
+            recordClient.record(.contentTabAction(
+                result: .success,
+                identity: identity,
+                source: .contentTabBar,
+                operationID: UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 9, UInt8(index + 1))),
+            ))
+        }
+        let recorded = requests.value
+        XCTAssertEqual(recorded.count, identities.count)
+        XCTAssertEqual(Set(recorded.map(\.metricKey)).count, identities.count)
+
+        let registry = ProductAnalyticsRegistry.load(bundle: VoyagerTestSupport.hostApplicationBundle())
+        for (index, identity) in identities.enumerated() {
+            let request = recorded[index]
+            XCTAssertEqual(request.metricKey, try XCTUnwrap(expectedKeys[identity]))
+            XCTAssertEqual(request.properties["action_type"], .string(identity.actionType))
+            let result = registry.resolve(
+                metricKey: request.metricKey,
+                identity: .device("test-device-id"),
+                context: request.context,
+                properties: request.properties,
+                eventVersion: request.eventVersion,
+                operationID: request.operationID,
+            )
+            guard case .capture = result else {
+                return XCTFail("identity metric did not resolve: \(request.metricKey), result: \(result)")
+            }
+        }
+    }
+
+    /// EOP-001-quick_look_entry: Entry terminal identity는 exact implemented registry key로 사상된다.
+    /// action_type fallback이 Quick Look을 open-default interaction으로 오염시키지 않는지 검증한다.
+    /// - 검증 내용: Quick Look metric request의 key, operation ID, registry resolve 결과를 비교한다.
+    /// - 사전 조건: 성공 Quick Look terminal과 keyboard source가 있다.
+    /// - 기대 결과: `voy_691_eop_001_quick_look_entry` 한 건이 registry capture로 resolve된다.
+    func testFileManagerQuickLookMapsToExactCanonicalRegistryKey() {
+        let requests = LockIsolated<[ProductAnalyticsMetricRequest]>([])
+        let client = ProductAnalyticsClient { request in requests.withValue { $0.append(request) } }
+        let operationID = UUID()
+
+        VoyagerApp.makeFileManagerProductMetricsClient(client: client, environment: .dev)
+            .record(.entryAction(
+                result: .success,
+                identity: .quickLookEntry,
+                source: .keyboardShortcut,
+                operationID: operationID,
+                aggregate: .init(attempted: 1, succeeded: 1, failed: 0),
+            ))
+
+        XCTAssertEqual(requests.value.count, 1)
+        let request = requests.value[0]
+        XCTAssertEqual(request.metricKey, "voy_691_eop_001_quick_look_entry")
+        XCTAssertEqual(request.operationID, operationID)
+        let result = ProductAnalyticsRegistry.load(bundle: VoyagerTestSupport.hostApplicationBundle()).resolve(
+            metricKey: request.metricKey,
+            identity: .device("test-device-id"),
+            context: request.context,
+            properties: request.properties,
+            eventVersion: request.eventVersion,
+            operationID: request.operationID,
+        )
+        guard case .capture = result else {
+            return XCTFail("Quick Look metric did not resolve: \(result)")
+        }
+    }
+
+    /// EOP-005-compress_entries: registry에 implemented key가 없는 Entry identity는 Product event를 만들지 않는다.
+    /// unsupported identity가 open-default key로 fallback하지 않는 fail-closed adapter 계약을 검증한다.
+    /// - 검증 내용: compress terminal 기록 후 ProductAnalytics request 수를 확인한다.
+    /// - 사전 조건: SDK-neutral compress identity와 성공 terminal이 있다.
+    /// - 기대 결과: capture request가 0건이다.
+    func testUnsupportedEntryIdentityDoesNotFallBackToOpenDefault() {
+        let requests = LockIsolated<[ProductAnalyticsMetricRequest]>([])
+        let client = ProductAnalyticsClient { request in requests.withValue { $0.append(request) } }
+
+        VoyagerApp.makeFileManagerProductMetricsClient(client: client, environment: .dev)
+            .record(.entryAction(
+                result: .success,
+                identity: .compressEntries,
+                source: .contextMenu,
+                operationID: UUID(),
+                aggregate: .init(attempted: 1, succeeded: 1, failed: 0),
+            ))
+
+        XCTAssertTrue(requests.value.isEmpty)
+    }
+
+    /// EOP-001-entry_command_terminal: implemented Entry identity는 기존 canonical registry key에만 사상된다.
+    /// SDK-neutral identity 전 집합의 adapter key가 registry catalog와 정확히 일치하는지 검증한다.
+    /// - 검증 내용: implemented identity/key 행렬과 unsupported nil 집합을 비교한다.
+    /// - 사전 조건: registry 변경 없이 현재 EOP-001/002/003/004/006/007 implemented key를 사용한다.
+    /// - 기대 결과: implemented 20개는 exact key, unsupported 4개는 nil이다.
+    func testFileManagerEntryIdentitiesMapOnlyToImplementedCanonicalKeys() {
+        let implemented: [(EntryInteractionIdentity, String)] = [
+            (.openEntryWithDefaultApp, "voy_691_eop_001_open_entry_with_default_app"),
+            (.openEntryWithSelectedApp, "voy_691_eop_001_open_entry_with_selected_app"),
+            (.quickLookEntry, "voy_691_eop_001_quick_look_entry"),
+            (.copyEntries, "voy_691_eop_002_copy_entries"),
+            (.createEntryAlias, "voy_691_eop_002_create_entry_alias"),
+            (.createNewFolder, "voy_691_eop_002_create_new_folder"),
+            (.cutEntries, "voy_691_eop_002_cut_entries"),
+            (.duplicateEntries, "voy_691_eop_002_duplicate_entries"),
+            (.moveEntries, "voy_691_eop_002_move_entries"),
+            (.pasteEntries, "voy_691_eop_002_paste_entries"),
+            (.deleteEntriesImmediately, "voy_691_eop_003_delete_entries_immediately"),
+            (.emptyTrash, "voy_691_eop_003_empty_trash"),
+            (.moveEntriesToTrash, "voy_691_eop_003_move_entries_to_trash"),
+            (.putDeletedEntriesBack, "voy_691_eop_003_put_deleted_entries_back"),
+            (.editEntryTags, "voy_691_eop_004_edit_entry_tags"),
+            (.renameEntry, "voy_691_eop_004_rename_entry"),
+            (.copyAbsolutePaths, "voy_691_eop_006_copy_absolute_paths_of_entries"),
+            (.copyURLs, "voy_691_eop_006_copy_urls_of_entries"),
+            (.revealEntriesInFinder, "voy_691_eop_007_reveal_entries_in_finder"),
+            (.shareEntries, "voy_691_eop_007_share_entries_via_system_share_sheet"),
+        ]
+        for (identity, key) in implemented {
+            XCTAssertEqual(VoyagerApp.entryCanonicalMetricKey(identity), key)
+        }
+        for identity in [
+            EntryInteractionIdentity.getEntryInfo,
+            .performService,
+            .compressEntries,
+            .extractEntries,
+        ] {
+            XCTAssertNil(VoyagerApp.entryCanonicalMetricKey(identity))
+        }
+    }
+
+    func testAiChatProductMetricBridgeCapturesCanonicalRequestOnce() {
+        let requests = LockIsolated<[ProductAnalyticsMetricRequest]>([])
+        let client = ProductAnalyticsClient { request in requests.withValue { $0.append(request) } }
+        let operationID = UUID()
+
+        VoyagerApp.makeAiChatProductMetricsClient(client: client, environment: .dev)
+            .record(.turnResult(
+                operationID: operationID,
+                interaction: .generateContextualChatResponse,
+                result: .success,
+                sourceSurface: .aiChatContent,
+            ))
+
+        XCTAssertEqual(requests.value.count, 1)
+        XCTAssertEqual(requests.value.first?.metricKey, "voy_691_cbw_003_generate_contextual_chat_response")
+        XCTAssertEqual(requests.value.first?.eventVersion.rawValue, "1")
+        XCTAssertEqual(requests.value.first?.operationID, operationID)
+        XCTAssertEqual(requests.value.first?.properties["result_status"], .string("success"))
+        XCTAssertEqual(requests.value.first?.properties["source_surface"], .string("ai_chat_content"))
+    }
+
+    func testAiChatExplicitCancelResolvesThroughCanonicalRegistryKey() {
+        let requests = LockIsolated<[ProductAnalyticsMetricRequest]>([])
+        let client = ProductAnalyticsClient { request in requests.withValue { $0.append(request) } }
+        let operationID = UUID()
+
+        VoyagerApp.makeAiChatProductMetricsClient(client: client, environment: .dev)
+            .record(.turnResult(
+                operationID: operationID,
+                interaction: .cancelActiveChatRequest,
+                result: .cancelled,
+                sourceSurface: .aiChatInspector,
+            ))
+
+        let request = requests.value[0]
+        XCTAssertEqual(request.metricKey, "voy_691_cbw_001_cancel_active_chat_request")
+        XCTAssertEqual(request.operationID, operationID)
+        XCTAssertEqual(request.properties["result_status"], .string("cancelled"))
+        XCTAssertEqual(request.properties["source_surface"], .string("ai_chat_inspector"))
+
+        let result = ProductAnalyticsRegistry.load(bundle: VoyagerTestSupport.hostApplicationBundle()).resolve(
+            metricKey: request.metricKey,
+            identity: .device("test-device-id"),
+            context: request.context,
+            properties: request.properties,
+            eventVersion: request.eventVersion,
+            operationID: request.operationID,
+        )
+        guard case .capture = result else {
+            return XCTFail("explicit cancel metric did not resolve: \(result)")
+        }
+    }
+
+    func testComposerProductMetricBridgeCapturesCanonicalV2RequestOnce() {
+        let requests = LockIsolated<[ProductAnalyticsMetricRequest]>([])
+        let client = ProductAnalyticsClient { request in requests.withValue { $0.append(request) } }
+        let operationID = UUID()
+
+        VoyagerApp.makeComposerMetricClient(client: client, environment: .dev)
+            .record(.queryResult(
+                operationID: operationID,
+                result: .success,
+                durationMilliseconds: 123,
+            ))
+
+        XCTAssertEqual(requests.value.count, 1)
+        XCTAssertEqual(requests.value.first?.metricKey, "voy_691_rcl_004_generate_filter_changes_from_query")
+        XCTAssertEqual(requests.value.first?.eventVersion.rawValue, "2")
+        XCTAssertEqual(requests.value.first?.operationID, operationID)
+        XCTAssertEqual(requests.value.first?.properties["result_status"], .string("success"))
+        XCTAssertEqual(requests.value.first?.properties["source_surface"], .string("composer"))
+        XCTAssertEqual(requests.value.first?.properties["duration_ms"], .integer(123))
+    }
+
+    func testComposerGenericMetricInitializerDoesNotBridgeTypedProductRequest() {
+        let requests = LockIsolated<[ProductAnalyticsMetricRequest]>([])
+        let client = ProductAnalyticsClient { request in requests.withValue { $0.append(request) } }
+        let operationID = UUID()
+        let genericClient = ComposerMetricClient(logMetric: { _, _, _, _ in })
+
+        genericClient.record(.applyResult(
+            operationID: operationID,
+            result: .success,
+            durationMilliseconds: 45,
+        ))
+        XCTAssertTrue(requests.value.isEmpty)
+
+        VoyagerApp.makeComposerMetricClient(client: client, environment: .dev)
+            .record(.applyResult(
+                operationID: operationID,
+                result: .success,
+                durationMilliseconds: 45,
+            ))
+        XCTAssertEqual(requests.value.count, 1)
+        XCTAssertEqual(requests.value.first?.metricKey, "voy_691_rcl_004_apply_generated_filter_changes")
+        XCTAssertEqual(requests.value.first?.properties["duration_ms"], .integer(45))
+    }
+
+    func testTypedAdaptersResolveThroughCanonicalRegistryKeys() {
+        let requests = LockIsolated<[ProductAnalyticsMetricRequest]>([])
+        let client = ProductAnalyticsClient { request in requests.withValue { $0.append(request) } }
+        let operationIDs = (0 ..< 4).map { _ in UUID() }
+
+        VoyagerApp.makeOnboardingProductMetricsClient(client: client, environment: .dev)
+            .record(.completion(operationID: operationIDs[0], result: .success))
+        VoyagerApp.makeFileManagerProductMetricsClient(client: client, environment: .dev)
+            .record(.contentBrowsing(
+                result: .success,
+                content: .folder,
+                identity: .direct,
+                source: .fileManagerContent,
+                operationID: operationIDs[1],
+            ))
+        VoyagerApp.makeAiChatProductMetricsClient(client: client, environment: .dev)
+            .record(.turnSubmitted(operationID: operationIDs[2], sourceSurface: .aiChatContent))
+        VoyagerApp.makeComposerMetricClient(client: client, environment: .dev)
+            .record(.queryResult(operationID: operationIDs[3], result: .success, durationMilliseconds: 12))
+
+        let registry = ProductAnalyticsRegistry.load(bundle: VoyagerTestSupport.hostApplicationBundle())
+        let expectedEventNames = [
+            "voyager_onboarding_completed",
+            "voyager_content_browsing_engaged",
+            "voyager_ai_chat_turn_submitted",
+            "voyager_collection_filter_query_result",
+        ]
+        XCTAssertEqual(requests.value.count, expectedEventNames.count)
+
+        for (request, expectedEventName) in zip(requests.value, expectedEventNames) {
+            let result = registry.resolve(
+                metricKey: request.metricKey,
+                identity: .device("test-device-id"),
+                context: request.context,
+                properties: request.properties,
+                eventVersion: request.eventVersion,
+                operationID: request.operationID,
+            )
+            guard case let .capture(capture) = result else {
+                return XCTFail("typed adapter request did not resolve: \(request.metricKey), result: \(result)")
+            }
+            XCTAssertEqual(capture.event.eventName.rawValue, expectedEventName)
+            XCTAssertEqual(capture.event.operationID, request.operationID)
+        }
+    }
+
+    /// EVM-001-navigate_pages: browsing identity는 exact implemented registry key로만 사상된다.
+    /// TBD인 history identity는 보존하되 app product event를 만들지 않는지 검증한다.
+    /// - 검증 내용: direct/back/forward/enclosing key와 history 무이벤트
+    /// - 사전 조건: 동일 payload의 다섯 finite navigation identity
+    /// - 기대 결과: implemented key 4건만 registry capture로 resolve
+    func testContentBrowsingIdentityMapsExactImplementedRegistryKeysWithoutFallback() {
+        let requests = LockIsolated<[ProductAnalyticsMetricRequest]>([])
+        let client = ProductAnalyticsClient { request in requests.withValue { $0.append(request) } }
+        let metrics = VoyagerApp.makeFileManagerProductMetricsClient(client: client, environment: .dev)
+        let identities: [ContentPageNavigationInteractionIdentity] = [
+            .direct,
+            .back,
+            .forward,
+            .enclosingDirectory,
+            .history,
+        ]
+
+        for identity in identities {
+            metrics.record(.contentBrowsing(
+                result: .success,
+                content: .folder,
+                identity: identity,
+                source: .fileManagerContent,
+                operationID: UUID(),
+            ))
+        }
+
+        XCTAssertEqual(requests.value.map(\.metricKey), [
+            "voy_691_evm_001_navigate_pages",
+            "voy_691_evm_001_go_page_history_back",
+            "voy_691_evm_001_forward_page_history",
+            "voy_691_evm_001_go_to_enclosing_directory",
+        ])
+
+        let registry = ProductAnalyticsRegistry.load(bundle: VoyagerTestSupport.hostApplicationBundle())
+        for request in requests.value {
+            guard case .capture = registry.resolve(
+                metricKey: request.metricKey,
+                identity: .device("test-device-id"),
+                context: request.context,
+                properties: request.properties,
+                eventVersion: request.eventVersion,
+                operationID: request.operationID,
+            ) else {
+                return XCTFail("implemented browsing key did not resolve: \(request.metricKey)")
+            }
+        }
+    }
+
     func testProductAnalyticsContextUsesResolvedAppEnvironment() {
         let occurredAtUTC = Date(timeIntervalSince1970: 1_700_000_000)
 
@@ -130,7 +591,6 @@ final class AppRootCompositionTests: XCTestCase {
         await successStore.finish()
 
         let failures: [AppCollectionOpenBridgeFailure] = [
-            .unsupportedSchema,
             .invalidDefinition,
             .malformed,
             .access,
@@ -166,14 +626,13 @@ final class AppRootCompositionTests: XCTestCase {
             let keys = Set($0.properties.keys)
             return keys == ["result_status"] || keys == ["result_status", "failure_reason"]
         }
-        XCTAssertEqual(requests.count, 6)
+        XCTAssertEqual(requests.count, 5)
         XCTAssertEqual(requests.count { $0.properties["result_status"] == .string("valid_empty") }, 1)
-        XCTAssertEqual(requests.count { $0.properties["result_status"] == .string("load_failure") }, 5)
+        XCTAssertEqual(requests.count { $0.properties["result_status"] == .string("load_failure") }, 4)
         XCTAssertEqual(requests.first?.properties, ["result_status": .string("valid_empty")])
         XCTAssertEqual(
             requests.dropFirst().compactMap { $0.properties["failure_reason"] },
             [
-                .string("unsupported_schema"),
                 .string("invalid_definition"),
                 .string("malformed"),
                 .string("access"),
@@ -3924,7 +4383,6 @@ private final class ReplyRecordingAppDelegate: AppDelegate {
 }
 
 private enum AppCollectionOpenBridgeFailure {
-    case unsupportedSchema
     case invalidDefinition
     case malformed
     case access
@@ -3932,11 +4390,6 @@ private enum AppCollectionOpenBridgeFailure {
 
     var error: any Error {
         switch self {
-        case .unsupportedSchema:
-            CollectionFileCompatibilityError.unsupportedFutureSchemaVersion(
-                found: SchemaVersion(major: 99, minor: 0),
-                current: CollectionFileSchemaVersion.current,
-            )
         case .invalidDefinition:
             CollectionFileCompatibilityError.invalidDefinitionPayload
         case .malformed:

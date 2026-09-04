@@ -144,10 +144,73 @@ final class PostHogProductAnalyticsProviderTests: XCTestCase {
         XCTAssertEqual(properties["target_count"] as? Int, 2)
         XCTAssertTrue(Set([
             "app_version", "environment", "event_version", "platform", "source", "source_project", "interaction_id",
-            "feature_id", "target_count",
+            "feature_id", "operation_id", "target_count",
         ]).isSubset(of: properties.keys))
         XCTAssertFalse(properties.keys.contains("raw_path"))
         XCTAssertFalse(properties.keys.contains("user_prompt"))
+        XCTAssertFalse(properties.keys.contains("hardware_uuid"))
+        XCTAssertFalse(properties.keys.contains("account_id"))
+    }
+
+    func testProviderSerializesExactEventVersionAndLowercaseOperationID() async throws {
+        let interceptor = RequestInterceptor()
+        URLProtocol.registerClass(RequestInterceptor.self)
+        defer { URLProtocol.unregisterClass(RequestInterceptor.self) }
+
+        let sessionConfiguration = URLSessionConfiguration.ephemeral
+        sessionConfiguration.protocolClasses = [RequestInterceptor.self]
+        let provider = try XCTUnwrap(PostHogProductAnalyticsProvider(
+            projectToken: "version-operation-\(UUID().uuidString)",
+            host: "https://analytics.example.test",
+            urlSessionConfiguration: sessionConfiguration,
+            flushAt: 1,
+        ))
+
+        await provider.capture(.init(event: makeEvent(
+            eventName: "voyager_collection_filter_query_result",
+            eventVersion: "2",
+            operationID: "ABCDEFAB-CDEF-ABCD-EFAB-CDEFABCDEFAB",
+        )))
+        await provider.flush()
+
+        let captured = await interceptor.nextRequest()
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: gunzipped(captured.body),
+        ) as? [String: Any])
+        let event = try XCTUnwrap((json["batch"] as? [[String: Any]])?.first)
+        XCTAssertEqual(event["event"] as? String, "voyager_collection_filter_query_result")
+        let properties = try XCTUnwrap(event["properties"] as? [String: Any])
+        XCTAssertEqual(properties["event_version"] as? String, "2")
+        XCTAssertEqual(properties["operation_id"] as? String, "abcdefab-cdef-abcd-efab-cdefabcdefab")
+    }
+
+    func testReservedOperationIDCannotBeOverriddenByGenericProperties() async throws {
+        let interceptor = RequestInterceptor()
+        URLProtocol.registerClass(RequestInterceptor.self)
+        defer { URLProtocol.unregisterClass(RequestInterceptor.self) }
+
+        let sessionConfiguration = URLSessionConfiguration.ephemeral
+        sessionConfiguration.protocolClasses = [RequestInterceptor.self]
+        let provider = try XCTUnwrap(PostHogProductAnalyticsProvider(
+            projectToken: "reserved-operation-\(UUID().uuidString)",
+            host: "https://analytics.example.test",
+            urlSessionConfiguration: sessionConfiguration,
+            flushAt: 1,
+        ))
+        await provider.capture(.init(event: makeEvent(
+            eventVersion: "1",
+            operationID: "ABCDEFAB-CDEF-ABCD-EFAB-CDEFABCDEFAB",
+            properties: ["operation_id": .string("attacker-value")],
+        )))
+        await provider.flush()
+
+        let captured = await interceptor.nextRequest()
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: gunzipped(captured.body),
+        ) as? [String: Any])
+        let event = try XCTUnwrap((json["batch"] as? [[String: Any]])?.first)
+        let properties = try XCTUnwrap(event["properties"] as? [String: Any])
+        XCTAssertEqual(properties["operation_id"] as? String, "abcdefab-cdef-abcd-efab-cdefabcdefab")
     }
 
     func testAnonymousCaptureUsesSDKGeneratedDistinctID() async throws {
@@ -246,6 +309,69 @@ final class PostHogProductAnalyticsProviderTests: XCTestCase {
         let event = try XCTUnwrap((json["batch"] as? [[String: Any]])?.first)
         XCTAssertEqual(event["distinct_id"] as? String, "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")
         XCTAssertEqual(event["timestamp"] as? String, "2023-11-14T22:15:23.000Z")
+    }
+
+    func testMetricCapturePropagatesProducerVersionAndOperationID() async throws {
+        let interceptor = RequestInterceptor()
+        let suiteName = "ProductAnalyticsMetricEnvelopeTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        URLProtocol.registerClass(RequestInterceptor.self)
+        defer { URLProtocol.unregisterClass(RequestInterceptor.self) }
+
+        let installationID = try XCTUnwrap(UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"))
+        let sessionConfiguration = URLSessionConfiguration.ephemeral
+        sessionConfiguration.protocolClasses = [RequestInterceptor.self]
+        let client = ProductAnalyticsBootstrap.makeClient(
+            environment: [
+                "PUBLIC_POSTHOG_PROJECT_TOKEN": "metric-envelope-\(UUID().uuidString)",
+                "PUBLIC_POSTHOG_HOST": "https://analytics.example.test",
+            ],
+            urlSessionConfiguration: sessionConfiguration,
+            flushAt: 1,
+            registry: ProductAnalyticsRegistry(records: [
+                .init(
+                    interactionID: "RCL-004-generate_filter_changes_from_query",
+                    featureID: "RCL-004",
+                    implementationStatus: .implemented,
+                    sentryMetricKeys: ["metric_probe"],
+                    posthogEventName: "voyager_collection_filter_query_result",
+                    legacyAliases: [],
+                    identityPolicy: .device,
+                    propertyAllowlist: [],
+                    relatedIssues: [],
+                    eventVersion: "2",
+                    eventClass: "action",
+                    propertyValueAllowlist: [:],
+                ),
+            ]),
+            userDefaults: defaults,
+            makeInstallationID: { installationID },
+        )
+        let operationID = try XCTUnwrap(UUID(uuidString: "ABCDEFAB-CDEF-ABCD-EFAB-CDEFABCDEFAB"))
+
+        client.captureMetric(.init(
+            metricKey: "metric_probe",
+            properties: [:],
+            context: .init(
+                occurredAtUTC: Date(timeIntervalSince1970: 1_700_000_123),
+                environment: "test",
+                appVersion: "0.8.2",
+                platform: "macOS",
+                source: "app",
+            ),
+            eventVersion: .init(rawValue: "2"),
+            operationID: operationID,
+        ))
+
+        let captured = await interceptor.nextRequest()
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: gunzipped(captured.body),
+        ) as? [String: Any])
+        let event = try XCTUnwrap((json["batch"] as? [[String: Any]])?.first)
+        let properties = try XCTUnwrap(event["properties"] as? [String: Any])
+        XCTAssertEqual(properties["event_version"] as? String, "2")
+        XCTAssertEqual(properties["operation_id"] as? String, operationID.uuidString.lowercased())
     }
 
     func testAdjacentMetricCapturesPreserveProducerOrder() async throws {
@@ -418,6 +544,12 @@ final class PostHogProductAnalyticsProviderTests: XCTestCase {
     private func makeEvent(
         distinctID: String? = "device-test-id",
         eventName: String = "collection_scope_menu_opened",
+        eventVersion: String = "1",
+        operationID: String = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
+        properties: [String: ProductAnalyticsPropertyValue] = [
+            "interaction_id": .string("RCL-001-open_collection_scope_menu"),
+            "target_count": .integer(2),
+        ],
     ) -> ProductAnalyticsEvent {
         ProductAnalyticsEvent(
             eventName: .init(rawValue: eventName),
@@ -427,10 +559,9 @@ final class PostHogProductAnalyticsProviderTests: XCTestCase {
             appVersion: "0.8.2",
             platform: "macOS",
             source: "test",
-            properties: [
-                "interaction_id": .string("RCL-001-open_collection_scope_menu"),
-                "target_count": .integer(2),
-            ],
+            properties: properties,
+            eventVersion: .init(rawValue: eventVersion),
+            operationID: UUID(uuidString: operationID) ?? UUID(),
             sourceProject: "app",
             identifiers: .init(
                 interactionID: "RCL-001-open_collection_scope_menu",

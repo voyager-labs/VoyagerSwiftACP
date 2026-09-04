@@ -21,6 +21,12 @@ public struct FileManagerContentState: Equatable {
     /// 네비게이션 기원 pending selection이 바인딩된 목적지 로딩 세대. nil이면 미바인딩(외부 기원 또는 로드 전) 상태다.
     var pendingSelectEntryLoadGeneration: Int?
 
+    var productBrowsingOperationID: UUID?
+    var productBrowsingIdentity: ContentPageNavigationInteractionIdentity?
+    var productBrowsingSource: ContentBrowsingSource?
+    var productBrowsingContent: ContentBrowsingKind?
+    var pendingProductBrowsingSource: ContentBrowsingSource?
+
     /// 성공한 rename/move 명령의 consume-once 경로 전이.
     /// 동일 identity 변경을 알리는 외부 파일시스템 이벤트가 명령 완료 시 예약된 refresh를
     /// 중복 예약하는지 판정하는 데만 쓰인다. 벽시계 만료는 없으며 소비·대체·불일치로만 사라진다.

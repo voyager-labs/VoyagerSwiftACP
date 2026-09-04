@@ -34,6 +34,14 @@ final class EOP006CopyEntryReferencesTests: XCTestCase {
 
         await store.send(.clipboard(.copyAbsolutePaths(paths: [sandbox.fileURL.path])))
 
+        // 비-undo copyPath 명령도 pasteboard write 성공 aggregate를 담아 한 건 수신한다.
+        await store.receive { action in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return false }
+            return record.operationKind == .copyPath
+                && record.succeededCount == 1
+                && record.failedCount == 0
+        }
+
         XCTAssertEqual(capture.clearCount, 1)
         XCTAssertEqual(capture.strings, [sandbox.fileURL.path])
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
@@ -66,11 +74,58 @@ final class EOP006CopyEntryReferencesTests: XCTestCase {
 
         await store.send(.clipboard(.copyURLs(paths: [sandbox.fileURL.path])))
 
+        // 비-undo copyPath 명령도 pasteboard write 성공 aggregate를 담아 한 건 수신한다.
+        await store.receive { action in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return false }
+            return record.operationKind == .copyPath
+                && record.succeededCount == 1
+                && record.failedCount == 0
+        }
+
         XCTAssertEqual(capture.clearCount, 1)
         XCTAssertEqual(capture.strings, [sandbox.fileURL.absoluteString])
         let copiedURL = try XCTUnwrap(URL(string: capture.strings[0]))
         XCTAssertEqual(copiedURL, sandbox.fileURL)
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
+    }
+
+    /// EOP-006-copy_absolute_paths_of_entries: pasteboard write 실패는 실패 aggregate terminal로 마무리된다.
+    /// setString Bool 결과가 그대로 succeeded/failed 집계로 반영되는지 검증한다.
+    /// - 검증 내용: terminal record의 failedCount는 1이고 succeededCount는 0이다.
+    /// - 사전 조건: setString이 false를 반환하는 pasteboard mock
+    /// - 기대 결과: entryActionCompleted(.copyPath, failed: 1, succeeded: 0)가 한 번 수신된다.
+    func testCopyAbsolutePathsOfEntries_setStringFailureEmitsFailureTerminal() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+
+        let capture = PasteboardCapture()
+        let pasteboardClient = PasteboardClient(
+            changeCount: { 0 },
+            clearContents: { capture.recordClear() },
+            writeObjects: { _ in true },
+            readObjects: { _, _ in nil },
+            setString: { string, _ in
+                capture.record(string)
+                return false
+            },
+            string: { _ in capture.lastString },
+        )
+
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.pasteboardClient = pasteboardClient
+        }
+
+        await store.send(.clipboard(.copyAbsolutePaths(paths: [sandbox.fileURL.path])))
+
+        await store.receive { action in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return false }
+            return record.operationKind == .copyPath
+                && record.succeededCount == 0
+                && record.failedCount == 1
+        }
+
+        XCTAssertEqual(capture.clearCount, 1)
+        XCTAssertEqual(capture.strings, [sandbox.fileURL.path])
     }
 }
 

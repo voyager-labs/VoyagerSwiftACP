@@ -29,6 +29,8 @@ public struct SelectedContentTabPinMutationResult: Equatable, Sendable {
     public let successCount: Int
     public let failureCount: Int
     public let remainingCount: Int
+    public let source: ContentTabActionSource
+    public let origin: SelectedContentTabPinMutationOrigin
 
     public init(
         operationID: UUID,
@@ -37,6 +39,8 @@ public struct SelectedContentTabPinMutationResult: Equatable, Sendable {
         successCount: Int,
         failureCount: Int,
         remainingCount: Int,
+        source: ContentTabActionSource,
+        origin: SelectedContentTabPinMutationOrigin,
     ) {
         self.operationID = operationID
         self.target = target
@@ -44,6 +48,8 @@ public struct SelectedContentTabPinMutationResult: Equatable, Sendable {
         self.successCount = successCount
         self.failureCount = failureCount
         self.remainingCount = remainingCount
+        self.source = source
+        self.origin = origin
     }
 }
 
@@ -155,6 +161,7 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
     case topNavigationMoveRequested(
         source: FileManagerTopNavigationItemID,
         destination: FileManagerTopNavigationMoveDestination,
+        actionSource: ContentTabActionSource = .contentTabBar,
     )
     case applyExternalCommittedTopNavigationOrder(
         FileManagerTopNavigationOrder,
@@ -185,7 +192,10 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
     case cancelPendingPinnedCollectionReturn(ContentTabID)
     case resyncActiveCollectionNavigation
 
-    case requestSelectedContentTabPinMutation(target: SelectedContentTabPinMutationTargetState)
+    case requestSelectedContentTabPinMutation(
+        target: SelectedContentTabPinMutationTargetState,
+        source: ContentTabActionSource,
+    )
     case requestContentTabDomainTransition(ContentTabDomainTransitionRequest)
     case processNextSelectedContentTabPinMutation(operationID: UUID)
     case performSelectedContentTabPinMutation(
@@ -201,6 +211,7 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
     case selectedPinMutationBatchCompleted(SelectedContentTabPinMutationResult)
 
     case requestCloseSelectedContentTabs
+    case requestCloseSelectedTabs(ContentTabActionSource)
     case performSelectedContentTabCloseMutation(
         operationID: UUID,
         tabID: ContentTabID,
@@ -223,6 +234,8 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
         outcome: SelectedContentTabCloseOutcome,
     )
     case closeContentTabRequested(ContentTabID)
+    case closeContentTabRequestedWithSource(ContentTabID, ContentTabActionSource)
+    case contentTabActionRequested(ContentTabAction, source: ContentTabActionSource)
     case contentTabCloseAlertResponse(CollectionNavigationChoice)
     case selectedContentTabCloseAlertResponse(
         operationID: UUID,
@@ -320,7 +333,7 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
         case homeAiChatNewChatSeedRequested(sessionID: AiChatSessionID)
         case applyContentNewChatSeed(FileManagerContentNewChatSeedApplication)
         case applyInspectorNewChatSeed(FileManagerInspectorNewChatSeedApplication)
-        case defaultStartPageResolved(StartPage)
+        case defaultStartPageResolved(StartPage, source: ContentTabActionSource)
     }
 
     @CasePathable
@@ -355,7 +368,7 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
         case selectAll
         case copyAbsolutePaths
         case copyURLs
-        case openNewContentTab
+        case openNewContentTab(source: ContentTabActionSource)
         case selectContentTab(position: Int)
         case selectMostRecentlyUsedContentTab
         case activateContentTabSwitcherSelection
@@ -369,6 +382,7 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
         case duplicateContentTab(ContentTabID)
         case duplicateActiveContentTab
         case duplicateSelectedContentTabs
+        case contentTabAction(ContentTabProductActionRequest, source: ContentTabActionSource)
     }
 
     @CasePathable
@@ -411,6 +425,15 @@ public enum FileManagerWindowAction: CasePathable, Sendable {
         /// pinned tab의 durable route 복귀가 실제 navigation commit 없이 실패했음을 window manager에 알린다.
         case pinnedContentTabRuntimeNavigationFailed(tabID: ContentTabID)
     }
+}
+
+public enum ContentTabProductActionRequest: Equatable, Sendable {
+    case closeActive
+    case closeSelected
+    case restoreLastClosed
+    case duplicate(ContentTabID)
+    case duplicateActive
+    case duplicateSelected
 }
 
 public extension FileManagerWindowAction.WindowCommand {

@@ -147,7 +147,7 @@ final class SettingsGeneralFlowTests: XCTestCase {
             await store.receive { action in
                 guard case let .windowManager(.windows(.element(
                     id,
-                    action: .window(.request(.openNewContentTab)),
+                    action: .window(.request(.openNewContentTab(source: .menuCommand))),
                 ))) = action else { return false }
                 return id == newWindowID
             }

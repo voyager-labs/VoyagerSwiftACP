@@ -41,13 +41,34 @@ final class ProductAnalyticsRegistryTests: XCTestCase {
         let appBundle = VoyagerTestSupport.hostApplicationBundle()
         XCTAssertEqual(ProductAnalyticsRegistry.load(bundle: appBundle).records.count, 378)
 
-        let registry = ProductAnalyticsRegistry.load(bundle: appBundle)
-        XCTAssertEqual(registry.records.count(where: { $0.implementationStatus == .implemented }), 8)
-        XCTAssertEqual(registry.records.count(where: { $0.implementationStatus == .tbd }), 370)
+        let metadata = ProductAnalyticsRegistry.loadResult(bundle: appBundle)
+        guard case let .loaded(registry) = metadata else {
+            return XCTFail("expected bundled registry")
+        }
+        XCTAssertEqual(registry.metadataOnlyMetricCount, 3)
+
+        XCTAssertEqual(registry.records.count(where: { $0.implementationStatus == .implemented }), 45)
+        XCTAssertEqual(registry.records.count(where: { $0.implementationStatus == .noEventRequired }), 29)
+        XCTAssertEqual(registry.records.count(where: { $0.implementationStatus == .tbd }), 304)
         XCTAssertTrue(registry.records.filter { $0.implementationStatus == .implemented }
-            .allSatisfy { $0.relatedIssues == ["VOY-527"] })
-        XCTAssertTrue(registry.records.filter { $0.implementationStatus == .tbd }
             .allSatisfy { $0.relatedIssues == ["VOY-691"] })
+        XCTAssertTrue(registry.records.filter { $0.implementationStatus != .implemented }
+            .allSatisfy { $0.relatedIssues == ["VOY-691"] })
+        XCTAssertEqual(
+            Set(registry.records.filter { $0.implementationStatus == .implemented }.compactMap(\.posthogEventName)),
+            Set([
+                "voyager_onboarding_completed",
+                "voyager_onboarding_permission_result",
+                "voyager_ai_provider_setup_result",
+                "voyager_content_browsing_engaged",
+                "voyager_content_tab_action_result",
+                "voyager_entry_action_result",
+                "voyager_ai_chat_turn_submitted",
+                "voyager_ai_chat_turn_result",
+                "voyager_collection_filter_query_result",
+                "voyager_collection_filter_apply_result",
+            ]),
+        )
         for interactionID in [
             "FMW-001-close_file_manager_window",
             "FMW-002-adjust_sidebar_width",
@@ -59,6 +80,194 @@ final class ProductAnalyticsRegistryTests: XCTestCase {
             XCTAssertNil(record?.posthogEventName)
             XCTAssertEqual(record?.identityPolicy, ProductAnalyticsRegistryIdentityPolicy.none)
             XCTAssertEqual(record?.propertyAllowlist, [])
+        }
+
+        for interactionID in [
+            "CBW-003-show_request_resolution_failure",
+            "CTM-001-close_other_content_tabs",
+            "CTM-001-move_content_tab_to_new_file_manager_window",
+            "EOP-004-batch_rename_entries",
+            "EOP-006-copy_relative_paths_of_entries",
+        ] {
+            let record = registry.records.first { $0.interactionID == interactionID }
+            XCTAssertEqual(record?.implementationStatus, .tbd)
+            XCTAssertNil(record?.eventVersion)
+            XCTAssertNil(record?.eventClass)
+            XCTAssertEqual(record?.sentryMetricKeys, [])
+            XCTAssertNil(record?.posthogEventName)
+            XCTAssertEqual(record?.identityPolicy, ProductAnalyticsRegistryIdentityPolicy.none)
+            XCTAssertEqual(record?.propertyAllowlist, [])
+            XCTAssertEqual(record?.propertyValueAllowlist, [:])
+        }
+    }
+
+    func testRegistrySchemaRequiresVersionClassAndFiniteAllowlist() throws {
+        let appBundle = VoyagerTestSupport.hostApplicationBundle()
+        let registryURL = try XCTUnwrap(appBundle.url(forResource: "ProductAnalyticsRegistry", withExtension: "json"))
+        let original = try XCTUnwrap(JSONSerialization
+            .jsonObject(with: Data(contentsOf: registryURL)) as? [String: Any])
+
+        let mutations: [(String, (inout [String: Any]) -> Void)] = [
+            ("missing version", { root in
+                guard var records = root["records"] as? [[String: Any]] else { return }
+                records[0].removeValue(forKey: "event_version")
+                root["records"] = records
+            }),
+            ("unknown version", { root in
+                guard var records = root["records"] as? [[String: Any]] else { return }
+                records[0]["event_version"] = "3"
+                root["records"] = records
+            }),
+            ("unknown class", { root in
+                guard var records = root["records"] as? [[String: Any]] else { return }
+                records[0]["event_class"] = "exposure"
+                root["records"] = records
+            }),
+            ("missing value allowlist", { root in
+                guard var records = root["records"] as? [[String: Any]] else { return }
+                records[0].removeValue(forKey: "property_value_allowlist")
+                root["records"] = records
+            }),
+            ("duplicate value allowlist", { root in
+                guard var records = root["records"] as? [[String: Any]] else { return }
+                records[0]["property_value_allowlist"] = ["result_status": ["success", "success"]]
+                root["records"] = records
+            }),
+        ]
+
+        for (name, mutate) in mutations {
+            var mutated = original
+            mutate(&mutated)
+            let data = try JSONSerialization.data(withJSONObject: mutated)
+            XCTAssertEqual(ProductAnalyticsRegistry.load(data: data), .invalid(.malformed), name)
+        }
+    }
+
+    func testNonImplementedRowsRejectProductMappings() throws {
+        let appBundle = VoyagerTestSupport.hostApplicationBundle()
+        let registryURL = try XCTUnwrap(appBundle.url(forResource: "ProductAnalyticsRegistry", withExtension: "json"))
+        let original = try XCTUnwrap(JSONSerialization
+            .jsonObject(with: Data(contentsOf: registryURL)) as? [String: Any])
+        let mutations: [(String, (inout [String: Any]) -> Void)] = [
+            ("sentry metric", { root in
+                guard var records = root["records"] as? [[String: Any]] else { return }
+                records[0]["sentry_metric_keys"] = ["unexpected"]
+                root["records"] = records
+            }),
+            ("PostHog event", { root in
+                guard var records = root["records"] as? [[String: Any]] else { return }
+                records[0]["posthog_event_name"] = "unexpected"
+                root["records"] = records
+            }),
+            ("legacy alias", { root in
+                guard var records = root["records"] as? [[String: Any]] else { return }
+                records[0]["legacy_aliases"] = ["unexpected"]
+                root["records"] = records
+            }),
+            ("identity", { root in
+                guard var records = root["records"] as? [[String: Any]] else { return }
+                records[0]["identity_policy"] = "anonymous"
+                root["records"] = records
+            }),
+            ("property allowlist", { root in
+                guard var records = root["records"] as? [[String: Any]] else { return }
+                records[0]["property_allowlist"] = ["source_surface"]
+                root["records"] = records
+            }),
+            ("finite value allowlist", { root in
+                guard var records = root["records"] as? [[String: Any]] else { return }
+                records[0]["property_value_allowlist"] = ["source_surface": ["toolbar"]]
+                root["records"] = records
+            }),
+        ]
+
+        for (name, mutate) in mutations {
+            var mutated = original
+            mutate(&mutated)
+            let data = try JSONSerialization.data(withJSONObject: mutated)
+            XCTAssertEqual(ProductAnalyticsRegistry.load(data: data), .invalid(.malformed), name)
+        }
+    }
+
+    func testImplementedStringPropertyRequiresFiniteAllowlist() throws {
+        let appBundle = VoyagerTestSupport.hostApplicationBundle()
+        let registryURL = try XCTUnwrap(appBundle.url(forResource: "ProductAnalyticsRegistry", withExtension: "json"))
+        var root = try XCTUnwrap(JSONSerialization
+            .jsonObject(with: Data(contentsOf: registryURL)) as? [String: Any])
+        var records = try XCTUnwrap(root["records"] as? [[String: Any]])
+        let implementedIndex = try XCTUnwrap(records
+            .firstIndex { $0["implementation_status"] as? String == "implemented" })
+        records[implementedIndex]["property_allowlist"] = ["source_surface"]
+        records[implementedIndex]["property_value_allowlist"] = [:]
+        root["records"] = records
+
+        let data = try JSONSerialization.data(withJSONObject: root)
+        XCTAssertEqual(ProductAnalyticsRegistry.load(data: data), .invalid(.malformed))
+
+        let directRegistry = ProductAnalyticsRegistry(records: [
+            .init(
+                interactionID: "RCL-001-missing_finite_values",
+                featureID: "RCL-001",
+                implementationStatus: .implemented,
+                sentryMetricKeys: ["missing_finite_metric"],
+                posthogEventName: "missing_finite_event",
+                legacyAliases: [],
+                identityPolicy: .anonymous,
+                propertyAllowlist: ["source_surface"],
+                relatedIssues: [],
+            ),
+        ])
+        XCTAssertEqual(
+            directRegistry.resolve(
+                metricKey: "missing_finite_metric",
+                identity: .anonymous,
+                properties: ["source_surface": .string("arbitrary")],
+            ),
+            .drop(.privacyRejected),
+        )
+    }
+
+    func testFiniteValuesAndRawPrivacyInputsFailClosed() throws {
+        let data = try JSONSerialization.data(withJSONObject: [
+            "records": [[
+                "interaction_id": "RCL-001-finite_values",
+                "feature_id": "RCL-001",
+                "implementation_status": "implemented",
+                "event_version": "1",
+                "event_class": "action",
+                "sentry_metric_keys": ["finite_metric"],
+                "posthog_event_name": "finite_event",
+                "legacy_aliases": [],
+                "identity_policy": "anonymous",
+                "property_allowlist": ["result_status", "source_surface"],
+                "property_value_allowlist": [
+                    "result_status": ["success", "failure"],
+                    "source_surface": ["toolbar"],
+                ],
+                "related_issues": [],
+            ]],
+        ])
+        guard case let .loaded(registry) = ProductAnalyticsRegistry.load(data: data) else {
+            return XCTFail("expected finite-value fixture to load")
+        }
+
+        for value in ["unknown", "raw/path", "prompt", "token", "credential"] {
+            XCTAssertEqual(
+                registry.resolve(
+                    metricKey: "finite_metric",
+                    identity: .anonymous,
+                    properties: ["result_status": .string(value)],
+                ),
+                .drop(.privacyRejected),
+                value,
+            )
+        }
+        guard case .capture = registry.resolve(
+            metricKey: "finite_metric",
+            identity: .anonymous,
+            properties: ["source_surface": .string("toolbar")],
+        ) else {
+            return XCTFail("allowlisted finite value should capture")
         }
     }
 
@@ -82,6 +291,30 @@ final class ProductAnalyticsRegistryTests: XCTestCase {
         }
     }
 
+    func testMetadataOnlyMetricRejectsExplicitVersionMismatch() {
+        let registry = ProductAnalyticsRegistry(
+            records: [],
+            metadataOnlyMetrics: [
+                .init(
+                    metricKey: "metadata_metric",
+                    posthogEventName: "metadata_event",
+                    identityPolicy: .device,
+                    propertyAllowlist: [],
+                    eventVersion: "1",
+                ),
+            ],
+        )
+
+        XCTAssertEqual(
+            registry.resolve(
+                metricKey: "metadata_metric",
+                identity: .device("test-device-id"),
+                eventVersion: .init(rawValue: "2"),
+            ),
+            .drop(.privacyRejected),
+        )
+    }
+
     func testBundledGenericMetricsRejectCanonicalAttributionProperties() {
         let registry = ProductAnalyticsRegistry.load(bundle: VoyagerTestSupport.hostApplicationBundle())
 
@@ -100,7 +333,6 @@ final class ProductAnalyticsRegistryTests: XCTestCase {
         let deviceID = "test-device-id"
         let outcomes: [[String: ProductAnalyticsPropertyValue]] = [
             ["result_status": .string("valid_empty")],
-            ["result_status": .string("load_failure"), "failure_reason": .string("unsupported_schema")],
             ["result_status": .string("load_failure"), "failure_reason": .string("invalid_definition")],
             ["result_status": .string("load_failure"), "failure_reason": .string("malformed")],
             ["result_status": .string("load_failure"), "failure_reason": .string("access")],
@@ -145,45 +377,82 @@ final class ProductAnalyticsRegistryTests: XCTestCase {
 
     func testBundledQueryResultCapturesRepresentativeSnakeCaseOutcome() {
         let registry = ProductAnalyticsRegistry.load(bundle: VoyagerTestSupport.hostApplicationBundle())
+        let record = registry.records.first { $0.posthogEventName == "voyager_collection_filter_query_result" }
+        XCTAssertEqual(record?.eventVersion, "2")
+        XCTAssertEqual(record?.eventClass, "action")
+        XCTAssertEqual(record?.propertyAllowlist, ["result_status", "source_surface", "duration_ms"])
+        XCTAssertEqual(record?.propertyValueAllowlist["result_status"], ["success", "empty", "failure", "cancelled"])
+        XCTAssertEqual(record?.propertyValueAllowlist["source_surface"], ["composer"])
+        guard let metricKey = record?.sentryMetricKeys.first else {
+            return XCTFail("expected bundled query-result metric key")
+        }
 
         let result = registry.resolve(
-            metricKey: "voyager_collection_filter_query_result",
+            metricKey: metricKey,
             identity: .device("test-device-id"),
             properties: [
-                "result_status": .string("generated_change_set"),
-                "source_surface": .string("query_submit"),
+                "result_status": .string("success"),
+                "source_surface": .string("composer"),
             ],
         )
 
         guard case let .capture(request) = result else {
             return XCTFail("expected bundled query-result metric capture")
         }
-        XCTAssertEqual(request.event.eventName.rawValue, "voyager_collection_filter_query")
-        XCTAssertEqual(request.event.properties["result_status"], .string("generated_change_set"))
+        XCTAssertEqual(request.event.eventName.rawValue, "voyager_collection_filter_query_result")
+        XCTAssertEqual(request.event.properties["result_status"], .string("success"))
+        XCTAssertEqual(request.event.properties["source_surface"], .string("composer"))
+    }
+
+    func testBundledCutEntriesCapturesCanonicalActionEnvelope() {
+        let registry = ProductAnalyticsRegistry.load(bundle: VoyagerTestSupport.hostApplicationBundle())
+
+        let result = registry.resolve(
+            metricKey: "voy_691_eop_002_cut_entries",
+            identity: .device("test-device-id"),
+            properties: [
+                "result_status": .string("success"),
+                "action_type": .string("cut"),
+                "source_surface": .string("file_manager_content"),
+            ],
+            eventVersion: .init(rawValue: "1"),
+        )
+
+        guard case let .capture(request) = result else {
+            return XCTFail("expected bundled cut-entries capture, got: \(result)")
+        }
+        XCTAssertEqual(request.event.eventName.rawValue, "voyager_entry_action_result")
+        XCTAssertEqual(request.event.eventVersion.rawValue, "1")
+        XCTAssertEqual(request.event.properties["action_type"], .string("cut"))
     }
 
     func testBundledQueryResultCapturesEveryCanonicalConversionOutcome() {
         let registry = ProductAnalyticsRegistry.load(bundle: VoyagerTestSupport.hostApplicationBundle())
+        guard let metricKey = registry.records.first(where: {
+            $0.posthogEventName == "voyager_collection_filter_query_result"
+        })?.sentryMetricKeys.first else {
+            return XCTFail("expected bundled query-result metric key")
+        }
         let outcomes = [
-            "generated_change_set",
-            "unchanged_result",
-            "fallback_reuse",
-            "provider_not_configured",
-            "invalid_credential",
-            "provider_unavailable",
-            "network_failure",
-            "conversion_failure",
+            "success",
+            "empty",
+            "failure",
+            "cancelled",
         ]
 
         for outcome in outcomes {
             guard case let .capture(request) = registry.resolve(
-                metricKey: "voyager_collection_filter_query_result",
+                metricKey: metricKey,
                 identity: .device("test-device-id"),
-                properties: ["result_status": .string(outcome)],
+                properties: [
+                    "result_status": .string(outcome),
+                    "source_surface": .string("composer"),
+                ],
             ) else {
                 return XCTFail("expected bundled capture for \(outcome)")
             }
             XCTAssertEqual(request.event.properties["result_status"], .string(outcome))
+            XCTAssertEqual(request.event.properties["source_surface"], .string("composer"))
         }
     }
 
@@ -199,6 +468,10 @@ final class ProductAnalyticsRegistryTests: XCTestCase {
                 identityPolicy: .anonymous,
                 propertyAllowlist: ["result_status", "failure_reason"],
                 relatedIssues: [],
+                propertyValueAllowlist: [
+                    "result_status": ["success"],
+                    "failure_reason": ["network_unavailable"],
+                ],
             ),
         ])
 
@@ -435,6 +708,10 @@ final class ProductAnalyticsRegistryTests: XCTestCase {
                 identityPolicy: .anonymous,
                 propertyAllowlist: ["failure_reason", "recovery_action"],
                 relatedIssues: [],
+                propertyValueAllowlist: [
+                    "failure_reason": ["network_unavailable", "provider_unavailable", "verification_failed"],
+                    "recovery_action": ["retry"],
+                ],
             ),
         ])
 
@@ -520,12 +797,18 @@ final class ProductAnalyticsRegistryTests: XCTestCase {
                     "posthog_event_name": "event_a",
                     "identity_policy": "anonymous",
                     "property_allowlist": [],
+                    "event_version": "1",
+                    "event_class": "exposure",
+                    "kpi_eligible": false,
                 ],
                 [
                     "metric_key": "duplicate_metric",
                     "posthog_event_name": "event_b",
                     "identity_policy": "anonymous",
                     "property_allowlist": [],
+                    "event_version": "1",
+                    "event_class": "exposure",
+                    "kpi_eligible": false,
                 ],
             ],
             "records": [],
@@ -538,16 +821,22 @@ final class ProductAnalyticsRegistryTests: XCTestCase {
                 "posthog_event_name": "metadata_event",
                 "identity_policy": "anonymous",
                 "property_allowlist": [],
+                "event_version": "1",
+                "event_class": "exposure",
+                "kpi_eligible": false,
             ]],
             "records": [[
                 "interaction_id": "RCL-001-shared_metric",
                 "feature_id": "RCL-001",
-                "implementation_status": "TBD",
+                "implementation_status": "implemented",
+                "event_version": "1",
+                "event_class": "action",
                 "sentry_metric_keys": ["shared_metric"],
-                "posthog_event_name": NSNull(),
+                "posthog_event_name": "canonical_event",
                 "legacy_aliases": [],
-                "identity_policy": "none",
+                "identity_policy": "anonymous",
                 "property_allowlist": [],
+                "property_value_allowlist": [:],
                 "related_issues": [],
             ]],
         ])

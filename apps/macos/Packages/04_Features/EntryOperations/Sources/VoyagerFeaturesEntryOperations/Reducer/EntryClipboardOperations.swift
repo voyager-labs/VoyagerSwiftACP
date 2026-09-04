@@ -85,6 +85,16 @@ struct EntryClipboardOperationsReducer {
     @Dependency(\.externalDropAcquisitionClient)
     var acquisitionClient
 
+    /// copyPath terminal은 pasteboard write 성공 여부를 그대로 집계한다.
+    private func copyPathTerminal(didWrite: Bool) -> EntryActionRecord {
+        EntryActionRecord(
+            operationKind: .copyPath,
+            targets: [],
+            failedCount: didWrite ? 0 : 1,
+            succeededCount: didWrite ? 1 : 0,
+        )
+    }
+
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
@@ -97,10 +107,50 @@ struct EntryClipboardOperationsReducer {
                 pasteboardClient.clearContents()
 
                 let urls = files.map { URL(fileURLWithPath: $0.fullPath) }
-                _ = pasteboardClient.writeObjects(urls as [NSURL])
+                let didWrite = pasteboardClient.writeObjects(urls as [NSURL])
                 entryFileOpsClient.postFileSystemChanged([])
 
-                return .none
+                return .send(.lifecycle(.entryActionCompleted(EntryActionRecord(
+                    operationKind: .copyPath,
+                    targets: [],
+                    failedCount: didWrite ? 0 : 1,
+                    succeededCount: didWrite ? 1 : 0,
+                ))))
+
+            case let .clipboard(.cutSelectedItems(files)):
+                let paths = files.map(\.fullPath)
+                state.clipboardItems = paths
+                state.clipboardOperation = .copy
+                state.cutClearSession = nil
+                entryFileOpsClient.saveClipboardCutSessionId(nil)
+
+                pasteboardClient.clearContents()
+                let urls = paths.map { URL(fileURLWithPath: $0) }
+                let wroteURLs = pasteboardClient.writeObjects(urls as [NSURL])
+                let wroteMarker = wroteURLs && pasteboardClient.setString(
+                    "cut",
+                    NSPasteboard.PasteboardType("fm.voyager.clipboard.operation"),
+                )
+
+                if wroteMarker {
+                    state.clipboardOperation = .cut
+                    let cutSessionId = uuid().uuidString
+                    entryFileOpsClient.saveClipboardCutSessionId(cutSessionId)
+                    state.cutClearSession = EntryOperationsCutClearHeuristic().makeInitialSession(
+                        cutSessionId: cutSessionId,
+                        pasteboardChangeCount: entryFileOpsClient.clipboardChangeCount(),
+                        sourcePaths: paths,
+                        now: Date(),
+                    )
+                }
+
+                entryFileOpsClient.postFileSystemChanged([])
+                return .send(.lifecycle(.entryActionCompleted(EntryActionRecord(
+                    operationKind: .copyPath,
+                    targets: [],
+                    failedCount: wroteMarker ? 0 : 1,
+                    succeededCount: wroteMarker ? 1 : 0,
+                ))))
 
             case .lifecycle(.loadClipboardState):
                 let (clipboardPaths, clipboardOperation) = entryFileOpsClient.loadClipboardPaths()
@@ -155,9 +205,11 @@ struct EntryClipboardOperationsReducer {
 
                 let text = paths.joined(separator: "\n")
                 pasteboardClient.clearContents()
-                _ = pasteboardClient.setString(text, .string)
+                let didWrite = pasteboardClient.setString(text, .string)
 
-                return .none
+                return .send(.lifecycle(.entryActionCompleted(
+                    copyPathTerminal(didWrite: didWrite),
+                )))
 
             case let .clipboard(.copyURLs(paths)):
                 guard !paths.isEmpty else { return .none }
@@ -166,9 +218,11 @@ struct EntryClipboardOperationsReducer {
                     .map { URL(fileURLWithPath: $0).absoluteString }
                     .joined(separator: "\n")
                 pasteboardClient.clearContents()
-                _ = pasteboardClient.setString(text, .string)
+                let didWrite = pasteboardClient.setString(text, .string)
 
-                return .none
+                return .send(.lifecycle(.entryActionCompleted(
+                    copyPathTerminal(didWrite: didWrite),
+                )))
 
             case let .clipboard(.setClipboardOperation(operation)):
                 state.clipboardOperation = operation
@@ -291,6 +345,22 @@ struct EntryClipboardOperationsReducer {
                 }
                 return effect
 
+            case let .clipboard(.duplicateItems(groups)):
+                let destinations = groups.flatMap { group in
+                    EntryClipboardOperationsSupport.avoidNameCollisions(
+                        sourcePaths: group.sourcePaths,
+                        destinationURL: URL(fileURLWithPath: group.destinationPath),
+                        operation: .copy,
+                        entryFileOpsClient: entryFileOpsClient,
+                    )
+                }
+                return pasteDestinationsEffect(
+                    destinations,
+                    operation: .copy,
+                    operationKind: .pasteFileDuplicate,
+                    mutationImpactDestinationPath: nil,
+                )
+
             case let .clipboard(.performDrop(sourcePaths, destinationPath, isOptionDrag)):
                 let operation: ClipboardOperation = isOptionDrag ? .copy : .cut
                 let operationKind: OperationKind = operation == .copy ? .pasteFileCopy : .pasteFileMove
@@ -324,11 +394,38 @@ struct EntryClipboardOperationsReducer {
             entryFileOpsClient: entryFileOpsClient,
         )
         guard !destinations.isEmpty else {
-            return operation == .cut
-                ? .send(.lifecycle(.operationFinished(destinationPath, operationKind, .success(()))))
-                : .none
+            guard operation == .cut, !sourcePaths.isEmpty else { return .none }
+            return pasteDestinationsEffect(
+                [],
+                operation: operation,
+                operationKind: operationKind,
+                mutationImpactDestinationPath: mutationImpactDestinationPath,
+                cancelledCount: sourcePaths.count,
+                onCancelCleanup: onCancelCleanup,
+                secureCopy: secureCopy,
+            )
         }
 
+        return pasteDestinationsEffect(
+            destinations,
+            operation: operation,
+            operationKind: operationKind,
+            mutationImpactDestinationPath: mutationImpactDestinationPath,
+            cancelledCount: 0,
+            onCancelCleanup: onCancelCleanup,
+            secureCopy: secureCopy,
+        )
+    }
+
+    private func pasteDestinationsEffect(
+        _ destinations: [(URL, URL)],
+        operation: ClipboardOperation,
+        operationKind: OperationKind,
+        mutationImpactDestinationPath: String?,
+        cancelledCount initialCancelledCount: Int = 0,
+        onCancelCleanup: (@MainActor @Sendable () -> Void)? = nil,
+        secureCopy: SecurePlacementCopy? = nil,
+    ) -> Effect<Action> {
         let executor = EntryClipboardOperationsSupport.PasteExecutor(
             entryFileOpsClient: entryFileOpsClient,
             alertClient: alertClient,
@@ -337,23 +434,45 @@ struct EntryClipboardOperationsReducer {
         )
         let copyLoop: @Sendable (Send<Action>) async throws -> Void = { send in
             var targets: [EntryActionRecord.Target] = []
-            for (sourceURL, destinationURL) in destinations {
+            var failedCount = 0
+            var cancelledCount = initialCancelledCount
+            for (index, (sourceURL, destinationURL)) in destinations.enumerated() {
                 // resetForDuplicate가 effect task를 취소한 뒤에도 live pasteFile(동기 copyItem)은
-                // CancellationError를 던지지 않아 루프가 남은 항목까지 계속 진행할 수 있다.
-                // 각 항목 복사 전에 명시적으로 취소를 확인해 즉시 중단한다.
-                try Task.checkCancellation()
+                // CancellationError를 던지지 않으므로 미시작 항목을 취소로 집계하고 중단한다.
+                guard !Task.isCancelled else {
+                    cancelledCount += destinations.count - index
+                    break
+                }
                 await send(.lifecycle(.operationStarted(sourceURL.path, operationKind)))
-                if let target = await executor.execute(
+                let result = await executor.execute(
                     sourceURL: sourceURL,
                     destinationURL: destinationURL,
                     isCopy: operation == .copy,
                     operationKind: operationKind,
                     send: send,
-                ) {
+                )
+                switch result {
+                case let .success(target):
                     targets.append(target)
+                case let .failure(error):
+                    if error == .cancelled {
+                        cancelledCount += 1
+                    } else {
+                        failedCount += 1
+                    }
                 }
             }
-            await executor.finishBatch(targets, operationKind: operationKind, send: send)
+            // 마지막 취소 확인과 terminal 전송 사이의 race에서도 action이 유실되지 않도록
+            // 정상·취소 경로 모두 fresh task에서 batch를 마무리한다.
+            await Task {
+                await executor.finishBatch(
+                    targets,
+                    failedCount: failedCount,
+                    cancelledCount: cancelledCount,
+                    operationKind: operationKind,
+                    send: send,
+                )
+            }.value
         }
         guard let onCancelCleanup else {
             return .run { send in
@@ -391,11 +510,11 @@ private enum EntryClipboardOperationsSupport {
             isCopy: Bool,
             operationKind: OperationKind,
             send: Send<EntryOperationsAction>,
-        ) async -> EntryActionRecord.Target? {
+        ) async -> Result<EntryActionRecord.Target, FileOpError> {
             let context = OperationContext(isCopy: isCopy, operationKind: operationKind)
             do {
                 try await mutate(context: context, sourceURL: sourceURL, destinationURL: destinationURL)
-                return await finishSuccess(
+                return await .success(finishSuccess(
                     sourceURL: sourceURL,
                     destinationURL: destinationURL,
                     context: .init(
@@ -404,7 +523,7 @@ private enum EntryClipboardOperationsSupport {
                         repeatsPathsMutation: true,
                     ),
                     send: send,
-                )
+                ))
             } catch let error as FileOpError where error.isFileExists {
                 return await replaceExistingItem(
                     sourceURL: sourceURL,
@@ -419,21 +538,32 @@ private enum EntryClipboardOperationsSupport {
                     operationKind: operationKind,
                     result: .failure(error.fileOpError),
                 ))
-                return nil
+                return .failure(error.fileOpError)
             }
         }
 
         func finishBatch(
             _ targets: [EntryActionRecord.Target],
+            failedCount: Int,
+            cancelledCount: Int,
             operationKind: OperationKind,
             send: Send<EntryOperationsAction>,
         ) async {
-            guard !targets.isEmpty else { return }
-            if operationKind.isUndoable {
-                let record = EntryActionRecord(operationKind: operationKind, targets: targets)
+            // 전체 실패 배치도 실패 aggregate를 담은 terminal로 마무리한다.
+            // undo 등록은 소비자가 successful targets 존재로 게이트한다.
+            if operationKind.isUndoable || operationKind == .externalObjectImportItem {
+                let record = EntryActionRecord(
+                    operationKind: operationKind,
+                    targets: targets,
+                    failedCount: failedCount,
+                    cancelledCount: cancelledCount,
+                    succeededCount: targets.count,
+                    id: UUID(),
+                    timestamp: Date(),
+                )
                 await send(.lifecycle(.entryActionCompleted(record)))
             }
-            guard let mutationImpactDestinationPath else { return }
+            guard !targets.isEmpty, let mutationImpactDestinationPath else { return }
             let impact = EntryOperationsMutationImpact(
                 sourceParentPaths: EntryClipboardOperationsSupport.uniqueSourceParentPaths(from: targets),
                 destinationPath: mutationImpactDestinationPath,
@@ -447,14 +577,14 @@ private enum EntryClipboardOperationsSupport {
             context: OperationContext,
             error: FileOpError,
             send: Send<EntryOperationsAction>,
-        ) async -> EntryActionRecord.Target? {
+        ) async -> Result<EntryActionRecord.Target, FileOpError> {
             guard let itemName = error.itemName else {
                 await send(completionAction(
                     sourceURL.path,
                     operationKind: context.operationKind,
                     result: .failure(error),
                 ))
-                return nil
+                return .failure(error)
             }
             guard await alertClient.showReplaceAlert(itemName, .move) == .replace else {
                 await send(completionAction(
@@ -462,7 +592,7 @@ private enum EntryClipboardOperationsSupport {
                     operationKind: context.operationKind,
                     result: .failure(.cancelled),
                 ))
-                return nil
+                return .failure(.cancelled)
             }
             do {
                 // 기존 목적지를 먼저 삭제하지 않고 같은 디렉터리 임시 이름으로 치워둔다
@@ -491,7 +621,7 @@ private enum EntryClipboardOperationsSupport {
                     throw error
                 }
                 try? await entryFileOpsClient.deleteImmediately(backupURL)
-                return await finishSuccess(
+                return await .success(finishSuccess(
                     sourceURL: sourceURL,
                     destinationURL: destinationURL,
                     context: .init(
@@ -500,14 +630,14 @@ private enum EntryClipboardOperationsSupport {
                         repeatsPathsMutation: false,
                     ),
                     send: send,
-                )
+                ))
             } catch {
                 await send(completionAction(
                     sourceURL.path,
                     operationKind: context.operationKind,
                     result: .failure(error.fileOpError),
                 ))
-                return nil
+                return .failure(error.fileOpError)
             }
         }
 

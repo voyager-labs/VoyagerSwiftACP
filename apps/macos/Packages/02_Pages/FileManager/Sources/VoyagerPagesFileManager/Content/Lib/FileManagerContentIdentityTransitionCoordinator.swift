@@ -303,6 +303,12 @@ enum FileManagerContentIdentityTransitionCoordinator {
         }
     }
 
+    static func hasMigratedAdditionalDestinationOwner(
+        _ transition: FileManagerContentState.EntryIdentityTransition?,
+    ) -> Bool {
+        transition?.additionalMoves.contains { $0.destinationOwner != nil && $0.migrated } == true
+    }
+
     static func transitionOverlaps(
         _ eventPath: String,
         _ transition: FileManagerContentState.EntryIdentityTransition,
@@ -368,6 +374,28 @@ enum FileManagerContentIdentityTransitionCoordinator {
         _ transition: FileManagerContentState.EntryIdentityTransition,
     ) -> String {
         transition.afterLexicalPath.isEmpty ? transition.afterPath : transition.afterLexicalPath
+    }
+
+    static func folderIdentityBatch(
+        rootContextGeneration: Int,
+        folderID: EntryModel.ID,
+        folderGeneration: Int,
+        response: EntryListFolderChildrenResponse,
+        state: inout FileManagerContentState,
+    ) -> (items: [EntryModel], owner: FileManagerContentState.EntryIdentityTransitionProjectionOwner)? {
+        guard rootContextGeneration == state.entryViewLayout.hierarchy.rootContextGeneration,
+              let node = state.entryViewLayout.hierarchy.nodesByID[folderID],
+              node.generation == folderGeneration,
+              node.loadPhase == .loadingCore || node.loadPhase == .enriching,
+              case let .event(.coreBatch(items: items, batchIndex: batchIndex)) = response,
+              batchIndex == node.folder.expectedBatchIndex
+        else { return nil }
+        beginDeferredFolderReplacementIfNeeded(
+            folderID: folderID,
+            items: items,
+            state: &state,
+        )
+        return (items, .folder(id: folderID, generation: folderGeneration))
     }
 
     static func standardizedPath(_ path: String) -> String {

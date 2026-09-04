@@ -811,7 +811,10 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
         let store = makeFileManagerContentFeatureStore(initialState: state)
         store.exhaustivity = .off
 
-        await store.send(.entryViewLayout(.entryOperations(.loading(.streamFailed(generation: 0)))))
+        await store.send(.entryViewLayout(.entryOperations(.loading(.streamFailed(
+            generation: 0,
+            failure: .unavailable(description: "test"),
+        )))))
         await store.receive(\.entryViewLayout.internal.reconcileHierarchySelection)
     }
 
@@ -827,7 +830,10 @@ final class EVM002FileManagerPagePresentationTests: XCTestCase {
         let store = makeFileManagerContentFeatureStore(initialState: state)
         store.exhaustivity = .off
 
-        await store.send(.entryViewLayout(.entryOperations(.loading(.streamFailed(generation: 1)))))
+        await store.send(.entryViewLayout(.entryOperations(.loading(.streamFailed(
+            generation: 1,
+            failure: .unavailable(description: "test"),
+        )))))
         await store.receive(\.entryViewLayout.view.applyContentProjection)
     }
 }

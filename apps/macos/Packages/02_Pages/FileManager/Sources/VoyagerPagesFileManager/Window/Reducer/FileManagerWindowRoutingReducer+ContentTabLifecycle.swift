@@ -24,6 +24,38 @@ private struct ContentTabCloseEffectInputs {
     let loadingCancellation: Effect<FileManagerWindowAction>
 }
 
+func consumePendingBrowsingUnavailability(
+    state: inout FileManagerContentFeature.State,
+    consumedOperationIDs: inout Set<UUID>,
+) -> FileManagerProductMetric? {
+    let operationID = state.productBrowsingOperationID
+    let content = state.productBrowsingContent
+    let identity = state.productBrowsingIdentity
+    let source = state.productBrowsingSource
+    state.productBrowsingOperationID = nil
+    state.productBrowsingIdentity = nil
+    state.productBrowsingSource = nil
+    state.productBrowsingContent = nil
+    state.pendingProductBrowsingSource = nil
+    guard let operationID,
+          let content,
+          let identity,
+          let source,
+          let metric = FileManagerProductMetricsProducer.browsingTerminal(
+              operationID: operationID,
+              content: content,
+              identity: identity,
+              source: source,
+              entryCount: nil,
+              failure: .unavailable,
+          ),
+          consumedOperationIDs.insert(operationID).inserted
+    else {
+        return nil
+    }
+    return metric
+}
+
 private func contentTabCloseDisposition(
     tabID: ContentTabID,
     state: FileManagerWindowState,
@@ -64,7 +96,10 @@ extension FileManagerWindowRoutingReducer {
             && pendingClose.tabID == batch.currentTabID
     }
 
-    func handleRequestCloseSelectedContentTabs(state: inout State) -> Effect<Action> {
+    func handleRequestCloseSelectedContentTabs(
+        source: ContentTabActionSource,
+        state: inout State,
+    ) -> Effect<Action> {
         guard state.canStartSelectedContentTabClose else { return .none }
 
         let selectionOrderedIDs = state.contentTabSelectionOrderedIDs
@@ -87,8 +122,11 @@ extension FileManagerWindowRoutingReducer {
         state.pendingSelectedContentTabClose = PendingSelectedContentTabClose(
             operationID: operationID,
             orderedTargetIDs: orderedTargetIDs,
+            cursor: 0,
+            currentTabID: nil,
             originalActiveTabID: activeTabID,
             preferredFallbackIDs: preferredFallbackIDs,
+            actionSource: source,
         )
         return .send(.processNextSelectedContentTabClose(operationID: operationID))
     }
@@ -208,6 +246,7 @@ extension FileManagerWindowRoutingReducer {
             return .none
         }
         let disposition = contentTabCloseDisposition(tabID: tabID, state: state)
+        recordContentTabTerminalMetricsBeforeRemoval(tabID: tabID, disposition: disposition, state: &state)
         let cancelCollectionOpenEffect = disposition.shouldResyncContentNavigation
             ? cancelPendingCollectionOpen(state: &state, failedPinnedReturnTabID: tabID)
             : .none
@@ -266,6 +305,77 @@ extension FileManagerWindowRoutingReducer {
             wasActive: disposition.shouldRestorePreviousActiveTab,
             state: state,
         )
+    }
+
+    /// 실제 탭 제거로 확정된 close만 success terminal 한 건을 기록한다.
+    /// 배치 close는 다중 선택 pin/unpin 집계 대상이 아니므로 이벤트를 만들지 않는다.
+    private func recordContentTabCloseMetricIfRemoved(
+        tabID: ContentTabID,
+        _ disposition: ContentTabCloseDisposition,
+        state: inout State,
+    ) {
+        guard state.pendingSelectedContentTabClose == nil else { return }
+        let metric = state.productContentTabCloseMetric
+        if metric?.tabID == tabID {
+            state.productContentTabCloseMetric = nil
+        }
+        guard disposition.isActualRemoval,
+              let metric,
+              metric.tabID == tabID
+        else { return }
+        productMetricsClient.record(FileManagerProductMetricsProducer.contentTabTerminal(
+            operationID: metric.context.operationID,
+            identity: .closeContentTab,
+            source: metric.context.source,
+            result: .success,
+        ))
+    }
+
+    private func recordContentTabTerminalMetricsBeforeRemoval(
+        tabID: ContentTabID,
+        disposition: ContentTabCloseDisposition,
+        state: inout State,
+    ) {
+        recordContentTabCloseMetricIfRemoved(tabID: tabID, disposition, state: &state)
+        recordBrowsingUnavailabilityBeforeContentTabRemoval(
+            tabID: tabID,
+            disposition: disposition,
+            state: &state,
+        )
+    }
+
+    private func recordBrowsingUnavailabilityBeforeContentTabRemoval(
+        tabID: ContentTabID,
+        disposition: ContentTabCloseDisposition,
+        state: inout State,
+    ) {
+        guard disposition.isActualRemoval || disposition.shouldResetLastTabContent else { return }
+        var consumedOperationIDs = Set<UUID>()
+        if tabID == state.contentTabs.activeTabID {
+            if let metric = consumePendingBrowsingUnavailability(
+                state: &state.content,
+                consumedOperationIDs: &consumedOperationIDs,
+            ) {
+                productMetricsClient.record(metric)
+            }
+            if var cachedContent = state.tabContentStates[tabID] {
+                if let metric = consumePendingBrowsingUnavailability(
+                    state: &cachedContent,
+                    consumedOperationIDs: &consumedOperationIDs,
+                ) {
+                    productMetricsClient.record(metric)
+                }
+                state.tabContentStates[tabID] = cachedContent
+            }
+        } else if var cachedContent = state.tabContentStates[tabID] {
+            if let metric = consumePendingBrowsingUnavailability(
+                state: &cachedContent,
+                consumedOperationIDs: &consumedOperationIDs,
+            ) {
+                productMetricsClient.record(metric)
+            }
+            state.tabContentStates[tabID] = cachedContent
+        }
     }
 
     private func makeContentTabUndoManagerLifecycleEffect(
@@ -431,6 +541,7 @@ extension FileManagerWindowRoutingReducer {
         tabID: ContentTabID,
         state: inout State,
         batchOperationID: UUID? = nil,
+        source: ContentTabActionSource = .contentTabBar,
     ) -> Effect<Action> {
         guard !state.contentTabs.pendingPinnedRecordIDs.contains(tabID) else { return .none }
         if let pendingClose = state.pendingContentTabClose {
@@ -440,9 +551,7 @@ extension FileManagerWindowRoutingReducer {
             else { return .none }
         }
 
-        guard state.contentTabs.tabs[id: tabID] != nil else {
-            return .none
-        }
+        guard state.contentTabs.tabs[id: tabID] != nil else { return .none }
 
         if state.contentTabs.tabs[id: tabID]?.isPinned == true {
             return routeContentTabCloseMutation(
@@ -468,6 +577,14 @@ extension FileManagerWindowRoutingReducer {
             windowState: &state,
         )
 
+        guard acceptProductContentTabCloseMetric(
+            tabID: tabID,
+            targetState: targetState,
+            batchOperationID: batchOperationID,
+            source: source,
+            state: &state,
+        ) else { return .none }
+
         if let unsavedCloseEffect = routeUnsavedContentTabClose(
             tabID: tabID,
             targetState: targetState,
@@ -483,6 +600,36 @@ extension FileManagerWindowRoutingReducer {
             batchOperationID: batchOperationID,
             action: .requestClose(tabID),
         )
+    }
+
+    private func acceptProductContentTabCloseMetric(
+        tabID: ContentTabID,
+        targetState: FileManagerContentState,
+        batchOperationID: UUID?,
+        source: ContentTabActionSource,
+        state: inout State,
+    ) -> Bool {
+        guard batchOperationID == nil else { return true }
+        if let metric = state.productContentTabCloseMetric {
+            return metric.tabID == tabID
+        }
+        if !(targetState.isCollectionMode && targetState.hasUnsavedCollectionChanges) {
+            guard state.pendingContentTabTeardown == nil else { return false }
+            switch state.undoRedoPhase {
+            case .idle, .desynchronized:
+                break
+            case .invoking, .replaying, .refreshing, .recovering, .tearingDownTab:
+                return false
+            }
+        }
+        state.productContentTabCloseMetric = ProductContentTabCloseMetric(
+            tabID: tabID,
+            context: ProductContentTabActionMetricContext(
+                operationID: productMetricsClient.makeOperationID(),
+                source: source,
+            ),
+        )
+        return true
     }
 
     private func contentStateForClose(
@@ -569,6 +716,12 @@ extension FileManagerWindowRoutingReducer {
             previousActiveInspector: isActiveTarget ? nil : state.inspector,
             targetInspector: isActiveTarget ? nil : state.inspectorState(for: tabID),
             batchOperationID: batchOperationID,
+            actionSource: batchOperationID == nil
+                ? state.productContentTabCloseMetric?.context.source ?? .contentTabBar
+                : state.pendingSelectedContentTabClose?.actionSource ?? .contentTabBar,
+            metricOperationID: batchOperationID == nil
+                ? state.productContentTabCloseMetric?.context.operationID
+                : batchOperationID,
         )
         let alertEffect = Effect<Action>.run { send in
             let choice = await collectionAlertClient.showUnsavedNavigationAlert()
@@ -599,8 +752,9 @@ extension FileManagerWindowRoutingReducer {
         switch choice {
         case .cancel:
             guard let operationID = pendingClose.batchOperationID else {
-                state.pendingContentTabClose = nil
-                return .none
+                return finishSingleContentTabCloseWithoutClosing(
+                    tabID: pendingClose.tabID, result: .cancelled, state: &state,
+                )
             }
             return .send(.selectedContentTabCloseItemCompleted(
                 operationID: operationID,
@@ -615,8 +769,11 @@ extension FileManagerWindowRoutingReducer {
             stagePendingTargetContentIfNeeded(pendingClose, state: &state)
             guard canStartPendingContentSave(state.content) else {
                 restorePreviousActiveContentIfNeeded(pendingClose, state: &state)
-                state.pendingContentTabClose = nil
-                guard let operationID = pendingClose.batchOperationID else { return .none }
+                guard let operationID = pendingClose.batchOperationID else {
+                    return finishSingleContentTabCloseWithoutClosing(
+                        tabID: pendingClose.tabID, result: .failure, state: &state,
+                    )
+                }
                 return .send(.selectedContentTabCloseItemCompleted(
                     operationID: operationID,
                     tabID: pendingClose.tabID,
@@ -717,6 +874,16 @@ extension FileManagerWindowRoutingReducer {
         guard let pendingClose = state.pendingContentTabClose else { return .none }
         restorePreviousActiveContentIfNeeded(pendingClose, state: &state)
         guard let operationID = pendingClose.batchOperationID else {
+            let result: ContentTabActionResult = switch outcome {
+            case .cancelled: .cancelled
+            case .failed: .failure
+            case .removed, .unpinned, .missing: .success
+            }
+            recordProductContentTabCloseMetric(
+                for: pendingClose.tabID,
+                result: result,
+                state: &state,
+            )
             state.pendingContentTabClose = nil
             return .none
         }

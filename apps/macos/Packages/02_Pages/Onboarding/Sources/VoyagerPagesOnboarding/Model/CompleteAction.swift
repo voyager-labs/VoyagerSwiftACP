@@ -1,8 +1,10 @@
 import ComposableArchitecture
+import Foundation
 
 @CasePathable
-enum CompleteAction: CasePathable {
+enum CompleteAction: CasePathable, Equatable {
     case startUsingTapped
     case retryTapped
-    case openWindowResponse(Bool)
+    case progressSaveResponse(UUID, Bool)
+    case openWindowResponse(UUID, Bool)
 }

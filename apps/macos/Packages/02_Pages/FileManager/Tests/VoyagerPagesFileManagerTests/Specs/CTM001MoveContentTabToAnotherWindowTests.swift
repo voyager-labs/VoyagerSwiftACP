@@ -1,3 +1,4 @@
+import ComposableArchitecture
 import Foundation
 import IdentifiedCollections
 import VoyagerEntitiesAi
@@ -2142,6 +2143,311 @@ final class CTM001MoveContentTabToAnotherWindowTests: XCTestCase {
                 placement: .empty,
             ),
         )
+    }
+
+    /// CTM-001-move_content_tab_to_another_file_manager_window: 매칭 in-flight 성공 터미널은 이동 메트릭을 정확히 한 번
+    /// 기록한다.
+    /// stale 터미널과 duplicate 성공 재생이 이벤트를 만들지 않고 singleton source는 contextMenu임을 검증한다.
+    /// - 검증 내용: success/.moveContentTabToAnotherWindow/.contextMenu/request.operationID 1건, stale·duplicate
+    /// 무이벤트
+    /// - 사전 조건: prepared singleton pending이 source window에 있고 메트릭 레코더 client가 주입됨
+    /// - 기대 결과: stale 무이벤트 후 성공 1건 기록, 재생 후에도 1건 유지
+    func testMatchingInFlightSuccessRecordsSingleContextMenuMoveMetric() async {
+        let request = makeMetricMoveRequest(operationByte: 1)
+        let recorder = FileManagerProductMetricRecorder()
+        let store = TestStore(initialState: makeMetricMoveState(request: request)) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+
+        await store.send(.sidebar(.delegate(.requestContentTabMove(request)))) {
+            $0.pendingContentTabMove?.lifecycle = .inFlight
+        }
+        await store.receive(\.delegate.requestContentTabMove, request)
+
+        let staleRequest = ContentTabMoveRequest(
+            operationID: UUID(uuid: (77, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 99)),
+            requestID: request.requestID,
+            sourceWindowID: request.sourceWindowID,
+            initiatingTabID: request.initiatingTabID,
+            orderedTabIDs: request.orderedTabIDs,
+            targetWindowID: request.targetWindowID,
+        )
+        await store.send(.contentTabMoveSucceeded(request: staleRequest))
+        XCTAssertTrue(recorder.metrics().isEmpty)
+
+        await store.send(.contentTabMoveSucceeded(request: request)) {
+            $0.pendingContentTabMove = nil
+            $0.sidebar.pendingContentTabMoveRequest = nil
+        }
+        XCTAssertEqual(recorder.metrics(), [
+            .contentTabAction(
+                result: .success,
+                identity: .moveContentTabToAnotherWindow,
+                source: .contextMenu,
+                operationID: request.operationID,
+            ),
+        ])
+
+        await store.send(.contentTabMoveSucceeded(request: request))
+        XCTAssertEqual(recorder.metrics().count, 1)
+    }
+
+    /// CTM-001-move_content_tab_to_another_file_manager_window: 매칭 in-flight 거절 category를 typed 결과로 매핑한다.
+    /// unavailable만 unavailable이고 busy/capacity/generic은 failure로 기록되는지 검증한다.
+    /// - 검증 내용: category별 결과 매핑과 category별 정확히 1건 기록
+    /// - 사전 조건: category별로 prepared pending을 수나해 in-flight로 만든 뒤 대응 거절 터미널을 전달함
+    /// - 기대 결과: 각 category가 매핑된 결과 한 건씩 기록된다.
+    func testMatchingInFlightRejectionMapsCategoriesToTypedResults() async {
+        let cases: [(category: ContentTabMoveFailurePresentation.Category, expected: ContentTabActionResult)] = [
+            (.unavailable, .unavailable),
+            (.busy, .failure),
+            (.capacity, .failure),
+            (.generic, .failure),
+        ]
+
+        for (index, entry) in cases.enumerated() {
+            await assertMatchingInFlightRejectionMetric(
+                category: entry.category,
+                expectedResult: entry.expected,
+                operationByte: UInt8(10 + index),
+            )
+        }
+    }
+
+    private func assertMatchingInFlightRejectionMetric(
+        category: ContentTabMoveFailurePresentation.Category,
+        expectedResult: ContentTabActionResult,
+        operationByte: UInt8,
+    ) async {
+        let request = makeMetricMoveRequest(operationByte: operationByte)
+        let recorder = FileManagerProductMetricRecorder()
+        let store = TestStore(initialState: makeMetricMoveState(request: request)) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+
+        await store.send(.sidebar(.delegate(.requestContentTabMove(request)))) {
+            $0.pendingContentTabMove?.lifecycle = .inFlight
+        }
+        await store.receive(\.delegate.requestContentTabMove, request)
+        await store.send(.contentTabMoveRejected(request: request, category: category)) {
+            $0.pendingContentTabMove = nil
+            $0.sidebar.pendingContentTabMoveRequest = nil
+            $0.contentTabMoveFailurePresentation = ContentTabMoveFailurePresentation(
+                requestID: request.requestID,
+                category: category,
+            )
+        }
+
+        XCTAssertEqual(recorder.metrics(), [
+            .contentTabAction(
+                result: expectedResult,
+                identity: .moveContentTabToAnotherWindow,
+                source: .contextMenu,
+                operationID: request.operationID,
+            ),
+        ])
+    }
+
+    /// CTM-001-move_content_tab_to_another_file_manager_window: menu batch 이동은 contextMenu source로 기록한다.
+    /// moveSelectedContentTabs 경로의 batch pending이 기본 contextMenu 표면을 유지하는지 검증한다.
+    /// - 검증 내용: menu batch 수락→성공 후 .moveSelectedContentTabsToAnotherWindow/.contextMenu/request.operationID
+    /// 1건
+    /// - 사전 조건: tab 2개 source와 가용 target, 고정 uuid와 메트릭 레코더 주입
+    /// - 기대 결과: 성공 터미널에서 contextMenu source 메트릭 정확히 1건
+    func testMenuBatchMoveRecordsContextMenuSourceMetric() async {
+        let tabA = ContentTabID(rawValue: "metric-menu-a")
+        let tabB = ContentTabID(rawValue: "metric-menu-b")
+        let requestID = UUID(uuid: (77, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 21))
+        let request = ContentTabMoveRequest(
+            operationID: requestID,
+            requestID: requestID,
+            sourceWindowID: Fixture.sourceWindowID,
+            initiatingTabID: tabA,
+            orderedTabIDs: [tabB, tabA],
+            targetWindowID: Fixture.targetWindowID,
+        )
+        var state = Fixture.window(
+            windowID: Fixture.sourceWindowID,
+            tabs: [Fixture.tab(tabA, path: "/metric/menu-a"), Fixture.tab(tabB, path: "/metric/menu-b")],
+            active: tabA,
+        )
+        state.sidebar.currentWindowID = Fixture.sourceWindowID
+        state.sidebar.contentTabMoveTargets = [
+            ContentTabMoveTarget(windowID: Fixture.targetWindowID, displayTitle: "Metric Target"),
+        ]
+        let recorder = FileManagerProductMetricRecorder()
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.uuid = .constant(requestID)
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+
+        await store.send(.sidebar(.view(.moveSelectedContentTabs(
+            initiatingTabID: tabA,
+            orderedTabIDs: [tabB, tabA],
+            targetWindowID: Fixture.targetWindowID,
+        )))) {
+            $0.sidebar.pendingContentTabMoveRequest = request
+            $0.pendingContentTabMove = FileManagerWindowContentTabMovePending(request: request)
+        }
+        await store.receive(\.sidebar.delegate.requestContentTabMove, request) {
+            $0.pendingContentTabMove?.lifecycle = .inFlight
+        }
+        await store.receive(\.delegate.requestContentTabMove, request)
+        await store.send(.contentTabMoveSucceeded(request: request)) {
+            $0.pendingContentTabMove = nil
+            $0.sidebar.pendingContentTabMoveRequest = nil
+        }
+
+        XCTAssertEqual(recorder.metrics(), [
+            .contentTabAction(
+                result: .success,
+                identity: .moveSelectedContentTabsToAnotherWindow,
+                source: .contextMenu,
+                operationID: requestID,
+            ),
+        ])
+    }
+
+    /// CTM-001-move_content_tab_to_another_file_manager_window: drag 이동은 dragAndDrop source로 기록한다.
+    /// moveContentTabs payload 경로만 dragAndDrop 표면으로 준비되고 단일 tab은 singleton identity를 유지한다.
+    /// - 검증 내용: drag pending 준비 시 metricSource dragAndDrop과 singleton identity 성공 메트릭 1건
+    /// - 사전 조건: in-flight drag snapshot과 일치 payload, 가용 target, 고정 uuid·레코더 주입
+    /// - 기대 결과: 성공 터미널에서 dragAndDrop source 메트릭 정확히 1건
+    func testDragMoveRecordsDragAndDropSourceAndSingletonIdentityMetric() async {
+        let fixture = makeDragBatchMetricFixture()
+        let recorder = FileManagerProductMetricRecorder()
+        let store = TestStore(initialState: fixture.state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.uuid = .constant(fixture.request.requestID)
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+
+        await store.send(.sidebar(.view(.moveContentTabs(
+            payload: fixture.payload,
+            targetWindowID: Fixture.targetWindowID,
+            targetDomain: nil,
+            placement: nil,
+        )))) {
+            $0.sidebar.contentTabDragSnapshot = nil
+            $0.sidebar.pendingContentTabMoveRequest = fixture.request
+            $0.pendingContentTabMove = FileManagerWindowContentTabMovePending(
+                request: fixture.request,
+                metricSource: .dragAndDrop,
+            )
+        }
+        await store.receive(\.sidebar.delegate.requestContentTabMove, fixture.request) {
+            $0.pendingContentTabMove?.lifecycle = .inFlight
+        }
+        await store.receive(\.delegate.requestContentTabMove, fixture.request)
+        await store.send(.contentTabMoveSucceeded(request: fixture.request)) {
+            $0.pendingContentTabMove = nil
+            $0.sidebar.pendingContentTabMoveRequest = nil
+        }
+
+        XCTAssertEqual(recorder.metrics(), [
+            .contentTabAction(
+                result: .success,
+                identity: .moveContentTabToAnotherWindow,
+                source: .dragAndDrop,
+                operationID: fixture.request.operationID,
+            ),
+        ])
+    }
+
+    private func makeDragBatchMetricFixture() -> (
+        payload: ContentTabDragPayload,
+        request: ContentTabMoveRequest,
+        state: FileManagerWindowState,
+    ) {
+        let tabA = ContentTabID(rawValue: "metric-drag-a")
+        let operationID = UUID(uuid: (77, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31))
+        let requestID = UUID(uuid: (77, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 32))
+        let payload = ContentTabDragPayload(
+            operationID: operationID,
+            sourceWindowID: Fixture.sourceWindowID,
+            initiatingTabID: tabA,
+            orderedTabIDs: [tabA],
+        )
+        let request = ContentTabMoveRequest(
+            operationID: operationID,
+            requestID: requestID,
+            sourceWindowID: Fixture.sourceWindowID,
+            initiatingTabID: tabA,
+            orderedTabIDs: [tabA],
+            targetWindowID: Fixture.targetWindowID,
+        )
+        var state = Fixture.window(
+            windowID: Fixture.sourceWindowID,
+            tabs: [Fixture.tab(tabA, path: "/metric/drag-a")],
+            active: tabA,
+        )
+        state.sidebar.currentWindowID = Fixture.sourceWindowID
+        state.sidebar.contentTabMoveTargets = [
+            ContentTabMoveTarget(windowID: Fixture.targetWindowID, displayTitle: "Metric Target"),
+        ]
+        state.sidebar.contentTabDragSnapshot = ContentTabDragSnapshot(
+            operationID: operationID,
+            sourceWindowID: Fixture.sourceWindowID,
+            initiatingTabID: tabA,
+            orderedTabIDs: [tabA],
+            lifecycle: .inFlight,
+        )
+        return (payload, request, state)
+    }
+
+    /// CTM-001-move_content_tab_to_another_file_manager_window: prepared 거절은 메트릭을 만들지 않는다.
+    /// in-flight 승격 전 busy 거절이 presentation만 남기고 이벤트 없이 끝나는지 검증한다.
+    /// - 검증 내용: closing window의 prepared 요청 거절과 레코더 빈 결과
+    /// - 사전 조건: prepared singleton pending과 isClosing source window
+    /// - 기대 결과: busy presentation 설정 외 상태 변화 없음, 메트릭 0건
+    func testPreparedRejectionEmitsNoMetric() async {
+        let request = makeMetricMoveRequest(operationByte: 41)
+        var state = makeMetricMoveState(request: request)
+        state.isClosing = true
+        let recorder = FileManagerProductMetricRecorder()
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+
+        await store.send(.sidebar(.delegate(.requestContentTabMove(request)))) {
+            $0.pendingContentTabMove = nil
+            $0.sidebar.pendingContentTabMoveRequest = nil
+            $0.contentTabMoveFailurePresentation = ContentTabMoveFailurePresentation(
+                requestID: request.requestID,
+                category: .busy,
+            )
+        }
+
+        XCTAssertTrue(recorder.metrics().isEmpty)
+    }
+
+    private func makeMetricMoveRequest(operationByte: UInt8) -> ContentTabMoveRequest {
+        let operationID = UUID(uuid: (77, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, operationByte))
+        return ContentTabMoveRequest(
+            operationID: operationID,
+            requestID: operationID,
+            sourceWindowID: UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 41)),
+            initiatingTabID: ContentTabID(rawValue: "metric-moved"),
+            orderedTabIDs: [ContentTabID(rawValue: "metric-moved")],
+            targetWindowID: UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 42)),
+        )
+    }
+
+    private func makeMetricMoveState(request: ContentTabMoveRequest) -> FileManagerWindowState {
+        var state = FileManagerWindowState.makeInitial(path: nil, windowID: request.sourceWindowID)
+        state.sidebar.currentWindowID = request.sourceWindowID
+        state.sidebar.pendingContentTabMoveRequest = request
+        state.pendingContentTabMove = FileManagerWindowContentTabMovePending(request: request)
+        return state
     }
 
     private func batchPostCommit(

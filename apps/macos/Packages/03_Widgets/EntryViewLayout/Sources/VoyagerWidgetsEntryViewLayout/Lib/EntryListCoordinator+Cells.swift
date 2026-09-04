@@ -38,7 +38,7 @@ extension EntryListCoordinator {
                 onRenameUpdate: { [weak self] text in
                     guard let self else { return }
                     guard state.entryOperations.renamingItemId != nil else { return }
-                    store.send(.view(.startRename(item: entry, text: text)))
+                    store.send(.view(.updateRenamingText(text)))
                 },
                 onRenameCommit: { [weak self] in
                     guard let self else { return }

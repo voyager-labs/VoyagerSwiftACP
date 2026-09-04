@@ -4,11 +4,14 @@ private enum ProductAnalyticsRecordCodingKeys: String, CodingKey {
     case interactionID = "interaction_id"
     case featureID = "feature_id"
     case implementationStatus = "implementation_status"
+    case eventVersion = "event_version"
+    case eventClass = "event_class"
     case sentryMetricKeys = "sentry_metric_keys"
     case posthogEventName = "posthog_event_name"
     case legacyAliases = "legacy_aliases"
     case identityPolicy = "identity_policy"
     case propertyAllowlist = "property_allowlist"
+    case propertyValueAllowlist = "property_value_allowlist"
     case relatedIssues = "related_issues"
 }
 
@@ -17,6 +20,10 @@ private enum ProductAnalyticsMetadataOnlyMetricCodingKeys: String, CodingKey {
     case posthogEventName = "posthog_event_name"
     case identityPolicy = "identity_policy"
     case propertyAllowlist = "property_allowlist"
+    case propertyValueAllowlist = "property_value_allowlist"
+    case eventVersion = "event_version"
+    case eventClass = "event_class"
+    case kpiEligible = "kpi_eligible"
 }
 
 private struct ProductAnalyticsAnyCodingKey: CodingKey {
@@ -35,6 +42,49 @@ private struct ProductAnalyticsAnyCodingKey: CodingKey {
 }
 
 private struct ProductAnalyticsUnknownKeyError: Error {}
+private struct ProductAnalyticsInvalidSchemaError: Error {}
+
+private struct ProductAnalyticsRecordSchemaInput {
+    let status: ProductAnalyticsImplementationStatus
+    let eventVersion: String?
+    let eventClass: String?
+    let sentryMetricKeys: [String]
+    let posthogEventName: String?
+    let legacyAliases: [String]
+    let identityPolicy: ProductAnalyticsRegistryIdentityPolicy
+    let propertyAllowlist: [String]
+    let propertyValueAllowlist: [String: [String]]
+}
+
+private struct ProductAnalyticsEventEnvelope {
+    let eventVersion: ProductAnalyticsEventVersion?
+    let operationID: UUID
+}
+
+private func isValidProductAnalyticsRecordSchema(
+    _ input: ProductAnalyticsRecordSchemaInput,
+) -> Bool {
+    let reservedPropertyKeys: Set = ["interaction_id", "feature_id", "target_count", "duration_ms"]
+    guard input.propertyValueAllowlist.keys.allSatisfy({ input.propertyAllowlist.contains($0) }),
+          input.propertyAllowlist.allSatisfy({ key in
+              reservedPropertyKeys.contains(key) || input.propertyValueAllowlist[key] != nil
+          }),
+          input.propertyValueAllowlist.values.allSatisfy({ !$0.isEmpty && Set($0).count == $0.count })
+    else { return false }
+
+    switch input.status {
+    case .implemented:
+        guard input.eventVersion == "1" || input.eventVersion == "2",
+              input.eventClass == "action" || input.eventClass == "journey"
+        else { return false }
+    case .deferred, .noEventRequired, .tbd:
+        guard input.eventVersion == nil, input.eventClass == nil,
+              input.sentryMetricKeys.isEmpty, input.posthogEventName == nil, input.legacyAliases.isEmpty,
+              input.identityPolicy == .none, input.propertyAllowlist.isEmpty, input.propertyValueAllowlist.isEmpty
+        else { return false }
+    }
+    return true
+}
 
 private func validateKnownKeys(_ decoder: Decoder, allowed: Set<String>) throws {
     let container = try decoder.container(keyedBy: ProductAnalyticsAnyCodingKey.self)
@@ -260,30 +310,60 @@ public struct ProductAnalyticsRegistry: Equatable, Sendable {
         public let posthogEventName: String
         public let identityPolicy: ProductAnalyticsRegistryIdentityPolicy
         public let propertyAllowlist: [String]
+        public let propertyValueAllowlist: [String: [String]]
+        public let eventVersion: String
+        public let eventClass: String
+        public let kpiEligible: Bool
 
         public init(
             metricKey: String,
             posthogEventName: String,
             identityPolicy: ProductAnalyticsRegistryIdentityPolicy,
             propertyAllowlist: [String],
+            propertyValueAllowlist: [String: [String]] = [:],
+            eventVersion: String = "1",
+            eventClass: String = "exposure",
+            kpiEligible: Bool = false,
         ) {
             self.metricKey = metricKey
             self.posthogEventName = posthogEventName
             self.identityPolicy = identityPolicy
             self.propertyAllowlist = propertyAllowlist
+            self.propertyValueAllowlist = propertyValueAllowlist
+            self.eventVersion = eventVersion
+            self.eventClass = eventClass
+            self.kpiEligible = kpiEligible
         }
 
         public init(from decoder: Decoder) throws {
             try validateKnownKeys(decoder, allowed: [
                 "metric_key", "posthog_event_name", "identity_policy", "property_allowlist",
+                "property_value_allowlist",
+                "event_version", "event_class", "kpi_eligible",
             ])
             let container = try decoder.container(keyedBy: ProductAnalyticsMetadataOnlyMetricCodingKeys.self)
+            let eventVersion = try container.decode(String.self, forKey: .eventVersion)
+            let eventClass = try container.decode(String.self, forKey: .eventClass)
+            let kpiEligible = try container.decode(Bool.self, forKey: .kpiEligible)
             try self.init(
                 metricKey: container.decode(String.self, forKey: .metricKey),
                 posthogEventName: container.decode(String.self, forKey: .posthogEventName),
                 identityPolicy: container.decode(ProductAnalyticsRegistryIdentityPolicy.self, forKey: .identityPolicy),
                 propertyAllowlist: container.decode([String].self, forKey: .propertyAllowlist),
+                propertyValueAllowlist: container.decodeIfPresent(
+                    [String: [String]].self,
+                    forKey: .propertyValueAllowlist,
+                ) ?? [:],
+                eventVersion: eventVersion,
+                eventClass: eventClass,
+                kpiEligible: kpiEligible,
             )
+            guard eventVersion == "1", ["action", "exposure"].contains(eventClass), kpiEligible == false,
+                  propertyValueAllowlist.keys.allSatisfy({ propertyAllowlist.contains($0) }),
+                  propertyValueAllowlist.values.allSatisfy({ !$0.isEmpty && Set($0).count == $0.count })
+            else {
+                throw ProductAnalyticsInvalidSchemaError()
+            }
         }
     }
 
@@ -291,11 +371,14 @@ public struct ProductAnalyticsRegistry: Equatable, Sendable {
         public let interactionID: String
         public let featureID: String
         public let implementationStatus: ProductAnalyticsImplementationStatus
+        public let eventVersion: String?
+        public let eventClass: String?
         public let sentryMetricKeys: [String]
         public let posthogEventName: String?
         public let legacyAliases: [String]
         public let identityPolicy: ProductAnalyticsRegistryIdentityPolicy
         public let propertyAllowlist: [String]
+        public let propertyValueAllowlist: [String: [String]]
         public let relatedIssues: [String]
 
         public init(
@@ -308,37 +391,76 @@ public struct ProductAnalyticsRegistry: Equatable, Sendable {
             identityPolicy: ProductAnalyticsRegistryIdentityPolicy,
             propertyAllowlist: [String],
             relatedIssues: [String],
+            eventVersion: String? = nil,
+            eventClass: String? = nil,
+            propertyValueAllowlist: [String: [String]] = [:],
         ) {
             self.interactionID = interactionID
             self.featureID = featureID
             self.implementationStatus = implementationStatus
+            self.eventVersion = eventVersion
+            self.eventClass = eventClass
             self.sentryMetricKeys = sentryMetricKeys
             self.posthogEventName = posthogEventName
             self.legacyAliases = legacyAliases
             self.identityPolicy = identityPolicy
             self.propertyAllowlist = propertyAllowlist
+            self.propertyValueAllowlist = propertyValueAllowlist
             self.relatedIssues = relatedIssues
         }
 
         public init(from decoder: Decoder) throws {
             try validateKnownKeys(decoder, allowed: [
-                "interaction_id", "feature_id", "implementation_status", "sentry_metric_keys",
-                "posthog_event_name", "legacy_aliases", "identity_policy", "property_allowlist", "related_issues",
+                "interaction_id", "feature_id", "implementation_status", "event_version", "event_class",
+                "sentry_metric_keys", "posthog_event_name", "legacy_aliases", "identity_policy", "property_allowlist",
+                "property_value_allowlist", "related_issues",
             ])
             let container = try decoder.container(keyedBy: ProductAnalyticsRecordCodingKeys.self)
+            guard container.contains(.eventVersion), container.contains(.eventClass),
+                  container.contains(.propertyValueAllowlist)
+            else { throw ProductAnalyticsInvalidSchemaError() }
+            let implementationStatus = try container.decode(
+                ProductAnalyticsImplementationStatus.self,
+                forKey: .implementationStatus,
+            )
+            let eventVersion = try container.decodeIfPresent(String.self, forKey: .eventVersion)
+            let eventClass = try container.decodeIfPresent(String.self, forKey: .eventClass)
+            let propertyValueAllowlist = try container.decode(
+                [String: [String]].self,
+                forKey: .propertyValueAllowlist,
+            )
+            let propertyAllowlist = try container.decode([String].self, forKey: .propertyAllowlist)
+            let sentryMetricKeys = try container.decode([String].self, forKey: .sentryMetricKeys)
+            let posthogEventName = try container.decodeIfPresent(String.self, forKey: .posthogEventName)
+            let legacyAliases = try container.decode([String].self, forKey: .legacyAliases)
+            let identityPolicy = try container.decode(
+                ProductAnalyticsRegistryIdentityPolicy.self,
+                forKey: .identityPolicy,
+            )
+            guard isValidProductAnalyticsRecordSchema(.init(
+                status: implementationStatus,
+                eventVersion: eventVersion,
+                eventClass: eventClass,
+                sentryMetricKeys: sentryMetricKeys,
+                posthogEventName: posthogEventName,
+                legacyAliases: legacyAliases,
+                identityPolicy: identityPolicy,
+                propertyAllowlist: propertyAllowlist,
+                propertyValueAllowlist: propertyValueAllowlist,
+            )) else { throw ProductAnalyticsInvalidSchemaError() }
             try self.init(
                 interactionID: container.decode(String.self, forKey: .interactionID),
                 featureID: container.decode(String.self, forKey: .featureID),
-                implementationStatus: container.decode(
-                    ProductAnalyticsImplementationStatus.self,
-                    forKey: .implementationStatus,
-                ),
-                sentryMetricKeys: container.decode([String].self, forKey: .sentryMetricKeys),
-                posthogEventName: container.decodeIfPresent(String.self, forKey: .posthogEventName),
-                legacyAliases: container.decode([String].self, forKey: .legacyAliases),
-                identityPolicy: container.decode(ProductAnalyticsRegistryIdentityPolicy.self, forKey: .identityPolicy),
-                propertyAllowlist: container.decode([String].self, forKey: .propertyAllowlist),
+                implementationStatus: implementationStatus,
+                sentryMetricKeys: sentryMetricKeys,
+                posthogEventName: posthogEventName,
+                legacyAliases: legacyAliases,
+                identityPolicy: identityPolicy,
+                propertyAllowlist: propertyAllowlist,
                 relatedIssues: container.decode([String].self, forKey: .relatedIssues),
+                eventVersion: eventVersion,
+                eventClass: eventClass,
+                propertyValueAllowlist: propertyValueAllowlist,
             )
         }
 
@@ -347,11 +469,14 @@ public struct ProductAnalyticsRegistry: Equatable, Sendable {
             try container.encode(interactionID, forKey: .interactionID)
             try container.encode(featureID, forKey: .featureID)
             try container.encode(implementationStatus, forKey: .implementationStatus)
+            try container.encode(eventVersion, forKey: .eventVersion)
+            try container.encode(eventClass, forKey: .eventClass)
             try container.encode(sentryMetricKeys, forKey: .sentryMetricKeys)
             try container.encodeIfPresent(posthogEventName, forKey: .posthogEventName)
             try container.encode(legacyAliases, forKey: .legacyAliases)
             try container.encode(identityPolicy, forKey: .identityPolicy)
             try container.encode(propertyAllowlist, forKey: .propertyAllowlist)
+            try container.encode(propertyValueAllowlist, forKey: .propertyValueAllowlist)
             try container.encode(relatedIssues, forKey: .relatedIssues)
         }
     }
@@ -431,13 +556,17 @@ public struct ProductAnalyticsRegistry: Equatable, Sendable {
             source: "unknown",
         ),
         properties: [String: ProductAnalyticsPropertyValue] = [:],
+        eventVersion: ProductAnalyticsEventVersion? = nil,
+        operationID: UUID = UUID(),
     ) -> ProductAnalyticsMappingResult {
+        let envelope = ProductAnalyticsEventEnvelope(eventVersion: eventVersion, operationID: operationID)
         if let metadataOnlyMetric = byMetadataMetricKey[metricKey] {
             return resolveMetadataOnlyMetric(
                 metadataOnlyMetric,
                 identity: identity,
                 context: context,
                 properties: properties,
+                envelope: envelope,
             )
         }
         return resolveCanonicalMetric(
@@ -445,6 +574,7 @@ public struct ProductAnalyticsRegistry: Equatable, Sendable {
             identity: identity,
             context: context,
             properties: properties,
+            envelope: envelope,
         )
     }
 
@@ -453,6 +583,7 @@ public struct ProductAnalyticsRegistry: Equatable, Sendable {
         identity: ProductAnalyticsIdentity,
         context: ProductAnalyticsEventContext,
         properties: [String: ProductAnalyticsPropertyValue],
+        envelope: ProductAnalyticsEventEnvelope,
     ) -> ProductAnalyticsMappingResult {
         guard let record = byMetricKey[metricKey] else { return .drop(.unregistered) }
         if record.legacyAliases.contains(metricKey) { return .drop(.legacyAlias) }
@@ -465,12 +596,21 @@ public struct ProductAnalyticsRegistry: Equatable, Sendable {
         guard let eventName = record.posthogEventName, !eventName.isEmpty else {
             return .drop(.tbd)
         }
+        let resolvedEventVersion = record.eventVersion ?? "1"
+        guard (envelope.eventVersion?.rawValue ?? resolvedEventVersion) == resolvedEventVersion else {
+            return .drop(.privacyRejected)
+        }
         guard record.identityPolicy != .none else { return .drop(.noEventRequired) }
         guard identityIsAvailable(for: record.identityPolicy, identity: identity) else {
             return .drop(.identityUnavailable)
         }
         let distinctID = explicitDistinctID(for: record.identityPolicy, identity: identity)
-        guard isPrivacySafe(properties, allowed: record.propertyAllowlist) else {
+        guard isPrivacySafe(
+            properties,
+            allowed: record.propertyAllowlist,
+            finiteValues: record.propertyValueAllowlist,
+            requireFiniteValues: true,
+        ) else {
             return .drop(.privacyRejected)
         }
         let event = ProductAnalyticsEvent(
@@ -482,6 +622,8 @@ public struct ProductAnalyticsRegistry: Equatable, Sendable {
             platform: context.platform,
             source: context.source,
             properties: properties,
+            eventVersion: .init(rawValue: resolvedEventVersion),
+            operationID: envelope.operationID,
             sourceProject: context.sourceProject,
             identifiers: .init(interactionID: record.interactionID, featureID: record.featureID),
         )
@@ -493,13 +635,22 @@ public struct ProductAnalyticsRegistry: Equatable, Sendable {
         identity: ProductAnalyticsIdentity,
         context: ProductAnalyticsEventContext,
         properties: [String: ProductAnalyticsPropertyValue],
+        envelope: ProductAnalyticsEventEnvelope,
     ) -> ProductAnalyticsMappingResult {
         guard !metric.posthogEventName.isEmpty else { return .drop(.tbd) }
         guard metric.identityPolicy != .none else { return .drop(.noEventRequired) }
         guard identityIsAvailable(for: metric.identityPolicy, identity: identity) else {
             return .drop(.identityUnavailable)
         }
-        guard isPrivacySafe(properties, allowed: metric.propertyAllowlist) else {
+        guard (envelope.eventVersion?.rawValue ?? metric.eventVersion) == metric.eventVersion else {
+            return .drop(.privacyRejected)
+        }
+        guard isPrivacySafe(
+            properties,
+            allowed: metric.propertyAllowlist,
+            finiteValues: metric.propertyValueAllowlist,
+            requireFiniteValues: !metric.propertyValueAllowlist.isEmpty,
+        ) else {
             return .drop(.privacyRejected)
         }
         let event = ProductAnalyticsEvent(
@@ -511,6 +662,8 @@ public struct ProductAnalyticsRegistry: Equatable, Sendable {
             platform: context.platform,
             source: context.source,
             properties: properties,
+            eventVersion: envelope.eventVersion ?? .init(rawValue: metric.eventVersion),
+            operationID: envelope.operationID,
             sourceProject: context.sourceProject,
         )
         return .capture(.init(event: event))
@@ -559,11 +712,20 @@ public struct ProductAnalyticsRegistry: Equatable, Sendable {
     nonisolated private func isPrivacySafe(
         _ properties: [String: ProductAnalyticsPropertyValue],
         allowed: [String],
+        finiteValues: [String: [String]] = [:],
+        requireFiniteValues: Bool = false,
     ) -> Bool {
         let allowedKeys = Set(allowed).intersection(Self.commonPropertyAllowlist)
         guard Set(properties.keys).isSubset(of: allowedKeys) else { return false }
         return properties.allSatisfy { key, value in
-            isAllowedTelemetryValue(key: key, value: value)
+            if let allowedValues = finiteValues[key] {
+                guard case let .string(stringValue) = value, allowedValues.contains(stringValue) else { return false }
+            } else if requireFiniteValues,
+                      !["interaction_id", "feature_id", "target_count", "duration_ms"].contains(key)
+            {
+                return false
+            }
+            return isAllowedTelemetryValue(key: key, value: value)
         }
     }
 
@@ -574,7 +736,8 @@ public struct ProductAnalyticsRegistry: Equatable, Sendable {
         switch key {
         case "interaction_id", "feature_id":
             return isIdentifierValue(key: key, value: value)
-        case "source_surface", "result_status", "failure_reason", "recovery_action":
+        case "source_surface", "result_status", "failure_reason", "recovery_action",
+             "permission_kind", "provider_kind", "content_kind", "action_type":
             guard case let .string(value) = value else { return false }
             return isBoundedTelemetryToken(key: key, value: value)
         case "target_count", "duration_ms":
@@ -640,7 +803,8 @@ public struct ProductAnalyticsRegistry: Equatable, Sendable {
 
     nonisolated private static let commonPropertyAllowlist: Set<String> = [
         "interaction_id", "feature_id", "source_surface", "result_status", "failure_reason",
-        "recovery_action", "target_count", "duration_ms",
+        "recovery_action", "permission_kind", "provider_kind", "content_kind", "action_type",
+        "target_count", "duration_ms",
     ]
 
     nonisolated private static let sensitiveValueFragments = [

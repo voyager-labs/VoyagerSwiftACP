@@ -1775,8 +1775,13 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             .contentTab(fixture.tabB),
         ])
         let destination = FileManagerTopNavigationMoveDestination.before(.location(fixture.downloadsID))
+        let moveMetricOperationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 4))
         let store = TestStore(initialState: initialState) { FileManagerFeature() } withDependencies: {
             $0.contentTabPinnedRecordClient.reserveTopNavigationOperationToken = { fixture.token }
+            $0.fileManagerProductMetricsClient = FileManagerProductMetricsClient(
+                record: { _ in },
+                makeOperationID: { moveMetricOperationID },
+            )
         }
 
         await store.send(.topNavigationMoveRequested(
@@ -1790,6 +1795,10 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
                 ),
             ]
             $0.optimisticTopNavigationOrder = expectedOrder
+            $0.productContentTabMoveMetricContexts = [fixture.token: .init(
+                operationID: moveMetricOperationID,
+                source: .contentTabBar,
+            )]
         }
         await store.receive { action in
             guard case let .delegate(.persistTopNavigationMove(token, source, receivedDestination, _)) = action
@@ -1949,15 +1958,21 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         _ scenario: PinnedGroupChangedScenario,
         fixture: PinnedGroupReorderFixture,
     ) async {
+        let moveMetricOperationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 5))
         let store = TestStore(
             initialState: fixture.state(order: fixture.initialOrder, frozenIDs: [fixture.tabC, fixture.tabA]),
         ) { FileManagerFeature() } withDependencies: {
             $0.contentTabPinnedRecordClient.reserveTopNavigationOperationToken = { fixture.token }
+            $0.fileManagerProductMetricsClient = FileManagerProductMetricsClient(
+                record: { _ in },
+                makeOperationID: { moveMetricOperationID },
+            )
         }
         await store.send(.sidebar(.delegate(.fileManagerTopNavigationReorderRequested(
             sourceID: .contentTab(fixture.tabC),
             anchorID: .location(fixture.downloadsID),
             placement: scenario.placement,
+            actionSource: .dragAndDrop,
         ))))
         await store.receive(\.topNavigationMoveRequested) {
             $0.sidebar.contentTabDragSnapshot = nil
@@ -1973,6 +1988,10 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
                 ),
             ]
             $0.optimisticTopNavigationOrder = scenario.expectedOrder
+            $0.productContentTabMoveMetricContexts = [fixture.token: .init(
+                operationID: moveMetricOperationID,
+                source: .dragAndDrop,
+            )]
         }
         await store.receive { action in
             guard case .delegate(.persistTopNavigationPinnedGroupMove) = action else { return false }
@@ -1992,6 +2011,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             sourceID: .contentTab(fixture.tabC),
             anchorID: scenario.anchorID,
             placement: scenario.placement,
+            actionSource: .dragAndDrop,
         ))))
         await store.receive(\.topNavigationMoveRequested)
         XCTAssertEqual(store.state.optimisticTopNavigationOrder, scenario.order)
@@ -3605,34 +3625,42 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
 
     // MARK: - CTM-004-sidebar_content_tab_reorder_routing
 
-    /// CTM-004-sidebar_content_tab_reorder_routing: Sidebar View reorder 요청을 같은 Delegate 값으로 한 번 relay함
-    /// SwiftUI adapter가 보낸 semantic source/target/placement가 Entry 계약 없이 feature 경계를 통과하는지 검증한다.
-    /// - 검증 내용: View action 뒤 동일한 Delegate action 한 개만 수신하고 Sidebar state는 변경되지 않음
-    /// - 사전 조건: unpinned source A와 target C, placement after
-    /// - 기대 결과: sourceID/targetID/placement가 그대로 보존된 Delegate action 정확히 1회
-    func testSidebarReorderViewRelaysSameSemanticValueExactlyOnce() async {
+    /// CTM-004-sidebar_content_tab_reorder_routing: drag와 keyboard reorder source를 Delegate까지 구분해 relay함
+    /// SwiftUI adapter의 semantic move 값과 제품 source가 feature 경계를 함께 통과하는지 검증한다.
+    /// - 검증 내용: 각 View action 뒤 동일한 source를 가진 Delegate action 한 개와 불변 Sidebar state
+    /// - 사전 조건: unpinned source A와 target C, placement after, dragAndDrop/keyboardShortcut source
+    /// - 기대 결과: sourceID/targetID/placement/actionSource가 source별 정확히 한 번 보존됨
+    func testSidebarReorderViewPreservesDragAndKeyboardSourcesExactlyOnce() async {
         let sourceID = ContentTabID(rawValue: "relay-source")
         let targetID = ContentTabID(rawValue: "relay-target")
         let initialState = FileManagerSidebarState()
-        let store = TestStore(initialState: initialState) {
-            FileManagerSidebarFeature()
-        }
-
-        await store.send(.view(.fileManagerTopNavigationReorderRequested(
-            sourceID: .contentTab(sourceID),
-            anchorID: .contentTab(targetID),
-            placement: .after,
-        )))
-        await store.receive { action in
-            guard case let .delegate(.fileManagerTopNavigationReorderRequested(source, target, placement)) = action
-            else {
-                return false
+        for actionSource in [ContentTabActionSource.dragAndDrop, .keyboardShortcut] {
+            let store = TestStore(initialState: initialState) {
+                FileManagerSidebarFeature()
             }
-            return source == .contentTab(sourceID) && target == .contentTab(targetID) && placement == .after
-        }
 
-        XCTAssertEqual(store.state, initialState)
-        await store.finish()
+            await store.send(.view(.fileManagerTopNavigationReorderRequested(
+                sourceID: .contentTab(sourceID),
+                anchorID: .contentTab(targetID),
+                placement: .after,
+                actionSource: actionSource,
+            )))
+            await store.receive { action in
+                guard case let .delegate(.fileManagerTopNavigationReorderRequested(
+                    source,
+                    target,
+                    placement,
+                    receivedActionSource,
+                )) = action else { return false }
+                return source == .contentTab(sourceID)
+                    && target == .contentTab(targetID)
+                    && placement == .after
+                    && receivedActionSource == actionSource
+            }
+
+            XCTAssertEqual(store.state, initialState)
+            await store.finish()
+        }
     }
 
     /// CTM-004-sidebar_content_tab_reorder_routing: Window는 Sidebar Delegate를 ContentTab reorder 한 번으로 전달함
@@ -3660,6 +3688,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             sourceID: .contentTab(sourceID),
             anchorID: .contentTab(targetID),
             placement: .after,
+            actionSource: .contentTabBar,
         ))))
         await store.receive { action in
             guard case let .contentTabs(.reorder(source, target, placement)) = action else {
@@ -3697,12 +3726,19 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             placement: .after,
         ))))
         await store.receive { action in
-            guard case let .sidebar(.delegate(.fileManagerTopNavigationReorderRequested(source, target, placement))) =
-                action
+            guard case let .sidebar(.delegate(.fileManagerTopNavigationReorderRequested(
+                source,
+                target,
+                placement,
+                actionSource,
+            ))) = action
             else {
                 return false
             }
-            return source == .contentTab(sourceID) && target == .contentTab(targetID) && placement == .after
+            return source == .contentTab(sourceID)
+                && target == .contentTab(targetID)
+                && placement == .after
+                && actionSource == .contentTabBar
         }
         await store.receive { action in
             guard case let .contentTabs(.reorder(source, target, placement)) = action else {
@@ -3745,12 +3781,15 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             sourceID: source,
             anchorID: anchor,
             placement: .before,
+            actionSource: .contentTabBar,
         ))))
         await store.receive { action in
-            guard case let .topNavigationMoveRequested(receivedSource, destination) = action else {
+            guard case let .topNavigationMoveRequested(receivedSource, destination, actionSource) = action else {
                 return false
             }
-            return receivedSource == source && destination == .before(anchor)
+            return receivedSource == source
+                && destination == .before(anchor)
+                && actionSource == .contentTabBar
         }
 
         XCTAssertEqual(store.state, initialState)
@@ -3864,10 +3903,12 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
                     receivedSource,
                     receivedAnchor,
                     receivedPlacement,
+                    actionSource,
                 )) = action else { return false }
                 return receivedSource == source
                     && receivedAnchor == anchor
                     && receivedPlacement == placement
+                    && actionSource == .contentTabBar
             }
             XCTAssertEqual(store.state, initialState)
             await store.finish()
@@ -3989,6 +4030,8 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         XCTAssertTrue(source.contains("Text(\"Move Down\")"))
         XCTAssertTrue(source.contains("[.option, .command]"))
         XCTAssertTrue(source.contains("sendTopNavigationMoveRequest"))
+        XCTAssertTrue(source.contains("actionSource: .dragAndDrop"))
+        XCTAssertTrue(source.contains(".keyboardShortcut"))
         XCTAssertTrue(fixedLocationSource.contains("workspaceClient.cachedIconForFile(item.path)"))
         XCTAssertFalse(fixedLocationSource.contains("workspaceClient.iconForFile(item.path)"))
         XCTAssertTrue(fixedLocationSource.contains("Image(systemName: item.iconName)"))
@@ -4401,6 +4444,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         var state = FileManagerFeature.State()
         state.sidebar.setFixedLocationItems([location])
         let providers = [NSItemProvider(), NSItemProvider()]
+        let operationID = UUID()
         let request = FileManagerSidebarEntryDropRequest(
             target: .fixedLocation(location.id),
             providers: providers,
@@ -4408,22 +4452,23 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         )
         let store = TestStore(initialState: state) {
             FileManagerWindowCommandRoutingReducer()
+        } withDependencies: {
+            $0.fileManagerProductMetricsClient = .init(
+                record: { _ in },
+                makeOperationID: { operationID },
+            )
         }
-        let expectedRoute = AnyCasePath<FileManagerFeature.Action, Void>(
-            embed: { _ in
-                .internal(.sidebarEntryDrop(.routing(.handleDropToTrash(providers: providers))))
-            },
-            extract: { action in
-                guard case let .internal(.sidebarEntryDrop(.routing(.handleDropToTrash(receivedProviders)))) = action
-                else { return nil }
-                XCTAssertEqual(receivedProviders.count, providers.count)
-                XCTAssertTrue(zip(receivedProviders, providers).allSatisfy { $0 === $1 })
-                return ()
-            },
-        )
-
         await store.send(.sidebar(.delegate(.entryDropRequested(request))))
-        await store.receive(expectedRoute)
+        await store.receive { action in
+            guard case let .internal(.sidebarEntryDrop(.acceptedCommand(metadata, nestedAction))) = action,
+                  metadata.id == operationID,
+                  metadata.interaction == .moveEntriesToTrash,
+                  metadata.source == .dragAndDrop,
+                  case let .routing(.handleDropToTrash(receivedProviders)) = nestedAction
+            else { return false }
+            XCTAssertEqual(receivedProviders.count, providers.count)
+            return zip(receivedProviders, providers).allSatisfy { $0 === $1 }
+        }
         XCTAssertEqual(store.state, state)
         await store.finish()
     }
@@ -6443,39 +6488,32 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             providers: providers,
             isOptionDrag: isOptionDrag,
         )
+        let operationID = UUID()
         let store = TestStore(initialState: initialState) {
             FileManagerWindowCommandRoutingReducer()
+        } withDependencies: {
+            $0.fileManagerProductMetricsClient = .init(
+                record: { _ in },
+                makeOperationID: { operationID },
+            )
         }
-        let expectedHandleDrop = AnyCasePath<FileManagerFeature.Action, Void>(
-            embed: { _ in
-                FileManagerFeature.Action.internal(.sidebarEntryDrop(.routing(.handleDrop(
-                    providers: providers,
-                    destinationPath: destinationPath,
-                    isOptionDrag: isOptionDrag,
-                ))))
-            },
-            extract: { action in
-                guard case let .internal(.sidebarEntryDrop(.routing(.handleDrop(
-                    receivedProviders,
-                    receivedDestinationPath,
-                    receivedIsOptionDrag,
-                )))) = action
-                else { return nil }
-                XCTAssertEqual(receivedProviders.count, providers.count, file: file, line: line)
-                XCTAssertTrue(
-                    zip(receivedProviders, providers).allSatisfy { $0 === $1 },
-                    "provider identity and order must be preserved",
-                    file: file,
-                    line: line,
-                )
-                XCTAssertEqual(receivedDestinationPath, destinationPath, file: file, line: line)
-                XCTAssertEqual(receivedIsOptionDrag, isOptionDrag, file: file, line: line)
-                return ()
-            },
-        )
-
         await store.send(.sidebar(.delegate(.entryDropRequested(request))))
-        await store.receive(expectedHandleDrop)
+        await store.receive { action in
+            guard case let .internal(.sidebarEntryDrop(.acceptedCommand(metadata, nestedAction))) = action,
+                  metadata.id == operationID,
+                  metadata.interaction == (isOptionDrag ? .copyEntries : .moveEntries),
+                  metadata.source == .dragAndDrop,
+                  case let .routing(.handleDrop(
+                      receivedProviders,
+                      receivedDestinationPath,
+                      receivedIsOptionDrag,
+                  )) = nestedAction
+            else { return false }
+            XCTAssertEqual(receivedProviders.count, providers.count, file: file, line: line)
+            XCTAssertEqual(receivedDestinationPath, destinationPath, file: file, line: line)
+            XCTAssertEqual(receivedIsOptionDrag, isOptionDrag, file: file, line: line)
+            return zip(receivedProviders, providers).allSatisfy { $0 === $1 }
+        }
         XCTAssertEqual(store.state, initialState, "drop routing must preserve Window state", file: file, line: line)
         await store.finish()
     }
@@ -6707,7 +6745,7 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
         XCTAssertEqual(pinnedAction.systemName, "minus")
         XCTAssertEqual(ordinaryAction, .close)
         XCTAssertEqual(ordinaryAction.systemName, "xmark")
-        guard case let .unpinContentTab(pinnedTabID) = pinnedAction.viewAction(tabID: tabID) else {
+        guard case let .unpinContentTabFromTrailingControl(pinnedTabID) = pinnedAction.viewAction(tabID: tabID) else {
             return XCTFail("Pinned trailing action must preserve the tab and unpin it")
         }
         XCTAssertEqual(pinnedTabID, tabID)
@@ -6715,6 +6753,129 @@ final class CTM004ContentTabSidebarTests: XCTestCase {
             return XCTFail("Ordinary trailing action must close the tab")
         }
         XCTAssertEqual(ordinaryTabID, tabID)
+    }
+
+    /// CTM-004-sidebar_close_selected_content_tabs: Sidebar context-menu Pin은 source-bearing window action으로 라우팅된다.
+    /// context menu와 direct/trailing control이 terminal metric에서 구분 가능한 route를 갖는지 검증한다.
+    /// - 검증 내용: Sidebar Pin delegate에서 source `.contextMenu`를 포함한 단일 pin mutation request
+    /// - 사전 조건: pin 가능한 unpinned Directory tab
+    /// - 기대 결과: `.contentTabActionRequested(.pin, source: .contextMenu)` 한 건
+    func testSidebarContextMenuPinRoutesContextMenuSource() async {
+        let tabID = ContentTabID(rawValue: "sidebar-context-menu-pin-route")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: tabID,
+                    page: .directory,
+                    anchor: .directory(path: "/sidebar-context-menu-pin-route"),
+                    isPinned: false,
+                    title: nil,
+                    iconName: nil,
+                ),
+            ],
+            activeTabID: tabID,
+            recentlyClosed: nil,
+        )
+        let store = TestStore(initialState: state) {
+            FileManagerWindowRoutingReducer()
+        }
+
+        await store.send(.sidebar(.delegate(.pinContentTab(tabID))))
+        await store.receive { action in
+            guard case let .contentTabActionRequested(.pin(receivedTabID, placement), source) = action else {
+                return false
+            }
+            return receivedTabID == tabID && placement == nil && source == .contextMenu
+        }
+    }
+
+    /// CTM-004-sidebar_close_selected_content_tabs: Sidebar context-menu Unpin은 source-bearing window action으로 라우팅된다.
+    /// context menu Unpin이 trailing control과 같은 source-less delegate로 붕괴하지 않는지 검증한다.
+    /// - 검증 내용: Sidebar Unpin delegate에서 source `.contextMenu`를 포함한 단일 unpin mutation request
+    /// - 사전 조건: pinned Directory tab과 close 가능한 sibling tab
+    /// - 기대 결과: `.contentTabActionRequested(.unpin, source: .contextMenu)` 한 건
+    func testSidebarContextMenuUnpinRoutesContextMenuSource() async {
+        let tabID = ContentTabID(rawValue: "sidebar-context-menu-unpin-route")
+        let siblingID = ContentTabID(rawValue: "sidebar-context-menu-unpin-sibling")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: tabID,
+                    page: .directory,
+                    anchor: .directory(path: "/sidebar-context-menu-unpin-route"),
+                    isPinned: true,
+                    title: nil,
+                    iconName: nil,
+                ),
+                ContentTabItem(
+                    id: siblingID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+            ],
+            activeTabID: tabID,
+            recentlyClosed: nil,
+        )
+        let store = TestStore(initialState: state) {
+            FileManagerWindowRoutingReducer()
+        }
+
+        await store.send(.sidebar(.delegate(.unpinContentTab(tabID))))
+        await store.receive { action in
+            guard case let .contentTabActionRequested(.unpin(receivedTabID, placement), source) = action else {
+                return false
+            }
+            return receivedTabID == tabID && placement == nil && source == .contextMenu
+        }
+    }
+
+    /// CTM-004-sidebar_close_selected_content_tabs: Sidebar trailing Unpin은 content-tab-bar source로 라우팅된다.
+    /// pinned row의 직접 trailing control이 context menu source로 오분류되지 않는지 검증한다.
+    /// - 검증 내용: trailing Unpin delegate에서 source `.contentTabBar`를 포함한 단일 unpin mutation request
+    /// - 사전 조건: pinned Directory tab과 close 가능한 sibling tab
+    /// - 기대 결과: `.contentTabActionRequested(.unpin, source: .contentTabBar)` 한 건
+    func testSidebarTrailingUnpinRoutesContentTabBarSource() async {
+        let tabID = ContentTabID(rawValue: "sidebar-trailing-unpin-route")
+        let siblingID = ContentTabID(rawValue: "sidebar-trailing-unpin-sibling")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: tabID,
+                    page: .directory,
+                    anchor: .directory(path: "/sidebar-trailing-unpin-route"),
+                    isPinned: true,
+                    title: nil,
+                    iconName: nil,
+                ),
+                ContentTabItem(
+                    id: siblingID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+            ],
+            activeTabID: tabID,
+            recentlyClosed: nil,
+        )
+        let store = TestStore(initialState: state) {
+            FileManagerWindowRoutingReducer()
+        }
+
+        await store.send(.sidebar(.delegate(.unpinContentTabFromTrailingControl(tabID))))
+        await store.receive { action in
+            guard case let .contentTabActionRequested(.unpin(receivedTabID, placement), source) = action else {
+                return false
+            }
+            return receivedTabID == tabID && placement == nil && source == .contentTabBar
+        }
     }
 
     /// CTM-004-sidebar_close_selected_content_tabs: native trailing action은 hover 배경을 복원함
@@ -8007,6 +8168,7 @@ extension CTM004ContentTabSidebarTests {
             initiatingTabID: sourceID,
             orderedTabIDs: [selectedID, sourceID],
             placement: .before(anchorID),
+            source: .dragAndDrop,
         )])
         XCTAssertNil(sessionStore.entry)
     }
@@ -8025,6 +8187,7 @@ extension CTM004ContentTabSidebarTests {
             initiatingTabID: .init(rawValue: "source"),
             orderedTabIDs: [.init(rawValue: "source")],
             placement: .empty,
+            source: .dragAndDrop,
         )
         let store = TestStore(initialState: FileManagerSidebarState()) {
             FileManagerSidebarFeature()

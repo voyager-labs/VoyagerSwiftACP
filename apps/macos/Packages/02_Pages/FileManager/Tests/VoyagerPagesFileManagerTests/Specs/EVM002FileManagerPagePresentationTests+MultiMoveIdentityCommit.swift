@@ -517,8 +517,9 @@ extension EVM002FileManagerPagePresentationTests {
             ],
         )
         let store = makeRootSourceCandidateStore(state)
+        let generation = store.state.entryViewLayout.entryOperations.loadingContext.generation
 
-        await store.send(.entryViewLayout(.entryOperations(.loading(.itemsLoaded([
+        await store.send(.entryViewLayout(.entryOperations(.loading(.itemsLoaded(generation: generation, items: [
             beforePrimary,
             afterAdditional,
         ])))))
@@ -573,7 +574,10 @@ extension EVM002FileManagerPagePresentationTests {
         )
         let store = makeRootSourceCandidateStore(state)
 
-        await store.send(.entryViewLayout(.entryOperations(.loading(.streamFailed(generation: 1)))))
+        await store.send(.entryViewLayout(.entryOperations(.loading(.streamFailed(
+            generation: 1,
+            failure: .unavailable(description: "test"),
+        )))))
 
         XCTAssertEqual(store.state.pendingIdentityTransition?.additionalMoves.map(\.migrated), [true, false])
         XCTAssertNotNil(store.state.pendingIdentityTransition)
@@ -632,7 +636,10 @@ extension EVM002FileManagerPagePresentationTests {
         )
         let store = makeRootSourceCandidateStore(state)
 
-        await store.send(.entryViewLayout(.entryOperations(.loading(.streamFailed(generation: 1)))))
+        await store.send(.entryViewLayout(.entryOperations(.loading(.streamFailed(
+            generation: 1,
+            failure: .unavailable(description: "test"),
+        )))))
 
         XCTAssertEqual(store.state.pendingIdentityTransition?.primaryMigrated, true)
         XCTAssertEqual(store.state.pendingIdentityTransition?.additionalMoves.first?.migrated, false)
@@ -667,10 +674,14 @@ extension EVM002FileManagerPagePresentationTests {
             projectionOwner: .root(generation: 1),
             preservationOwner: nil,
         )
-        let trigger = FileManagerContentAction.entryViewLayout(.entryOperations(.loading(.itemsLoaded([
-            beforePrimary,
-            otherSelected,
-        ]))))
+        let generation = state.entryViewLayout.entryOperations.loadingContext.generation
+        let trigger = FileManagerContentAction.entryViewLayout(.entryOperations(.loading(.itemsLoaded(
+            generation: generation,
+            items: [
+                beforePrimary,
+                otherSelected,
+            ],
+        ))))
 
         FileManagerContentIdentityTransitionCoordinator.markReplacementSelection(
             on: trigger,
@@ -713,9 +724,11 @@ extension EVM002FileManagerPagePresentationTests {
             projectionOwner: .root(generation: 1),
             preservationOwner: nil,
         )
-        let trigger = FileManagerContentAction.entryViewLayout(.entryOperations(.loading(.itemsLoaded([
-            beforePrimary,
-        ]))))
+        let generation = state.entryViewLayout.entryOperations.loadingContext.generation
+        let trigger = FileManagerContentAction.entryViewLayout(.entryOperations(.loading(.itemsLoaded(
+            generation: generation,
+            items: [beforePrimary],
+        ))))
 
         FileManagerContentIdentityTransitionCoordinator.markReplacementSelection(
             on: trigger,

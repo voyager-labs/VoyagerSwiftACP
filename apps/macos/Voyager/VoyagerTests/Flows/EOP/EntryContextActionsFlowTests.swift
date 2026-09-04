@@ -38,7 +38,10 @@ final class EntryContextActionsFlowTests: XCTestCase {
         let initialHistory = store.state.navigation.backHistory
         let initialSelection = store.state.entryViewLayout.selectedIds
 
-        await store.send(.entryViewLayout(.delegate(.executeCommand("navigation.shareSelectedItems"))))
+        await store.send(.entryViewLayout(.delegate(.executeCommand(
+            "navigation.shareSelectedItems",
+            source: .fileManagerContent,
+        ))))
         await store.finish()
 
         XCTAssertEqual(
@@ -78,7 +81,10 @@ final class EntryContextActionsFlowTests: XCTestCase {
         let initialHistory = store.state.navigation.backHistory
         let initialSelection = store.state.entryViewLayout.selectedIds
 
-        await store.send(.entryViewLayout(.delegate(.executeCommand("navigation.shareSelectedItems"))))
+        await store.send(.entryViewLayout(.delegate(.executeCommand(
+            "navigation.shareSelectedItems",
+            source: .fileManagerContent,
+        ))))
         await store.finish()
 
         XCTAssertTrue(shareCalls.withValue { $0.isEmpty })

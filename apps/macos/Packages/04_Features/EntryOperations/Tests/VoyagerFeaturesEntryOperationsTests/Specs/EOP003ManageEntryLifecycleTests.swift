@@ -130,12 +130,12 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: secondSandbox.originalFixture.path))
     }
 
-    /// EOP-003-move_entries_to_trash: provider 하나라도 decode 실패하면 batch 전체를 변경하지 않음
+    /// EOP-003-move_entries_to_trash: 수용된 provider decode 실패는 mutation 없이 취소 terminal을 한 번 보냄
     /// all-or-none resolver가 일부 성공 path를 Trash mutation으로 흘리지 않는 회귀를 검증한다.
-    /// - 검증 내용: valid + invalid provider batch의 moveToTrash/generic move/paste 호출 0회, metadata/Undo 없음
+    /// - 검증 내용: metadata 보존 cancelled terminal 한 건, moveToTrash/generic move/paste 호출 0회, Trash metadata/Undo 없음
     /// - 사전 조건: `fixtures/fixtures/texts/plain/11.txt` temp copy provider와 fileURL payload가 없는 provider
-    /// - 기대 결과: fixture copy와 원본이 유지되고 EntryOperations state가 변경되지 않음
-    func testHandleDropToTrash_decodeFailureMutatesNothing() async throws {
+    /// - 기대 결과: provider 수 2의 cancelled terminal만 생성되고 fixture copy와 원본이 유지됨
+    func testHandleDropToTrash_decodeFailureEmitsCancelledTerminalWithoutMutation() async throws {
         let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
         defer { sandbox.cleanup() }
         let validProvider = NSItemProvider(
@@ -143,33 +143,95 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
             typeIdentifier: UTType.fileURL.identifier,
         )
         let mutationCalls = LockIsolated(0)
+        let reloadRecorder = CallRecorder<[String]>()
         var fileOps = EntryFileOpsClient.previewValue
-        fileOps.pasteFile = { _, _ in
-            mutationCalls.withValue { $0 += 1 }
-            throw FileOpError.system(message: "generic paste must not run")
-        }
-        fileOps.moveFile = { _, _ in
-            mutationCalls.withValue { $0 += 1 }
-            throw FileOpError.system(message: "generic move must not run")
-        }
         fileOps.moveToTrashAndReturnURL = { _ in
             mutationCalls.withValue { $0 += 1 }
             throw FileOpError.system(message: "trash mutation must not run")
         }
+        fileOps.postFileSystemChanged = reloadRecorder.record
+        let commandID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000303"))
+        let metadata = EntryCommandMetadata(
+            id: commandID,
+            interaction: .moveEntriesToTrash,
+            source: .dragAndDrop,
+        )
+        let undoSpy = UndoManagerSpy()
         let store = EntryOperationsTestSupport.makeStore(initialState: .init()) {
             $0.entryFileOpsClient = fileOps
+            $0.undoManagerClient = undoSpy.client
         }
-        // store.exhaustivity = .off: decode failure의 action 부재와 filesystem 불변만 검증한다.
-        store.exhaustivity = .off
 
-        await store.send(.routing(.handleDropToTrash(providers: [validProvider, NSItemProvider()])))
+        await store.send(.acceptedCommand(
+            metadata: metadata,
+            action: .routing(.handleDropToTrash(providers: [validProvider, NSItemProvider()])),
+        ))
+        await store.receive { action in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return false }
+            return record.command == metadata
+                && record.operationKind == .moveToTrash
+                && record.attemptedCount == 2
+                && record.cancelledCount == 2
+                && record.succeededCount == 0
+                && record.failedCount == 0
+                && record.targets.isEmpty
+        }
         await store.finish()
 
         XCTAssertEqual(mutationCalls.value, 0)
+        XCTAssertTrue(reloadRecorder.recorded.isEmpty)
         XCTAssertTrue(store.state.undoRecords.isEmpty)
         XCTAssertTrue(store.state.itemStates.isEmpty)
+        XCTAssertTrue(undoSpy.registerUndoCalls.isEmpty)
+        let trashPath = sandbox.root.appendingPathComponent(".Trash/\(sandbox.fileURL.lastPathComponent)").path
+        let trashMetadata = await store.dependencies.trashMetadataStoreClient.find(trashPath)
+        XCTAssertNil(trashMetadata)
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.fileURL.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
+    }
+
+    /// EOP-003-entry_command_teardown: 수용된 command의 path lifecycle은 원 metadata를 유지한다.
+    /// Window owner가 teardown aggregate를 계산할 수 있도록 실제 effect 출력의 metadata envelope를 검증한다.
+    /// - 검증 내용: Quick Look의 started/finished가 acceptedCommand로 전달되고 terminal record에도 metadata가 연결됨
+    /// - 사전 조건: 고정 command metadata와 성공하는 Quick Look dependency
+    /// - 기대 결과: 모든 lifecycle 단계가 동일 command ID, interaction, source를 유지함
+    func testAcceptedCommandPropagatesMetadataThroughPathLifecycle() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+        let path = sandbox.fileURL.path
+        let metadata = EntryCommandMetadata(
+            id: UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 4)),
+            interaction: .quickLookEntry,
+            source: .keyboardShortcut,
+        )
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryQuickLookClient = EntryQuickLookClient(quickLook: { _, _ in })
+        }
+        // store.exhaustivity = .off: lifecycle metadata envelope만 검증하고 item 상태 변화는 기존 owner에 위임함
+        store.exhaustivity = .off
+
+        await store.send(.acceptedCommand(
+            metadata: metadata,
+            action: .open(.quickLookFiles(paths: [path])),
+        ))
+        await store.receive { action in
+            guard case let .acceptedCommand(received, .lifecycle(.operationStarted(receivedPath, kind))) = action
+            else { return false }
+            return received == metadata && receivedPath == path && kind == .quickLook
+        }
+        await store.receive { action in
+            guard case let .acceptedCommand(
+                received,
+                .lifecycle(.operationFinished(receivedPath, kind, .success)),
+            ) = action else { return false }
+            return received == metadata && receivedPath == path && kind == .quickLook
+        }
+        await store.receive { action in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return false }
+            return record.command == metadata
+                && record.operationKind == .quickLook
+                && record.succeededCount == 1
+        }
     }
 
     /// EOP-003-move_entries_to_trash: 손상된 Trash metadata를 격리한 뒤 새 기록을 안전하게 저장한다.
@@ -1923,7 +1985,7 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
             $0.loadingContext.preservedDirectoryReloadItems = [candidate]
             $0.loadingContext.expectedCoreBatchIndex = 1
         }
-        await store.send(.loading(.streamFailed(generation: generation))) {
+        await store.send(.loading(.streamFailed(generation: generation, failure: .unavailable(description: "test")))) {
             $0.loadingContext.preservedDirectoryReloadItems = nil
             $0.loadingContext.streamTerminal = true
             $0.loadingContext.isIncomplete = true
@@ -1934,6 +1996,28 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         XCTAssertEqual(store.state.renamingItemId, oldEntry.id)
         XCTAssertEqual(store.state.renamingText, "renaming")
         XCTAssertEqual(store.state.renamingItem, oldEntry)
+    }
+
+    /// EOP-003-load_entry_items: 이전 Computer 결과는 새 폴더 로딩 상태를 변경하지 않는다.
+    /// Computer A 뒤 시작된 폴더 B가 현재 세대를 소유할 때 늦은 A 결과를 무시하는 경쟁 상태를 검증한다.
+    /// - 검증 내용: stale Computer itemsLoaded가 현재 items, isLoading, generation을 변경하지 않는다.
+    /// - 사전 조건: generation 2의 폴더 B가 로딩 중이고 B의 기존 항목이 표시되어 있다.
+    /// - 기대 결과: B 항목과 로딩 상태가 유지되고 현재 B terminal만 이후 상태를 종료할 수 있다.
+    func testComputerItemsLoadedFromSupersededGenerationCannotMutateCurrentFolderLoad() async {
+        let currentEntry = EntryModelFixtures.makeFileEntry(id: "/tmp/folder-b.txt", name: "folder-b.txt")
+        let staleComputerEntry = EntryModelFixtures.makeFileEntry(id: "/tmp/computer-a", name: "computer-a")
+        var state = EntryOperationsState()
+        state.items = [currentEntry]
+        state.isLoading = true
+        state.loadingContext.generation = 2
+        state.loadingContext.sourceKind = .directory
+        let store = EntryOperationsTestSupport.makeStore(initialState: state)
+
+        await store.send(.loading(.itemsLoaded(generation: 1, items: [staleComputerEntry])))
+
+        XCTAssertEqual(store.state.items, [currentEntry])
+        XCTAssertTrue(store.state.isLoading)
+        XCTAssertEqual(store.state.loadingContext.generation, 2)
     }
 
     /// EOP-003-load_entry_items: stale 또는 잘못된 root stream event는 현재 항목을 변경하지 않는다.
@@ -1977,6 +2061,60 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
             generation: 3,
             event: .coreBatch(items: [entry], batchIndex: 1),
         ))))
+    }
+
+    /// EOP-003-load_entry_items: root stream permission failures retain typed permissionDenied.
+    /// Cocoa and POSIX permission errors must reach the loading action without collapsing to unavailable.
+    /// - 검증 내용: root stream failure action carries `.permissionDenied` for both OS error families.
+    /// - 사전 조건: directory stream throws Cocoa no-permission or POSIX EACCES/EPERM.
+    /// - 기대 결과: current generation emits the matching typed failure and terminates loading.
+    func testRootStreamPermissionFailureEmitsTypedFailure() async {
+        for error in [
+            NSError(domain: NSCocoaErrorDomain, code: NSFileReadNoPermissionError),
+            NSError(domain: NSPOSIXErrorDomain, code: Int(EACCES)),
+            NSError(domain: NSPOSIXErrorDomain, code: Int(EPERM)),
+        ] {
+            let store = EntryOperationsTestSupport.makeStore {
+                $0.entryLoadingClient.stagedLoadItems = { _, _, _ in
+                    AsyncThrowingStream { continuation in
+                        continuation.finish(throwing: error)
+                    }
+                }
+            }
+            // store.exhaustivity = .off: 로딩 시작이 여러 loadingContext 필드를 함께 변경하므로 terminal action만 검증한다.
+            store.exhaustivity = .off
+            await store.send(EntryOperationsAction.loading(.loadItems(path: "/tmp", showHidden: false)))
+            await store.receive { action in
+                guard case let .loading(.streamFailed(generation, failure)) = action else { return false }
+                return generation == 1 && failure == .permissionDenied
+            }
+            await store.finish()
+        }
+    }
+
+    /// EOP-003-load_entry_items: root stream generic failures retain unavailable.
+    /// Non-permission errors must preserve their description while keeping stale generation guards unchanged.
+    /// - 검증 내용: generic stream failure action carries `.unavailable(description:)`.
+    /// - 사전 조건: current directory stream throws a generic NSError.
+    /// - 기대 결과: current generation emits unavailable with the NSError localized description.
+    func testRootStreamGenericFailureEmitsUnavailable() async {
+        let error = NSError(domain: "EOP003", code: 77, userInfo: [NSLocalizedDescriptionKey: "generic failure"])
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryLoadingClient.stagedLoadItems = { _, _, _ in
+                AsyncThrowingStream { continuation in
+                    continuation.finish(throwing: error)
+                }
+            }
+        }
+
+        // store.exhaustivity = .off: 로딩 시작이 여러 loadingContext 필드를 함께 변경하므로 terminal action만 검증한다.
+        store.exhaustivity = .off
+        await store.send(EntryOperationsAction.loading(.loadItems(path: "/tmp", showHidden: false)))
+        await store.receive { action in
+            guard case let .loading(.streamFailed(generation, failure)) = action else { return false }
+            return generation == 1 && failure == .unavailable(description: "generic failure")
+        }
+        await store.finish()
     }
 
     /// EOP-003-load_entry_items: route clear는 root load generation과 transient snapshot을 함께 무효화한다.
@@ -2048,7 +2186,7 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         state.items = [entry]
         let store = EntryOperationsTestSupport.makeStore(initialState: state)
 
-        await store.send(.loading(.streamFailed(generation: 5))) {
+        await store.send(.loading(.streamFailed(generation: 5, failure: .unavailable(description: "test")))) {
             $0.loadingContext.streamTerminal = true
             $0.loadingContext.isIncomplete = true
         }
@@ -2102,6 +2240,27 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
     func testCancelledComputerItemsFailureDoesNotClearLatestItems() async {
         let preservedLatest = await EntryOperationsTestSupport.cancelledLoadPreservesLatest(.computerFailure)
         XCTAssertTrue(preservedLatest)
+    }
+
+    /// EOP-003-load_entry_items: 실제 Computer 로드 오류는 성공 빈 결과가 아닌 실패 terminal을 방출한다.
+    /// Computer 소스 오류를 browsing 실패로 구분할 수 있는 reducer action 계약을 검증한다.
+    /// - 검증 내용: loadComputerItems 오류가 computerItemsLoadFailed를 한 번 방출하고 loading 상태를 종료한다.
+    /// - 사전 조건: Computer loader가 일반 오류를 던지고 초기 loading generation은 0이다.
+    /// - 기대 결과: generation 1의 실패 terminal이 수신되고 항목은 비어 있으며 isLoading은 false다.
+    func testComputerItemsLoadErrorEmitsFailureTerminal() async {
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryLoadingClient.loadComputerItems = {
+                throw NSError(domain: "EOP003ComputerLoad", code: 1)
+            }
+        }
+
+        await store.send(.loading(.loadComputerItems)) {
+            $0.loadingContext.generation = 1
+            $0.isLoading = true
+        }
+        await store.receive(\.loading.computerItemsLoadFailed, 1) {
+            $0.isLoading = false
+        }
     }
 
     // MARK: - EOP-003-load_folder_items
@@ -2421,6 +2580,30 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
 }
 
 extension EOP003ManageEntryLifecycleTests {
+    // MARK: - EOP-003-product_batch_metrics
+
+    /// EOP-003-product_batch_metrics: batch records preserve failed target count.
+    /// successful targets alone must not imply an all-success batch terminal.
+    /// - 검증 내용: attempted/succeeded/failed aggregate source values
+    /// - 사전 조건: two successful targets and one failed target
+    /// - 기대 결과: aggregate remains 3 attempted, 2 succeeded, 1 failed
+    func testEntryActionRecordPreservesPartialFailureAggregate() {
+        let record = EntryActionRecord(
+            operationKind: .pasteFileCopy,
+            targets: [
+                .init(beforePath: "/a", afterPath: "/b"),
+                .init(beforePath: "/c", afterPath: "/d"),
+            ],
+            failedCount: 1,
+        )
+
+        XCTAssertEqual(record.attemptedCount, 3)
+        XCTAssertEqual(record.targets.count, 2)
+        XCTAssertEqual(record.failedCount, 1)
+    }
+}
+
+extension EOP003ManageEntryLifecycleTests {
     // MARK: - EOP-003-load_entry_items
 
     /// EOP-003-load_entry_items: 단계적 root stream 완료는 Trash metadata projection을 새로 읽는다.
@@ -2524,7 +2707,11 @@ private extension EOP003ManageEntryLifecycleTests {
         }
         await gate.waitUntilWaiting()
         await gate.resume(with: .failure)
-        await store.receive(\.loading.streamFailed, 1) {
+        await store.receive { action in
+            guard case let .loading(.streamFailed(generation, failure)) = action else { return false }
+            guard case .unavailable = failure else { return false }
+            return generation == 1
+        } assert: {
             $0.isLoading = false
             $0.isReloading = false
             $0.loadingContext.streamTerminal = true
@@ -2929,5 +3116,195 @@ extension EOP003ManageEntryLifecycleTests {
     private func posixPermissions(at url: URL) throws -> Int {
         let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
         return try XCTUnwrap(attributes[.posixPermissions] as? NSNumber).intValue & 0o777
+    }
+}
+
+// MARK: - Batch Terminal Records
+
+extension EOP003ManageEntryLifecycleTests {
+    // MARK: - EOP-003-delete_entries_immediately
+
+    /// EOP-003-delete_entries_immediately: 즉시 삭제 성공도 한 건의 command-level terminal을 낸다.
+    /// 비-undo 삭제가 operationFinished 이후 entryActionCompleted로 정확히 한 번 마무리되는지 검증한다.
+    /// - 검증 내용: terminal record의 operationKind는 .deleteImmediately이고 targets는 비며 failedCount는 0이다.
+    /// - 사전 조건: deleteImmediately client 성공 mock
+    /// - 기대 결과: entryActionCompleted(.deleteImmediately, targets: [], failedCount: 0)가 한 번 수신된다.
+    func testDeleteImmediatelyConfirmedEmitsSingleTerminalRecord() async {
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryFileOpsClient.deleteImmediately = { _ in }
+        }
+        // store.exhaustivity = .off: terminal 계약만 검증하고 중간 lifecycle 수신은 생략함
+        store.exhaustivity = .off
+
+        await store.send(.trash(.deleteImmediatelyConfirmed(paths: ["/root/deleted"])))
+        await store.receive { action in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return false }
+            return record.operationKind == .deleteImmediately
+                && record.targets.isEmpty
+                && record.failedCount == 0
+                && record.succeededCount == 1
+        }
+        await store.finish()
+    }
+
+    /// EOP-003-delete_entries_immediately: 즉시 삭제 전체 실패도 실패 aggregate를 담은 terminal을 낸다.
+    /// - 검증 내용: terminal record의 failedCount는 시도 수와 같고 targets는 비어 있다.
+    /// - 사전 조건: deleteImmediately client 실패 mock
+    /// - 기대 결과: entryActionCompleted(.deleteImmediately, targets: [], failedCount: 1)가 한 번 수신된다.
+    func testDeleteImmediatelyConfirmedAllFailureEmitsFailureTerminalRecord() async {
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryFileOpsClient = makeFailingDeleteClient(error: .system(message: "delete denied"))
+        }
+        // store.exhaustivity = .off: 전체 실패 terminal 계약만 검증함
+        store.exhaustivity = .off
+
+        await store.send(.trash(.deleteImmediatelyConfirmed(paths: ["/root/deleted"])))
+        await store.receive { action in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return false }
+            return record.operationKind == .deleteImmediately
+                && record.targets.isEmpty
+                && record.failedCount == 1
+                && record.succeededCount == 0
+        }
+        await store.finish()
+    }
+
+    // MARK: - eop-003-product_batch_metrics
+
+    /// EOP-003-product_batch_metrics: paste 전체 실패 배치도 실패 terminal을 한 건 낸다.
+    /// 성공 target이 하나도 없어도 시도한 배치는 command-level terminal로 마무리되어야 한다.
+    /// - 검증 내용: terminal record의 operationKind는 .pasteFileCopy이고 targets는 비며 failedCount는 1이다.
+    /// - 사전 조건: pasteFile client 실패 mock
+    /// - 기대 결과: entryActionCompleted(.pasteFileCopy, targets: [], failedCount: 1)가 한 번 수신된다.
+    func testPasteAllFailureEmitsFailureTerminalRecord() async {
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryFileOpsClient.pasteFile = { _, _ in throw FileOpError.system(message: "paste failed") }
+        }
+        // store.exhaustivity = .off: 전체 실패 배치 terminal 계약만 검증함
+        store.exhaustivity = .off
+
+        await store.send(.clipboard(.pasteItems(
+            sourcePaths: ["/src/a.txt"],
+            destinationPath: "/dest",
+            operation: .copy,
+            operationKind: .pasteFileCopy,
+        )))
+        await store.receive { action in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return false }
+            return record.operationKind == .pasteFileCopy
+                && record.targets.isEmpty
+                && record.failedCount == 1
+                && record.succeededCount == 0
+        }
+        await store.finish()
+    }
+
+    /// EOP-003-product_batch_metrics: putBack 전체 실패 배치도 실패 terminal을 한 건 낸다.
+    /// metadata 부재로 모든 대상이 실패하면 failedCount를 담은 record로 마무리되는지 검증한다.
+    /// - 검증 내용: terminal record의 operationKind는 .putBack이고 targets는 비며 failedCount는 1이다.
+    /// - 사전 조건: trash metadata store에 해당 path의 metadata가 없음
+    /// - 기대 결과: entryActionCompleted(.putBack, targets: [], failedCount: 1)가 한 번 수신된다.
+    func testPutBackAllFailureEmitsFailureTerminalRecord() async {
+        let store = EntryOperationsTestSupport.makeStore()
+        // store.exhaustivity = .off: 전체 실패 배치 terminal 계약만 검증함
+        store.exhaustivity = .off
+
+        await store.send(.trash(.putBackFromTrash(paths: ["/.Trash/a.txt"])))
+        await store.receive { action in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return false }
+            return record.operationKind == .putBack
+                && record.targets.isEmpty
+                && record.failedCount == 1
+                && record.succeededCount == 0
+        }
+        await store.finish()
+    }
+
+    /// EOP-003-put_deleted_entries_back: 사용자 취소는 실패가 아닌 cancelled terminal로 집계된다.
+    /// Put Back 경계가 `.cancelled`를 반환하면 command aggregate가 실패율을 오염시키지 않는지 검증한다.
+    /// - 검증 내용: 성공 0, 실패 0, 취소 1인 terminal record가 한 번 방출된다.
+    /// - 사전 조건: Trash metadata는 존재하고 putBack client가 `.cancelled`를 반환한다.
+    /// - 기대 결과: attemptedCount 1, succeededCount 0, failedCount 0이다.
+    func testPutBackCancellationDoesNotCountAsFailure() async {
+        let trashPath = "/tmp/.Trash/cancelled.txt"
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryFileOpsClient.putBackFromTrash = { _, _ in throw FileOpError.cancelled }
+        }
+        await store.dependencies.trashMetadataStoreClient.save(TrashMetadata(
+            trashPath: trashPath,
+            originalPath: "/tmp/cancelled.txt",
+            deletedDate: .distantPast,
+        ))
+        // store.exhaustivity = .off: 취소 aggregate terminal만 검증하고 중간 lifecycle action은 생략함
+        store.exhaustivity = .off
+
+        await store.send(.trash(.putBackFromTrash(paths: [trashPath])))
+        await store.receive { action in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return false }
+            return record.operationKind == .putBack
+                && record.attemptedCount == 1
+                && record.succeededCount == 0
+                && record.failedCount == 0
+                && record.cancelledCount == 1
+        }
+        await store.finish()
+    }
+
+    /// EOP-003-product_batch_metrics: 전체 실패 배치 record는 성공 사운드를 재생하지 않는다.
+    /// - 검증 내용: targets가 비은 moveToTrash/pasteFileMove 완료에서 soundClient 호출이 없다.
+    /// - 사전 조건: 성공 target 1개짜리 대조 레코드와 전체 실패 레코드
+    /// - 기대 결과: 성공 레코드만 사운드 1회, 전체 실패 레코드는 무음
+    func testAllFailedBatchRecordsDoNotPlaySuccessSounds() async {
+        var played: [EntryOperationSound] = []
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryOperationSoundClient = EntryOperationSoundClient(play: { sound in
+                await MainActor.run { played.append(sound) }
+            })
+        }
+        // store.exhaustivity = .off: 사운드 부수 효과 계약에 집중함
+        store.exhaustivity = .off
+
+        let successTrash = EntryActionRecord(
+            operationKind: .moveToTrash,
+            targets: [.init(beforePath: "/src/a.txt", afterPath: nil)],
+        )
+        await store.send(.lifecycle(.entryActionCompleted(successTrash)))
+        let allFailedTrash = EntryActionRecord(operationKind: .moveToTrash, targets: [], failedCount: 2)
+        await store.send(.lifecycle(.entryActionCompleted(allFailedTrash)))
+        let allFailedPaste = EntryActionRecord(operationKind: .pasteFileMove, targets: [], failedCount: 1)
+        await store.send(.lifecycle(.entryActionCompleted(allFailedPaste)))
+
+        XCTAssertEqual(played, [.moveToTrash])
+    }
+
+    // MARK: - eop-003-undo_entry_action
+
+    /// EOP-003-undo_entry_action: 성공 target이 없는 레코드는 undo 등록하지 않는다.
+    /// 전체 실패 배치 record(undoable kind라도 targets가 비면) undo history와 manager 등록에서 제외되는지 검증한다.
+    /// - 검증 내용: undoRecords가 변하지 않고 UndoManagerSpy.registerUndo가 호출되지 않는다.
+    /// - 사전 조건: windowID/ownerID가 설정된 state와 UndoManagerSpy, targets가 빈 pasteFileMove record
+    /// - 기대 결과: 상태 변화 없이 spy 호출 0회
+    func testEntryActionCompletedWithoutSuccessfulTargetsDoesNotRegisterUndo() async throws {
+        let spy = UndoManagerSpy()
+        let windowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000569"))
+        let ownerID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000568"))
+        var initialState = EntryOperationsState(undoOwnerID: ownerID)
+        initialState.windowID = windowID
+        let store = EntryOperationsTestSupport.makeStore(initialState: initialState) {
+            $0.undoManagerClient = spy.client
+        }
+
+        let allFailedRecord = EntryActionRecord(
+            operationKind: .pasteFileMove,
+            targets: [],
+            failedCount: 2,
+        )
+
+        await store.send(.lifecycle(.entryActionCompleted(allFailedRecord)))
+
+        await store.finish()
+
+        XCTAssertTrue(spy.registerUndoCalls.isEmpty)
+        XCTAssertTrue(store.state.undoRecords.isEmpty)
     }
 }

@@ -38,17 +38,18 @@ struct ContentPaneContextMenu: View {
     var body: some View {
         if isTrashFolder {
             Button("Empty Trash") {
-                store
-                    .send(.entryViewLayout(.entryOperations(.trash(.emptyTrash(paths: store.entryViewLayout.entries
-                            .map(\.fullPath))))))
+                store.send(.entryViewLayout(.delegate(.executeCommand(
+                    "mutation.emptyTrash",
+                    source: .contextMenu,
+                ))))
             }
             .disabled(!canPerformEntryCommands)
         } else {
             Button("New Folder") {
-                store.send(.entryViewLayout(.entryOperations(.edit(.createNewFolder(
-                    parentPath: store.navigation.currentPath,
-                    siblingNames: store.entryViewLayout.entries.map(\.name),
-                )))))
+                store.send(.entryViewLayout(.delegate(.executeCommand(
+                    "mutation.createNewFolder",
+                    source: .contextMenu,
+                ))))
             }
             .keyboardShortcut("n", modifiers: [.command, .shift])
             .disabled(!canPerformEntryCommands)
@@ -57,7 +58,10 @@ struct ContentPaneContextMenu: View {
         Divider()
 
         Button("Paste") {
-            store.send(.entryViewLayout(.delegate(.executeCommand("clipboard.pasteItems"))))
+            store.send(.entryViewLayout(.delegate(.executeCommand(
+                "clipboard.pasteItems",
+                source: .contextMenu,
+            ))))
         }
         .keyboardShortcut("v", modifiers: .command)
         .disabled(!canPaste)

@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import Foundation
 import VoyagerEntitiesAi
 import VoyagerFeaturesAiProviderConnection
 
@@ -10,6 +11,16 @@ struct AiProviderSetupState: Equatable {
     var choice: AiProviderSetupChoice = .none
     var status: AiProviderSetupStatus = .blocked
     var rows: IdentifiedArrayOf<AiConnectionRowState>
+    @ObservationStateIgnored var pendingConnectionOperationIDs: [AiProvider: UUID] = [:]
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.didBootstrap == rhs.didBootstrap
+            && lhs.bootstrapPhase == rhs.bootstrapPhase
+            && lhs.loadError == rhs.loadError
+            && lhs.choice == rhs.choice
+            && lhs.status == rhs.status
+            && lhs.rows == rhs.rows
+    }
 
     init(rows: IdentifiedArrayOf<AiConnectionRowState>? = nil) {
         self.rows = rows ?? Self.catalogRows()
@@ -24,6 +35,12 @@ struct AiProviderSetupState: Equatable {
     }
 
     mutating func refreshStatus() {
+        if choice == .setUpLater {
+            status = .skipped
+            loadError = nil
+            return
+        }
+
         if rows.contains(where: { $0.connectionState == .connected }) {
             choice = .providerConnected
             status = .complete
@@ -33,12 +50,6 @@ struct AiProviderSetupState: Equatable {
 
         if choice == .providerConnected && rows.contains(where: { $0.connectionState == .checkingStatus }) {
             status = .complete
-            loadError = nil
-            return
-        }
-
-        if choice == .setUpLater {
-            status = .skipped
             loadError = nil
             return
         }

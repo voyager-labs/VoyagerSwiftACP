@@ -39,6 +39,30 @@ struct ContentTabRowInteractionSurface: Equatable {
     }
 }
 
+enum FileManagerObservedEntryPathResult: Equatable {
+    case pending
+    case succeeded
+    case failed
+    case cancelled
+}
+
+struct FileManagerPendingEntryCommand: Equatable {
+    let metadata: EntryCommandMetadata
+    var pathResults: [String: FileManagerObservedEntryPathResult] = [:]
+
+    var aggregate: EntryActionAggregate {
+        let succeeded = pathResults.values.count { $0 == .succeeded }
+        let failed = pathResults.values.count { $0 == .failed }
+        let cancelled = pathResults.values.count { $0 == .cancelled }
+        return .init(
+            attempted: pathResults.count,
+            succeeded: succeeded,
+            failed: failed,
+            cancelled: cancelled,
+        )
+    }
+}
+
 public enum FileManagerUndoRedoPhase: Equatable, Sendable {
     case idle
     case invoking(requestID: UUID, direction: EntryActionDirection)
@@ -108,6 +132,34 @@ public enum FileManagerTopNavigationIntent: Equatable, Sendable {
     case unpin(ContentTabID)
     case close(ContentTabID)
     case update(ContentTabID)
+}
+
+extension FileManagerTopNavigationIntent {
+    var isContentTabMoveMetricEligible: Bool {
+        switch self {
+        case .move, .movePinnedGroup:
+            true
+        case .pin, .unpin, .close, .update:
+            false
+        }
+    }
+}
+
+/// direct pin/unpin 터미널을 탭별로 상관하기 위한 메트릭 키.
+public struct ProductContentTabPinMutationMetric: Equatable, Sendable {
+    public let operationID: UUID
+    public let identity: ContentTabInteractionIdentity
+    public let source: ContentTabActionSource
+
+    public init(
+        operationID: UUID,
+        identity: ContentTabInteractionIdentity,
+        source: ContentTabActionSource,
+    ) {
+        self.operationID = operationID
+        self.identity = identity
+        self.source = source
+    }
 }
 
 public struct FileManagerPendingTopNavigationIntent: Equatable, Sendable {
@@ -191,6 +243,11 @@ public struct FileManagerWindowState: Equatable {
     public var pendingContentTabClose: PendingContentTabClose?
     public var pendingSelectedContentTabClose: PendingSelectedContentTabClose?
     public var pendingSelectedContentTabPinMutation: PendingSelectedContentTabPinMutation?
+    var productContentTabMoveMetricContexts: [
+        FileManagerTopNavigationOperationToken: ProductContentTabActionMetricContext
+    ] = [:]
+    var productContentTabPinMutationMetrics: [ContentTabID: ProductContentTabPinMutationMetric] = [:]
+    var productContentTabCloseMetric: ProductContentTabCloseMetric?
     public var deferredPinnedContentTabs: ContentTabState?
     public var deferredPinnedContentTabsMode: PinnedContentTabsApplicationMode?
     var pendingRuntimePreservationRecords: [ContentTabID: ContentTabPinnedRecord] = [:]
@@ -204,6 +261,10 @@ public struct FileManagerWindowState: Equatable {
     public var undoManagerAvailability: UndoManagerAvailability
     public var undoRedoPhase: FileManagerUndoRedoPhase
     public var sidebarEntryDropOperations: EntryOperationsState
+    var recordedContentEntryCommandIDs: Set<UUID> = []
+    var pendingContentEntryCommands: [UUID: FileManagerPendingEntryCommand] = [:]
+    var recordedSidebarEntryCommandIDs: Set<UUID> = []
+    var pendingSidebarEntryCommands: [UUID: FileManagerPendingEntryCommand] = [:]
     public var pendingCollectionOpenRequest: ContentPageCollectionOpenRequest?
     public var pendingContentTabMove: FileManagerWindowContentTabMovePending?
     public var contentTabMoveParticipantRequestID: UUID?
@@ -446,6 +507,7 @@ public struct PendingSelectedContentTabPinMutation: Equatable {
     public let operationID: UUID
     public let target: SelectedContentTabPinMutationTargetState
     public let orderedTargetIDs: [ContentTabID]
+    public let source: ContentTabActionSource
     public let origin: SelectedContentTabPinMutationOrigin
     public let dragOperationID: UUID?
     public let sourceWindowID: UUID?
@@ -475,6 +537,7 @@ public struct PendingSelectedContentTabPinMutation: Equatable {
         operationID: UUID,
         target: SelectedContentTabPinMutationTargetState,
         orderedTargetIDs: [ContentTabID],
+        source: ContentTabActionSource,
         origin: SelectedContentTabPinMutationOrigin = .menu,
         dragOperationID: UUID? = nil,
         sourceWindowID: UUID? = nil,
@@ -494,6 +557,7 @@ public struct PendingSelectedContentTabPinMutation: Equatable {
         self.operationID = operationID
         self.target = target
         self.orderedTargetIDs = orderedTargetIDs
+        self.source = source
         self.origin = origin
         self.dragOperationID = dragOperationID
         self.sourceWindowID = sourceWindowID
@@ -514,11 +578,13 @@ public struct PendingSelectedContentTabPinMutation: Equatable {
 
 public struct PendingSelectedContentTabClose: Equatable, Sendable {
     public let operationID: UUID
+    public let actionSource: ContentTabActionSource
     public let orderedTargetIDs: [ContentTabID]
     public var cursor: Int
     public var currentTabID: ContentTabID?
     public let originalActiveTabID: ContentTabID?
     public let preferredFallbackIDs: [ContentTabID]
+    public var aggregateResult: ContentTabActionResult?
 
     public init(
         operationID: UUID,
@@ -527,13 +593,16 @@ public struct PendingSelectedContentTabClose: Equatable, Sendable {
         currentTabID: ContentTabID?,
         originalActiveTabID: ContentTabID?,
         preferredFallbackIDs: [ContentTabID],
+        actionSource: ContentTabActionSource = .contentTabBar,
     ) {
         self.operationID = operationID
+        self.actionSource = actionSource
         self.orderedTargetIDs = orderedTargetIDs
         self.cursor = cursor
         self.currentTabID = currentTabID
         self.originalActiveTabID = originalActiveTabID
         self.preferredFallbackIDs = preferredFallbackIDs
+        aggregateResult = nil
     }
 
     public init(
@@ -549,6 +618,7 @@ public struct PendingSelectedContentTabClose: Equatable, Sendable {
             currentTabID: nil,
             originalActiveTabID: originalActiveTabID,
             preferredFallbackIDs: preferredFallbackIDs,
+            actionSource: .contentTabBar,
         )
     }
 
@@ -566,6 +636,7 @@ public struct PendingSelectedContentTabClose: Equatable, Sendable {
             currentTabID: nil,
             originalActiveTabID: originalActiveTabID,
             preferredFallbackIDs: preferredFallbackIDs,
+            actionSource: .contentTabBar,
         )
     }
 
@@ -583,6 +654,7 @@ public struct PendingSelectedContentTabClose: Equatable, Sendable {
             currentTabID: currentTabID,
             originalActiveTabID: originalActiveTabID,
             preferredFallbackIDs: preferredFallbackIDs,
+            actionSource: .contentTabBar,
         )
     }
 }
@@ -596,6 +668,8 @@ public struct PendingContentTabClose: Equatable {
     public let previousActiveInspector: FileManagerInspectorFeature.State?
     public let targetInspector: FileManagerInspectorFeature.State?
     public let batchOperationID: UUID?
+    public let actionSource: ContentTabActionSource
+    public let metricOperationID: UUID?
     public var didReceiveWriteBackNavigationState: Bool
     public var didReceiveWriteBackComposerSync: Bool
     public var requiresWriteBackFailureTerminal: Bool
@@ -613,6 +687,8 @@ public struct PendingContentTabClose: Equatable {
         previousActiveInspector: FileManagerInspectorFeature.State? = nil,
         targetInspector: FileManagerInspectorFeature.State? = nil,
         batchOperationID: UUID? = nil,
+        actionSource: ContentTabActionSource = .contentTabBar,
+        metricOperationID: UUID? = nil,
         didReceiveWriteBackNavigationState: Bool = false,
         didReceiveWriteBackComposerSync: Bool = false,
         requiresWriteBackFailureTerminal: Bool = true,
@@ -629,6 +705,8 @@ public struct PendingContentTabClose: Equatable {
         self.previousActiveInspector = previousActiveInspector
         self.targetInspector = targetInspector
         self.batchOperationID = batchOperationID
+        self.actionSource = actionSource
+        self.metricOperationID = metricOperationID
         self.didReceiveWriteBackNavigationState = didReceiveWriteBackNavigationState
         self.didReceiveWriteBackComposerSync = didReceiveWriteBackComposerSync
         self.requiresWriteBackFailureTerminal = requiresWriteBackFailureTerminal

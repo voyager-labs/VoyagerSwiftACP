@@ -398,7 +398,10 @@ extension EVM002FileManagerPagePresentationTests {
             charactersIgnoringModifiers: "c",
         ))))
         await store.receive {
-            guard case .entryViewLayout(.delegate(.executeCommand("clipboard.copySelectedItems"))) = $0 else {
+            guard case .entryViewLayout(.delegate(.executeCommand(
+                "clipboard.copySelectedItems",
+                source: .keyboardShortcut,
+            ))) = $0 else {
                 return false
             }
             return true
@@ -823,7 +826,7 @@ extension EVM002FileManagerPagePresentationTests {
                 switch action {
                 case .view(.selectAllEntries):
                     state.entryViewLayout.selectedIds = Set(entries.map(\.id))
-                case let .entryViewLayout(.delegate(.executeCommand(command))):
+                case let .entryViewLayout(.delegate(.executeCommand(command, _))):
                     routedCommands.withValue { $0.append(command) }
                 case .entryViewLayout(.delegate(.startRename)):
                     routedCommands.withValue { $0.append("rename") }

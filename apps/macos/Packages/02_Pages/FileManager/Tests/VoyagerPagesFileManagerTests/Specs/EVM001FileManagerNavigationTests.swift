@@ -170,12 +170,12 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
 
     // MARK: - EVM-001-dau_navigation_metrics
 
-    /// EVM-001-dau_navigation_metrics: content-row directory open reaches the FileManager metrics client
-    /// 실제 Open Selected Item 경로가 navigation delegate를 거쳐 folder metric을 정확히 한 번 기록하는지 검증.
-    /// - 검증 내용: FileManagerFeature → EntryViewLayout command → navigation delegate → MetricsClient
+    /// EVM-001-dau_navigation_metrics: content-row directory open does not emit legacy DAU
+    /// 실제 Open Selected Item 경로가 폐기된 legacy DAU callback을 다시 호출하지 않는지 검증.
+    /// - 검증 내용: FileManagerFeature → EntryViewLayout command → navigation delegate 이후 legacy callback count
     /// - 사전 조건: ordinary folder entry가 선택된 FileManagerFeature 상태
-    /// - 기대 결과: `.folder` 1회, collection/no-op metric 없음
-    func testContentRowFolderOpenLogsFolderNavigationExactlyOnce() async {
+    /// - 기대 결과: legacy DAU metric 0회
+    func testContentRowFolderOpenDoesNotEmitLegacyDAU() async {
         let folderPath = "/tmp/voyager-content-row-folder"
         let folder = EntryModel.temporaryFolder(id: folderPath, name: "folder")
         var state = FileManagerFeature.State()
@@ -197,25 +197,28 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         // store.exhaustivity = .off: 전체 FileManager routing의 부수적인 loading effect보다 metric count를 검증한다.
         store.exhaustivity = .off
 
-        await store.send(.content(.entryViewLayout(.delegate(.executeCommand("navigation.openSelectedItem")))))
+        await store.send(.content(.entryViewLayout(.delegate(.executeCommand(
+            "navigation.openSelectedItem",
+            source: .fileManagerContent,
+        )))))
         await store.skipInFlightEffects()
 
-        XCTAssertEqual(metrics.value, [.folder], "content-row folder navigation must log exactly one folder metric")
+        XCTAssertTrue(metrics.value.isEmpty)
     }
 
-    /// EVM-001-dau_navigation_metrics: direct fixed-location folder selection logs one folder metric
-    /// FileManager window의 직접 folder selection 경로가 동일한 metric owner를 사용하는지 검증.
-    /// - 검증 내용: navigation view action이 folder metric으로 연결되는지 확인
+    /// EVM-001-dau_navigation_metrics: direct fixed-location folder selection does not emit legacy DAU
+    /// FileManager window의 직접 folder selection이 폐기된 legacy callback을 호출하지 않는지 검증.
+    /// - 검증 내용: navigation view action 이후 legacy callback count
     /// - 사전 조건: Home route의 FileManagerFeature
-    /// - 기대 결과: 지정한 ordinary folder에 대해 `.folder` 1회
-    func testDirectFolderSelectionLogsFolderNavigationExactlyOnce() async {
+    /// - 기대 결과: legacy DAU metric 0회
+    func testDirectFolderSelectionDoesNotEmitLegacyDAU() async {
         let metrics = LockIsolated<[DAUNavigationKind]>([])
         let store = makeMetricsStore(metrics: metrics)
 
         await store.send(.navigation(.view(.navigateToPath("/tmp/voyager-fixed-location"))))
         await store.skipInFlightEffects()
 
-        XCTAssertEqual(metrics.value, [.folder])
+        XCTAssertTrue(metrics.value.isEmpty)
     }
 
     /// EVM-001-dau_navigation_metrics: same folder selection is a metric no-op
@@ -236,12 +239,12 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         XCTAssertTrue(metrics.value.isEmpty)
     }
 
-    /// EVM-001-dau_navigation_metrics: collection open remains exactly one collection metric
-    /// collection open의 직접 logging과 navigation delegate가 중복되지 않는지 검증.
-    /// - 검증 내용: collection file open 실패에서도 metric 호출 count와 kind
+    /// EVM-001-dau_navigation_metrics: collection open does not emit legacy DAU
+    /// collection open 실패에서도 폐기된 legacy callback이 호출되지 않는지 검증.
+    /// - 검증 내용: collection file open 실패 이후 legacy callback count
     /// - 사전 조건: ordinary folder route와 throwing collection loader
-    /// - 기대 결과: `.collection` 1회
-    func testCollectionOpenLogsCollectionNavigationExactlyOnce() async {
+    /// - 기대 결과: legacy DAU metric 0회
+    func testCollectionOpenDoesNotEmitLegacyDAU() async {
         let metrics = LockIsolated<[DAUNavigationKind]>([])
         let url = URL(fileURLWithPath: "/tmp/voyager-metrics.voycoll")
         let store = makeMetricsStore(metrics: metrics) { dependencies in
@@ -252,15 +255,15 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
 
         await store.send(.navigation(.view(.openCollectionFile(url))))
 
-        XCTAssertEqual(metrics.value, [.collection])
+        XCTAssertTrue(metrics.value.isEmpty)
     }
 
-    /// EVM-001-dau_navigation_metrics: sidebar fixed-location selection logs one folder metric
-    /// 실제 Sidebar delegate action이 navigation route 변경과 folder metric을 함께 처리하는지 검증.
-    /// - 검증 내용: `.sidebar(.delegate(.selectFixedLocation(id)))` 이후 anchor transition과 metric kind/count
+    /// EVM-001-dau_navigation_metrics: sidebar fixed-location selection does not emit legacy DAU
+    /// 실제 Sidebar delegate action이 폐기된 legacy callback을 호출하지 않는지 검증.
+    /// - 검증 내용: `.sidebar(.delegate(.selectFixedLocation(id)))` 이후 anchor transition과 callback count
     /// - 사전 조건: active Home tab과 다른 ordinary fixed location이 있는 FileManagerFeature 상태
-    /// - 기대 결과: directory anchor로 전환되고 `.folder`만 정확히 1회 기록됨
-    func testSidebarFixedLocationSelectionLogsOneFolderMetric() async throws {
+    /// - 기대 결과: directory anchor로 전환되고 legacy DAU metric은 0회
+    func testSidebarFixedLocationSelectionDoesNotEmitLegacyDAU() async throws {
         let location = FileManagerFixedLocationItem(
             id: "location-documents",
             title: "Documents",
@@ -281,7 +284,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             store.state.contentTabs.tabs[id: activeTabID]?.anchor,
             .directory(path: location.path),
         )
-        XCTAssertEqual(metrics.value, [.folder])
+        XCTAssertTrue(metrics.value.isEmpty)
     }
 
     /// EVM-001-dau_navigation_metrics: sidebar fixed-location re-selection is a metric no-op
@@ -333,6 +336,1248 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         }
         store.exhaustivity = .off
         return store
+    }
+
+    // MARK: - EVM-001-content_browsing_correlation
+
+    nonisolated private static let typedBrowsingOperationIDs = [
+        UUID(uuidString: "E0010000-0000-0000-0000-000000000001")!,
+        UUID(uuidString: "E0010000-0000-0000-0000-000000000002")!,
+    ]
+
+    /// 로더를 의도적으로 응답 없이 유지해 테스트가 주입하는 단말 외에는
+    /// 경쟁하는 loading 단맀이 correlation을 소비하지 않도록 만든다.
+    private static let suspendedLoadItems: @Sendable (URL, Bool) async throws -> [EntryModel] = { _, _ in
+        try await Task.sleep(nanoseconds: 3_000_000_000)
+        return []
+    }
+
+    private func makeTypedBrowsingStore(
+        metrics: LockIsolated<[FileManagerProductMetric]>,
+        allocations: LockIsolated<Int>? = nil,
+        initialState: FileManagerFeature.State = .init(),
+        configure: (inout DependencyValues) -> Void = { _ in },
+    ) -> TestStore<FileManagerFeature.State, FileManagerFeature.Action> {
+        let operationIDIndex = LockIsolated(0)
+        let store = TestStore(initialState: initialState) {
+            FileManagerFeature()
+        } withDependencies: { dependencies in
+            dependencies.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            dependencies.uuid = .incrementing
+            dependencies.fileManagerProductMetricsClient = FileManagerProductMetricsClient(
+                record: { metric in metrics.withValue { $0.append(metric) } },
+                makeOperationID: {
+                    allocations?.withValue { $0 += 1 }
+                    let index = operationIDIndex.withValue { current -> Int in
+                        defer { current += 1 }
+                        return current
+                    }
+                    return Self.typedBrowsingOperationIDs[index % Self.typedBrowsingOperationIDs.count]
+                },
+            )
+            configure(&dependencies)
+        }
+        // store.exhaustivity = .off: 전체 window routing의 부수 effect보다 typed terminal count를 검증한다.
+        store.exhaustivity = .off
+        return store
+    }
+
+    private func assertBrowsingSilent(
+        _ store: TestStore<FileManagerFeature.State, FileManagerFeature.Action>,
+        metrics: LockIsolated<[FileManagerProductMetric]>,
+        allocations: LockIsolated<Int>,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+    ) {
+        XCTAssertEqual(allocations.value, 0, file: file, line: line)
+        XCTAssertTrue(metrics.value.isEmpty, file: file, line: line)
+        XCTAssertNil(store.state.content.pendingProductBrowsingSource, file: file, line: line)
+        XCTAssertNil(store.state.content.productBrowsingOperationID, file: file, line: line)
+    }
+
+    private func assertHomeDirectoryBrowsing(
+        selection: FileManagerHomeSelection,
+        path: String,
+        configure: (inout DependencyValues) -> Void = { _ in },
+    ) async {
+        let metrics = LockIsolated<[FileManagerProductMetric]>([])
+        let allocations = LockIsolated(0)
+        let entry = EntryModel.temporaryFolder(id: path + "/child", name: "child")
+        let store = makeTypedBrowsingStore(metrics: metrics, allocations: allocations) { dependencies in
+            dependencies.entryLoadingClient.loadItems = Self.suspendedLoadItems
+            configure(&dependencies)
+        }
+
+        await store.sendTabContent(.view(.homeSelectionTapped(selection)))
+        await store.skipReceivedActions()
+        await store.send(.content(.entryViewLayout(.entryOperations(.loading(.itemsLoaded(
+            generation: store.state.content.entryViewLayout.entryOperations.loadingContext.generation,
+            items: [entry],
+        ))))))
+
+        XCTAssertEqual(allocations.value, 1)
+        XCTAssertEqual(metrics.value, [
+            .contentBrowsing(
+                result: .success,
+                content: .folder,
+                identity: .direct,
+                source: .fileManagerContent,
+                operationID: Self.typedBrowsingOperationIDs[0],
+            ),
+        ])
+    }
+
+    /// EVM-001-navigate_pages: Home Favorite preserves content browsing source.
+    /// Home Favorites의 directory pageAnchor가 content-origin browsing 계약으로 수렴하는지 검증한다.
+    /// - 검증 내용: 실제 FileManager composition에서 선택부터 loading terminal까지 source, operation ID, 단일 event를 검증한다.
+    /// - 사전 조건: active Home tab과 directory Favorite, deterministic operation ID가 있다.
+    /// - 기대 결과: fileManagerContent source의 success metric을 정확히 한 번 기록하고 ID를 한 번 할당한다.
+    func testHomeFavoritePreservesContentBrowsingSource() async {
+        let path = "/tmp/voyager-evm001-home-favorite"
+        await assertHomeDirectoryBrowsing(selection: .pageAnchor(.directory(path: path)), path: path)
+    }
+
+    /// EVM-001-navigate_pages: Home Location preserves content browsing source.
+    /// Home Locations의 fixedDirectory가 content-origin browsing 계약으로 수렴하는지 검증한다.
+    /// - 검증 내용: 실제 FileManager composition에서 선택부터 loading terminal까지 source, operation ID, 단일 event를 검증한다.
+    /// - 사전 조건: active Home tab과 deterministic Documents location, operation ID가 있다.
+    /// - 기대 결과: fileManagerContent source의 success metric을 정확히 한 번 기록하고 ID를 한 번 할당한다.
+    func testHomeLocationPreservesContentBrowsingSource() async {
+        let path = "/tmp/voyager-evm001-home-location"
+        await assertHomeDirectoryBrowsing(selection: .fixedDirectory(.documents), path: path) {
+            $0.fileManagerClient.urlsForDirectory = { _, _ in [URL(fileURLWithPath: path)] }
+        }
+    }
+
+    /// EVM-001-navigate_pages: Home Open Directory preserves content browsing source.
+    /// Home picker의 selected directory가 content-origin browsing 계약으로 수렴하는지 검증한다.
+    /// - 검증 내용: 실제 FileManager composition에서 선택부터 loading terminal까지 source, operation ID, 단일 event를 검증한다.
+    /// - 사전 조건: active Home tab과 selected picker result, deterministic operation ID가 있다.
+    /// - 기대 결과: fileManagerContent source의 success metric을 정확히 한 번 기록하고 ID를 한 번 할당한다.
+    func testHomeOpenDirectoryPreservesContentBrowsingSource() async {
+        let path = "/tmp/voyager-evm001-home-picker"
+        await assertHomeDirectoryBrowsing(selection: .openDirectory, path: path) {
+            $0.homePickerClient.pickDirectory = { .selected(path) }
+        }
+    }
+
+    /// EVM-001-navigate_pages: rejected Home directory routes stay browsing silent.
+    /// 누락 tab, non-Home tab, same route가 Home content browsing correlation을 만들지 않는지 검증한다.
+    /// - 검증 내용: 실제 FileManager composition에서 guard와 same-route 처리 후 allocation, pending source, metric을 검증한다.
+    /// - 사전 조건: 각 거부 조건에 맞는 tab 및 navigation state가 있다.
+    /// - 기대 결과: 모든 경로가 operation ID를 할당하지 않고 correlation과 metric을 남기지 않는다.
+    func testRejectedHomeDirectoryRoutesStayBrowsingSilent() async throws {
+        do {
+            let metrics = LockIsolated<[FileManagerProductMetric]>([])
+            let allocations = LockIsolated(0)
+            let store = makeTypedBrowsingStore(metrics: metrics, allocations: allocations)
+
+            await store.send(.tabContent(
+                tabID: ContentTabID(rawValue: "missing-home-tab"),
+                action: .delegate(.homePageAnchorSelected(.directory(path: "/tmp/missing"))),
+            ))
+
+            assertBrowsingSilent(store, metrics: metrics, allocations: allocations)
+        }
+
+        do {
+            var state = FileManagerFeature.State()
+            let activeTabID = try XCTUnwrap(state.contentTabs.activeTabID)
+            state.contentTabs.tabs[id: activeTabID]?.anchor = .directory(path: "/tmp/current")
+            state.contentTabs.tabs[id: activeTabID]?.page = .directory
+            state.content.navigation.navigationState = .folder("/tmp/current")
+            let metrics = LockIsolated<[FileManagerProductMetric]>([])
+            let allocations = LockIsolated(0)
+            let store = makeTypedBrowsingStore(
+                metrics: metrics,
+                allocations: allocations,
+                initialState: state,
+            )
+
+            await store.send(.tabContent(
+                tabID: activeTabID,
+                action: .delegate(.homePageAnchorSelected(.directory(path: "/tmp/other"))),
+            ))
+
+            assertBrowsingSilent(store, metrics: metrics, allocations: allocations)
+        }
+
+        do {
+            let path = "/tmp/voyager-evm001-home-same-route"
+            var state = FileManagerFeature.State()
+            state.content.navigation.navigationState = .folder(path)
+            let metrics = LockIsolated<[FileManagerProductMetric]>([])
+            let allocations = LockIsolated(0)
+            let store = makeTypedBrowsingStore(
+                metrics: metrics,
+                allocations: allocations,
+                initialState: state,
+            )
+
+            await store.sendTabContent(.view(.homeSelectionTapped(.pageAnchor(.directory(path: path)))))
+            await store.skipReceivedActions()
+
+            assertBrowsingSilent(store, metrics: metrics, allocations: allocations)
+        }
+    }
+
+    /// EVM-001-navigate_pages: non-directory Home outcomes stay browsing silent.
+    /// picker 취소·실패와 Collection·AI 선택이 directory browsing source나 operation을 만들지 않는지 검증한다.
+    /// - 검증 내용: 실제 FileManager composition의 각 완료 경로 뒤 allocation, pending source, metric을 검증한다.
+    /// - 사전 조건: active Home tab과 deterministic picker, collection, AI dependency 결과가 있다.
+    /// - 기대 결과: 모든 경로가 operation ID를 할당하지 않고 correlation과 metric을 남기지 않는다.
+    func testNonDirectoryHomeOutcomesStayBrowsingSilent() async {
+        for result in [
+            FileManagerHomePickerResult<String>.cancelled,
+            .failed("picker failed"),
+        ] {
+            let metrics = LockIsolated<[FileManagerProductMetric]>([])
+            let allocations = LockIsolated(0)
+            let store = makeTypedBrowsingStore(metrics: metrics, allocations: allocations) {
+                $0.homePickerClient.pickDirectory = { result }
+            }
+
+            await store.sendTabContent(.view(.homeSelectionTapped(.openDirectory)))
+            await store.skipReceivedActions()
+
+            assertBrowsingSilent(store, metrics: metrics, allocations: allocations)
+        }
+
+        do {
+            struct CollectionLoadFailure: Error {}
+            let metrics = LockIsolated<[FileManagerProductMetric]>([])
+            let allocations = LockIsolated(0)
+            let store = makeTypedBrowsingStore(metrics: metrics, allocations: allocations) {
+                $0.homePickerClient.pickCollectionFile = {
+                    .selected(URL(fileURLWithPath: "/tmp/voyager-evm001-home.voycoll"))
+                }
+                $0.collectionFileClient.load = { _ in throw CollectionLoadFailure() }
+                $0.collectionAlertClient.showCollectionOpenErrorAlert = { _, _ in }
+            }
+
+            await store.sendTabContent(.view(.homeSelectionTapped(.openCollection)))
+            await store.skipReceivedActions()
+
+            assertBrowsingSilent(store, metrics: metrics, allocations: allocations)
+        }
+
+        do {
+            let sessionID = "E0010000-0000-0000-0000-0000000000A1"
+            let metrics = LockIsolated<[FileManagerProductMetric]>([])
+            let allocations = LockIsolated(0)
+            let store = makeTypedBrowsingStore(metrics: metrics, allocations: allocations) {
+                $0.homeAiChatClient.createSession = { .selected(sessionID) }
+                $0.aiConnectionsFileClient.load = { .empty() }
+                $0.aiChatSessionPersistenceClient.loadSession = { _ in nil }
+            }
+
+            await store.sendTabContent(.view(.homeSelectionTapped(.startAiChat)))
+            await store.skipReceivedActions()
+
+            assertBrowsingSilent(store, metrics: metrics, allocations: allocations)
+        }
+    }
+
+    /// EVM-001-navigate_pages: 수락 전 content 탐색 intent는 operation을 만들지 않는다.
+    /// 실제 route 전환 delegate 전에는 browsing terminal과 연결할 제품 operation이 없어야 한다.
+    /// - 검증 내용: content requestNavigation 직후 operation ID와 active correlation 부재
+    /// - 사전 조건: 다른 folder로 이동 가능한 기본 FileManager 상태
+    /// - 기대 결과: metric 0회, operation ID nil
+    func testContentNavigationIntentDoesNotCreateOperationBeforeAcceptance() async {
+        let metrics = LockIsolated<[FileManagerProductMetric]>([])
+        let store = makeTypedBrowsingStore(metrics: metrics)
+
+        await store.send(.content(.internal(.requestNavigation(
+            .view(.navigateToPath("/tmp/voyager-evm001-pending-intent")),
+        ))))
+
+        XCTAssertNil(store.state.content.productBrowsingOperationID)
+        XCTAssertTrue(metrics.value.isEmpty)
+    }
+
+    /// EVM-001-navigate_pages: content chrome keeps accepted navigation in the content browsing domain.
+    /// Toolbar, history, swipe, and breadcrumb callbacks must preserve their content ownership at the window bridge.
+    /// - 검증 내용: accepted chrome routes allocate content browsing source, rejected and same-route inputs stay silent.
+    /// - 사전 조건: each accepted route has its required history or parent state; rejected routes do not.
+    /// - 기대 결과: accepted routes use fileManagerContent, rejected and same-route routes allocate no operation.
+    func testContentChromeNavigationMatrixPreservesContentBrowsingSource() async throws {
+        let accepted: [(
+            ContentPageNavigationAction.View,
+            ContentPageNavigationInteractionIdentity,
+            (inout FileManagerFeature.State) -> Void,
+        )] = [
+            (.goBack, .back, { $0.content.navigation.backHistory = [
+                ContentPageNavigationHistorySnapshot(navigationState: .folder("/tmp/content-back")),
+            ] }),
+            (.goForward, .forward, { $0.content.navigation.forwardHistory = [
+                ContentPageNavigationHistorySnapshot(navigationState: .folder("/tmp/content-forward")),
+            ] }),
+            (.goToHistoryIndex(0, isBackHistory: true), .back, { $0.content.navigation.backHistory = [
+                ContentPageNavigationHistorySnapshot(navigationState: .folder("/tmp/content-history")),
+            ] }),
+            (
+                .goToEnclosingDirectory,
+                .enclosingDirectory,
+                { $0.content.navigation.navigationState = .folder("/tmp/content-parent/child") },
+            ),
+            (
+                .navigateToPath("/tmp/content-breadcrumb"),
+                .direct,
+                { $0.content.navigation.navigationState = .folder("/tmp/content-current") },
+            ),
+        ]
+
+        for (action, identity, configureState) in accepted {
+            var state = FileManagerFeature.State()
+            configureState(&state)
+            let metrics = LockIsolated<[FileManagerProductMetric]>([])
+            let store = makeTypedBrowsingStore(metrics: metrics, initialState: state)
+
+            let activeTabID = try XCTUnwrap(store.state.contentTabs.activeTabID)
+            await store.send(.tabContent(
+                tabID: activeTabID,
+                action: .internal(.requestNavigation(.view(action))),
+            ))
+            await store.skipReceivedActions()
+
+            XCTAssertEqual(metrics.value, [
+                .contentBrowsing(
+                    result: .empty,
+                    content: .folder,
+                    identity: identity,
+                    source: .fileManagerContent,
+                    operationID: Self.typedBrowsingOperationIDs[0],
+                ),
+            ], "\(action)")
+        }
+
+        let silent: [(ContentPageNavigationAction.View, (inout FileManagerFeature.State) -> Void)] = [
+            (.goBack, { _ in }),
+            (.goForward, { _ in }),
+            (.goToHistoryIndex(0, isBackHistory: true), { _ in }),
+            (.goToEnclosingDirectory, { $0.content.navigation.navigationState = .folder("/") }),
+            (
+                .navigateToPath("/tmp/content-same"),
+                { $0.content.navigation.navigationState = .folder("/tmp/content-same") },
+            ),
+        ]
+
+        for (action, configureState) in silent {
+            var state = FileManagerFeature.State()
+            configureState(&state)
+            let metrics = LockIsolated<[FileManagerProductMetric]>([])
+            let store = makeTypedBrowsingStore(metrics: metrics, initialState: state)
+
+            let activeTabID = try XCTUnwrap(store.state.contentTabs.activeTabID)
+            await store.send(.tabContent(
+                tabID: activeTabID,
+                action: .internal(.requestNavigation(.view(action))),
+            ))
+
+            XCTAssertNil(store.state.content.productBrowsingOperationID, "\(action)")
+            XCTAssertTrue(metrics.value.isEmpty, "\(action)")
+        }
+    }
+
+    /// EVM-001-navigate_pages: unsaved Cancel은 browsing intent를 폐기한다.
+    /// 취소 뒤 도착한 reload terminal이 취소된 사용자 탐색으로 오귀속되지 않는지 검증한다.
+    /// - 검증 내용: Cancel 뒤 pending intent와 operation 부재, itemsLoaded 무이벤트
+    /// - 사전 조건: content-originated back intent와 unsaved alert Cancel 응답
+    /// - 기대 결과: metric 0회, 모든 browsing correlation nil
+    func testUnsavedNavigationCancelCannotLeakIntoLaterReload() async {
+        let metrics = LockIsolated<[FileManagerProductMetric]>([])
+        var state = FileManagerFeature.State()
+        state.content.navigation.backHistory = [
+            ContentPageNavigationHistorySnapshot(navigationState: .folder("/tmp/voyager-evm001-target")),
+        ]
+        let store = makeTypedBrowsingStore(metrics: metrics, initialState: state)
+
+        await store.send(.content(.internal(.requestNavigation(.view(.goBack)))))
+        await store.send(.navigation(.internal(.unsavedNavigationAlertResponse(.back, .cancel))))
+        await store.send(.content(.entryViewLayout(.entryOperations(.loading(.itemsLoaded(
+            generation: store.state.content.entryViewLayout.entryOperations.loadingContext.generation,
+            items: [],
+        ))))))
+
+        XCTAssertNil(store.state.content.pendingProductBrowsingSource)
+        XCTAssertNil(store.state.content.productBrowsingOperationID)
+        XCTAssertNil(store.state.content.productBrowsingIdentity)
+        XCTAssertTrue(metrics.value.isEmpty)
+    }
+
+    /// EVM-001-go_page_history_back: Discard와 Save는 accepted transition에서만 operation을 만든다.
+    /// unsaved 응답 이후에도 실제 route 전환 delegate 전까지 pending intent와 operation을 분리한다.
+    /// - 검증 내용: Discard/Save 응답 직후 operation nil, accepted back delegate 뒤 exact identity/source
+    /// - 사전 조건: content-originated back intent와 각 수락 응답
+    /// - 기대 결과: 응답별 첫 operation ID, back identity, file_manager_content source
+    func testUnsavedNavigationDiscardAndSaveAllocateOnlyAfterAcceptedTransition() async {
+        for choice in [CollectionNavigationChoice.discard, .save] {
+            var state = FileManagerWindowState()
+            state.content.pendingProductBrowsingSource = .fileManagerContent
+            let store = TestStore(initialState: state) {
+                FileManagerNavigationActionReducer()
+            } withDependencies: {
+                $0.fileManagerProductMetricsClient = FileManagerProductMetricsClient(
+                    record: { _ in },
+                    makeOperationID: { Self.typedBrowsingOperationIDs[0] },
+                )
+            }
+
+            await store.send(.navigation(.internal(.unsavedNavigationAlertResponse(.back, choice)))) {
+                $0.content.resetComposerOnNextDirectoryNavigation = true
+                if choice == .discard {
+                    $0.content.skipCollectionRestoreSearchOnNextDiscard = true
+                }
+            }
+            switch choice {
+            case .discard:
+                await store.receive(\.content.view.discardCollectionChanges)
+                await store.receive(\.navigation.internal.performNavigation)
+                await store.receive(\.content.internal.resetComposerAfterDirectoryNavigation)
+            case .save:
+                await store.receive(\.navigation.internal.setPendingNavigation)
+                await store.receive { action in
+                    guard case .content(.composer) = action else { return false }
+                    return true
+                }
+            case .cancel:
+                XCTFail("Cancel is covered by testUnsavedNavigationCancelCannotLeakIntoLaterReload")
+            }
+
+            XCTAssertNil(store.state.content.productBrowsingOperationID)
+            XCTAssertEqual(store.state.content.pendingProductBrowsingSource, .fileManagerContent)
+
+            await store.send(.navigation(.delegate(.logDAUNavigation(
+                previous: .folder("/tmp/voyager-evm001-current"),
+                next: .folder("/tmp/voyager-evm001-target"),
+                identity: .back,
+            )))) {
+                $0.content.productBrowsingOperationID = Self.typedBrowsingOperationIDs[0]
+                $0.content.productBrowsingIdentity = .back
+                $0.content.productBrowsingSource = .fileManagerContent
+                $0.content.productBrowsingContent = .folder
+                $0.content.pendingProductBrowsingSource = nil
+            }
+
+            XCTAssertEqual(store.state.content.productBrowsingOperationID, Self.typedBrowsingOperationIDs[0])
+            XCTAssertEqual(store.state.content.productBrowsingIdentity, .back)
+            XCTAssertEqual(store.state.content.productBrowsingSource, .fileManagerContent)
+            XCTAssertNil(store.state.content.pendingProductBrowsingSource)
+        }
+    }
+
+    /// EVM-001-content_browsing_correlation: navigation delegate establishes window browsing correlation
+    /// 실제 navigation reducer의 delegate seam이 typed browsing correlation을 성립시키는지 검증.
+    /// - 검증 내용: folder route의 logDAUNavigation delegate 처리 결과
+    /// - 사전 조건: correlation이 없는 기본 FileManagerFeature 상태
+    /// - 기대 결과: 주입된 operation ID와 sidebar source가 상태에 저장됨
+    func testNavigationDelegateEstablishesWindowBrowsingCorrelation() async {
+        let metrics = LockIsolated<[FileManagerProductMetric]>([])
+        let store = makeTypedBrowsingStore(metrics: metrics)
+
+        await store.send(.navigation(.delegate(.logDAUNavigation(
+            previous: .home,
+            next: .folder("/tmp/voyager-evm001-delegate"),
+            identity: .direct,
+        ))))
+
+        XCTAssertEqual(store.state.content.productBrowsingOperationID, Self.typedBrowsingOperationIDs[0])
+        XCTAssertEqual(store.state.content.productBrowsingSource, .fileManagerSidebar)
+        XCTAssertTrue(metrics.value.isEmpty)
+    }
+
+    /// EVM-001-content_browsing_correlation: window command folder navigation emits one typed browsing success event
+    /// Window/Sidebar 명령이 수렴하는 navigation view 경로가 콘텐츠 로딩 단말과 상관되어
+    /// typed metric을 정확히 한 번 기록하는지 검증.
+    /// - 검증 내용: navigateToPath → correlation 성립 → itemsLoaded 이후 `.contentBrowsing(success)` 1회
+    /// - 사전 조건: 응답 없는 directory stub loader와 기본 FileManagerFeature 상태
+    /// - 기대 결과: 첫 operation ID, file_manager_sidebar source로 event 1회
+    func testWindowFolderNavigationEmitsTypedBrowsingSuccessOnce() async {
+        let path = "/tmp/voyager-evm001-window-folder"
+        let entry = EntryModel.temporaryFolder(id: path + "/child", name: "child")
+        let metrics = LockIsolated<[FileManagerProductMetric]>([])
+        let store = makeTypedBrowsingStore(metrics: metrics) {
+            $0.entryLoadingClient.loadItems = Self.suspendedLoadItems
+        }
+
+        await store.send(.navigation(.view(.navigateToPath(path))))
+        await store.skipReceivedActions()
+
+        await store.send(.content(.entryViewLayout(.entryOperations(.loading(
+            .itemsLoaded(
+                generation: store.state.content.entryViewLayout.entryOperations.loadingContext.generation,
+                items: [entry],
+            ),
+        )))))
+
+        XCTAssertEqual(
+            metrics.value,
+            [.contentBrowsing(
+                result: .success,
+                content: .folder,
+                identity: .direct,
+                source: .fileManagerSidebar,
+                operationID: Self.typedBrowsingOperationIDs[0],
+            )],
+            "window/sidebar navigation must correlate with the loading terminal exactly once",
+        )
+    }
+
+    /// EVM-001-content_browsing_correlation: window folder navigation with empty listing emits one empty event
+    /// Window 명령 경로의 folder navigation이 빈 목록 로딩에서 `.empty` 단말을 한 번 기록하는지 검증.
+    /// - 검증 내용: navigateToPath → itemsLoaded([]) 이후 `.contentBrowsing(empty)` 1회
+    /// - 사전 조건: 빈 배열을 반환하는 directory stub loader
+    /// - 기대 결과: `.empty` 1회, sidebar source 유지
+    func testWindowFolderNavigationEmitsTypedBrowsingEmptyOnce() async {
+        let path = "/tmp/voyager-evm001-empty-folder"
+        let metrics = LockIsolated<[FileManagerProductMetric]>([])
+        let store = makeTypedBrowsingStore(metrics: metrics) {
+            $0.entryLoadingClient.loadItems = Self.suspendedLoadItems
+        }
+
+        await store.send(.navigation(.view(.navigateToPath(path))))
+        await store.skipReceivedActions()
+
+        await store.send(.content(.entryViewLayout(.entryOperations(.loading(.itemsLoaded(
+            generation: store.state.content.entryViewLayout.entryOperations.loadingContext.generation,
+            items: [],
+        ))))))
+
+        XCTAssertEqual(
+            metrics.value,
+            [.contentBrowsing(
+                result: .empty,
+                content: .folder,
+                identity: .direct,
+                source: .fileManagerSidebar,
+                operationID: Self.typedBrowsingOperationIDs[0],
+            )],
+        )
+    }
+
+    /// EVM-001-content_browsing_correlation: child folder failure preserves root browsing correlation
+    /// outline 하위 폴더 실패가 진행 중인 root browsing terminal을 대신 소비하지 않는지 검증.
+    /// - 검증 내용: root navigation 중 child folderLoadFailed(permissionDenied)를 전달한다.
+    /// - 사전 조건: 응답 없는 root loader와 별도 child folder load request가 있다.
+    /// - 기대 결과: metric 없이 root browsing correlation이 유지된다.
+    func testChildFolderLoadFailureDoesNotConsumeRootBrowsingCorrelation() async {
+        let path = "/tmp/voyager-evm001-root-folder"
+        let childPath = "\(path)/child"
+        let metrics = LockIsolated<[FileManagerProductMetric]>([])
+        let store = makeTypedBrowsingStore(metrics: metrics) {
+            $0.entryLoadingClient.loadItems = Self.suspendedLoadItems
+        }
+
+        await store.send(.navigation(.view(.navigateToPath(path))))
+
+        let request = EntryFolderLoadRequest(
+            rootContextGeneration: 0,
+            folderID: childPath,
+            folderGeneration: 0,
+            path: childPath,
+            showHidden: false,
+            priority: .none,
+        )
+        await store.send(.content(.entryViewLayout(.entryOperations(.delegate(
+            .folderLoadFailed(request: request, failure: .permissionDenied),
+        )))))
+
+        XCTAssertTrue(metrics.value.isEmpty)
+        XCTAssertEqual(store.state.content.productBrowsingOperationID, Self.typedBrowsingOperationIDs[0])
+        XCTAssertEqual(store.state.content.productBrowsingIdentity, .direct)
+        XCTAssertEqual(store.state.content.productBrowsingSource, .fileManagerSidebar)
+        XCTAssertEqual(store.state.content.productBrowsingContent, .folder)
+    }
+
+    /// EVM-001-content_browsing_correlation: same-route window navigation stays silent
+    /// 동일 route 재선택이 correlation 없이 metric 없이 무음인지 검증.
+    /// - 검증 내용: 현재 route와 같은 navigateToPath 이후 correlation과 metric 부재
+    /// - 사전 조건: navigationState가 이미 대상 folder인 FileManagerFeature
+    /// - 기대 결과: correlation nil, metric 0회
+    func testSameRouteWindowNavigationStaysSilent() async {
+        let path = "/tmp/voyager-evm001-same-folder"
+        var state = FileManagerFeature.State()
+        state.content.navigation.navigationState = .folder(path)
+        let metrics = LockIsolated<[FileManagerProductMetric]>([])
+        let store = makeTypedBrowsingStore(metrics: metrics, initialState: state) {
+            $0.entryLoadingClient.loadItems = { _, _ in [] }
+        }
+
+        await store.send(.navigation(.view(.navigateToPath(path))))
+        await store.skipInFlightEffects()
+
+        XCTAssertNil(store.state.content.productBrowsingOperationID)
+        XCTAssertTrue(metrics.value.isEmpty)
+    }
+
+    /// EVM-001-content_browsing_correlation: history and parent navigation emit one browsing event
+    /// back, forward, history index, enclosing-folder 사용자 경로가 동일한 typed terminal 계약으로 수렴하는지 검증.
+    /// - 검증 내용: 각 수락 경로 뒤 itemsLoaded가 `.contentBrowsing(success)`를 한 번 기록함
+    /// - 사전 조건: 각 경로가 실제로 수락될 history 또는 enclosing folder 상태
+    /// - 기대 결과: 경로별 sidebar source event 1회, operation correlation 완전 소비
+    func testAcceptedHistoryAndParentRoutesEmitTypedBrowsingOnce() async {
+        let targetPath = "/tmp/voyager-evm001-history-target"
+        let target = ContentPageNavigationHistorySnapshot(navigationState: .folder(targetPath))
+        let currentPath = "/tmp/voyager-evm001/current/child"
+        let entry = EntryModel.temporaryFolder(id: targetPath + "/entry", name: "entry")
+        let scenarios: [(
+            ContentPageNavigationAction.View,
+            ContentPageNavigationInteractionIdentity,
+            (inout FileManagerFeature.State) -> Void,
+        )] = [
+            (.goBack, .back, { $0.content.navigation.backHistory = [target] }),
+            (.goForward, .forward, { $0.content.navigation.forwardHistory = [target] }),
+            (.goToHistoryIndex(0, isBackHistory: true), .back, {
+                $0.content.navigation.backHistory = [target]
+            }),
+            (.goToHistoryIndex(0, isBackHistory: false), .forward, {
+                $0.content.navigation.forwardHistory = [target]
+            }),
+            (.goToEnclosingDirectory, .enclosingDirectory, {
+                $0.content.navigation.navigationState = .folder(currentPath)
+            }),
+        ]
+
+        for (action, expectedIdentity, configureState) in scenarios {
+            var state = FileManagerFeature.State()
+            configureState(&state)
+            let metrics = LockIsolated<[FileManagerProductMetric]>([])
+            let store = makeTypedBrowsingStore(metrics: metrics, initialState: state) {
+                $0.entryLoadingClient.loadItems = Self.suspendedLoadItems
+            }
+
+            await store.send(.navigation(.view(action)))
+            await store.skipReceivedActions()
+            await store.send(.content(.entryViewLayout(.entryOperations(.loading(.itemsLoaded(
+                generation: store.state.content.entryViewLayout.entryOperations.loadingContext.generation,
+                items: [entry],
+            ))))))
+
+            XCTAssertEqual(metrics.value.count, 1, "\(action) must emit one browsing terminal")
+            guard case let .contentBrowsing(result, content, identity, source, operationID) = metrics.value.first else {
+                XCTFail("\(action) must emit contentBrowsing")
+                continue
+            }
+            XCTAssertEqual(result, .success)
+            XCTAssertEqual(content, .folder)
+            XCTAssertEqual(identity, expectedIdentity)
+            XCTAssertEqual(source, .fileManagerSidebar)
+            XCTAssertEqual(operationID, Self.typedBrowsingOperationIDs[0])
+            XCTAssertNil(store.state.content.productBrowsingOperationID)
+        }
+    }
+
+    /// EVM-001-content_browsing_correlation: streaming folder load emits one typed success event
+    /// 실제 로딩 스트림(coreBatch→coreFinished→streamFinished)이 correlation과 상관되어
+    /// typed success 단말을 정확히 한 번 기록하는지 검증.
+    /// - 검증 내용: 현재 generation 스트림 완료 뒤 `.contentBrowsing(success)` 1회와 correlation 해제
+    /// - 사전 조건: 응답 없는 directory stub loader로 시작된 loading stream
+    /// - 기대 결과: event 1회, productBrowsing 상관 완전 소비
+    func testStreamingFolderLoadEmitsTypedBrowsingSuccessOnce() async throws {
+        let path = "/tmp/voyager-evm001-stream-folder"
+        let entry = EntryModel.temporaryFolder(id: path + "/child", name: "child")
+        let metrics = LockIsolated<[FileManagerProductMetric]>([])
+        let store = makeTypedBrowsingStore(metrics: metrics) {
+            $0.entryLoadingClient.loadItems = Self.suspendedLoadItems
+        }
+
+        await store.send(.navigation(.view(.navigateToPath(path))))
+        await store.skipReceivedActions()
+        let generation = store.state.content.entryViewLayout.entryOperations.loadingContext.generation
+        try XCTSkipUnless(generation > 0, "navigation must begin a loading stream")
+
+        await store.send(.content(.entryViewLayout(.entryOperations(.loading(
+            .streamEvent(EntryLoadingStreamEvent(
+                generation: generation,
+                event: .coreBatch(items: [entry], batchIndex: 0),
+            )),
+        )))))
+        await store.send(.content(.entryViewLayout(.entryOperations(.loading(
+            .streamEvent(EntryLoadingStreamEvent(
+                generation: generation,
+                event: .coreFinished(batchCount: 1),
+            )),
+        )))))
+        await store.send(.content(.entryViewLayout(.entryOperations(.loading(
+            .streamFinished(generation: generation),
+        )))))
+
+        XCTAssertEqual(
+            metrics.value,
+            [.contentBrowsing(
+                result: .success,
+                content: .folder,
+                identity: .direct,
+                source: .fileManagerSidebar,
+                operationID: Self.typedBrowsingOperationIDs[0],
+            )],
+            "streaming folder completion must correlate with the browsing terminal exactly once",
+        )
+        XCTAssertNil(store.state.content.productBrowsingOperationID)
+    }
+
+    /// EVM-001-content_browsing_correlation: streaming empty folder emits one typed empty event
+    /// 빈 스트림(coreFinished batchCount 0 → streamFinished)이 `.empty` 단말을 한 번 기록하는지 검증.
+    /// - 검증 내용: 항목 없는 현재 generation 스트림 완료 뒤 `.contentBrowsing(empty)` 1회
+    /// - 사전 조건: 응답 없는 directory stub loader로 시작된 loading stream
+    /// - 기대 결과: `.empty` 1회, correlation 해제
+    func testStreamingFolderLoadEmitsTypedBrowsingEmptyOnce() async throws {
+        let path = "/tmp/voyager-evm001-stream-empty"
+        let metrics = LockIsolated<[FileManagerProductMetric]>([])
+        let store = makeTypedBrowsingStore(metrics: metrics) {
+            $0.entryLoadingClient.loadItems = Self.suspendedLoadItems
+        }
+
+        await store.send(.navigation(.view(.navigateToPath(path))))
+        await store.skipReceivedActions()
+        let generation = store.state.content.entryViewLayout.entryOperations.loadingContext.generation
+        try XCTSkipUnless(generation > 0, "navigation must begin a loading stream")
+
+        await store.send(.content(.entryViewLayout(.entryOperations(.loading(
+            .streamEvent(EntryLoadingStreamEvent(
+                generation: generation,
+                event: .coreFinished(batchCount: 0),
+            )),
+        )))))
+        await store.send(.content(.entryViewLayout(.entryOperations(.loading(
+            .streamFinished(generation: generation),
+        )))))
+
+        XCTAssertEqual(
+            metrics.value,
+            [.contentBrowsing(
+                result: .empty,
+                content: .folder,
+                identity: .direct,
+                source: .fileManagerSidebar,
+                operationID: Self.typedBrowsingOperationIDs[0],
+            )],
+        )
+        XCTAssertNil(store.state.content.productBrowsingOperationID)
+    }
+
+    /// EVM-001-content_browsing_correlation: streaming folder failure emits one typed unavailable event
+    /// 현재 generation의 streamFailed가 correlation을 소비해 `.unavailable` 단말을 한 번 기록하는지 검증.
+    /// - 검증 내용: coreBatch 없이 실패한 스트림 뒤 `.contentBrowsing(unavailable)` 1회
+    /// - 사전 조건: 응답 없는 directory stub loader로 시작된 loading stream
+    /// - 기대 결과: `.unavailable` 1회, correlation 해제
+    func testStreamingFolderLoadFailureEmitsTypedBrowsingUnavailableOnce() async throws {
+        let path = "/tmp/voyager-evm001-stream-failed"
+        let metrics = LockIsolated<[FileManagerProductMetric]>([])
+        let store = makeTypedBrowsingStore(metrics: metrics) {
+            $0.entryLoadingClient.loadItems = Self.suspendedLoadItems
+        }
+
+        await store.send(.navigation(.view(.navigateToPath(path))))
+        await store.skipReceivedActions()
+        let generation = store.state.content.entryViewLayout.entryOperations.loadingContext.generation
+        try XCTSkipUnless(generation > 0, "navigation must begin a loading stream")
+
+        await store.send(.content(.entryViewLayout(.entryOperations(.loading(
+            .streamFailed(generation: generation, failure: .unavailable(description: "test")),
+        )))))
+
+        XCTAssertEqual(
+            metrics.value,
+            [.contentBrowsing(
+                result: .unavailable,
+                content: .folder,
+                identity: .direct,
+                source: .fileManagerSidebar,
+                operationID: Self.typedBrowsingOperationIDs[0],
+            )],
+        )
+        XCTAssertNil(store.state.content.productBrowsingOperationID)
+    }
+
+    /// EVM-001-content_browsing_correlation: window teardown terminates accepted browsing exactly once.
+    /// 수락된 탐색의 로딩 중 window가 사라지면 원래 상관 정보로 unavailable 단말을 기록하고 늦은 단말을 무시한다.
+    /// - 검증 내용: 첫 onDisappear의 typed terminal과 상관 해제, 반복 teardown 및 late stream terminal 무이벤트
+    /// - 사전 조건: 응답 없는 directory loader로 실제 folder navigation이 수락되어 correlation이 성립돼 있다.
+    /// - 기대 결과: 원 operation ID·content·identity·source의 unavailable 1회와 모든 browsing correlation nil
+    func testWindowDisappearTerminatesAcceptedBrowsingExactlyOnce() async {
+        let path = "/tmp/voyager-evm001-window-teardown"
+        let metrics = LockIsolated<[FileManagerProductMetric]>([])
+        let store = makeTypedBrowsingStore(metrics: metrics) {
+            $0.entryLoadingClient.loadItems = Self.suspendedLoadItems
+        }
+
+        await store.send(.navigation(.view(.navigateToPath(path))))
+        await store.skipReceivedActions()
+        let generation = store.state.content.entryViewLayout.entryOperations.loadingContext.generation
+
+        await store.send(.onDisappear)
+
+        let expectedMetrics: [FileManagerProductMetric] = [
+            .contentBrowsing(
+                result: .unavailable,
+                content: .folder,
+                identity: .direct,
+                source: .fileManagerSidebar,
+                operationID: Self.typedBrowsingOperationIDs[0],
+            ),
+        ]
+        XCTAssertEqual(metrics.value, expectedMetrics)
+        XCTAssertNil(store.state.content.productBrowsingOperationID)
+        XCTAssertNil(store.state.content.productBrowsingIdentity)
+        XCTAssertNil(store.state.content.productBrowsingSource)
+        XCTAssertNil(store.state.content.productBrowsingContent)
+        XCTAssertNil(store.state.content.pendingProductBrowsingSource)
+
+        await store.send(.onDisappear)
+        await store.send(.content(.entryViewLayout(.entryOperations(.loading(
+            .streamFailed(generation: generation, failure: .unavailable(description: "test")),
+        )))))
+        await store.send(.content(.entryViewLayout(.entryOperations(.loading(
+            .streamFinished(generation: generation),
+        )))))
+
+        XCTAssertEqual(metrics.value, expectedMetrics)
+        XCTAssertNil(store.state.content.productBrowsingOperationID)
+        XCTAssertNil(store.state.content.productBrowsingIdentity)
+        XCTAssertNil(store.state.content.productBrowsingSource)
+        XCTAssertNil(store.state.content.productBrowsingContent)
+        XCTAssertNil(store.state.content.pendingProductBrowsingSource)
+    }
+
+    // MARK: - EVM-001-content_browsing_correlation
+
+    /// EVM-001-content_browsing_correlation: closing the active accepted tab terminates browsing once.
+    /// 실제 accepted navigation 뒤 active tab close가 제거 전에 browsing correlation을 unavailable로 terminalize하는지 검증한다.
+    /// - 검증 내용: navigateToPath → close active tab의 unavailable metric payload와 반복 close/late terminal 무중복
+    /// - 사전 조건: 응답 없는 directory loader로 active tab browsing correlation이 성립돼 있다.
+    /// - 기대 결과: 원 operation ID/content/identity/source의 unavailable metric 한 건과 correlation 전체 해제
+    func testClosingActiveAcceptedTabTerminatesBrowsingExactlyOnce() async throws {
+        let path = "/tmp/voyager-evm001-active-close"
+        let metrics = LockIsolated<[FileManagerProductMetric]>([])
+        let store = makeTypedBrowsingStore(metrics: metrics) {
+            $0.entryLoadingClient.loadItems = Self.suspendedLoadItems
+        }
+
+        await store.send(.navigation(.view(.navigateToPath(path))))
+        await store.skipReceivedActions()
+        let activeTabID = try XCTUnwrap(store.state.contentTabs.activeTabID)
+
+        await store.send(.closeContentTabRequested(activeTabID))
+        await store.skipReceivedActions(strict: false)
+        await store.send(.contentTabs(.close(activeTabID)))
+        await store.skipReceivedActions(strict: false)
+
+        XCTAssertEqual(metrics.value, [
+            .contentBrowsing(
+                result: .unavailable,
+                content: .folder,
+                identity: .direct,
+                source: .fileManagerSidebar,
+                operationID: Self.typedBrowsingOperationIDs[0],
+            ),
+            .contentTabAction(
+                result: .success,
+                identity: .closeContentTab,
+                source: .contentTabBar,
+                operationID: Self.typedBrowsingOperationIDs[0],
+            ),
+        ])
+        XCTAssertNil(store.state.content.productBrowsingOperationID)
+        XCTAssertNil(store.state.content.productBrowsingIdentity)
+        XCTAssertNil(store.state.content.productBrowsingSource)
+        XCTAssertNil(store.state.content.productBrowsingContent)
+        XCTAssertNil(store.state.content.pendingProductBrowsingSource)
+
+        await store.send(.onDisappear)
+        XCTAssertEqual(metrics.value.count(where: { metric in
+            if case .contentBrowsing = metric { return true }
+            return false
+        }), 1)
+    }
+
+    /// EVM-001-content_browsing_correlation: closing an inactive accepted tab preserves its active sibling.
+    /// 실제 inactive tab navigation과 close route가 cached content의 correlation만 terminalize하는지 검증한다.
+    /// - 검증 내용: inactive tab requestNavigation → closeContentTabRequested의 exact unavailable metric과 active state 보존
+    /// - 사전 조건: active Home tab과 별도 inactive directory tab이 있고 inactive tab navigation이 수락된다.
+    /// - 기대 결과: inactive operation 한 건만 terminalize되고 active sibling tab/content는 유지된다.
+    func testClosingInactiveAcceptedTabTerminatesCachedBrowsingAndPreservesActiveSibling() async throws {
+        let inactiveTabID = ContentTabID(rawValue: "evm001-inactive-close")
+        var state = FileManagerFeature.State()
+        let activeTabID = try XCTUnwrap(state.contentTabs.activeTabID)
+        state.contentTabs.tabs.append(ContentTabItem(
+            id: inactiveTabID,
+            page: .directory,
+            anchor: .directory(path: "/tmp/evm001-inactive"),
+            isPinned: false,
+            title: "Inactive",
+            iconName: "folder",
+        ))
+        state.contentTabs.activeTabID = activeTabID
+        state.tabContentStates[inactiveTabID] = FileManagerContentFeature.State()
+        let metrics = LockIsolated<[FileManagerProductMetric]>([])
+        let store = makeTypedBrowsingStore(metrics: metrics, initialState: state) {
+            $0.entryLoadingClient.loadItems = Self.suspendedLoadItems
+        }
+
+        await store.send(.contentTabs(.setCurrent(inactiveTabID)))
+        await store.send(.navigation(.view(.navigateToPath("/tmp/voyager-evm001-inactive-target"))))
+        await store.skipReceivedActions(strict: false)
+        await store.send(.contentTabs(.setCurrent(activeTabID)))
+        await store.skipReceivedActions(strict: false)
+        XCTAssertEqual(
+            store.state.tabContentStates[inactiveTabID]?.productBrowsingOperationID,
+            Self.typedBrowsingOperationIDs[0],
+        )
+        await store.send(.closeContentTabRequested(inactiveTabID))
+        await store.skipReceivedActions(strict: false)
+        await store.send(.contentTabs(.close(inactiveTabID)))
+        await store.skipReceivedActions(strict: false)
+
+        XCTAssertEqual(metrics.value, [
+            .contentTabAction(
+                result: .success,
+                identity: .closeContentTab,
+                source: .contentTabBar,
+                operationID: Self.typedBrowsingOperationIDs[1],
+            ),
+            .contentBrowsing(
+                result: .unavailable,
+                content: .folder,
+                identity: .direct,
+                source: .fileManagerSidebar,
+                operationID: Self.typedBrowsingOperationIDs[0],
+            ),
+        ])
+        XCTAssertNotNil(store.state.contentTabs.tabs[id: activeTabID])
+        XCTAssertEqual(store.state.contentTabs.activeTabID, activeTabID)
+        XCTAssertNil(store.state.tabContentStates[inactiveTabID])
+        XCTAssertNil(store.state.contentTabs.tabs[id: inactiveTabID])
+    }
+
+    /// EVM-001-content_browsing_correlation: stale stream terminal does not consume browsing correlation
+    /// 구 generation 터미널은 correlation을 소비하지 않고, 이후 현재 generation 터미널이 정확히 한 번 기록하는지 검증.
+    /// - 검증 내용: 미래 generation streamFinished 무음·상관 유지, 이어진 현재 streamFailed 1회
+    /// - 사전 조건: 응답 없는 directory stub loader로 시작된 loading stream
+    /// - 기대 결과: stale 무이벤트 후 `.unavailable` 1회
+    func testStaleStreamTerminalDoesNotConsumeBrowsingCorrelation() async throws {
+        let path = "/tmp/voyager-evm001-stream-stale"
+        let metrics = LockIsolated<[FileManagerProductMetric]>([])
+        let store = makeTypedBrowsingStore(metrics: metrics) {
+            $0.entryLoadingClient.loadItems = Self.suspendedLoadItems
+        }
+
+        await store.send(.navigation(.view(.navigateToPath(path))))
+        await store.skipReceivedActions()
+        let generation = store.state.content.entryViewLayout.entryOperations.loadingContext.generation
+        try XCTSkipUnless(generation > 0, "navigation must begin a loading stream")
+
+        await store.send(.content(.entryViewLayout(.entryOperations(.loading(
+            .streamFinished(generation: generation + 1),
+        )))))
+
+        XCTAssertTrue(metrics.value.isEmpty, "stale generation terminal must not emit")
+        XCTAssertNotNil(store.state.content.productBrowsingOperationID, "stale terminal must preserve correlation")
+
+        await store.send(.content(.entryViewLayout(.entryOperations(.loading(
+            .streamFailed(generation: generation, failure: .unavailable(description: "test")),
+        )))))
+
+        XCTAssertEqual(metrics.value.count, 1, "current terminal must emit exactly once")
+        guard case let .contentBrowsing(result, _, _, _, operationID) = metrics.value.first else {
+            return XCTFail("current terminal must emit contentBrowsing")
+        }
+        XCTAssertEqual(result, .unavailable)
+        XCTAssertEqual(operationID, Self.typedBrowsingOperationIDs[0])
+        XCTAssertNil(store.state.content.productBrowsingOperationID)
+    }
+
+    /// EVM-001-content_browsing_correlation: 이전 Computer 결과는 새 폴더의 browsing correlation을 소비하지 않는다.
+    /// Computer A 뒤 시작된 폴더 B가 현재 operation을 소유할 때 늦은 A와 현재 B terminal을 순서대로 검증한다.
+    /// - 검증 내용: stale A는 metric/state no-op이고 current B는 typed terminal을 정확히 한 번 기록한다.
+    /// - 사전 조건: generation 2 폴더 B에 두 번째 operation ID와 sidebar browsing metadata가 설정돼 있다.
+    /// - 기대 결과: stale A 이후 B correlation이 유지되고 current B success metric만 한 건 기록된다.
+    func testStaleComputerItemsLoadedCannotConsumeNewerFolderBrowsingCorrelation() async {
+        let entryB = EntryModel.temporaryFolder(id: "/folder-b/child", name: "child")
+        let metrics = LockIsolated<[FileManagerProductMetric]>([])
+        var state = FileManagerFeature.State()
+        state.content.entryViewLayout.entryOperations.loadingContext.generation = 2
+        state.content.entryViewLayout.entryOperations.loadingContext.sourceKind = .directory
+        state.content.entryViewLayout.entryOperations.isLoading = true
+        state.content.productBrowsingOperationID = Self.typedBrowsingOperationIDs[1]
+        state.content.productBrowsingIdentity = .direct
+        state.content.productBrowsingSource = .fileManagerSidebar
+        state.content.productBrowsingContent = .folder
+        let store = makeTypedBrowsingStore(metrics: metrics, initialState: state)
+
+        await store.send(.content(.entryViewLayout(.entryOperations(.loading(.itemsLoaded(generation: 1, items: [
+            EntryModel.temporaryFolder(id: "/computer-a", name: "computer-a"),
+        ]))))))
+
+        XCTAssertTrue(metrics.value.isEmpty)
+        XCTAssertEqual(store.state.content.productBrowsingOperationID, Self.typedBrowsingOperationIDs[1])
+        XCTAssertTrue(store.state.content.entryViewLayout.entryOperations.isLoading)
+
+        await store.send(.content(.entryViewLayout(.entryOperations(.loading(.itemsLoaded(
+            generation: 2,
+            items: [entryB],
+        ))))))
+
+        XCTAssertEqual(
+            metrics.value,
+            [.contentBrowsing(
+                result: .success,
+                content: .folder,
+                identity: .direct,
+                source: .fileManagerSidebar,
+                operationID: Self.typedBrowsingOperationIDs[1],
+            )],
+        )
+        XCTAssertNil(store.state.content.productBrowsingOperationID)
+    }
+
+    /// EVM-001-content_browsing_correlation: rejected history and parent navigation stay silent
+    /// 수락되지 않은 history/parent 명령이 correlation을 남겨 후속 로딩을 오귀속하지 않는지 검증.
+    /// - 검증 내용: empty back/forward, invalid history index, parent 없는 root 경로 처리
+    /// - 사전 조건: 각 명령의 수락 조건이 충족되지 않은 상태
+    /// - 기대 결과: correlation nil, metric 0회
+    func testRejectedHistoryAndParentRoutesDoNotCreateBrowsingCorrelation() async {
+        let scenarios: [(ContentPageNavigationAction.View, (inout FileManagerFeature.State) -> Void)] = [
+            (.goBack, { _ in }),
+            (.goForward, { _ in }),
+            (.goToHistoryIndex(0, isBackHistory: true), { _ in }),
+            (.goToEnclosingDirectory, { $0.content.navigation.navigationState = .folder("/") }),
+        ]
+
+        for (action, configureState) in scenarios {
+            var state = FileManagerFeature.State()
+            configureState(&state)
+            let metrics = LockIsolated<[FileManagerProductMetric]>([])
+            let store = makeTypedBrowsingStore(metrics: metrics, initialState: state)
+
+            await store.send(.content(.internal(.requestNavigation(.view(action)))))
+
+            XCTAssertNil(store.state.content.productBrowsingOperationID, "\(action) must not create correlation")
+            XCTAssertNil(store.state.content.productBrowsingSource)
+            XCTAssertNil(store.state.content.productBrowsingContent)
+            XCTAssertTrue(metrics.value.isEmpty)
+        }
+    }
+
+    /// EVM-001-content_browsing_correlation: superseded navigation terminalizes A before B starts.
+    /// 서로 다른 A/B 탐색이 겹칠 때 A를 unavailable로 종결하고 B가 새 상관을 소유하는지 검증한다.
+    /// - 검증 내용: A/B의 ID·identity·source 구분, stale·duplicate A 무이벤트, current B exactly-once
+    /// - 사전 조건: A back/content 로딩 중 B forward/sidebar 탐색을 수락한 응답 없는 loader
+    /// - 기대 결과: A unavailable 뒤 B의 operation ID와 metadata를 가진 success가 순서대로 기록됨
+    func testOverlappingWindowNavigationsEmitExactlyOneEvent() async {
+        let currentPath = "/tmp/voyager-evm001-current-folder"
+        let pathA = "/tmp/voyager-evm001-folder-a"
+        let entryB = EntryModel.temporaryFolder(id: currentPath + "/entry-b", name: "entry-b")
+        var state = FileManagerFeature.State()
+        state.content.navigation.navigationState = .folder(currentPath)
+        state.content.navigation.backHistory = [
+            ContentPageNavigationHistorySnapshot(navigationState: .folder(pathA)),
+        ]
+        let metrics = LockIsolated<[FileManagerProductMetric]>([])
+        let store = makeTypedBrowsingStore(metrics: metrics, initialState: state) {
+            $0.entryLoadingClient.loadItems = Self.suspendedLoadItems
+        }
+
+        await store.send(.content(.internal(.requestNavigation(.view(.goBack)))))
+        await store.send(.navigation(.view(.goBack)))
+        await store.skipReceivedActions()
+        let generationA = store.state.content.entryViewLayout.entryOperations.loadingContext.generation
+        XCTAssertEqual(store.state.content.productBrowsingOperationID, Self.typedBrowsingOperationIDs[0])
+        XCTAssertEqual(store.state.content.productBrowsingIdentity, .back)
+        XCTAssertEqual(store.state.content.productBrowsingSource, .fileManagerContent)
+
+        await store.send(.navigation(.view(.goForward)))
+        await store.skipReceivedActions()
+        let generationB = store.state.content.entryViewLayout.entryOperations.loadingContext.generation
+        XCTAssertGreaterThan(generationB, generationA)
+        XCTAssertEqual(store.state.content.productBrowsingOperationID, Self.typedBrowsingOperationIDs[1])
+        XCTAssertEqual(store.state.content.productBrowsingIdentity, .forward)
+        XCTAssertEqual(store.state.content.productBrowsingSource, .fileManagerSidebar)
+
+        let expectedUnavailableA = FileManagerProductMetric.contentBrowsing(
+            result: .unavailable,
+            content: .folder,
+            identity: .back,
+            source: .fileManagerContent,
+            operationID: Self.typedBrowsingOperationIDs[0],
+        )
+        XCTAssertEqual(metrics.value, [expectedUnavailableA])
+
+        for _ in 0 ..< 2 {
+            await store.send(.content(.entryViewLayout(.entryOperations(.loading(
+                .streamFailed(generation: generationA, failure: .unavailable(description: "test")),
+            )))))
+        }
+        XCTAssertEqual(metrics.value, [expectedUnavailableA], "stale or duplicate A must stay silent")
+        XCTAssertEqual(store.state.content.productBrowsingOperationID, Self.typedBrowsingOperationIDs[1])
+        XCTAssertEqual(store.state.content.productBrowsingIdentity, .forward)
+        XCTAssertEqual(store.state.content.productBrowsingSource, .fileManagerSidebar)
+        XCTAssertEqual(store.state.content.productBrowsingContent, .folder)
+
+        await store.send(.content(.entryViewLayout(.entryOperations(.loading(
+            .streamEvent(EntryLoadingStreamEvent(
+                generation: generationB,
+                event: .coreBatch(items: [entryB], batchIndex: 0),
+            )),
+        )))))
+        await store.send(.content(.entryViewLayout(.entryOperations(.loading(
+            .streamEvent(EntryLoadingStreamEvent(
+                generation: generationB,
+                event: .coreFinished(batchCount: 1),
+            )),
+        )))))
+        await store.send(.content(.entryViewLayout(.entryOperations(.loading(
+            .streamFinished(generation: generationB),
+        )))))
+
+        XCTAssertEqual(
+            metrics.value,
+            [
+                expectedUnavailableA,
+                .contentBrowsing(
+                    result: .success,
+                    content: .folder,
+                    identity: .forward,
+                    source: .fileManagerSidebar,
+                    operationID: Self.typedBrowsingOperationIDs[1],
+                ),
+            ],
+            "A must terminalize before current B emits exactly once",
+        )
+    }
+
+    /// EVM-001-content_browsing_correlation: content-originated correlation survives window navigation
+    /// 콘텐츠 기원 correlation(`.fileManagerContent`)이 window navigation 상관 설정에 덮어쓰이지 않는지 검증.
+    /// - 검증 내용: content requestNavigation으로 성립한 correlation이 window navigateToPath 이후에도 유지되는지
+    /// - 사전 조건: content seam으로 선성립된 correlation과 directory stub loader
+    /// - 기대 결과: event 1회, source file_manager_content, 첫 operation ID
+    func testContentOriginatedCorrelationSurvivesWindowNavigation() async {
+        let originPath = "/tmp/voyager-evm001-content-origin"
+        let targetPath = "/tmp/voyager-evm001-window-target"
+        let entry = EntryModel.temporaryFolder(id: "/tmp/voyager-evm001-entry", name: "entry")
+        let metrics = LockIsolated<[FileManagerProductMetric]>([])
+        let store = makeTypedBrowsingStore(metrics: metrics) {
+            $0.entryLoadingClient.loadItems = Self.suspendedLoadItems
+        }
+
+        await store.send(.content(.internal(.requestNavigation(
+            .view(.navigateToPath(originPath)),
+        ))))
+        XCTAssertNil(store.state.content.productBrowsingOperationID)
+        XCTAssertEqual(store.state.content.pendingProductBrowsingSource, .fileManagerContent)
+
+        await store.send(.navigation(.view(.navigateToPath(targetPath))))
+        await store.skipReceivedActions()
+
+        await store.send(.content(.entryViewLayout(.entryOperations(.loading(
+            .itemsLoaded(
+                generation: store.state.content.entryViewLayout.entryOperations.loadingContext.generation,
+                items: [entry],
+            ),
+        )))))
+
+        XCTAssertEqual(
+            metrics.value,
+            [.contentBrowsing(
+                result: .success,
+                content: .folder,
+                identity: .direct,
+                source: .fileManagerContent,
+                operationID: Self.typedBrowsingOperationIDs[0],
+            )],
+        )
+    }
+
+    /// EVM-001-content_browsing_correlation: non-loading transition terminalizes accepted browsing.
+    /// 수락된 A 탐색 로딩 중 AI route로 전환하면 원래 상관 정보로 unavailable 단말을 기록한다.
+    /// - 검증 내용: accepted A 뒤 AI delegate 전환의 typed terminal과 전체 correlation 해제
+    /// - 사전 조건: content-originated folder A가 수락되어 응답 없는 loader에서 로딩 중이다.
+    /// - 기대 결과: A operation ID·content·identity·source의 unavailable 한 건과 correlation nil
+    func testNonLoadingRouteTerminalizesAcceptedBrowsing() async {
+        let pathA = "/tmp/voyager-evm001-accepted-before-ai"
+        let metrics = LockIsolated<[FileManagerProductMetric]>([])
+        let store = makeTypedBrowsingStore(metrics: metrics) {
+            $0.entryLoadingClient.loadItems = Self.suspendedLoadItems
+        }
+
+        await store.send(.content(.internal(.requestNavigation(.view(.navigateToPath(pathA))))))
+        await store.send(.navigation(.view(.navigateToPath(pathA))))
+        await store.skipReceivedActions()
+
+        await store.send(.navigation(.delegate(.logDAUNavigation(
+            previous: .folder(pathA),
+            next: .aiChat("evm001-chat"),
+            identity: .direct,
+        ))))
+
+        XCTAssertEqual(metrics.value, [
+            .contentBrowsing(
+                result: .unavailable,
+                content: .folder,
+                identity: .direct,
+                source: .fileManagerContent,
+                operationID: Self.typedBrowsingOperationIDs[0],
+            ),
+        ])
+        XCTAssertNil(store.state.content.productBrowsingOperationID)
+        XCTAssertNil(store.state.content.productBrowsingIdentity)
+        XCTAssertNil(store.state.content.productBrowsingSource)
+        XCTAssertNil(store.state.content.productBrowsingContent)
+        XCTAssertNil(store.state.content.pendingProductBrowsingSource)
+    }
+
+    /// EVM-001-content_browsing_correlation: non-loading route clears pending correlation
+    /// 비로딩 route 전환이 미완료 correlation을 정리해 stale 단말을 막는지 검증.
+    /// - 검증 내용: AI Chat 전환 후 correlation 해제와 metric 무음
+    /// - 사전 조건: content seam으로 선성립된 correlation
+    /// - 기대 결과: correlation nil, metric 0회
+    func testNonLoadingRouteClearsPendingCorrelation() async {
+        let metrics = LockIsolated<[FileManagerProductMetric]>([])
+        let store = makeTypedBrowsingStore(metrics: metrics) {
+            $0.entryLoadingClient.loadRecentItems = { _, _ in [] }
+        }
+
+        await store.send(.content(.internal(.requestNavigation(
+            .view(.navigateToPath("/tmp/voyager-evm001-pending")),
+        ))))
+        XCTAssertNil(store.state.content.productBrowsingOperationID)
+        XCTAssertEqual(store.state.content.pendingProductBrowsingSource, .fileManagerContent)
+
+        await store.send(.navigation(.delegate(.logDAUNavigation(
+            previous: .folder("/tmp/voyager-evm001-pending"),
+            next: .aiChat("evm001-chat"),
+            identity: .direct,
+        ))))
+
+        XCTAssertNil(store.state.content.productBrowsingOperationID)
+        XCTAssertNil(store.state.content.productBrowsingSource)
+        XCTAssertTrue(metrics.value.isEmpty)
+    }
+
+    /// EVM-001-content_browsing_correlation: internal route change creates no correlation or event
+    /// bootstrap/internal route 설정은 사용자 탐색 단말을 만들지 않는지 검증.
+    /// - 검증 내용: setNavigationState 후 correlation 부재와 수동 itemsLoaded 무음
+    /// - 사전 조건: 기본 FileManagerFeature 상태
+    /// - 기대 결과: correlation nil, metric 0회
+    func testInternalRouteChangeCreatesNoCorrelationOrEvent() async {
+        let entry = EntryModel.temporaryFolder(id: "/tmp/voyager-evm001-entry", name: "entry")
+        let metrics = LockIsolated<[FileManagerProductMetric]>([])
+        let store = makeTypedBrowsingStore(metrics: metrics) {
+            $0.entryLoadingClient.loadItems = { _, _ in [entry] }
+        }
+
+        await store.send(.navigation(.internal(.setNavigationState(
+            .folder("/tmp/voyager-evm001-bootstrap"),
+        ))))
+
+        XCTAssertNil(store.state.content.productBrowsingOperationID)
+        await store.send(.content(.entryViewLayout(.entryOperations(.loading(
+            .itemsLoaded(
+                generation: store.state.content.entryViewLayout.entryOperations.loadingContext.generation,
+                items: [entry],
+            ),
+        )))))
+        XCTAssertTrue(metrics.value.isEmpty)
     }
 
     // MARK: - EVM-001-route_entry_selection_commands
@@ -434,7 +1679,10 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             charactersIgnoringModifiers: nil,
         ))))
         await store.receive { action in
-            guard case .entryViewLayout(.delegate(.executeCommand("mutation.moveSelectedItemsToTrash"))) = action
+            guard case .entryViewLayout(.delegate(.executeCommand(
+                "mutation.moveSelectedItemsToTrash",
+                source: .keyboardShortcut,
+            ))) = action
             else {
                 return false
             }
@@ -448,7 +1696,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             charactersIgnoringModifiers: nil,
         ))))
         await store.receive { action in
-            guard case let .entryViewLayout(.delegate(.startRename(item, text))) = action else {
+            guard case let .entryViewLayout(.delegate(.startRename(item, text, _))) = action else {
                 return false
             }
             return item == child && text == child.name
@@ -483,7 +1731,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
             charactersIgnoringModifiers: nil,
         ))))
         await store.receive { action in
-            guard case let .entryViewLayout(.delegate(.startRename(item, text))) = action else {
+            guard case let .entryViewLayout(.delegate(.startRename(item, text, _))) = action else {
                 return false
             }
             return item == entry && text == entry.name
@@ -539,9 +1787,12 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         }
         store.exhaustivity = .off
 
-        await store.send(.entryViewLayout(.delegate(.executeCommand("mutation.emptyTrash"))))
+        await store.send(.entryViewLayout(.delegate(.executeCommand(
+            "mutation.emptyTrash",
+            source: .fileManagerContent,
+        ))))
         await store.receive { action in
-            guard case let .entryViewLayout(.entryOperations(.routing(.executeCommand(command, context)))) = action
+            guard case let .entryViewLayout(.entryOperations(.routing(.executeCommand(command, context, _)))) = action
             else {
                 return false
             }
@@ -1723,7 +2974,10 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         )
 
         FileManagerContentIdentityTransitionCoordinator.markReplacementSelection(
-            on: .entryViewLayout(.entryOperations(.loading(.itemsLoaded([targetRow])))),
+            on: .entryViewLayout(.entryOperations(.loading(.itemsLoaded(
+                generation: state.entryViewLayout.entryOperations.loadingContext.generation,
+                items: [targetRow],
+            )))),
             state: &state,
         )
 
@@ -2188,7 +3442,10 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
 
         let linkRow = makeCorrelationEntry(id: linkPath, name: "link")
         let targetRow = makeCorrelationEntry(id: targetPath, name: "target")
-        await store.send(.bridge(.loading(.itemsLoaded([targetRow, linkRow]))))
+        await store.send(.bridge(.loading(.itemsLoaded(
+            generation: store.state.content.entryViewLayout.entryOperations.loadingContext.generation,
+            items: [targetRow, linkRow],
+        ))))
         XCTAssertEqual(
             store.state.content.entryViewLayout.selectedIds,
             [linkPath],
@@ -2272,7 +3529,10 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         store.exhaustivity = .off
 
         let targetRow = makeCorrelationEntry(id: targetPath, name: "target")
-        await store.send(.bridge(.loading(.itemsLoaded([targetRow]))))
+        await store.send(.bridge(.loading(.itemsLoaded(
+            generation: store.state.content.entryViewLayout.entryOperations.loadingContext.generation,
+            items: [targetRow],
+        ))))
         XCTAssertEqual(
             store.state.content.entryViewLayout.selectedIds,
             [oldPath],
@@ -2281,7 +3541,10 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         XCTAssertNotNil(store.state.content.pendingIdentityTransition)
 
         let linkRow = makeCorrelationEntry(id: linkPath, name: "link")
-        await store.send(.bridge(.loading(.itemsLoaded([targetRow, linkRow]))))
+        await store.send(.bridge(.loading(.itemsLoaded(
+            generation: store.state.content.entryViewLayout.entryOperations.loadingContext.generation,
+            items: [targetRow, linkRow],
+        ))))
         XCTAssertEqual(store.state.content.entryViewLayout.selectedIds, [linkPath])
         XCTAssertNil(store.state.content.pendingIdentityTransition)
     }
@@ -2790,7 +4053,7 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         }
         store.exhaustivity = .off
 
-        await store.send(.bridge(.loading(.itemsLoaded([]))))
+        await store.send(.bridge(.loading(.itemsLoaded(generation: 0, items: []))))
         await store.finish()
     }
 
@@ -3291,9 +4554,12 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         }
         store.exhaustivity = .off
 
-        await store.send(.bridge(.loading(.itemsLoaded([
-            makeCorrelationEntry(id: newPath, name: "new.txt"),
-        ]))))
+        await store.send(.bridge(.loading(.itemsLoaded(
+            generation: store.state.content.entryViewLayout.entryOperations.loadingContext.generation,
+            items: [
+                makeCorrelationEntry(id: newPath, name: "new.txt"),
+            ],
+        ))))
         XCTAssertNil(
             store.state.content.pendingIdentityTransition,
             "사용자가 before 선택을 포기했다면 owning batch에서 전이를 소비한다",
@@ -3457,7 +4723,10 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
 
         // after-path projection이 도착하면 선택을 옮기고 전이를 소비한다.
         let renamedEntry = makeCorrelationEntry(id: newPath, name: "new.txt")
-        await store.send(.bridge(.loading(.itemsLoaded([renamedEntry]))))
+        await store.send(.bridge(.loading(.itemsLoaded(
+            generation: store.state.content.entryViewLayout.entryOperations.loadingContext.generation,
+            items: [renamedEntry],
+        ))))
         XCTAssertEqual(store.state.content.entryViewLayout.selectedIds, [newPath])
         XCTAssertNil(store.state.content.pendingIdentityTransition, "after-path projection이 전이를 소비한다")
     }
@@ -3693,7 +4962,10 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
 
         // 무관한 첫 projection batch: after-path가 없으므로 선택과 전이를 유지한다.
         let unrelatedEntry = makeCorrelationEntry(id: unrelatedPath, name: "unrelated.txt")
-        await store.send(.bridge(.loading(.itemsLoaded([unrelatedEntry]))))
+        await store.send(.bridge(.loading(.itemsLoaded(
+            generation: store.state.content.entryViewLayout.entryOperations.loadingContext.generation,
+            items: [unrelatedEntry],
+        ))))
         XCTAssertEqual(
             store.state.content.entryViewLayout.selectedIds,
             [oldPath],
@@ -3703,7 +4975,10 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
 
         // after-path projection batch: 선택을 정확히 한 번 옮기고 전이를 소비한다.
         let renamedEntry = makeCorrelationEntry(id: newPath, name: "new.txt")
-        await store.send(.bridge(.loading(.itemsLoaded([unrelatedEntry, renamedEntry]))))
+        await store.send(.bridge(.loading(.itemsLoaded(
+            generation: store.state.content.entryViewLayout.entryOperations.loadingContext.generation,
+            items: [unrelatedEntry, renamedEntry],
+        ))))
         XCTAssertEqual(
             store.state.content.entryViewLayout.selectedIds,
             [newPath],
@@ -3806,7 +5081,10 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         XCTAssertNotNil(store.state.content.pendingIdentityTransition)
 
         let renamedEntry = makeCorrelationEntry(id: newPath, name: "new.txt")
-        await store.send(.bridge(.loading(.itemsLoaded([renamedEntry]))))
+        await store.send(.bridge(.loading(.itemsLoaded(
+            generation: store.state.content.entryViewLayout.entryOperations.loadingContext.generation,
+            items: [renamedEntry],
+        ))))
         XCTAssertEqual(
             store.state.content.entryViewLayout.selectedIds,
             [newPath],
@@ -3895,9 +5173,12 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
 
         state.entryViewLayout.entryOperations.loadingContext.generation = 2
         _ = FileManagerContentEntryOpsCoordinator.handleEntryOperationsAction(
-            .loading(.itemsLoaded([
-                makeCorrelationEntry(id: newPath, name: "new.txt"),
-            ])),
+            .loading(.itemsLoaded(
+                generation: state.entryViewLayout.entryOperations.loadingContext.generation,
+                items: [
+                    makeCorrelationEntry(id: newPath, name: "new.txt"),
+                ],
+            )),
             state: &state,
         )
         XCTAssertEqual(state.entryViewLayout.selectedIds, [newPath])
@@ -3946,9 +5227,12 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
 
         state.entryViewLayout.entryOperations.loadingContext.generation = 2
         _ = FileManagerContentEntryOpsCoordinator.handleEntryOperationsAction(
-            .loading(.itemsLoaded([
-                makeCorrelationEntry(id: newPath, name: "new.txt"),
-            ])),
+            .loading(.itemsLoaded(
+                generation: state.entryViewLayout.entryOperations.loadingContext.generation,
+                items: [
+                    makeCorrelationEntry(id: newPath, name: "new.txt"),
+                ],
+            )),
             state: &state,
         )
         XCTAssertEqual(state.entryViewLayout.selectedIds, [newPath])
@@ -4014,7 +5298,10 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
 
         let renamedEntry = makeCorrelationEntry(id: newPath, name: "new.txt")
         let otherEntry = makeCorrelationEntry(id: "\(folderPath)/other.txt", name: "other.txt")
-        await store.send(.bridge(.loading(.itemsLoaded([renamedEntry, otherEntry]))))
+        await store.send(.bridge(.loading(.itemsLoaded(
+            generation: store.state.content.entryViewLayout.entryOperations.loadingContext.generation,
+            items: [renamedEntry, otherEntry],
+        ))))
 
         XCTAssertEqual(
             store.state.content.entryViewLayout.selectedIds,
@@ -4050,7 +5337,10 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         store.exhaustivity = .off
 
         let otherEntry = makeCorrelationEntry(id: "\(folderPath)/other.txt", name: "other.txt")
-        await store.send(.bridge(.loading(.itemsLoaded([otherEntry]))))
+        await store.send(.bridge(.loading(.itemsLoaded(
+            generation: store.state.content.entryViewLayout.entryOperations.loadingContext.generation,
+            items: [otherEntry],
+        ))))
 
         XCTAssertEqual(store.state.content.entryViewLayout.selectedIds, [oldPath])
         XCTAssertEqual(store.state.content.pendingIdentityTransition, transition)
@@ -4317,7 +5607,10 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         store.exhaustivity = .off
 
         let renamedEntry = makeCorrelationEntry(id: newPath, name: "new.txt")
-        await store.send(.bridge(.loading(.itemsLoaded([renamedEntry]))))
+        await store.send(.bridge(.loading(.itemsLoaded(
+            generation: store.state.content.entryViewLayout.entryOperations.loadingContext.generation,
+            items: [renamedEntry],
+        ))))
 
         XCTAssertEqual(
             store.state.content.entryViewLayout.selectedIds,
@@ -4896,7 +6189,10 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
 
         // after-path projection: 같은 세대에서 선택을 옮기고 전이를 소비한다.
         let renamedEntry = makeCorrelationEntry(id: newPath, name: "new.txt")
-        await store.send(.bridge(.loading(.itemsLoaded([renamedEntry]))))
+        await store.send(.bridge(.loading(.itemsLoaded(
+            generation: store.state.content.entryViewLayout.entryOperations.loadingContext.generation,
+            items: [renamedEntry],
+        ))))
         XCTAssertEqual(
             store.state.content.entryViewLayout.selectedIds,
             [newPath],
@@ -4984,6 +6280,126 @@ private extension EVM001FileManagerNavigationTests {
 }
 
 extension EVM001FileManagerNavigationTests {
+    // MARK: - EVM-001-product_navigation_contract
+
+    /// EVM-001-product_navigation_contract: browsing failure categories map to finite terminal results.
+    /// typed permission failures must remain distinguishable from unavailable infrastructure.
+    /// - 검증 내용: permissionDenied → failure, unavailable → unavailable
+    /// - 사전 조건: typed browsing failure categories
+    /// - 기대 결과: raw error payload 없이 mutually exclusive terminal result
+    func testBrowsingFailureCategoriesMapToFiniteTerminalResults() {
+        XCTAssertEqual(
+            FileManagerProductMetricsProducer.browsingFailure(.permissionDenied),
+            .failure,
+        )
+        XCTAssertEqual(
+            FileManagerProductMetricsProducer.browsingFailure(.unavailable),
+            .unavailable,
+        )
+    }
+
+    // MARK: - EVM-001-product_terminal_metrics
+
+    /// EVM-001-product_terminal_metrics: empty navigation emits the empty terminal only.
+    /// accepted navigation은 accumulated entry count가 0일 때 empty terminal 한 건만 만든다.
+    /// - 검증 내용: success/empty/failure/unavailable terminal mutual exclusion
+    /// - 사전 조건: opaque operation ID와 빈 directory load 결과
+    /// - 기대 결과: `.empty` browsing event 1건, raw path 없음
+    func testEmptyBrowsingTerminalEmitsEmptyOnly() {
+        let operationID = UUID()
+        let metric = FileManagerProductMetricsProducer.browsingTerminal(
+            operationID: operationID,
+            content: .folder,
+            identity: .direct,
+            source: .fileManagerContent,
+            entryCount: 0,
+            failure: nil,
+        )
+
+        XCTAssertEqual(metric, .contentBrowsing(
+            result: .empty,
+            content: .folder,
+            identity: .direct,
+            source: .fileManagerContent,
+            operationID: operationID,
+        ))
+    }
+
+    /// EVM-001-product_terminal_metrics: 현재 Computer 실패는 unavailable terminal을 정확히 한 번 기록한다.
+    /// 실제 Computer 로드 오류가 empty 성공으로 축소되지 않고 browsing 실패로 종결되는 경로를 검증한다.
+    /// - 검증 내용: 동일 current 실패를 두 번 전달해도 unavailable metric과 correlation 소비는 한 번뿐이다.
+    /// - 사전 조건: generation 7의 Computer load와 완전한 browsing correlation이 활성 상태다.
+    /// - 기대 결과: unavailable metric 한 건만 기록되고 correlation 필드는 모두 nil이다.
+    func testCurrentComputerItemsLoadFailureRecordsUnavailableExactlyOnce() async {
+        let operationID = UUID()
+        let recorder = FileManagerProductMetricRecorder()
+        var state = FileManagerContentState()
+        state.entryViewLayout.entryOperations.loadingContext.generation = 7
+        state.entryViewLayout.entryOperations.isLoading = true
+        state.productBrowsingOperationID = operationID
+        state.productBrowsingIdentity = .direct
+        state.productBrowsingSource = .fileManagerContent
+        state.productBrowsingContent = .folder
+        let store = TestStore(initialState: state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.fileManagerProductMetricsClient = recorder.client
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+        }
+        // store.exhaustivity = .off: 통합 projection보다 browsing terminal exactly-once 계약을 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.entryViewLayout(.entryOperations(.loading(.computerItemsLoadFailed(generation: 7)))))
+        await store.send(.entryViewLayout(.entryOperations(.loading(.computerItemsLoadFailed(generation: 7)))))
+
+        XCTAssertEqual(recorder.metrics(), [
+            .contentBrowsing(
+                result: .unavailable,
+                content: .folder,
+                identity: .direct,
+                source: .fileManagerContent,
+                operationID: operationID,
+            ),
+        ])
+        XCTAssertNil(store.state.productBrowsingOperationID)
+        XCTAssertNil(store.state.productBrowsingIdentity)
+        XCTAssertNil(store.state.productBrowsingSource)
+        XCTAssertNil(store.state.productBrowsingContent)
+    }
+
+    /// EVM-001-product_terminal_metrics: stale Computer 실패는 browsing B 상태 전체에서 no-op이다.
+    /// 이전 Computer 요청의 오류가 새 폴더 상태나 현재 browsing correlation을 소비하지 않는지 검증한다.
+    /// - 검증 내용: stale 실패 전후 FileManagerContentState 동등성과 metric 미기록을 비교한다.
+    /// - 사전 조건: generation 8의 폴더 항목, 선택, pending selection, browsing correlation이 유지 중이다.
+    /// - 기대 결과: 모든 상태와 correlation이 보존되고 metric은 0건이다.
+    func testStaleComputerItemsLoadFailurePreservesBrowsingStateAndCorrelation() async {
+        let preservedEntry = EntryModel.temporaryFolder(id: "/folder-b", name: "folder-b")
+        var state = FileManagerContentState()
+        state.entryViewLayout.entryOperations.loadingContext.generation = 8
+        state.entryViewLayout.entryOperations.loadingContext.items = [preservedEntry]
+        state.entryViewLayout.entries = [preservedEntry]
+        state.entryViewLayout.selectedIds = [preservedEntry.id]
+        state.setPendingEntrySelection(entryID: "/folder-b/target", destinationPath: "/folder-b", generation: 8)
+        state.productBrowsingOperationID = UUID()
+        state.productBrowsingIdentity = .direct
+        state.productBrowsingSource = .fileManagerContent
+        state.productBrowsingContent = .folder
+        let originalState = state
+        let recorder = FileManagerProductMetricRecorder()
+        let store = TestStore(initialState: state) {
+            FileManagerContentFeature()
+        } withDependencies: {
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: stale terminal이 통합 B 상태 전체를 보존하는지만 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.entryViewLayout(.entryOperations(.loading(.computerItemsLoadFailed(generation: 7)))))
+
+        XCTAssertEqual(store.state, originalState)
+        XCTAssertTrue(recorder.metrics().isEmpty)
+    }
+
     /// EVM-001-reload_directory_page_on_external_change: dot-segment watch root의 canonical event 보존
     /// 표준화되지 않은 route root도 Shared canonical seam을 통해 FSEvent path와 같은 scope로 비교되는지 검증한다.
     /// - 검증 내용: `/var/tmp/../tmp` interest에 대한 `/private/var/tmp` child event relevance
@@ -5006,6 +6422,396 @@ extension EVM001FileManagerNavigationTests {
             gatewayRelevantChangedEvents([event], interest: interest, openedURL: nil),
             [event],
         )
+    }
+}
+
+// MARK: - Entry Command Product Metrics
+
+extension EVM001FileManagerNavigationTests {
+    // MARK: - evm-001-entry_command_product_metrics
+
+    /// EVM-001-entry_command_product_metrics: 겹친 명령의 완료는 각자의 record로 상관된다.
+    /// paste 수용 뒤 quickLook이 수용되어 단일 슬롯이 덮어써져도, 완료 순서가 뒤바뀌면 각 record의 id/kind로
+    /// 정확히 두 건의 terminal이 기록되어야 한다.
+    /// - 검증 내용: 첫 완료(quickLook)와 늦은 완료(paste)가 각각 자신의 record.id와 kind로 기록된다.
+    /// - 사전 조건: paste → quickLook 순서로 두 명령을 수용하고 완료는 quickLook → paste 순으로 도착
+    /// - 기대 결과: recorder에 entryAction 메트릭 2건(quickLook success, move success)이 순서대로 기록됨
+    func testOverlappingCompletionsCorrelateToTheirOwnRecords() async {
+        let injectedID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x42))
+        let recorder = FileManagerProductMetricRecorder(makeOperationID: { injectedID })
+        let store = TestStore(initialState: FileManagerFeature.State()) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.fileManagerProductMetricsClient = recorder.client
+            $0.date = .constant(Date())
+        }
+        // store.exhaustivity = .off: 메트릭 상관 계약에 집중하고 라우팅 부수 효과 수신은 생략함
+        store.exhaustivity = .off
+
+        let latePasteRecord = EntryActionRecord(
+            operationKind: .pasteFileMove,
+            targets: [.init(beforePath: "/src/a.txt", afterPath: "/dest/a.txt")],
+        ).attaching(command: .init(
+            id: UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x43)),
+            interaction: .pasteEntries,
+            source: .contextMenu,
+        ))
+        let earlyQuickLookRecord = EntryActionRecord(
+            operationKind: .quickLook,
+            targets: [],
+            succeededCount: 1,
+        ).attaching(command: .init(
+            id: UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x44)),
+            interaction: .quickLookEntry,
+            source: .keyboardShortcut,
+        ))
+
+        await store.send(.content(.entryViewLayout(.entryOperations(.lifecycle(.entryActionCompleted(
+            earlyQuickLookRecord,
+        ))))))
+        await store.send(.content(.entryViewLayout(.entryOperations(.lifecycle(.entryActionCompleted(
+            latePasteRecord,
+        ))))))
+
+        XCTAssertEqual(recorder.metrics(), [
+            .entryAction(
+                result: .success,
+                identity: .quickLookEntry,
+                source: .keyboardShortcut,
+                operationID: earlyQuickLookRecord.id,
+                aggregate: .init(attempted: 1, succeeded: 1, failed: 0),
+            ),
+            .entryAction(
+                result: .success,
+                identity: .pasteEntries,
+                source: .contextMenu,
+                operationID: latePasteRecord.id,
+                aggregate: .init(attempted: 1, succeeded: 1, failed: 0),
+            ),
+        ])
+    }
+
+    /// EVM-001-entry_command_product_metrics: 전체 실패 배치는 .failure result로 기록된다.
+    /// succeeded=0, failed>0인 record는 partial이 아니라 failure로 truthfully 매핑되어야 한다.
+    /// - 검증 내용: result가 .failure이고 aggregate가 attempted 2, succeeded 0, failed 2이다.
+    /// - 사전 조건: paste 명령 수용 후 targets가 비고 failedCount 2인 record 도착
+    /// - 기대 결과: entryAction(.failure, .move) 메트릭 1건 기록
+    func testAllFailedBatchMapsToFailureResult() async {
+        let recorder = FileManagerProductMetricRecorder()
+        let store = TestStore(initialState: FileManagerFeature.State()) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.fileManagerProductMetricsClient = recorder.client
+            $0.date = .constant(Date())
+        }
+        // store.exhaustivity = .off: 메트릭 truth table 계약에 집중함
+        store.exhaustivity = .off
+
+        let allFailedRecord = EntryActionRecord(
+            operationKind: .pasteFileMove,
+            targets: [],
+            failedCount: 2,
+        ).attaching(command: .init(
+            id: UUID(),
+            interaction: .pasteEntries,
+            source: .fileManagerContent,
+        ))
+        await store.send(.content(.entryViewLayout(.entryOperations(.lifecycle(.entryActionCompleted(
+            allFailedRecord,
+        ))))))
+
+        XCTAssertEqual(recorder.metrics(), [
+            .entryAction(
+                result: .failure,
+                identity: .pasteEntries,
+                source: .fileManagerContent,
+                operationID: allFailedRecord.id,
+                aggregate: .init(attempted: 2, succeeded: 0, failed: 2),
+            ),
+        ])
+    }
+
+    /// EVM-001-entry_command_product_metrics: 성공 없는 failure+cancel 혼합은 failure로 결정된다.
+    /// 일부 대상 취소가 실제 실패를 가리지 않고 aggregate 및 exactly-once를 유지하는지 검증한다.
+    /// - 검증 내용: 동일 terminal 중복 전달 뒤 result와 failed/cancelled aggregate를 비교한다.
+    /// - 사전 조건: 성공 0, 실패 1, 취소 1인 command-owned record가 두 번 도착한다.
+    /// - 기대 결과: failure metric 한 건과 aggregate 2/0/1/1이 기록된다.
+    func testFailureAndCancellationWithoutSuccessMapsToSingleFailure() async {
+        let recorder = FileManagerProductMetricRecorder()
+        let store = TestStore(initialState: FileManagerFeature.State()) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.fileManagerProductMetricsClient = recorder.client
+            $0.date = .constant(Date())
+        }
+        // store.exhaustivity = .off: terminal truth table과 duplicate suppression만 검증함
+        store.exhaustivity = .off
+        let record = EntryActionRecord(
+            operationKind: .putBack,
+            targets: [],
+            failedCount: 1,
+            cancelledCount: 1,
+            succeededCount: 0,
+            id: UUID(),
+            timestamp: Date(),
+        ).attaching(command: .init(
+            id: UUID(),
+            interaction: .putDeletedEntriesBack,
+            source: .contextMenu,
+        ))
+
+        for _ in 0 ..< 2 {
+            await store.send(.content(.entryViewLayout(.entryOperations(.lifecycle(.entryActionCompleted(
+                record,
+            ))))))
+        }
+
+        XCTAssertEqual(recorder.metrics(), [
+            .entryAction(
+                result: .failure,
+                identity: .putDeletedEntriesBack,
+                source: .contextMenu,
+                operationID: record.id,
+                aggregate: .init(attempted: 2, succeeded: 0, failed: 1, cancelled: 1),
+            ),
+        ])
+    }
+
+    /// EVM-001-entry_command_product_metrics: 성공/부분 성공 배치는 truth table대로 기록된다.
+    /// succeeded>0 failed=0은 success, succeeded>0 failed>0은 partial로 매핑되는지 검증한다.
+    /// - 검증 내용: 연속된 두 배치가 각각 success/partial result와 정확한 aggregate로 기록된다.
+    /// - 사전 조건: paste 명령을 두 번 수용하고 각각 성공/부분 성공 record가 도착
+    /// - 기대 결과: entryAction 메트릭 2건(success 1/1/0, partial 2/1/1)이 순서대로 기록됨
+    func testSuccessAndPartialBatchesMapTruthfully() async {
+        let recorder = FileManagerProductMetricRecorder()
+        let store = TestStore(initialState: FileManagerFeature.State()) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.fileManagerProductMetricsClient = recorder.client
+            $0.date = .constant(Date())
+        }
+        // store.exhaustivity = .off: 메트릭 truth table 계약에 집중함
+        store.exhaustivity = .off
+
+        let successRecord = EntryActionRecord(
+            operationKind: .pasteFileCopy,
+            targets: [.init(beforePath: "/src/a.txt", afterPath: "/dest/a.txt")],
+        ).attaching(command: .init(id: UUID(), interaction: .pasteEntries, source: .fileManagerContent))
+        await store.send(.content(.entryViewLayout(.entryOperations(.lifecycle(.entryActionCompleted(
+            successRecord,
+        ))))))
+
+        let partialRecord = EntryActionRecord(
+            operationKind: .pasteFileCopy,
+            targets: [.init(beforePath: "/src/b.txt", afterPath: "/dest/b.txt")],
+            failedCount: 1,
+        ).attaching(command: .init(id: UUID(), interaction: .pasteEntries, source: .fileManagerContent))
+        await store.send(.content(.entryViewLayout(.entryOperations(.lifecycle(.entryActionCompleted(
+            partialRecord,
+        ))))))
+
+        // pasteFileCopy는 실제 연산대로 .copy로 분류된다(단일 .move 회귀 수정).
+        XCTAssertEqual(recorder.metrics(), [
+            .entryAction(
+                result: .success,
+                identity: .pasteEntries,
+                source: .fileManagerContent,
+                operationID: successRecord.id,
+                aggregate: .init(attempted: 1, succeeded: 1, failed: 0),
+            ),
+            .entryAction(
+                result: .partial,
+                identity: .pasteEntries,
+                source: .fileManagerContent,
+                operationID: partialRecord.id,
+                aggregate: .init(attempted: 2, succeeded: 1, failed: 1),
+            ),
+        ])
+    }
+
+    /// EVM-001-entry_command_product_metrics: content effect에서 방출된 비-undo terminal도 제품 메트릭으로 정확히 한 번 기록된다.
+    /// routeContentEffectAction이 비-undo record를 .internal 경로로 돌려 drop하는 P0 회귀를 검증한다.
+    /// - 검증 내용: copyPath 명령의 실제 effect terminal이 window 라우팅을 통과해 메트릭 1건으로 기록된다.
+    /// - 사전 조건: 선택 항목 1개와 pasteboard 성공 mock, 실제 FileManagerFeature 라우팅 사용
+    /// - 기대 결과: entryAction(.copyPath, aggregate 1/1/0) 메트릭 정확히 1건 기록
+    func testNonUndoEffectTerminalRecordsSingleProductEvent() async {
+        let folderPath = "/tmp/voyager-nonundo-terminal"
+        let folder = EntryModel.temporaryFolder(id: folderPath, name: "folder")
+        var state = FileManagerFeature.State()
+        state.content.navigation.navigationState = .folder("/tmp")
+        state.content.entryViewLayout.entries = [folder]
+        state.content.entryViewLayout.selectedIds = [folder.id]
+
+        let recorder = FileManagerProductMetricRecorder()
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.fileManagerProductMetricsClient = recorder.client
+            $0.date = .constant(Date())
+            $0.pasteboardClient = PasteboardClient(
+                changeCount: { 0 },
+                clearContents: {},
+                writeObjects: { _ in true },
+                readObjects: { _, _ in nil },
+                setString: { _, _ in true },
+                string: { _ in nil },
+            )
+        }
+        // store.exhaustivity = .off: window 라우팅 부수 effect보다 메트릭 exactly-once를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.content(.entryViewLayout(.delegate(
+            .executeCommand("clipboard.copySelectedAbsolutePaths", source: .fileManagerContent),
+        ))))
+        await store.finish()
+
+        XCTAssertEqual(recorder.metrics().count, 1)
+        guard case let .entryAction(metric)? = recorder.metrics().first else {
+            return XCTFail("Expected one entryAction metric")
+        }
+        XCTAssertEqual(metric.result, .success)
+        XCTAssertEqual(metric.identity, .copyAbsolutePaths)
+        XCTAssertEqual(metric.aggregate, .init(attempted: 1, succeeded: 1, failed: 0))
+    }
+
+    /// EVM-001-entry_command_product_metrics: paste 계열 record는 실제 연산별 metric kind로 매핑된다.
+    /// 복사·복제는 .copy, 이동은 .move로 분류되어야 한다(이전 단일 .move 회귀 수정).
+    /// - 검증 내용: pasteFileCopy→.copy, pasteFileDuplicate→.copy, pasteFileMove→.move
+    /// - 사전 조건: 성공 target 1개씩을 가진 세 record를 직접 전달
+    /// - 기대 결과: entryAction 메트릭 3건이 각각 .copy/.copy/.move로 기록됨
+    func testPasteRecordKindsMapToCopyAndMoveActions() async {
+        let recorder = FileManagerProductMetricRecorder()
+        let store = TestStore(initialState: FileManagerFeature.State()) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.fileManagerProductMetricsClient = recorder.client
+            $0.date = .constant(Date())
+        }
+        // store.exhaustivity = .off: kind 매핑 계약에 집중함
+        store.exhaustivity = .off
+
+        let copyRecord = EntryActionRecord(
+            operationKind: .pasteFileCopy,
+            targets: [.init(beforePath: "/src/a.txt", afterPath: "/dest/a.txt")],
+        ).attaching(command: .init(id: UUID(), interaction: .copyEntries, source: .fileManagerContent))
+        let duplicateRecord = EntryActionRecord(
+            operationKind: .pasteFileDuplicate,
+            targets: [.init(beforePath: "/src/b.txt", afterPath: "/dest/b.txt")],
+        ).attaching(command: .init(id: UUID(), interaction: .duplicateEntries, source: .fileManagerContent))
+        let moveRecord = EntryActionRecord(
+            operationKind: .pasteFileMove,
+            targets: [.init(beforePath: "/src/c.txt", afterPath: "/dest/c.txt")],
+        ).attaching(command: .init(id: UUID(), interaction: .pasteEntries, source: .fileManagerContent))
+        for record in [copyRecord, duplicateRecord, moveRecord] {
+            await store.send(.content(.entryViewLayout(.entryOperations(.lifecycle(.entryActionCompleted(
+                record,
+            ))))))
+        }
+
+        let identities = recorder.metrics().compactMap { metric -> EntryInteractionIdentity? in
+            guard case let .entryAction(payload) = metric else { return nil }
+            return payload.identity
+        }
+        XCTAssertEqual(identities, [.copyEntries, .duplicateEntries, .pasteEntries])
+    }
+
+    /// EVM-001-entry_command_product_metrics: 압축/해제 record는 이전 fallback인 .copy를 유지한다.
+    /// - 검증 내용: compress record의 metric action이 .copy다
+    /// - 사전 조건: compress record 1건을 직접 전달
+    /// - 기대 결과: entryAction 메트릭 1건이 .copy로 기록됨
+    func testCompressRecordMapsToCopyFallback() async {
+        let recorder = FileManagerProductMetricRecorder()
+        let store = TestStore(initialState: FileManagerFeature.State()) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.fileManagerProductMetricsClient = recorder.client
+            $0.date = .constant(Date())
+        }
+        // store.exhaustivity = .off: fallback 매핑 계약에 집중함
+        store.exhaustivity = .off
+
+        let compressRecord = EntryActionRecord(
+            operationKind: .compress,
+            targets: [],
+        ).attaching(command: .init(id: UUID(), interaction: .compressEntries, source: .contextMenu))
+        await store.send(.content(.entryViewLayout(.entryOperations(.lifecycle(.entryActionCompleted(
+            compressRecord,
+        ))))))
+
+        let identities = recorder.metrics().compactMap { metric -> EntryInteractionIdentity? in
+            guard case let .entryAction(payload) = metric else { return nil }
+            return payload.identity
+        }
+        XCTAssertEqual(identities, [.compressEntries])
+    }
+
+    /// EVM-001-entry_command_product_metrics: 비-undo record도 kind별 메트릭으로 매핑된다.
+    /// quickLook/deleteImmediately record가 수용 슬롯 없이도 자체 kind로 terminal이 되는지 검증한다.
+    /// - 검증 내용: quickLook은 .quickLook으로, deleteImmediately는 .trash로 매핑되어 2건 기록된다.
+    /// - 사전 조건: 명령 수용 없이 비-undo record 두 개를 직접 전달
+    /// - 기대 결과: entryAction 메트릭 2건(quickLook success, trash success)이 순서대로 기록됨
+    func testNonUndoRecordsMapMetricKinds() async {
+        let recorder = FileManagerProductMetricRecorder()
+        let store = TestStore(initialState: FileManagerFeature.State()) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.fileManagerProductMetricsClient = recorder.client
+            $0.date = .constant(Date())
+        }
+        // store.exhaustivity = .off: 메트릭 kind 매핑 계약에 집중함
+        store.exhaustivity = .off
+
+        // 성공 1회 시도는 succeededCount로 전달되어 aggregate에 그대로 반영된다.
+        let quickLookRecord = EntryActionRecord(operationKind: .quickLook, targets: [], succeededCount: 1)
+        // 시도 없는 완료(0/0)는 no-attempt success로 기록된다.
+        let deleteRecord = EntryActionRecord(operationKind: .deleteImmediately, targets: [])
+        await store.send(.content(.entryViewLayout(.entryOperations(.lifecycle(.entryActionCompleted(
+            quickLookRecord,
+        ))))))
+        await store.send(.content(.entryViewLayout(.entryOperations(.lifecycle(.entryActionCompleted(
+            deleteRecord,
+        ))))))
+
+        XCTAssertTrue(recorder.metrics().isEmpty)
+    }
+
+    /// EVM-001-entry_command_product_metrics: keyboard 명령 terminal은 실제 source와 command UUID를 보존한다.
+    /// Quick Look key command의 수용 surface가 비동기 terminal까지 command-owned metadata로 전달되는지 검증한다.
+    /// - 검증 내용: 실제 key routing과 Quick Look effect를 거친 metric의 source 및 operation ID를 비교한다.
+    /// - 사전 조건: 선택 entry 1개, 고정 operation ID, 성공 Quick Look client가 있다.
+    /// - 기대 결과: terminal 한 건의 source는 keyboardShortcut이고 operationID는 수용 시 생성한 UUID다.
+    func testKeyboardQuickLookPreservesAcceptedCommandSourceAndID() async {
+        let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x71))
+        let entry = EntryModel.temporaryFolder(id: "/tmp/keyboard-source", name: "keyboard-source")
+        var state = FileManagerFeature.State()
+        state.content.navigation.navigationState = .folder("/tmp")
+        state.content.entryViewLayout.entries = [entry]
+        state.content.entryViewLayout.selectedIds = [entry.id]
+        let recorder = FileManagerProductMetricRecorder(makeOperationID: { operationID })
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.fileManagerProductMetricsClient = recorder.client
+            $0.entryQuickLookClient = EntryQuickLookClient(quickLook: { _, _ in })
+            $0.date = .constant(Date())
+        }
+        // store.exhaustivity = .off: 실제 window/content/EOP routing의 terminal metadata만 검증함
+        store.exhaustivity = .off
+
+        await store.send(.content(.view(.handleKeyCommand(.init(
+            keyCode: 49,
+            modifiers: [],
+            characters: " ",
+            charactersIgnoringModifiers: " ",
+        )))))
+        await store.finish()
+
+        guard case let .entryAction(metric)? = recorder.metrics().first else {
+            return XCTFail("Expected one entryAction metric")
+        }
+        XCTAssertEqual(recorder.metrics().count, 1)
+        XCTAssertEqual(metric.source, .keyboardShortcut)
+        XCTAssertEqual(metric.operationID, operationID)
     }
 }
 

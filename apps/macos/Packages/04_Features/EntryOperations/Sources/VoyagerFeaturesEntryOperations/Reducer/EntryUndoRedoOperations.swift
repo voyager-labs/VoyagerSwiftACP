@@ -26,7 +26,8 @@ struct EntryUndoRedoOperationsReducer {
         Reduce { state, action in
             switch action {
             case let .lifecycle(.entryActionCompleted(record: record)):
-                guard record.operationKind.isUndoable else {
+                // 성공 target이 없는 레코드(전체 실패 배치)는 undo 이력에 등록하지 않는다.
+                guard record.operationKind.isUndoable, !record.targets.isEmpty else {
                     return .none
                 }
                 state.appendUndoRecord(record)
@@ -351,6 +352,7 @@ struct EntryUndoRedoOperationsReducer {
              .share,
              .performService,
              .revealInFinder,
+             .copyPath,
              .deleteImmediately,
              .compress,
              .extract,

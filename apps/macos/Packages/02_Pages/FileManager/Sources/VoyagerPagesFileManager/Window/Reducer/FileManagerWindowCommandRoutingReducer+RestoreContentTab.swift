@@ -12,7 +12,10 @@ extension FileManagerWindowCommandRoutingReducer {
         case unsupportedAIChat
     }
 
-    func handleRestoreLastClosedContentTab(state: inout State) -> Effect<Action> {
+    func handleRestoreLastClosedContentTab(
+        state: inout State,
+        actionSource: ContentTabActionSource = .contentTabBar,
+    ) -> Effect<Action> {
         guard state.pendingContentTabClose == nil else { return .none }
 
         guard let snapshot = state.contentTabs.recentlyClosed else { return .none }
@@ -24,8 +27,11 @@ extension FileManagerWindowCommandRoutingReducer {
             return restoreFailureFeedbackEffect(reason)
         }
 
+        let restoreEffect: Effect<Action> = actionSource == .contentTabBar
+            ? .send(.contentTabs(.restore))
+            : .send(.contentTabActionRequested(.restore, source: actionSource))
         return .concatenate(
-            .send(.contentTabs(.restore)),
+            restoreEffect,
             .send(.contentTabs(.collapseSelectionToActive)),
         )
     }

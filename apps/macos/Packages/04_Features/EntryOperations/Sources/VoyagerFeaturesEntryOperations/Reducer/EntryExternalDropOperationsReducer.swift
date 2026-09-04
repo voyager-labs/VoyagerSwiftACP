@@ -30,35 +30,43 @@ public struct EntryExternalDropOperationsReducer {
             switch action {
             // MARK: - Session lifecycle (from Todo 4/5)
 
-            case let .externalDrop(.accepted(request)):
-                // 기존 active 세션이 있으면 정확한 세션을 취소하고 교체한다.
-                if let previous = state.activeExternalDrop {
-                    let previousID = previous.sessionID
-                    state.activeExternalDrop = nil
-                    state.externalObjectImportStatus = nil
-                    return .merge(
-                        .cancel(id: CancelID.externalDrop(previousID)),
-                        .run { [acquisitionClient] _ in
-                            await acquisitionClient.cancel(previousID)
-                        },
-                        beginSubscription(request: request, state: &state),
-                    )
-                }
-                return beginSubscription(request: request, state: &state)
+            case let .acceptedCommand(command, .externalDrop(.accepted(request, _, logicalItemCount))):
+                return beginAccepted(
+                    request: request,
+                    command: command,
+                    logicalItemCount: logicalItemCount,
+                    state: &state,
+                )
+
+            case let .externalDrop(.accepted(request, command, logicalItemCount)):
+                return beginAccepted(
+                    request: request,
+                    command: command,
+                    logicalItemCount: logicalItemCount,
+                    state: &state,
+                )
 
             case let .externalDrop(.event(event)):
                 return handle(event: event, state: &state)
 
             case let .externalDrop(.cancelSession(sessionID)):
-                guard state.activeExternalDrop?.sessionID == sessionID else {
+                guard let active = state.activeExternalDrop, active.sessionID == sessionID else {
                     return .none
                 }
-                return teardown(
+                let cleanup = teardown(
                     sessionID: sessionID,
                     state: &state,
                     cleanup: .run { [acquisitionClient] _ in
                         await acquisitionClient.cancel(sessionID)
                     },
+                )
+                return .merge(
+                    .send(.lifecycle(.entryActionCompleted(terminalRecord(
+                        command: active.command,
+                        logicalItemCount: active.logicalItemCount,
+                        cancelledCount: active.logicalItemCount,
+                    )))),
+                    cleanup,
                 )
 
             case let .externalDrop(.finishSession(sessionID)):
@@ -83,11 +91,19 @@ public struct EntryExternalDropOperationsReducer {
                     return .none
                 }
                 guard isValid else {
+                    let terminal = terminalRecord(
+                        command: plan.command,
+                        logicalItemCount: plan.logicalItemCount,
+                        failedCount: plan.logicalItemCount,
+                    )
                     state.externalDropImportPlacement = nil
                     state.externalObjectImportStatus = .failed
-                    return .run { [acquisitionClient, sessionID = plan.sessionID] _ in
-                        await acquisitionClient.finish(sessionID)
-                    }
+                    return .merge(
+                        .send(.lifecycle(.entryActionCompleted(terminal))),
+                        .run { [acquisitionClient, sessionID = plan.sessionID] _ in
+                            await acquisitionClient.finish(sessionID)
+                        },
+                    )
                 }
                 return startPlacement(plan: plan, state: &state)
 
@@ -115,7 +131,8 @@ public struct EntryExternalDropOperationsReducer {
                 return finishPlacementIfComplete(state: &state)
 
             // Todo 7: 종합 완료 후 in-flight 추적 상태를 정리한다.
-            case .externalDrop(.importFinished):
+            case let .externalDrop(.importFinished(result)):
+                guard state.externalDropImportPlacement?.sessionID == result.sessionID else { return .none }
                 state.externalDropImportPlacement = nil
                 return .none
 
@@ -130,11 +147,32 @@ public struct EntryExternalDropOperationsReducer {
         }
     }
 
-    private func beginSubscription(
+    private func beginAccepted(
         request: ExternalDropAcceptedRequest,
+        command: EntryCommandMetadata,
+        logicalItemCount: Int,
         state: inout State,
     ) -> Effect<Action> {
-        state.activeExternalDrop = ExternalDropActiveSession(request: request)
+        guard state.activeExternalDrop == nil else { return .none }
+        return beginSubscription(
+            request: request,
+            command: command,
+            logicalItemCount: logicalItemCount,
+            state: &state,
+        )
+    }
+
+    private func beginSubscription(
+        request: ExternalDropAcceptedRequest,
+        command: EntryCommandMetadata,
+        logicalItemCount: Int,
+        state: inout State,
+    ) -> Effect<Action> {
+        state.activeExternalDrop = ExternalDropActiveSession(
+            request: request,
+            command: command,
+            logicalItemCount: logicalItemCount,
+        )
         state.externalObjectImportStatus = .pending
         return .run { [acquisitionClient, sessionID = request.sessionID] send in
             await withTaskCancellationHandler {
@@ -167,6 +205,8 @@ public struct EntryExternalDropOperationsReducer {
             let plan = ExternalDropImportPlan(
                 sessionID: sessionID,
                 destination: active.destination,
+                command: active.command,
+                logicalItemCount: active.logicalItemCount,
                 forcedCopy: active.forcedCopy,
                 orderedPromisedNames: active.orderedPromisedNames,
                 promisedOrdinals: active.promisedOrdinals,
@@ -182,20 +222,30 @@ public struct EntryExternalDropOperationsReducer {
 
         case let .failed(sessionID, _):
             // 하나의 promise 실패가 promised/immediate 전체 배치를 막는다.
-            guard state.activeExternalDrop?.sessionID == sessionID else { return .none }
+            guard let active = state.activeExternalDrop, active.sessionID == sessionID else { return .none }
             state.activeExternalDrop = nil
             state.externalObjectImportStatus = .failed
-            return .run { [acquisitionClient] _ in
-                await acquisitionClient.cancel(sessionID)
-            }
+            return .merge(
+                .send(.lifecycle(.entryActionCompleted(terminalRecord(
+                    command: active.command,
+                    logicalItemCount: active.logicalItemCount,
+                    failedCount: active.logicalItemCount,
+                )))),
+                .run { [acquisitionClient] _ in await acquisitionClient.cancel(sessionID) },
+            )
 
         case let .cancelled(sessionID):
-            guard state.activeExternalDrop?.sessionID == sessionID else { return .none }
+            guard let active = state.activeExternalDrop, active.sessionID == sessionID else { return .none }
             state.activeExternalDrop = nil
             state.externalObjectImportStatus = nil
-            return .run { [acquisitionClient] _ in
-                await acquisitionClient.cancel(sessionID)
-            }
+            return .merge(
+                .send(.lifecycle(.entryActionCompleted(terminalRecord(
+                    command: active.command,
+                    logicalItemCount: active.logicalItemCount,
+                    cancelledCount: active.logicalItemCount,
+                )))),
+                .run { [acquisitionClient] _ in await acquisitionClient.cancel(sessionID) },
+            )
         }
     }
 
@@ -210,14 +260,24 @@ public struct EntryExternalDropOperationsReducer {
         }
         let orderedSources = orderedSources(for: plan)
         guard !orderedSources.isEmpty else {
+            let terminal = terminalRecord(
+                command: plan.command,
+                logicalItemCount: plan.logicalItemCount,
+                failedCount: plan.logicalItemCount,
+            )
             state.externalObjectImportStatus = .failed
-            return .run { [acquisitionClient, sessionID = plan.sessionID] _ in
-                await acquisitionClient.finish(sessionID)
-            }
+            return .merge(
+                .send(.lifecycle(.entryActionCompleted(terminal))),
+                .run { [acquisitionClient, sessionID = plan.sessionID] _ in
+                    await acquisitionClient.finish(sessionID)
+                },
+            )
         }
         state.externalDropImportPlacement = ExternalDropImportPlacementState(
             sessionID: plan.sessionID,
             destination: plan.destination,
+            command: plan.command,
+            logicalItemCount: plan.logicalItemCount,
             pendingPaths: Set(orderedSources),
         )
         state.externalObjectImportStatus = .pending
@@ -244,12 +304,13 @@ public struct EntryExternalDropOperationsReducer {
     private func startPlacement(plan: ExternalDropImportPlan, state: inout State) -> Effect<Action> {
         guard state.externalDropImportPlacement?.sessionID == plan.sessionID else { return .none }
         let orderedSources = orderedSources(for: plan)
-        return .send(.clipboard(.pasteItems(
+        state.externalDropImportPlacement?.isCopyStarted = true
+        return .send(.acceptedCommand(metadata: plan.command, action: .clipboard(.pasteItems(
             sourcePaths: orderedSources,
             destinationPath: plan.destination,
             operation: .copy,
             operationKind: .externalObjectImportItem,
-        )))
+        ))))
     }
 
     private func orderedSources(for plan: ExternalDropImportPlan) -> [String] {
@@ -352,7 +413,21 @@ public struct EntryExternalDropOperationsReducer {
         // 별도 세션 ID로 관리된다. windowIDChanged가 placement 복사 중 도착하면 acquisition은
         // 이미 종단(nil)됐을 수 있으므로 placement 상태도 함께 정리해야 다음 drop이 시작된다.
         let acquisitionSessionID = state.activeExternalDrop?.sessionID
+        let acquisitionTerminal = state.activeExternalDrop.map { active in
+            terminalRecord(
+                command: active.command,
+                logicalItemCount: active.logicalItemCount,
+                cancelledCount: active.logicalItemCount,
+            )
+        }
         let placementSessionID = state.externalDropImportPlacement?.sessionID
+        let placementTerminal = state.externalDropImportPlacement.flatMap { placement in
+            placement.isCopyStarted ? nil : terminalRecord(
+                command: placement.command,
+                logicalItemCount: placement.logicalItemCount,
+                cancelledCount: placement.logicalItemCount,
+            )
+        }
         guard acquisitionSessionID != nil || placementSessionID != nil else {
             return .none
         }
@@ -361,12 +436,18 @@ public struct EntryExternalDropOperationsReducer {
         state.externalObjectImportStatus = nil
         var effects: [Effect<Action>] = []
         if let acquisitionSessionID {
+            if let acquisitionTerminal {
+                effects.append(.send(.lifecycle(.entryActionCompleted(acquisitionTerminal))))
+            }
             effects.append(.cancel(id: CancelID.externalDrop(acquisitionSessionID)))
             effects.append(.run { [acquisitionClient] _ in
                 await acquisitionClient.cancel(acquisitionSessionID)
             })
         }
         if let placementSessionID {
+            if let placementTerminal {
+                effects.append(.send(.lifecycle(.entryActionCompleted(placementTerminal))))
+            }
             // placement 복사 effect 취소는 onCancelCleanup이 staging finish를 단일 소유한다.
             // 여기서 client.cancel을 호출하면 복사가 읽던 staging을 지워 부분 파일이 생기므로
             // effect 취소만 적용한다.
@@ -374,6 +455,23 @@ public struct EntryExternalDropOperationsReducer {
             effects.append(.cancel(id: CancelID.externalDrop(placementSessionID)))
         }
         return .merge(effects)
+    }
+
+    private func terminalRecord(
+        command: EntryCommandMetadata,
+        logicalItemCount _: Int,
+        failedCount: Int = 0,
+        cancelledCount: Int = 0,
+    ) -> EntryActionRecord {
+        EntryActionRecord(
+            operationKind: .externalObjectImportItem,
+            targets: [],
+            failedCount: failedCount,
+            cancelledCount: cancelledCount,
+            succeededCount: 0,
+            id: command.id,
+            timestamp: Date(),
+        ).attaching(command: command)
     }
 }
 

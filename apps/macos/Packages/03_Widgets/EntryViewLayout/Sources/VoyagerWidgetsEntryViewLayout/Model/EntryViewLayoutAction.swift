@@ -125,25 +125,30 @@ public enum EntryViewLayoutAction: ViewAction, CasePathable, Sendable {
         case startDrag(paths: [String])
         case handleDrop(providers: [NSItemProvider], destinationPath: String)
         case dropItems(sourcePaths: [String], destinationPath: String, isOptionDrag: Bool)
-        // 외부 drop 획득 세션의 semantic view action. coordinator가 child reducer에
-        // 직접 주입하지 않고 이 경계를 통해 EntryViewLayoutFeature가 라우팅한다.
-        case externalDropAccepted(request: ExternalDropAcceptedRequest)
+        /// 외부 drop 획득 세션의 semantic view action. coordinator가 child reducer에
+        /// 직접 주입하지 않고 이 경계를 통해 EntryViewLayoutFeature가 라우팅한다.
+        case externalDropAccepted(
+            request: ExternalDropAcceptedRequest,
+            command: EntryCommandMetadata,
+            logicalItemCount: Int,
+        )
         case externalDropCancelSession(ExternalDropSessionID)
-        case openSelectedItem
-        case executeCommand(String)
+        case openSelectedItem(source: EntryCommandSource)
+        case executeCommand(String, source: EntryCommandSource)
         case openPathInNewWindow(String)
         case openInNewTab([String])
         case performService(serviceName: String)
-        case startRename(item: EntryModel, text: String)
+        case startRename(item: EntryModel, text: String, source: EntryCommandSource)
+        case updateRenamingText(String)
         case commitRename(itemID: EntryModel.ID, newName: String)
         case openEntry(EntryModel)
         case saveScrollOffset(CGPoint, forPath: String)
         case changeSort(EntryViewLayoutSortKey, VoyagerShared.SortOrder)
         case toggleGroup(String)
         case preloadOpenWithApplications([EntryModel])
-        case openWithApp(bundleID: String?)
-        case toggleTag(String)
-        case mutateTag(name: String, mode: TagMutationMode)
+        case openWithApp(bundleID: String?, source: EntryCommandSource)
+        case toggleTag(String, source: EntryCommandSource)
+        case mutateTag(name: String, mode: TagMutationMode, source: EntryCommandSource)
         case expandFolder(EntryModel.ID)
         case collapseFolder(EntryModel.ID)
         case retryFolder(EntryModel.ID)
@@ -153,11 +158,11 @@ public enum EntryViewLayoutAction: ViewAction, CasePathable, Sendable {
 
     @CasePathable
     public enum Delegate: Sendable {
-        case executeCommand(String)
+        case executeCommand(String, source: EntryCommandSource)
         case openPathInNewWindow(String)
         case openInNewTab([String])
         case performService(serviceName: String)
-        case startRename(item: EntryModel, text: String)
+        case startRename(item: EntryModel, text: String, source: EntryCommandSource)
         case saveScrollOffset(CGPoint, forPath: String)
         case selectionChanged
         // Feature로 라우팅할 intent
@@ -172,9 +177,9 @@ public enum EntryViewLayoutAction: ViewAction, CasePathable, Sendable {
         case groupChanged(EntryViewLayoutGroupKey)
         case toggleGroup(String)
         case preloadOpenWithApplications([EntryModel])
-        case tagMutation(tagName: String, mode: TagMutationMode)
-        case toggleTag(tagName: String)
-        case openWithApp(bundleID: String?)
+        case tagMutation(tagName: String, mode: TagMutationMode, source: EntryCommandSource)
+        case toggleTag(tagName: String, source: EntryCommandSource)
+        case openWithApp(bundleID: String?, source: EntryCommandSource)
         case dropItems(sourcePaths: [String], destinationPath: String, isOptionDrag: Bool)
         case identityReplacementSettled(
             id: UUID,

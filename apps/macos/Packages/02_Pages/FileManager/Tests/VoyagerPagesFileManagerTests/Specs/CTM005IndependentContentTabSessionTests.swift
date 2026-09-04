@@ -7685,6 +7685,7 @@ extension CTM005IndependentContentTabSessionTests {
                 preparedRequest: AiChatPreparedRequest(
                     prompt: "test",
                     messages: lock.request.messages,
+                    persistenceTranscriptHistory: lock.persistenceTranscriptHistory,
                     assistantReplacementIndex: nil,
                     historyTruncation: AiChatHistoryTruncationMetadata(
                         includedMessageCount: lock.request.messages.count,
@@ -7750,6 +7751,7 @@ extension CTM005IndependentContentTabSessionTests {
                 preparedRequest: AiChatPreparedRequest(
                     prompt: "test",
                     messages: lock.request.messages,
+                    persistenceTranscriptHistory: lock.persistenceTranscriptHistory,
                     assistantReplacementIndex: nil,
                     historyTruncation: AiChatHistoryTruncationMetadata(
                         includedMessageCount: lock.request.messages.count,
@@ -7835,6 +7837,7 @@ extension CTM005IndependentContentTabSessionTests {
             preparedRequest: AiChatPreparedRequest(
                 prompt: "test",
                 messages: requestLock.request.messages,
+                persistenceTranscriptHistory: requestLock.persistenceTranscriptHistory,
                 assistantReplacementIndex: nil,
                 historyTruncation: AiChatHistoryTruncationMetadata(
                     includedMessageCount: requestLock.request.messages.count,
@@ -8076,6 +8079,7 @@ extension CTM005IndependentContentTabSessionTests {
             preparedRequest: AiChatPreparedRequest(
                 prompt: "test",
                 messages: requestLock.request.messages,
+                persistenceTranscriptHistory: requestLock.persistenceTranscriptHistory,
                 assistantReplacementIndex: nil,
                 historyTruncation: AiChatHistoryTruncationMetadata(
                     includedMessageCount: requestLock.request.messages.count,
@@ -8156,6 +8160,7 @@ extension CTM005IndependentContentTabSessionTests {
             preparedRequest: AiChatPreparedRequest(
                 prompt: "test",
                 messages: requestLock.request.messages,
+                persistenceTranscriptHistory: requestLock.persistenceTranscriptHistory,
                 assistantReplacementIndex: nil,
                 historyTruncation: AiChatHistoryTruncationMetadata(
                     includedMessageCount: requestLock.request.messages.count,
@@ -8257,6 +8262,7 @@ extension CTM005IndependentContentTabSessionTests {
             preparedRequest: AiChatPreparedRequest(
                 prompt: "test",
                 messages: requestLock.request.messages,
+                persistenceTranscriptHistory: requestLock.persistenceTranscriptHistory,
                 assistantReplacementIndex: nil,
                 historyTruncation: AiChatHistoryTruncationMetadata(
                     includedMessageCount: requestLock.request.messages.count,
@@ -8364,6 +8370,7 @@ extension CTM005IndependentContentTabSessionTests {
             preparedRequest: AiChatPreparedRequest(
                 prompt: "test",
                 messages: requestLock.request.messages,
+                persistenceTranscriptHistory: requestLock.persistenceTranscriptHistory,
                 assistantReplacementIndex: nil,
                 historyTruncation: AiChatHistoryTruncationMetadata(
                     includedMessageCount: requestLock.request.messages.count,
@@ -8461,6 +8468,7 @@ extension CTM005IndependentContentTabSessionTests {
             preparedRequest: AiChatPreparedRequest(
                 prompt: "test",
                 messages: requestLock.request.messages,
+                persistenceTranscriptHistory: requestLock.persistenceTranscriptHistory,
                 assistantReplacementIndex: nil,
                 historyTruncation: AiChatHistoryTruncationMetadata(
                     includedMessageCount: requestLock.request.messages.count,
@@ -8552,6 +8560,7 @@ extension CTM005IndependentContentTabSessionTests {
             preparedRequest: AiChatPreparedRequest(
                 prompt: "test",
                 messages: requestLock.request.messages,
+                persistenceTranscriptHistory: requestLock.persistenceTranscriptHistory,
                 assistantReplacementIndex: nil,
                 historyTruncation: AiChatHistoryTruncationMetadata(
                     includedMessageCount: requestLock.request.messages.count,
@@ -8616,6 +8625,7 @@ extension CTM005IndependentContentTabSessionTests {
             preparedRequest: AiChatPreparedRequest(
                 prompt: "test",
                 messages: requestLock.request.messages,
+                persistenceTranscriptHistory: requestLock.persistenceTranscriptHistory,
                 assistantReplacementIndex: nil,
                 historyTruncation: AiChatHistoryTruncationMetadata(
                     includedMessageCount: requestLock.request.messages.count,
@@ -9594,6 +9604,7 @@ extension CTM005IndependentContentTabSessionTests {
             preparedRequest: AiChatPreparedRequest(
                 prompt: "test",
                 messages: requestLock.request.messages,
+                persistenceTranscriptHistory: requestLock.persistenceTranscriptHistory,
                 assistantReplacementIndex: nil,
                 historyTruncation: AiChatHistoryTruncationMetadata(
                     includedMessageCount: requestLock.request.messages.count,
@@ -9664,6 +9675,7 @@ extension CTM005IndependentContentTabSessionTests {
             preparedRequest: AiChatPreparedRequest(
                 prompt: "test",
                 messages: requestLock.request.messages,
+                persistenceTranscriptHistory: requestLock.persistenceTranscriptHistory,
                 assistantReplacementIndex: nil,
                 historyTruncation: AiChatHistoryTruncationMetadata(
                     includedMessageCount: requestLock.request.messages.count,
@@ -9744,6 +9756,7 @@ extension CTM005IndependentContentTabSessionTests {
             preparedRequest: AiChatPreparedRequest(
                 prompt: "test",
                 messages: requestLock.request.messages,
+                persistenceTranscriptHistory: requestLock.persistenceTranscriptHistory,
                 assistantReplacementIndex: nil,
                 historyTruncation: AiChatHistoryTruncationMetadata(
                     includedMessageCount: requestLock.request.messages.count,
@@ -10568,6 +10581,7 @@ extension CTM005IndependentContentTabSessionTests {
             preparedRequest: AiChatPreparedRequest(
                 prompt: "parked",
                 messages: [AiChatMessage(role: .user, content: "parked")],
+                persistenceTranscriptHistory: [AiChatMessage(role: .user, content: "parked")],
                 assistantReplacementIndex: nil,
                 historyTruncation: .init(
                     includedMessageCount: 1,
@@ -13248,7 +13262,13 @@ private extension CTM005IndependentContentTabSessionTests {
         XCTAssertEqual(store.state.content.entryViewLayout.entries, [fixture.staleEntry])
 
         await fixture.gate.resume(with: .failure)
-        await store.receiveTabContent(\.entryViewLayout.entryOperations.loading.streamFailed, 1)
+        await store.receive { action in
+            guard case let .tabContent(
+                _,
+                .entryViewLayout(.entryOperations(.loading(.streamFailed(generation, failure)))),
+            ) = action else { return false }
+            return generation == 1 && failure == .unavailable(description: "test")
+        }
 
         await store.send(.contentTabs(.setCurrent(fixture.homeID)))
         await store.skipReceivedActions()
@@ -13543,6 +13563,7 @@ private extension CTM005IndependentContentTabSessionTests {
             preparedRequest: AiChatPreparedRequest(
                 prompt: "test",
                 messages: requestLock.request.messages,
+                persistenceTranscriptHistory: requestLock.persistenceTranscriptHistory,
                 assistantReplacementIndex: nil,
                 historyTruncation: AiChatHistoryTruncationMetadata(
                     includedMessageCount: requestLock.request.messages.count,
