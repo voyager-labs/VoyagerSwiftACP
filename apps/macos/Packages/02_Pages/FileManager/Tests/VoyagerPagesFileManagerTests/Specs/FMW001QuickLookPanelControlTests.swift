@@ -3,6 +3,7 @@ import ComposableArchitecture
 import Foundation
 import QuickLookUI
 import VoyagerEntitiesEntry
+import VoyagerFeaturesEntryOperations
 @testable import VoyagerPagesFileManager
 import VoyagerShared
 import XCTest
