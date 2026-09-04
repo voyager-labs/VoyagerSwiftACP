@@ -228,13 +228,18 @@ extension EntryCorePropertyClient {
         _ definition: PropertyDefinition,
         request: PropertyOptionCreateRequest,
     ) -> Bool {
-        definitionMutationRevisionMatches(
+        guard definitionMutationRevisionMatches(
             definition,
             propertyID: request.propertyID,
             expectedDefinitionRevision: request.expectedDefinitionRevision,
-        ) && definition.options.contains { option in
-            option.state == .active && option.label == request.label
+        ) else { return false }
+        // CreateOption은 새 option을 항상 마지막 ordinal 뒤에 추가한다. 기존
+        // option이 같은 label을 가질 수 있으므로 contains 대신 마지막 option을
+        // 대조해야 누락·치환 응답이 거절된다.
+        guard let created = definition.options.max(by: { $0.position < $1.position }) else {
+            return false
         }
+        return created.state == .active && created.label == request.label
     }
 
     nonisolated private static func optionUpdateMatchesResponse(
@@ -314,6 +319,13 @@ extension EntryCorePropertyClient {
         request: PropertyAssignmentListRequest,
     ) -> Bool {
         guard page.assignments.count <= request.pageSize else { return false }
+        // assignment-list 경로는 단일 local-path target을 한 entry로 해석해
+        // 조회한다. 서로 다른 entry의 값이 섞인 페이지는 생성 불가능한 응답이다.
+        if let firstEntryID = page.assignments.first?.entryID,
+           page.assignments.contains(where: { $0.entryID != firstEntryID })
+        {
+            return false
+        }
         // ID 부분집합 검사 뒤에도 has_more 진행 검사를 계속 수행한다. 필터
         // 요청에서 조기 반환하면 반복 token이 승인될 수 있다.
         if !request.requestedPropertyIDs.isEmpty {

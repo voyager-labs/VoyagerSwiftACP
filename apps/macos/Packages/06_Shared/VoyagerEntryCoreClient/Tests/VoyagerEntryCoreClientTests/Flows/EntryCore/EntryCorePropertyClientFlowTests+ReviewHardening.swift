@@ -224,6 +224,45 @@ extension EntryCorePropertyClientFlowTests {
         let updated = try await acceptedClient.definitionUpdate(endpoint, request)
         XCTAssertEqual(updated.origin, .userDefined)
     }
+
+    /// CreateOption은 새 option을 항상 마지막 ordinal 뒤에 추가한다. 기존
+    /// option이 같은 label을 가질 때 마지막 option이 아니면 누락·치환 응답이다.
+    func testOptionCreateRejectsResponseWithoutRequestedLastOption() async throws {
+        let request = try PropertyOptionCreateRequest(
+            propertyID: PropertyID(rawValue: "00000000-0000-0000-8000-000000000001"),
+            expectedDefinitionRevision: 1,
+            label: "new-label",
+        )
+        let endpoint = try EntryCoreEndpoint(path: "/tmp/property-client.sock")
+        let operators = PropertyConditionRelation.operators(for: .categorical)
+            .map { "\"\($0.rawValue)\"" }
+            .joined(separator: ",")
+
+        let replacedRecorder = PropertyTransportRecorder(
+            response: Data(optionCreateResponse(lastLabel: "other-label", operators: operators).utf8),
+        )
+        let replacedClient = EntryCorePropertyClient.makeLive(
+            requestID: { "option-create-id" },
+            makeTransport: replacedRecorder.makeTransport,
+        )
+        do {
+            _ = try await replacedClient.optionCreate(endpoint, request)
+            XCTFail("response without the requested option last should be rejected")
+        } catch {
+            XCTAssertEqual(error as? EntryCoreClientError, .protocolMismatch)
+        }
+        XCTAssertEqual(replacedRecorder.requests.count, 1)
+
+        let createdRecorder = PropertyTransportRecorder(
+            response: Data(optionCreateResponse(lastLabel: "new-label", operators: operators).utf8),
+        )
+        let createdClient = EntryCorePropertyClient.makeLive(
+            requestID: { "option-create-id" },
+            makeTransport: createdRecorder.makeTransport,
+        )
+        let created = try await createdClient.optionCreate(endpoint, request)
+        XCTAssertEqual(created.options.last?.label, "new-label")
+    }
 }
 
 private func definitionCreateResponse(origin: String, capability: String) -> String {
@@ -287,6 +326,27 @@ private func propertyChangeExecuteResponse(assignments: String) -> String {
       "request_id":"execute-id",
       "ok":true,
       "result":{"assignments":\(assignments)}
+    }
+    """
+}
+
+private func optionCreateResponse(lastLabel: String, operators: String) -> String {
+    """
+    {
+      "request_id":"option-create-id",
+      "ok":true,
+      "result":{"definition":{
+        "property_id":"00000000-0000-0000-8000-000000000001",
+        "key":"select-key","name":"select name",
+        "value_type":"select","cardinality":"one","state":"active","origin":"user_defined",
+        "revision":2,
+        "options":[
+          {"option_id":"00000000-0000-7000-8000-000000000001","label":"other-label","position":1,"state":"active"},
+          {"option_id":"00000000-0000-7000-8000-000000000002","label":"\(lastLabel)","position":2,"state":"active"}
+        ],
+        "condition_capability":{"supported":true,"evaluation_scope":"local_assignment",
+          "catalog_version":"2.2.0","native_type":"categorical","allowed_operators":[\(operators)]}
+      }}
     }
     """
 }

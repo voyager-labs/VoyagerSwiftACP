@@ -590,6 +590,7 @@ func (result PropertyAssignmentListResult) Validate() error {
 		return ErrInvalidResponse
 	}
 	seen := make(map[string]struct{}, len(result.Assignments))
+	firstEntryID := ""
 	for _, assignment := range result.Assignments {
 		if assignment.Validate() != nil {
 			return ErrInvalidResponse
@@ -598,6 +599,14 @@ func (result PropertyAssignmentListResult) Validate() error {
 			return ErrInvalidResponse
 		}
 		seen[assignment.PropertyID] = struct{}{}
+		// assignment-list는 단일 local-path target을 한 entry로 해석해
+		// 조회한다. 서로 다른 entry의 값이 섞인 페이지는 생성 불가능한
+		// 응답이다.
+		if firstEntryID == "" {
+			firstEntryID = assignment.EntryID
+		} else if assignment.EntryID != firstEntryID {
+			return ErrInvalidResponse
+		}
 	}
 	return nil
 }

@@ -926,6 +926,32 @@ func TestPropertyConditionQueryResultRejectsOutOfBoundsCandidates(t *testing.T) 
 	}
 }
 
+func TestPropertyAssignmentListResultRejectsMixedEntries(t *testing.T) {
+	t.Parallel()
+
+	mixed := PropertyAssignmentListResult{
+		Assignments: []PropertyAssignment{
+			{PropertyID: fixturePropertyID(t, 650), EntryID: fixtureEntryID(1), ValueType: "text", Cardinality: "one", State: "null", Revision: 1},
+			{PropertyID: fixturePropertyID(t, 651), EntryID: fixtureEntryID(2), ValueType: "text", Cardinality: "one", State: "null", Revision: 1},
+		},
+		HasMore: false,
+	}
+	if mixed.Validate() == nil {
+		t.Fatal("assignment page mixing multiple entries accepted")
+	}
+
+	single := PropertyAssignmentListResult{
+		Assignments: []PropertyAssignment{
+			{PropertyID: fixturePropertyID(t, 652), EntryID: fixtureEntryID(1), ValueType: "text", Cardinality: "one", State: "null", Revision: 1},
+			{PropertyID: fixturePropertyID(t, 653), EntryID: fixtureEntryID(1), ValueType: "text", Cardinality: "one", State: "null", Revision: 1},
+		},
+		HasMore: false,
+	}
+	if single.Validate() != nil {
+		t.Fatal("assignment page from a single entry rejected")
+	}
+}
+
 func TestPropertyDefinitionRejectsUnknownOrigin(t *testing.T) {
 	t.Parallel()
 

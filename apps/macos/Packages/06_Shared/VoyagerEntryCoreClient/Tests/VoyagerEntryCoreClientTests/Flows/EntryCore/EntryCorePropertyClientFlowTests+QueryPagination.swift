@@ -193,6 +193,53 @@ extension EntryCorePropertyClientFlowTests {
             $0.assignments.count == 2
         }
     }
+
+    /// assignment-list 경로는 단일 local-path target을 한 entry로 해석해
+    /// 조회한다. 서로 다른 entry의 값이 섞인 페이지는 생성 불가능한 응답이다.
+    func testAssignmentListRejectsMixedEntryIds() async throws {
+        let request = try PropertyAssignmentListRequest(
+            pageSize: 2,
+            target: PropertyTarget(localPath: "/a"),
+            requestedPropertyIDs: [],
+        )
+        let endpoint = try EntryCoreEndpoint(path: "/tmp/property-client.sock")
+
+        let firstEntryID = "ent:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        let secondEntryID = "ent:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+        let singleEntryRecorder = PropertyTransportRecorder(
+            response: Data(assignmentEntriesPageJSON(entryIDs: [firstEntryID]).utf8),
+        )
+        let singleEntryClient = EntryCorePropertyClient.makeLive(
+            requestID: { "list-id" },
+            makeTransport: singleEntryRecorder.makeTransport,
+        )
+        let conflictingRecorder = PropertyTransportRecorder(
+            response: Data(
+                assignmentEntriesPageJSON(entryIDs: [firstEntryID, secondEntryID]).utf8,
+            ),
+        )
+        let conflictingClient = EntryCorePropertyClient.makeLive(
+            requestID: { "list-id" },
+            makeTransport: conflictingRecorder.makeTransport,
+        )
+        do {
+            _ = try await conflictingClient.assignmentList(endpoint, request)
+            XCTFail("page mixing multiple entries should be rejected")
+        } catch {
+            XCTAssertEqual(error as? EntryCoreClientError, .protocolMismatch)
+        }
+        XCTAssertEqual(conflictingRecorder.requests.count, 1)
+
+        let singleEntryPage = try await singleEntryClient.assignmentList(
+            endpoint,
+            PropertyAssignmentListRequest(
+                pageSize: 2,
+                target: PropertyTarget(localPath: "/a"),
+                requestedPropertyIDs: [],
+            ),
+        )
+        XCTAssertEqual(Set(singleEntryPage.assignments.map(\.entryID)).count, 1)
+    }
 }
 
 private struct DefinitionListCase {
@@ -390,6 +437,32 @@ private func queryPaginationPageResponse(
         "next_page_token":"\(nextPageToken)",
         "catalog_version":"2.2.0",
         "has_more":\(hasMore)
+      }
+    }
+    """
+}
+
+private func assignmentEntriesPageJSON(entryIDs: [String]) -> String {
+    var assignments = ""
+    for (index, entryID) in entryIDs.enumerated() {
+        let propertyID = "00000000-0000-0000-8000-00000000000\(index + 1)"
+        assignments += "      {\"property_id\":\"\(propertyID)\","
+        assignments += "\"entry_id\":\"\(entryID)\",\"value_type\":\"text\","
+        assignments += "\"cardinality\":\"one\",\"state\":\"null\",\"revision\":1},"
+        if index == entryIDs.count - 1 {
+            assignments = String(assignments.dropLast())
+        }
+        assignments += "\n"
+    }
+    return """
+    {
+      "request_id":"list-id",
+      "ok":true,
+      "result":{
+        "assignments":[
+    \(assignments)
+        ],
+        "has_more":false
       }
     }
     """
