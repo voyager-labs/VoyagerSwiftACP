@@ -381,6 +381,73 @@ extension EntryCorePropertyClientFlowTests {
         XCTAssertEqual(driftedRecorder.requests.count, 1)
     }
 
+    /// RenameOption은 활성 대상 option만 수정한다. snapshot에 대상이 없으면
+    /// mutation 응답 자체가 불가능하므로 revision만 올린 응답도 거절된다.
+    func testOptionUpdateRejectsMissingTargetOption() async throws {
+        let option2ID = try PropertyOptionID(rawValue: "00000000-0000-7000-8000-000000000002")
+        let request = try PropertyOptionUpdateRequest(
+            propertyID: PropertyID(rawValue: "00000000-0000-0000-8000-000000000001"),
+            optionID: PropertyOptionID(rawValue: "00000000-0000-7000-8000-000000000001"),
+            expectedDefinitionRevision: 1,
+            expectedDefinition: selectDefinitionSnapshot(options: [
+                PropertyOption(id: option2ID, label: "Second", position: 1, state: .active),
+            ]),
+            label: "Renamed option",
+        )
+        let endpoint = try EntryCoreEndpoint(path: "/tmp/property-client.sock")
+        let operators = PropertyConditionRelation.operators(for: .categorical)
+            .map { "\"\($0.rawValue)\"" }
+            .joined(separator: ",")
+        let response = optionCreateResponse(
+            options: [
+                selectOptionJSON(id: option2ID.rawValue, label: "Second", position: 1),
+            ].joined(separator: ",\n          "),
+            operators: operators,
+        )
+
+        await assertOptionMutationRejected(
+            name: "update with missing target option",
+            response: response,
+            endpoint: endpoint,
+        ) { client, endpoint in
+            try await client.optionUpdate(endpoint, request)
+        }
+    }
+
+    /// DisableOption은 활성 대상 option만 비활성화한다. 이미 비활성인 option에
+    /// 대한 응답은 정상 daemon에서 생성될 수 없다.
+    func testOptionDisableRejectsInactiveTargetOption() async throws {
+        let option1ID = try PropertyOptionID(rawValue: "00000000-0000-7000-8000-000000000001")
+        let request = try PropertyOptionDisableRequest(
+            propertyID: PropertyID(rawValue: "00000000-0000-0000-8000-000000000001"),
+            optionID: option1ID,
+            expectedDefinitionRevision: 1,
+            expectedDefinition: selectDefinitionSnapshot(options: [
+                PropertyOption(id: option1ID, label: "First", position: 1, state: .disabled),
+            ]),
+        )
+        let endpoint = try EntryCoreEndpoint(path: "/tmp/property-client.sock")
+        let operators = PropertyConditionRelation.operators(for: .categorical)
+            .map { "\"\($0.rawValue)\"" }
+            .joined(separator: ",")
+        let response = optionCreateResponse(
+            options: [
+                selectOptionJSON(
+                    id: option1ID.rawValue, label: "First", position: 1, state: "disabled",
+                ),
+            ].joined(separator: ",\n          "),
+            operators: operators,
+        )
+
+        await assertOptionMutationRejected(
+            name: "disable with inactive target option",
+            response: response,
+            endpoint: endpoint,
+        ) { client, endpoint in
+            try await client.optionDisable(endpoint, request)
+        }
+    }
+
     /// prepare의 before는 요청 CAS 기준을 그대로 반영해야 한다: expected 0이면
     /// nil, 양수면 같은 revision. 그렇지 않으면 caller가 실제 CAS 기준과 다른
     /// 이전 값을 확인한 뒤 mutation을 승인하게 된다.

@@ -407,16 +407,25 @@ extension EntryCorePropertyClient {
         optionID: PropertyOptionID,
         transform: (PropertyOption) throws -> PropertyOption,
     ) -> [PropertyOption]? {
+        // Go locateActiveOption과 동일하게, 대상 option이 존재하지 않거나
+        // 비활성이면 mutation 응답 자체가 불가능하므로 nil을 반환한다.
         var expected: [PropertyOption] = []
+        var targetFound = false
         expected.reserveCapacity(expectedOptions.count)
         for option in expectedOptions {
+            if option.id != optionID {
+                expected.append(option)
+                continue
+            }
+            guard option.state == .active, !targetFound else { return nil }
+            targetFound = true
             do {
-                try expected.append(option.id == optionID ? transform(option) : option)
+                try expected.append(transform(option))
             } catch {
                 return nil
             }
         }
-        return expected
+        return targetFound ? expected : nil
     }
 
     /// 활성 option이 optionIDs 순서대로 오고 비활성 option이 snapshot 순서대로
@@ -661,6 +670,14 @@ extension EntryCorePropertyClient {
         // 때만 has_more을 설정한다(condition_query.go의 page completion 조건).
         // 꽉 차지 않은 페이지나 같은 token의 반복은 페이지 순회 caller를 끝내지
         // 못하게 하므로 거절한다.
+        // query cursor는 opaque token이므로 caller가 보존한 candidate offset
+        // 하한으로 단조 진행을 검증한다. 이를 어긋나는 응답은 같은 페이지의
+        // 재생이다(A → B → A 교체 포함). terminal 페이지에도 동일 적용한다.
+        if let minCandidateIndex = request.minCandidateIndex {
+            guard page.items.allSatisfy({ $0.candidateIndex >= minCandidateIndex }),
+                  page.unresolvedCandidateIndices.allSatisfy({ $0 >= minCandidateIndex })
+            else { return false }
+        }
         guard page.hasMore else { return true }
         // 정본 query service는 pageSize번째 match에서 중단하며 그 이전 candidate만
         // unresolved로 반환한다. 마지막 matched index 뒤의 unresolved는 아직
@@ -668,14 +685,6 @@ extension EntryCorePropertyClient {
         guard let lastMatched = page.items.last?.candidateIndex,
               page.unresolvedCandidateIndices.allSatisfy({ $0 < lastMatched })
         else { return false }
-        // query cursor는 opaque token이므로 caller가 보존한 candidate offset
-        // 하한으로 단조 진행을 검증한다. 이를 어긋나는 응답은 같은 페이지의
-        // 재생이다(A → B → A 교체 포함).
-        if let minCandidateIndex = request.minCandidateIndex {
-            guard page.items.allSatisfy({ $0.candidateIndex >= minCandidateIndex }),
-                  page.unresolvedCandidateIndices.allSatisfy({ $0 >= minCandidateIndex })
-            else { return false }
-        }
         return page.items.count == request.pageSize
             && page.nextPageToken != nil
             && page.nextPageToken != request.pageToken

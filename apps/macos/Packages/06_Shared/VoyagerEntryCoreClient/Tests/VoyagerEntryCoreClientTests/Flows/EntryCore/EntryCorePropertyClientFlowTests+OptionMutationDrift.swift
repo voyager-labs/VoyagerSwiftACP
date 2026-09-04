@@ -132,7 +132,7 @@ func selectDefinitionSnapshot(options: [PropertyOption]) throws -> PropertyDefin
     )
 }
 
-private func assertOptionMutationRejected(
+func assertOptionMutationRejected(
     name: String,
     response: String,
     endpoint: EntryCoreEndpoint,

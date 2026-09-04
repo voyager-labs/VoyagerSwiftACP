@@ -66,6 +66,46 @@ extension EntryCorePropertyClientFlowTests {
         try await assertQueryPaginationRejected(cases, endpoint: endpoint)
 
         // has_more가 아니면 마지막 matched 뒤의 unresolved도 유효하다(꼬리 미스).
+        // terminal 페이지도 minCandidateIndex 하한을 적용한다 — 재생은 거절.
+        let replayedTerminalRequest = try makePaginationQueryRequest(
+            targets: [targetA, targetB],
+            condition: condition,
+            pageSize: 1,
+            pageToken: "first",
+            minCandidateIndex: 1,
+        )
+        let replayedTerminalCases = [
+            PaginationCase(
+                name: "terminal page replaying the request cursor",
+                request: replayedTerminalRequest,
+                response: queryPaginationPageResponse(
+                    items: firstPageItem, unresolved: "[]", hasMore: false,
+                ),
+            ),
+        ]
+        try await assertQueryPaginationRejected(replayedTerminalCases, endpoint: endpoint)
+
+        // 하한 이상인 terminal 페이지는 수용된다.
+        let advancedTerminalResponse = queryPaginationPageResponse(
+            items: "[\(paginationQueryItem(index: 1))]", unresolved: "[]", hasMore: false,
+        )
+        let advancedTerminalRecorder = PropertyTransportRecorder(
+            response: Data(advancedTerminalResponse.utf8),
+        )
+        let advancedTerminalClient = EntryCorePropertyClient.makeLive(
+            requestID: { "query-id" },
+            makeTransport: advancedTerminalRecorder.makeTransport,
+        )
+        let advancedTerminalRequest = try makePaginationQueryRequest(
+            targets: [targetA, targetB],
+            condition: condition,
+            pageSize: 1,
+            pageToken: "first",
+            minCandidateIndex: 1,
+        )
+        _ = try await advancedTerminalClient.conditionQuery(endpoint, advancedTerminalRequest)
+        XCTAssertEqual(advancedTerminalRecorder.requests.count, 1)
+
         let tailMissResponse = queryPaginationPageResponse(
             items: firstPageItem, unresolved: "[1]", hasMore: false,
         )
