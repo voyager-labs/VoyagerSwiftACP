@@ -150,5 +150,17 @@ func (client *Client) Call(ctx context.Context, socketPath string, request schem
 	if !response.OK {
 		return schema.Response{}, &ServerError{Code: response.Error.Code, Message: response.Error.Message}
 	}
+	// condition query 응답이 원래 요청 경계(대상 수·page size·projection)를
+	// 벗어나지 않는지 검증한다. version-skew daemon의 재생·초과 페이지를
+	// 정본 결과로 승인하지 않기 위함이다.
+	if params := request.PropertyConditionQueryParams; params != nil && request.Method == schema.MethodPropertyConditionQuery {
+		result, ok := response.Result.(schema.PropertyConditionQueryResult)
+		if !ok {
+			return schema.Response{}, &ProtocolError{Reason: "response schema"}
+		}
+		if err := schema.ReconcileConditionQueryResult(result, *params); err != nil {
+			return schema.Response{}, &ProtocolError{Reason: "response request mismatch", Err: err}
+		}
+	}
 	return response, nil
 }
