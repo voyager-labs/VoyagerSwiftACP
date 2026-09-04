@@ -531,6 +531,10 @@ private func handleNavigateToCollection(
     )
 
     var effects: [Effect<FileManagerWindowAction>] = [
+        .send(.tabContent(
+            tabID: activeTabID,
+            action: .entryViewLayout(.internal(.applyClearSelection)),
+        )),
         .send(.tabContent(tabID: activeTabID, action: .collection(.navigationStateApplied(payload)))),
         .send(.tabContent(tabID: activeTabID, action: .composer(.applyCollectionNavigationComposer(payload)))),
         .send(.tabContent(
