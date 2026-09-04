@@ -2603,6 +2603,118 @@ final class CTM005IndependentContentTabSessionTests: XCTestCase {
         await store.finish()
     }
 
+    /// CTM-444-collection_dirty_close: 실행 중인 file-backed Collection query를 close dirty 판정 전에 canonical owner에 반영함
+    /// close 경로가 Composer의 pending query만 보고 탭을 제거하지 않고, 기존 RCL unsaved alert를 유지하는지 검증한다.
+    /// - 검증 내용: pending query projection, dirty/save 상태, close alert pending
+    /// - 사전 조건: clean file-backed Collection에 query search가 진행 중이고 Composer pending query가 있음
+    /// - 기대 결과: close 요청 직후 Collection context가 dirty가 되고 alert가 표시됨
+    func testInFlightFileBackedCollectionSearchProjectsDraftBeforeCloseDirtyCheck() async {
+        let tabID = ContentTabID()
+        let targetURL = URL(fileURLWithPath: "/tmp/in-flight.voycoll")
+        let baseline = CollectionContext(query: "", scopes: ["/tmp"], conditions: [])
+        var content = FileManagerContentFeature.State()
+        content.entryViewLayout.isCollectionMode = true
+        content.collection.collectionContext = baseline
+        content.collection.collectionSession.document = .init(
+            url: targetURL,
+            name: "In Flight",
+        )
+        content.collection.collectionSession.metadata.baseline = .init(context: baseline)
+        content.composer.collectionContext = baseline
+        content.composer.scopes = baseline.scopes
+        content.composer.pendingSearchQuery = "invoice"
+        content.composer.activeSearchRequestID = UUID(610)
+        content.composer.isLoadingSearch = true
+        content.composer.queryRenderPhase = .searching
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: tabID,
+                page: .collection,
+                anchor: .collectionFile(url: targetURL),
+                isPinned: false,
+                title: "In Flight",
+                iconName: "rectangle.stack",
+            )],
+            activeTabID: tabID,
+            recentlyClosed: nil,
+        )
+        state.content = content
+        state.tabContentStates = [tabID: content]
+        state.syncContentTabSidebarItems()
+
+        let store = makeTestStore(state: state, alertChoice: .cancel)
+
+        await store.send(.closeContentTabRequested(tabID))
+        XCTAssertEqual(store.state.content.collection.collectionContext?.query, "invoice")
+        XCTAssertTrue(store.state.content.collection.isDirty)
+        XCTAssertTrue(store.state.content.collection.canSave(isCollectionMode: true))
+        XCTAssertNotNil(store.state.pendingContentTabClose)
+        await store.receive(\.contentTabCloseAlertResponse)
+        XCTAssertNotNil(store.state.contentTabs.tabs[id: tabID])
+        await store.finish()
+    }
+
+    /// CTM-444-collection_dirty_close: condition-only draft를 close dirty 판정 전에 canonical owner에 반영함
+    /// condition 편집이 Composer state에만 남아 있어도 file-backed Collection tab을 보호하는지 검증한다.
+    func testConditionOnlyFileBackedCollectionProjectsDraftBeforeCloseDirtyCheck() async {
+        let tabID = ContentTabID()
+        let targetURL = URL(fileURLWithPath: "/tmp/condition-only-close.voycoll")
+        let baseline = CollectionContext(query: "", scopes: ["/tmp"], conditions: [])
+        let condition = Condition(
+            property: .init(
+                key: "kind",
+                label: "Kind",
+                type: .string,
+                unitContract: nil,
+                operatorOptions: [],
+            ),
+            operation: nil,
+            values: nil,
+            availability: .available,
+            opaqueSource: nil,
+        )
+        var content = FileManagerContentFeature.State()
+        content.entryViewLayout.isCollectionMode = true
+        content.collection.collectionContext = baseline
+        content.collection.collectionSession.document = .init(
+            url: targetURL,
+            name: "Condition Only",
+        )
+        content.collection.collectionSession.metadata.baseline = .init(context: baseline)
+        content.composer.collectionContext = baseline
+        content.composer.conditionEditors = [ConditionEditorState(id: UUID(611), condition: condition)]
+
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: tabID,
+                page: .collection,
+                anchor: .collectionFile(url: targetURL),
+                isPinned: false,
+                title: "Condition Only",
+                iconName: "rectangle.stack",
+            )],
+            activeTabID: tabID,
+            recentlyClosed: nil,
+        )
+        state.content = content
+        state.tabContentStates = [tabID: content]
+        state.syncContentTabSidebarItems()
+
+        let store = makeTestStore(state: state, alertChoice: .cancel)
+
+        await store.send(.closeContentTabRequested(tabID))
+        XCTAssertEqual(store.state.content.collection.collectionContext?.conditions, [condition])
+        XCTAssertEqual(store.state.content.composer.collectionContext?.conditions, [condition])
+        XCTAssertTrue(store.state.content.collection.isDirty)
+        XCTAssertNotNil(store.state.pendingContentTabClose)
+        await store.receive(\.contentTabCloseAlertResponse)
+        XCTAssertNotNil(store.state.contentTabs.tabs[id: tabID])
+        await store.finish()
+    }
+
     /// CTM-444-collection_dirty_close: Collection open loading 중 dirty tab close도 unsaved alert를 표시함
     /// Save UI 비활성화와 tab close의 미저장 보호가 독립적으로 유지되는지 검증한다.
     /// - 검증 내용: loading 중 close 요청의 pendingContentTabClose 설정과 cancel 처리
@@ -4896,7 +5008,8 @@ extension CTM005IndependentContentTabSessionTests {
 
         await store.send(.navigation(.view(.showAiChatSessions(sessionID))))
         await store.receive { action in
-            guard case let .navigation(.internal(.performShowAiChatSessions(receivedSessionID))) = action else {
+            guard case let .navigation(.internal(.performNavigation(.showAiChatSessions(receivedSessionID)))) = action
+            else {
                 return false
             }
             return receivedSessionID == sessionID
@@ -5087,7 +5200,7 @@ extension CTM005IndependentContentTabSessionTests {
 
         await store.send(.navigation(.view(.showAiChat(currentSessionID))))
         await store.receive { action in
-            guard case let .navigation(.internal(.performShowAiChat(receivedSessionID))) = action else {
+            guard case let .navigation(.internal(.performNavigation(.showAiChat(receivedSessionID)))) = action else {
                 return false
             }
             return receivedSessionID == currentSessionID
@@ -5189,7 +5302,7 @@ extension CTM005IndependentContentTabSessionTests {
             return receivedTabID == tabID && receivedSessionID == newSessionID
         }
         await store.receive { action in
-            guard case let .navigation(.internal(.performShowAiChat(receivedSessionID))) = action else {
+            guard case let .navigation(.internal(.performNavigation(.showAiChat(receivedSessionID)))) = action else {
                 return false
             }
             return receivedSessionID == newSessionID
@@ -5454,7 +5567,7 @@ extension CTM005IndependentContentTabSessionTests {
             return receivedTabID == tabID && receivedSessionID == selectedSessionID
         }
         await store.receive { action in
-            guard case let .navigation(.internal(.performShowAiChat(receivedSessionID))) = action else {
+            guard case let .navigation(.internal(.performNavigation(.showAiChat(receivedSessionID)))) = action else {
                 return false
             }
             return receivedSessionID == selectedSessionID
@@ -5663,7 +5776,9 @@ extension CTM005IndependentContentTabSessionTests {
             return receivedTabID == tabID && receivedSessionID == currentSessionID
         }
         await store.receive { action in
-            guard case let .navigation(.internal(.performShowAiChat(receivedSessionID))) = action else { return false }
+            guard case let .navigation(.internal(.performNavigation(.showAiChat(receivedSessionID)))) = action else {
+                return false
+            }
             return receivedSessionID == currentSessionID
         }
         await store.receive { action in

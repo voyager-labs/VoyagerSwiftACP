@@ -56,6 +56,9 @@ struct FileManagerWindowCommandRoutingReducer {
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
+            case let .view(.quickLookKeyCommand(command)):
+                return .send(.content(.view(.handleKeyCommand(command))))
+
             case .onAppear:
                 state.syncHomeFavoriteItems()
                 guard state.fixedLocationsLoadPhase == .idle else { return .none }
@@ -193,21 +196,13 @@ struct FileManagerWindowCommandRoutingReducer {
                 guard tabID == state.contentTabs.activeTabID,
                       state.contentTabs.tabs[id: tabID]?.anchor == .homeDefault
                 else { return .none }
-                return handleHomeChatHistorySessionSelected(sessionID, activeTabID: tabID, state: state)
+                return handleHomeChatHistorySessionSelected(sessionID, activeTabID: tabID)
 
             case let .sidebar(.delegate(.selectFixedLocation(id))):
-                guard let activeTabID = state.contentTabs.activeTabID,
+                guard state.contentTabs.activeTabID != nil,
                       let location = state.sidebar.fixedLocationItems.first(where: { $0.id == id })
                 else { return .none }
-                let anchor = ContentTabPageAnchor.directory(path: location.path)
-                return .concatenate(
-                    updateContentTabPageAnchorEffect(
-                        tabID: activeTabID,
-                        anchor: anchor,
-                        state: state,
-                    ),
-                    .send(.navigation(.view(.navigateToPath(location.path)))),
-                )
+                return .send(.navigation(.view(.navigateToPath(location.path))))
 
             case let .sidebar(.delegate(.entryDropRequested(request))):
                 if case let .fixedLocation(id) = request.target {

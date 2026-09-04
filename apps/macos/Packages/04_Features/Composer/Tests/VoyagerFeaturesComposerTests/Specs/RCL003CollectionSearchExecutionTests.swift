@@ -89,6 +89,211 @@ final class RCL003CollectionSearchExecutionTests: XCTestCase {
         XCTAssertNil(call.tags?["filters"])
     }
 
+    /// RCL-003-execute_filtered_collection_retrieval: ordinary zero response remains an accepted success
+    /// A zero-item response without an embedded error must retain the normal accepted-response contract.
+    /// - 검증 내용: accepted request/response correlation, applied filters, loading cleanup, success metric
+    /// - 사전 조건: an active filter request with a valid zero-item response
+    /// - 기대 결과: the response is accepted as success and no failure feedback is presented
+    func testExecuteFilteredCollectionRetrieval_ordinaryZeroResponseRemainsAcceptedSuccess() {
+        let requestID = UUID()
+        let recorder = ComposerMetricRecorder()
+        let appliedFilters = AppliedFiltersPayload(
+            scopes: ["/VoyagerFixtures/Documents"],
+            includeSubfolders: true,
+            conditions: [],
+        )
+        var state = ComposerState()
+        state.activeFiltersRequestID = requestID
+        state.isLoadingFilters = true
+        state.isFilteringInFlight = true
+
+        withDependencies {
+            $0.composerMetricClient = ComposerMetricClient(recordProductMetric: recorder.record)
+            $0.registryClient = makeRegistryClient()
+        } operation: {
+            _ = ComposerSearchLifecycleReducer().reduce(
+                into: &state,
+                action: .filtersResponse(
+                    requestID,
+                    .success(.init(itemCount: 0, appliedFilters: appliedFilters)),
+                ),
+            )
+        }
+
+        XCTAssertEqual(state.lastAcceptedFiltersRequestID, requestID)
+        XCTAssertEqual(state.lastFiltersResponse?.itemCount, 0)
+        XCTAssertEqual(state.scopes, ["/VoyagerFixtures/Documents"])
+        XCTAssertFalse(state.isLoadingFilters)
+        XCTAssertFalse(state.isFilteringInFlight)
+        XCTAssertNil(state.activeFiltersRequestID)
+        XCTAssertNil(state.lastFailedFiltersRequestID)
+        XCTAssertNil(state.transientFeedback)
+        XCTAssertEqual(recorder.names, [ComposerCollectionFilterMetrics.applyResult])
+        XCTAssertEqual(recorder.resultStatuses, ["success"])
+    }
+
+    /// RCL-003-execute_filtered_collection_retrieval: thrown filter failure keeps the existing failure lifecycle
+    /// The established thrown-error path must clear only process state and emit failure feedback/metrics.
+    /// - 검증 내용: loading/request/timing cleanup, failed feedback, query reset, failure-only metric
+    /// - 사전 조건: an active filter request that terminates with a thrown error
+    /// - 기대 결과: the request finishes as an execution failure without a success metric
+    func testExecuteFilteredCollectionRetrieval_thrownFailureKeepsExistingFailureLifecycle() {
+        let requestID = UUID()
+        let recorder = ComposerMetricRecorder()
+        var state = ComposerState()
+        state.activeFiltersRequestID = requestID
+        state.activeFiltersMetricSource = ComposerCollectionFilterMetrics.sourceManualApply
+        state.filtersStartedAt = Date(timeIntervalSince1970: 1)
+        state.isLoadingFilters = true
+        state.isFilteringInFlight = true
+        state.queryRenderPhase = .chipsAppliedPendingList
+        let previousResponse = SearchResponsePayload(itemCount: 4)
+        state.lastFiltersResponse = previousResponse
+
+        withDependencies {
+            $0.composerMetricClient = ComposerMetricClient(recordProductMetric: recorder.record)
+            $0.continuousClock = ImmediateClock()
+        } operation: {
+            _ = ComposerSearchLifecycleReducer().reduce(
+                into: &state,
+                action: .filtersResponse(requestID, .failure(RCL003FilterFailure.thrown)),
+            )
+        }
+
+        XCTAssertFalse(state.isLoadingFilters)
+        XCTAssertFalse(state.isFilteringInFlight)
+        XCTAssertNil(state.activeFiltersRequestID)
+        XCTAssertEqual(state.lastFailedFiltersRequestID, requestID)
+        XCTAssertEqual(state.lastFiltersResponse, previousResponse)
+        XCTAssertNil(state.activeFiltersMetricSource)
+        XCTAssertNil(state.filtersStartedAt)
+        XCTAssertEqual(state.queryRenderPhase, .idle)
+        XCTAssertEqual(state.transientFeedback?.kind, .error)
+        XCTAssertEqual(
+            recorder.names,
+            [ComposerCollectionFilterMetrics.applyResult],
+        )
+        XCTAssertEqual(recorder.resultStatuses, ["failure"])
+    }
+
+    /// RCL-003-execute_filtered_collection_retrieval: embedded error is rejected before accepted state mutation
+    /// Error-bearing success payloads must share failure cleanup while preserving the last accepted result and filters.
+    /// - 검증 내용: prior accepted response/filter preservation, lifecycle cleanup, failure feedback and metric
+    /// - 사전 조건: an active request after a previously accepted filtered response
+    /// - 기대 결과: no accepted-success state mutates and only execution failure is recorded
+    func testExecuteFilteredCollectionRetrieval_embeddedErrorRejectsBeforeAcceptedStateMutation() {
+        let previousRequestID = UUID()
+        let requestID = UUID()
+        let recorder = ComposerMetricRecorder()
+        let previousFilters = AppliedFiltersPayload(
+            scopes: ["/VoyagerFixtures/Previous"],
+            includeSubfolders: false,
+            conditions: [],
+        )
+        let previousResponse = SearchResponsePayload(
+            itemCount: 3,
+            appliedFilters: previousFilters,
+            items: [.string("/VoyagerFixtures/Previous/report.md")],
+        )
+        var state = ComposerState()
+        state.scopes = ["/VoyagerFixtures/Previous"]
+        state.scopeEditor.includeSubfolders = false
+        state.scopeEditor.committedSelection = state.scopeEditor.selection
+        state.scopeEditor.committedIncludeSubfolders = false
+        state.lastAcceptedFiltersRequestID = previousRequestID
+        state.lastFiltersResponse = previousResponse
+        state.activeFiltersRequestID = requestID
+        state.activeFiltersMetricSource = ComposerCollectionFilterMetrics.sourceManualApply
+        state.filtersStartedAt = Date(timeIntervalSince1970: 1)
+        state.isLoadingFilters = true
+        state.isFilteringInFlight = true
+
+        let malformedResponse = SearchResponsePayload(
+            itemCount: 0,
+            appliedFilters: .init(scopes: ["/VoyagerFixtures/Mutated"], includeSubfolders: true),
+            items: [],
+            error: .init(code: "filter_execution_failed", details: "malformed response"),
+        )
+        withDependencies {
+            $0.composerMetricClient = ComposerMetricClient(recordProductMetric: recorder.record)
+            $0.registryClient = makeRegistryClient()
+            $0.continuousClock = ImmediateClock()
+        } operation: {
+            _ = ComposerSearchLifecycleReducer().reduce(
+                into: &state,
+                action: .filtersResponse(requestID, .success(malformedResponse)),
+            )
+        }
+
+        XCTAssertEqual(state.lastAcceptedFiltersRequestID, previousRequestID)
+        XCTAssertEqual(state.lastFiltersResponse, previousResponse)
+        XCTAssertEqual(state.scopes, ["/VoyagerFixtures/Previous"])
+        XCTAssertFalse(state.scopeEditor.includeSubfolders)
+        XCTAssertEqual(state.scopeEditor.committedSelection, state.scopeEditor.selection)
+        XCTAssertFalse(state.scopeEditor.committedIncludeSubfolders)
+        XCTAssertFalse(state.isLoadingFilters)
+        XCTAssertFalse(state.isFilteringInFlight)
+        XCTAssertNil(state.activeFiltersRequestID)
+        XCTAssertEqual(state.lastFailedFiltersRequestID, requestID)
+        XCTAssertNil(state.activeFiltersMetricSource)
+        XCTAssertNil(state.filtersStartedAt)
+        XCTAssertEqual(state.transientFeedback?.kind, .error)
+        XCTAssertEqual(
+            recorder.names,
+            [ComposerCollectionFilterMetrics.applyResult],
+        )
+        XCTAssertEqual(recorder.resultStatuses, ["failure"])
+    }
+
+    /// RCL-003-execute_filtered_collection_retrieval: stale and duplicate terminal IDs mutate nothing
+    /// Correlation must reject a stale response and reject repeated delivery after the active request is cleared.
+    /// - 검증 내용: stale no-op, first failure correlation, duplicate no-op, metric cardinality
+    /// - 사전 조건: one active request plus a different stale request identifier
+    /// - 기대 결과: only the first active terminal response records one failure and one result metric
+    func testExecuteFilteredCollectionRetrieval_staleAndDuplicateFailuresMutateOnlyOnce() {
+        let staleRequestID = UUID()
+        let requestID = UUID()
+        let recorder = ComposerMetricRecorder()
+        let previousResponse = SearchResponsePayload(itemCount: 2)
+        var state = ComposerState()
+        state.activeFiltersRequestID = requestID
+        state.lastFiltersResponse = previousResponse
+        state.isLoadingFilters = true
+        state.isFilteringInFlight = true
+        let response = SearchResponsePayload(
+            itemCount: 0,
+            error: .init(code: "filter_execution_failed"),
+        )
+
+        withDependencies {
+            $0.composerMetricClient = ComposerMetricClient(recordProductMetric: recorder.record)
+            $0.continuousClock = ImmediateClock()
+        } operation: {
+            _ = ComposerSearchLifecycleReducer().reduce(
+                into: &state,
+                action: .filtersResponse(staleRequestID, .success(response)),
+            )
+            XCTAssertEqual(state.activeFiltersRequestID, requestID)
+            XCTAssertNil(state.lastFailedFiltersRequestID)
+            XCTAssertTrue(recorder.names.isEmpty)
+
+            _ = ComposerSearchLifecycleReducer().reduce(
+                into: &state,
+                action: .filtersResponse(requestID, .success(response)),
+            )
+            _ = ComposerSearchLifecycleReducer().reduce(
+                into: &state,
+                action: .filtersResponse(requestID, .success(response)),
+            )
+        }
+
+        XCTAssertEqual(state.lastFailedFiltersRequestID, requestID)
+        XCTAssertEqual(state.lastFiltersResponse, previousResponse)
+        XCTAssertNil(state.activeFiltersRequestID)
+        XCTAssertEqual(recorder.names, [ComposerCollectionFilterMetrics.applyResult])
+        XCTAssertEqual(recorder.resultStatuses, ["failure"])
+    }
+
     /// RCL-003-execute_filtered_collection_retrieval: condition 없는 scope-only filter는 검색 실행을 시작하지 않음
     /// VOY-342의 조건 없는 재검색 차단 계약을 Composer package 내부에서 직접 검증한다.
     /// - 검증 내용: SearchClient 미호출, loading/inflight/request 상태 초기화 확인
@@ -549,6 +754,22 @@ final class ComposerMetricRecorder: @unchecked Sendable {
         defer { lock.unlock() }
         return calls
     }
+
+    var outcomes: [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return calls.compactMap { $0.tags?["outcome"] }
+    }
+
+    var resultStatuses: [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return calls.compactMap { $0.tags?["result_status"] }
+    }
+}
+
+private enum RCL003FilterFailure: Error {
+    case thrown
 }
 
 private extension SearchFiltersPayload {

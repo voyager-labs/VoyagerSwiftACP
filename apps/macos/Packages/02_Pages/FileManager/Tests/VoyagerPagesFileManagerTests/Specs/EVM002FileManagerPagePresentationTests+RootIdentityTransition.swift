@@ -810,7 +810,10 @@ extension EVM002FileManagerPagePresentationTests {
             EntryModel.temporaryFolder(id: "/root/a", name: "a"),
             EntryModel.temporaryFolder(id: "/root/b", name: "b"),
         ]
-        state.entryViewLayout.entryOperations.items = [destinationC]
+        state.entryViewLayout.entryOperations.items = [
+            destinationC,
+            EntryModel.temporaryFolder(id: "/root/a", name: "a"),
+        ]
         state.entryViewLayout.entryOperations.loadingContext.generation = 1
         state.entryViewLayout.hierarchy = .init(rootPath: rootPath)
         state.entryViewLayout.hierarchy.nodesByID[destinationC.id] = .init(

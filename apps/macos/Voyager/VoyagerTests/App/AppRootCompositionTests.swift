@@ -519,6 +519,146 @@ final class AppRootCompositionTests: XCTestCase {
         }
     }
 
+    func testCollectionOpenMetricsReachProductionAnalyticsBridge() async {
+        XCTAssertEqual(
+            VoyagerApp.productMetricProperties(
+                name: "collection.open",
+                value: 1,
+                tags: [
+                    "result_status": "load_failure",
+                    "error_category": "unsupportedSchema",
+                    "raw_path": "/private/secret.voycoll",
+                ],
+            ),
+            [
+                "result_status": .string("load_failure"),
+                "failure_reason": .string("unsupported_schema"),
+            ],
+        )
+        let metricRequests = LockIsolated<[ProductAnalyticsMetricRequest]>([])
+        let analyticsClient = ProductAnalyticsClient(captureMetric: { request in
+            metricRequests.withValue { $0.append(request) }
+        })
+        let metricsClient = VoyagerApp.makeFileManagerMetricsClient(context: .init(
+            client: analyticsClient,
+            environment: .dev,
+        ))
+        let registry = ProductAnalyticsRegistry.load(bundle: VoyagerTestSupport.hostApplicationBundle())
+        let validEmptyFile = VoyagerCollectionFile(
+            id: "valid-empty",
+            name: "Private Collection Name",
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+            updatedAt: Date(timeIntervalSince1970: 1_700_000_100),
+            query: "",
+            scopes: [],
+            conditions: [],
+            snapshot: nil,
+            snapshotMeta: nil,
+            appVersion: "test",
+        )
+        let validEmptyResult = CollectionFileLoadResult(
+            file: validEmptyFile,
+            containerFormat: .package,
+            compatibility: .init(
+                sourceSchemaVersion: CollectionFileSchemaVersion.snapshotBearingCurrent,
+                migrationPath: [.currentSchemaV2],
+                warnings: [],
+                usedDefinitionFallback: false,
+                writeBackAllowed: true,
+                writeBackReason: .allowed,
+            ),
+        )
+        let successStore = TestStore(initialState: FileManagerWindowState()) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.collectionFileClient.load = { _ in validEmptyResult }
+            $0.collectionAlertClient = .testValue
+            $0.collectionStalenessClient = .testValue
+            $0.registryClient = .testValue
+            $0.searchClient = .testValue
+            $0.metricsClient = metricsClient
+            $0.date = .constant(Date(timeIntervalSince1970: 1_700_000_200))
+            $0.uuid = .incrementing
+            $0.continuousClock = ImmediateClock()
+        }
+        // store.exhaustivity = .off: production bridge 결과만 검증하고 FileManager child action은 package owner에 위임함.
+        successStore.exhaustivity = .off(showSkippedAssertions: false)
+
+        await successStore.send(.navigation(.view(.openCollectionFile(
+            URL(fileURLWithPath: "/private/secret/valid-empty.voycoll"),
+        ))))
+        await successStore.skipReceivedActions(strict: false)
+        await successStore.finish()
+
+        let failures: [AppCollectionOpenBridgeFailure] = [
+            .invalidDefinition,
+            .malformed,
+            .access,
+            .unknown,
+        ]
+        for (index, failure) in failures.enumerated() {
+            let store = TestStore(initialState: FileManagerWindowState()) {
+                FileManagerFeature()
+            } withDependencies: {
+                $0.collectionFileClient.load = { _ in throw failure.error }
+                $0.collectionAlertClient.showCollectionOpenErrorAlert = { _, _ in }
+                $0.collectionStalenessClient = .testValue
+                $0.registryClient = .testValue
+                $0.searchClient = .testValue
+                $0.metricsClient = metricsClient
+                $0.date = .constant(Date(timeIntervalSince1970: 1_700_000_200))
+                $0.uuid = .constant(UUID(index + 1000))
+                $0.continuousClock = ImmediateClock()
+            }
+            // store.exhaustivity = .off: typed failure별 production bridge 결과만 검증함.
+            store.exhaustivity = .off(showSkippedAssertions: false)
+
+            await store.send(.navigation(.view(.openCollectionFile(
+                URL(fileURLWithPath: "/private/secret/failure-\(index).voycoll"),
+            ))))
+            await store.skipReceivedActions(strict: false)
+            await store.finish()
+        }
+
+        // develop이 open 흐름에 추가한 dau.navigation 등 타 metric은 이 테스트 대상이 아니라서
+        // collection.open(result_status/failure_reason properties)만 골라 검증한다.
+        let requests = metricRequests.value.filter {
+            let keys = Set($0.properties.keys)
+            return keys == ["result_status"] || keys == ["result_status", "failure_reason"]
+        }
+        XCTAssertEqual(requests.count, 5)
+        XCTAssertEqual(requests.count { $0.properties["result_status"] == .string("valid_empty") }, 1)
+        XCTAssertEqual(requests.count { $0.properties["result_status"] == .string("load_failure") }, 4)
+        XCTAssertEqual(requests.first?.properties, ["result_status": .string("valid_empty")])
+        XCTAssertEqual(
+            requests.dropFirst().compactMap { $0.properties["failure_reason"] },
+            [
+                .string("invalid_definition"),
+                .string("malformed"),
+                .string("access"),
+                .string("unknown"),
+            ],
+        )
+
+        for (index, metricRequest) in requests.enumerated() {
+            XCTAssertEqual(metricRequest.metricKey, "collection.open")
+            XCTAssertEqual(metricRequest.properties.count, index == 0 ? 1 : 2)
+            XCTAssertTrue(Set(metricRequest.properties.keys).isSubset(of: ["result_status", "failure_reason"]))
+            guard case let .capture(request) = registry.resolve(
+                metricKey: metricRequest.metricKey,
+                identity: .device("test-device-id"),
+                context: metricRequest.context,
+                properties: metricRequest.properties,
+            ) else {
+                return XCTFail("expected collection.open request \(index) to resolve")
+            }
+            XCTAssertEqual(request.event.eventName.rawValue, "voyager_collection_open")
+            XCTAssertEqual(request.event.distinctID, "test-device-id")
+            XCTAssertEqual(request.event.properties, metricRequest.properties)
+            XCTAssertNil(request.event.identifiers)
+        }
+    }
+
     func testLiveUndoManagerClientUsesCanonicalRegistryStackForSequentialUndo() async throws {
         let windowID = UUID()
         let ownerID = UUID()
@@ -1500,6 +1640,203 @@ final class AppRootCompositionTests: XCTestCase {
         let appDelegate = AppDelegate()
         appDelegate.configure(appRootStore: store)
         return appDelegate
+    }
+
+    // MARK: - RCL-002-save_collection_filter_changes
+
+    /// RCL-002-save_collection_filter_changes: external open한 empty Collection의 scope를 저장하고 닫은 뒤 다시 연다.
+    /// VOY-590의 bounded AppRoot composition 경로에서 scope-only 편집이 검색 없이 같은 package에 보존되는지 검증한다.
+    /// - 검증 내용: normalized external receipt, WindowManager placement, FileManager open/edit/save,
+    ///   Content Tab close, second receipt
+    /// - 사전 조건: `fixtures/fixtures/collections/empty_definition_collection.voycoll` 복사본과 임시 search root
+    /// - 기대 결과: search 요청 0회, 같은 sandbox URL, 저장한 scope definition의 clean reopened baseline
+    @MainActor
+    func testEmptyCollectionExternalOpenScopeSaveReopenJourney() async throws {
+        let sandbox = try CollectionManagementCompositionFixtureSandbox.make()
+        defer { sandbox.cleanup() }
+        let searchRequests = LockIsolated<[SearchRequestPayload]>([])
+        let filterRequests = LockIsolated<[FiltersOnlyRequestPayload]>([])
+        let searchWarmUpCount = LockIsolated(0)
+        let registeredWindowIDs = LockIsolated<Set<UUID>>([])
+        let activatedWindowIDs = LockIsolated<[UUID]>([])
+        let store = makeCollectionManagementCompositionStore(
+            searchRequests: searchRequests,
+            filterRequests: filterRequests,
+            searchWarmUpCount: searchWarmUpCount,
+            registeredWindowIDs: registeredWindowIDs,
+            activatedWindowIDs: activatedWindowIDs,
+        )
+
+        await openCollectionExternally(sandbox.collectionURL, in: store)
+        let firstWindowID = try activeCollectionWindowID(in: store)
+        var window = try activeCollectionWindow(in: store)
+        XCTAssertEqual(store.state.windowManager.focusedWindowID, firstWindowID)
+        XCTAssertEqual(registeredWindowIDs.value, [firstWindowID])
+        XCTAssertEqual(activatedWindowIDs.value, [firstWindowID])
+        XCTAssertEqual(window.content.collection.collectionSession.document?.url, sandbox.collectionURL)
+        XCTAssertEqual(window.content.collection.collectionContext, CollectionContext())
+        XCTAssertFalse(window.content.collection.isDirty)
+        await store.send(.windowManager(.windows(.element(
+            id: firstWindowID,
+            action: .window(.content(.composer(.scopeEditorSetPresented(true)))),
+        ))))
+        await store.send(.windowManager(.windows(.element(
+            id: firstWindowID,
+            action: .window(.content(.composer(.candidateScope(.add(path: sandbox.searchRoot.path))))),
+        ))))
+        await store.send(.windowManager(.windows(.element(
+            id: firstWindowID,
+            action: .window(.content(.composer(.scopeEditorSetIncludeSubfolders(false)))),
+        ))))
+        await store.send(.windowManager(.windows(.element(
+            id: firstWindowID,
+            action: .window(.content(.composer(.scopeEditorSetPresented(false)))),
+        ))))
+        await store.skipReceivedActions(strict: false)
+
+        window = try activeCollectionWindow(in: store)
+        XCTAssertTrue(window.content.collection.isDirty)
+        XCTAssertEqual(window.content.collection.collectionSession.document?.url, sandbox.collectionURL)
+        XCTAssertTrue(searchRequests.value.isEmpty)
+        XCTAssertTrue(filterRequests.value.isEmpty)
+        XCTAssertEqual(searchWarmUpCount.value, 0)
+
+        await store.send(.windowManager(.windows(.element(
+            id: firstWindowID,
+            action: .window(.content(.composer(.saveCollection))),
+        ))))
+        await store.skipReceivedActions(strict: false)
+        window = try activeCollectionWindow(in: store)
+        XCTAssertFalse(window.content.collection.isDirty)
+        XCTAssertEqual(window.content.collection.collectionSession.document?.url, sandbox.collectionURL)
+
+        try await closeActiveCollectionContentTab(in: store)
+        XCTAssertFalse(hasOpenCollection(at: sandbox.collectionURL, in: store))
+        await openCollectionExternally(sandbox.collectionURL, in: store)
+        XCTAssertEqual(try activeCollectionWindowID(in: store), firstWindowID)
+        window = try activeCollectionWindow(in: store)
+        let expectedContext = CollectionContext(
+            query: "",
+            scopes: [sandbox.searchRoot.path],
+            excludedScopes: [],
+            includeSubfolders: false,
+            includeDirectories: false,
+            conditions: [],
+        )
+        XCTAssertEqual(window.content.collection.collectionContext, expectedContext)
+        XCTAssertEqual(window.content.collection.collectionSession.metadata.baseline?.context, expectedContext)
+        XCTAssertEqual(window.content.collection.collectionSession.document?.url, sandbox.collectionURL)
+        XCTAssertEqual(window.content.composer.openedCollectionURL, sandbox.collectionURL)
+        XCTAssertFalse(window.content.collection.isDirty)
+        XCTAssertTrue(searchRequests.value.isEmpty)
+        XCTAssertTrue(filterRequests.value.isEmpty)
+        XCTAssertEqual(searchWarmUpCount.value, 0)
+        XCTAssertEqual(activatedWindowIDs.value, [firstWindowID, firstWindowID])
+        await store.finish()
+    }
+
+    /// RCL-002-save_collection_filter_changes: external open한 empty Collection의 query를 저장하고 닫은 뒤 다시 연다.
+    /// VOY-590의 bounded AppRoot composition 경로에서 query submit의 accepted response와 같은 package 복원을 검증한다.
+    /// - 검증 내용: normalized external receipt, bounded query request, save, Content Tab close,
+    ///   second receipt와 clean baseline
+    /// - 사전 조건: canonical empty package 복사본, 임시 search root, deterministic accepted-zero search response
+    /// - 기대 결과: edit/reopen query 요청 각 1회, filter 요청 0회, 같은 sandbox URL과 저장한 definition 복원
+    @MainActor
+    func testEmptyCollectionExternalOpenQuerySaveReopenJourney() async throws {
+        let sandbox = try CollectionManagementCompositionFixtureSandbox.make()
+        defer { sandbox.cleanup() }
+        let searchRequests = LockIsolated<[SearchRequestPayload]>([])
+        let filterRequests = LockIsolated<[FiltersOnlyRequestPayload]>([])
+        let searchWarmUpCount = LockIsolated(0)
+        let registeredWindowIDs = LockIsolated<Set<UUID>>([])
+        let activatedWindowIDs = LockIsolated<[UUID]>([])
+        let acceptedResponse = SearchResponsePayload(itemCount: 0, items: [])
+        let store = makeCollectionManagementCompositionStore(
+            searchRequests: searchRequests,
+            filterRequests: filterRequests,
+            searchWarmUpCount: searchWarmUpCount,
+            registeredWindowIDs: registeredWindowIDs,
+            activatedWindowIDs: activatedWindowIDs,
+            searchResponse: acceptedResponse,
+        )
+
+        await openCollectionExternally(sandbox.collectionURL, in: store)
+        let firstWindowID = try activeCollectionWindowID(in: store)
+        var window = try activeCollectionWindow(in: store)
+        XCTAssertEqual(store.state.windowManager.focusedWindowID, firstWindowID)
+        XCTAssertEqual(registeredWindowIDs.value, [firstWindowID])
+        XCTAssertEqual(activatedWindowIDs.value, [firstWindowID])
+        XCTAssertEqual(window.content.collection.collectionSession.document?.url, sandbox.collectionURL)
+        XCTAssertEqual(window.content.collection.collectionContext, CollectionContext())
+        XCTAssertFalse(window.content.collection.isDirty)
+        await store.send(.windowManager(.windows(.element(
+            id: firstWindowID,
+            action: .window(.content(.composer(.scopeEditorSetPresented(true)))),
+        ))))
+        await store.send(.windowManager(.windows(.element(
+            id: firstWindowID,
+            action: .window(.content(.composer(.candidateScope(.add(path: sandbox.searchRoot.path))))),
+        ))))
+        await store.send(.windowManager(.windows(.element(
+            id: firstWindowID,
+            action: .window(.content(.composer(.scopeEditorSetPresented(false)))),
+        ))))
+        await store.send(.windowManager(.windows(.element(
+            id: firstWindowID,
+            action: .window(.content(.composer(.setText("invoice")))),
+        ))))
+        await store.send(.windowManager(.windows(.element(
+            id: firstWindowID,
+            action: .window(.content(.composer(.submit))),
+        ))))
+        await store.skipReceivedActions(strict: false)
+
+        window = try activeCollectionWindow(in: store)
+        XCTAssertTrue(window.content.collection.isDirty)
+        XCTAssertEqual(window.content.composer.lastSearchResponse, acceptedResponse)
+        XCTAssertNotNil(window.content.composer.lastAcceptedSearchRequestID)
+        XCTAssertEqual(searchRequests.value.count, 1)
+        XCTAssertEqual(searchRequests.value.first?.query, "invoice")
+        XCTAssertEqual(searchRequests.value.first?.filters.scopes, [sandbox.searchRoot.path])
+        XCTAssertTrue(filterRequests.value.isEmpty)
+
+        await store.send(.windowManager(.windows(.element(
+            id: firstWindowID,
+            action: .window(.content(.composer(.saveCollection))),
+        ))))
+        await store.skipReceivedActions(strict: false)
+        window = try activeCollectionWindow(in: store)
+        XCTAssertFalse(window.content.collection.isDirty)
+        XCTAssertEqual(window.content.collection.collectionSession.document?.url, sandbox.collectionURL)
+        try await closeActiveCollectionContentTab(in: store)
+        XCTAssertFalse(hasOpenCollection(at: sandbox.collectionURL, in: store))
+        await openCollectionExternally(sandbox.collectionURL, in: store)
+
+        XCTAssertEqual(try activeCollectionWindowID(in: store), firstWindowID)
+        window = try activeCollectionWindow(in: store)
+        let expectedContext = CollectionContext(
+            query: "invoice",
+            scopes: [sandbox.searchRoot.path],
+            excludedScopes: [],
+            includeSubfolders: true,
+            includeDirectories: false,
+            conditions: [],
+        )
+        XCTAssertEqual(window.content.collection.collectionContext, expectedContext)
+        XCTAssertEqual(window.content.collection.collectionSession.metadata.baseline?.context, expectedContext)
+        XCTAssertEqual(window.content.collection.collectionSession.document?.url, sandbox.collectionURL)
+        XCTAssertEqual(window.content.composer.openedCollectionURL, sandbox.collectionURL)
+        XCTAssertFalse(window.content.collection.isDirty)
+        XCTAssertEqual(searchRequests.value.count, 2)
+        XCTAssertEqual(searchRequests.value.map(\.query), ["invoice", "invoice"])
+        XCTAssertEqual(searchRequests.value.map(\.filters.scopes), [
+            [sandbox.searchRoot.path],
+            [sandbox.searchRoot.path],
+        ])
+        XCTAssertTrue(filterRequests.value.isEmpty)
+        XCTAssertEqual(searchWarmUpCount.value, 0)
+        XCTAssertEqual(activatedWindowIDs.value, [firstWindowID, firstWindowID])
+        await store.finish()
     }
 
     // MARK: - External open batch FIFO orchestration
@@ -3873,6 +4210,133 @@ final class AppRootCompositionTests: XCTestCase {
         XCTAssertTrue(store.state.externalOpenBatchQueue.isEmpty)
         await store.finish()
     }
+
+    private func makeCollectionManagementCompositionStore(
+        searchRequests: LockIsolated<[SearchRequestPayload]>,
+        filterRequests: LockIsolated<[FiltersOnlyRequestPayload]>,
+        searchWarmUpCount: LockIsolated<Int>,
+        registeredWindowIDs: LockIsolated<Set<UUID>>,
+        activatedWindowIDs: LockIsolated<[UUID]>,
+        searchResponse: SearchResponsePayload = .init(itemCount: 0, items: []),
+    ) -> TestStoreOf<AppRootFeature> {
+        var initialState = AppRootFeature.State()
+        initialState.lifecycle.didFinishLaunching = true
+        initialState.lifecycle.didStartHelper = true
+        initialState.lifecycle.didCompleteEntryCoreHealthProbe = true
+        initialState.lifecycle.didCreateInitialWindow = true
+        // develop의 external-open placement는 이미 존재하는 초기 윈도우를 재사용 대상으로 본다.
+        // didCreateInitialWindow=true는 실제 윈도우 세션을 만들지 않으므로 테스트에서 직접 구성한다.
+        let initialWindowID = UUID()
+        let initialWindow = WindowSessionState(
+            id: initialWindowID,
+            window: .makeInitial(path: nil),
+        )
+        initialState.windowManager.windows.append(initialWindow)
+        initialState.windowManager.focusedWindowID = initialWindowID
+        initialState.windowManager.lastUsedWindowIDs = [initialWindowID]
+        registeredWindowIDs.withValue { $0.insert(initialWindowID) }
+        let store = TestStore(initialState: initialState) {
+            AppRootFeature()
+        } withDependencies: {
+            $0.collectionFileClient = .liveValue
+            $0.collectionAlertClient = .testValue
+            $0.collectionStalenessClient = .testValue
+            $0.registryClient = .testValue
+            $0.searchClient.search = { request in
+                searchRequests.withValue { $0.append(request) }
+                return searchResponse
+            }
+            $0.searchClient.applyFilters = { request in
+                filterRequests.withValue { $0.append(request) }
+                return .init(itemCount: 0, items: [])
+            }
+            $0.searchClient.warmUpAIModelCatalog = {
+                searchWarmUpCount.withValue { $0 += 1 }
+            }
+            $0.userDefaultsClient = .testValue
+            $0.pathProbeClient.probeExistence = { path in
+                var isDirectory = ObjCBool(false)
+                let exists = FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
+                return PathProbeResult(exists: exists, isDirectory: isDirectory.boolValue)
+            }
+            $0.fileManagerWindowClient.open = { id in
+                _ = registeredWindowIDs.withValue { $0.insert(id) }
+            }
+            $0.fileManagerWindowClient.close = { id in
+                _ = registeredWindowIDs.withValue { $0.remove(id) }
+            }
+            $0.fileManagerWindowClient.finalizeClose = { id in
+                _ = registeredWindowIDs.withValue { $0.remove(id) }
+            }
+            $0.fileManagerWindowClient.registeredWindowIDs = { registeredWindowIDs.value }
+            $0.fileManagerWindowClient.activate = { id in
+                activatedWindowIDs.withValue { $0.append(id) }
+                return .becameKey
+            }
+            $0.onboardingWindowClient.isRequired = { false }
+            $0.onboardingWindowClient.showIfNeeded = { false }
+            $0.date = .constant(Date(timeIntervalSince1970: 1_700_000_200))
+            $0.uuid = .incrementing
+            $0.continuousClock = ImmediateClock()
+        }
+        // store.exhaustivity = .off: AppRoot부터 FileManager까지의 composition journey는
+        // terminal state와 dependency cardinality를 검증함.
+        store.exhaustivity = .off(showSkippedAssertions: false)
+        return store
+    }
+
+    private func openCollectionExternally(
+        _ url: URL,
+        in store: TestStoreOf<AppRootFeature>,
+    ) async {
+        await store.send(.receiveExternalFileBatch([url], source: .systemOpenEvent, mode: .open))
+        await store.skipReceivedActions(strict: false)
+    }
+
+    private func closeActiveCollectionContentTab(
+        in store: TestStoreOf<AppRootFeature>,
+    ) async throws {
+        let windowID = try activeCollectionWindowID(in: store)
+        let window = try activeCollectionWindow(in: store)
+        guard let tabID = window.contentTabs.activeTabID else {
+            throw CollectionManagementCompositionJourneyError.activeContentTabNotFound
+        }
+        await store.send(.windowManager(.windows(.element(
+            id: windowID,
+            action: .window(.closeContentTabRequested(tabID)),
+        ))))
+        await store.skipReceivedActions(strict: false)
+    }
+
+    private func activeCollectionWindowID(
+        in store: TestStoreOf<AppRootFeature>,
+    ) throws -> UUID {
+        guard let session = store.state.windowManager.windows.first(where: {
+            $0.window.content.collection.collectionSession.document != nil
+        }) else {
+            throw CollectionManagementCompositionJourneyError.activeCollectionWindowNotFound
+        }
+        return session.id
+    }
+
+    private func activeCollectionWindow(
+        in store: TestStoreOf<AppRootFeature>,
+    ) throws -> FileManagerWindowState {
+        let windowID = try activeCollectionWindowID(in: store)
+        guard let window = store.state.windowManager.windows[id: windowID]?.window else {
+            throw CollectionManagementCompositionJourneyError.activeCollectionWindowNotFound
+        }
+        return window
+    }
+
+    private func hasOpenCollection(
+        at url: URL,
+        in store: TestStoreOf<AppRootFeature>,
+    ) -> Bool {
+        store.state.windowManager.windows.contains {
+            $0.window.content.collection.collectionSession.document?.url == url
+        }
+    }
 }
 
 // MARK: - VOY-521 Task 1 test support
@@ -3916,6 +4380,31 @@ private final class ReplyRecordingAppDelegate: AppDelegate {
         replies.append(reply)
         actionCountsAtReply.append(actionCount())
     }
+}
+
+private enum AppCollectionOpenBridgeFailure {
+    case invalidDefinition
+    case malformed
+    case access
+    case unknown
+
+    var error: any Error {
+        switch self {
+        case .invalidDefinition:
+            CollectionFileCompatibilityError.invalidDefinitionPayload
+        case .malformed:
+            CollectionFileCompatibilityError.invalidPropertyListPayload
+        case .access:
+            CocoaError(.fileReadNoPermission)
+        case .unknown:
+            NSError(domain: "CollectionOpenUnknown", code: 1)
+        }
+    }
+}
+
+private enum CollectionManagementCompositionJourneyError: Error {
+    case activeCollectionWindowNotFound
+    case activeContentTabNotFound
 }
 
 private struct _ActionRecordingAppRoot: Reducer {

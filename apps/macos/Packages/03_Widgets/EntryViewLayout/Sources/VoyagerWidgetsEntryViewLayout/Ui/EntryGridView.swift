@@ -67,6 +67,10 @@ public final class EntryGridView: NSView {
         var onSelectionDrag: (() -> Void)?
         var onLassoSelectionIndexPathsChanged: ((Set<IndexPath>, Bool) -> Void)?
         var onLassoActiveChanged: ((Bool) -> Void)?
+        /// 빈 영역 클릭(좌/우, non-additive)이 시작될 때 호출된다. coordinator가 1회성 user-clear provenance를 표시한다.
+        var onBlankSpaceSelectionClear: (() -> Void)?
+        /// Command 클릭으로 item 선택 토글이 시작될 때 호출된다. 마지막 항목 해제 provenance에 사용된다.
+        var onCommandItemClick: (() -> Void)?
 
         private var lassoStartPoint: NSPoint?
         private var lassoInitialSelection: Set<IndexPath> = []
@@ -75,9 +79,14 @@ public final class EntryGridView: NSView {
 
         override func mouseDown(with event: NSEvent) {
             let location = convert(event.locationInWindow, from: nil)
-            if indexPathForItem(at: location) == nil {
+            if indexPathForItem(at: location) != nil {
+                if event.modifierFlags.contains(.command) {
+                    onCommandItemClick?()
+                }
+            } else {
                 let isAdditive = event.modifierFlags.contains(.command) || event.modifierFlags.contains(.shift)
                 if !isAdditive {
+                    onBlankSpaceSelectionClear?()
                     deselectAll(nil)
                 }
 
@@ -93,6 +102,7 @@ public final class EntryGridView: NSView {
         override func rightMouseDown(with event: NSEvent) {
             let location = convert(event.locationInWindow, from: nil)
             guard let indexPath = indexPathForItem(at: location) else {
+                onBlankSpaceSelectionClear?()
                 deselectAll(nil)
                 if let menu = blankSpaceContextMenuProvider?() {
                     NSMenu.popUpContextMenu(menu, with: event, for: self)

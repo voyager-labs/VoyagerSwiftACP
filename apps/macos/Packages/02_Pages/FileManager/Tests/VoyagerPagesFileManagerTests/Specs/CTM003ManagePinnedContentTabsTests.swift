@@ -9304,48 +9304,30 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         XCTAssertNil(store.state.pendingCollectionOpenRequest)
     }
 
-    /// CTM-003-go_to_anchored_path_of_pinned_tab: empty durable Collection은 유효한 source Collection 보존
-    /// empty 판정은 staleness/session/navigation mutation 전에 failure-style terminal로 종료되어야 한다.
-    /// - 검증 내용: source document/draft/baseline/route/history 보존, staleness write 미호출, Empty Collection alert
+    /// CTM-003-go_to_anchored_path_of_pinned_tab: empty durable Collection은 target draft로 commit한다.
+    /// active pinned row 재선택도 direct open과 같은 valid-empty Collection transaction을 사용한다.
+    /// - 검증 내용: target URL/anchor/session/baseline/route commit과 loading terminal, 검색 무호출
     /// - 사전 조건: active pinned Collection A의 durable anchor B가 empty definition file을 반환함
-    /// - 기대 결과: A의 전체 runtime state가 유지되고 B는 runtime이나 persistence에 반영되지 않음
-    func testReselectActivePinnedEmptyCollectionPreservesCollectionSource() async {
+    /// - 기대 결과: pinned record를 유지하면서 B가 clean file-backed Collection Page로 적용됨
+    func testReselectActivePinnedEmptyCollectionCommitsTargetDraftWithoutSearch() async throws {
         let pinnedID = ContentTabID(rawValue: "pinned-empty-collection")
         let sourceURL = URL(fileURLWithPath: "/Users/test/A.voycollection")
-        let targetURL = URL(fileURLWithPath: "/Users/test/Empty.voycollection")
+        let fixtureDirectory = try FileManagerFixtureSandbox.readOnlyDirectory(
+            from: "fixtures/fixtures/collections",
+        )
+        let fixtureURL = fixtureDirectory.appendingPathComponent("empty_definition_collection.voycoll")
+        let sandboxRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("VoyagerCTM003Open-\(UUID().uuidString)", isDirectory: true)
+        let targetURL = sandboxRoot.appendingPathComponent(fixtureURL.lastPathComponent, isDirectory: true)
+        try FileManager.default.createDirectory(at: sandboxRoot, withIntermediateDirectories: true)
+        try FileManager.default.copyItem(at: fixtureURL, to: targetURL)
+        defer { try? FileManager.default.removeItem(at: sandboxRoot) }
         let record = Self.pinnedRecord(
             id: pinnedID,
             page: .collection,
             anchor: .collectionFile(url: targetURL),
             title: "Empty",
             iconName: "rectangle.stack",
-        )
-        let emptyFile = VoyagerCollectionFile(
-            id: "empty-target",
-            name: "Empty",
-            createdAt: Self.pinnedAt,
-            updatedAt: Self.pinnedAt,
-            query: "",
-            scopes: [],
-            excludedScopes: [],
-            includeSubfolders: true,
-            includeDirectories: true,
-            conditions: [],
-            snapshot: nil,
-            snapshotMeta: nil,
-            appVersion: "test",
-        )
-        let loadResult = CollectionFileLoadResult(
-            file: emptyFile,
-            containerFormat: .package,
-            compatibility: .init(
-                sourceSchemaVersion: CollectionFileSchemaVersion.snapshotBearingCurrent,
-                migrationPath: [.currentSchemaV2],
-                warnings: [],
-                usedDefinitionFallback: false,
-                writeBackAllowed: true,
-                writeBackReason: .allowed,
-            ),
         )
         var state = FileManagerFeature.State()
         state.contentTabs = ContentTabState(
@@ -9376,30 +9358,39 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         state.content.navigation.forwardHistory = [
             ContentPageNavigationHistorySnapshot(navigationState: .folder("/after")),
         ]
-        let sourceContent = state.content
         state.syncActiveTabContentState()
         state.syncContentTabSidebarItems()
         let alertRecorder = CollectionPinAlertRecorder()
+        let searchRequests = LockIsolated<[String]>([])
+        let metricNames = LockIsolated<[String]>([])
+        let metricTags = LockIsolated<[[String: String]?]>([])
         let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
             $0.date = .constant(Self.pinnedAt)
             $0.uuid = .constant(UUID(741))
             $0.continuousClock = ImmediateClock()
             $0.fileManagerClient.fileExistsWithIsDirectory = { _, _ in true }
-            $0.collectionFileClient.load = { _ in loadResult }
+            $0.collectionFileClient = .liveValue
             $0.collectionAlertClient.showCollectionOpenErrorAlert = { title, message in
                 alertRecorder.record(title: title, message: message)
             }
-            $0.collectionStalenessClient.record = { _ in
-                XCTFail("Empty Collection must not read staleness after semantic empty detection")
-                return nil
-            }
-            $0.collectionStalenessClient.registerCollection = { _, _, _, _ in
-                XCTFail("Empty Collection must not register staleness")
-            }
-            $0.collectionStalenessClient.upsertRecord = { _, _ in
-                XCTFail("Empty Collection must not persist staleness")
-            }
+            $0.collectionStalenessClient = .testValue
             $0.registryClient = .testValue
+            $0.searchClient.search = { _ in
+                searchRequests.withValue { $0.append("submit") }
+                return .init(itemCount: 0)
+            }
+            $0.searchClient.applyFilters = { _ in
+                searchRequests.withValue { $0.append("applyFilters") }
+                return .init(itemCount: 0)
+            }
+            $0.metricsClient = MetricsClient(
+                logMetric: { name, _, tags in
+                    metricNames.withValue { $0.append(name) }
+                    metricTags.withValue { $0.append(tags) }
+                },
+                logDAUNavigation: { _ in },
+                logDAUEntryAction: { _, _ in },
+            )
         }
         // store.exhaustivity = .off: canonical load child action보다 empty terminal의 source 전체 보존을 검증한다.
         store.exhaustivity = .off(showSkippedAssertions: false)
@@ -9408,11 +9399,27 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         await store.skipReceivedActions(strict: false)
         await store.finish()
 
-        XCTAssertEqual(alertRecorder.latestAlert()?.title, "Empty Collection")
+        XCTAssertNil(alertRecorder.latestAlert())
+        XCTAssertTrue(searchRequests.value.isEmpty)
+        XCTAssertEqual(metricNames.value, ["collection.open"])
+        XCTAssertEqual(metricTags.value, [["result_status": "valid_empty"]])
         XCTAssertNil(store.state.pendingCollectionOpenRequest)
         XCTAssertFalse(store.state.content.entryViewLayout.isCollectionContentLoading)
-        XCTAssertEqual(store.state.content, sourceContent)
+        XCTAssertTrue(store.state.content.entryViewLayout.isCollectionMode)
+        XCTAssertEqual(store.state.content.collection.collectionSession.document?.url, targetURL)
+        XCTAssertEqual(store.state.content.collection.collectionContext, .init())
+        XCTAssertEqual(store.state.content.collection.collectionSession.metadata.baseline, .init(context: .init()))
+        XCTAssertFalse(store.state.content.isOpenedCollectionDirty)
+        XCTAssertEqual(store.state.contentTabs.tabs[id: pinnedID]?.anchor, .collectionFile(url: targetURL))
         XCTAssertEqual(store.state.contentTabs.pinnedRecords[pinnedID], record)
+        guard case let .collection(navigation) = store.state.content.navigation.navigationState else {
+            return XCTFail("Expected target empty Collection navigation")
+        }
+        guard case let .file(openedURL, _) = navigation.kind else {
+            return XCTFail("Expected target file-backed Collection navigation")
+        }
+        XCTAssertEqual(openedURL, targetURL)
+        XCTAssertEqual(navigation.context, .init())
     }
 
     /// CTM-003-go_to_anchored_path_of_pinned_tab: 같은 saved Collection URL 재선택은 payload가 달라도 no-op

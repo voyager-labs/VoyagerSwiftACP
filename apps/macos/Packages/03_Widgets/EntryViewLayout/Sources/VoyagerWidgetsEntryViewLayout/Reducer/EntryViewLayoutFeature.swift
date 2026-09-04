@@ -188,6 +188,9 @@ public struct EntryViewLayoutFeature {
                     shouldScrollToSelection: shouldScrollToSelection,
                 )))
 
+            case .view(.clearSelection):
+                return .send(.internal(.applyClearSelection))
+
             case let .view(.selectAll(orderedItemIds)):
                 return .send(.internal(.applySelectAll(orderedItemIds: orderedItemIds)))
 

@@ -2055,6 +2055,15 @@ private final class Task4Fixture {
                     state.shouldScrollToSelection = shouldScroll
                     recorder.updateCount += 1
                     recorder.events.append("selection")
+                case .view(.clearSelection):
+                    // 실제 feature의 applyClearSelection과 동일한 상태 효과를 미러링하고,
+                    // 명시적 clear도 canonical-mutating selection 이벤트 1회로 집계한다.
+                    state.selectedIds = []
+                    state.lastSelectedId = nil
+                    state.rangeAnchorId = nil
+                    state.shouldScrollToSelection = false
+                    recorder.updateCount += 1
+                    recorder.events.append("selection")
                 case let .view(.preloadOpenWithApplications(entries)):
                     recorder.events.append("preload:\(entries.map(\.id).joined(separator: ","))")
                 case let .view(.toggleGroup(name)):

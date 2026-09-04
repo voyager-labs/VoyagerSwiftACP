@@ -20,6 +20,7 @@ private enum ProductAnalyticsMetadataOnlyMetricCodingKeys: String, CodingKey {
     case posthogEventName = "posthog_event_name"
     case identityPolicy = "identity_policy"
     case propertyAllowlist = "property_allowlist"
+    case propertyValueAllowlist = "property_value_allowlist"
     case eventVersion = "event_version"
     case eventClass = "event_class"
     case kpiEligible = "kpi_eligible"
@@ -309,6 +310,7 @@ public struct ProductAnalyticsRegistry: Equatable, Sendable {
         public let posthogEventName: String
         public let identityPolicy: ProductAnalyticsRegistryIdentityPolicy
         public let propertyAllowlist: [String]
+        public let propertyValueAllowlist: [String: [String]]
         public let eventVersion: String
         public let eventClass: String
         public let kpiEligible: Bool
@@ -318,6 +320,7 @@ public struct ProductAnalyticsRegistry: Equatable, Sendable {
             posthogEventName: String,
             identityPolicy: ProductAnalyticsRegistryIdentityPolicy,
             propertyAllowlist: [String],
+            propertyValueAllowlist: [String: [String]] = [:],
             eventVersion: String = "1",
             eventClass: String = "exposure",
             kpiEligible: Bool = false,
@@ -326,6 +329,7 @@ public struct ProductAnalyticsRegistry: Equatable, Sendable {
             self.posthogEventName = posthogEventName
             self.identityPolicy = identityPolicy
             self.propertyAllowlist = propertyAllowlist
+            self.propertyValueAllowlist = propertyValueAllowlist
             self.eventVersion = eventVersion
             self.eventClass = eventClass
             self.kpiEligible = kpiEligible
@@ -334,6 +338,7 @@ public struct ProductAnalyticsRegistry: Equatable, Sendable {
         public init(from decoder: Decoder) throws {
             try validateKnownKeys(decoder, allowed: [
                 "metric_key", "posthog_event_name", "identity_policy", "property_allowlist",
+                "property_value_allowlist",
                 "event_version", "event_class", "kpi_eligible",
             ])
             let container = try decoder.container(keyedBy: ProductAnalyticsMetadataOnlyMetricCodingKeys.self)
@@ -345,11 +350,18 @@ public struct ProductAnalyticsRegistry: Equatable, Sendable {
                 posthogEventName: container.decode(String.self, forKey: .posthogEventName),
                 identityPolicy: container.decode(ProductAnalyticsRegistryIdentityPolicy.self, forKey: .identityPolicy),
                 propertyAllowlist: container.decode([String].self, forKey: .propertyAllowlist),
+                propertyValueAllowlist: container.decodeIfPresent(
+                    [String: [String]].self,
+                    forKey: .propertyValueAllowlist,
+                ) ?? [:],
                 eventVersion: eventVersion,
                 eventClass: eventClass,
                 kpiEligible: kpiEligible,
             )
-            guard eventVersion == "1", eventClass == "exposure", kpiEligible == false else {
+            guard eventVersion == "1", ["action", "exposure"].contains(eventClass), kpiEligible == false,
+                  propertyValueAllowlist.keys.allSatisfy({ propertyAllowlist.contains($0) }),
+                  propertyValueAllowlist.values.allSatisfy({ !$0.isEmpty && Set($0).count == $0.count })
+            else {
                 throw ProductAnalyticsInvalidSchemaError()
             }
         }
@@ -473,7 +485,7 @@ public struct ProductAnalyticsRegistry: Equatable, Sendable {
     private let byMetricKey: [String: Record]
     private let byMetadataMetricKey: [String: MetadataOnlyMetric]
 
-    var metadataOnlyMetricCountForTesting: Int {
+    var metadataOnlyMetricCount: Int {
         byMetadataMetricKey.count
     }
 
@@ -633,7 +645,12 @@ public struct ProductAnalyticsRegistry: Equatable, Sendable {
         guard (envelope.eventVersion?.rawValue ?? metric.eventVersion) == metric.eventVersion else {
             return .drop(.privacyRejected)
         }
-        guard isPrivacySafe(properties, allowed: metric.propertyAllowlist) else {
+        guard isPrivacySafe(
+            properties,
+            allowed: metric.propertyAllowlist,
+            finiteValues: metric.propertyValueAllowlist,
+            requireFiniteValues: !metric.propertyValueAllowlist.isEmpty,
+        ) else {
             return .drop(.privacyRejected)
         }
         let event = ProductAnalyticsEvent(

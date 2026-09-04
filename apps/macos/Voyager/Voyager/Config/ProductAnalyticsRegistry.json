@@ -432,6 +432,19 @@
       "event_version": "1",
       "event_class": "exposure",
       "kpi_eligible": false
+    },
+    {
+      "metric_key": "collection.open",
+      "posthog_event_name": "voyager_collection_open",
+      "identity_policy": "device",
+      "property_allowlist": ["result_status", "failure_reason"],
+      "property_value_allowlist": {
+        "result_status": ["valid_empty", "load_failure"],
+        "failure_reason": ["invalid_definition", "malformed", "access", "unknown"]
+      },
+      "event_version": "1",
+      "event_class": "action",
+      "kpi_eligible": false
     }
   ],
   "records": [
