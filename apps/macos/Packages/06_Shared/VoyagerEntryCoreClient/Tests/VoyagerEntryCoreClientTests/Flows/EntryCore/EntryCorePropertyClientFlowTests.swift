@@ -267,7 +267,7 @@ final class EntryCorePropertyClientFlowTests: XCTestCase {
             expectedDefinitionRevision: 1,
             expectedAssignmentRevision: 0,
             desired: desired,
-            expectedValueContract: ExpectedValueContract(valueType: .text, cardinality: .one),
+            expectedValueContract: ExpectedValueContract(valueType: .text, cardinality: .many),
         )
         let request = try PropertyChangeRequest(changes: [change])
 

@@ -2,6 +2,7 @@ package schema
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"time"
 
@@ -687,6 +688,35 @@ func (result PropertyConditionQueryResult) Validate() error {
 			return ErrInvalidResponse
 		}
 		last = index
+	}
+	return nil
+}
+
+// ReconcileConditionQueryResult는 응답이 원래 요청 경계를 벗어나지 않는지
+// 검증한다. 저장소가 property_id > after로 조회하고 pageSize번째 match에서
+// 중단하므로, page_size 초과 item·target 범위 밖 candidate·요청하지 않은
+// projection은 생성될 수 없다. (Swift queryPageMatchesRequest와 동일 경계)
+func ReconcileConditionQueryResult(
+	result PropertyConditionQueryResult,
+	params PropertyConditionQueryParams,
+) error {
+	if len(result.Items) > params.PageSize {
+		return ErrInvalidResponse
+	}
+	for _, item := range result.Items {
+		if item.CandidateIndex >= len(params.Targets) {
+			return ErrInvalidResponse
+		}
+		for _, assignment := range item.Projection {
+			if !slices.Contains(params.ProjectionPropertyIDs, assignment.PropertyID) {
+				return ErrInvalidResponse
+			}
+		}
+	}
+	for _, index := range result.UnresolvedCandidateIndices {
+		if index >= len(params.Targets) {
+			return ErrInvalidResponse
+		}
 	}
 	return nil
 }

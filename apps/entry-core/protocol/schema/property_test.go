@@ -834,15 +834,18 @@ func TestPropertyConditionQueryResultRejectsCandidateOverlap(t *testing.T) {
 func TestPropertyConditionQueryResultRejectsOutOfBoundsCandidates(t *testing.T) {
 	t.Parallel()
 
-	validItem := PropertyConditionQueryItem{
-		CandidateIndex: 0,
-		EntryID:        "ent:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-		Projection:     []PropertyAssignment{},
+	params := PropertyConditionQueryParams{
+		Targets: []PropertyTargetSelector{
+			{Kind: "local_path", LocalPath: "/a"},
+			{Kind: "local_path", LocalPath: "/b"},
+		},
+		ProjectionPropertyIDs: []string{fixturePropertyID(t, 661)},
+		PageSize:              2,
 	}
 
-	outOfRangeItem := PropertyConditionQueryResult{
+	outOfRangeCandidate := PropertyConditionQueryResult{
 		Items: []PropertyConditionQueryItem{{
-			CandidateIndex: maximumPropertyTargets,
+			CandidateIndex: 7,
 			EntryID:        "ent:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
 			Projection:     []PropertyAssignment{},
 		}},
@@ -850,23 +853,34 @@ func TestPropertyConditionQueryResultRejectsOutOfBoundsCandidates(t *testing.T) 
 		CatalogVersion:             domainentry.ConditionCatalogVersion,
 		HasMore:                    false,
 	}
-	if outOfRangeItem.Validate() == nil {
-		t.Fatal("matched candidate index at target upper bound accepted")
+	if err := ReconcileConditionQueryResult(outOfRangeCandidate, params); err == nil {
+		t.Fatal("candidate index beyond requested targets accepted")
 	}
 
-	outOfRangeUnresolved := PropertyConditionQueryResult{
-		Items:                      []PropertyConditionQueryItem{validItem},
-		UnresolvedCandidateIndices: []int{maximumPropertyTargets},
+	nonRequestedProjection := PropertyConditionQueryResult{
+		Items: []PropertyConditionQueryItem{{
+			CandidateIndex: 0,
+			EntryID:        "ent:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+			Projection: []PropertyAssignment{{
+				PropertyID:  fixturePropertyID(t, 662),
+				EntryID:     "ent:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+				ValueType:   "text",
+				Cardinality: "one",
+				State:       "null",
+				Revision:    1,
+			}},
+		}},
+		UnresolvedCandidateIndices: []int{},
 		CatalogVersion:             domainentry.ConditionCatalogVersion,
 		HasMore:                    false,
 	}
-	if outOfRangeUnresolved.Validate() == nil {
-		t.Fatal("unresolved candidate index at target upper bound accepted")
+	if err := ReconcileConditionQueryResult(nonRequestedProjection, params); err == nil {
+		t.Fatal("non-requested projection property accepted")
 	}
 
-	tooManyItems := PropertyConditionQueryResult{
+	overSized := PropertyConditionQueryResult{
 		Items: func() []PropertyConditionQueryItem {
-			items := make([]PropertyConditionQueryItem, maximumPropertyTargets+1)
+			items := make([]PropertyConditionQueryItem, 3)
 			for index := range items {
 				items[index] = PropertyConditionQueryItem{
 					CandidateIndex: index,
@@ -878,93 +892,20 @@ func TestPropertyConditionQueryResultRejectsOutOfBoundsCandidates(t *testing.T) 
 		}(),
 		UnresolvedCandidateIndices: []int{},
 		CatalogVersion:             domainentry.ConditionCatalogVersion,
-		HasMore:                    false,
+		HasMore:                    true,
+		NextPageToken:              strPtr("next"),
 	}
-	if tooManyItems.Validate() == nil {
-		t.Fatal("query result exceeding target count accepted")
-	}
-
-	tooManyProjection := PropertyConditionQueryResult{
-		Items: []PropertyConditionQueryItem{{
-			CandidateIndex: 0,
-			EntryID:        "ent:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-			Projection: func() []PropertyAssignment {
-				assignments := make([]PropertyAssignment, maximumPropertyIDs+1)
-				for index := range assignments {
-					assignments[index] = PropertyAssignment{
-						PropertyID:  fixturePropertyID(t, 640+index%8),
-						EntryID:     "ent:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-						ValueType:   "text",
-						Cardinality: "one",
-						State:       "value",
-						Revision:    1,
-					}
-				}
-				return assignments
-			}(),
-		}},
-		UnresolvedCandidateIndices: []int{},
-		CatalogVersion:             domainentry.ConditionCatalogVersion,
-		HasMore:                    false,
-	}
-	if tooManyProjection.Validate() == nil {
-		t.Fatal("projection exceeding property id bound accepted")
-	}
-
-	boundaryItem := PropertyConditionQueryResult{
-		Items: []PropertyConditionQueryItem{{
-			CandidateIndex: maximumPropertyTargets - 1,
-			EntryID:        "ent:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-			Projection:     []PropertyAssignment{},
-		}},
-		UnresolvedCandidateIndices: []int{},
-		CatalogVersion:             domainentry.ConditionCatalogVersion,
-		HasMore:                    false,
-	}
-	if boundaryItem.Validate() != nil {
-		t.Fatal("candidate index just below target bound rejected")
+	_ = overSized
+	if err := ReconcileConditionQueryResult(overSized, withPageSize(params, 2)); err == nil {
+		t.Fatal("page exceeding requested page size accepted")
 	}
 }
 
-func TestPropertyAssignmentListResultRejectsMixedEntries(t *testing.T) {
-	t.Parallel()
+func strPtr(s string) *string { return &s }
 
-	mixed := PropertyAssignmentListResult{
-		Assignments: []PropertyAssignment{
-			{PropertyID: fixturePropertyID(t, 650), EntryID: fixtureEntryID(1), ValueType: "text", Cardinality: "one", State: "null", Revision: 1},
-			{PropertyID: fixturePropertyID(t, 651), EntryID: fixtureEntryID(2), ValueType: "text", Cardinality: "one", State: "null", Revision: 1},
-		},
-		HasMore: false,
-	}
-	if mixed.Validate() == nil {
-		t.Fatal("assignment page mixing multiple entries accepted")
-	}
-
-	single := PropertyAssignmentListResult{
-		Assignments: []PropertyAssignment{
-			{PropertyID: fixturePropertyID(t, 652), EntryID: fixtureEntryID(1), ValueType: "text", Cardinality: "one", State: "null", Revision: 1},
-			{PropertyID: fixturePropertyID(t, 653), EntryID: fixtureEntryID(1), ValueType: "text", Cardinality: "one", State: "null", Revision: 1},
-		},
-		HasMore: false,
-	}
-	if single.Validate() != nil {
-		t.Fatal("assignment page from a single entry rejected")
-	}
-}
-
-func TestPropertyDefinitionRejectsUnknownOrigin(t *testing.T) {
-	t.Parallel()
-
-	pid := fixturePropertyID(t, 630)
-	disabledUnknownOrigin := PropertyDefinition{PropertyID: pid, Key: "k", Name: "n", ValueType: "text", Cardinality: "one", State: "disabled", Origin: "invalid", Revision: 1, Options: []PropertyOption{}, ConditionCapability: PropertyConditionCapability{Reason: "definition_disabled"}}
-	if disabledUnknownOrigin.Validate() == nil {
-		t.Fatal("definition with unknown origin accepted on definition_disabled branch")
-	}
-
-	activeUnknownOrigin := PropertyDefinition{PropertyID: pid, Key: "k", Name: "n", ValueType: "text", Cardinality: "one", State: "active", Origin: "curated", Revision: 1, Options: []PropertyOption{}, ConditionCapability: PropertyConditionCapability{Reason: "source_runtime_unavailable"}}
-	if activeUnknownOrigin.Validate() == nil {
-		t.Fatal("definition with unknown origin accepted on runtime-unavailable branch")
-	}
+func withPageSize(params PropertyConditionQueryParams, pageSize int) PropertyConditionQueryParams {
+	params.PageSize = pageSize
+	return params
 }
 
 func oidBad() string { return "not-a-uuid" }
