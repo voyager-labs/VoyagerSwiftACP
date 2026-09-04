@@ -662,6 +662,12 @@ extension EntryCorePropertyClient {
         // 꽉 차지 않은 페이지나 같은 token의 반복은 페이지 순회 caller를 끝내지
         // 못하게 하므로 거절한다.
         guard page.hasMore else { return true }
+        // 정본 query service는 pageSize번째 match에서 중단하며 그 이전 candidate만
+        // unresolved로 반환한다. 마지막 matched index 뒤의 unresolved는 아직
+        // 평가되지 않은 path를 표시하므로 거절한다.
+        guard let lastMatched = page.items.last?.candidateIndex,
+              page.unresolvedCandidateIndices.allSatisfy({ $0 < lastMatched })
+        else { return false }
         return page.items.count == request.pageSize
             && page.nextPageToken != nil
             && page.nextPageToken != request.pageToken

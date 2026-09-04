@@ -40,8 +40,32 @@ extension EntryCorePropertyClientFlowTests {
                     items: firstPageItem, unresolved: "[]", hasMore: true, nextPageToken: "same",
                 ),
             ),
+            PaginationCase(
+                name: "has_more with unresolved beyond the last matched candidate",
+                request: makePaginationQueryRequest(
+                    targets: [targetA, targetB], condition: condition, pageSize: 1,
+                ),
+                response: queryPaginationPageResponse(
+                    items: firstPageItem, unresolved: "[1]", hasMore: true, nextPageToken: "next",
+                ),
+            ),
         ]
         try await assertQueryPaginationRejected(cases, endpoint: endpoint)
+
+        // has_more가 아니면 마지막 matched 뒤의 unresolved도 유효하다(꼬리 미스).
+        let tailMissResponse = queryPaginationPageResponse(
+            items: firstPageItem, unresolved: "[1]", hasMore: false,
+        )
+        let tailMissRecorder = PropertyTransportRecorder(response: Data(tailMissResponse.utf8))
+        let tailMissClient = EntryCorePropertyClient.makeLive(
+            requestID: { "query-id" },
+            makeTransport: tailMissRecorder.makeTransport,
+        )
+        let tailMissRequest = try makePaginationQueryRequest(
+            targets: [targetA, targetB], condition: condition, pageSize: 1,
+        )
+        _ = try await tailMissClient.conditionQuery(endpoint, tailMissRequest)
+        XCTAssertEqual(tailMissRecorder.requests.count, 1)
 
         // 전진하는 token을 가진 꽉 찬 페이지는 수용된다.
         let progressiveRequest = try makePaginationQueryRequest(
@@ -651,16 +675,17 @@ private func queryPaginationPageResponse(
     items: String,
     unresolved: String,
     hasMore: Bool,
-    nextPageToken: String,
+    nextPageToken: String? = nil,
 ) -> String {
-    """
+    let tokenField = nextPageToken.map { "\"next_page_token\":\"\($0)\"," } ?? ""
+    return """
     {
       "request_id":"query-id",
       "ok":true,
       "result":{
         "items":\(items),
         "unresolved_candidate_indices":\(unresolved),
-        "next_page_token":"\(nextPageToken ?? "")",
+        \(tokenField)
         "catalog_version":"2.2.0",
         "has_more":\(hasMore)
       }
