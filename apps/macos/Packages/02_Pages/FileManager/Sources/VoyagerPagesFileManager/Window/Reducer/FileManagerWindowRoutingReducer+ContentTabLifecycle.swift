@@ -24,6 +24,38 @@ private struct ContentTabCloseEffectInputs {
     let loadingCancellation: Effect<FileManagerWindowAction>
 }
 
+func consumePendingBrowsingUnavailability(
+    state: inout FileManagerContentFeature.State,
+    consumedOperationIDs: inout Set<UUID>,
+) -> FileManagerProductMetric? {
+    let operationID = state.productBrowsingOperationID
+    let content = state.productBrowsingContent
+    let identity = state.productBrowsingIdentity
+    let source = state.productBrowsingSource
+    state.productBrowsingOperationID = nil
+    state.productBrowsingIdentity = nil
+    state.productBrowsingSource = nil
+    state.productBrowsingContent = nil
+    state.pendingProductBrowsingSource = nil
+    guard let operationID,
+          let content,
+          let identity,
+          let source,
+          let metric = FileManagerProductMetricsProducer.browsingTerminal(
+              operationID: operationID,
+              content: content,
+              identity: identity,
+              source: source,
+              entryCount: nil,
+              failure: .unavailable,
+          ),
+          consumedOperationIDs.insert(operationID).inserted
+    else {
+        return nil
+    }
+    return metric
+}
+
 private func contentTabCloseDisposition(
     tabID: ContentTabID,
     state: FileManagerWindowState,
@@ -214,7 +246,7 @@ extension FileManagerWindowRoutingReducer {
             return .none
         }
         let disposition = contentTabCloseDisposition(tabID: tabID, state: state)
-        recordContentTabCloseMetricIfRemoved(tabID: tabID, disposition, state: &state)
+        recordContentTabTerminalMetricsBeforeRemoval(tabID: tabID, disposition: disposition, state: &state)
         let cancelCollectionOpenEffect = disposition.shouldResyncContentNavigation
             ? cancelPendingCollectionOpen(state: &state, failedPinnedReturnTabID: tabID)
             : .none
@@ -297,6 +329,53 @@ extension FileManagerWindowRoutingReducer {
             source: metric.context.source,
             result: .success,
         ))
+    }
+
+    private func recordContentTabTerminalMetricsBeforeRemoval(
+        tabID: ContentTabID,
+        disposition: ContentTabCloseDisposition,
+        state: inout State,
+    ) {
+        recordContentTabCloseMetricIfRemoved(tabID: tabID, disposition, state: &state)
+        recordBrowsingUnavailabilityBeforeContentTabRemoval(
+            tabID: tabID,
+            disposition: disposition,
+            state: &state,
+        )
+    }
+
+    private func recordBrowsingUnavailabilityBeforeContentTabRemoval(
+        tabID: ContentTabID,
+        disposition: ContentTabCloseDisposition,
+        state: inout State,
+    ) {
+        guard disposition.isActualRemoval || disposition.shouldResetLastTabContent else { return }
+        var consumedOperationIDs = Set<UUID>()
+        if tabID == state.contentTabs.activeTabID {
+            if let metric = consumePendingBrowsingUnavailability(
+                state: &state.content,
+                consumedOperationIDs: &consumedOperationIDs,
+            ) {
+                productMetricsClient.record(metric)
+            }
+            if var cachedContent = state.tabContentStates[tabID] {
+                if let metric = consumePendingBrowsingUnavailability(
+                    state: &cachedContent,
+                    consumedOperationIDs: &consumedOperationIDs,
+                ) {
+                    productMetricsClient.record(metric)
+                }
+                state.tabContentStates[tabID] = cachedContent
+            }
+        } else if var cachedContent = state.tabContentStates[tabID] {
+            if let metric = consumePendingBrowsingUnavailability(
+                state: &cachedContent,
+                consumedOperationIDs: &consumedOperationIDs,
+            ) {
+                productMetricsClient.record(metric)
+            }
+            state.tabContentStates[tabID] = cachedContent
+        }
     }
 
     private func makeContentTabUndoManagerLifecycleEffect(

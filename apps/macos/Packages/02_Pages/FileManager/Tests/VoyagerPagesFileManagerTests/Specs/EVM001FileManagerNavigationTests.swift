@@ -1140,6 +1140,116 @@ final class EVM001FileManagerNavigationTests: XCTestCase {
         XCTAssertNil(store.state.content.pendingProductBrowsingSource)
     }
 
+    // MARK: - EVM-001-content_browsing_correlation
+
+    /// EVM-001-content_browsing_correlation: closing the active accepted tab terminates browsing once.
+    /// 실제 accepted navigation 뒤 active tab close가 제거 전에 browsing correlation을 unavailable로 terminalize하는지 검증한다.
+    /// - 검증 내용: navigateToPath → close active tab의 unavailable metric payload와 반복 close/late terminal 무중복
+    /// - 사전 조건: 응답 없는 directory loader로 active tab browsing correlation이 성립돼 있다.
+    /// - 기대 결과: 원 operation ID/content/identity/source의 unavailable metric 한 건과 correlation 전체 해제
+    func testClosingActiveAcceptedTabTerminatesBrowsingExactlyOnce() async throws {
+        let path = "/tmp/voyager-evm001-active-close"
+        let metrics = LockIsolated<[FileManagerProductMetric]>([])
+        let store = makeTypedBrowsingStore(metrics: metrics) {
+            $0.entryLoadingClient.loadItems = Self.suspendedLoadItems
+        }
+
+        await store.send(.navigation(.view(.navigateToPath(path))))
+        await store.skipReceivedActions()
+        let activeTabID = try XCTUnwrap(store.state.contentTabs.activeTabID)
+
+        await store.send(.closeContentTabRequested(activeTabID))
+        await store.skipReceivedActions(strict: false)
+        await store.send(.contentTabs(.close(activeTabID)))
+        await store.skipReceivedActions(strict: false)
+
+        XCTAssertEqual(metrics.value, [
+            .contentBrowsing(
+                result: .unavailable,
+                content: .folder,
+                identity: .direct,
+                source: .fileManagerSidebar,
+                operationID: Self.typedBrowsingOperationIDs[0],
+            ),
+            .contentTabAction(
+                result: .success,
+                identity: .closeContentTab,
+                source: .contentTabBar,
+                operationID: Self.typedBrowsingOperationIDs[0],
+            ),
+        ])
+        XCTAssertNil(store.state.content.productBrowsingOperationID)
+        XCTAssertNil(store.state.content.productBrowsingIdentity)
+        XCTAssertNil(store.state.content.productBrowsingSource)
+        XCTAssertNil(store.state.content.productBrowsingContent)
+        XCTAssertNil(store.state.content.pendingProductBrowsingSource)
+
+        await store.send(.onDisappear)
+        XCTAssertEqual(metrics.value.count(where: { metric in
+            if case .contentBrowsing = metric { return true }
+            return false
+        }), 1)
+    }
+
+    /// EVM-001-content_browsing_correlation: closing an inactive accepted tab preserves its active sibling.
+    /// 실제 inactive tab navigation과 close route가 cached content의 correlation만 terminalize하는지 검증한다.
+    /// - 검증 내용: inactive tab requestNavigation → closeContentTabRequested의 exact unavailable metric과 active state 보존
+    /// - 사전 조건: active Home tab과 별도 inactive directory tab이 있고 inactive tab navigation이 수락된다.
+    /// - 기대 결과: inactive operation 한 건만 terminalize되고 active sibling tab/content는 유지된다.
+    func testClosingInactiveAcceptedTabTerminatesCachedBrowsingAndPreservesActiveSibling() async throws {
+        let inactiveTabID = ContentTabID(rawValue: "evm001-inactive-close")
+        var state = FileManagerFeature.State()
+        let activeTabID = try XCTUnwrap(state.contentTabs.activeTabID)
+        state.contentTabs.tabs.append(ContentTabItem(
+            id: inactiveTabID,
+            page: .directory,
+            anchor: .directory(path: "/tmp/evm001-inactive"),
+            isPinned: false,
+            title: "Inactive",
+            iconName: "folder",
+        ))
+        state.contentTabs.activeTabID = activeTabID
+        state.tabContentStates[inactiveTabID] = FileManagerContentFeature.State()
+        let metrics = LockIsolated<[FileManagerProductMetric]>([])
+        let store = makeTypedBrowsingStore(metrics: metrics, initialState: state) {
+            $0.entryLoadingClient.loadItems = Self.suspendedLoadItems
+        }
+
+        await store.send(.contentTabs(.setCurrent(inactiveTabID)))
+        await store.send(.navigation(.view(.navigateToPath("/tmp/voyager-evm001-inactive-target"))))
+        await store.skipReceivedActions(strict: false)
+        await store.send(.contentTabs(.setCurrent(activeTabID)))
+        await store.skipReceivedActions(strict: false)
+        XCTAssertEqual(
+            store.state.tabContentStates[inactiveTabID]?.productBrowsingOperationID,
+            Self.typedBrowsingOperationIDs[0],
+        )
+        await store.send(.closeContentTabRequested(inactiveTabID))
+        await store.skipReceivedActions(strict: false)
+        await store.send(.contentTabs(.close(inactiveTabID)))
+        await store.skipReceivedActions(strict: false)
+
+        XCTAssertEqual(metrics.value, [
+            .contentTabAction(
+                result: .success,
+                identity: .closeContentTab,
+                source: .contentTabBar,
+                operationID: Self.typedBrowsingOperationIDs[1],
+            ),
+            .contentBrowsing(
+                result: .unavailable,
+                content: .folder,
+                identity: .direct,
+                source: .fileManagerSidebar,
+                operationID: Self.typedBrowsingOperationIDs[0],
+            ),
+        ])
+        XCTAssertNotNil(store.state.contentTabs.tabs[id: activeTabID])
+        XCTAssertEqual(store.state.contentTabs.activeTabID, activeTabID)
+        XCTAssertNil(store.state.tabContentStates[inactiveTabID])
+        XCTAssertNil(store.state.contentTabs.tabs[id: inactiveTabID])
+    }
+
     /// EVM-001-content_browsing_correlation: stale stream terminal does not consume browsing correlation
     /// 구 generation 터미널은 correlation을 소비하지 않고, 이후 현재 generation 터미널이 정확히 한 번 기록하는지 검증.
     /// - 검증 내용: 미래 generation streamFinished 무음·상관 유지, 이어진 현재 streamFailed 1회
