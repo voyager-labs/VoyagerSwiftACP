@@ -176,16 +176,16 @@ final class ONB004ConfigureAIProviderDuringOnboardingTests: XCTestCase {
 
     // MARK: - ONB-004-start_ai_provider_connection_from_onboarding
 
-    /// ONB-004-start_ai_provider_connection_from_onboarding: OAuth provider Connect가 SET-007 shared row flow로 라우팅된다.
+    /// ONB-004-start_ai_provider_connection_from_onboarding: CLI provider Connect가 SET-007 shared row flow로 라우팅된다.
     /// 사용자가 ChatGPT Codex row의 Connect를 누를 때 onboarding이 자체 연결 로직을 갖지 않고 shared row reducer를 실행하는지 검증한다.
-    /// - 검증 내용: `.connectButtonTapped`가 child reducer의 `.startBrowserLogin` action을 emit하고 setup 상태를 pending으로 해석한다.
-    /// - 사전 조건: ChatGPT Codex row는 `notVerified`이고 native browser login은 즉시 cancelled 실패를 반환한다.
+    /// - 검증 내용: `.connectButtonTapped`가 child reducer의 `.startProviderLogin` action을 emit하고 setup 상태를 pending으로 해석한다.
+    /// - 사전 조건: ChatGPT Codex row는 `notVerified`이고 provider CLI login은 즉시 cancelled 실패를 반환한다.
     /// - 기대 결과: row가 `connectInProgress/browserLoginInProgress`로 전환된 뒤 취소 실패 상태를 row reducer가 보존하고 blocked 상태로 복귀한다.
-    func testStartConnectionRoutesOAuthProviderThroughSharedRowReducer() async {
+    func testStartConnectionRoutesCLIProviderThroughSharedRowReducer() async {
         let store = TestStore(initialState: AiProviderSetupState()) {
             AiProviderSetupFeature()
         } withDependencies: {
-            $0.codexNativeAuthClient.startBrowserLogin = {
+            $0.codexNativeAuthClient.startProviderLogin = {
                 AsyncThrowingStream { continuation in
                     continuation.yield(.failed(.cancelled))
                     continuation.finish()
@@ -195,7 +195,7 @@ final class ONB004ConfigureAIProviderDuringOnboardingTests: XCTestCase {
 
         await store.send(.row(.element(id: .chatgptCodex, action: .connectButtonTapped)))
 
-        await store.receive(\.row[id: .chatgptCodex].startBrowserLogin) { state in
+        await store.receive(\.row[id: .chatgptCodex].startProviderLogin) { state in
             state.rows[id: .chatgptCodex]?.connectionState = .connectInProgress
             state.rows[id: .chatgptCodex]?.flowState = .browserLoginInProgress
             state.status = .pending
@@ -327,6 +327,44 @@ final class ONB004ConfigureAIProviderDuringOnboardingTests: XCTestCase {
             state.rows[id: provider]?.statusReason = .none
             state.choice = .providerConnected
             state.status = .complete
+        }
+
+        await store.finish()
+    }
+
+    /// ONB-004-start_ai_provider_connection_from_onboarding: failed Codex logout preserves retryable state.
+    /// Onboarding must not reload a persisted connected snapshot after provider-owned logout fails.
+    /// - 검증 내용: disconnect failure가 bootstrap reload 없이 connectionFailed/retry 상태를 유지하는지 확인합니다.
+    /// - 사전 조건: connected Codex row가 disconnect failure 결과를 수신합니다.
+    /// - 기대 결과: row는 connectionFailed/idle이고 setup은 blocked 상태로 남습니다.
+    func testCodexDisconnectFailurePreservesRetryableStateWithoutBootstrapReload() async {
+        var initialState = AiProviderSetupState()
+        initialState.bootstrapPhase = .loaded
+        initialState.rows[id: .chatgptCodex]?.connectionState = .disconnecting
+        initialState.rows[id: .chatgptCodex]?.flowState = .disconnecting
+
+        let store = TestStore(initialState: initialState) {
+            AiProviderSetupFeature()
+        } withDependencies: {
+            $0.aiConnectionsFileClient.load = {
+                XCTFail("Logout failure must not reload bootstrap state")
+                return AIConnectionsFile.empty()
+            }
+        }
+
+        await store.send(.row(.element(
+            id: .chatgptCodex,
+            action: .disconnectResponse(AiProviderConnectionResult(
+                provider: .chatgptCodex,
+                state: .connectionFailed,
+                reason: .verificationFailed,
+                updatedFile: .empty(),
+            )),
+        ))) { state in
+            state.rows[id: .chatgptCodex]?.connectionState = .connectionFailed
+            state.rows[id: .chatgptCodex]?.statusReason = .verificationFailed
+            state.rows[id: .chatgptCodex]?.flowState = .idle
+            state.status = .blocked
         }
 
         await store.finish()
