@@ -10,6 +10,7 @@ public enum AiConnectionRowAction: CasePathable, Equatable, Sendable {
     case retryButtonTapped
     case cancelButtonTapped
     case startBrowserLogin
+    case startProviderLogin
     case browserLoginCompleted(OAuthCredentialFile)
     case browserLoginFailed(CodexNativeAuthError)
     case verificationFailed(ProviderStatusReason)

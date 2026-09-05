@@ -36,7 +36,20 @@ public struct AiConnectionRowReducer {
                 state.flowState = .disconnecting
                 state.connectionState = .disconnecting
                 let provider = state.provider
-                return .run { [connectionClient] send in
+                return .run { [connectionClient, nativeAuthClient] send in
+                    if provider == .chatgptCodex {
+                        do {
+                            try await nativeAuthClient.logout()
+                        } catch {
+                            await send(.disconnectResponse(AiProviderConnectionResult(
+                                provider: provider,
+                                state: .connectionFailed,
+                                reason: .verificationFailed,
+                                updatedFile: AIConnectionsFile.empty(),
+                            )))
+                            return
+                        }
+                    }
                     let result = await connectionClient.disconnect(provider)
                     await send(.disconnectResponse(result))
                 }
@@ -59,9 +72,14 @@ public struct AiConnectionRowReducer {
                 )
 
             case .startBrowserLogin:
+                guard state.provider != .chatgptCodex else { return .none }
+                return handleLegacyBrowserLogin(&state)
+
+            case .startProviderLogin:
                 return handleStartBrowserLogin(&state)
 
             case let .browserLoginCompleted(credential):
+                guard state.provider != .chatgptCodex else { return .none }
                 state.connectionState = .connected
                 state.flowState = .idle
                 state.statusReason = .none
@@ -82,9 +100,11 @@ public struct AiConnectionRowReducer {
                 return .none
 
             case .startDeviceAuth:
+                guard state.provider != .chatgptCodex else { return .none }
                 return handleStartDeviceAuth(&state)
 
             case let .deviceAuthCompleted(credential):
+                guard state.provider != .chatgptCodex else { return .none }
                 state.connectionState = .connected
                 state.flowState = .idle
                 state.statusReason = .none
@@ -117,6 +137,9 @@ public struct AiConnectionRowReducer {
                     state.enteredKey = ""
                     state.accountID = nil
                     state.tokenExpiresAtMs = nil
+                case .connectionFailed:
+                    state.connectionState = .connectionFailed
+                    state.statusReason = result.reason == .none ? .verificationFailed : result.reason
                 default:
                     state.connectionState = .connected
                     state.statusReason = .none
@@ -138,9 +161,10 @@ public struct AiConnectionRowReducer {
         let descriptor = ProviderDescriptor.descriptor(for: state.provider)
         guard let descriptor else { return .none }
 
-        if descriptor.authMethod == .oauth {
-            return .send(.startBrowserLogin)
+        if state.provider == .chatgptCodex {
+            return .send(.startProviderLogin)
         }
+        if descriptor.authMethod == .oauth { return .send(.startBrowserLogin) }
         return .none
     }
 
@@ -149,13 +173,47 @@ public struct AiConnectionRowReducer {
         state.flowState = .browserLoginInProgress
         state.connectionState = .connectInProgress
 
+        return .run { [nativeAuthClient, connectionClient] send in
+            guard let startProviderLogin = nativeAuthClient.startProviderLogin else {
+                await send(.browserLoginFailed(.loginUnavailable))
+                return
+            }
+            do {
+                guard try await providerLoginSucceeded(startProviderLogin) else {
+                    await send(.browserLoginFailed(.cancelled))
+                    return
+                }
+            } catch {
+                if Self.isCancellation(error) {
+                    await send(.browserLoginFailed(.cancelled))
+                    return
+                }
+                await send(.browserLoginFailed((error as? CodexNativeAuthError) ??
+                        .networkError(error.localizedDescription)))
+                return
+            }
+            guard !Task.isCancelled else { return }
+            let result = await connectionClient.connectProviderManaged(.chatgptCodex, .connected)
+            guard !Task.isCancelled else { return }
+            guard result.state == .connected else {
+                await send(.browserLoginFailed(.networkError("Connection failed")))
+                return
+            }
+            await send(.connectionResponse(result))
+        }
+        .cancellable(id: CancelID.connectFlow, cancelInFlight: true)
+    }
+
+    private func handleLegacyBrowserLogin(_ state: inout State) -> Effect<Action> {
+        guard state.connectionState != .unavailable else { return .none }
+        state.flowState = .browserLoginInProgress
+        state.connectionState = .connectInProgress
+
         return .run { [nativeAuthClient, connectionClient, verificationClient] send in
             let credentialResult = await Self.browserCredential(client: nativeAuthClient)
             guard !Task.isCancelled else { return }
             guard case let .success(credential) = credentialResult else {
-                if case let .failure(error) = credentialResult {
-                    await send(.browserLoginFailed(error))
-                }
+                if case let .failure(error) = credentialResult { await send(.browserLoginFailed(error)) }
                 return
             }
             for action in await Self.browserLoginActions(
@@ -375,7 +433,28 @@ public struct AiConnectionRowReducer {
         state.flowState = .idle
         if result.state == .connected {
             state.enteredKey = ""
+            if state.provider == .chatgptCodex {
+                state.accountID = nil
+                state.tokenExpiresAtMs = nil
+            }
         }
         return .none
     }
+}
+
+private func providerLoginSucceeded(
+    _ startProviderLogin: @escaping @Sendable () -> AsyncThrowingStream<CodexProviderLoginState, Error>,
+) async throws -> Bool {
+    var succeeded = false
+    for try await event in startProviderLogin() {
+        switch event {
+        case .inProgress:
+            continue
+        case .completed:
+            succeeded = true
+        case let .failed(error):
+            throw error
+        }
+    }
+    return succeeded
 }
