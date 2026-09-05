@@ -73,10 +73,10 @@ actor AIProviderModelCatalogCache {
 
         for provider in currentSnapshot.connectedProviderIds {
             guard modelsByProvider[provider] == nil else { continue }
-            guard let record = file.providers[provider.rawValue], let credential = record.credential else { continue }
+            guard let record = file.providers[provider.rawValue] else { continue }
 
             do {
-                modelsByProvider[provider] = try await loadModels(for: provider, credential: credential)
+                modelsByProvider[provider] = try await loadModels(for: provider, credential: record.credential)
             } catch {
                 logger.warning(
                     "[AIProviderModelCatalogCache] model warmup failed provider=\(provider.rawValue) error=\(error)",
@@ -93,7 +93,7 @@ actor AIProviderModelCatalogCache {
 
     private func loadModels(
         for provider: AiProvider,
-        credential: StoredCredentialPayload,
+        credential: StoredCredentialPayload?,
     ) async throws -> [AiProviderModel] {
         let models = try await modelListClient.loadModels(provider, credential)
         return models.filter(Self.supportsQueryConversion)
@@ -120,7 +120,8 @@ actor AIProviderModelCatalogCache {
             .map(\.provider)
             .filter { provider in
                 guard let record = file.providers[provider.rawValue] else { return false }
-                return record.snapshot.lastKnownStatus == .connected && record.credential != nil
+                return record.snapshot.lastKnownStatus == .connected
+                    && (record.credential != nil || provider == .chatgptCodex)
             }
         return Snapshot(updatedAtMs: file.updatedAtMs, connectedProviderIds: connectedProviderIds)
     }
