@@ -6,6 +6,7 @@ import VoyagerEntitiesAppPreferences
 import VoyagerEntryCoreClient
 import VoyagerFeaturesAccountAccess
 import VoyagerPagesOnboarding
+import VoyagerSentryComposition
 import VoyagerShared
 
 struct AppTechnicalSentryClient {

@@ -385,6 +385,7 @@
 				F20000000000000000000011 /* VoyagerPagesOnboarding */,
 				F20000000000000000000012 /* VoyagerPagesSettings */,
 				F20000000000000000000013 /* VoyagerShared */,
+				F20000000000000000000061 /* VoyagerSentryComposition */,
 				EC0000000000000000000004 /* VoyagerEntryCoreClient */,
 				F20000000000000000000020 /* VoyagerFeaturesAccountAccess */,
 				F20000000000000000000014 /* VoyagerFeaturesEntryOperations */,
@@ -503,6 +504,7 @@
 			name = VoyagerHelper;
 			packageProductDependencies = (
 				F20000000000000000000013 /* VoyagerShared */,
+				F20000000000000000000062 /* VoyagerSentryComposition */,
 				F20000000000000000000017 /* VoyagerEntitiesCollection */,
 				F20000000000000000000047 /* VoyagerEntitiesAi */,
 				7E9D64942E8CDDC8006CB69F /* SwiftDotenv */,
@@ -621,6 +623,7 @@
 				F20000000000000000000002 /* XCLocalSwiftPackageReference "02_Pages/Settings" */,
 				F20000000000000000000003 /* XCLocalSwiftPackageReference "04_Features/EntryOperations" */,
 				F20000000000000000000010 /* XCLocalSwiftPackageReference "04_Features/AccountAccess" */,
+				F20000000000000000000060 /* XCLocalSwiftPackageReference "01_App/VoyagerSentryComposition" */,
 				F20000000000000000000004 /* XCLocalSwiftPackageReference "06_Shared/VoyagerShared" */,
 				EC0000000000000000000003 /* XCLocalSwiftPackageReference "06_Shared/VoyagerEntryCoreClient" */,
 				F20000000000000000000005 /* XCLocalSwiftPackageReference "05_Entities/AppPreferences" */,
@@ -649,7 +652,6 @@
 				7E17249F2EC5B91C00385F6E /* XCRemoteSwiftPackageReference "SwiftUI-Introspect" */,
 				6C57FBA72F02111500D85C72 /* XCRemoteSwiftPackageReference "Sparkle" */,
 				6C727A2B2F0DF4A10012D44A /* XCRemoteSwiftPackageReference "swift-log" */,
-				7E17C11F2F24CB7500F6BD2B /* XCRemoteSwiftPackageReference "sentry-cocoa" */,
 				A52700000000000000000003 /* XCRemoteSwiftPackageReference "posthog-ios" */,
 				08631B7042D24536AA083429 /* XCRemoteSwiftPackageReference "swift-structured-queries" */,
 			);
@@ -1958,6 +1960,10 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../Packages/04_Features/AccountAccess;
 		};
+		F20000000000000000000060 /* XCLocalSwiftPackageReference "01_App/VoyagerSentryComposition" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../Packages/01_App/VoyagerSentryComposition;
+		};
 		F20000000000000000000004 /* XCLocalSwiftPackageReference "06_Shared/VoyagerShared" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../Packages/06_Shared/VoyagerShared;
@@ -2105,14 +2111,6 @@
 				version = 26.0.0;
 			};
 		};
-		7E17C11F2F24CB7500F6BD2B /* XCRemoteSwiftPackageReference "sentry-cocoa" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/getsentry/sentry-cocoa.git";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 9.2.0;
-			};
-		};
 		A52700000000000000000003 /* XCRemoteSwiftPackageReference "posthog-ios" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/PostHog/posthog-ios";
@@ -2208,11 +2206,6 @@
 			package = 7E17249F2EC5B91C00385F6E /* XCRemoteSwiftPackageReference "SwiftUI-Introspect" */;
 			productName = SwiftUIIntrospect;
 		};
-		7E17C1202F24CB7500F6BD2B /* Sentry */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 7E17C11F2F24CB7500F6BD2B /* XCRemoteSwiftPackageReference "sentry-cocoa" */;
-			productName = Sentry;
-		};
 		A52700000000000000000002 /* PostHog */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = A52700000000000000000003 /* XCRemoteSwiftPackageReference "posthog-ios" */;
@@ -2232,6 +2225,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 7E9D64932E8CDDC8006CB69F /* XCRemoteSwiftPackageReference "swift-dotenv" */;
 			productName = SwiftDotenv;
+		};
+		F20000000000000000000061 /* VoyagerSentryComposition */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F20000000000000000000060 /* XCLocalSwiftPackageReference "01_App/VoyagerSentryComposition" */;
+			productName = VoyagerSentryComposition;
+		};
+		F20000000000000000000062 /* VoyagerSentryComposition */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F20000000000000000000060 /* XCLocalSwiftPackageReference "01_App/VoyagerSentryComposition" */;
+			productName = VoyagerSentryComposition;
 		};
 		F20000000000000000000011 /* VoyagerPagesOnboarding */ = {
 			isa = XCSwiftPackageProductDependency;
