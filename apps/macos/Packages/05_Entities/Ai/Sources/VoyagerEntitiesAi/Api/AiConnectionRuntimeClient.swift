@@ -61,15 +61,29 @@ extension AiConnectionRuntimeClient {
         session: URLSession = .shared,
         refreshCredential: (@Sendable (OAuthCredentialFile) async throws -> OAuthCredentialFile)? = nil,
         loadModels: (@Sendable (AiProvider, StoredCredentialPayload?) async throws -> [AiProviderModel])? = nil,
+        codexReadinessVerifier: (@Sendable () async -> AiProviderVerificationResult)? = nil,
     ) -> AiConnectionRuntimeClient {
         let refreshCredential = refreshCredential ?? CodexNativeAuthClient.live(session: session).refreshCredential
         let loadModels = loadModels ?? AiProviderModelListClient.live(session: session).loadModels
+        let codexReadinessVerifier = codexReadinessVerifier ?? {
+            await Self.verifyCodexReadiness()
+        }
         return AiConnectionRuntimeClient(
             verifyProvider: { provider, credential in
-                await Self.verifyStatus(provider: provider, credential: credential, session: session)
+                if provider == .chatgptCodex {
+                    return await codexReadinessVerifier()
+                }
+                return await Self.verifyStatus(provider: provider, credential: credential, session: session)
             },
             verifyProviderWithCredential: { provider, credential in
-                try await Self.verifyWithEffectiveCredential(
+                if provider == .chatgptCodex {
+                    return await AiProviderVerificationOutcome(
+                        result: codexReadinessVerifier(),
+                        sourceCredential: nil,
+                        effectiveCredential: nil,
+                    )
+                }
+                return try await Self.verifyWithEffectiveCredential(
                     provider: provider,
                     credential: credential,
                     session: session,
@@ -91,12 +105,39 @@ extension AiConnectionRuntimeClient {
         )
     }
 
+    private static func verifyCodexReadiness() async -> AiProviderVerificationResult {
+        guard let executableURL = CodexExecReadinessProbe.discoverExecutable() else {
+            return .invalid(.verificationFailed)
+        }
+        do {
+            _ = try CodexExecReadinessProbe().check(
+                executableURL: executableURL,
+                environment: AiChatProviderExecutionClient.codexProcessEnvironment(
+                    codexHomeURL: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex"),
+                ),
+            )
+            return .valid
+        } catch let error as CodexExecReadinessError {
+            return .invalid(Self.readinessReason(error))
+        } catch {
+            return .networkError
+        }
+    }
+
+    static func readinessReason(_ error: CodexExecReadinessError) -> ProviderStatusReason {
+        switch error {
+        case .unsupportedVersion: .providerUnsupportedInBuild
+        case .loginRequired, .loginProbeFailed: .missingCredential
+        default: .verificationFailed
+        }
+    }
+
     private static func verifyWithEffectiveCredential(
         provider: AiProvider,
         credential: StoredCredentialPayload?,
         session: URLSession,
-        refreshCredential: @escaping @Sendable (OAuthCredentialFile) async throws -> OAuthCredentialFile,
-        loadModels: @escaping @Sendable (AiProvider, StoredCredentialPayload?) async throws -> [AiProviderModel],
+        refreshCredential _: @escaping @Sendable (OAuthCredentialFile) async throws -> OAuthCredentialFile,
+        loadModels _: @escaping @Sendable (AiProvider, StoredCredentialPayload?) async throws -> [AiProviderModel],
     ) async throws -> AiProviderVerificationOutcome {
         guard let credential else {
             return AiProviderVerificationOutcome(
@@ -105,33 +146,10 @@ extension AiConnectionRuntimeClient {
                 effectiveCredential: nil,
             )
         }
-        guard provider == .chatgptCodex else {
-            return await AiProviderVerificationOutcome(
-                result: verifyStatus(provider: provider, credential: credential, session: session),
-                sourceCredential: credential,
-                effectiveCredential: credential,
-            )
-        }
-        guard case let .oauth(oauth) = credential, !oauth.accessToken.isEmpty else {
-            return AiProviderVerificationOutcome(
-                result: .invalid(.credentialKindMismatch),
-                sourceCredential: credential,
-                effectiveCredential: credential,
-            )
-        }
-        let effectiveCredential = try await refreshedCredential(
-            oauth,
-            source: credential,
-            refreshCredential: refreshCredential,
-        )
-        guard case let .success(effective) = effectiveCredential else {
-            return effectiveCredential.failure
-        }
-        return try await verifyModels(
-            provider: provider,
+        return await AiProviderVerificationOutcome(
+            result: verifyStatus(provider: provider, credential: credential, session: session),
             sourceCredential: credential,
-            effectiveCredential: effective,
-            loadModels: loadModels,
+            effectiveCredential: credential,
         )
     }
 
@@ -215,7 +233,6 @@ extension AiConnectionRuntimeClient {
         case let .oauth(payload): payload.accessToken
         }
         guard !secret.isEmpty else { return .invalid(.invalidAPIKey) }
-        if provider == .chatgptCodex { return .valid }
         return await performSmokeRequest(provider: provider, secret: secret, session: session)
     }
 
@@ -276,7 +293,7 @@ extension AiConnectionRuntimeClient {
             request.timeoutInterval = 30
 
         case .chatgptCodex:
-            return .valid
+            return .invalid(.verificationFailed)
 
         case .anthropic:
             url = "https://api.anthropic.com/v1/models"

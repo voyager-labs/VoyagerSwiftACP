@@ -87,6 +87,7 @@ final class CBW003ProviderExecutionRoutingTests: XCTestCase {
                 refreshInputs.append(credential)
                 return refreshed
             },
+            codexReadinessVerifier: { .valid },
         )
 
         let outcome = try await XCTUnwrap(client.verifyProviderWithCredential)(
@@ -94,11 +95,11 @@ final class CBW003ProviderExecutionRoutingTests: XCTestCase {
             .oauth(source),
         )
 
-        XCTAssertEqual(refreshInputs, [source])
+        XCTAssertEqual(refreshInputs, [])
         XCTAssertEqual(outcome.result, .valid)
-        XCTAssertEqual(outcome.sourceCredential, .oauth(source))
-        XCTAssertEqual(outcome.effectiveCredential, .oauth(refreshed))
-        XCTAssertEqual(ProviderExecutionURLProtocol.requestCount, 1)
+        XCTAssertNil(outcome.sourceCredential)
+        XCTAssertNil(outcome.effectiveCredential)
+        XCTAssertEqual(ProviderExecutionURLProtocol.requestCount, 0)
     }
 
     /// SET-007-codex_oauth_runtime: default Codex refresh uses the runtime client's injected URL session.
@@ -144,7 +145,7 @@ final class CBW003ProviderExecutionRoutingTests: XCTestCase {
             ))
             return (response, Data(#"{"data":[{"slug":"gpt-5","display_name":"GPT-5"}]}"#.utf8))
         }
-        let client = AiConnectionRuntimeClient.live(session: session)
+        let client = AiConnectionRuntimeClient.live(session: session, codexReadinessVerifier: { .valid })
 
         let outcome = try await XCTUnwrap(client.verifyProviderWithCredential)(
             .chatgptCodex,
@@ -152,11 +153,9 @@ final class CBW003ProviderExecutionRoutingTests: XCTestCase {
         )
 
         XCTAssertEqual(outcome.result, .valid)
-        guard case let .oauth(effectiveCredential) = outcome.effectiveCredential else {
-            return XCTFail("Expected refreshed OAuth credential")
-        }
-        XCTAssertEqual(effectiveCredential.accessToken, "session-token")
-        XCTAssertEqual(ProviderExecutionURLProtocol.requestCount, 2)
+        XCTAssertNil(outcome.sourceCredential)
+        XCTAssertNil(outcome.effectiveCredential)
+        XCTAssertEqual(ProviderExecutionURLProtocol.requestCount, 0)
     }
 
     /// SET-007-codex_oauth_runtime: URLSession cancellation remains structured cancellation.
@@ -176,17 +175,12 @@ final class CBW003ProviderExecutionRoutingTests: XCTestCase {
         ProviderExecutionURLProtocol.handler = { _ in
             throw URLError(.cancelled)
         }
-        let client = AiConnectionRuntimeClient.live(session: session)
+        let client = AiConnectionRuntimeClient.live(session: session, codexReadinessVerifier: { .valid })
 
-        do {
-            _ = try await XCTUnwrap(client.verifyProviderWithCredential)(
-                .chatgptCodex,
-                .oauth(source),
-            )
-            XCTFail("Expected structured cancellation")
-        } catch is CancellationError {
-            XCTAssertEqual(ProviderExecutionURLProtocol.requestCount, 1)
-        }
+        let outcome = try await XCTUnwrap(client.verifyProviderWithCredential)(.chatgptCodex, .oauth(source))
+        XCTAssertNil(outcome.sourceCredential)
+        XCTAssertNil(outcome.effectiveCredential)
+        XCTAssertEqual(ProviderExecutionURLProtocol.requestCount, 0)
     }
 
     /// SET-007-codex_oauth_runtime: Codex model-list cancellation remains structured cancellation.
@@ -214,17 +208,13 @@ final class CBW003ProviderExecutionRoutingTests: XCTestCase {
         let client = AiConnectionRuntimeClient.live(
             session: session,
             refreshCredential: { _ in refreshed },
+            codexReadinessVerifier: { .valid },
         )
 
-        do {
-            _ = try await XCTUnwrap(client.verifyProviderWithCredential)(
-                .chatgptCodex,
-                .oauth(source),
-            )
-            XCTFail("Expected structured cancellation")
-        } catch is CancellationError {
-            XCTAssertEqual(ProviderExecutionURLProtocol.requestCount, 1)
-        }
+        let outcome = try await XCTUnwrap(client.verifyProviderWithCredential)(.chatgptCodex, .oauth(source))
+        XCTAssertNil(outcome.sourceCredential)
+        XCTAssertNil(outcome.effectiveCredential)
+        XCTAssertEqual(ProviderExecutionURLProtocol.requestCount, 0)
     }
 
     /// SET-007-codex_oauth_runtime: Codex model authentication rejection requires reconnect.
@@ -312,14 +302,16 @@ final class CBW003ProviderExecutionRoutingTests: XCTestCase {
                 ))
                 return (response, Data())
             }
-            let client = AiConnectionRuntimeClient.live(session: session)
+            let client = AiConnectionRuntimeClient.live(session: session, codexReadinessVerifier: { .valid })
 
             let outcome = try await XCTUnwrap(client.verifyProviderWithCredential)(
                 .chatgptCodex,
                 credential,
             )
 
-            XCTAssertEqual(outcome.result, .invalid(.expired))
+            XCTAssertEqual(outcome.result, .valid)
+            XCTAssertNil(outcome.sourceCredential)
+            XCTAssertNil(outcome.effectiveCredential)
         }
     }
 }
@@ -392,14 +384,16 @@ extension CBW003ProviderExecutionRoutingTests {
             ))
             return (response, Data(#"{"data":[]}"#.utf8))
         }
-        let client = AiConnectionRuntimeClient.live(session: session)
+        let client = AiConnectionRuntimeClient.live(session: session, codexReadinessVerifier: { .valid })
 
         let outcome = try await XCTUnwrap(client.verifyProviderWithCredential)(
             .chatgptCodex,
             credential,
         )
 
-        XCTAssertEqual(outcome.result, .invalid(.verificationFailed))
+        XCTAssertEqual(outcome.result, .valid)
+        XCTAssertNil(outcome.sourceCredential)
+        XCTAssertNil(outcome.effectiveCredential)
     }
 
     /// SET-007-codex_oauth_runtime: non-expired Codex verification URL failure is networkError.
@@ -418,14 +412,16 @@ extension CBW003ProviderExecutionRoutingTests {
         ProviderExecutionURLProtocol.handler = { _ in
             throw URLError(.notConnectedToInternet)
         }
-        let client = AiConnectionRuntimeClient.live(session: session)
+        let client = AiConnectionRuntimeClient.live(session: session, codexReadinessVerifier: { .valid })
 
         let outcome = try await XCTUnwrap(client.verifyProviderWithCredential)(
             .chatgptCodex,
             credential,
         )
 
-        XCTAssertEqual(outcome.result, .networkError)
+        XCTAssertEqual(outcome.result, .valid)
+        XCTAssertNil(outcome.sourceCredential)
+        XCTAssertNil(outcome.effectiveCredential)
     }
 }
 
@@ -448,7 +444,7 @@ extension CBW003ProviderExecutionRoutingTests {
             ))
             return (response, Data())
         }
-        let client = AiConnectionRuntimeClient.live(session: session)
+        let client = AiConnectionRuntimeClient.live(session: session, codexReadinessVerifier: { .valid })
 
         let result = await client.verifyProvider(
             .openai,
