@@ -6,6 +6,36 @@ import XCTest
 // MARK: - ATI-004-manage_external_agent_runtimes
 
 final class ATI004ManageExternalAgentRuntimesTests: XCTestCase {
+    private final class CancellationFlag: @unchecked Sendable {
+        private let lock = NSLock()
+        var value = false
+
+        func setValue(_ value: Bool) {
+            lock.withLock { self.value = value }
+        }
+
+        func isSet() -> Bool {
+            lock.withLock { value }
+        }
+    }
+
+    private actor AsyncLatch {
+        private var isOpen = false
+        private var waiters: [CheckedContinuation<Void, Never>] = []
+
+        func open() {
+            isOpen = true
+            let waiters = waiters
+            self.waiters.removeAll()
+            waiters.forEach { $0.resume() }
+        }
+
+        func wait() async {
+            if isOpen { return }
+            await withCheckedContinuation { waiters.append($0) }
+        }
+    }
+
     private let root = URL(fileURLWithPath: "/tmp/voyager-codex-workspace", isDirectory: true)
 
     override func setUpWithError() throws {
@@ -212,11 +242,16 @@ final class ATI004ManageExternalAgentRuntimesTests: XCTestCase {
     func testCommandEnvironment_usesProviderOwnedAllowlist() {
         let environment = AiChatProviderExecutionClient.codexProcessEnvironment(
             codexHomeURL: URL(fileURLWithPath: "/Users/me/.codex"),
-            parentEnvironment: ["OPENAI_API_KEY": "secret", "HTTPS_PROXY": "proxy"],
+            parentEnvironment: [
+                "CODEX_ACCESS_TOKEN": "sentinel-oauth",
+                "OPENAI_API_KEY": "secret",
+                "HTTPS_PROXY": "proxy",
+            ],
         )
         XCTAssertEqual(environment["CODEX_HOME"], "/Users/me/.codex")
         XCTAssertNil(environment["OPENAI_API_KEY"])
         XCTAssertNil(environment["HTTPS_PROXY"])
+        XCTAssertNil(environment["CODEX_ACCESS_TOKEN"])
     }
 
     /// ATI-004-manage_external_agent_runtimes: unsupported forbidden flags are rejected before launch.
@@ -420,6 +455,10 @@ final class ATI004ManageExternalAgentRuntimesTests: XCTestCase {
         )
         XCTAssertEqual(readiness.version, "0.148.0")
         XCTAssertEqual(harness.invocations.map(\.arguments), [["--version"], ["login", "status"]])
+        XCTAssertTrue(harness.invocations.allSatisfy { invocation in
+            !invocation.arguments.contains("sentinel-oauth")
+                && invocation.environment.values.allSatisfy { !$0.contains("sentinel-oauth") }
+        })
     }
 
     /// ATI-004-manage_external_agent_runtimes: unsupported gates fail before main execution spawn.
@@ -1025,5 +1064,64 @@ final class ATI004ManageExternalAgentRuntimesTests: XCTestCase {
             XCTAssertEqual(controllerCounts.resume, 0)
             XCTAssertEqual(controllerCounts.staged, 0)
         }
+    }
+
+    func testProviderLoginStreamCancellationCancelsOwnedCommand() async {
+        let started = AsyncLatch()
+        let cancellationObserved = CancellationFlag()
+        let stream = CodexNativeAuthClient.providerLoginStream(session: .shared, runner: { _ in
+            await started.open()
+            await withTaskCancellationHandler {
+                let never = AsyncStream<Void>(bufferingPolicy: .bufferingNewest(1)) { _ in }
+                for await _ in never {}
+            } onCancel: {
+                cancellationObserved.setValue(true)
+            }
+        })
+        let consumer = Task {
+            do {
+                for try await _ in stream {}
+            } catch {}
+        }
+        await started.wait()
+        consumer.cancel()
+        _ = await consumer.value
+        let observed = cancellationObserved.isSet()
+        XCTAssertTrue(observed)
+    }
+
+    /// ATI-004-manage_external_agent_runtimes: cancellation bounds an ignoring provider runner.
+    /// A runner that ignores task cancellation must not delay stream cancellation or emit completion later.
+    /// - 검증 내용: cancellation이 stream을 즉시 종료하고 detached runner가 늦게 끝나도 completed가 방출되지 않는지 확인합니다.
+    /// - 사전 조건: provider runner가 cancellation을 무시하고 release latch까지 대기합니다.
+    /// - 기대 결과: consumer가 제한 시간 안에 종료되고 runner 완료 후에도 completed event가 없습니다.
+    func testProviderLoginStreamCancellationBoundsIgnoringRunnerAndSuppressesLateCompletion() async {
+        let started = AsyncLatch()
+        let release = AsyncLatch()
+        let runnerFinished = AsyncLatch()
+        let completedEvent = CancellationFlag()
+        let consumerFinished = expectation(description: "provider login consumer finished")
+        let stream = CodexNativeAuthClient.providerLoginStream(session: .shared, runner: { _ in
+            await started.open()
+            await release.wait()
+            await runnerFinished.open()
+        })
+        let consumer = Task {
+            do {
+                for try await event in stream {
+                    if case .completed = event { completedEvent.setValue(true) }
+                }
+            } catch {}
+            consumerFinished.fulfill()
+        }
+
+        await started.wait()
+        consumer.cancel()
+        await fulfillment(of: [consumerFinished], timeout: 1)
+        await release.open()
+        await runnerFinished.wait()
+        _ = await consumer.value
+
+        XCTAssertFalse(completedEvent.isSet())
     }
 }
