@@ -55,21 +55,7 @@ public extension AiProviderModelListClient {
             loadModels: { provider, credential in
                 switch provider {
                 case .chatgptCodex:
-                    let credential = try oauthCredential(for: provider, credential: credential)
-                    let response = try await fetchCodexModels(credential: credential, session: session)
-                    return response.models.filter(\.isListable).map { payload in
-                        makeModel(
-                            provider: provider,
-                            rawModelID: payload.modelID,
-                            displayName: Self.displayName(
-                                provider: provider,
-                                rawModelID: payload.modelID,
-                                providerDisplayName: payload.displayName,
-                            ),
-                            thinkingCapability: payload.thinkingCapability ?? Self.unknownThinkingCapability,
-                            supportsThinkingNone: payload.supportsThinkingNone,
-                        )
-                    }
+                    return codexProviderManagedModels()
                 case .openai:
                     let secret = try secret(for: provider, credential: credential)
                     let response = try await fetchOpenAIModels(secret: secret, session: session)
@@ -105,6 +91,17 @@ public extension AiProviderModelListClient {
 }
 
 extension AiProviderModelListClient {
+    static func codexProviderManagedModels() -> [AiProviderModel] {
+        [
+            makeModel(
+                provider: .chatgptCodex,
+                rawModelID: "gpt-5-codex",
+                displayName: "GPT-5 Codex",
+                thinkingCapability: unknownThinkingCapability,
+            ),
+        ]
+    }
+
     static let codexCompatibilityVersion = "0.146.0"
 
     static func secret(

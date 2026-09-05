@@ -3,12 +3,12 @@ import Foundation
 public struct AIProviderQuerySelectionContext: Equatable, Sendable {
     public let provider: AiProvider
     public let record: ProviderRecordFile
-    public let credential: StoredCredentialPayload
+    public let credential: StoredCredentialPayload?
 
     public init(
         provider: AiProvider,
         record: ProviderRecordFile,
-        credential: StoredCredentialPayload,
+        credential: StoredCredentialPayload?,
     ) {
         self.provider = provider
         self.record = record
@@ -183,6 +183,13 @@ public enum AIProviderQuerySelection {
     ) -> SelectionState {
         switch record.snapshot.lastKnownStatus {
         case .connected:
+            if descriptor.provider == .chatgptCodex {
+                return .select(AIProviderQuerySelectionContext(
+                    provider: descriptor.provider,
+                    record: record,
+                    credential: nil,
+                ))
+            }
             guard let credential = record.credential else {
                 return .invalidCredential(.invalidCredential(
                     provider: descriptor.provider,
@@ -226,6 +233,13 @@ public enum AIProviderQuerySelection {
     ) -> SelectionState {
         switch record.snapshot.lastKnownStatus {
         case .connected:
+            if descriptor.provider == .chatgptCodex {
+                return .select(AIProviderQuerySelectionContext(
+                    provider: descriptor.provider,
+                    record: record,
+                    credential: nil,
+                ))
+            }
             guard let credential = record.credential else {
                 return .invalidCredential(.invalidCredential(
                     provider: descriptor.provider,
