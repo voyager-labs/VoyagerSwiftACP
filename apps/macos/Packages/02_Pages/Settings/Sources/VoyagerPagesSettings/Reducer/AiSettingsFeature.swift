@@ -340,6 +340,9 @@ private extension AiSettingsFeature {
                 if case let .oauth(credential) = result.effectiveCredential ?? result.sourceCredential {
                     state.rows[rowIdx].accountID = credential.chatGPTAccountId
                     state.rows[rowIdx].tokenExpiresAtMs = credential.expiresAtMs
+                } else if result.provider == .chatgptCodex {
+                    state.rows[rowIdx].accountID = nil
+                    state.rows[rowIdx].tokenExpiresAtMs = nil
                 }
             }
         }
@@ -377,15 +380,14 @@ private extension AiSettingsFeature {
             var failedProviders: [String] = []
 
             let file = try? await connectionsFileClient.load()
-            guard let record = file?.providers[provider.rawValue],
-                  let credential = record.credential
+            guard let record = file?.providers[provider.rawValue]
             else {
                 await send(.collectionSearchModelsLoaded(modelsByProvider: [:], errorMessage: nil))
                 return
             }
 
             do {
-                let models = try await providerModelListClient.loadModels(provider, credential)
+                let models = try await providerModelListClient.loadModels(provider, record.credential)
                 let filtered = models.filter(CollectionSearchAISelectionPolicy.supportsQueryConversion)
                 modelsByProvider[provider] = filtered
             } catch {
@@ -595,7 +597,7 @@ private extension AiSettingsFeature {
             do {
                 let file = try await connectionsFileClient.load()
                 try Task.checkCancellation()
-                guard let credential = file.providers[provider.rawValue]?.credential else {
+                guard let record = file.providers[provider.rawValue] else {
                     await send(.chatModelsFailed(
                         provider: provider,
                         requestID: requestID,
@@ -603,7 +605,7 @@ private extension AiSettingsFeature {
                     ))
                     return
                 }
-                let models = try await providerModelListClient.loadModels(provider, credential)
+                let models = try await providerModelListClient.loadModels(provider, record.credential)
                 try Task.checkCancellation()
                 await send(.chatModelsLoaded(provider: provider, requestID: requestID, models: models))
             } catch is CancellationError {

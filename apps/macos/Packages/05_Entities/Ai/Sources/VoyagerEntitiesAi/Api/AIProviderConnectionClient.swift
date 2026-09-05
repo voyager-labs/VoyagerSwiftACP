@@ -27,14 +27,15 @@ public struct AiProviderConnectionResult: Equatable, Sendable {
     }
 }
 
-/// A dependency client that manages AI provider connection lifecycle (connect via OAuth, connect via API key,
-/// disconnect).
+/// A dependency client that manages AI provider connection lifecycle (provider-managed login, API key, disconnect).
 ///
 /// Verification ownership lives in the reducer (via `AIProviderVerificationClient`).
 /// This client is a **persistence-only** layer: it validates auth-method compatibility,
 /// writes credentials, and returns the updated file. It does NOT perform runtime verification.
 public struct AIProviderConnectionClient: Sendable {
     public var connectOAuth: @Sendable (AiProvider, OAuthCredentialFile, ProviderConnectionState) async
+        -> AiProviderConnectionResult
+    public var connectProviderManaged: @Sendable (AiProvider, ProviderConnectionState) async
         -> AiProviderConnectionResult
     public var connectAPIKey: @Sendable (AiProvider, String, ProviderConnectionState) async
         -> AiProviderConnectionResult
@@ -43,11 +44,21 @@ public struct AIProviderConnectionClient: Sendable {
     nonisolated public init(
         connectOAuth: @escaping @Sendable (AiProvider, OAuthCredentialFile, ProviderConnectionState) async
             -> AiProviderConnectionResult,
+        connectProviderManaged: @escaping @Sendable (AiProvider, ProviderConnectionState) async
+            -> AiProviderConnectionResult = { provider, state in
+                AiProviderConnectionResult(
+                    provider: provider,
+                    state: state,
+                    reason: .none,
+                    updatedFile: AIConnectionsFile.empty(),
+                )
+            },
         connectAPIKey: @escaping @Sendable (AiProvider, String, ProviderConnectionState) async
             -> AiProviderConnectionResult,
         disconnect: @escaping @Sendable (AiProvider) async -> AiProviderConnectionResult,
     ) {
         self.connectOAuth = connectOAuth
+        self.connectProviderManaged = connectProviderManaged
         self.connectAPIKey = connectAPIKey
         self.disconnect = disconnect
     }
@@ -75,6 +86,7 @@ extension AIProviderConnectionClient: DependencyKey {
     ) -> AIProviderConnectionClient {
         AIProviderConnectionClient(
             connectOAuth: connectOAuthHandler(store: store),
+            connectProviderManaged: connectProviderManagedHandler(store: store),
             connectAPIKey: connectAPIKeyHandler(store: store),
             disconnect: disconnectHandler(store: store),
         )
@@ -86,7 +98,8 @@ extension AIProviderConnectionClient: DependencyKey {
         { provider, credential, connectionState in
             try? await store.migrateFromHomeIfNeeded()
             guard let descriptor = ProviderDescriptor.descriptor(for: provider),
-                  descriptor.authMethod == .oauth
+                  descriptor.authMethod == .oauth,
+                  provider != .chatgptCodex
             else {
                 return unsupportedProviderResult(provider: provider)
             }
@@ -99,6 +112,24 @@ extension AIProviderConnectionClient: DependencyKey {
                 authMethod: descriptor.authMethod,
                 credential: credentialPayload,
                 outcome: (connectionState: connectionState, reason: reason),
+            )
+        }
+    }
+
+    nonisolated private static func connectProviderManagedHandler(
+        store: AIConnectionFileStore,
+    ) -> @Sendable (AiProvider, ProviderConnectionState) async -> AiProviderConnectionResult {
+        { provider, connectionState in
+            try? await store.migrateFromHomeIfNeeded()
+            guard provider == .chatgptCodex
+            else { return unsupportedProviderResult(provider: provider) }
+            return await Self.persistAndReturn(
+                store: store,
+                provider: provider,
+                authMethod: .codexCLI,
+                credential: nil,
+                outcome: (connectionState: connectionState, reason: .none),
+                provenance: .providerManaged,
             )
         }
     }
@@ -166,8 +197,9 @@ extension AIProviderConnectionClient: DependencyKey {
         store: AIConnectionFileStore,
         provider: AiProvider,
         authMethod: ProviderAuthMethod,
-        credential: StoredCredentialPayload,
+        credential: StoredCredentialPayload?,
         outcome: (connectionState: ProviderConnectionState, reason: ProviderStatusReason),
+        provenance: ProviderConnectPath? = nil,
     ) async -> AiProviderConnectionResult {
         let now = Int64(Date().timeIntervalSince1970 * 1000)
         let record = providerRecord(
@@ -179,6 +211,7 @@ extension AIProviderConnectionClient: DependencyKey {
                 reason: outcome.reason,
                 now: now,
             ),
+            provenance: provenance,
         )
 
         do {
@@ -217,8 +250,9 @@ extension AIProviderConnectionClient: DependencyKey {
     nonisolated private static func providerRecord(
         provider: AiProvider,
         authMethod: ProviderAuthMethod,
-        credential: StoredCredentialPayload,
+        credential: StoredCredentialPayload?,
         snapshot: ProviderConnectionSnapshot,
+        provenance: ProviderConnectPath? = nil,
     ) -> ProviderRecordFile {
         let snapshotReason: ProviderStatusReason = snapshot.connectionState == .connected ? .none : snapshot.reason
         return ProviderRecordFile(
@@ -230,6 +264,7 @@ extension AIProviderConnectionClient: DependencyKey {
                 lastVerifiedAtMs: snapshot.connectionState == .connected ? snapshot.now : nil,
                 lastErrorCode: snapshotReason,
             ),
+            provenance: provenance,
         )
     }
 

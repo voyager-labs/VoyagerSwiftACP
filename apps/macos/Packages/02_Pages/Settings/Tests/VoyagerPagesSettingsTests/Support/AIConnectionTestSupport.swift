@@ -146,6 +146,9 @@ func settingsStore(
         AiSettingsFeature()
     } withDependencies: {
         $0.aiConnectionsFileClient.load = { file }
+        $0.aiProviderVerificationClient = AIProviderVerificationClient(
+            verify: { _, _ in .valid },
+        )
         dependencies(&$0)
     }
 }
