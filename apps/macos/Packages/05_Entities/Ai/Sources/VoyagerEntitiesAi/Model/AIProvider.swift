@@ -1,7 +1,7 @@
 import Foundation
 
 /// Locked v1 provider set for AI connections.
-/// Only three providers are supported: ChatGPT Codex (OAuth), OpenAI (API key), Anthropic (API key).
+/// Only three providers are supported: ChatGPT Codex (CLI), OpenAI (API key), Anthropic (API key).
 public enum AiProvider: String, CaseIterable, Codable, Sendable, Equatable, Hashable {
     case chatgptCodex
     case openai
@@ -9,7 +9,7 @@ public enum AiProvider: String, CaseIterable, Codable, Sendable, Equatable, Hash
 }
 
 /// Credential semantics for a provider — what *kind* of credential is stored.
-/// `.codexCLI` is retained for backward-compatible decoding only; new writes emit `.oauth`.
+/// `.oauth` remains decodable for legacy Codex records; new Codex writes emit `.codexCLI`.
 public enum ProviderAuthMethod: String, Codable, Sendable, Equatable, Hashable {
     case oauth
     case apiKey
@@ -22,6 +22,7 @@ public enum ProviderConnectPath: String, Codable, Sendable, Equatable, Hashable 
     case browserLogin
     case deviceAuth
     case legacyImport
+    case providerManaged
 }
 
 public struct ProviderDescriptor: Equatable, Sendable {
@@ -50,14 +51,14 @@ public struct ProviderDescriptor: Equatable, Sendable {
 
     public var primaryConnectPath: ProviderConnectPath {
         switch provider {
-        case .chatgptCodex: .browserLogin
+        case .chatgptCodex: .providerManaged
         case .openai, .anthropic: .browserLogin
         }
     }
 
     public var secondaryConnectPaths: [ProviderConnectPath] {
         switch provider {
-        case .chatgptCodex: [.deviceAuth, .legacyImport]
+        case .chatgptCodex: []
         case .openai, .anthropic: []
         }
     }
@@ -66,8 +67,9 @@ public struct ProviderDescriptor: Equatable, Sendable {
         ProviderDescriptor(
             provider: .chatgptCodex,
             displayName: "ChatGPT Codex",
-            authMethod: .oauth,
+            authMethod: .codexCLI,
             sortOrder: 0,
+            browserLoginAvailable: false,
             deviceAuthAvailable: false,
         ),
         ProviderDescriptor(

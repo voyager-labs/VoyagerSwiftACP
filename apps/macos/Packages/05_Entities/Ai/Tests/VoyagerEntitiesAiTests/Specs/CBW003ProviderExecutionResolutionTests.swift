@@ -4,6 +4,23 @@ import Foundation
 import XCTest
 
 final class CBW003ProviderExecutionResolutionTests: XCTestCase {
+    private func makeCodexFile(
+        state: ProviderConnectionState,
+        credential: StoredCredentialPayload? = nil,
+    ) -> AIConnectionsFile {
+        AIConnectionsFile(
+            updatedAtMs: 1,
+            providers: [
+                AiProvider.chatgptCodex.rawValue: ProviderRecordFile(
+                    providerId: .chatgptCodex,
+                    authMethod: credential == nil ? .codexCLI : .oauth,
+                    credential: credential,
+                    snapshot: ProviderSnapshotFile(lastKnownStatus: state),
+                ),
+            ],
+        )
+    }
+
     // MARK: - CBW-003-provider_managed_codex_preflight
 
     /// CBW-003-provider_managed_codex_preflight: Codex credential이 없어도 provider-managed readiness를 반환한다.
@@ -87,6 +104,129 @@ final class CBW003ProviderExecutionResolutionTests: XCTestCase {
                 .invalidCredential(provider: .anthropic, expected: .apiKey),
             )
         }
+    }
+
+    // MARK: - CBW-003-provider_managed_codex_state
+
+    /// CBW-003-provider_managed_codex_state: legacy Codex OAuth is sanitized without losing connected state.
+    /// Codex-owned authentication must not retain native OAuth bytes in the normalized connection record.
+    /// - 검증 내용: OAuth payload가 nil credential과 codexCLI metadata로 정규화되고 connected snapshot은 보존됩니다.
+    /// - 사전 조건: Codex connected record에 legacy OAuth access/refresh token이 저장되어 있습니다.
+    /// - 기대 결과: 정규화 결과에 OAuth bytes가 없고 provider-managed connected 상태가 유지됩니다.
+    func testCodexNormalizer_sanitizesLegacyOAuthAndPreservesConnectedState() {
+        let file = makeCodexFile(
+            state: .connected,
+            credential: .oauth(OAuthCredentialFile(
+                accessToken: "sentinel-access",
+                refreshToken: "sentinel-refresh",
+            )),
+        )
+
+        let normalized = AIConnectionsNormalizer.normalize(file)
+        let record = normalized.providers[AiProvider.chatgptCodex.rawValue]
+
+        XCTAssertEqual(record?.authMethod, .codexCLI)
+        XCTAssertNil(record?.credential)
+        XCTAssertEqual(record?.snapshot.lastKnownStatus, .connected)
+    }
+
+    /// CBW-003-provider_managed_codex_state: connected Codex selection does not require a stored credential.
+    /// Query routing must pass provider-managed authentication to the CLI execution boundary.
+    /// - 검증 내용: credentialless connected Codex가 explicit selection context로 반환되는지 확인합니다.
+    /// - 사전 조건: Codex record는 codexCLI metadata와 nil credential을 가진 connected 상태입니다.
+    /// - 기대 결과: selection이 성공하고 context credential은 nil입니다.
+    func testCodexQuerySelection_acceptsCredentiallessConnectedRecord() {
+        let file = makeCodexFile(state: .connected)
+
+        let selection = AIProviderQuerySelection.select(provider: .chatgptCodex, from: file)
+
+        guard case let .success(context) = selection else {
+            XCTFail("Credentialless connected Codex should be selectable")
+            return
+        }
+        XCTAssertNil(context.credential)
+    }
+
+    /// CBW-003-provider_managed_codex_state: direct OAuth persistence is rejected for Codex.
+    /// Legacy OAuth API compatibility must fail closed instead of creating a native-token record.
+    /// - 검증 내용: live connection client가 Codex OAuth 연결을 unsupported 결과로 거부하는지 확인합니다.
+    /// - 사전 조건: temporary repository root와 sentinel OAuth payload를 사용합니다.
+    /// - 기대 결과: connection failed 결과가 반환되고 OAuth persistence는 실행되지 않습니다.
+    func testCodexConnectionClient_rejectsDirectOAuthPersistence() async {
+        let client = AIProviderConnectionClient.liveForRepoRoot(
+            repoRootURL: FileManager.default.temporaryDirectory
+                .appendingPathComponent("CodexOAuth-\(UUID().uuidString)", isDirectory: true),
+        )
+
+        let result = await client.connectOAuth(
+            .chatgptCodex,
+            OAuthCredentialFile(accessToken: "sentinel-oauth"),
+            .connected,
+        )
+
+        XCTAssertEqual(result.state, .connectionFailed)
+        XCTAssertEqual(result.reason, .providerUnsupportedInBuild)
+        XCTAssertTrue(result.updatedFile.providers.isEmpty)
+    }
+
+    /// CBW-003-provider_managed_codex_state: Codex model source ignores native OAuth payloads.
+    /// Model resolution must remain available from the provider-managed catalog without reading OAuth tokens.
+    /// - 검증 내용: Codex model loading accepts nil or legacy OAuth input without using the payload.
+    /// - 사전 조건: model client receives a sentinel OAuth payload.
+    /// - 기대 결과: a provider-managed Codex model is returned without token-dependent network work.
+    func testCodexModelList_usesProviderManagedCatalogWithoutOAuth() async throws {
+        let client = AiProviderModelListClient.live()
+        let models = try await client.loadModels(
+            .chatgptCodex,
+            .oauth(OAuthCredentialFile(accessToken: "sentinel-oauth")),
+        )
+
+        XCTAssertEqual(models.map(\.rawModelID), ["gpt-5-codex"])
+    }
+
+    /// CBW-003-provider_managed_codex_state: Codex status verifies CLI ownership and persists legacy sanitization.
+    /// Status checks must use CLI readiness while removing legacy OAuth metadata from the local record.
+    /// - 검증 내용: status verifier receives nil credential and normalized file is written back.
+    /// - 사전 조건: temporary store contains a connected legacy OAuth Codex record and readiness is valid.
+    /// - 기대 결과: status is ready and stored credential is nil with connected state preserved.
+    func testCodexStatus_usesCLIReadinessAndPersistsSanitizedRecord() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CodexStatus-\(UUID().uuidString)", isDirectory: true)
+        let payloadURL = directory.appendingPathComponent("auth.json")
+        let lockURL = directory.appendingPathComponent("auth.lock")
+        let store = AIConnectionFileStore(payloadURL: payloadURL, lockURL: lockURL)
+        let file = makeCodexFile(
+            state: .connected,
+            credential: .oauth(OAuthCredentialFile(accessToken: "sentinel-oauth")),
+        )
+        try await store.write(file)
+
+        let runtimeClient = AiConnectionRuntimeClient(
+            verifyProvider: { provider, credential in
+                XCTAssertEqual(provider, .chatgptCodex)
+                XCTAssertNil(credential)
+                return .valid
+            },
+            resolveAdapter: { _, _ in nil },
+        )
+        let client = AiConnectionStatusClient.persistenceClient(
+            store: store,
+            runtimeClient: runtimeClient,
+        )
+
+        let status = await client.checkStatus(.chatgptCodex)
+        let normalized = try await store.load()
+
+        XCTAssertEqual(status, .ready)
+        XCTAssertEqual(
+            AiConnectionRuntimeClient.readinessReason(.loginProbeFailed(1)),
+            .missingCredential,
+        )
+        XCTAssertNil(normalized.providers[AiProvider.chatgptCodex.rawValue]?.credential)
+        XCTAssertEqual(
+            normalized.providers[AiProvider.chatgptCodex.rawValue]?.snapshot.lastKnownStatus,
+            .connected,
+        )
     }
 
     // MARK: - CBW-003-prepare_contextual_chat_request
@@ -758,6 +898,7 @@ extension CBW003ProviderExecutionResolutionTests {
             .allSatisfy { $0.environment["TMPDIR"] == codexHome.appendingPathComponent("session").path })
         XCTAssertNil(command.environment["OPENAI_API_KEY"])
         XCTAssertNil(command.environment["CODEX_ACCESS_TOKEN"])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: codexHome.appendingPathComponent("auth.json").path))
     }
 
     /// CBW-003-stream_contextual_chat_response: legacy execution preserves a duplicate after completion.
