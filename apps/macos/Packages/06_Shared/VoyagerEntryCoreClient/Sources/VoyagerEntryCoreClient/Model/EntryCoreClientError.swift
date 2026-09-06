@@ -13,6 +13,7 @@ nonisolated public enum EntryCoreClientError: Error, Equatable, Sendable {
     case responseTooLarge
     case malformedResponse
     case protocolMismatch
+    case localValidation
     case requestIDMismatch
     case server(EntryCoreServerErrorCode)
 }

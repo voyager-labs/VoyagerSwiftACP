@@ -73,20 +73,27 @@ func scalarExceedsBudget(value domainentry.AssignmentValue) bool {
 }
 
 // resolveChangeTargets는 모든 local path를 Core-owned 해석기로 대상화하고 중복
-// (entry, property) 참조를 거절한다. 해석은 트랜잭션 밖에서 수행된다.
-func resolveChangeTargets(resolver LocalPathResolver, ctx context.Context, changes []ChangeTarget) ([]resolvedChange, error) {
+// (entry, property) 참조를 거절한다. execute에서는 호출자가 전달한 stable
+// EntryID와 현재 해석 결과도 비교한다. 해석은 트랜잭션 밖에서 수행된다.
+func resolveChangeTargets(resolver LocalPathResolver, ctx context.Context, changes []ChangeTarget, requireStableIdentity bool) ([]resolvedChange, error) {
 	if err := validateChangeRequest(changes); err != nil {
 		return nil, err
 	}
 	resolved := make([]resolvedChange, 0, len(changes))
 	seen := make(map[assignmentRef]struct{}, len(changes))
 	for _, input := range changes {
+		if requireStableIdentity && input.EntryID == "" {
+			return nil, ErrInvalidChangeRequest
+		}
 		target, err := resolver.ResolveLocalPath(ctx, input.LocalPath)
 		if err != nil {
 			return nil, err
 		}
 		if err := target.Validate(); err != nil {
 			return nil, err
+		}
+		if input.EntryID != "" && input.EntryID != target.EntryRef.EntryID {
+			return nil, ErrStaleTargetIdentity
 		}
 		ref := assignmentRef{entryID: target.EntryRef.EntryID, propertyID: input.PropertyID}
 		if _, duplicate := seen[ref]; duplicate {

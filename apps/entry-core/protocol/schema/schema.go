@@ -22,24 +22,25 @@ const (
 type ErrorCode string
 
 const (
-	ErrorRequestTooLarge   ErrorCode = "request_too_large"
-	ErrorInvalidRequest    ErrorCode = "invalid_request"
-	ErrorUnknownMethod     ErrorCode = "unknown_method"
-	ErrorInvalidPath       ErrorCode = "invalid_path"
-	ErrorMountNotFound     ErrorCode = "mount_not_found"
-	ErrorSourceNotFound    ErrorCode = "source_not_found"
-	ErrorInvalidSelector   ErrorCode = "invalid_selector"
-	ErrorContextMismatch   ErrorCode = "context_mismatch"
-	ErrorScopeTooLarge     ErrorCode = "scope_too_large"
-	ErrorInvalidPageToken  ErrorCode = "invalid_page_token"
-	ErrorPermissionDenied  ErrorCode = "permission_denied"
-	ErrorSourceUnavailable ErrorCode = "source_unavailable"
-	ErrorSourceDeleted     ErrorCode = "source_deleted"
-	ErrorEntryNotFound     ErrorCode = "entry_not_found"
-	ErrorUnsupported       ErrorCode = "unsupported"
-	ErrorConflict          ErrorCode = "conflict"
-	ErrorAdapterFailure    ErrorCode = "adapter_failure"
-	ErrorInternal          ErrorCode = "internal_error"
+	ErrorRequestTooLarge          ErrorCode = "request_too_large"
+	ErrorInvalidRequest           ErrorCode = "invalid_request"
+	ErrorUnknownMethod            ErrorCode = "unknown_method"
+	ErrorInvalidPath              ErrorCode = "invalid_path"
+	ErrorMountNotFound            ErrorCode = "mount_not_found"
+	ErrorSourceNotFound           ErrorCode = "source_not_found"
+	ErrorInvalidSelector          ErrorCode = "invalid_selector"
+	ErrorContextMismatch          ErrorCode = "context_mismatch"
+	ErrorScopeTooLarge            ErrorCode = "scope_too_large"
+	ErrorInvalidPageToken         ErrorCode = "invalid_page_token"
+	ErrorPermissionDenied         ErrorCode = "permission_denied"
+	ErrorSourceUnavailable        ErrorCode = "source_unavailable"
+	ErrorSourceRuntimeUnavailable ErrorCode = "source_runtime_unavailable"
+	ErrorSourceDeleted            ErrorCode = "source_deleted"
+	ErrorEntryNotFound            ErrorCode = "entry_not_found"
+	ErrorUnsupported              ErrorCode = "unsupported"
+	ErrorConflict                 ErrorCode = "conflict"
+	ErrorAdapterFailure           ErrorCode = "adapter_failure"
+	ErrorInternal                 ErrorCode = "internal_error"
 )
 
 type EmptyParams struct{}
@@ -61,6 +62,7 @@ type Request struct {
 	PropertyAssignmentListParams    *PropertyAssignmentListParams
 	PropertyChangePrepareParams     *PropertyChangePrepareParams
 	PropertyChangeExecuteParams     *PropertyChangeExecuteParams
+	PropertyConditionQueryParams    *PropertyConditionQueryParams
 }
 
 type ProtocolError struct {
@@ -147,6 +149,8 @@ func errorMessage(code ErrorCode) string {
 		return "permission was denied"
 	case ErrorSourceUnavailable:
 		return "source is unavailable"
+	case ErrorSourceRuntimeUnavailable:
+		return "source runtime is unavailable"
 	case ErrorSourceDeleted:
 		return "source was deleted"
 	case ErrorEntryNotFound:
@@ -293,6 +297,8 @@ func validResult(result Result) bool {
 		return typed.Validate() == nil
 	case PropertyChangeExecuteResult:
 		return typed.Validate() == nil
+	case PropertyConditionQueryResult:
+		return typed.Validate() == nil
 	default:
 		return false
 	}
@@ -309,7 +315,7 @@ func validProtocolError(protocolError *ProtocolError) bool {
 		return false
 	}
 	switch protocolError.Code {
-	case ErrorRequestTooLarge, ErrorInvalidRequest, ErrorUnknownMethod, ErrorInternal, ErrorInvalidPath, ErrorMountNotFound, ErrorSourceNotFound, ErrorInvalidSelector, ErrorContextMismatch, ErrorScopeTooLarge, ErrorInvalidPageToken, ErrorPermissionDenied, ErrorSourceUnavailable, ErrorSourceDeleted, ErrorEntryNotFound, ErrorUnsupported, ErrorConflict, ErrorAdapterFailure, ErrorPropertyNotFound, ErrorResponseTooLarge:
+	case ErrorRequestTooLarge, ErrorInvalidRequest, ErrorUnknownMethod, ErrorInternal, ErrorInvalidPath, ErrorMountNotFound, ErrorSourceNotFound, ErrorInvalidSelector, ErrorContextMismatch, ErrorScopeTooLarge, ErrorInvalidPageToken, ErrorPermissionDenied, ErrorSourceUnavailable, ErrorSourceRuntimeUnavailable, ErrorSourceDeleted, ErrorEntryNotFound, ErrorUnsupported, ErrorConflict, ErrorAdapterFailure, ErrorPropertyNotFound, ErrorResponseTooLarge:
 		return true
 	default:
 		return false
@@ -455,6 +461,12 @@ func decodeResult(value jsonValue, method Method) (Result, error) {
 		return result, nil
 	case MethodPropertyChangeExecute:
 		result, ok := decodePropertyChangeExecuteResult(value)
+		if !ok {
+			return nil, ErrInvalidResponse
+		}
+		return result, nil
+	case MethodPropertyConditionQuery:
+		result, ok := decodePropertyConditionQueryResult(value)
 		if !ok {
 			return nil, ErrInvalidResponse
 		}

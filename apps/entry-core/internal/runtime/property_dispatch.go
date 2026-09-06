@@ -27,6 +27,10 @@ type PropertyService interface {
 	ListAssignmentsPage(ctx context.Context, workspace domainentry.WorkspaceContext, localPath string, requestedIDs []domainentry.PropertyID, after *domainentry.PropertyID, limit int) ([]domainentry.EntryPropertyAssignment, map[domainentry.PropertyID]applicationproperty.DefinitionView, *domainentry.PropertyID, bool, error)
 }
 
+type propertyConditionQueryService interface {
+	Query(ctx context.Context, workspace domainentry.WorkspaceContext, query applicationproperty.ConditionQuery) (applicationproperty.ConditionQueryResult, error)
+}
+
 // NewWithPropertyService는 Property 전용 테스트·조합 생성자다. 워크스페이스
 // 식별이 typed UUIDv7로 파싱되지 않으면 실패 닫기로 서비스를 떼어 게이트가
 // 거절한다.
@@ -83,9 +87,23 @@ func propertyParamsMissing(request schema.Request) bool {
 		return request.PropertyChangePrepareParams == nil
 	case schema.MethodPropertyChangeExecute:
 		return request.PropertyChangeExecuteParams == nil
+	case schema.MethodPropertyConditionQuery:
+		return request.PropertyConditionQueryParams == nil
 	default:
 		return false
 	}
+}
+
+// anyMissingStableIdentity는 mutation execute가 경로만으로 대상을 다시
+// 해석하는 우회를 차단한다. prepare는 아직 identity를 응답으로 확정하기
+// 전이므로 이 검사를 적용하지 않는다.
+func anyMissingStableIdentity(changes []schema.PropertyChangeTarget) bool {
+	for _, change := range changes {
+		if change.EntryID == "" {
+			return true
+		}
+	}
+	return false
 }
 
 // propertyDispatchGuard는 공통 실패 닫기 전제를 검사하고 주입된 워크스페이스
@@ -172,6 +190,9 @@ func dispatchPropertyChangeExecute(ctx context.Context, request schema.Request, 
 	changes, code := changeTargetsFromWire(request.PropertyChangeExecuteParams.Changes)
 	if code != "" {
 		return dispatchError(request, code)
+	}
+	if anyMissingStableIdentity(request.PropertyChangeExecuteParams.Changes) {
+		return dispatchError(request, schema.ErrorInvalidRequest)
 	}
 	executed, err := service.Execute(ctx, workspace, request.RequestID, changes)
 	if err != nil {

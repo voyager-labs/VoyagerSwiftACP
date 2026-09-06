@@ -119,6 +119,7 @@ func TestPropertyDispatchErrorMappingTable(t *testing.T) {
 	}{
 		{"stale definition revision", applicationproperty.ErrStaleDefinitionRevision, schema.ErrorConflict},
 		{"stale assignment revision", applicationproperty.ErrStaleAssignmentRevision, schema.ErrorConflict},
+		{"stale target identity", applicationproperty.ErrStaleTargetIdentity, schema.ErrorConflict},
 		{"duplicate definition key", applicationproperty.ErrDuplicateDefinitionKey, schema.ErrorConflict},
 		{"definition inactive", applicationproperty.ErrDefinitionInactive, schema.ErrorConflict},
 		{"option inactive", applicationproperty.ErrOptionInactive, schema.ErrorConflict},

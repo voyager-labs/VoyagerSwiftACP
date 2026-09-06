@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
@@ -39,7 +40,28 @@ func ascendingUUID(n int) string {
 }
 
 func fixtureDefinitionJSON(id string) string {
-	return `{"property_id":"` + id + `","key":"k","name":"n","value_type":"text","cardinality":"one","state":"active","revision":1,"options":[]}`
+	return `{"property_id":"` + id + `","key":"k","name":"n","value_type":"text","cardinality":"one","state":"active","origin":"user_defined","revision":1,"options":[],"condition_capability":` + fixtureConditionCapabilityJSON() + `}`
+}
+
+func fixtureConditionCapabilityJSON() string {
+	return `{"supported":true,"evaluation_scope":"local_assignment","catalog_version":"2.2.0","native_type":"string","allowed_operators":["all","any","cn","empty","eq","ew","exists","nc","neq","rx","sw"]}`
+}
+func fixtureConditionCapability() PropertyConditionCapability {
+	return PropertyConditionCapability{Supported: true, EvaluationScope: "local_assignment", CatalogVersion: "2.2.0", NativeType: "string", AllowedOperators: []string{"all", "any", "cn", "empty", "eq", "ew", "exists", "nc", "neq", "rx", "sw"}}
+}
+
+// fixtureConditionCapabilityForContract는 value contract에서 유도되는 정확한
+// native type과 Registry operator 집합을 담은 capability를 만든다. capability
+// exactness 검사가 definition value contract와의 일치를 강제하므로 text가 아닌
+// definition fixture는 이 helper로 capability를 만들어야 한다.
+func fixtureConditionCapabilityForContract(valueType, cardinality string) PropertyConditionCapability {
+	nativeType, ok := domainentry.ConditionNativeTypeForContract(domainentry.PropertyType(valueType), domainentry.PropertyCardinality(cardinality))
+	if !ok {
+		panic("fixture value contract is not condition-queryable")
+	}
+	operators := append([]string(nil), domainentry.ConditionCatalogData.OperatorsForType(nativeType)...)
+	sort.Strings(operators)
+	return PropertyConditionCapability{Supported: true, EvaluationScope: "local_assignment", CatalogVersion: domainentry.ConditionCatalogVersion, NativeType: string(nativeType), AllowedOperators: operators}
 }
 
 func fixtureAssignmentJSON(id, entryID string) string {
@@ -60,7 +82,7 @@ func decodePropertyParams(t *testing.T, wire []byte) (Request, *ProtocolError) {
 	return request, protocolError
 }
 
-// --- 1. 메서드 계약 완전성: 11개 메서드 각각 디코드/게이트/유니언 오류 ---
+// --- 1. 메서드 계약 완전성: 12개 메서드 각각 디코드/게이트/유니언 오류 ---
 
 func TestPropertyMethodContractCompleteness(t *testing.T) {
 	t.Parallel()
@@ -84,6 +106,7 @@ func TestPropertyMethodContractCompleteness(t *testing.T) {
 		{MethodPropertyAssignmentList, `{"page_size":1,"requested_property_ids":[],"target":{"kind":"local_path","local_path":"/a"}}`},
 		{MethodPropertyChangePrepare, `{"changes":[` + changeTarget + `]}`},
 		{MethodPropertyChangeExecute, `{"changes":[` + changeTarget + `]}`},
+		{MethodPropertyConditionQuery, `{"targets":[{"kind":"local_path","local_path":"/a"}],"combinator":"all","conditions":[{"property_id":"` + pid + `","operator":"exists","operand":{"kind":"none"}}],"projection_property_ids":[],"evaluation_date":"2026-09-01","page_size":1}`},
 	}
 
 	for _, test := range methods {
@@ -116,6 +139,50 @@ func TestPropertyMethodContractCompleteness(t *testing.T) {
 				t.Fatalf("unknown member accepted: %#v", protocolError)
 			}
 		})
+	}
+}
+
+func TestPropertyConditionQueryRequestBoundsAndStrictness(t *testing.T) {
+	pid1, pid2 := ascendingUUID(1), ascendingUUID(2)
+	base := `{"targets":[{"kind":"local_path","local_path":"/a"}],"combinator":"all","conditions":[{"property_id":"` + pid1 + `","operator":"exists","operand":{"kind":"none"}}],"projection_property_ids":["` + pid2 + `"],"evaluation_date":"2026-09-01","page_size":1}`
+	request, protocolError := decodePropertyParams(t, propertyRequest(MethodPropertyConditionQuery, base))
+	if protocolError != nil || request.PropertyConditionQueryParams == nil {
+		t.Fatalf("valid query rejected: %#v", protocolError)
+	}
+	cases := []struct {
+		name, params string
+		code         ErrorCode
+	}{
+		{"duplicate target", strings.Replace(base, `[{"kind":"local_path","local_path":"/a"}]`, `[{"kind":"local_path","local_path":"/a"},{"kind":"local_path","local_path":"/a"}]`, 1), ErrorInvalidRequest},
+		{"duplicate condition", strings.Replace(base, `[{"property_id":"`+pid1+`","operator":"exists","operand":{"kind":"none"}}]`, `[{"property_id":"`+pid1+`","operator":"exists","operand":{"kind":"none"}},{"property_id":"`+pid1+`","operator":"empty","operand":{"kind":"none"}}]`, 1), ErrorInvalidRequest},
+		{"bad date", strings.Replace(base, "2026-09-01", "2026-9-1", 1), ErrorInvalidRequest},
+		{"wrong operand shape", strings.Replace(base, `"operand":{"kind":"none"}`, `"operand":{"kind":"text","values":["x"]}`, 1), ErrorInvalidRequest},
+		{"unsorted projection", strings.Replace(base, `"projection_property_ids":["`+pid2+`"]`, `"projection_property_ids":["`+pid2+`","`+pid1+`"]`, 1), ErrorInvalidRequest},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			_, got := decodePropertyParams(t, propertyRequest(MethodPropertyConditionQuery, test.params))
+			if got == nil || got.Code != test.code {
+				t.Fatalf("error = %#v, want %s", got, test.code)
+			}
+		})
+	}
+
+	targets := make([]string, 17)
+	for index := range targets {
+		targets[index] = `{"kind":"local_path","local_path":"/` + fmt.Sprint(index) + `"}`
+	}
+	conditions := make([]string, 256)
+	for index := range conditions {
+		conditions[index] = `{"property_id":"` + ascendingUUID(index+1) + `","operator":"exists","operand":{"kind":"none"}}`
+	}
+	atLimit := `{"targets":[` + strings.Join(targets[:16], ",") + `],"combinator":"all","conditions":[` + strings.Join(conditions[:256], ",") + `],"projection_property_ids":[],"evaluation_date":"2026-09-01","page_size":1}`
+	if _, got := decodePropertyParams(t, propertyRequest(MethodPropertyConditionQuery, atLimit)); got != nil {
+		t.Fatalf("4096 work units rejected: %#v", got)
+	}
+	over := `{"targets":[` + strings.Join(targets, ",") + `],"combinator":"all","conditions":[` + strings.Join(conditions[:241], ",") + `],"projection_property_ids":[],"evaluation_date":"2026-09-01","page_size":1}`
+	if _, got := decodePropertyParams(t, propertyRequest(MethodPropertyConditionQuery, over)); got == nil || got.Code != ErrorScopeTooLarge {
+		t.Fatalf("4097 work units error = %#v", got)
 	}
 }
 
@@ -483,7 +550,7 @@ func TestPropertyResultEncodeShapeAndRoundTrip(t *testing.T) {
 
 	pid := fixturePropertyID(t, 500)
 	entryID := fixtureEntryID(1)
-	definition := PropertyDefinition{PropertyID: pid, Key: "k", Name: "n", ValueType: "text", Cardinality: "one", State: "active", Revision: 1, Options: []PropertyOption{}}
+	definition := PropertyDefinition{PropertyID: pid, Key: "k", Name: "n", ValueType: "text", Cardinality: "one", State: "active", Origin: "user_defined", Revision: 1, Options: []PropertyOption{}, ConditionCapability: fixtureConditionCapability()}
 	assignment := PropertyAssignment{PropertyID: pid, EntryID: entryID, ValueType: "text", Cardinality: "one", State: "value", Revision: 1, Payload: &PropertyPayload{kind: "text", one: "v"}}
 	prepared := PropertyPreparedChange{
 		Target:     PropertyTargetSelector{Kind: "local_path", LocalPath: "/a"},
@@ -501,17 +568,17 @@ func TestPropertyResultEncodeShapeAndRoundTrip(t *testing.T) {
 		{
 			MethodPropertyDefinitionList,
 			PropertyDefinitionListResult{Definitions: []PropertyDefinition{definition}, HasMore: false},
-			`{"request_id":"id","ok":true,"result":{"definitions":[{"property_id":"` + pid + `","key":"k","name":"n","value_type":"text","cardinality":"one","state":"active","revision":1,"options":[]}],"has_more":false}}`,
+			`{"request_id":"id","ok":true,"result":{"definitions":[` + fixtureDefinitionJSON(pid) + `],"has_more":false}}`,
 		},
 		{
 			MethodPropertyDefinitionUpdate,
 			PropertyDefinitionResult{Definition: definition},
-			`{"request_id":"id","ok":true,"result":{"definition":{"property_id":"` + pid + `","key":"k","name":"n","value_type":"text","cardinality":"one","state":"active","revision":1,"options":[]}}}`,
+			`{"request_id":"id","ok":true,"result":{"definition":` + fixtureDefinitionJSON(pid) + `}}`,
 		},
 		{
 			MethodPropertyOptionReorder,
 			PropertyDefinitionResult{Definition: definition},
-			`{"request_id":"id","ok":true,"result":{"definition":{"property_id":"` + pid + `","key":"k","name":"n","value_type":"text","cardinality":"one","state":"active","revision":1,"options":[]}}}`,
+			`{"request_id":"id","ok":true,"result":{"definition":` + fixtureDefinitionJSON(pid) + `}}`,
 		},
 		{
 			MethodPropertyAssignmentList,
@@ -605,6 +672,297 @@ func TestPropertyResultRejectsInvalidUnions(t *testing.T) {
 	}
 }
 
+// --- 11a. capability exactness: native type과 operator 집합은 value contract에서 유도된 것과 정확히 일치해야 한다 ---
+
+func TestPropertyCapabilityExactnessAgainstValueContract(t *testing.T) {
+	t.Parallel()
+
+	pid := fixturePropertyID(t, 610)
+	base := func(valueType, cardinality string) PropertyDefinition {
+		return PropertyDefinition{PropertyID: pid, Key: "k", Name: "n", ValueType: valueType, Cardinality: cardinality, State: "active", Origin: "user_defined", Revision: 1, Options: []PropertyOption{}, ConditionCapability: fixtureConditionCapabilityForContract(valueType, cardinality)}
+	}
+
+	if definition := base("text", "one"); definition.Validate() != nil {
+		t.Fatal("text/one with derived capability rejected")
+	}
+	if definition := base("boolean", "one"); definition.Validate() != nil {
+		t.Fatal("boolean/one with derived capability rejected")
+	}
+	if definition := base("text", "many"); definition.Validate() != nil {
+		t.Fatal("text/many with derived capability rejected")
+	}
+
+	disabledSupported := base("text", "one")
+	disabledSupported.State = "disabled"
+	if disabledSupported.Validate() == nil {
+		t.Fatal("disabled definition with supported capability accepted")
+	}
+
+	mismatchedNative := base("text", "one")
+	mismatchedNative.ConditionCapability.NativeType = "date"
+	if mismatchedNative.Validate() == nil {
+		t.Fatal("text definition with date capability accepted")
+	}
+
+	wrongOperators := base("boolean", "one")
+	wrongOperators.ConditionCapability.AllowedOperators = []string{"rx"}
+	if wrongOperators.Validate() == nil {
+		t.Fatal("boolean capability advertising rx accepted")
+	}
+
+	full := fixtureConditionCapabilityForContract("boolean", "one")
+	if len(full.AllowedOperators) < 2 {
+		t.Fatalf("boolean relation inventory unexpectedly small: %d", len(full.AllowedOperators))
+	}
+	partialOperators := base("boolean", "one")
+	partialOperators.ConditionCapability.AllowedOperators = full.AllowedOperators[:len(full.AllowedOperators)-1]
+	if partialOperators.Validate() == nil {
+		t.Fatal("boolean capability missing a relation operator accepted")
+	}
+
+	unevaluable := PropertyDefinition{PropertyID: pid, Key: "k", Name: "n", ValueType: "datetime", Cardinality: "one", State: "active", Revision: 1, Options: []PropertyOption{}, ConditionCapability: fixtureConditionCapability()}
+	if unevaluable.Validate() == nil {
+		t.Fatal("datetime definition with supported capability accepted")
+	}
+
+	unsupported := PropertyDefinition{PropertyID: pid, Key: "k", Name: "n", ValueType: "datetime", Cardinality: "one", State: "active", Origin: "user_defined", Revision: 1, Options: []PropertyOption{}, ConditionCapability: PropertyConditionCapability{Reason: "unsupported_value_contract"}}
+	if unsupported.Validate() != nil {
+		t.Fatal("datetime definition with unsupported capability rejected")
+	}
+
+	derivableUnsupported := base("text", "one")
+	derivableUnsupported.ConditionCapability = PropertyConditionCapability{Reason: "unsupported_value_contract"}
+	if derivableUnsupported.Validate() == nil {
+		t.Fatal("text definition with unsupported capability accepted")
+	}
+
+	disabledRuntimeUnavailable := base("text", "one")
+	disabledRuntimeUnavailable.State = "disabled"
+	disabledRuntimeUnavailable.ConditionCapability = PropertyConditionCapability{Reason: "source_runtime_unavailable"}
+	if disabledRuntimeUnavailable.Validate() == nil {
+		t.Fatal("disabled definition with runtime-unavailable capability accepted")
+	}
+
+	builtInRuntimeUnavailable := base("text", "one")
+	builtInRuntimeUnavailable.Origin = "built_in"
+	builtInRuntimeUnavailable.ConditionCapability = PropertyConditionCapability{Reason: "source_runtime_unavailable"}
+	if builtInRuntimeUnavailable.Validate() != nil {
+		t.Fatal("built-in definition with runtime-unavailable capability rejected")
+	}
+
+	userDefinedRuntimeUnavailable := base("text", "one")
+	userDefinedRuntimeUnavailable.ConditionCapability = PropertyConditionCapability{Reason: "source_runtime_unavailable"}
+	if userDefinedRuntimeUnavailable.Validate() == nil {
+		t.Fatal("user-defined definition with runtime-unavailable capability accepted")
+	}
+
+	builtInSupported := base("text", "one")
+	builtInSupported.Origin = "built_in"
+	if builtInSupported.Validate() == nil {
+		t.Fatal("built-in definition with supported capability accepted")
+	}
+
+	builtInUnsupportedContract := PropertyDefinition{PropertyID: pid, Key: "k", Name: "n", ValueType: "datetime", Cardinality: "one", State: "active", Origin: "built_in", Revision: 1, Options: []PropertyOption{}, ConditionCapability: PropertyConditionCapability{Reason: "unsupported_value_contract"}}
+	if builtInUnsupportedContract.Validate() == nil {
+		t.Fatal("built-in definition with unsupported-value-contract capability accepted")
+	}
+
+	activeDefinitionDisabled := base("text", "one")
+	activeDefinitionDisabled.ConditionCapability = PropertyConditionCapability{Reason: "definition_disabled"}
+	if activeDefinitionDisabled.Validate() == nil {
+		t.Fatal("active definition with definition-disabled capability accepted")
+	}
+}
+
+// --- 11c. catalog version 고정과 origin 무결성: 다른 버전의 semantics와
+// 알 수 없는 ownership은 fail closed로 거절한다 ---
+
+func TestPropertyConditionCatalogVersionPinned(t *testing.T) {
+	t.Parallel()
+
+	pid := fixturePropertyID(t, 620)
+	foreignCapability := fixtureConditionCapability()
+	foreignCapability.CatalogVersion = "3.0.0"
+	foreignDefinition := PropertyDefinition{PropertyID: pid, Key: "k", Name: "n", ValueType: "text", Cardinality: "one", State: "active", Origin: "user_defined", Revision: 1, Options: []PropertyOption{}, ConditionCapability: foreignCapability}
+	if foreignDefinition.Validate() == nil {
+		t.Fatal("capability advertising foreign catalog version accepted")
+	}
+
+	foreignResult := PropertyConditionQueryResult{Items: []PropertyConditionQueryItem{}, UnresolvedCandidateIndices: []int{}, CatalogVersion: "3.0.0", HasMore: false}
+	if foreignResult.Validate() == nil {
+		t.Fatal("query result with foreign catalog version accepted")
+	}
+
+	canonicalResult := PropertyConditionQueryResult{Items: []PropertyConditionQueryItem{}, UnresolvedCandidateIndices: []int{}, CatalogVersion: domainentry.ConditionCatalogVersion, HasMore: false}
+	if canonicalResult.Validate() != nil {
+		t.Fatal("query result with canonical catalog version rejected")
+	}
+}
+
+func TestPropertyConditionQueryResultRejectsCandidateOverlap(t *testing.T) {
+	t.Parallel()
+
+	overlap := PropertyConditionQueryResult{
+		Items: []PropertyConditionQueryItem{{
+			CandidateIndex: 0,
+			EntryID:        "ent:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+			Projection:     []PropertyAssignment{},
+		}},
+		UnresolvedCandidateIndices: []int{0},
+		CatalogVersion:             domainentry.ConditionCatalogVersion,
+		HasMore:                    false,
+	}
+	if overlap.Validate() == nil {
+		t.Fatal("candidate present in both matched and unresolved accepted")
+	}
+
+	disjoint := PropertyConditionQueryResult{
+		Items: []PropertyConditionQueryItem{{
+			CandidateIndex: 0,
+			EntryID:        "ent:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+			Projection:     []PropertyAssignment{},
+		}},
+		UnresolvedCandidateIndices: []int{1},
+		CatalogVersion:             domainentry.ConditionCatalogVersion,
+		HasMore:                    false,
+	}
+	if disjoint.Validate() != nil {
+		t.Fatal("disjoint matched and unresolved candidates rejected")
+	}
+}
+
+func TestPropertyConditionQueryResultRejectsOutOfBoundsCandidates(t *testing.T) {
+	t.Parallel()
+
+	params := PropertyConditionQueryParams{
+		Targets: []PropertyTargetSelector{
+			{Kind: "local_path", LocalPath: "/a"},
+			{Kind: "local_path", LocalPath: "/b"},
+			{Kind: "local_path", LocalPath: "/c"},
+		},
+		ProjectionPropertyIDs: []string{fixturePropertyID(t, 661)},
+		PageSize:              2,
+	}
+
+	outOfRangeCandidate := PropertyConditionQueryResult{
+		Items: []PropertyConditionQueryItem{{
+			CandidateIndex: 7,
+			EntryID:        "ent:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+			Projection:     []PropertyAssignment{},
+		}},
+		UnresolvedCandidateIndices: []int{},
+		CatalogVersion:             domainentry.ConditionCatalogVersion,
+		HasMore:                    false,
+	}
+	if err := ReconcileConditionQueryResult(outOfRangeCandidate, params); err == nil {
+		t.Fatal("candidate index beyond requested targets accepted")
+	}
+
+	nonRequestedProjection := PropertyConditionQueryResult{
+		Items: []PropertyConditionQueryItem{{
+			CandidateIndex: 0,
+			EntryID:        "ent:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+			Projection: []PropertyAssignment{{
+				PropertyID:  fixturePropertyID(t, 662),
+				EntryID:     "ent:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+				ValueType:   "text",
+				Cardinality: "one",
+				State:       "null",
+				Revision:    1,
+			}},
+		}},
+		UnresolvedCandidateIndices: []int{},
+		CatalogVersion:             domainentry.ConditionCatalogVersion,
+		HasMore:                    false,
+	}
+	if err := ReconcileConditionQueryResult(nonRequestedProjection, params); err == nil {
+		t.Fatal("non-requested projection property accepted")
+	}
+
+	wideRequest := withPageSize(params, 2)
+
+	underFilledHasMore := PropertyConditionQueryResult{
+		Items: []PropertyConditionQueryItem{{
+			CandidateIndex: 0,
+			EntryID:        "ent:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+			Projection:     []PropertyAssignment{},
+		}},
+		UnresolvedCandidateIndices: []int{},
+		CatalogVersion:             domainentry.ConditionCatalogVersion,
+		HasMore:                    true,
+		NextPageToken:              strPtr("next"),
+	}
+	if err := ReconcileConditionQueryResult(underFilledHasMore, wideRequest); err == nil {
+		t.Fatal("has_more page with under-filled items accepted")
+	}
+
+	unresolvedAtLastMatched := PropertyConditionQueryResult{
+		Items: []PropertyConditionQueryItem{{
+			CandidateIndex: 0,
+			EntryID:        "ent:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+			Projection:     []PropertyAssignment{},
+		}},
+		UnresolvedCandidateIndices: []int{0},
+		CatalogVersion:             domainentry.ConditionCatalogVersion,
+		HasMore:                    true,
+		NextPageToken:              strPtr("next"),
+	}
+	if err := ReconcileConditionQueryResult(unresolvedAtLastMatched, wideRequest); err == nil {
+		t.Fatal("unresolved index at the last matched index accepted on has_more page")
+	}
+
+	validHasMore := PropertyConditionQueryResult{
+		Items: []PropertyConditionQueryItem{
+			{
+				CandidateIndex: 0,
+				EntryID:        "ent:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+				Projection:     []PropertyAssignment{},
+			},
+			{
+				CandidateIndex: 1,
+				EntryID:        "ent:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+				Projection:     []PropertyAssignment{},
+			},
+		},
+		UnresolvedCandidateIndices: []int{},
+		CatalogVersion:             domainentry.ConditionCatalogVersion,
+		HasMore:                    true,
+		NextPageToken:              strPtr("next"),
+	}
+	if err := ReconcileConditionQueryResult(validHasMore, wideRequest); err != nil {
+		t.Fatal("full has_more page rejected")
+	}
+
+	overSized := PropertyConditionQueryResult{
+		Items: func() []PropertyConditionQueryItem {
+			items := make([]PropertyConditionQueryItem, 3)
+			for index := range items {
+				items[index] = PropertyConditionQueryItem{
+					CandidateIndex: index,
+					EntryID:        "ent:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+					Projection:     []PropertyAssignment{},
+				}
+			}
+			return items
+		}(),
+		UnresolvedCandidateIndices: []int{},
+		CatalogVersion:             domainentry.ConditionCatalogVersion,
+		HasMore:                    true,
+		NextPageToken:              strPtr("next"),
+	}
+	_ = overSized
+	if err := ReconcileConditionQueryResult(overSized, withPageSize(params, 2)); err == nil {
+		t.Fatal("page exceeding requested page size accepted")
+	}
+}
+
+func strPtr(s string) *string { return &s }
+
+func withPageSize(params PropertyConditionQueryParams, pageSize int) PropertyConditionQueryParams {
+	params.PageSize = pageSize
+	return params
+}
+
 func oidBad() string { return "not-a-uuid" }
 
 // --- 12. 에러 코드 계약: 신규 2종 + 전체 코드 고정 메시지 완전성 ---
@@ -623,7 +981,7 @@ func TestPropertyErrorCodeContract(t *testing.T) {
 		ErrorRequestTooLarge, ErrorInvalidRequest, ErrorUnknownMethod, ErrorInvalidPath,
 		ErrorMountNotFound, ErrorSourceNotFound, ErrorInvalidSelector, ErrorContextMismatch,
 		ErrorScopeTooLarge, ErrorInvalidPageToken, ErrorPermissionDenied, ErrorSourceUnavailable,
-		ErrorSourceDeleted, ErrorEntryNotFound, ErrorUnsupported, ErrorConflict,
+		ErrorSourceRuntimeUnavailable, ErrorSourceDeleted, ErrorEntryNotFound, ErrorUnsupported, ErrorConflict,
 		ErrorAdapterFailure, ErrorInternal, ErrorPropertyNotFound, ErrorResponseTooLarge,
 	}
 	for _, code := range allCodes {
@@ -647,7 +1005,7 @@ func TestEncodedSuccessBytesExactness(t *testing.T) {
 	t.Parallel()
 
 	pid := fixturePropertyID(t, 700)
-	definition := PropertyDefinition{PropertyID: pid, Key: "k", Name: "n", ValueType: "text", Cardinality: "one", State: "active", Revision: 1, Options: []PropertyOption{}}
+	definition := PropertyDefinition{PropertyID: pid, Key: "k", Name: "n", ValueType: "text", Cardinality: "one", State: "active", Origin: "user_defined", Revision: 1, Options: []PropertyOption{}, ConditionCapability: fixtureConditionCapability()}
 	result := PropertyDefinitionResult{Definition: definition}
 
 	size, fits := EncodedSuccessBytes("id", result)
@@ -664,7 +1022,7 @@ func TestEncodedSuccessBytesExactness(t *testing.T) {
 	for index := range options {
 		options[index] = PropertyOption{OptionID: fixtureOptionID(1000 + index), Label: strings.Repeat("l", 256), Position: int64(index), State: "active"}
 	}
-	fat := PropertyDefinitionListResult{Definitions: []PropertyDefinition{{PropertyID: pid, Key: "k", Name: "n", ValueType: "select", Cardinality: "one", State: "active", Revision: 1, Options: options}}, HasMore: false}
+	fat := PropertyDefinitionListResult{Definitions: []PropertyDefinition{{PropertyID: pid, Key: "k", Name: "n", ValueType: "select", Cardinality: "one", State: "active", Origin: "user_defined", Revision: 1, Options: options, ConditionCapability: fixtureConditionCapabilityForContract("select", "one")}}, HasMore: false}
 	fatSize, fatFits := EncodedSuccessBytes("id", fat)
 	if fatFits || fatSize <= MaxWireBytes {
 		t.Fatalf("oversized read-back not flagged: size=%d fits=%v", fatSize, fatFits)

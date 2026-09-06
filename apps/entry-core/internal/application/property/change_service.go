@@ -22,6 +22,9 @@ var (
 	// ErrStaleAssignmentRevision은 예상 assignment revision이 현재와 다를 때
 	// 거절하는 CAS 센티널이다. set→clear ABA도 이 검사가 잡는다.
 	ErrStaleAssignmentRevision = errors.New("stale property assignment revision")
+	// ErrStaleTargetIdentity는 prepare 이후 같은 경로가 다른 canonical entry를
+	// 가리키면 mutation을 거절하는 stable-reference 센티널이다.
+	ErrStaleTargetIdentity = errors.New("stale property target identity")
 	// ErrDefinitionNotEditable은 편집 불가 정의에 대한 값 지정을 거절한다.
 	ErrDefinitionNotEditable = errors.New("property definition not editable")
 	// ErrRegistryOwnedDefinition은 System Registry 시드(registry_derived) 정의에
@@ -52,7 +55,11 @@ type DesiredAssignment struct {
 // ChangeTarget은 단일 변경 대상 요청이다. ExpectedAssignmentRevision 0은 implicit
 // unset@0을 의미하고 첫 쓰기는 revision 1이 된다.
 type ChangeTarget struct {
-	LocalPath                  string
+	LocalPath string
+	// EntryID는 prepare 이후 execute가 같은 canonical entry를 대상으로 하는지
+	// 확인하는 stable reference다. prepare 요청에서는 비어 있을 수 있지만,
+	// execute 요청에서는 반드시 채워져야 한다.
+	EntryID                    string
 	PropertyID                 domainentry.PropertyID
 	ExpectedDefinitionRevision int
 	ExpectedAssignmentRevision uint64
@@ -122,7 +129,7 @@ func (service *ChangeService) Prepare(
 	if err := ValidateWorkspaceContext(workspace); err != nil {
 		return Proposal{}, err
 	}
-	resolved, err := resolveChangeTargets(service.targets, ctx, changes)
+	resolved, err := resolveChangeTargets(service.targets, ctx, changes, false)
 	if err != nil {
 		return Proposal{}, err
 	}
@@ -180,7 +187,7 @@ func (service *ChangeService) Execute(
 	if !utf8.ValidString(requestID) || len(requestID) == 0 || len(requestID) > maximumEchoIDBytes {
 		return ExecuteResult{}, ErrInvalidChangeRequest
 	}
-	resolved, err := resolveChangeTargets(service.targets, ctx, changes)
+	resolved, err := resolveChangeTargets(service.targets, ctx, changes, true)
 	if err != nil {
 		return ExecuteResult{}, err
 	}

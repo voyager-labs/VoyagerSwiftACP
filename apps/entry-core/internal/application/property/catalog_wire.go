@@ -3,6 +3,7 @@ package property
 import (
 	"strings"
 
+	domainentry "github.com/voyager-labs/voyager-app/apps/entry-core/internal/domain/entry"
 	schema "github.com/voyager-labs/voyager-app/apps/entry-core/protocol/schema"
 )
 
@@ -31,19 +32,34 @@ func DefinitionViewToWire(view DefinitionView) (schema.PropertyDefinition, schem
 		options[index] = schema.PropertyOption{OptionID: option.OptionID.String(), Label: option.Label, Position: int64(option.Ordinal) + 1, State: optionState}
 	}
 	definition := schema.PropertyDefinition{
-		PropertyID:  view.Definition.PropertyID.String(),
-		Key:         view.Definition.CanonicalKey,
-		Name:        view.Definition.DisplayName,
-		ValueType:   string(view.Definition.ValueType),
-		Cardinality: string(view.Definition.Cardinality),
-		State:       state,
-		Revision:    int64(view.Definition.DefinitionRev),
-		Options:     options,
+		PropertyID:          view.Definition.PropertyID.String(),
+		Key:                 view.Definition.CanonicalKey,
+		Name:                view.Definition.DisplayName,
+		ValueType:           string(view.Definition.ValueType),
+		Cardinality:         string(view.Definition.Cardinality),
+		State:               state,
+		Origin:              string(view.Definition.Origin),
+		Revision:            int64(view.Definition.DefinitionRev),
+		Options:             options,
+		ConditionCapability: conditionCapabilityToWire(ConditionCapabilityFor(view.Definition)),
 	}
 	if definition.Validate() != nil {
 		return schema.PropertyDefinition{}, schema.ErrorInternal
 	}
 	return definition, ""
+}
+
+func conditionCapabilityToWire(capability ConditionCapability) schema.PropertyConditionCapability {
+	if !capability.Supported {
+		return schema.PropertyConditionCapability{Reason: capability.Reason}
+	}
+	return schema.PropertyConditionCapability{
+		Supported:        true,
+		EvaluationScope:  "local_assignment",
+		CatalogVersion:   domainentry.ConditionCatalogVersion,
+		NativeType:       string(capability.NativeType),
+		AllowedOperators: append([]string(nil), capability.AllowedOperators...),
+	}
 }
 
 // encodedDefinitionResponseFits은 정의 뷰 결과의 성공 응답이 wire 봉투에 들어가는지

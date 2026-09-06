@@ -146,7 +146,7 @@ func listAllDefinitions(t *testing.T, socketPath string) definitionIndex {
 		if page > 64 {
 			t.Fatal("definition paging did not terminate")
 		}
-		params := map[string]any{"page_size": 256, "requested_property_ids": []string{}, "include_disabled": true}
+		params := map[string]any{"page_size": 32, "requested_property_ids": []string{}, "include_disabled": true}
 		if pageToken != nil {
 			params["page_token"] = *pageToken
 		}
@@ -232,10 +232,13 @@ func mustTextPayload(t *testing.T, value string) *schema.PropertyPayload {
 	return &payload
 }
 
+const fallbackPropertyEntryID = "ent:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+
 func textChangeTarget(t *testing.T, localPath, propertyID string, definitionRevision, assignmentRevision int64, value string) schema.PropertyChangeTarget {
 	t.Helper()
 	return schema.PropertyChangeTarget{
 		Target:                     schema.PropertyTargetSelector{Kind: "local_path", LocalPath: localPath},
+		EntryID:                    entryIDForChangeTarget(t, localPath),
 		PropertyID:                 propertyID,
 		ExpectedDefinitionRevision: definitionRevision,
 		ExpectedAssignmentRevision: assignmentRevision,
@@ -243,14 +246,28 @@ func textChangeTarget(t *testing.T, localPath, propertyID string, definitionRevi
 	}
 }
 
-func stateChangeTarget(localPath, propertyID string, definitionRevision, assignmentRevision int64, state string) schema.PropertyChangeTarget {
+func stateChangeTarget(t *testing.T, localPath, propertyID string, definitionRevision, assignmentRevision int64, state string) schema.PropertyChangeTarget {
+	t.Helper()
 	return schema.PropertyChangeTarget{
 		Target:                     schema.PropertyTargetSelector{Kind: "local_path", LocalPath: localPath},
+		EntryID:                    entryIDForChangeTarget(t, localPath),
 		PropertyID:                 propertyID,
 		ExpectedDefinitionRevision: definitionRevision,
 		ExpectedAssignmentRevision: assignmentRevision,
 		Desired:                    schema.PropertyDesiredState{State: state},
 	}
+}
+
+func entryIDForChangeTarget(t *testing.T, localPath string) string {
+	t.Helper()
+	oracle := newEntryIDOracle(t)
+	ref, err := oracle.adapter.ResolveLocalPath(context.Background(), localPath)
+	if err != nil {
+		// Execute tests for deleted/inaccessible paths still model a prepared
+		// stable identity; the daemon must reject on source resolution first.
+		return fallbackPropertyEntryID
+	}
+	return ref.EntryID
 }
 
 func prepareChanges(t *testing.T, socketPath, requestID string, changes []schema.PropertyChangeTarget) schema.PropertyChangePrepareResult {
@@ -376,6 +393,71 @@ func stopDaemonCleanly(t *testing.T, daemon *daemonProcess, socketPath string) {
 	if _, err := os.Lstat(socketPath); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("socket remains after daemon exit: %v", err)
 	}
+}
+
+func runPropertyConditionQuery(t *testing.T, env propertyPersistenceEnv) {
+	dbPath := filepath.Join(env.tempRoot, "property-condition-query.db")
+	paths := writeNumberedFiles(t, filepath.Join(env.tempRoot, "query"), 2)
+	daemon := startDaemonWithDatabase(t, env.daemonPath, env.socketPath, dbPath)
+	waitForSocket(t, daemon, env.socketPath, 15*time.Second)
+	definition := createDefinition(t, env.socketPath, "query_text", "Query Text", "text", "one", nil)
+	executeChanges(t, env.socketPath, "query-seed", []schema.PropertyChangeTarget{
+		textChangeTarget(t, paths[0], definition.PropertyID, definition.Revision, 0, "match"),
+		textChangeTarget(t, paths[1], definition.PropertyID, definition.Revision, 0, "match"),
+	})
+	params := map[string]any{
+		"targets":                 []map[string]any{{"kind": "local_path", "local_path": paths[0]}, {"kind": "local_path", "local_path": paths[1]}},
+		"combinator":              "all",
+		"conditions":              []map[string]any{{"property_id": definition.PropertyID, "operator": "eq", "operand": map[string]any{"kind": "text", "values": []string{"match"}}}},
+		"projection_property_ids": []string{definition.PropertyID}, "evaluation_date": "2026-09-01", "page_size": 1,
+	}
+	page1Response := propertyCall(t, env.socketPath, "query-page-1", schema.MethodPropertyConditionQuery, params)
+	requireSuccess(t, page1Response, "condition query page 1")
+	page1 := page1Response.Result.(schema.PropertyConditionQueryResult)
+	if len(page1.Items) != 1 || page1.Items[0].CandidateIndex != 0 || len(page1.Items[0].Projection) != 1 || !page1.HasMore || page1.NextPageToken == nil {
+		t.Fatalf("page 1 = %+v", page1)
+	}
+	pageParams := cloneQueryParams(params)
+	pageParams["page_token"] = *page1.NextPageToken
+	page2Response := propertyCall(t, env.socketPath, "query-page-2", schema.MethodPropertyConditionQuery, pageParams)
+	requireSuccess(t, page2Response, "condition query page 2")
+	page2 := page2Response.Result.(schema.PropertyConditionQueryResult)
+	if len(page2.Items) != 1 || page2.Items[0].CandidateIndex != 1 || page2.HasMore {
+		t.Fatalf("page 2 = %+v", page2)
+	}
+
+	tampered := cloneQueryParams(params)
+	tampered["page_token"] = *page1.NextPageToken + "x"
+	if response := propertyCall(t, env.socketPath, "query-tamper", schema.MethodPropertyConditionQuery, tampered); response.Error == nil || response.Error.Code != schema.ErrorInvalidPageToken {
+		t.Fatalf("tamper error = %+v", response.Error)
+	}
+	changed := cloneQueryParams(pageParams)
+	changed["combinator"] = "any"
+	if response := propertyCall(t, env.socketPath, "query-context", schema.MethodPropertyConditionQuery, changed); response.Error == nil || response.Error.Code != schema.ErrorContextMismatch {
+		t.Fatalf("context error = %+v", response.Error)
+	}
+
+	stopDaemonCleanly(t, daemon, env.socketPath)
+	restart := startDaemonWithDatabase(t, env.daemonPath, env.socketPath, dbPath)
+	waitForSocket(t, restart, env.socketPath, 15*time.Second)
+	if response := propertyCall(t, env.socketPath, "query-restart-token", schema.MethodPropertyConditionQuery, pageParams); response.Error == nil || response.Error.Code != schema.ErrorInvalidPageToken {
+		t.Fatalf("restart token error = %+v", response.Error)
+	}
+	repeated := propertyCall(t, env.socketPath, "query-page-1-repeat", schema.MethodPropertyConditionQuery, params)
+	requireSuccess(t, repeated, "condition query repeated page 1")
+	repeatedPage := repeated.Result.(schema.PropertyConditionQueryResult)
+	if len(repeatedPage.Items) != 1 || repeatedPage.Items[0].EntryID != page1.Items[0].EntryID {
+		t.Fatalf("repeated page = %+v, original = %+v", repeatedPage, page1)
+	}
+	stopDaemonCleanly(t, restart, env.socketPath)
+}
+
+func cloneQueryParams(source map[string]any) map[string]any {
+	cloned := make(map[string]any, len(source)+1)
+	for key, value := range source {
+		cloned[key] = value
+	}
+	return cloned
 }
 
 // databaseBytesDigest는 db 파일과 WAL 파일의 결합 다이제스트를 돌려준다.
@@ -542,7 +624,7 @@ func runPropertyAtomicPersistence(t *testing.T, env propertyPersistenceEnv) {
 
 	clearChanges := make([]schema.PropertyChangeTarget, len(lifecyclePaths))
 	for index, path := range lifecyclePaths {
-		clearChanges[index] = stateChangeTarget(path, textDef.PropertyID, renamedText.Revision, 2, "unknown")
+		clearChanges[index] = stateChangeTarget(t, path, textDef.PropertyID, renamedText.Revision, 2, "unknown")
 	}
 	clearRows := executeChanges(t, env.socketPath, "exec-clear", clearChanges)
 	for index, row := range clearRows {

@@ -28,6 +28,7 @@ func (runtime *Runtime) Dispatch(ctx context.Context, request schema.Request) sc
 	state, appVersion := runtime.state, runtime.appVersion
 	entryService, propertyService := runtime.entryService, runtime.propertyService
 	workspaceID := runtime.workspaceID
+	queryTokenKey := runtime.propertyQueryTokenKey
 	runtime.mu.RUnlock()
 	if state != StateRunning {
 		return dispatchError(request, schema.ErrorInternal)
@@ -81,6 +82,8 @@ func (runtime *Runtime) Dispatch(ctx context.Context, request schema.Request) sc
 		return dispatchPropertyChangePrepare(ctx, request, workspaceID, propertyService)
 	case schema.MethodPropertyChangeExecute:
 		return dispatchPropertyChangeExecute(ctx, request, workspaceID, propertyService)
+	case schema.MethodPropertyConditionQuery:
+		return dispatchPropertyConditionQuery(ctx, request, workspaceID, propertyService, queryTokenKey)
 	default:
 		return dispatchError(request, schema.ErrorUnknownMethod)
 	}
@@ -163,7 +166,7 @@ func runtimeMethodAllowed(hasEntryService bool, hasPropertyService bool, method 
 		return hasEntryService
 	case schema.MethodPropertyDefinitionList, schema.MethodPropertyDefinitionCreate, schema.MethodPropertyDefinitionUpdate, schema.MethodPropertyDefinitionDisable,
 		schema.MethodPropertyOptionCreate, schema.MethodPropertyOptionUpdate, schema.MethodPropertyOptionReorder, schema.MethodPropertyOptionDisable,
-		schema.MethodPropertyAssignmentList, schema.MethodPropertyChangePrepare, schema.MethodPropertyChangeExecute:
+		schema.MethodPropertyAssignmentList, schema.MethodPropertyChangePrepare, schema.MethodPropertyChangeExecute, schema.MethodPropertyConditionQuery:
 		return hasPropertyService
 	default:
 		return false

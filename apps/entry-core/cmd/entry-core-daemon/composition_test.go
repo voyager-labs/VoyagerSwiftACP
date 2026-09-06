@@ -219,7 +219,7 @@ func TestComposeWorkspaceServicesExposesPropertyMethodsAndLifecycle(t *testing.T
 	listResponse := runtime.Dispatch(ctx, schema.Request{
 		RequestID:                    "l",
 		Method:                       schema.MethodPropertyDefinitionList,
-		PropertyDefinitionListParams: &schema.PropertyDefinitionListParams{PageSize: 256, RequestedPropertyIDs: []string{}},
+		PropertyDefinitionListParams: &schema.PropertyDefinitionListParams{PageSize: 32, RequestedPropertyIDs: []string{}},
 	})
 	if !listResponse.OK {
 		t.Fatalf("property.definition.list dispatch error = %+v, want success", listResponse.Error)

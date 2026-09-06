@@ -25,6 +25,7 @@ func changeTargetsFromWire(wire []schema.PropertyChangeTarget) ([]applicationpro
 		}
 		changes[index] = applicationproperty.ChangeTarget{
 			LocalPath:                  target.Target.LocalPath,
+			EntryID:                    target.EntryID,
 			PropertyID:                 propertyID,
 			ExpectedDefinitionRevision: int(target.ExpectedDefinitionRevision),
 			ExpectedAssignmentRevision: uint64(target.ExpectedAssignmentRevision),

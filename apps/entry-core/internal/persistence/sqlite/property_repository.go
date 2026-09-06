@@ -97,6 +97,59 @@ func (r *EntryPropertyRepository) LoadAssignmentsCapped(
 	return LoadEntryPropertyAssignmentsCapped(db, wsctx, entryIDs, propertyIDs, maxHeaders)
 }
 
+func (r *EntryPropertyRepository) LoadAssignmentsMemberCapped(ctx context.Context, wsctx domainentry.WorkspaceContext, entryIDs []string, propertyIDs []domainentry.PropertyID, maxMembers int) (map[EntryPropertyRef]domainentry.EntryPropertyAssignment, error) {
+	db := r.store.db.WithContext(ctx)
+	if scope, ok := ctx.Value(txScopeKey{}).(*txScope); ok && scope != nil && scope.tx != nil {
+		db = scope.tx.WithContext(ctx)
+	}
+	if wsctx.ID == (domainentry.WorkspaceID{}) || maxMembers < 0 {
+		return nil, ErrInvalidPropertyRow
+	}
+	if len(entryIDs) == 0 {
+		return map[EntryPropertyRef]domainentry.EntryPropertyAssignment{}, nil
+	}
+	wsBytes := wsctx.ID.Bytes()
+	var headers []EntryPropertyAssignmentRow
+	if err := scopeAssignmentQuery(db.Model(&EntryPropertyAssignmentRow{}), wsBytes, entryIDs, propertyIDs).Find(&headers).Error; err != nil {
+		return nil, err
+	}
+	var values []EntryPropertyAssignmentValueRow
+	if err := scopeAssignmentQuery(db.Model(&EntryPropertyAssignmentValueRow{}), wsBytes, entryIDs, propertyIDs).Order("entry_id, property_id, ordinal").Limit(maxMembers + 1).Find(&values).Error; err != nil {
+		return nil, err
+	}
+	if len(values) > maxMembers {
+		return nil, applicationproperty.ErrConditionQueryScopeTooLarge
+	}
+	filter := propertyIDFilter(propertyIDs)
+	defQuery := db.Where("workspace_id = ?", wsBytes)
+	optionQuery := db.Where("workspace_id = ?", wsBytes)
+	if filter != "" {
+		defQuery = defQuery.Where(filter, idFilterArg(propertyIDs))
+		optionQuery = optionQuery.Where(filter, idFilterArg(propertyIDs))
+	}
+	var definitions []WorkspacePropertyDefinitionRow
+	if err := defQuery.Find(&definitions).Error; err != nil {
+		return nil, err
+	}
+	var options []WorkspacePropertyOptionRow
+	if err := optionQuery.Find(&options).Error; err != nil {
+		return nil, err
+	}
+	result, err := assembleEntryPropertyAssignments(headers, values, definitions, options)
+	if err != nil {
+		return nil, err
+	}
+	for _, entryID := range entryIDs {
+		for _, propertyID := range propertyIDs {
+			ref := EntryPropertyRef{EntryID: entryID, PropertyID: propertyID}
+			if _, ok := result[ref]; !ok {
+				result[ref] = domainentry.ImplicitUnsetEntryPropertyAssignment(wsctx.ID, entryID, propertyID)
+			}
+		}
+	}
+	return result, nil
+}
+
 // LoadAssignmentsByRefs는 exact-pair change 경로 읽기다. 자세한 계약은
 // LoadEntryPropertyAssignmentsByRefs다.
 func (r *EntryPropertyRepository) LoadAssignmentsByRefs(
