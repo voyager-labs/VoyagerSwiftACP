@@ -88,5 +88,9 @@ func composeWorkspaceServices(
 	// UDS에 노출되면 안 된다. entry.list/resolve의 production wiring과 overlay
 	// 결합은 mount/source를 소유한 후속 변경이 소유한다.
 	service := &propertyService{CatalogService: catalogService, ChangeService: changeService, ConditionQueryService: queryService}
-	return entryruntime.NewWithPropertyService(wsctx.ID.String(), service), nil
+	runtime, err := entryruntime.NewWithPropertyService(wsctx.ID.String(), service)
+	if err != nil {
+		return nil, err
+	}
+	return runtime, nil
 }

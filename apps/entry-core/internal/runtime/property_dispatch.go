@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/hex"
 	"strings"
 
@@ -33,14 +34,19 @@ type propertyConditionQueryService interface {
 
 // NewWithPropertyService는 Property 전용 테스트·조합 생성자다. 워크스페이스
 // 식별이 typed UUIDv7로 파싱되지 않으면 실패 닫기로 서비스를 떼어 게이트가
-// 거절한다.
-func NewWithPropertyService(workspaceID string, service PropertyService) *Runtime {
+// 거절한다. Property dispatch를 소유하는 조합은 condition query token key
+// 생성에 실패하면 readiness 전에 오류를 반환한다.
+func NewWithPropertyService(workspaceID string, service PropertyService) (*Runtime, error) {
 	return NewWithServices(workspaceID, nil, service)
 }
 
 // NewWithServices는 daemon 조합용 생성자다. 각 서비스는 독립적으로 검증되며
 // 구성되지 않은 서비스의 메서드는 메서드 게이트에서 unknown_method로 거절된다.
-func NewWithServices(workspaceID string, entryService EntryService, propertyService PropertyService) *Runtime {
+// propertyService가 구성된 조합은 condition query token key를 소유해야 한다 —
+// 키 생성 실패를 조용히 서비스 탈거로 대체하면 daemon이 정상 기동을 보고한 뒤
+// 모든 Property 메서드를 unknown_method로 거절하는 퇴가 생기므로 조합 오류로
+// 반환해 readiness 전에 실패 닫기한다.
+func NewWithServices(workspaceID string, entryService EntryService, propertyService PropertyService) (*Runtime, error) {
 	if nilInterface(entryService) || workspaceID == "" {
 		entryService = nil
 	}
@@ -49,7 +55,13 @@ func NewWithServices(workspaceID string, entryService EntryService, propertyServ
 	} else if _, err := parseWorkspaceText(workspaceID); err != nil {
 		propertyService = nil
 	}
-	return newWithAppVersionAndServices(AppVersion, workspaceID, entryService, propertyService)
+	runtime := newWithAppVersionAndServices(AppVersion, workspaceID, entryService, propertyService)
+	if propertyService != nil {
+		if _, err := rand.Read(runtime.propertyQueryTokenKey[:]); err != nil {
+			return nil, err
+		}
+	}
+	return runtime, nil
 }
 
 // parseWorkspaceText는 하이픈 UUID 텍스트를 typed WorkspaceID로 파싱한다.

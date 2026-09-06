@@ -197,7 +197,12 @@ func (service *recordingPropertyService) ListAssignmentsPage(ctx context.Context
 }
 
 func newPropertyRuntime(service *recordingPropertyService) *Runtime {
-	return NewWithPropertyService(testWorkspaceText, service)
+	runtime, err := NewWithPropertyService(testWorkspaceText, service)
+	if err != nil {
+		// token key 생성은 테스트 환경에서 실패하지 않는다.
+		panic(err)
+	}
+	return runtime
 }
 
 func testDefinitionView(idText string, active bool) applicationproperty.DefinitionView {

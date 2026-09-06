@@ -59,10 +59,14 @@ func TestConditionQueryMapsSourceRuntimeUnavailableToCanonicalCode(t *testing.T)
 		Conditions:            []schema.PropertyCondition{{PropertyID: "00000000-0000-0000-8000-000000000001", Operator: "exists", Operand: schema.PropertyConditionOperand{Kind: "none"}}},
 		ProjectionPropertyIDs: []string{}, EvaluationDate: "2026-09-01", PageSize: 1,
 	}
-	response := NewWithPropertyService(testWorkspaceText, conditionQueryErrorService{
+	runtime, err := NewWithPropertyService(testWorkspaceText, conditionQueryErrorService{
 		recordingPropertyService: newRecordingPropertyService(),
 		err:                      source.ErrSourceUnavailable,
-	}).Dispatch(context.Background(), schema.Request{
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := runtime.Dispatch(context.Background(), schema.Request{
 		RequestID:                    "condition-error",
 		Method:                       schema.MethodPropertyConditionQuery,
 		PropertyConditionQueryParams: params,
