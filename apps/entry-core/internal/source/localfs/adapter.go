@@ -219,9 +219,13 @@ func openVerifiedRoot(path string) (*os.Root, error) {
 	return root, nil
 }
 
-func openDirectory(root *os.Root, relativePath string) (*os.File, error) {
+// openVerifiedDirectoryScope는 부모 경로 컴포넌트를 openat 방식으로 하나씩
+// 열며 각 단계에서 symlink 치환과 디렉터리 여부를 재검증해, 검증된 scope의
+// *os.Root를 반환한다. owned가 true면 호출자가 닫는다(root 자체는 닫지
+// 않는다). 단일 대상 조회와 디렉터리 열거가 같은 검증 사슬을 공유한다.
+func openVerifiedDirectoryScope(root *os.Root, relativePath string) (*os.Root, bool, error) {
 	if !source.ValidateRelativePath(relativePath) {
-		return nil, source.ErrInvalidRequest
+		return nil, false, source.ErrInvalidRequest
 	}
 	current := root
 	owned := false
@@ -235,36 +239,58 @@ func openDirectory(root *os.Root, relativePath string) (*os.File, error) {
 			before, err := current.Lstat(component)
 			if err != nil {
 				closeOwned()
-				return nil, localFilesystemError(err, source.ErrEntryNotFound)
+				return nil, false, localFilesystemError(err, source.ErrEntryNotFound)
 			}
 			if before.Mode()&os.ModeSymlink != 0 || !before.IsDir() {
 				closeOwned()
-				return nil, source.ErrPathEscape
+				return nil, false, source.ErrPathEscape
 			}
 			next, err := current.OpenRoot(component)
 			if err != nil {
 				closeOwned()
-				return nil, localFilesystemError(err, source.ErrEntryNotFound)
+				return nil, false, localFilesystemError(err, source.ErrEntryNotFound)
 			}
 			opened, openedErr := next.Lstat(".")
 			after, afterErr := current.Lstat(component)
 			if openedErr != nil {
 				_ = next.Close()
 				closeOwned()
-				return nil, source.ErrAdapterFailure
+				return nil, false, source.ErrAdapterFailure
 			}
 			if afterErr != nil {
 				_ = next.Close()
 				closeOwned()
-				return nil, localFilesystemError(afterErr, source.ErrEntryNotFound)
+				return nil, false, localFilesystemError(afterErr, source.ErrEntryNotFound)
 			}
 			if after.Mode()&os.ModeSymlink != 0 || !os.SameFile(before, opened) || !os.SameFile(after, opened) {
 				_ = next.Close()
 				closeOwned()
-				return nil, source.ErrPathEscape
+				return nil, false, source.ErrPathEscape
 			}
 			closeOwned()
 			current, owned = next, true
+		}
+	}
+	before, err := current.Lstat(".")
+	if err != nil {
+		closeOwned()
+		return nil, false, localFilesystemError(err, source.ErrEntryNotFound)
+	}
+	if before.Mode()&os.ModeSymlink != 0 || !before.IsDir() {
+		closeOwned()
+		return nil, false, source.ErrPathEscape
+	}
+	return current, owned, nil
+}
+
+func openDirectory(root *os.Root, relativePath string) (*os.File, error) {
+	current, owned, err := openVerifiedDirectoryScope(root, relativePath)
+	if err != nil {
+		return nil, err
+	}
+	closeOwned := func() {
+		if owned {
+			_ = current.Close()
 		}
 	}
 	before, err := current.Lstat(".")
@@ -540,16 +566,21 @@ func (adapter *Adapter) resolveItem(ctx context.Context, relativePath string) (s
 		parent = ""
 	}
 	parent = strings.TrimSuffix(parent, "/")
-	directory, err := openDirectory(root, parent)
+	scope, owned, err := openVerifiedDirectoryScope(root, parent)
 	if err != nil {
 		return source.SourceItem{}, false, err
 	}
-	defer directory.Close()
+	if owned {
+		defer scope.Close()
+	}
 	// 단일 대상 해석은 부모를 열거하지 않는다. 목록 API의 디렉터리 예산
 	// (1,024)을 여기 전파하면 큰 폴더의 존재하는 파일을 ErrAdapterFailure로
-	// 거절한다. Lstat 직접 조회로 이름을 찾고 symlink는 목록 경로와 동일하게
-	// 부재로 취급한다.
-	info, statErr := os.Lstat(filepath.Join(root.Name(), filepath.FromSlash(relativePath)))
+	// 거절한다. FileInfo는 walk가 검증한 scope에 대한 fstatat
+	// (AT_SYMLINK_NOFOLLOW)로 얻는다. 절대 경로 재조회는 검증 이후 부모가
+	// symlink·다른 디렉터리로 교체되면 다른 객체의 FileInfo를 반환하므로
+	// resource type과 identity 입력을 검증 사슬 밖 객체에서 만들 수 있다
+	// (TOCTOU). symlink는 목록 경로와 동일하게 부재로 취급한다.
+	info, statErr := scope.Lstat(name)
 	if statErr != nil {
 		// 부재와 이름 길이 초과(4,096 경계 경로)는 목록 경로와 동일하게
 		// 부재로 취급한다. 나머지 오류만 접근 실패로 실패 닫기한다.

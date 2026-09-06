@@ -492,3 +492,46 @@ func TestIntermediateSymlinkTraversalRejected(t *testing.T) {
 		})
 	}
 }
+
+// TestOpenVerifiedDirectoryScopeContract는 walk가 반환하는 scope의 계약을
+// 고정한다. 단일 대상 조회(resolveItem)와 디렉터리 열거(openDirectory)가 같은
+// 검증 사슬을 공유하므로, scope는 부모 컴포넌트 symlink 치환을 거절하고 누수
+// 없는 소유 규약을 유지해야 한다.
+func TestOpenVerifiedDirectoryScopeContract(t *testing.T) {
+	rootPath := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(rootPath, "nested"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(rootPath, "nested", "leaf.txt"), "leaf")
+	root, err := os.OpenRoot(rootPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+
+	if scope, owned, err := openVerifiedDirectoryScope(root, ""); err != nil || scope != root || owned {
+		t.Fatalf("empty parent scope = (%v, %v, %v), want (root, false, nil)", scope, owned, err)
+	}
+
+	scope, owned, err := openVerifiedDirectoryScope(root, "nested")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !owned || scope == root {
+		t.Fatalf("nested scope must be owned and distinct: owned=%v", owned)
+	}
+	if _, err := scope.Lstat("leaf.txt"); err != nil {
+		t.Fatalf("scope must reach the leaf without re-traversal: %v", err)
+	}
+	scope.Close()
+
+	if err := os.Symlink(rootPath, filepath.Join(rootPath, "escape")); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := openVerifiedDirectoryScope(root, "escape/nested"); !errors.Is(err, source.ErrPathEscape) {
+		t.Fatalf("symlink component error = %v, want ErrPathEscape", err)
+	}
+	if _, _, err := openVerifiedDirectoryScope(root, "missing/leaf.txt"); !errors.Is(err, source.ErrEntryNotFound) {
+		t.Fatalf("missing component error = %v, want ErrEntryNotFound", err)
+	}
+}
