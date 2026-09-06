@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"path/filepath"
+	"reflect"
 	"time"
 
 	"github.com/voyager-labs/voyager-app/apps/entry-core/protocol/schema"
@@ -78,9 +79,19 @@ func newClient(dial dialFunc, now func() time.Time) *Client {
 }
 
 type requestWire struct {
-	RequestID string             `json:"request_id"`
-	Method    schema.Method      `json:"method"`
-	Params    schema.EmptyParams `json:"params"`
+	RequestID string        `json:"request_id"`
+	Method    schema.Method `json:"method"`
+	Params    any           `json:"params"`
+}
+
+// wireParams는 method에 맞는 typed params를 반환한다. condition query는
+// 필수 파라미터가 있어 EmptyParams로는 호출할 수 없으며, EmptyParams method는
+// 그대로 EmptyParams를 사용한다.
+func wireParams(request schema.Request) any {
+	if request.PropertyConditionQueryParams != nil {
+		return request.PropertyConditionQueryParams
+	}
+	return request.Params
 }
 
 func (client *Client) Call(ctx context.Context, socketPath string, request schema.Request) (schema.Response, error) {
@@ -88,16 +99,27 @@ func (client *Client) Call(ctx context.Context, socketPath string, request schem
 		return schema.Response{}, &TransportError{Phase: "dial", Err: errors.New("socket path must be absolute")}
 	}
 
+	params := wireParams(request)
 	wire, err := json.Marshal(requestWire{
 		RequestID: request.RequestID,
 		Method:    request.Method,
-		Params:    request.Params,
+		Params:    params,
 	})
 	if err != nil {
 		return schema.Response{}, &ProtocolError{Reason: "request encoding", Err: err}
 	}
 	decodedRequest, _, requestError := schema.DecodeRequest(wire)
-	if requestError != nil || decodedRequest != request {
+	if requestError != nil {
+		return schema.Response{}, &ProtocolError{Reason: "invalid request"}
+	}
+	// round-trip 대조는 포인터 동일성이 아닌 의미 값으로 수행한다. 디코딩된
+	// typed params는 새로 할당되므로 포인터 비교는 항상 실패한다.
+	if request.PropertyConditionQueryParams != nil {
+		decoded := decodedRequest.PropertyConditionQueryParams
+		if decoded == nil || !reflect.DeepEqual(decoded, request.PropertyConditionQueryParams) {
+			return schema.Response{}, &ProtocolError{Reason: "invalid request"}
+		}
+	} else if decodedRequest != request {
 		return schema.Response{}, &ProtocolError{Reason: "invalid request"}
 	}
 

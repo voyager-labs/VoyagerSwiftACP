@@ -215,13 +215,13 @@ type PropertyCondition struct {
 }
 
 type PropertyConditionQueryParams struct {
-	Targets               []PropertyTargetSelector
-	Combinator            string
-	Conditions            []PropertyCondition
-	ProjectionPropertyIDs []string
-	EvaluationDate        string
-	PageSize              int
-	PageToken             *string
+	Targets               []PropertyTargetSelector `json:"targets"`
+	Combinator            string                   `json:"combinator"`
+	Conditions            []PropertyCondition      `json:"conditions"`
+	ProjectionPropertyIDs []string                 `json:"projection_property_ids"`
+	EvaluationDate        string                   `json:"evaluation_date"`
+	PageSize              int                      `json:"page_size"`
+	PageToken             *string                  `json:"page_token,omitempty"`
 }
 
 // --- 결과 ---
@@ -725,8 +725,13 @@ func ReconcileConditionQueryResult(
 		if len(result.Items) != params.PageSize {
 			return ErrInvalidResponse
 		}
-		if last := result.Items[len(result.Items)-1].CandidateIndex; len(result.UnresolvedCandidateIndices) > 0 &&
-			result.UnresolvedCandidateIndices[len(result.UnresolvedCandidateIndices)-1] >= last {
+		last := result.Items[len(result.Items)-1].CandidateIndex
+		// 마지막 matched index 뒤에도 후보가 남아 있어야 has_more다.
+		if last >= len(params.Targets)-1 {
+			return ErrInvalidResponse
+		}
+		if unresolved := result.UnresolvedCandidateIndices; len(unresolved) > 0 &&
+			unresolved[len(unresolved)-1] >= last {
 			return ErrInvalidResponse
 		}
 	}

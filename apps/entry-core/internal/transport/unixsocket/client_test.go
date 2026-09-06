@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	domainentry "github.com/voyager-labs/voyager-app/apps/entry-core/internal/domain/entry"
 	"github.com/voyager-labs/voyager-app/apps/entry-core/protocol/schema"
 )
 
@@ -71,6 +72,118 @@ func TestClientRoundTrip(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestClientConditionQueryRequestAwareReconciliation(t *testing.T) {
+	propertyID := "00000000-0000-0000-8000-000000000001"
+	entryID := "ent:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+	operand := schema.PropertyConditionOperand{}
+	_ = operand
+	conditionPropertyID := "00000000-0000-0000-8000-000000000002"
+	params := &schema.PropertyConditionQueryParams{
+		Targets: []schema.PropertyTargetSelector{
+			{Kind: "local_path", LocalPath: "/a"},
+		},
+		Combinator: "all",
+		Conditions: []schema.PropertyCondition{{
+			PropertyID: conditionPropertyID,
+			Operator:   "exists",
+			Operand:    schema.PropertyConditionOperand{Kind: "none"},
+		}},
+		ProjectionPropertyIDs: []string{propertyID},
+		EvaluationDate:        "2026-09-01",
+		PageSize:              1,
+	}
+
+	newConditionQueryRequest := func() schema.Request {
+		return schema.Request{
+			RequestID:                    "request-1",
+			Method:                       schema.MethodPropertyConditionQuery,
+			PropertyConditionQueryParams: params,
+		}
+	}
+	invalidResult := schema.PropertyConditionQueryResult{
+		Items: []schema.PropertyConditionQueryItem{{
+			CandidateIndex: 7,
+			EntryID:        entryID,
+			Projection:     []schema.PropertyAssignment{},
+		}},
+		UnresolvedCandidateIndices: []int{},
+		CatalogVersion:             domainentry.ConditionCatalogVersion,
+		HasMore:                    false,
+	}
+	validResult := schema.PropertyConditionQueryResult{
+		Items: []schema.PropertyConditionQueryItem{{
+			CandidateIndex: 0,
+			EntryID:        entryID,
+			Projection:     []schema.PropertyAssignment{},
+		}},
+		UnresolvedCandidateIndices: []int{},
+		CatalogVersion:             domainentry.ConditionCatalogVersion,
+		HasMore:                    false,
+	}
+
+	t.Run("candidate beyond requested targets rejected", func(t *testing.T) {
+		socketPath, listener := unixListener(t)
+		peerDone := make(chan error, 1)
+		go func() {
+			connection, err := listener.AcceptUnix()
+			if err != nil {
+				peerDone <- err
+				return
+			}
+			defer connection.Close()
+			if _, err := io.ReadAll(connection); err != nil {
+				peerDone <- err
+				return
+			}
+			_, err = connection.Write(schema.EncodeResponse(
+				schema.NewSuccessResponse("request-1", invalidResult),
+			))
+			peerDone <- err
+		}()
+
+		_, err := NewClient().Call(context.Background(), socketPath, newConditionQueryRequest())
+		var protocolError *ProtocolError
+		if err == nil || !errors.As(err, &protocolError) || protocolError.Reason != "response request mismatch" {
+			t.Fatalf("out-of-bounds candidate accepted: %v", err)
+		}
+		if err := <-peerDone; err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	t.Run("valid page accepted", func(t *testing.T) {
+		socketPath, listener := unixListener(t)
+		peerDone := make(chan error, 1)
+		go func() {
+			connection, err := listener.AcceptUnix()
+			if err != nil {
+				peerDone <- err
+				return
+			}
+			defer connection.Close()
+			if _, err := io.ReadAll(connection); err != nil {
+				peerDone <- err
+				return
+			}
+			_, err = connection.Write(schema.EncodeResponse(
+				schema.NewSuccessResponse("request-1", validResult),
+			))
+			peerDone <- err
+		}()
+
+		response, err := NewClient().Call(context.Background(), socketPath, newConditionQueryRequest())
+		if err != nil {
+			t.Fatalf("valid page rejected: %v", err)
+		}
+		if !response.OK {
+			t.Fatalf("response = %#v", response)
+		}
+		if err := <-peerDone; err != nil {
+			t.Fatal(err)
+		}
+	})
 }
 
 func TestClientAbsoluteDeadline(t *testing.T) {

@@ -838,6 +838,7 @@ func TestPropertyConditionQueryResultRejectsOutOfBoundsCandidates(t *testing.T) 
 		Targets: []PropertyTargetSelector{
 			{Kind: "local_path", LocalPath: "/a"},
 			{Kind: "local_path", LocalPath: "/b"},
+			{Kind: "local_path", LocalPath: "/c"},
 		},
 		ProjectionPropertyIDs: []string{fixturePropertyID(t, 661)},
 		PageSize:              2,
