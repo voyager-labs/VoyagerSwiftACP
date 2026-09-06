@@ -659,11 +659,30 @@ func (adapter *Adapter) resolveAccessibleItem(ctx context.Context, relativePath 
 		return source.SourceItem{}, false, source.ErrAdapterFailure
 	}
 	defer target.Close()
-	info, statErr := target.Stat()
+	opened, statErr := target.Stat()
 	if statErr != nil {
 		return source.SourceItem{}, false, source.ErrAdapterFailure
 	}
-	item, makeErr := adapter.makeItemFromInfo(parent, name, info)
+	// open이 성공해도 leaf가 루트 내부 대상을 가리키는 symlink로 교체되어
+	// 있으면 Root의 symlink 해석이 링크 대상을 열었을 수 있다. open 이후
+	// 경로를 재조회해 열린 핸들이 이름의 현재 non-symlink 객체와 동일한지
+	// 확인한다(openDirectory의 before/opened/after SameFile 검증과 같은
+	// 경계). symlink·부재로의 교체는 목록 경로와 동일하게 부재로, 다른
+	// 객체로의 교체는 실패 닫기한다.
+	post, postErr := scope.Lstat(name)
+	if postErr != nil {
+		if errors.Is(postErr, fs.ErrNotExist) || errors.Is(postErr, syscall.ENAMETOOLONG) {
+			return notFound()
+		}
+		return source.SourceItem{}, false, source.ErrAdapterFailure
+	}
+	if post.Mode()&os.ModeSymlink != 0 {
+		return notFound()
+	}
+	if !os.SameFile(post, opened) {
+		return source.SourceItem{}, false, source.ErrAdapterFailure
+	}
+	item, makeErr := adapter.makeItemFromInfo(parent, name, opened)
 	return item, makeErr == nil, makeErr
 }
 
