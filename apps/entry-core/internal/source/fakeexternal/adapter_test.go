@@ -427,7 +427,11 @@ func TestRequestedPropertiesResourceAdapter(t *testing.T) {
 		t.Fatal(err)
 	}
 	result, err := adapter.List(context.Background(), request)
-	if err != nil || len(result.Items) != 1 || len(result.Items[0].EntrySnapshot.CanonicalProperties) != 1 || result.Items[0].EntrySnapshot.CanonicalProperties[0].PropertyID != "title" {
+	titleID, idErr := entry.RegistryPropertyID("title")
+	if idErr != nil {
+		t.Fatal(idErr)
+	}
+	if err != nil || len(result.Items) != 1 || len(result.Items[0].EntrySnapshot.CanonicalProperties) != 1 || result.Items[0].EntrySnapshot.CanonicalProperties[0].PropertyID != titleID {
 		t.Fatalf("List() = %#v, %v", result, err)
 	}
 	ref := result.Items[0].EntryRef

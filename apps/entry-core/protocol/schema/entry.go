@@ -67,6 +67,78 @@ func DecodeRequest(wire []byte) (Request, string, *ProtocolError) {
 			return request, trustworthyID, newProtocolError(code)
 		}
 		request.EntryResolveParams = &params
+	case MethodPropertyDefinitionList:
+		params, code := decodePropertyDefinitionListParams(fields["params"])
+		if code != "" {
+			return request, trustworthyID, newProtocolError(code)
+		}
+		request.PropertyDefinitionListParams = &params
+	case MethodPropertyDefinitionCreate:
+		params, code := decodePropertyDefinitionCreateParams(fields["params"])
+		if code != "" {
+			return request, trustworthyID, newProtocolError(code)
+		}
+		request.PropertyDefinitionCreateParams = &params
+	case MethodPropertyDefinitionUpdate:
+		params, code := decodePropertyDefinitionUpdateParams(fields["params"])
+		if code != "" {
+			return request, trustworthyID, newProtocolError(code)
+		}
+		request.PropertyDefinitionUpdateParams = &params
+	case MethodPropertyDefinitionDisable:
+		params, code := decodePropertyDefinitionDisableParams(fields["params"])
+		if code != "" {
+			return request, trustworthyID, newProtocolError(code)
+		}
+		request.PropertyDefinitionDisableParams = &params
+	case MethodPropertyOptionCreate:
+		params, code := decodePropertyOptionCreateParams(fields["params"])
+		if code != "" {
+			return request, trustworthyID, newProtocolError(code)
+		}
+		request.PropertyOptionCreateParams = &params
+	case MethodPropertyOptionUpdate:
+		params, code := decodePropertyOptionUpdateParams(fields["params"])
+		if code != "" {
+			return request, trustworthyID, newProtocolError(code)
+		}
+		request.PropertyOptionUpdateParams = &params
+	case MethodPropertyOptionReorder:
+		params, code := decodePropertyOptionReorderParams(fields["params"])
+		if code != "" {
+			return request, trustworthyID, newProtocolError(code)
+		}
+		request.PropertyOptionReorderParams = &params
+	case MethodPropertyOptionDisable:
+		params, code := decodePropertyOptionDisableParams(fields["params"])
+		if code != "" {
+			return request, trustworthyID, newProtocolError(code)
+		}
+		request.PropertyOptionDisableParams = &params
+	case MethodPropertyAssignmentList:
+		params, code := decodePropertyAssignmentListParams(fields["params"])
+		if code != "" {
+			return request, trustworthyID, newProtocolError(code)
+		}
+		request.PropertyAssignmentListParams = &params
+	case MethodPropertyChangePrepare:
+		changes, code := decodePropertyChangeParams(fields["params"])
+		if code != "" {
+			return request, trustworthyID, newProtocolError(code)
+		}
+		request.PropertyChangePrepareParams = &PropertyChangePrepareParams{Changes: changes}
+	case MethodPropertyChangeExecute:
+		changes, code := decodePropertyChangeParams(fields["params"])
+		if code != "" {
+			return request, trustworthyID, newProtocolError(code)
+		}
+		request.PropertyChangeExecuteParams = &PropertyChangeExecuteParams{Changes: changes}
+	case MethodPropertyConditionQuery:
+		params, code := decodePropertyConditionQueryParams(fields["params"])
+		if code != "" {
+			return request, trustworthyID, newProtocolError(code)
+		}
+		request.PropertyConditionQueryParams = &params
 	default:
 		if !validEmptyParams(fields["params"]) {
 			return request, trustworthyID, newProtocolError(ErrorInvalidRequest)
@@ -503,7 +575,7 @@ func propertyValueFromDomain(value domainentry.PropertyValue) (PropertyValue, er
 			validation.RuleKind = &k
 		}
 	}
-	return PropertyValue{PropertyID: value.PropertyID, EntryID: value.EntryID, ValueType: string(value.Type), Value: payload, State: string(value.State), Provenance: string(value.Provenance), ObservedAt: formatTime(value.ObservedAt), SourceRevision: revisionFromDomain(value.SourceRevision.Revision), Editable: value.Editable, Validation: validation, Cardinality: string(value.Cardinality)}, nil
+	return PropertyValue{PropertyID: value.PropertyID.String(), EntryID: value.EntryID, ValueType: string(value.Type), Value: payload, State: string(value.State), Provenance: string(value.Provenance), ObservedAt: formatTime(value.ObservedAt), SourceRevision: revisionFromDomain(value.SourceRevision.Revision), Editable: value.Editable, Validation: validation, Cardinality: string(value.Cardinality)}, nil
 }
 func revisionFromDomain(v domainentry.Revision) Revision {
 	return Revision{Strength: string(v.Strength), Token: cloneWireString(v.Token)}

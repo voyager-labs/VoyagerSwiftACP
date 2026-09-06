@@ -226,6 +226,37 @@ func (adapter *recordingResourceAdapter) Resolve(_ context.Context, request sour
 	return adapter.resolveResult, nil
 }
 
+// mutatingResourceAdapter는 악의적 어댑터가 요청 맵을 변조하고 임의 결과를 반환하는
+// 시나리오를 재현한다. 서비스 소유 정의 맵이 어댑터 변조로 오염되지 않음을 검증한다.
+type mutatingResourceAdapter struct {
+	listResults     []source.AdapterListResult
+	resolveResult   source.AdapterResolveResult
+	onList          func(request source.AdapterListRequest)
+	onResolve       func(request source.AdapterResolveRequest)
+	listRequests    []source.AdapterListRequest
+	resolveRequests []source.AdapterResolveRequest
+}
+
+func (adapter *mutatingResourceAdapter) List(_ context.Context, request source.AdapterListRequest) (source.AdapterListResult, error) {
+	if adapter.onList != nil {
+		adapter.onList(request)
+	}
+	adapter.listRequests = append(adapter.listRequests, request)
+	index := len(adapter.listRequests) - 1
+	if index >= len(adapter.listResults) {
+		return source.AdapterListResult{}, source.ErrAdapterFailure
+	}
+	return adapter.listResults[index], nil
+}
+
+func (adapter *mutatingResourceAdapter) Resolve(_ context.Context, request source.AdapterResolveRequest) (source.AdapterResolveResult, error) {
+	if adapter.onResolve != nil {
+		adapter.onResolve(request)
+	}
+	adapter.resolveRequests = append(adapter.resolveRequests, request)
+	return adapter.resolveResult, nil
+}
+
 func unifiedFixture(t *testing.T) (*mount.Registry, []ResourceAdapterBinding) {
 	t.Helper()
 	available, _ := domainentry.NewAvailability(domainentry.AvailabilityStateAvailable)
@@ -254,6 +285,256 @@ func mustUnifiedService(t *testing.T, registry *mount.Registry, bindings []Resou
 		t.Fatal(err)
 	}
 	return service
+}
+
+func TestPropertyDefinitionsResolveCatalogTerms(t *testing.T) {
+	titleID := domainentry.MustPropertyID("5f495fc5-a187-5e64-80ec-a9757f21d64d")
+	service := &UnifiedService{catalog: domainentry.PropertyCatalogSnapshot{
+		Definitions: []domainentry.WorkspacePropertyDefinition{{
+			PropertyID: titleID, IdentityScheme: domainentry.PropertyIdentitySchemeRegistryDerived,
+			Namespace: "system", CanonicalKey: "common.title", DisplayName: "Title",
+			ValueType: domainentry.PropertyTypeText, Cardinality: domainentry.PropertyCardinalityOne,
+			Provenance: domainentry.PropertyProvenanceSystem,
+		}},
+		Terms: []domainentry.WorkspacePropertyTerm{{PropertyID: titleID, TermKind: "legacy_alias", TermValue: "title"}},
+	}}
+	definitions, err := service.propertyDefinitions(service.catalog.Definitions, definitionIndexFrom(service.catalog.Definitions), []string{"title"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition, ok := definitions["title"]
+	if !ok || definition.PropertyID != titleID || definition.Key != "common.title" || definition.Namespace != "system" {
+		t.Fatalf("title definition = %#v", definition)
+	}
+}
+
+// VOY-764 회귀: canonical key와 alias는 하나의 resolver를 공유하고 같은 카탈로그
+// 정의(PropertyID·ValueType·Cardinality)를 반환해야 한다.
+func TestPropertyDefinitionsResolveCanonicalKeySameAsAlias(t *testing.T) {
+	titleID := domainentry.MustPropertyID("5f495fc5-a187-5e64-80ec-a9757f21d64d")
+	service := &UnifiedService{catalog: domainentry.PropertyCatalogSnapshot{
+		Definitions: []domainentry.WorkspacePropertyDefinition{{
+			PropertyID: titleID, IdentityScheme: domainentry.PropertyIdentitySchemeRegistryDerived,
+			Namespace: "system", CanonicalKey: "common.title", DisplayName: "Title",
+			ValueType: domainentry.PropertyTypeText, Cardinality: domainentry.PropertyCardinalityOne,
+			Provenance: domainentry.PropertyProvenanceSystem,
+		}},
+		Terms: []domainentry.WorkspacePropertyTerm{{PropertyID: titleID, TermKind: "legacy_alias", TermValue: "title"}},
+	}}
+	aliasDefinitions, err := service.propertyDefinitions(service.catalog.Definitions, definitionIndexFrom(service.catalog.Definitions), []string{"title"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonicalDefinitions, err := service.propertyDefinitions(service.catalog.Definitions, definitionIndexFrom(service.catalog.Definitions), []string{"common.title"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	alias, aliasOK := aliasDefinitions["title"]
+	canonical, canonicalOK := canonicalDefinitions["common.title"]
+	if !aliasOK || !canonicalOK {
+		t.Fatalf("resolution missing: alias=%v canonical=%v", aliasOK, canonicalOK)
+	}
+	if alias.PropertyID != titleID || canonical.PropertyID != titleID {
+		t.Fatalf("alias id = %s, canonical id = %s, want %s", alias.PropertyID, canonical.PropertyID, titleID)
+	}
+	if alias.ValueType != domainentry.PropertyTypeText || canonical.ValueType != domainentry.PropertyTypeText ||
+		alias.Cardinality != domainentry.PropertyCardinalityOne || canonical.Cardinality != domainentry.PropertyCardinalityOne ||
+		canonical.Key != "common.title" {
+		t.Fatalf("alias = %#v, canonical = %#v, want shared catalog contract", alias, canonical)
+	}
+}
+
+func TestNormalizeRequestedPropertiesDeduplicatesSemanticSelectors(t *testing.T) {
+	titleID := domainentry.MustPropertyID("5f495fc5-a187-5e64-80ec-a9757f21d64d")
+	service := &UnifiedService{catalog: domainentry.PropertyCatalogSnapshot{
+		Definitions: []domainentry.WorkspacePropertyDefinition{{
+			PropertyID: titleID, IdentityScheme: domainentry.PropertyIdentitySchemeRegistryDerived,
+			Namespace: "system", CanonicalKey: "common.title", DisplayName: "Title",
+			ValueType: domainentry.PropertyTypeText, Cardinality: domainentry.PropertyCardinalityOne,
+			Provenance: domainentry.PropertyProvenanceSystem,
+		}},
+		Terms: []domainentry.WorkspacePropertyTerm{{PropertyID: titleID, TermKind: "legacy_alias", TermValue: "title"}},
+	}}
+	normalized, err := service.normalizeRequestedProperties(service.catalog.Definitions, definitionIndexFrom(service.catalog.Definitions), []string{"common.title", "title"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(normalized) != 1 || normalized[0] != "common.title" {
+		t.Fatalf("normalized selectors = %#v, want [common.title]", normalized)
+	}
+}
+
+func TestPropertyDefinitionsPreserveUnitContract(t *testing.T) {
+	sizeID := domainentry.MustPropertyID("12a1c023-0b61-56b0-aec6-71a2d0d8cc1b")
+	unit := "B"
+	service := &UnifiedService{catalog: domainentry.PropertyCatalogSnapshot{
+		Definitions: []domainentry.WorkspacePropertyDefinition{{
+			PropertyID: sizeID, IdentityScheme: domainentry.PropertyIdentitySchemeRegistryDerived,
+			Namespace: "system", CanonicalKey: "misc.size", DisplayName: "File size",
+			ValueType: domainentry.PropertyTypeNumber, Cardinality: domainentry.PropertyCardinalityOne,
+			Provenance: domainentry.PropertyProvenanceSystem, Unit: &unit,
+			DefaultDisplayUnit: "Byte",
+			Units: []domainentry.PropertyUnit{
+				{Code: "B", Label: "Byte", FactorToCanonical: "1"},
+				{Code: "KB", Label: "KB", FactorToCanonical: "1024"},
+			},
+		}},
+	}}
+	definitions, err := service.propertyDefinitions(service.catalog.Definitions, definitionIndexFrom(service.catalog.Definitions), []string{"misc.size"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition, ok := definitions["misc.size"]
+	if !ok {
+		t.Fatal("misc.size definition not resolved")
+	}
+	if definition.Unit == nil || *definition.Unit != "B" {
+		t.Fatalf("unit = %v, want B", definition.Unit)
+	}
+	if definition.DefaultDisplayUnit != "Byte" || len(definition.Units) != 2 {
+		t.Fatalf("unit contract = default=%q units=%d, want Byte/2", definition.DefaultDisplayUnit, len(definition.Units))
+	}
+	if definition.Units[1].Code != "KB" || definition.Units[1].FactorToCanonical != "1024" {
+		t.Fatalf("units = %#v", definition.Units)
+	}
+}
+
+// TestPropertyDefinitionsPreserveNullableContract proves the catalog Nullable
+// contract survives the runtime definition conversion: a nullable catalog
+// definition must keep Nullable=true so a canonical null from an adapter
+// validates instead of failing as null_not_allowed.
+func TestPropertyDefinitionsPreserveNullableContract(t *testing.T) {
+	sizeID := domainentry.MustPropertyID("12a1c023-0b61-56b0-aec6-71a2d0d8cc1b")
+	service := &UnifiedService{catalog: domainentry.PropertyCatalogSnapshot{
+		Definitions: []domainentry.WorkspacePropertyDefinition{{
+			PropertyID: sizeID, IdentityScheme: domainentry.PropertyIdentitySchemeRegistryDerived,
+			Namespace: "system", CanonicalKey: "misc.size", DisplayName: "File size",
+			ValueType: domainentry.PropertyTypeNumber, Cardinality: domainentry.PropertyCardinalityOne,
+			Nullable: true, Editable: false,
+			Provenance: domainentry.PropertyProvenanceSystem,
+		}},
+	}}
+	definitions, err := service.propertyDefinitions(service.catalog.Definitions, definitionIndexFrom(service.catalog.Definitions), []string{"misc.size"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition, ok := definitions["misc.size"]
+	if !ok {
+		t.Fatal("misc.size definition not resolved")
+	}
+	if !definition.Nullable {
+		t.Fatal("Nullable was dropped by the runtime definition conversion")
+	}
+	nullValue := domainentry.PropertyValue{
+		Type: domainentry.PropertyTypeNumber, PropertyID: sizeID,
+		State: domainentry.PropertyStateNull, Cardinality: domainentry.PropertyCardinalityOne,
+	}
+	if result := nullValue.ValidateAgainst(definition); !result.Valid {
+		t.Fatalf("canonical null against nullable definition = %+v, want valid", result)
+	}
+}
+
+func TestPropertyDefinitionsPropagatesInvalidCatalogDefinition(t *testing.T) {
+	sizeID := domainentry.MustPropertyID("12a1c023-0b61-56b0-aec6-71a2d0d8cc1b")
+	service := &UnifiedService{catalog: domainentry.PropertyCatalogSnapshot{
+		Definitions: []domainentry.WorkspacePropertyDefinition{{
+			PropertyID: sizeID, IdentityScheme: domainentry.PropertyIdentitySchemeVoyagerIssued,
+			Namespace: "system", CanonicalKey: "misc.size", DisplayName: "File size",
+			ValueType: domainentry.PropertyTypeNumber, Cardinality: domainentry.PropertyCardinalityOne,
+			Provenance: domainentry.PropertyProvenanceSystem,
+		}},
+	}}
+	definitions, err := service.propertyDefinitions(service.catalog.Definitions, definitionIndexFrom(service.catalog.Definitions), []string{"misc.size"})
+	if err == nil || !errors.Is(err, domainentry.ErrInvalidPropertyDefinition) {
+		t.Fatalf("propertyDefinitions() error = %v, want wrapped ErrInvalidPropertyDefinition", err)
+	}
+	if definitions != nil {
+		t.Fatalf("definitions = %#v, want nil on conversion failure", definitions)
+	}
+}
+
+// VOY-764 회귀: UUIDv7 PropertyID term은 registry 재해싱 없이 resolve된다.
+func TestPropertyDefinitionsResolveVoyagerIssuedTerm(t *testing.T) {
+	v7ID := domainentry.MustPropertyID("0198c0de-f00d-7000-8000-3b9ac9e12345")
+	service := &UnifiedService{catalog: domainentry.PropertyCatalogSnapshot{
+		Definitions: []domainentry.WorkspacePropertyDefinition{{
+			PropertyID: v7ID, IdentityScheme: domainentry.PropertyIdentitySchemeVoyagerIssued,
+			Namespace: "system", CanonicalKey: "common.title", DisplayName: "Title",
+			ValueType: domainentry.PropertyTypeText, Cardinality: domainentry.PropertyCardinalityOne,
+			Provenance: domainentry.PropertyProvenanceSystem,
+		}},
+		Terms: []domainentry.WorkspacePropertyTerm{{PropertyID: v7ID, TermKind: "legacy_alias", TermValue: "title"}},
+	}}
+	definitions, err := service.propertyDefinitions(service.catalog.Definitions, definitionIndexFrom(service.catalog.Definitions), []string{"title"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition, ok := definitions["title"]
+	if !ok || definition.PropertyID != v7ID || definition.IdentityScheme != domainentry.PropertyIdentitySchemeVoyagerIssued {
+		t.Fatalf("title definition = %#v, want voyager-issued %s", definition, v7ID)
+	}
+}
+
+// VOY-764 회귀(후속 P1): 같은 별칭이 서로 다른 PropertyID에 걸리면 첫 매칭 대신 실패 닫기한다.
+func TestPropertyDefinitionsRejectsAmbiguousAlias(t *testing.T) {
+	firstID := domainentry.MustPropertyID("5f495fc5-a187-5e64-80ec-a9757f21d64d")
+	secondID := domainentry.MustPropertyID("5f495fc5-a187-5e64-80ec-a9757f21d64e")
+	service := &UnifiedService{catalog: domainentry.PropertyCatalogSnapshot{
+		Definitions: []domainentry.WorkspacePropertyDefinition{
+			{
+				PropertyID: firstID, IdentityScheme: domainentry.PropertyIdentitySchemeRegistryDerived,
+				Namespace: "system", CanonicalKey: "common.title", DisplayName: "Title",
+				ValueType: domainentry.PropertyTypeText, Cardinality: domainentry.PropertyCardinalityOne,
+				Provenance: domainentry.PropertyProvenanceSystem,
+			},
+			{
+				PropertyID: secondID, IdentityScheme: domainentry.PropertyIdentitySchemeRegistryDerived,
+				Namespace: "system", CanonicalKey: "common.body", DisplayName: "Body",
+				ValueType: domainentry.PropertyTypeText, Cardinality: domainentry.PropertyCardinalityOne,
+				Provenance: domainentry.PropertyProvenanceSystem,
+			},
+		},
+		Terms: []domainentry.WorkspacePropertyTerm{
+			{PropertyID: firstID, TermKind: "legacy_alias", TermValue: "shared"},
+			{PropertyID: secondID, TermKind: "legacy_alias", TermValue: "shared"},
+		},
+	}}
+	definitions, err := service.propertyDefinitions(service.catalog.Definitions, definitionIndexFrom(service.catalog.Definitions), []string{"shared"})
+	if !errors.Is(err, ErrAmbiguousPropertySelector) {
+		t.Fatalf("propertyDefinitions() error = %v, want %v", err, ErrAmbiguousPropertySelector)
+	}
+	if definitions != nil {
+		t.Fatalf("definitions = %#v, want nil on ambiguity", definitions)
+	}
+}
+
+// VOY-764 회귀(후속 P1): canonical key가 여러 정의에 걸리는 잘못된 스냅샷도 실패 닫기한다.
+func TestPropertyDefinitionsRejectsAmbiguousCanonicalKey(t *testing.T) {
+	firstID := domainentry.MustPropertyID("5f495fc5-a187-5e64-80ec-a9757f21d64d")
+	secondID := domainentry.MustPropertyID("5f495fc5-a187-5e64-80ec-a9757f21d64e")
+	service := &UnifiedService{catalog: domainentry.PropertyCatalogSnapshot{
+		Definitions: []domainentry.WorkspacePropertyDefinition{
+			{
+				PropertyID: firstID, IdentityScheme: domainentry.PropertyIdentitySchemeRegistryDerived,
+				Namespace: "system", CanonicalKey: "common.dup", DisplayName: "First",
+				ValueType: domainentry.PropertyTypeText, Cardinality: domainentry.PropertyCardinalityOne,
+				Provenance: domainentry.PropertyProvenanceSystem,
+			},
+			{
+				PropertyID: secondID, IdentityScheme: domainentry.PropertyIdentitySchemeRegistryDerived,
+				Namespace: "system", CanonicalKey: "common.dup", DisplayName: "Second",
+				ValueType: domainentry.PropertyTypeText, Cardinality: domainentry.PropertyCardinalityOne,
+				Provenance: domainentry.PropertyProvenanceSystem,
+			},
+		},
+	}}
+	definitions, err := service.propertyDefinitions(service.catalog.Definitions, definitionIndexFrom(service.catalog.Definitions), []string{"common.dup"})
+	if !errors.Is(err, ErrAmbiguousPropertySelector) {
+		t.Fatalf("propertyDefinitions() error = %v, want %v", err, ErrAmbiguousPropertySelector)
+	}
+	if definitions != nil {
+		t.Fatalf("definitions = %#v, want nil on ambiguity", definitions)
+	}
 }
 
 func adapterListResultFixture(t *testing.T, sourceRef domainentry.SourceRef, key, relative string, cursor *string) source.AdapterListResult {

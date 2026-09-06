@@ -1,0 +1,233 @@
+-- disable the enforcement of foreign-keys constraints
+PRAGMA foreign_keys = off;
+-- create "new_workspace_property_definitions" table
+CREATE TABLE `new_workspace_property_definitions` (
+  `workspace_id` blob NOT NULL,
+  `property_id` blob NOT NULL,
+  `origin` text NOT NULL,
+  `identity_scheme` text NOT NULL,
+  `namespace` text NOT NULL,
+  `canonical_key` text NOT NULL,
+  `display_name` text NOT NULL,
+  `description` text NOT NULL,
+  `value_type` text NOT NULL,
+  `cardinality` text NOT NULL,
+  `nullable` boolean NOT NULL,
+  `editable` boolean NOT NULL,
+  `default_hidden` boolean NOT NULL,
+  `default_pinned` boolean NOT NULL,
+  `db_indexed_hint` boolean NOT NULL,
+  `provenance` text NOT NULL,
+  `unit` text NOT NULL,
+  `definition_revision` integer NOT NULL,
+  `lifecycle_state` text NOT NULL,
+  `default_display_unit` text NOT NULL DEFAULT '',
+  `units_json` text NOT NULL DEFAULT '',
+  `seed_owner` text NULL,
+  `seed_version` integer NULL,
+  `seed_source_version` text NULL,
+  `created_at` datetime NOT NULL,
+  `updated_at` datetime NOT NULL,
+  PRIMARY KEY (`workspace_id`, `property_id`),
+  CONSTRAINT `chk_workspace_property_definitions_lifecycle_state` CHECK (lifecycle_state in ('active','tombstoned')),
+  CONSTRAINT `chk_workspace_property_definitions_origin` CHECK (origin in ('built_in','user_defined')),
+  CONSTRAINT `chk_workspace_property_definitions_cardinality` CHECK (cardinality in ('one','many')),
+  CONSTRAINT `chk_workspace_property_definitions_definition_revision` CHECK (definition_revision >= 0),
+  CONSTRAINT `chk_workspace_property_definitions_workspace_id` CHECK (length(workspace_id) = 16),
+  CONSTRAINT `chk_workspace_property_definitions_identity_scheme` CHECK (identity_scheme in ('registry_derived','voyager_issued')),
+  CONSTRAINT `chk_workspace_property_definitions_value_type` CHECK (value_type in ('text','number','boolean','date','datetime','select')),
+  CONSTRAINT `chk_workspace_property_definitions_property_id` CHECK (length(property_id) = 16)
+);
+-- copy rows from old table "workspace_property_definitions" to new temporary table "new_workspace_property_definitions"
+INSERT INTO `new_workspace_property_definitions` (`workspace_id`, `property_id`, `origin`, `identity_scheme`, `namespace`, `canonical_key`, `display_name`, `description`, `value_type`, `cardinality`, `nullable`, `editable`, `default_hidden`, `default_pinned`, `db_indexed_hint`, `provenance`, `unit`, `definition_revision`, `lifecycle_state`, `default_display_unit`, `units_json`, `seed_owner`, `seed_version`, `seed_source_version`, `created_at`, `updated_at`) SELECT `workspace_id`, `property_id`, `origin`, `identity_scheme`, `namespace`, `canonical_key`, `display_name`, `description`, `value_type`, `cardinality`, `nullable`, `editable`, `default_hidden`, `default_pinned`, `db_indexed_hint`, `provenance`, `unit`, `definition_revision`, `lifecycle_state`, `default_display_unit`, `units_json`, `seed_owner`, `seed_version`, `seed_source_version`, `created_at`, `updated_at` FROM `workspace_property_definitions`;
+-- drop "workspace_property_definitions" table after copying rows
+DROP TABLE `workspace_property_definitions`;
+-- rename temporary table "new_workspace_property_definitions" to "workspace_property_definitions"
+ALTER TABLE `new_workspace_property_definitions` RENAME TO `workspace_property_definitions`;
+-- create index "idx_def_ns_key" to table: "workspace_property_definitions"
+CREATE UNIQUE INDEX `idx_def_ns_key` ON `workspace_property_definitions` (`workspace_id`, `namespace`, `canonical_key`);
+-- create "new_source_property_descriptors" table
+CREATE TABLE `new_source_property_descriptors` (
+  `workspace_id` blob NOT NULL,
+  `provider_id` text NOT NULL,
+  `source_instance_id` text NOT NULL,
+  `scope_kind` text NOT NULL,
+  `scope_external_id` text NOT NULL,
+  `external_property_id` text NOT NULL,
+  `authority_kind` text NOT NULL,
+  `native_type` text NOT NULL,
+  `native_cardinality` text NOT NULL,
+  `source_readable` boolean NOT NULL,
+  `source_queryable` boolean NOT NULL,
+  `source_writable` boolean NOT NULL,
+  `lifecycle_state` text NOT NULL,
+  `availability_note` text NOT NULL,
+  `seed_owner` text NULL,
+  `seed_version` integer NULL,
+  `seed_source_version` text NULL,
+  `created_at` datetime NOT NULL,
+  `updated_at` datetime NOT NULL,
+  PRIMARY KEY (`workspace_id`, `provider_id`, `source_instance_id`, `scope_kind`, `scope_external_id`, `external_property_id`),
+  CONSTRAINT `chk_source_property_descriptors_authority_kind` CHECK (authority_kind in ('system','provider')),
+  CONSTRAINT `chk_source_property_descriptors_lifecycle_state` CHECK (lifecycle_state in ('active','tombstoned')),
+  CONSTRAINT `chk_source_property_descriptors_workspace_id` CHECK (length(workspace_id) = 16)
+);
+-- copy rows from old table "source_property_descriptors" to new temporary table "new_source_property_descriptors"
+INSERT INTO `new_source_property_descriptors` (`workspace_id`, `provider_id`, `source_instance_id`, `scope_kind`, `scope_external_id`, `external_property_id`, `authority_kind`, `native_type`, `native_cardinality`, `source_readable`, `source_queryable`, `source_writable`, `lifecycle_state`, `availability_note`, `seed_owner`, `seed_version`, `seed_source_version`, `created_at`, `updated_at`) SELECT `workspace_id`, `provider_id`, `source_instance_id`, `scope_kind`, `scope_external_id`, `external_property_id`, `authority_kind`, `native_type`, `native_cardinality`, `source_readable`, `source_queryable`, `source_writable`, `lifecycle_state`, `availability_note`, `seed_owner`, `seed_version`, `seed_source_version`, `created_at`, `updated_at` FROM `source_property_descriptors`;
+-- drop "source_property_descriptors" table after copying rows
+DROP TABLE `source_property_descriptors`;
+-- rename temporary table "new_source_property_descriptors" to "source_property_descriptors"
+ALTER TABLE `new_source_property_descriptors` RENAME TO `source_property_descriptors`;
+-- create "new_property_bindings" table
+CREATE TABLE `new_property_bindings` (
+  `workspace_id` blob NOT NULL,
+  `property_id` blob NOT NULL,
+  `provider_id` text NOT NULL,
+  `source_instance_id` text NOT NULL,
+  `scope_kind` text NOT NULL,
+  `scope_external_id` text NOT NULL,
+  `external_property_id` text NOT NULL,
+  `binding_ordinal` integer NOT NULL,
+  `read_transform` text NOT NULL,
+  `direction` text NOT NULL,
+  `effective_readable` boolean NOT NULL,
+  `effective_queryable` boolean NOT NULL,
+  `effective_writable` boolean NOT NULL,
+  `query_profile` text NOT NULL,
+  `mapping_version` integer NOT NULL,
+  `value_contract_revision` integer NOT NULL,
+  `mapping_provenance` text NOT NULL,
+  `approval_state` text NOT NULL,
+  `lossiness` text NOT NULL,
+  `lifecycle_state` text NOT NULL,
+  `seed_owner` text NULL,
+  `seed_version` integer NULL,
+  `seed_source_version` text NULL,
+  `created_at` datetime NOT NULL,
+  `updated_at` datetime NOT NULL,
+  PRIMARY KEY (`workspace_id`, `property_id`, `provider_id`, `source_instance_id`, `scope_kind`, `scope_external_id`, `external_property_id`),
+  CONSTRAINT `chk_property_bindings_binding_ordinal` CHECK (binding_ordinal >= 0),
+  CONSTRAINT `chk_property_bindings_mapping_version` CHECK (mapping_version >= 0),
+  CONSTRAINT `chk_property_bindings_value_contract_revision` CHECK (value_contract_revision >= 0),
+  CONSTRAINT `chk_property_bindings_workspace_id` CHECK (length(workspace_id) = 16),
+  CONSTRAINT `chk_property_bindings_property_id` CHECK (length(property_id) = 16),
+  CONSTRAINT `chk_property_bindings_approval_state` CHECK (approval_state in ('approved','pending','rejected')),
+  CONSTRAINT `chk_property_bindings_direction` CHECK (direction in ('read','write','bidirectional')),
+  CONSTRAINT `chk_property_bindings_lifecycle_state` CHECK (lifecycle_state in ('active','tombstoned'))
+);
+-- copy rows from old table "property_bindings" to new temporary table "new_property_bindings"
+INSERT INTO `new_property_bindings` (`workspace_id`, `property_id`, `provider_id`, `source_instance_id`, `scope_kind`, `scope_external_id`, `external_property_id`, `binding_ordinal`, `read_transform`, `direction`, `effective_readable`, `effective_queryable`, `effective_writable`, `query_profile`, `mapping_version`, `value_contract_revision`, `mapping_provenance`, `approval_state`, `lossiness`, `lifecycle_state`, `seed_owner`, `seed_version`, `seed_source_version`, `created_at`, `updated_at`) SELECT `workspace_id`, `property_id`, `provider_id`, `source_instance_id`, `scope_kind`, `scope_external_id`, `external_property_id`, `binding_ordinal`, `read_transform`, `direction`, `effective_readable`, `effective_queryable`, `effective_writable`, `query_profile`, `mapping_version`, `value_contract_revision`, `mapping_provenance`, `approval_state`, `lossiness`, `lifecycle_state`, `seed_owner`, `seed_version`, `seed_source_version`, `created_at`, `updated_at` FROM `property_bindings`;
+-- drop "property_bindings" table after copying rows
+DROP TABLE `property_bindings`;
+-- rename temporary table "new_property_bindings" to "property_bindings"
+ALTER TABLE `new_property_bindings` RENAME TO `property_bindings`;
+-- create "new_workspace_property_terms" table
+CREATE TABLE `new_workspace_property_terms` (
+  `workspace_id` blob NOT NULL,
+  `property_id` blob NOT NULL,
+  `term_kind` text NOT NULL,
+  `ordinal` integer NOT NULL,
+  `term_value` text NOT NULL,
+  `lifecycle_state` text NOT NULL DEFAULT 'active',
+  `seed_owner` text NULL,
+  `seed_version` integer NULL,
+  `seed_source_version` text NULL,
+  PRIMARY KEY (`workspace_id`, `property_id`, `term_kind`, `ordinal`),
+  CONSTRAINT `chk_workspace_property_terms_property_id` CHECK (length(property_id) = 16),
+  CONSTRAINT `chk_workspace_property_terms_ordinal` CHECK (ordinal >= 0),
+  CONSTRAINT `chk_workspace_property_terms_workspace_id` CHECK (length(workspace_id) = 16),
+  CONSTRAINT `chk_workspace_property_terms_term_kind` CHECK (term_kind in ('search_alias','legacy_alias')),
+  CONSTRAINT `chk_workspace_property_terms_lifecycle_state` CHECK (lifecycle_state in ('active','tombstoned'))
+);
+-- copy rows from old table "workspace_property_terms" to new temporary table "new_workspace_property_terms"
+INSERT INTO `new_workspace_property_terms` (`workspace_id`, `property_id`, `term_kind`, `ordinal`, `term_value`, `lifecycle_state`, `seed_owner`, `seed_version`, `seed_source_version`) SELECT `workspace_id`, `property_id`, `term_kind`, `ordinal`, `term_value`, `lifecycle_state`, `seed_owner`, `seed_version`, `seed_source_version` FROM `workspace_property_terms`;
+-- drop "workspace_property_terms" table after copying rows
+DROP TABLE `workspace_property_terms`;
+-- rename temporary table "new_workspace_property_terms" to "workspace_property_terms"
+ALTER TABLE `new_workspace_property_terms` RENAME TO `workspace_property_terms`;
+-- create index "idx_term_value" to table: "workspace_property_terms"
+CREATE UNIQUE INDEX `idx_term_value` ON `workspace_property_terms` (`workspace_id`, `property_id`, `term_value`) WHERE lifecycle_state = 'active';
+-- create "new_workspace_property_options" table
+CREATE TABLE `new_workspace_property_options` (
+  `workspace_id` blob NOT NULL,
+  `option_id` blob NOT NULL,
+  `property_id` blob NOT NULL,
+  `label` text NOT NULL,
+  `color` text NOT NULL,
+  `ordinal` integer NOT NULL,
+  `active` boolean NOT NULL,
+  `created_at` datetime NOT NULL,
+  `updated_at` datetime NOT NULL,
+  PRIMARY KEY (`workspace_id`, `option_id`),
+  CONSTRAINT `chk_workspace_property_options_ordinal` CHECK (ordinal >= 0),
+  CONSTRAINT `chk_workspace_property_options_option_id` CHECK (length(option_id) = 16),
+  CONSTRAINT `chk_workspace_property_options_property_id` CHECK (length(property_id) = 16),
+  CONSTRAINT `chk_workspace_property_options_label` CHECK (length(label) >= 1),
+  CONSTRAINT `chk_workspace_property_options_color` CHECK (length(color) <= 64),
+  CONSTRAINT `chk_workspace_property_options_workspace_id` CHECK (length(workspace_id) = 16)
+);
+-- copy rows from old table "workspace_property_options" to new temporary table "new_workspace_property_options"
+INSERT INTO `new_workspace_property_options` (`workspace_id`, `option_id`, `property_id`, `label`, `color`, `ordinal`, `active`, `created_at`, `updated_at`) SELECT `workspace_id`, `option_id`, `property_id`, `label`, `color`, `ordinal`, `active`, `created_at`, `updated_at` FROM `workspace_property_options`;
+-- drop "workspace_property_options" table after copying rows
+DROP TABLE `workspace_property_options`;
+-- rename temporary table "new_workspace_property_options" to "workspace_property_options"
+ALTER TABLE `new_workspace_property_options` RENAME TO `workspace_property_options`;
+-- create index "idx_option_property_ordinal" to table: "workspace_property_options"
+CREATE UNIQUE INDEX `idx_option_property_ordinal` ON `workspace_property_options` (`workspace_id`, `property_id`, `ordinal`);
+-- create "new_entry_property_assignments" table
+CREATE TABLE `new_entry_property_assignments` (
+  `workspace_id` blob NOT NULL,
+  `entry_id` text NOT NULL,
+  `property_id` blob NOT NULL,
+  `target_kind` text NOT NULL,
+  `state` text NOT NULL,
+  `record_revision` integer NOT NULL,
+  `value_contract_revision` integer NOT NULL,
+  `created_at` datetime NOT NULL,
+  `updated_at` datetime NOT NULL,
+  PRIMARY KEY (`workspace_id`, `entry_id`, `property_id`),
+  CONSTRAINT `chk_entry_property_assignments_value_contract_revision` CHECK (value_contract_revision >= 1),
+  CONSTRAINT `chk_entry_property_assignments_property_id` CHECK (length(property_id) = 16),
+  CONSTRAINT `chk_entry_property_assignments_workspace_id` CHECK (length(workspace_id) = 16),
+  CONSTRAINT `chk_entry_property_assignments_entry_id` CHECK (length(entry_id) = 47 AND entry_id LIKE 'ent:%'),
+  CONSTRAINT `chk_entry_property_assignments_target_kind` CHECK (target_kind in ('core_native','locator_derived')),
+  CONSTRAINT `chk_entry_property_assignments_state` CHECK (state in ('unset','null','value')),
+  CONSTRAINT `chk_entry_property_assignments_record_revision` CHECK (record_revision >= 1)
+);
+-- copy rows from old table "entry_property_assignments" to new temporary table "new_entry_property_assignments"
+INSERT INTO `new_entry_property_assignments` (`workspace_id`, `entry_id`, `property_id`, `target_kind`, `state`, `record_revision`, `value_contract_revision`, `created_at`, `updated_at`) SELECT `workspace_id`, `entry_id`, `property_id`, `target_kind`, `state`, `record_revision`, `value_contract_revision`, `created_at`, `updated_at` FROM `entry_property_assignments`;
+-- drop "entry_property_assignments" table after copying rows
+DROP TABLE `entry_property_assignments`;
+-- rename temporary table "new_entry_property_assignments" to "entry_property_assignments"
+ALTER TABLE `new_entry_property_assignments` RENAME TO `entry_property_assignments`;
+-- create "new_entry_property_assignment_values" table
+CREATE TABLE `new_entry_property_assignment_values` (
+  `workspace_id` blob NOT NULL,
+  `entry_id` text NOT NULL,
+  `property_id` blob NOT NULL,
+  `ordinal` integer NOT NULL,
+  `value_kind` text NOT NULL,
+  `boolean_value` boolean NULL,
+  `decimal_value` text NULL,
+  `date_value` text NULL,
+  `timestamp_value` text NULL,
+  `text_value` text NULL,
+  `option_id` blob NULL,
+  `created_at` datetime NOT NULL,
+  `updated_at` datetime NOT NULL,
+  PRIMARY KEY (`workspace_id`, `entry_id`, `property_id`, `ordinal`),
+  CONSTRAINT `chk_entry_property_assignment_values_option_id` CHECK ((option_id IS NULL OR length(option_id) = 16)),
+  CONSTRAINT `chk_entry_property_assignment_values_property_id` CHECK (length(property_id) = 16),
+  CONSTRAINT `chk_entry_property_assignment_values_ordinal` CHECK (ordinal >= 0),
+  CONSTRAINT `chk_entry_property_assignment_values_value_kind` CHECK ((value_kind = 'boolean' AND boolean_value IS NOT NULL AND decimal_value IS NULL AND date_value IS NULL AND timestamp_value IS NULL AND text_value IS NULL AND option_id IS NULL) OR (value_kind = 'decimal' AND boolean_value IS NULL AND decimal_value IS NOT NULL AND date_value IS NULL AND timestamp_value IS NULL AND text_value IS NULL AND option_id IS NULL) OR (value_kind = 'date' AND boolean_value IS NULL AND decimal_value IS NULL AND date_value IS NOT NULL AND timestamp_value IS NULL AND text_value IS NULL AND option_id IS NULL) OR (value_kind = 'timestamp' AND boolean_value IS NULL AND decimal_value IS NULL AND date_value IS NULL AND timestamp_value IS NOT NULL AND text_value IS NULL AND option_id IS NULL) OR (value_kind = 'text' AND boolean_value IS NULL AND decimal_value IS NULL AND date_value IS NULL AND timestamp_value IS NULL AND text_value IS NOT NULL AND option_id IS NULL) OR (value_kind = 'option_ref' AND boolean_value IS NULL AND decimal_value IS NULL AND date_value IS NULL AND timestamp_value IS NULL AND text_value IS NULL AND option_id IS NOT NULL)),
+  CONSTRAINT `chk_entry_property_assignment_values_workspace_id` CHECK (length(workspace_id) = 16),
+  CONSTRAINT `chk_entry_property_assignment_values_entry_id` CHECK (length(entry_id) = 47 AND entry_id LIKE 'ent:%')
+);
+-- copy rows from old table "entry_property_assignment_values" to new temporary table "new_entry_property_assignment_values"
+INSERT INTO `new_entry_property_assignment_values` (`workspace_id`, `entry_id`, `property_id`, `ordinal`, `value_kind`, `boolean_value`, `decimal_value`, `date_value`, `timestamp_value`, `text_value`, `option_id`, `created_at`, `updated_at`) SELECT `workspace_id`, `entry_id`, `property_id`, `ordinal`, `value_kind`, `boolean_value`, `decimal_value`, `date_value`, `timestamp_value`, `text_value`, `option_id`, `created_at`, `updated_at` FROM `entry_property_assignment_values`;
+-- drop "entry_property_assignment_values" table after copying rows
+DROP TABLE `entry_property_assignment_values`;
+-- rename temporary table "new_entry_property_assignment_values" to "entry_property_assignment_values"
+ALTER TABLE `new_entry_property_assignment_values` RENAME TO `entry_property_assignment_values`;
+-- enable back the enforcement of foreign-keys constraints
+PRAGMA foreign_keys = on;

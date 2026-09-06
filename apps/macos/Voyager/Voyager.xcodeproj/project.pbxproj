@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		E30000000000000000000001 /* VoyagerFeaturesEntryProperties in Frameworks */ = {isa = PBXBuildFile; productRef = E30000000000000000000003 /* VoyagerFeaturesEntryProperties */; };
 		11884BDAA11DD6217EEF5014 /* system_property_registry.json in Resources */ = {isa = PBXBuildFile; fileRef = A68896D2BA838902604FD30A /* system_property_registry.json */; };
 		3B378A28A482423D9B847800 /* StructuredQueries in Frameworks */ = {isa = PBXBuildFile; productRef = 319E52B31FBB4D8FA03D33B9 /* StructuredQueries */; };
 		6C57FBA92F02111500D85C72 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 6C57FBA82F02111500D85C72 /* Sparkle */; };
@@ -238,6 +239,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				E30000000000000000000001 /* VoyagerFeaturesEntryProperties in Frameworks */,
 				F21000000000000000000025 /* CasePaths in Frameworks */,
 				F21000000000000000000023 /* IdentifiedCollections in Frameworks */,
 				F21000000000000000000024 /* OrderedCollections in Frameworks */,
@@ -432,6 +434,7 @@
 			);
 			name = VoyagerTests;
 			packageProductDependencies = (
+				E30000000000000000000003 /* VoyagerFeaturesEntryProperties */,
 				F20000000000000000000011 /* VoyagerPagesOnboarding */,
 				F2000000000000000000001E /* VoyagerPagesFileManager */,
 				F20000000000000000000018 /* VoyagerFeaturesEntryArrangements */,
@@ -619,6 +622,7 @@
 			mainGroup = 7E14EDC32E86622C005AC834;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				E30000000000000000000002 /* XCLocalSwiftPackageReference "04_Features/EntryProperties" */,
 				F20000000000000000000001 /* XCLocalSwiftPackageReference "02_Pages/Onboarding" */,
 				F20000000000000000000002 /* XCLocalSwiftPackageReference "02_Pages/Settings" */,
 				F20000000000000000000003 /* XCLocalSwiftPackageReference "04_Features/EntryOperations" */,
@@ -1944,6 +1948,10 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
+		E30000000000000000000002 /* XCLocalSwiftPackageReference "04_Features/EntryProperties" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../Packages/04_Features/EntryProperties;
+		};
 		F20000000000000000000001 /* XCLocalSwiftPackageReference "02_Pages/Onboarding" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../Packages/02_Pages/Onboarding;
@@ -2146,6 +2154,11 @@
 		/* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		E30000000000000000000003 /* VoyagerFeaturesEntryProperties */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = E30000000000000000000002 /* XCLocalSwiftPackageReference "04_Features/EntryProperties" */;
+			productName = VoyagerFeaturesEntryProperties;
+		};
 		F21000000000000000000011 /* IdentifiedCollections */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = F21000000000000000000001 /* XCRemoteSwiftPackageReference "swift-identified-collections" */;

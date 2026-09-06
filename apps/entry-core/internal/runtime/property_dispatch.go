@@ -1,0 +1,293 @@
+package runtime
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"strings"
+
+	applicationproperty "github.com/voyager-labs/voyager-app/apps/entry-core/internal/application/property"
+	domainentry "github.com/voyager-labs/voyager-app/apps/entry-core/internal/domain/entry"
+	"github.com/voyager-labs/voyager-app/apps/entry-core/protocol/schema"
+)
+
+// PropertyService는 Property 유스케이스의 application 경계다. runtime은 저장소에
+// 접근하지 않고 이 좁은 인터페이스를 통해서만 정의·선택지·할당 명령을 수행한다.
+type PropertyService interface {
+	ListDefinitions(ctx context.Context, workspace domainentry.WorkspaceContext) ([]applicationproperty.DefinitionView, error)
+	ListDefinitionsPage(ctx context.Context, workspace domainentry.WorkspaceContext, activeOnly bool, idFilter []domainentry.PropertyID, after *domainentry.PropertyID, limit int) ([]applicationproperty.DefinitionView, *domainentry.PropertyID, bool, error)
+	CreateDefinition(ctx context.Context, workspace domainentry.WorkspaceContext, input applicationproperty.CreateDefinitionInput) (applicationproperty.DefinitionView, error)
+	UpdateDefinitionMetadata(ctx context.Context, workspace domainentry.WorkspaceContext, propertyID domainentry.PropertyID, expectedRevision int, requestID string, displayName string) (applicationproperty.DefinitionView, error)
+	DisableDefinition(ctx context.Context, workspace domainentry.WorkspaceContext, propertyID domainentry.PropertyID, expectedRevision int, requestID string) (applicationproperty.DefinitionView, error)
+	CreateOption(ctx context.Context, workspace domainentry.WorkspaceContext, propertyID domainentry.PropertyID, expectedRevision int, requestID string, label string) (applicationproperty.DefinitionView, error)
+	RenameOption(ctx context.Context, workspace domainentry.WorkspaceContext, propertyID domainentry.PropertyID, optionID domainentry.PropertyOptionID, expectedRevision int, requestID string, label string) (applicationproperty.DefinitionView, error)
+	ReorderOptions(ctx context.Context, workspace domainentry.WorkspaceContext, propertyID domainentry.PropertyID, expectedRevision int, requestID string, orderedIDs []domainentry.PropertyOptionID) (applicationproperty.DefinitionView, error)
+	DisableOption(ctx context.Context, workspace domainentry.WorkspaceContext, propertyID domainentry.PropertyID, optionID domainentry.PropertyOptionID, expectedRevision int, requestID string) (applicationproperty.DefinitionView, error)
+	Prepare(ctx context.Context, workspace domainentry.WorkspaceContext, changes []applicationproperty.ChangeTarget) (applicationproperty.Proposal, error)
+	Execute(ctx context.Context, workspace domainentry.WorkspaceContext, requestID string, changes []applicationproperty.ChangeTarget) (applicationproperty.ExecuteResult, error)
+	ListAssignmentsPage(ctx context.Context, workspace domainentry.WorkspaceContext, localPath string, requestedIDs []domainentry.PropertyID, after *domainentry.PropertyID, limit int) ([]domainentry.EntryPropertyAssignment, map[domainentry.PropertyID]applicationproperty.DefinitionView, *domainentry.PropertyID, bool, error)
+}
+
+type propertyConditionQueryService interface {
+	Query(ctx context.Context, workspace domainentry.WorkspaceContext, query applicationproperty.ConditionQuery) (applicationproperty.ConditionQueryResult, error)
+}
+
+// NewWithPropertyService는 Property 전용 테스트·조합 생성자다. 워크스페이스
+// 식별이 typed UUIDv7로 파싱되지 않으면 실패 닫기로 서비스를 떼어 게이트가
+// 거절한다. Property dispatch를 소유하는 조합은 condition query token key
+// 생성에 실패하면 readiness 전에 오류를 반환한다.
+func NewWithPropertyService(workspaceID string, service PropertyService) (*Runtime, error) {
+	return NewWithServices(workspaceID, nil, service)
+}
+
+// NewWithServices는 daemon 조합용 생성자다. 각 서비스는 독립적으로 검증되며
+// 구성되지 않은 서비스의 메서드는 메서드 게이트에서 unknown_method로 거절된다.
+// propertyService가 구성된 조합은 condition query token key를 소유해야 한다 —
+// 키 생성 실패를 조용히 서비스 탈거로 대체하면 daemon이 정상 기동을 보고한 뒤
+// 모든 Property 메서드를 unknown_method로 거절하는 퇴가 생기므로 조합 오류로
+// 반환해 readiness 전에 실패 닫기한다.
+func NewWithServices(workspaceID string, entryService EntryService, propertyService PropertyService) (*Runtime, error) {
+	if nilInterface(entryService) || workspaceID == "" {
+		entryService = nil
+	}
+	if nilInterface(propertyService) {
+		propertyService = nil
+	} else if _, err := parseWorkspaceText(workspaceID); err != nil {
+		propertyService = nil
+	}
+	runtime := newWithAppVersionAndServices(AppVersion, workspaceID, entryService, propertyService)
+	if propertyService != nil {
+		if _, err := rand.Read(runtime.propertyQueryTokenKey[:]); err != nil {
+			return nil, err
+		}
+	}
+	return runtime, nil
+}
+
+// parseWorkspaceText는 하이픈 UUID 텍스트를 typed WorkspaceID로 파싱한다.
+func parseWorkspaceText(text string) (domainentry.WorkspaceID, error) {
+	raw, err := hex.DecodeString(strings.ReplaceAll(text, "-", ""))
+	if err != nil {
+		return domainentry.WorkspaceID{}, err
+	}
+	return domainentry.ParseWorkspaceID(raw)
+}
+
+// propertyParamsMissing은 Property 메서드별 필수 파라미터 결손을 검사한다.
+// 각 케이스는 열거형 전체를 다루며 default는 실패 닫기다.
+func propertyParamsMissing(request schema.Request) bool {
+	switch request.Method {
+	case schema.MethodPropertyDefinitionList:
+		return request.PropertyDefinitionListParams == nil
+	case schema.MethodPropertyDefinitionCreate:
+		return request.PropertyDefinitionCreateParams == nil
+	case schema.MethodPropertyDefinitionUpdate:
+		return request.PropertyDefinitionUpdateParams == nil
+	case schema.MethodPropertyDefinitionDisable:
+		return request.PropertyDefinitionDisableParams == nil
+	case schema.MethodPropertyOptionCreate:
+		return request.PropertyOptionCreateParams == nil
+	case schema.MethodPropertyOptionUpdate:
+		return request.PropertyOptionUpdateParams == nil
+	case schema.MethodPropertyOptionReorder:
+		return request.PropertyOptionReorderParams == nil
+	case schema.MethodPropertyOptionDisable:
+		return request.PropertyOptionDisableParams == nil
+	case schema.MethodPropertyAssignmentList:
+		return request.PropertyAssignmentListParams == nil
+	case schema.MethodPropertyChangePrepare:
+		return request.PropertyChangePrepareParams == nil
+	case schema.MethodPropertyChangeExecute:
+		return request.PropertyChangeExecuteParams == nil
+	case schema.MethodPropertyConditionQuery:
+		return request.PropertyConditionQueryParams == nil
+	default:
+		return false
+	}
+}
+
+// anyMissingStableIdentity는 mutation execute가 경로만으로 대상을 다시
+// 해석하는 우회를 차단한다. prepare는 아직 identity를 응답으로 확정하기
+// 전이므로 이 검사를 적용하지 않는다.
+func anyMissingStableIdentity(changes []schema.PropertyChangeTarget) bool {
+	for _, change := range changes {
+		if change.EntryID == "" {
+			return true
+		}
+	}
+	return false
+}
+
+// propertyDispatchGuard는 공통 실패 닫기 전제를 검사하고 주입된 워크스페이스
+// 컨텍스트를 돌려준다.
+func propertyDispatchGuard(ctx context.Context, workspaceID string, service PropertyService) (domainentry.WorkspaceContext, bool) {
+	if ctx == nil || service == nil || workspaceID == "" {
+		return domainentry.WorkspaceContext{}, false
+	}
+	workspace, err := parseWorkspaceText(workspaceID)
+	if err != nil {
+		return domainentry.WorkspaceContext{}, false
+	}
+	return domainentry.WorkspaceContext{ID: workspace}, true
+}
+
+func dispatchPropertyAssignmentList(ctx context.Context, request schema.Request, workspaceID string, service PropertyService) schema.Response {
+	workspace, ok := propertyDispatchGuard(ctx, workspaceID, service)
+	if !ok {
+		return dispatchError(request, schema.ErrorInternal)
+	}
+	params := request.PropertyAssignmentListParams
+	propertyIDs, err := parsePropertyIDs(params.RequestedPropertyIDs)
+	if err != nil {
+		return dispatchError(request, schema.ErrorInvalidRequest)
+	}
+	// 필터·정렬·창 잘라내기를 저장소 쿼리로 밀어 넣는다. page_size 적용 전에
+	// 전체 header/value/카탈로그를 적재하면 단일 연결을 오래 점유한다.
+	var after *domainentry.PropertyID
+	if params.PageToken != nil {
+		parsed, parseErr := domainentry.ParsePropertyID(*params.PageToken)
+		if parseErr != nil {
+			return dispatchError(request, schema.ErrorInvalidRequest)
+		}
+		after = &parsed
+	}
+	facts, definitions, next, hasMore, err := service.ListAssignmentsPage(ctx, workspace, params.Target.LocalPath, propertyIDs, after, params.PageSize)
+	if err != nil {
+		return dispatchError(request, protocolCodeForPropertyError(err))
+	}
+	assignments := make([]schema.PropertyAssignment, len(facts))
+	for index, fact := range facts {
+		mapped, mapCode := assignmentFactToWire(fact, definitions)
+		if mapCode != "" {
+			return dispatchError(request, mapCode)
+		}
+		assignments[index] = mapped
+	}
+	var nextToken *string
+	if hasMore && next != nil {
+		token := next.String()
+		nextToken = &token
+	}
+	result := schema.PropertyAssignmentListResult{Assignments: assignments, NextPageToken: nextToken, HasMore: hasMore}
+	return dispatchPropertySuccess(request, result)
+}
+
+func dispatchPropertyChangePrepare(ctx context.Context, request schema.Request, workspaceID string, service PropertyService) schema.Response {
+	workspace, ok := propertyDispatchGuard(ctx, workspaceID, service)
+	if !ok {
+		return dispatchError(request, schema.ErrorInternal)
+	}
+	changes, code := changeTargetsFromWire(request.PropertyChangePrepareParams.Changes)
+	if code != "" {
+		return dispatchError(request, code)
+	}
+	proposal, err := service.Prepare(ctx, workspace, changes)
+	if err != nil {
+		return dispatchError(request, protocolCodeForPropertyError(err))
+	}
+	// 응답 매핑은 Prepare가 검증에 사용한 요청 정의로 완성한다 — 전체
+	// 카탈로그 재조회(N+1)는 응답에 기여하지 않는다.
+	result, code := prepareResultFromApplication(proposal, proposal.DefinitionViews(), request.PropertyChangePrepareParams.Changes)
+	if code != "" {
+		return dispatchError(request, code)
+	}
+	return dispatchPropertySuccess(request, result)
+}
+
+func dispatchPropertyChangeExecute(ctx context.Context, request schema.Request, workspaceID string, service PropertyService) schema.Response {
+	workspace, ok := propertyDispatchGuard(ctx, workspaceID, service)
+	if !ok {
+		return dispatchError(request, schema.ErrorInternal)
+	}
+	changes, code := changeTargetsFromWire(request.PropertyChangeExecuteParams.Changes)
+	if code != "" {
+		return dispatchError(request, code)
+	}
+	if anyMissingStableIdentity(request.PropertyChangeExecuteParams.Changes) {
+		return dispatchError(request, schema.ErrorInvalidRequest)
+	}
+	executed, err := service.Execute(ctx, workspace, request.RequestID, changes)
+	if err != nil {
+		return dispatchError(request, protocolCodeForPropertyError(err))
+	}
+	// 응답 매핑은 트랜잭션 안에서 검증된 정의 계약으로 완성한다. 커밋 뒤
+	// 카탈로그를 다시 읽으면 조회 실패 시 영속화된 변경이 internal_error와
+	// 재시도 conflict로 남는다.
+	assignments := make([]schema.PropertyAssignment, len(executed.Facts))
+	for index, fact := range executed.Facts {
+		mapped, mapCode := assignmentFactToWire(fact, executed.DefinitionViews())
+		if mapCode != "" {
+			return dispatchError(request, mapCode)
+		}
+		assignments[index] = mapped
+	}
+	result := schema.PropertyChangeExecuteResult{Assignments: assignments}
+	return dispatchPropertySuccess(request, result)
+}
+
+// dispatchPropertySuccess는 socket write 전에 응답 봉투 적합성을 강제한다.
+// 초과 결과는 내부 폴백 대신 안정 코드 response_too_large로 거절된다.
+func dispatchPropertySuccess(request schema.Request, result schema.Result) schema.Response {
+	if _, fits := schema.EncodedSuccessBytes(request.RequestID, result); !fits {
+		return dispatchError(request, schema.ErrorResponseTooLarge)
+	}
+	return dispatchSuccess(request, result)
+}
+
+func definitionViewResponse(request schema.Request, view applicationproperty.DefinitionView) schema.Response {
+	definition, code := applicationproperty.DefinitionViewToWire(view)
+	if code != "" {
+		return dispatchError(request, code)
+	}
+	return dispatchPropertySuccess(request, schema.PropertyDefinitionResult{Definition: definition})
+}
+
+// parseOptionCommandIDs는 option update/disable 명령의 소유 정의와 선택지
+// 식별자를 함께 파싱한다.
+func parseOptionCommandIDs(propertyText, optionText string) (struct {
+	propertyID domainentry.PropertyID
+	optionID   domainentry.PropertyOptionID
+}, schema.ErrorCode) {
+	var ids struct {
+		propertyID domainentry.PropertyID
+		optionID   domainentry.PropertyOptionID
+	}
+	propertyID, err := domainentry.ParsePropertyID(propertyText)
+	if err != nil {
+		return ids, schema.ErrorInvalidRequest
+	}
+	optionID, err := domainentry.ParsePropertyOptionID(optionText)
+	if err != nil {
+		return ids, schema.ErrorInvalidRequest
+	}
+	ids.propertyID = propertyID
+	ids.optionID = optionID
+	return ids, ""
+}
+
+func parsePropertyIDs(texts []string) ([]domainentry.PropertyID, error) {
+	ids := make([]domainentry.PropertyID, len(texts))
+	for index, text := range texts {
+		id, err := domainentry.ParsePropertyID(text)
+		if err != nil {
+			return nil, err
+		}
+		ids[index] = id
+	}
+	return ids, nil
+}
+
+// loadDefinitionIndex는 read-back 사상에 필요한 정의 계약(value_type,
+// cardinality)을 한 번의 batched 목록 읽기로 모은다. 정의 유형과 카디널리티는
+// 불변(ErrImmutableDefinitionField)이므로 커밋 뒤 재조회도 안전하다.
+func loadDefinitionIndex(ctx context.Context, workspace domainentry.WorkspaceContext, service PropertyService) (map[domainentry.PropertyID]applicationproperty.DefinitionView, error) {
+	views, err := service.ListDefinitions(ctx, workspace)
+	if err != nil {
+		return nil, err
+	}
+	index := make(map[domainentry.PropertyID]applicationproperty.DefinitionView, len(views))
+	for _, view := range views {
+		index[view.Definition.PropertyID] = view
+	}
+	return index, nil
+}

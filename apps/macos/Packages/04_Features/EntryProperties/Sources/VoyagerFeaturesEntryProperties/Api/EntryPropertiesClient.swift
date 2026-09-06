@@ -1,0 +1,492 @@
+import Dependencies
+import Foundation
+import VoyagerEntryCoreClient
+
+public struct EntryPropertiesClient: Sendable {
+    public var loadCatalog: @Sendable (EntryPropertiesSelection) async throws -> EntryPropertiesCatalog
+    public var loadAssignments: @Sendable (
+        EntryPropertiesSelection,
+        EntryPropertiesCatalog,
+    ) async throws -> EntryPropertiesAssignments
+    public var discoverCapabilities: @Sendable (
+        EntryPropertiesCapabilityRequest,
+    ) async throws -> EntryPropertiesCapabilityReport
+    public var prepare: @Sendable (EntryPropertiesPrepareRequest) async throws -> EntryPropertiesProposal
+    public var execute: @Sendable (EntryPropertiesProposal) async throws -> EntryPropertiesExecutionReceipt
+    public var readBack: @Sendable (EntryPropertiesReadBackRequest) async throws -> EntryPropertiesCanonicalResult
+
+    public init(
+        loadCatalog: @escaping @Sendable (EntryPropertiesSelection) async throws -> EntryPropertiesCatalog,
+        loadAssignments: @escaping @Sendable (
+            EntryPropertiesSelection,
+            EntryPropertiesCatalog,
+        ) async throws -> EntryPropertiesAssignments,
+        discoverCapabilities: @escaping @Sendable (
+            EntryPropertiesCapabilityRequest,
+        ) async throws -> EntryPropertiesCapabilityReport,
+        prepare: @escaping @Sendable (EntryPropertiesPrepareRequest) async throws -> EntryPropertiesProposal,
+        execute: @escaping @Sendable (EntryPropertiesProposal) async throws -> EntryPropertiesExecutionReceipt,
+        readBack: @escaping @Sendable (EntryPropertiesReadBackRequest) async throws -> EntryPropertiesCanonicalResult,
+    ) {
+        self.loadCatalog = loadCatalog
+        self.loadAssignments = loadAssignments
+        self.discoverCapabilities = discoverCapabilities
+        self.prepare = prepare
+        self.execute = execute
+        self.readBack = readBack
+    }
+}
+
+extension EntryPropertiesClient: DependencyKey {
+    public static let liveValue = EntryPropertiesClient.unavailable
+    public static let testValue = EntryPropertiesClient.unavailable
+    public static let previewValue = EntryPropertiesClient.unavailable
+
+    public static let unavailable = EntryPropertiesClient(
+        loadCatalog: { _ in throw EntryPropertiesFailure.unavailable },
+        loadAssignments: { _, _ in throw EntryPropertiesFailure.unavailable },
+        discoverCapabilities: { _ in throw EntryPropertiesFailure.unavailable },
+        prepare: { _ in throw EntryPropertiesFailure.unavailable },
+        execute: { _ in throw EntryPropertiesFailure.unavailable },
+        readBack: { _ in throw EntryPropertiesFailure.unavailable },
+    )
+}
+
+public extension DependencyValues {
+    var entryPropertiesClient: EntryPropertiesClient {
+        get { self[EntryPropertiesClient.self] }
+        set { self[EntryPropertiesClient.self] = newValue }
+    }
+}
+
+/// Entry Core Property transport를 EPR-006의 의미 기반 dependency로 연결하는 유일한 생성 경계다.
+public enum EntryPropertiesClientFactory {
+    public typealias CapabilityDiscovery = @Sendable (
+        EntryPropertiesCapabilityRequest,
+    ) async throws -> EntryPropertiesCapabilityReport
+
+    public static func live(
+        propertyClient: EntryCorePropertyClient,
+        endpoint: EntryCoreEndpoint,
+        capabilityDiscovery: @escaping CapabilityDiscovery,
+    ) -> EntryPropertiesClient {
+        EntryPropertiesClient(
+            loadCatalog: { selection in
+                try await loadCatalog(propertyClient: propertyClient, endpoint: endpoint, selection: selection)
+            },
+            loadAssignments: { selection, catalog in
+                try await loadAssignments(
+                    propertyClient: propertyClient,
+                    endpoint: endpoint,
+                    selection: selection,
+                    catalog: catalog,
+                )
+            },
+            discoverCapabilities: capabilityDiscovery,
+            prepare: { request in
+                try await prepare(
+                    propertyClient: propertyClient,
+                    endpoint: endpoint,
+                    request: request,
+                )
+            },
+            execute: { proposal in
+                try await execute(propertyClient: propertyClient, endpoint: endpoint, proposal: proposal)
+            },
+            readBack: { request in
+                try await readBack(propertyClient: propertyClient, endpoint: endpoint, request: request)
+            },
+        )
+    }
+
+    private static func prepare(
+        propertyClient: EntryCorePropertyClient,
+        endpoint: EntryCoreEndpoint,
+        request: EntryPropertiesPrepareRequest,
+    ) async throws -> EntryPropertiesProposal {
+        let changes = try makeWireChanges(
+            snapshot: request.snapshot,
+            intent: request.intent,
+            requireStableIdentity: false,
+        )
+        let proposal = try await propertyClient.changePrepare(endpoint, PropertyChangeRequest(changes: changes))
+        guard proposal.changes.count == changes.count,
+              zip(proposal.changes, changes).allSatisfy({ prepared, requested in
+                  prepared.target.localPath == requested.target.localPath
+                      && prepared.propertyID == requested.propertyID
+                      && prepared.after == requested.desired
+              })
+        else {
+            throw EntryPropertiesFailure.validation
+        }
+        let differences = try makePreparedDifferences(
+            proposal.changes,
+            snapshotTargets: request.snapshot.targets,
+            snapshot: request.snapshot,
+        )
+        let snapshot = makeReconciledSnapshot(
+            from: request.snapshot,
+            differences: differences,
+        )
+        return EntryPropertiesProposal(
+            snapshot: snapshot,
+            intent: request.intent,
+            differences: differences,
+            affectedTargetCount: differences.count,
+            validation: .init(isValid: true),
+            requiresConfirmation: proposal.requiresConfirmation
+                || request.intent.isDestructive
+                || request.snapshot.targets.count > 1,
+        )
+    }
+
+    private static func makePreparedDifferences(
+        _ changes: [PropertyPreparedChange],
+        snapshotTargets: [EntryPropertiesTarget],
+        snapshot: EntryPropertiesTargetSnapshot,
+    ) throws -> [EntryPropertiesDifference] {
+        try zip(changes, snapshotTargets).map { change, snapshotTarget in
+            guard change.target.localPath == snapshotTarget.localPath,
+                  snapshotTarget.entryID == nil || snapshotTarget.entryID == change.entryID
+            else { throw EntryPropertiesFailure.conflict }
+            let target = EntryPropertiesTarget(localPath: change.target.localPath, entryID: change.entryID)
+            try validatePreparedBefore(change.before, target: target, snapshot: snapshot)
+            return try EntryPropertiesDifference(
+                target: target,
+                before: semanticValue(change.before),
+                after: semanticValue(change.after),
+            )
+        }
+    }
+
+    private static func makeReconciledSnapshot(
+        from snapshot: EntryPropertiesTargetSnapshot,
+        differences: [EntryPropertiesDifference],
+    ) -> EntryPropertiesTargetSnapshot {
+        EntryPropertiesTargetSnapshot(
+            reconcilingTargets: differences.map(\.target),
+            propertyID: snapshot.propertyID,
+            catalogVersion: snapshot.catalogVersion,
+            canonicalRevision: snapshot.canonicalRevision,
+            definitionRevision: snapshot.definitionRevision,
+            valueKind: snapshot.valueKind,
+            cardinality: snapshot.cardinality,
+            assignmentRevisions: differences.compactMap { difference in
+                guard let revision = snapshot.assignmentRevisions.first(
+                    where: { $0.target.localPath == difference.target.localPath },
+                ) else { return nil }
+                return .init(target: difference.target, revision: revision.revision)
+            },
+        )
+    }
+
+    private static func execute(
+        propertyClient: EntryCorePropertyClient,
+        endpoint: EntryCoreEndpoint,
+        proposal: EntryPropertiesProposal,
+    ) async throws -> EntryPropertiesExecutionReceipt {
+        let changes = try makeWireChanges(
+            snapshot: proposal.snapshot,
+            intent: proposal.intent,
+            requireStableIdentity: true,
+        )
+        _ = try await propertyClient.changeExecute(endpoint, PropertyChangeRequest(changes: changes))
+        return EntryPropertiesExecutionReceipt(snapshot: proposal.snapshot)
+    }
+
+    private static func readBack(
+        propertyClient: EntryCorePropertyClient,
+        endpoint: EntryCoreEndpoint,
+        request: EntryPropertiesReadBackRequest,
+    ) async throws -> EntryPropertiesCanonicalResult {
+        let snapshot = request.snapshot
+        let selection = EntryPropertiesSelection(targets: snapshot.targets, propertyID: snapshot.propertyID)
+        let catalog = EntryPropertiesCatalog(
+            version: snapshot.catalogVersion,
+            definitionRevision: snapshot.definitionRevision,
+            valueKind: snapshot.valueKind,
+            cardinality: snapshot.cardinality,
+        )
+        let assignments = try await loadAssignments(
+            propertyClient: propertyClient,
+            endpoint: endpoint,
+            selection: selection,
+            catalog: catalog,
+        )
+        return EntryPropertiesCanonicalResult(snapshot: snapshot, values: assignments.values)
+    }
+
+    /// 공개 selection 조립의 전송 전 실패는 caller 입력 결함이므로 validation으로
+    /// 분류한다. mappedFailure의 .unavailable 변환은 daemon 장애 전용이다
+    /// (makeWireChanges의 request-side 변환과 동일 경계).
+    private static func localSelectionValue<T>(_ build: () throws -> T) throws -> T {
+        do {
+            return try build()
+        } catch let error as EntryCoreClientError {
+            guard case .protocolMismatch = error else { throw error }
+            throw EntryPropertiesFailure.validation
+        }
+    }
+
+    private static func loadCatalog(
+        propertyClient: EntryCorePropertyClient,
+        endpoint: EntryCoreEndpoint,
+        selection: EntryPropertiesSelection,
+    ) async throws -> EntryPropertiesCatalog {
+        let propertyID = try localSelectionValue {
+            try PropertyID(rawValue: selection.propertyID.rawValue)
+        }
+        let request = try PropertyDefinitionListRequest(
+            pageSize: 256,
+            requestedPropertyIDs: [propertyID],
+            includeDisabled: true,
+        )
+        let page = try await propertyClient.definitionList(endpoint, request)
+        // daemon은 ID 필터를 페이징 전에 적용하므로 단일 ID(pageSize 256) 요청의
+        // 정상 응답은 한 페이지다. hasMore는 wire 계약 위반이므로 무한 transport
+        // 루프 대신 protocolMismatch로 거절한다.
+        guard !page.hasMore else { throw EntryCoreClientError.protocolMismatch }
+        if let definition = page.definitions.first(where: { $0.id == propertyID }) {
+            let version: String? = switch definition.conditionCapability {
+            case let .supported(catalogVersion, _, _): catalogVersion
+            case .unsupported: nil
+            }
+            return EntryPropertiesCatalog(
+                version: version,
+                definitionRevision: definition.revision,
+                valueKind: semanticValueKind(definition.valueType),
+                cardinality: semanticCardinality(definition.cardinality),
+            )
+        }
+        throw EntryPropertiesFailure.unavailable
+    }
+
+    private static func loadAssignments(
+        propertyClient: EntryCorePropertyClient,
+        endpoint: EntryCoreEndpoint,
+        selection: EntryPropertiesSelection,
+        catalog: EntryPropertiesCatalog,
+    ) async throws -> EntryPropertiesAssignments {
+        let propertyID = try localSelectionValue {
+            try PropertyID(rawValue: selection.propertyID.rawValue)
+        }
+        var values: [EntryPropertiesCanonicalValue] = []
+        values.reserveCapacity(selection.targets.count)
+        for target in selection.targets {
+            let wireTarget = try localSelectionValue {
+                try PropertyTarget(localPath: target.localPath)
+            }
+            let request = try PropertyAssignmentListRequest(
+                pageSize: 256,
+                target: wireTarget,
+                requestedPropertyIDs: [propertyID],
+            )
+            let page = try await propertyClient.assignmentList(endpoint, request)
+            // daemon은 target·ID 필터를 페이징 전에 적용하므로 단일 target × ID
+            // (pageSize 256) 요청의 정상 응답은 한 페이지다. hasMore는 wire 계약
+            // 위반이므로 무한 transport 루프 대신 protocolMismatch로 거절한다.
+            guard !page.hasMore else { throw EntryCoreClientError.protocolMismatch }
+            let resolved = page.assignments.first(where: { $0.propertyID == propertyID })
+
+            if let resolved {
+                // daemon이 정확한 property ID를 담아도 catalog value contract와
+                // 다른 value type/cardinality를 반환하면 snapshot 계약과 모순되는
+                // canonical baseline이 만들어지므로 fail-closed로 거절한다.
+                guard semanticValueKind(resolved.valueType) == catalog.valueKind,
+                      semanticCardinality(resolved.cardinality) == catalog.cardinality,
+                      target.entryID == nil || target.entryID == resolved.entryID
+                else {
+                    throw target.entryID == nil ? EntryPropertiesFailure.validation : .conflict
+                }
+                let canonicalTarget = EntryPropertiesTarget(localPath: target.localPath, entryID: resolved.entryID)
+                try values.append(
+                    .init(
+                        target: canonicalTarget,
+                        value: semanticValue(resolved),
+                        revision: resolved.revision,
+                    ),
+                )
+            } else {
+                values.append(.init(target: target, value: .unset, revision: 0))
+            }
+        }
+        return EntryPropertiesAssignments(
+            canonicalRevision: values.map(\.revision).max() ?? 0,
+            values: values,
+        )
+    }
+
+    private static func validatePreparedBefore(
+        _ before: PropertyAssignment?,
+        target: EntryPropertiesTarget,
+        snapshot: EntryPropertiesTargetSnapshot,
+    ) throws {
+        let expectedRevision = expectedAssignmentRevision(for: target, snapshot: snapshot)
+        guard let before else {
+            guard expectedRevision == 0 else { throw EntryPropertiesFailure.validation }
+            return
+        }
+        guard before.propertyID.rawValue == snapshot.propertyID.rawValue,
+              target.entryID == before.entryID,
+              semanticValueKind(before.valueType) == snapshot.valueKind,
+              semanticCardinality(before.cardinality) == snapshot.cardinality,
+              before.revision == expectedRevision
+        else {
+            throw EntryPropertiesFailure.validation
+        }
+    }
+
+    private static func expectedAssignmentRevision(
+        for target: EntryPropertiesTarget,
+        snapshot: EntryPropertiesTargetSnapshot,
+    ) -> Int64 {
+        // validatePreparedBefore는 identity 보강 전 snapshot과 보강된 prepared
+        // target을 비교한다. localPath가 snapshot 내 유일하므로 entryID가 채워진
+        // target도 원래 revision 키와 대응되며, 못 찾을 때만 canonicalRevision
+        // fallback이 동작한다.
+        snapshot.assignmentRevisions
+            .first(where: { $0.target.localPath == target.localPath })?.revision ?? snapshot.canonicalRevision
+    }
+
+    private static func makeWireChanges(
+        snapshot: EntryPropertiesTargetSnapshot,
+        intent: EntryPropertiesChangeIntent,
+        requireStableIdentity: Bool,
+    ) throws -> [PropertyChangeTarget] {
+        do {
+            let propertyID = try PropertyID(rawValue: snapshot.propertyID.rawValue)
+            let desired = try wireDesiredState(intent.change, snapshot: snapshot)
+            return try snapshot.targets.map { target in
+                if requireStableIdentity, target.entryID == nil {
+                    throw EntryCoreClientError.protocolMismatch
+                }
+                let assignmentRevision = expectedAssignmentRevision(for: target, snapshot: snapshot)
+                return try PropertyChangeTarget(
+                    target: PropertyTarget(localPath: target.localPath),
+                    propertyID: propertyID,
+                    expectedDefinitionRevision: snapshot.definitionRevision,
+                    expectedAssignmentRevision: assignmentRevision,
+                    desired: desired,
+                    entryID: target.entryID,
+                )
+            }
+        } catch let error as EntryCoreClientError {
+            guard case .protocolMismatch = error else { throw error }
+            // Request model validation happens before any transport call. Keep it
+            // distinct from response protocol mismatches and transport failures.
+            throw EntryPropertiesFailure.validation
+        }
+    }
+
+    private static func wireDesiredState(
+        _ change: EntryPropertiesChange,
+        snapshot: EntryPropertiesTargetSnapshot,
+    ) throws -> PropertyDesiredState {
+        guard case let .set(value) = change else { return .unknown }
+        switch snapshot.cardinality {
+        case .one: return try wireScalarValue(value)
+        case .many: return try wireManyValue(value)
+        }
+    }
+
+    private static func wireScalarValue(_ value: EntryPropertiesValue) throws -> PropertyDesiredState {
+        switch value {
+        case .unset: return .unknown
+        case .null: return .null
+        case let .text(value): return .value(.text, .one, .text(value))
+        case let .number(value): return .value(.number, .one, .number(value))
+        case let .date(value): return .value(.date, .one, .date(value))
+        case let .dateTime(value): return .value(.datetime, .one, .dateTime(value))
+        case let .boolean(value): return .value(.boolean, .one, .boolean(value))
+        case let .selection(values):
+            let optionIDs = try values.map(PropertyOptionID.init(rawValue:))
+            guard let optionID = optionIDs.only else { throw EntryPropertiesFailure.validation }
+            return .value(.select, .one, .select(optionID))
+        case .texts, .numbers, .dates, .dateTimes, .booleans:
+            throw EntryPropertiesFailure.validation
+        }
+    }
+
+    private static func wireManyValue(_ value: EntryPropertiesValue) throws -> PropertyDesiredState {
+        switch value {
+        case .unset: return .unknown
+        case .null: return .null
+        case let .selection(values):
+            return try .value(.select, .many, .selects(values.map(PropertyOptionID.init(rawValue:))))
+        case let .texts(values): return .value(.text, .many, .texts(values))
+        case let .numbers(values): return .value(.number, .many, .numbers(values))
+        case let .dates(values): return .value(.date, .many, .dates(values))
+        case let .dateTimes(values): return .value(.datetime, .many, .dateTimes(values))
+        case let .booleans(values): return .value(.boolean, .many, .booleans(values))
+        case .text, .number, .date, .dateTime, .boolean:
+            throw EntryPropertiesFailure.validation
+        }
+    }
+
+    private static func semanticValue(_ assignment: PropertyAssignment?) throws -> EntryPropertiesValue {
+        guard let assignment else { return .unset }
+        switch assignment.state {
+        case .null: return .null
+        case .unknown, .notApplicable: return .unset
+        case .value:
+            guard let value = assignment.value else { throw EntryPropertiesFailure.validation }
+            return try semanticValue(value)
+        }
+    }
+
+    private static func semanticValue(_ desired: PropertyDesiredState) throws -> EntryPropertiesValue {
+        switch desired {
+        case .null: .null
+        case .unknown, .notApplicable: .unset
+        case let .value(_, _, value): try semanticValue(value)
+        }
+    }
+
+    private static func semanticValue(_ value: PropertyValue) throws -> EntryPropertiesValue {
+        switch value {
+        case let .text(value): .text(value)
+        case let .number(value): .number(value)
+        case let .date(value): .date(value)
+        case let .dateTime(value): .dateTime(value)
+        case let .boolean(value): .boolean(value)
+        case let .select(value): .selection([value.rawValue])
+        default: try semanticManyValue(value)
+        }
+    }
+
+    private static func semanticManyValue(_ value: PropertyValue) throws -> EntryPropertiesValue {
+        switch value {
+        case let .texts(values): .texts(values)
+        case let .numbers(values): .numbers(values)
+        case let .dates(values): .dates(values)
+        case let .dateTimes(values): .dateTimes(values)
+        case let .booleans(values): .booleans(values)
+        case let .selects(values): .selection(values.map(\.rawValue))
+        default: throw EntryPropertiesFailure.validation
+        }
+    }
+
+    private static func semanticValueKind(_ valueType: PropertyValueType) -> EntryPropertiesValueKind {
+        switch valueType {
+        case .text: .text
+        case .number: .number
+        case .date: .date
+        case .datetime: .dateTime
+        case .boolean: .boolean
+        case .select: .selection
+        }
+    }
+
+    private static func semanticCardinality(_ cardinality: PropertyCardinality) -> EntryPropertiesCardinality {
+        switch cardinality {
+        case .one: .one
+        case .many: .many
+        }
+    }
+}
+
+private extension Array {
+    var only: Element? {
+        count == 1 ? first : nil
+    }
+}

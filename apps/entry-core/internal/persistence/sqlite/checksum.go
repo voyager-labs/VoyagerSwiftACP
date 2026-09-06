@@ -17,17 +17,6 @@ import (
 // .up.sql files, or an orphaned .down.sql). The daemon maps it to exit 1.
 var ErrMigrationChecksum = errors.New("migration checksum failed")
 
-// fileHash returns the Atlas per-file hash for a migration file:
-// base64(sha256(name + content)). This is exactly what atlas.sum stores for
-// each *.up.sql entry; the algorithm is confirmed against the pinned CLI's
-// generated atlas.sum (the test oracle).
-func fileHash(name string, content []byte) string {
-	h := sha256.New()
-	h.Write([]byte(name))
-	h.Write(content)
-	return base64.StdEncoding.EncodeToString(h.Sum(nil))
-}
-
 // sumHash returns the atlas.sum overall hash:
 // base64(sha256 over each entry's (name + per-file-hash)) in atlas.sum order.
 func sumHash(entries []sumEntry) string {
@@ -37,6 +26,31 @@ func sumHash(entries []sumEntry) string {
 		h.Write([]byte(e.hash))
 	}
 	return base64.StdEncoding.EncodeToString(h.Sum(nil))
+}
+
+// cumulativeHashes computes each *.up.sql file's cumulative Atlas hash, keyed
+// by name, by folding over the sorted up files. Each file's hash is the SHA-256
+// over the concatenation of every up file's (name + content) from the first
+// through this one (the running raw byte accumulation, not a digest chain).
+func cumulativeHashes(migFS fs.FS) (map[string]string, error) {
+	upNames, err := fs.Glob(migFS, "*.up.sql")
+	if err != nil {
+		return nil, err
+	}
+	sort.Strings(upNames)
+	hashes := make(map[string]string, len(upNames))
+	var acc []byte
+	for _, name := range upNames {
+		content, err := fs.ReadFile(migFS, name)
+		if err != nil {
+			return nil, err
+		}
+		acc = append(acc, []byte(name)...)
+		acc = append(acc, content...)
+		sum := sha256.Sum256(acc)
+		hashes[name] = base64.StdEncoding.EncodeToString(sum[:])
+	}
+	return hashes, nil
 }
 
 type sumEntry struct {
@@ -113,7 +127,13 @@ func VerifyEmbeddedMigrations(fsys fs.FS) error {
 		}
 	}
 
-	// Hash-verify every *.up.sql: it must be listed and its content must match.
+	// Hash-verify every *.up.sql using the cumulative scheme: each file's hash
+	// must be listed and equal the running SHA-256 over all up files up to and
+	// including it.
+	computed, err := cumulativeHashes(migFS)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrMigrationChecksum, err)
+	}
 	upNames, err := fs.Glob(migFS, "*.up.sql")
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrMigrationChecksum, err)
@@ -124,11 +144,7 @@ func VerifyEmbeddedMigrations(fsys fs.FS) error {
 		if !ok {
 			return fmt.Errorf("%w: unlisted .up.sql %q", ErrMigrationChecksum, name)
 		}
-		content, err := fs.ReadFile(migFS, name)
-		if err != nil {
-			return fmt.Errorf("%w: %v", ErrMigrationChecksum, err)
-		}
-		if got := fileHash(name, content); got != wantHash {
+		if got := computed[name]; got != wantHash {
 			return fmt.Errorf("%w: hash mismatch for %q", ErrMigrationChecksum, name)
 		}
 	}
