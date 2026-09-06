@@ -38,6 +38,31 @@ export const encodeRelativeLiteral = (
   return `voyager.relativeDate:v1:${direction}:${amount}:${unit}:${todayLiteral()}`
 }
 
+// 앵커(오늘)와 amount/unit으로 상대 날짜를 YYYY-MM-DD로 계산한다 (네이티브 syncRelativeSelectedDate 대응)
+export const resolveRelativeDate = (
+  direction: "past" | "future",
+  amount: number,
+  unit: ParsedRelativeLiteral["unit"],
+): string => {
+  const offset = direction === "past" ? -amount : amount
+  const now = new Date()
+  const format = (year: number, monthIndex: number, day: number): string =>
+    `${year}-${String(monthIndex + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`
+
+  if (unit === "day" || unit === "week") {
+    const date = new Date(now)
+    date.setDate(date.getDate() + offset * (unit === "week" ? 7 : 1))
+    return format(date.getFullYear(), date.getMonth(), date.getDate())
+  }
+  // 네이티브 Calendar.date(byAdding:)의 말일 보정 대응: JS 오버플로(예: 5/31 - 3개월 = 3/3)를 목표 월 말일 클램프로 대체한다
+  // Date 생성자로 연·월을 먼저 정규화해야 연도 경계(음수·13+ 월)에서 포맷이 깨지지 않는다
+  const targetYear = unit === "year" ? now.getFullYear() + offset : now.getFullYear()
+  const targetMonth = unit === "month" ? now.getMonth() + offset : now.getMonth()
+  const normalized = new Date(targetYear, targetMonth, 1)
+  const lastDay = new Date(normalized.getFullYear(), normalized.getMonth() + 1, 0).getDate()
+  return format(normalized.getFullYear(), normalized.getMonth(), Math.min(now.getDate(), lastDay))
+}
+
 export const todayLiteral = (): string => {
   const now = new Date()
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(

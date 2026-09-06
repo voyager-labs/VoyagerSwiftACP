@@ -6,6 +6,255 @@ import XCTest
 
 @MainActor
 final class ONB003ConfigureRequiredPermissionsDuringOnboardingTests: XCTestCase {
+    func testPermissionMetricsIgnoreCancelledAndEmitHelperResponseOnce() async {
+        let metrics = LockIsolated<[OnboardingProductMetric]>([])
+        let store = TestStore(initialState: PermissionsFeature.State()) {
+            PermissionsFeature()
+        } withDependencies: {
+            $0.onboardingProductMetricsClient = Self.metricsClient(metrics)
+            $0.helperFolderAccessClient.requestAccess = { kGrantedHelperAccess }
+        }
+
+        await store.send(.requestHelperFolderAccessTapped) { state in
+            state.isRequestingHelperFolderAccess = true
+        }
+        await store.receive(\.helperFolderAccessResponse) { state in
+            state.isRequestingHelperFolderAccess = false
+            state.helperFolderAccess = kGrantedHelperAccess
+        }
+        await store.send(.helperFolderAccessResponse(kGrantedHelperAccess))
+        await store.send(.onDisappear)
+
+        XCTAssertEqual(metrics.value.count, 1)
+        guard case let .helperFolderAccess(_, result) = metrics.value.first else {
+            return XCTFail("Expected helper access metric")
+        }
+        XCTAssertEqual(result, .success)
+    }
+
+    /// ONB-003-refresh_onboarding_permission_status: 진행 중인 helper 요청에서 화면을 떠나면 요청을 취소하고 unavailable로 종결한다.
+    /// 동일 lifecycle 종료와 늦은 응답이 원래 operation을 다시 종결하지 않는지 검증합니다.
+    /// - 검증 내용: 원 operation ID의 unavailable 1회, requesting reset, task cancellation, late response 무시를 확인합니다.
+    /// - 사전 조건: helper 접근 요청 effect가 완료되지 않은 상태입니다.
+    /// - 기대 결과: 첫 onDisappear만 terminal을 기록하고 반복 onDisappear와 late response는 조용히 무시됩니다.
+    func testOnDisappearTerminalizesAndCancelsPendingHelperOperationOnce() async throws {
+        let metrics = LockIsolated<[OnboardingProductMetric]>([])
+        let requestStarted = LockIsolated(false)
+        let requestCancelled = LockIsolated(false)
+        let store = TestStore(initialState: PermissionsFeature.State()) {
+            PermissionsFeature()
+        } withDependencies: {
+            $0.onboardingProductMetricsClient = Self.metricsClient(metrics)
+            $0.helperFolderAccessClient.requestAccess = {
+                requestStarted.setValue(true)
+                return await withTaskCancellationHandler {
+                    while !Task.isCancelled {
+                        try? await Task.sleep(nanoseconds: 1_000_000_000)
+                    }
+                    return kGrantedHelperAccess
+                } onCancel: {
+                    requestCancelled.setValue(true)
+                }
+            }
+        }
+
+        await store.send(.requestHelperFolderAccessTapped) { state in
+            state.isRequestingHelperFolderAccess = true
+        }
+        await Self.waitUntil { requestStarted.value }
+        let operationID = store.state.pendingHelperFolderOperationID
+
+        await store.send(.onDisappear) { state in
+            state.isRequestingHelperFolderAccess = false
+        }
+        await Self.waitUntil { requestCancelled.value }
+        await store.send(.onDisappear)
+        await store.send(.helperFolderAccessResponse(kGrantedHelperAccess))
+        await store.finish()
+
+        XCTAssertEqual(metrics.value, try [
+            .helperFolderAccess(operationID: XCTUnwrap(operationID), result: .unavailable),
+        ])
+    }
+
+    /// ONB-003-refresh_onboarding_permission_status: 진행 중인 FDA operation에서 화면을 떠나면 원 ID로 unavailable 종결한다.
+    /// FDA refresh correlation을 지우기 전에 유한 terminal이 기록되는지 검증합니다.
+    /// - 검증 내용: 원 operation ID의 unavailable 1회를 확인합니다.
+    /// - 사전 조건: FDA operation과 app-active generation correlation이 pending입니다.
+    /// - 기대 결과: 두 pending FDA 필드가 지워지고 terminal은 정확히 한 번 기록됩니다.
+    func testOnDisappearTerminalizesPendingFullDiskAccessOperation() async throws {
+        let operationID = try XCTUnwrap(UUID(uuidString: "11111111-1111-1111-1111-111111111111"))
+        var initialState = PermissionsFeature.State()
+        initialState.pendingFullDiskAccessOperationID = operationID
+        initialState.pendingFullDiskAccessGeneration = 7
+        initialState.latestAppActiveRefreshGeneration = 7
+        let metrics = LockIsolated<[OnboardingProductMetric]>([])
+        let store = TestStore(initialState: initialState) {
+            PermissionsFeature()
+        } withDependencies: {
+            $0.onboardingProductMetricsClient = Self.metricsClient(metrics)
+        }
+
+        await store.send(.onDisappear)
+        await store.send(.onDisappear)
+        await store.send(.fullDiskAccessRefreshResponse(6, .granted))
+
+        XCTAssertNil(store.state.pendingFullDiskAccessOperationID)
+        XCTAssertNil(store.state.pendingFullDiskAccessGeneration)
+        XCTAssertEqual(metrics.value, [
+            .fullDiskAccess(operationID: operationID, result: .unavailable),
+        ])
+    }
+
+    /// ONB-003-refresh_onboarding_permission_status: helper와 FDA operation이 함께 pending일 때 화면을 떠나면 각각 종결한다.
+    /// 서로 다른 correlation ID가 손실되거나 합쳐지지 않는지 검증합니다.
+    /// - 검증 내용: helper와 FDA 각각 원 ID를 가진 unavailable terminal 1회를 확인합니다.
+    /// - 사전 조건: 두 permission operation이 동시에 pending입니다.
+    /// - 기대 결과: 두 terminal이 기록되고 모든 pending/requesting 상태가 초기화됩니다.
+    func testOnDisappearTerminalizesBothPendingPermissionOperations() async throws {
+        let helperID = try XCTUnwrap(UUID(uuidString: "22222222-2222-2222-2222-222222222222"))
+        let fullDiskAccessID = try XCTUnwrap(UUID(uuidString: "33333333-3333-3333-3333-333333333333"))
+        var initialState = PermissionsFeature.State()
+        initialState.pendingHelperFolderOperationID = helperID
+        initialState.pendingFullDiskAccessOperationID = fullDiskAccessID
+        initialState.isRequestingHelperFolderAccess = true
+        let metrics = LockIsolated<[OnboardingProductMetric]>([])
+        let store = TestStore(initialState: initialState) {
+            PermissionsFeature()
+        } withDependencies: {
+            $0.onboardingProductMetricsClient = Self.metricsClient(metrics)
+        }
+
+        await store.send(.onDisappear) { state in
+            state.isRequestingHelperFolderAccess = false
+        }
+
+        XCTAssertEqual(metrics.value, [
+            .helperFolderAccess(operationID: helperID, result: .unavailable),
+            .fullDiskAccess(operationID: fullDiskAccessID, result: .unavailable),
+        ])
+    }
+
+    /// ONB-003-refresh_onboarding_permission_status: pending permission operation 없이 화면을 떠나면 metric을 기록하지 않는다.
+    /// lifecycle 종료 자체가 가짜 terminal을 만들지 않는지 검증합니다.
+    /// - 검증 내용: 빈 metric 기록을 확인합니다.
+    /// - 사전 조건: helper/FDA pending ID가 모두 nil입니다.
+    /// - 기대 결과: onDisappear는 조용히 observation 정리만 수행합니다.
+    func testOnDisappearWithoutPendingPermissionOperationIsSilent() async {
+        let metrics = LockIsolated<[OnboardingProductMetric]>([])
+        let store = TestStore(initialState: PermissionsFeature.State()) {
+            PermissionsFeature()
+        } withDependencies: {
+            $0.onboardingProductMetricsClient = Self.metricsClient(metrics)
+        }
+
+        await store.send(.onDisappear)
+
+        XCTAssertTrue(metrics.value.isEmpty)
+    }
+
+    /// ONB-003-request_onboarding_permission_access: stale 또는 duplicate FDA 설정 열기 결과는 현재 요청을 소비하지 않는다.
+    /// 결과 correlation ID가 pending operation과 일치할 때만 실패 terminal을 기록하는지 검증합니다.
+    /// - 검증 내용: stale 결과는 상태와 metric을 바꾸지 않고, matching failure는 unavailable metric을 한 번만 기록합니다.
+    /// - 사전 조건: FDA operation 하나가 pending입니다.
+    /// - 기대 결과: stale/duplicate 결과는 no-op이고 matching failure 이후 pending ID가 nil입니다.
+    func testSystemSettingsOpenResultRequiresMatchingOperationAndTerminalizesFailureOnce() async throws {
+        let operationID = try XCTUnwrap(UUID(uuidString: "66666666-6666-6666-6666-666666666666"))
+        let staleOperationID = try XCTUnwrap(UUID(uuidString: "77777777-7777-7777-7777-777777777777"))
+        var initialState = PermissionsFeature.State()
+        initialState.pendingFullDiskAccessOperationID = operationID
+        let metrics = LockIsolated<[OnboardingProductMetric]>([])
+        let store = TestStore(initialState: initialState) {
+            PermissionsFeature()
+        } withDependencies: {
+            $0.onboardingProductMetricsClient = Self.metricsClient(metrics)
+        }
+
+        await store.send(.systemSettingsOpenResult(staleOperationID, false))
+        XCTAssertNil(store.state.systemSettingsError)
+        XCTAssertEqual(store.state.pendingFullDiskAccessOperationID, operationID)
+        XCTAssertTrue(metrics.value.isEmpty)
+
+        await store.send(.systemSettingsOpenResult(operationID, false)) { state in
+            state.systemSettingsError = "We couldn't open System Settings. Please open it manually."
+        }
+        await store.send(.systemSettingsOpenResult(operationID, false))
+
+        XCTAssertNil(store.state.pendingFullDiskAccessOperationID)
+        XCTAssertEqual(metrics.value, [
+            .fullDiskAccess(operationID: operationID, result: .unavailable),
+        ])
+    }
+
+    /// ONB-003-request_onboarding_permission_access: FDA 설정 열기 성공 결과는 app-active refresh 전까지 pending으로 남는다.
+    /// 성공 callback과 실제 권한 확인 refresh를 분리해 terminalization이 한 번만 일어나는지 검증합니다.
+    /// - 검증 내용: matching success 직후 pending을 유지하고, appDidBecomeActive의 granted refresh에서만 success metric을 기록합니다.
+    /// - 사전 조건: FDA operation이 pending이고 FDA/helper refresh가 granted를 반환합니다.
+    /// - 기대 결과: 성공 callback 직후 pending 유지, matching refresh 후 pending 해제와 success 1회입니다.
+    func testMatchingSystemSettingsOpenSuccessWaitsForAppActiveRefresh() async throws {
+        let operationID = try XCTUnwrap(UUID(uuidString: "88888888-8888-8888-8888-888888888888"))
+        var initialState = PermissionsFeature.State()
+        initialState.pendingFullDiskAccessOperationID = operationID
+        let metrics = LockIsolated<[OnboardingProductMetric]>([])
+        let store = TestStore(initialState: initialState) {
+            PermissionsFeature()
+        } withDependencies: {
+            $0.onboardingProductMetricsClient = Self.metricsClient(metrics)
+            $0.fullDiskAccessClient = PermissionClients.grantedFDA
+            $0.helperFolderAccessClient = PermissionClients.grantedHelper
+        }
+        // store.exhaustivity = .off: app-active의 두 병렬 refresh 결과 순서는 구현 세부사항입니다.
+        store.exhaustivity = .off
+
+        await store.send(.systemSettingsOpenResult(operationID, true)) { state in
+            state.hasAttemptedFullDiskAccessEnable = true
+        }
+        XCTAssertEqual(store.state.pendingFullDiskAccessOperationID, operationID)
+        XCTAssertTrue(metrics.value.isEmpty)
+
+        await store.send(.appDidBecomeActive) { state in
+            state.latestAppActiveRefreshGeneration = 1
+            state.pendingFullDiskAccessGeneration = 1
+        }
+        await store.receive(\.fullDiskAccessRefreshResponse)
+        await store.receive(\.helperFolderAccessRefreshLoaded)
+
+        XCTAssertEqual(metrics.value, [
+            .fullDiskAccess(operationID: operationID, result: .success),
+        ])
+        await store.finish()
+    }
+
+    /// ONB-003-refresh_onboarding_permission_status: FDA 설정 후 미허용 상태는 사용자 거부 실패로 기록한다.
+    /// 정규화된 FDA 상태와 Product metric 결과가 동일한 사용자 의도를 나타내는지 검증합니다.
+    /// - 검증 내용: attempted 상태의 needsAction refresh가 denied 상태와 failure terminal을 생성합니다.
+    /// - 사전 조건: FDA 설정 열기 operation과 matching refresh generation이 pending입니다.
+    /// - 기대 결과: 원 operation ID로 failure metric을 한 번 기록하고 correlation을 소비합니다.
+    func testFullDiskAccessNeedsActionAfterAttemptRecordsFailure() async throws {
+        let operationID = try XCTUnwrap(UUID(uuidString: "99999999-9999-9999-9999-999999999999"))
+        var initialState = PermissionsFeature.State()
+        initialState.hasAttemptedFullDiskAccessEnable = true
+        initialState.pendingFullDiskAccessOperationID = operationID
+        initialState.pendingFullDiskAccessGeneration = 7
+        initialState.latestAppActiveRefreshGeneration = 7
+        let metrics = LockIsolated<[OnboardingProductMetric]>([])
+        let store = TestStore(initialState: initialState) {
+            PermissionsFeature()
+        } withDependencies: {
+            $0.onboardingProductMetricsClient = Self.metricsClient(metrics)
+        }
+
+        await store.send(.fullDiskAccessRefreshResponse(7, .needsAction)) { state in
+            state.fullDiskAccessStatus = .denied
+        }
+
+        XCTAssertNil(store.state.pendingFullDiskAccessOperationID)
+        XCTAssertNil(store.state.pendingFullDiskAccessGeneration)
+        XCTAssertEqual(metrics.value, [
+            .fullDiskAccess(operationID: operationID, result: .failure),
+        ])
+    }
+
     // MARK: - ONB-003-show_onboarding_permission_status
 
     // 온보딩 권한 구성 화면(ONB-003)의 첫 번째 스펙 인터랙션입니다.
@@ -262,6 +511,40 @@ final class ONB003ConfigureRequiredPermissionsDuringOnboardingTests: XCTestCase 
         await store.finish()
     }
 
+    /// ONB-003-refresh_onboarding_permission_status: 화면 이탈은 진행 중인 초기 권한 로드를 취소한다.
+    /// lifecycle 종료가 초기 helper 상태 조회 Effect를 정리하는지 검증합니다.
+    ///
+    /// - 검증 내용: onAppear의 초기 helper 조회가 대기 중일 때 onDisappear를 전송합니다.
+    /// - 사전 조건: FDA 초기 상태 응답 이후 helper 조회가 아직 완료되지 않았습니다.
+    /// - 기대 결과: 초기 로드 task가 취소되고 늦은 helper/login 응답을 보내지 않습니다.
+    func testOnDisappearCancelsInitialPermissionLoad() async {
+        let loadStarted = LockIsolated(false)
+        let loadCancelled = LockIsolated(false)
+        let store = TestStore(initialState: PermissionsFeature.State()) {
+            PermissionsFeature()
+        } withDependencies: {
+            PermissionClients.fdaUnknown(&$0)
+            $0.helperFolderAccessClient.checkAccess = {
+                loadStarted.setValue(true)
+                return await withTaskCancellationHandler {
+                    while !Task.isCancelled {
+                        try? await Task.sleep(nanoseconds: 1_000_000_000)
+                    }
+                    return kGrantedHelperAccess
+                } onCancel: {
+                    loadCancelled.setValue(true)
+                }
+            }
+        }
+
+        await store.send(.onAppear)
+        await store.receive(\.fullDiskAccessStatusResponse)
+        await Self.waitUntil { loadStarted.value }
+        await store.send(.onDisappear)
+        await Self.waitUntil { loadCancelled.value }
+        await store.finish()
+    }
+
     /// ONB-003-refresh_onboarding_permission_status: 앱이 다시 active가 될 때 refresh가 실행되면 FDA/helper 상태를 다시 읽어 completion을
     /// 갱신한다.
     /// 앱이 포그라운드로 복귀할 때 권한 상태를 새로고침하는지 검증합니다.
@@ -497,5 +780,27 @@ final class ONB003ConfigureRequiredPermissionsDuringOnboardingTests: XCTestCase 
         XCTAssertTrue(store.state.isComplete)
 
         await store.finish()
+    }
+}
+
+private extension ONB003ConfigureRequiredPermissionsDuringOnboardingTests {
+    static func metricsClient(
+        _ metrics: LockIsolated<[OnboardingProductMetric]>,
+    ) -> OnboardingProductMetricsClient {
+        OnboardingProductMetricsClient(record: { metric in
+            metrics.withValue { $0.append(metric) }
+        })
+    }
+
+    static func waitUntil(
+        _ condition: @escaping @Sendable () -> Bool,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+    ) async {
+        for _ in 0 ..< 100 {
+            if condition() { return }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTFail("Condition was not met in time", file: file, line: line)
     }
 }

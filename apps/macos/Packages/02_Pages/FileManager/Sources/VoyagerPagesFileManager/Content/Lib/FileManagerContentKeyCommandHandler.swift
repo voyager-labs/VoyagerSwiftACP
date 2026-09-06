@@ -7,10 +7,47 @@ import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 import VoyagerFeaturesEntryOperations
 import VoyagerShared
+import VoyagerWidgetsEntryViewLayout
+
+enum FileManagerKeyCommandCompositionPolicy: Equatable {
+    case preserveMarkedText
+    case cancelMarkedText
+}
 
 enum FileManagerContentKeyCommandHandler {
     private static let undoSelector = Selector(("undo:"))
     private static let redoSelector = Selector(("redo:"))
+
+    /// 커밋된 타자 입력을 selection navigation으로 라우팅한다.
+    /// 입력이 유효한 단일 문자이고 rename이 진행 중이 아니면, 현재 visible projection 순서와 현재 단일 선택을
+    /// 기준으로 다음 대상을 결정해 target 단일 선택 + pending reveal을 설정한다. 매칭이 없으면 완전한 no-op으로
+    /// 기존 selection과 미소비 pending intent를 보존한다.
+    static func typeScrollEffect(
+        for text: String,
+        state: FileManagerContentState,
+    ) -> Effect<FileManagerContentAction> {
+        // 방어 계층: 매처가 다시 검증하지만 여기서도 단일 문자 커밋을 보장한다.
+        guard CommittedTypeScrollInput.character(from: text) != nil else { return .none }
+        // rename이 우선권을 가지므로 rename 중에는 type navigation을 비활성화한다.
+        guard state.entryViewLayout.entryOperations.renamingItemId == nil else { return .none }
+
+        let entries = typeScrollCandidateEntries(state: state)
+        // 단일 선택만 반복 순환 anchor가 된다. 없거나 다중이면 매처가 첫 match부터 시작한다.
+        let currentSelectionID = state.entryViewLayout.selectedIds.count == 1
+            ? state.entryViewLayout.selectedIds.first
+            : nil
+        guard let targetID = EntryViewLayoutTypeScrollMatcher.selectionTargetID(
+            in: entries,
+            inputText: text,
+            currentSelectionID: currentSelectionID,
+        )
+        else {
+            // no-match는 완전한 no-op이다. 이전 입력의 미소비 pending reveal을 취소하지 않는다.
+            return .none
+        }
+
+        return .send(.entryViewLayout(.internal(.selectTypeScrollTarget(targetID))))
+    }
 
     static func effect(
         for command: KeyCommand,
@@ -33,6 +70,46 @@ enum FileManagerContentKeyCommandHandler {
         return .none
     }
 
+    static func compositionPolicy(
+        for command: KeyCommand,
+        state: FileManagerContentState,
+    ) -> FileManagerKeyCommandCompositionPolicy {
+        guard command.modifiers.contains(.command) else { return .preserveMarkedText }
+
+        if command.keyCode == 51 {
+            return state.entryViewLayout.selectedIds.isEmpty ? .preserveMarkedText : .cancelMarkedText
+        }
+
+        if command.modifiers.isDisjoint(with: [.option, .control]),
+           command.charactersIgnoringModifiers == "z"
+        {
+            return state.composer.isPresented ? .preserveMarkedText : .cancelMarkedText
+        }
+
+        if command.characters == ".", command.modifiers.contains(.shift) {
+            return .cancelMarkedText
+        }
+
+        if command.keyCode == 125,
+           command.modifiers.isDisjoint(with: [.option, .control, .shift])
+        {
+            return state.entryViewLayout.selectedIds.isEmpty ? .preserveMarkedText : .cancelMarkedText
+        }
+
+        guard command.modifiers.isDisjoint(with: [.option, .control, .shift]) else {
+            return .preserveMarkedText
+        }
+
+        switch command.charactersIgnoringModifiers {
+        case "v":
+            return .cancelMarkedText
+        case "d":
+            return state.entryViewLayout.selectedIds.isEmpty ? .preserveMarkedText : .cancelMarkedText
+        default:
+            return .preserveMarkedText
+        }
+    }
+
     private static func quickLookKeyEffect(
         for command: KeyCommand,
         state: FileManagerContentState,
@@ -45,7 +122,10 @@ enum FileManagerContentKeyCommandHandler {
 
         guard !state.entryViewLayout.selectedIds.isEmpty else { return .none }
 
-        return .send(.entryViewLayout(.delegate(.executeCommand("navigation.quickLookSelectedItem"))))
+        return .send(.entryViewLayout(.delegate(.executeCommand(
+            "navigation.quickLookSelectedItem",
+            source: .keyboardShortcut,
+        ))))
     }
 
     private static func deleteKeyEffect(
@@ -61,10 +141,12 @@ enum FileManagerContentKeyCommandHandler {
         if command.modifiers.contains(.option) {
             return .send(.entryViewLayout(.delegate(.executeCommand(
                 "mutation.deleteSelectedItemsImmediately",
+                source: .keyboardShortcut,
             ))))
         }
         return .send(.entryViewLayout(.delegate(.executeCommand(
             "mutation.moveSelectedItemsToTrash",
+            source: .keyboardShortcut,
         ))))
     }
 
@@ -85,7 +167,11 @@ enum FileManagerContentKeyCommandHandler {
               let entry = commandEntries(state: state).first(where: { $0.id == selectedId })
         else { return .none }
 
-        return .send(.entryViewLayout(.delegate(.startRename(item: entry, text: entry.name))))
+        return .send(.entryViewLayout(.delegate(.startRename(
+            item: entry,
+            text: entry.name,
+            source: .keyboardShortcut,
+        ))))
     }
 
     private static func commandModifierEffect(
@@ -129,7 +215,10 @@ enum FileManagerContentKeyCommandHandler {
            command.modifiers.isDisjoint(with: [.option, .control, .shift])
         {
             guard !state.entryViewLayout.selectedIds.isEmpty else { return .none }
-            return .send(.entryViewLayout(.delegate(.executeCommand("navigation.openSelectedItem"))))
+            return .send(.entryViewLayout(.delegate(.executeCommand(
+                "navigation.openSelectedItem",
+                source: .keyboardShortcut,
+            ))))
         }
 
         guard command.modifiers.isDisjoint(with: [.option, .control, .shift]),
@@ -140,16 +229,28 @@ enum FileManagerContentKeyCommandHandler {
 
         switch key {
         case "x":
-            return .send(.entryViewLayout(.delegate(.executeCommand("clipboard.cutSelectedItems"))))
+            return .send(.entryViewLayout(.delegate(.executeCommand(
+                "clipboard.cutSelectedItems",
+                source: .keyboardShortcut,
+            ))))
 
         case "c":
-            return .send(.entryViewLayout(.delegate(.executeCommand("clipboard.copySelectedItems"))))
+            return .send(.entryViewLayout(.delegate(.executeCommand(
+                "clipboard.copySelectedItems",
+                source: .keyboardShortcut,
+            ))))
 
         case "v":
-            return .send(.entryViewLayout(.delegate(.executeCommand("clipboard.pasteItems"))))
+            return .send(.entryViewLayout(.delegate(.executeCommand(
+                "clipboard.pasteItems",
+                source: .keyboardShortcut,
+            ))))
 
         case "d":
-            return .send(.entryViewLayout(.delegate(.executeCommand("clipboard.duplicateSelectedItems"))))
+            return .send(.entryViewLayout(.delegate(.executeCommand(
+                "clipboard.duplicateSelectedItems",
+                source: .keyboardShortcut,
+            ))))
 
         default:
             return nil
@@ -279,6 +380,18 @@ enum FileManagerContentKeyCommandHandler {
         state.entryViewLayout.visibleSelectableEntries(
             isNormalDirectoryPage: isNormalDirectoryPage(state),
         )
+    }
+
+    /// type-scroll 후보 엔트리 목록. 계층형 목록 모드에서는 outline projection의
+    /// visibleSelectableEntries(expanded folder를 반영)를, 그 외 flat/grouped 모드에서는
+    /// collapsed group을 반영한 presentation.visibleEntries를 사용한다.
+    private static func typeScrollCandidateEntries(state: FileManagerContentState) -> [EntryModel] {
+        if state.entryViewLayout.hierarchyProjectionIsActive {
+            return state.entryViewLayout.visibleSelectableEntries(
+                isNormalDirectoryPage: isNormalDirectoryPage(state),
+            )
+        }
+        return state.entryViewLayout.presentation.visibleEntries
     }
 
     private static func sendNativeAction(_ selector: Selector) -> Bool {

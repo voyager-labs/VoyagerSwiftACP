@@ -4,6 +4,7 @@ import Foundation
 import SwiftNavigation
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
+import VoyagerFeaturesEntryOperations
 import VoyagerShared
 
 extension EntryGridCoordinator {
@@ -29,25 +30,42 @@ extension EntryGridCoordinator {
     }
 
     func handleSnapshotChanges(previous: RenderSnapshot, snapshot: RenderSnapshot) {
-        if shouldRebuildSections(previous: previous, snapshot: snapshot) {
-            rebuildSectionsAndReload()
-        } else if !applyIncrementalEntryRemoval(previous: previous, snapshot: snapshot) {
-            reloadVisibleItemsForEntryContentChange(previous: previous, snapshot: snapshot)
+        resetThumbnailSessionIfNeeded(previous: previous, snapshot: snapshot)
+        // 한 Store emission당 change set을 한 번만 계산해 모든 렌더 헬퍼가 재사용한다.
+        let changes = snapshot.presentation.changes(from: previous.presentation)
+        var didScrollToSelection = false
+        if shouldRebuildSections(previous: previous, snapshot: snapshot, changes: changes) {
+            didScrollToSelection = rebuildSectionsAndReload(presentation: snapshot.presentation)
+        } else if !applyIncrementalEntryChanges(previous: previous, snapshot: snapshot, changes: changes) {
+            reloadVisibleItemsForEntryContentChange(snapshot: snapshot, changes: changes)
         }
         syncSelectionIfNeeded(previous: previous, snapshot: snapshot)
         reloadVisibleItemsIfNeeded(previous: previous, snapshot: snapshot)
         syncRenamingIfNeeded(previous: previous, snapshot: snapshot)
         updateGridMetricsIfNeeded(previous: previous, snapshot: snapshot)
         saveScrollPositionIfNeeded(previous: previous, snapshot: snapshot)
-        scrollToSelectionIfNeeded(previous: previous, snapshot: snapshot)
+        // rebuild에서 selection scroll을 이미 처리했다면 snapshot 엣지 스크롤을 중복 실행하지 않는다.
+        if !didScrollToSelection {
+            didScrollToSelection = scrollToSelectionIfNeeded(previous: previous, snapshot: snapshot)
+        }
+        consumeTypeScrollTargetIfNeeded(previous: previous, snapshot: snapshot)
         updateDropTargetBorderIfNeeded(previous: previous, snapshot: snapshot)
         syncThumbnailProjectionIfNeeded(previous: previous, snapshot: snapshot)
-        resetThumbnailSessionIfNeeded(previous: previous, snapshot: snapshot)
-        restoreScrollOffsetIfNeeded(previous: previous, snapshot: snapshot)
+        // selection scroll이 성공하면 saved offset 복원보다 우선하므로 최종 복원을 생략한다.
+        if !didScrollToSelection {
+            restoreScrollOffsetIfNeeded(previous: previous, snapshot: snapshot)
+        }
+        externalDropSessionController.handleSessionTerminal(
+            previousActive: previous.activeExternalDrop,
+            currentActive: snapshot.activeExternalDrop,
+        )
     }
 
-    func shouldRebuildSections(previous: RenderSnapshot, snapshot: RenderSnapshot) -> Bool {
-        let changes = snapshot.presentation.changes(from: previous.presentation)
+    func shouldRebuildSections(
+        previous: RenderSnapshot,
+        snapshot: RenderSnapshot,
+        changes: EntryViewLayoutPresentationChangeSet,
+    ) -> Bool {
         guard changes.sectionStructureChanged || changes.groupExpansionChanged else { return false }
         guard !changes.groupExpansionChanged else { return true }
 
@@ -61,13 +79,16 @@ extension EntryGridCoordinator {
 
         let previousIDs = previous.entries.map(\.id)
         let nextIDs = snapshot.entries.map(\.id)
-        return !canApplyIncrementalEntryRemoval(previousIDs: previousIDs, nextIDs: nextIDs)
+        return !canApplyIncrementalEntryChanges(previousIDs: previousIDs, nextIDs: nextIDs)
     }
 
-    func reloadVisibleItemsForEntryContentChange(previous: RenderSnapshot, snapshot: RenderSnapshot) {
-        let changedIDs = snapshot.presentation.changes(from: previous.presentation).updatedEntryIDs
+    func reloadVisibleItemsForEntryContentChange(
+        snapshot: RenderSnapshot,
+        changes: EntryViewLayoutPresentationChangeSet,
+    ) {
+        let changedIDs = changes.updatedEntryIDs
         guard !changedIDs.isEmpty else { return }
-        updateSectionsFromState()
+        updateSections(presentation: snapshot.presentation)
         let visibleIndexPaths: Set<IndexPath> = MainActor.assumeIsolated {
             collectionView.indexPathsForVisibleItems()
         }
@@ -79,35 +100,80 @@ extension EntryGridCoordinator {
         }
     }
 
-    func applyIncrementalEntryRemoval(previous: RenderSnapshot, snapshot: RenderSnapshot) -> Bool {
+    func applyIncrementalEntryChanges(
+        previous: RenderSnapshot,
+        snapshot: RenderSnapshot,
+        changes: EntryViewLayoutPresentationChangeSet,
+    ) -> Bool {
         let previousIDs = previous.entries.map(\.id)
         let nextIDs = snapshot.entries.map(\.id)
-        guard canApplyIncrementalEntryRemoval(previousIDs: previousIDs, nextIDs: nextIDs) else { return false }
+        guard canApplyIncrementalEntryChanges(previousIDs: previousIDs, nextIDs: nextIDs) else { return false }
 
-        let nextIDSet = Set(nextIDs)
         let removedIndexPaths = Set(previousIDs.enumerated().compactMap { index, id in
-            nextIDSet.contains(id) ? nil : IndexPath(item: index, section: 0)
+            changes.removedEntryIDs.contains(id) ? IndexPath(item: index, section: 0) : nil
         })
-        updateSectionsFromState()
+        let insertedIndexPaths = Set(nextIDs.enumerated().compactMap { index, id in
+            changes.insertedEntryIDs.contains(id) ? IndexPath(item: index, section: 0) : nil
+        })
+        // 구조 batch와 같은 emission의 retained payload 갱신은 batch 완료 후 다시 그린다.
+        let retainedUpdatedIDs = Set(changes.updatedEntryIDs)
+            .subtracting(changes.insertedEntryIDs)
+            .subtracting(changes.removedEntryIDs)
+        updateSections(presentation: snapshot.presentation)
         MainActor.assumeIsolated {
             collectionView.performBatchUpdates {
-                collectionView.deleteItems(at: removedIndexPaths)
+                if !removedIndexPaths.isEmpty {
+                    collectionView.deleteItems(at: removedIndexPaths)
+                }
+                if !insertedIndexPaths.isEmpty {
+                    collectionView.insertItems(at: insertedIndexPaths)
+                }
+            } completionHandler: { [weak self] _ in
+                guard let self else { return }
+                reloadVisibleRetainedUpdatedItems(retainedUpdatedIDs: retainedUpdatedIDs)
             }
         }
         return true
     }
 
-    func canApplyIncrementalEntryRemoval(
+    /// 구조 배치 완료 후 유지된 보이는 updated 항목만 다시 그린다. post-update section data 기준 index path를 사용한다.
+    func reloadVisibleRetainedUpdatedItems(retainedUpdatedIDs: Set<EntryModel.ID>) {
+        guard !retainedUpdatedIDs.isEmpty else { return }
+        let visibleIndexPaths: Set<IndexPath> = MainActor.assumeIsolated {
+            collectionView.indexPathsForVisibleItems()
+        }
+        let changedIndexPaths = Set(retainedUpdatedIDs.compactMap { indexPathByEntryId[$0] })
+            .intersection(visibleIndexPaths)
+        guard !changedIndexPaths.isEmpty else { return }
+        MainActor.assumeIsolated {
+            collectionView.reloadItems(at: changedIndexPaths)
+        }
+    }
+
+    func canApplyIncrementalEntryChanges(
         previousIDs: [EntryModel.ID],
         nextIDs: [EntryModel.ID],
     ) -> Bool {
+        let previousIDSet = Set(previousIDs)
         let nextIDSet = Set(nextIDs)
-        return previousIDs.count > nextIDs.count
-            && previousIDs.filter(nextIDSet.contains) == nextIDs
+        guard previousIDSet.count == previousIDs.count,
+              nextIDSet.count == nextIDs.count
+        else { return false }
+        let removed = previousIDSet.subtracting(nextIDSet)
+        let inserted = nextIDSet.subtracting(previousIDSet)
+        guard !removed.isEmpty || !inserted.isEmpty,
+              max(removed.count, inserted.count) == 1
+        else { return false }
+        let retained = previousIDSet.intersection(nextIDSet)
+        return previousIDs.filter(retained.contains) == nextIDs.filter(retained.contains)
     }
 
     func syncSelectionIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
-        if previous.selectedIds != snapshot.selectedIds { syncSelectionFromStore() }
+        let expectedIndexPaths = Set(snapshot.selectedIds.compactMap { indexPathByEntryId[$0] })
+        guard previous.selectedIds != snapshot.selectedIds
+            || collectionView.selectionIndexPaths != expectedIndexPaths
+        else { return }
+        syncSelectionFromStore()
     }
 
     func reloadVisibleItemsIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
@@ -131,8 +197,36 @@ extension EntryGridCoordinator {
         if previous.showHiddenFiles != snapshot.showHiddenFiles { saveScrollPosition() }
     }
 
-    func scrollToSelectionIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
-        if !previous.shouldScrollToSelection, snapshot.shouldScrollToSelection { scrollToSelectionIfNeeded() }
+    /// shouldScrollToSelection false→true 엣지에서 selection scroll을 시도하고 성공 여부를 반환한다.
+    func scrollToSelectionIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) -> Bool {
+        guard !previous.shouldScrollToSelection, snapshot.shouldScrollToSelection else { return false }
+        return scrollToSelectionIfNeeded()
+    }
+
+    /// pending type-scroll target의 nil→id 엣지에서 첫 매칭 item으로 스크롤하고 reset한다.
+    func consumeTypeScrollTargetIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
+        guard previous.pendingTypeScrollTargetId != snapshot.pendingTypeScrollTargetId,
+              let targetId = snapshot.pendingTypeScrollTargetId
+        else { return }
+        consumeTypeScrollTargetIfLaidOut(targetId)
+    }
+
+    func completePhysicalLayoutAndConsumePendingTypeScrollTarget() {
+        guard isTypeScrollViewportReady else { return }
+        hasCompletedFirstPhysicalLayout = true
+        guard let targetId = state.pendingTypeScrollTargetId else { return }
+        consumeTypeScrollTargetIfLaidOut(targetId)
+    }
+
+    private var isTypeScrollViewportReady: Bool {
+        guard view?.window != nil else { return false }
+        let viewport = scrollView.contentView.bounds
+        return viewport.width > 0 && viewport.height > 0
+    }
+
+    private func consumeTypeScrollTargetIfLaidOut(_ targetId: EntryModel.ID) {
+        guard hasCompletedFirstPhysicalLayout else { return }
+        scrollToTypeScrollTarget(targetId)
     }
 
     func updateDropTargetBorderIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
@@ -142,6 +236,10 @@ extension EntryGridCoordinator {
 
     func resetThumbnailSessionIfNeeded(previous: RenderSnapshot, snapshot: RenderSnapshot) {
         if previous.currentPath != snapshot.currentPath {
+            // snapshot diff 함수는 main queue에서 실행되므로 main actor 격리를 단언한다.
+            MainActor.assumeIsolated {
+                externalDropSessionController.cancel()
+            }
             resetThumbnailSession()
             hasRestoredScrollPosition = false
         }
@@ -302,7 +400,7 @@ extension EntryGridCoordinator: NSCollectionViewDataSource {
             workspaceClient: workspaceClient,
             onRenameUpdate: { [weak self] text in
                 guard let self else { return }
-                store.send(.view(.startRename(item: entry, text: text)))
+                store.send(.view(.updateRenamingText(text)))
             },
             onRenameCommit: { [weak self] in
                 guard let self else { return }
@@ -396,12 +494,20 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
         willBeginAt _: NSPoint,
         forItemsAt indexPaths: Set<IndexPath>,
     ) {
+        beginNativeDragSession(forItemsAt: indexPaths)
+    }
+
+    func beginNativeDragSession(forItemsAt indexPaths: Set<IndexPath>) {
+        // drag가 시작되면 mouseDown의 Command toggle 기대는 확정되지 않으므로 남은
+        // 명시적 clear provenance를 폐기한다. 남겨두면 이후 lifecycle empty callback이
+        // Command-last-deselect로 오인돼 canonical selection이 비워진다.
+        consumeExplicitEmptySelectionGesture()
         let paths = indexPaths.compactMap { indexPath -> String? in
             guard let entry = entry(at: indexPath) else { return nil }
             return entry.fullPath
         }
         guard !paths.isEmpty else { return }
-        store.send(.view(.startDrag(paths: paths)))
+        entryFileOpsClient.saveDragPaths(paths)
     }
 
     public func collectionView(
@@ -411,14 +517,14 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
         dragOperation operation: NSDragOperation,
     ) {
         guard EntryViewLayoutDragStateClearRuleSet.shouldClearAfterSessionEnd(operation: operation) else { return }
-        store.send(.view(.startDrag(paths: [])))
+        entryFileOpsClient.saveDragPaths([])
         clearDropTargetState()
         store.send(.view(.setDropTargeted(false)))
     }
 
     @MainActor
     public func collectionView(
-        _: NSCollectionView,
+        _ collectionView: NSCollectionView,
         validateDrop draggingInfo: any NSDraggingInfo,
         proposedIndexPath proposedDropIndexPath: AutoreleasingUnsafeMutablePointer<NSIndexPath>,
         dropOperation proposedDropOperation: UnsafeMutablePointer<NSCollectionView.DropOperation>,
@@ -439,8 +545,7 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
         var destinationPath = state.currentPath
         var targetEntryId: EntryModel.ID?
         if let entry = entry(at: indexPath),
-           entry.isFolder,
-           !entry.isPackage
+           entry.acceptsDropInto
         {
             destinationPath = entry.fullPath
             targetEntryId = entry.id
@@ -448,57 +553,132 @@ extension EntryGridCoordinator: NSCollectionViewDelegate, NSCollectionViewDelega
         } else {
             proposedDropOperation.pointee = .before
         }
-        let validation = EntryViewLayoutDropValidationAdapter.resolve(
+        let origin = resolveDropOrigin(draggingInfo, ownView: collectionView)
+        let verdict = EntryViewLayoutDropValidationAdapter.resolveExternalDropOperation(
             draggingInfo: draggingInfo,
+            isInternalDrag: origin.isInternal,
+            sourcePaths: origin.sourcePaths,
             destinationPath: destinationPath,
+            allowedOperations: draggingInfo.draggingSourceOperationMask,
+            prefersCopy: origin.wantsCopy,
         )
-        let operation = EntryViewLayoutDropValidationAdapter.dragOperation(from: validation.resolvedOperation)
+        let operation = EntryViewLayoutDropValidationAdapter.dragOperation(from: verdict)
         setDropTargetEntryId(operation.isEmpty ? nil : targetEntryId)
         validatedDropDestinationPath = operation.isEmpty ? nil : destinationPath
-        store.send(.view(.setDropTargeted(!operation.isEmpty)))
+        if state.isDropTargeted != !operation.isEmpty {
+            store.send(.view(.setDropTargeted(!operation.isEmpty)))
+        }
 
         return operation
     }
 
     public func collectionView(
-        _: NSCollectionView,
+        _ collectionView: NSCollectionView,
         acceptDrop draggingInfo: NSDraggingInfo,
         indexPath _: IndexPath,
         dropOperation _: NSCollectionView.DropOperation,
     ) -> Bool {
+        // accept-time destination: validate에서 current target을 기준으로 확정한 destination을 사용한다.
+        // Grid 테스트 seam은 accept indexPath를 실제 entry로 해석할 수 없어 validate destination을 따른다.
         let destinationPath = validatedDropDestinationPath ?? state.currentPath
-        let pasteboard = draggingInfo.draggingPasteboard
-        let options: [NSPasteboard.ReadingOptionKey: Any] = [.urlReadingFileURLsOnly: true]
-        guard let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: options) as? [URL],
-              !urls.isEmpty
-        else {
+        let origin = resolveDropOrigin(draggingInfo, ownView: collectionView)
+        // promise/mixed 외부 drop은 path 기반 이동이 아니라 ExternalDropAcquisitionClient로
+        // 획득 세션을 시작하고, 그 결과를 EntryOperations에 accepted action으로 전달한다.
+        // promise-only는 source path가 없어 아래 empty-source guard보다 먼저 처리해야 한다.
+        let negotiation = VoyagerFeaturesEntryOperations.ExternalDropNegotiation.negotiateExternalDrop(
+            from: draggingInfo.draggingPasteboard,
+            wantsCopy: origin.wantsCopy,
+        )
+        if !negotiation.promisedOrdinals.isEmpty || !negotiation.dataFlavors.isEmpty {
+            return externalDropSessionController.beginAcquisition(
+                draggingInfo: draggingInfo,
+                negotiation: negotiation,
+                destinationPath: destinationPath,
+            )
+        }
+        // 빈 source는 항상 no-op으로 처리한다 (reducer의 empty-source 방어 이전 단계).
+        guard !origin.sourcePaths.isEmpty else {
+            entryFileOpsClient.saveDragPaths([])
             clearDropTargetState()
             store.send(.view(.setDropTargeted(false)))
             return false
         }
-        let sourcePaths = urls.map(\.path)
         let validation = EntryViewLayoutDropValidationAdapter.resolve(
-            sourcePaths: sourcePaths,
+            sourcePaths: origin.sourcePaths,
             destinationPath: destinationPath,
             allowedOperations: draggingInfo.draggingSourceOperationMask,
-            prefersCopy: NSEvent.modifierFlags.contains(.option),
+            prefersCopy: origin.wantsCopy,
         )
-        guard !EntryViewLayoutDropValidationAdapter.dragOperation(from: validation.resolvedOperation).isEmpty else {
+        let resolvedOperation = EntryViewLayoutDropValidationAdapter.dragOperation(from: validation.resolvedOperation)
+        guard !resolvedOperation.isEmpty else {
+            // accept-reject terminal path: transport/visual 상태를 정리한다.
+            entryFileOpsClient.saveDragPaths([])
             clearDropTargetState()
             store.send(.view(.setDropTargeted(false)))
             return false
         }
         store.send(.view(.dropItems(
-            sourcePaths: sourcePaths,
+            sourcePaths: origin.sourcePaths,
             destinationPath: destinationPath,
             isOptionDrag: validation.isOptionDrag,
         )))
+        if !origin.isInternal {
+            // 외부 accept는 transport를 정리하고 visual highlight를 유지하지 않는다.
+            // 내부 accept transport 정리는 `draggingSession endedAt` + `EntryViewLayoutDragStateClearRuleSet`이 담당한다.
+            entryFileOpsClient.saveDragPaths([])
+            clearDropTargetState()
+            store.send(.view(.setDropTargeted(false)))
+        }
         return true
+    }
+
+    /// 외부 drop 세션 진입/거절 시 transport·visual highlight를 정리한다 (Grid 기존 동작 유지).
+    @MainActor
+    func clearExternalDropDropState() {
+        entryFileOpsClient.saveDragPaths([])
+        clearDropTargetState()
+        store.send(.view(.setDropTargeted(false)))
+    }
+
+    /// 내부/외부 drop origin과 active source path를 결정한다.
+    /// 외부 session 진입 시 stale 내부 transport를 무효화한다 (FIX 7).
+    @MainActor
+    private func resolveDropOrigin(
+        _ draggingInfo: any NSDraggingInfo,
+        ownView: AnyObject?,
+    ) -> EntryViewLayoutDropValidationAdapter.DropOrigin {
+        let transportPaths = entryFileOpsClient.loadDragPaths()
+        let isInternal = EntryViewLayoutDropValidationAdapter.isInternalDrag(draggingInfo, ownView: ownView)
+        if isInternal {
+            return .init(
+                sourcePaths: transportPaths,
+                wantsCopy: NSEvent.modifierFlags.contains(.option),
+                isInternal: true,
+            )
+        }
+        entryFileOpsClient.saveDragPaths([])
+        return .init(
+            sourcePaths: EntryViewLayoutDropValidationAdapter.sourcePaths(from: draggingInfo.draggingPasteboard),
+            wantsCopy: NSEvent.modifierFlags.contains(.option),
+            isInternal: false,
+        )
     }
 
     public func updateSelectionFromCollectionView(_ collectionView: NSCollectionView) {
         guard !isUpdatingSelectionFromStore else { return }
         let selectedIndexPaths = collectionView.selectionIndexPaths
+        guard !selectedIndexPaths.isEmpty else {
+            if consumeExplicitEmptySelectionGesture() {
+                // blank/Command-last-deselect는 명시적 user-clear intent로 전달한다.
+                store.send(.view(.clearSelection))
+            } else {
+                // 출처 없는 lifecycle empty callback은 store selection만 native로 복원한다.
+                syncSelectionFromStore()
+            }
+            return
+        }
+        // non-empty callback이 먼저 오면 stale provenance를 폐기한다.
+        consumeExplicitEmptySelectionGesture()
         let selectedIds: Set<EntryModel.ID> = Set(selectedIndexPaths.compactMap { indexPath in
             entry(at: indexPath)?.id
         })

@@ -110,6 +110,9 @@ final class EOP004EditEntryMetadataTests: XCTestCase {
             state.itemStates[path]?.isBusy = false
         }
 
+        // 비-undo getInfo 명령도 command-level terminal을 한 건 수신한다.
+        await store.receive(\.lifecycle.entryActionCompleted)
+
         XCTAssertEqual(capture.url, sandbox.fileURL)
         XCTAssertEqual(capture.resourceValues?.fileSize, expectedSize)
         XCTAssertEqual(capture.resourceValues?.isRegularFile, true)
@@ -118,6 +121,180 @@ final class EOP004EditEntryMetadataTests: XCTestCase {
     }
 
     // MARK: - EOP-004-rename_entry
+
+    /// EOP-004-rename_entry: rename source는 세션 동안 보존되고 취소 시 제거된다.
+    /// - 검증 내용: startRename source 저장과 cancelRename cleanup
+    /// - 사전 조건: context menu에서 단일 entry rename을 시작한다.
+    /// - 기대 결과: source가 `.contextMenu`로 저장된 뒤 cancel에서 nil이 된다.
+    func testRenameEntry_sourceClearsOnCancel() async {
+        let entry = EntryModelFixtures.makeFileEntry(
+            id: "/tmp/source.txt",
+            name: "source.txt",
+            fileExtension: "txt",
+        )
+        let store = EntryOperationsTestSupport.makeStore()
+
+        await store.send(.edit(.startRename(
+            item: entry,
+            text: entry.name,
+            source: .contextMenu,
+        ))) {
+            $0.renamingItemId = entry.id
+            $0.renamingText = entry.name
+            $0.renamingItem = entry
+            $0.renamingCommandSource = .contextMenu
+        }
+        await store.send(.edit(.cancelRename)) {
+            $0.renamingItemId = nil
+            $0.renamingText = ""
+            $0.renamingItem = nil
+            $0.renamingCommandSource = nil
+        }
+    }
+
+    /// EOP-004-rename_entry: no-op commit도 rename source를 소모한다.
+    /// - 검증 내용: 원래 이름 commit 후 rename 세션 전체 cleanup
+    /// - 사전 조건: keyboard rename의 draft가 기존 이름과 같다.
+    /// - 기대 결과: 파일 작업 없이 source와 rename state가 nil로 초기화된다.
+    func testRenameEntry_noOpCommitConsumesSource() async {
+        let entry = EntryModelFixtures.makeFileEntry(
+            id: "/tmp/source.txt",
+            name: "source.txt",
+            fileExtension: "txt",
+        )
+        let store = EntryOperationsTestSupport.makeStore()
+
+        await store.send(.edit(.startRename(
+            item: entry,
+            text: entry.name,
+            source: .keyboardShortcut,
+        ))) {
+            $0.renamingItemId = entry.id
+            $0.renamingText = entry.name
+            $0.renamingItem = entry
+            $0.renamingCommandSource = .keyboardShortcut
+        }
+        await store.send(.edit(.commitRename)) {
+            $0.renamingItemId = nil
+            $0.renamingText = ""
+            $0.renamingItem = nil
+            $0.renamingCommandSource = nil
+        }
+        await store.receive(\.lifecycle.entryActionCompleted)
+    }
+
+    /// EOP-004-rename_entry: 수용된 unchanged/blank rename은 취소 terminal 한 건으로 종료된다.
+    /// - 검증 내용: accepted command의 ID/source를 보존한 빈-target cancelled record와 파일 작업 미호출을 확인한다.
+    /// - 사전 조건: context-menu unchanged rename과 keyboard blank rename이 각각 수용된다.
+    /// - 기대 결과: 각 명령은 cancelledCount 1인 terminal 정확히 한 건을 내고 undo record를 만들지 않는다.
+    func testRenameEntry_acceptedNoOpEmitsMetadataPreservingCancelledTerminal() async {
+        let entry = EntryModelFixtures.makeFileEntry(
+            id: "/tmp/source.txt",
+            name: "source.txt",
+            fileExtension: "txt",
+        )
+        let renameCallCount = LockIsolated(0)
+        let scenarios: [(String, EntryCommandMetadata)] = [
+            (entry.name, .init(id: UUID(4), interaction: .renameEntry, source: .contextMenu)),
+            ("   ", .init(id: UUID(5), interaction: .renameEntry, source: .keyboardShortcut)),
+        ]
+
+        for (draft, metadata) in scenarios {
+            let store = EntryOperationsTestSupport.makeStore {
+                $0.entryFileOpsClient.renameFile = { _, _ in
+                    renameCallCount.withValue { $0 += 1 }
+                }
+            }
+
+            await store.send(.edit(.startRename(item: entry, text: draft, source: metadata.source))) {
+                $0.renamingItemId = entry.id
+                $0.renamingText = draft
+                $0.renamingItem = entry
+                $0.renamingCommandSource = metadata.source
+            }
+            await store.send(.acceptedCommand(metadata: metadata, action: .edit(.commitRename))) {
+                $0.renamingItemId = nil
+                $0.renamingText = ""
+                $0.renamingItem = nil
+                $0.renamingCommandSource = nil
+            }
+            await store.receive { action in
+                guard case let .lifecycle(.entryActionCompleted(record)) = action else { return false }
+                return record.id == metadata.id
+                    && record.command == metadata
+                    && record.operationKind == .rename
+                    && record.targets.isEmpty
+                    && record.failedCount == 0
+                    && record.cancelledCount == 1
+                    && record.succeededCount == 0
+            }
+            await store.finish()
+
+            XCTAssertTrue(store.state.undoRecords.isEmpty)
+        }
+
+        XCTAssertEqual(renameCallCount.value, 0)
+    }
+
+    /// EOP-004-rename_entry: accepted rename의 terminal record는 시작 source를 보존한다.
+    /// - 검증 내용: command metadata가 성공 terminal의 `EntryActionRecord.command`에 연결된다.
+    /// - 사전 조건: context-menu source metadata로 이름 변경 commit이 수용된다.
+    /// - 기대 결과: terminal command source가 `.contextMenu`이고 pending source는 nil이다.
+    func testRenameEntry_terminalPreservesAcceptedSource() async {
+        let entry = EntryModelFixtures.makeFileEntry(
+            id: "/tmp/source.txt",
+            name: "source.txt",
+            fileExtension: "txt",
+        )
+        let metadata = EntryCommandMetadata(
+            id: UUID(3),
+            interaction: .renameEntry,
+            source: .contextMenu,
+        )
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryFileOpsClient.renameFile = { _, _ in }
+            $0.entryThumbnailCacheClient = .testValue
+        }
+        // store.exhaustivity = .off: lifecycle 중간 action보다 terminal command metadata를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.edit(.startRename(
+            item: entry,
+            text: "renamed.txt",
+            source: .contextMenu,
+        )))
+        await store.send(.acceptedCommand(metadata: metadata, action: .edit(.commitRename)))
+        await store.receive { action in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return false }
+            return record.command?.source == .contextMenu
+        }
+        await store.finish()
+
+        XCTAssertNil(store.state.renamingCommandSource)
+    }
+
+    /// EOP-004-rename_entry: reset과 terminal loading cleanup은 stale source를 남기지 않는다.
+    /// - 검증 내용: duplicate reset과 computerItemsLoadFailed의 source cleanup
+    /// - 사전 조건: context-menu rename source가 pending 상태다.
+    /// - 기대 결과: 두 lifecycle 경로 모두 source를 nil로 만든다.
+    func testRenameEntry_resetAndLoadingFailureClearSource() async {
+        var resetState = EntryOperationsState()
+        resetState.renamingCommandSource = .contextMenu
+        resetState.resetForDuplicate(
+            windowID: UUID(0),
+            loadingCancellationOwnerID: UUID(1),
+            undoOwnerID: UUID(2),
+        )
+        XCTAssertNil(resetState.renamingCommandSource)
+
+        var loadingState = EntryOperationsState()
+        loadingState.renamingCommandSource = .keyboardShortcut
+        let store = EntryOperationsTestSupport.makeStore(initialState: loadingState)
+        await store.send(.loading(.computerItemsLoadFailed(generation: 0))) {
+            $0.loadingContext.streamTerminal = false
+            $0.renamingCommandSource = nil
+        }
+    }
 
     /// EOP-004-rename_entry: itemsLoaded는 rename visibility 판단을 layout owner에 위임
     /// EntryOperations의 root-only snapshot이 hierarchy child rename을 직접 취소하지 않는지 검증한다.
@@ -146,7 +323,7 @@ final class EOP004EditEntryMetadataTests: XCTestCase {
             $0.entryThumbnailCacheClient = .testValue
         }
 
-        await store.send(.loading(.itemsLoaded([otherEntry]))) {
+        await store.send(.loading(.itemsLoaded(generation: 0, items: [otherEntry]))) {
             $0.items = IdentifiedArrayOf(uniqueElements: [otherEntry])
             $0.isLoading = false
             $0.isReloading = false
@@ -182,7 +359,7 @@ final class EOP004EditEntryMetadataTests: XCTestCase {
             $0.entryThumbnailCacheClient = .testValue
         }
 
-        await store.send(.loading(.itemsLoaded([entry]))) {
+        await store.send(.loading(.itemsLoaded(generation: 0, items: [entry]))) {
             $0.isLoading = false
             $0.isReloading = false
         }
@@ -626,6 +803,110 @@ extension EOP004EditEntryMetadataTests {
         XCTAssertEqual(store.state.undoRecords.count, 1)
         XCTAssertEqual(store.state.undoRecords.first?.targets.map(\.beforePath), [successfulPath])
         XCTAssertEqual(store.state.itemStates[failedPath]?.lastError?.message, "Tag write failed")
+    }
+
+    /// EOP-004-create_new_folder: 폴더 생성 실패도 실패 aggregate terminal로 마무리된다.
+    /// - 검증 내용: terminal record의 failedCount는 1이고 succeededCount는 0이다.
+    /// - 사전 조건: createFolder 실패 mock
+    /// - 기대 결과: entryActionCompleted(.createFolder, targets: [], failed: 1, succeeded: 0) 1건
+    func testCreateNewFolderFailureEmitsFailureTerminal() async {
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryFileOpsClient.createFolder = { _, _ in
+                throw FileOpError.system(message: "create denied")
+            }
+        }
+        // store.exhaustivity = .off: 실패 terminal 계약에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.edit(.createNewFolder(parentPath: "/tmp", siblingNames: [])))
+        await store.receive { action in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return false }
+            return record.operationKind == .createFolder
+                && record.targets.isEmpty
+                && record.failedCount == 1
+                && record.succeededCount == 0
+        }
+        await store.finish()
+    }
+
+    /// EOP-004-create_aliases: 별칭 생성 전체 실패 배치도 실패 aggregate terminal로 마무리된다.
+    /// - 검증 내용: terminal record의 failedCount는 시도 수 2이고 succeededCount는 0이다.
+    /// - 사전 조건: createAlias 실패 mock, 경로 2개
+    /// - 기대 결과: entryActionCompleted(.createAlias, targets: [], failed: 2, succeeded: 0) 1건
+    func testCreateAliasesAllFailureEmitsFailureTerminal() async {
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryFileOpsClient.createAlias = { _, _ in
+                throw FileOpError.system(message: "alias denied")
+            }
+        }
+        // store.exhaustivity = .off: 전체 실패 배치 terminal 계약에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.edit(.createAliases(paths: ["/tmp/a.txt", "/tmp/b.txt"])))
+        await store.receive { action in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return false }
+            return record.operationKind == .createAlias
+                && record.targets.isEmpty
+                && record.failedCount == 2
+                && record.succeededCount == 0
+        }
+        await store.finish()
+    }
+
+    /// EOP-004-rename_entry: 이름 변경 실패도 실패 aggregate terminal로 마무리된다.
+    /// - 검증 내용: terminal record의 failedCount는 1이고 succeededCount는 0이다.
+    /// - 사전 조건: renameFile 실패 mock
+    /// - 기대 결과: entryActionCompleted(.rename, targets: [], failed: 1, succeeded: 0) 1건
+    func testRenameItemFailureEmitsFailureTerminal() async {
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryFileOpsClient.renameFile = { _, _ in
+                throw FileOpError.system(message: "rename denied")
+            }
+        }
+        // store.exhaustivity = .off: 실패 terminal 계약에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.edit(.renameItem(oldPath: "/tmp/a.txt", newPath: "/tmp/b.txt")))
+        await store.receive { action in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return false }
+            return record.operationKind == .rename
+                && record.targets.isEmpty
+                && record.failedCount == 1
+                && record.succeededCount == 0
+        }
+        await store.finish()
+    }
+
+    /// EOP-004-edit_entry_tags: 태그 변경 전체 실패 배치도 실패 aggregate terminal로 마무리된다.
+    /// - 검증 내용: terminal record의 failedCount는 2이고 succeededCount는 0이며 undo에 등록되지 않는다.
+    /// - 사전 조건: setTags 실패 mock, 경로 2개
+    /// - 기대 결과: entryActionCompleted(.setTags, targets: [], failed: 2, succeeded: 0) 1건, undoRecords 비어 있음
+    func testSetTagsAllFailureEmitsFailureTerminalWithoutUndo() async {
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryFileOpsClient.getTags = { _ in [] }
+            $0.entryFileOpsClient.setTags = { _, _ in
+                throw FileOpError.system(message: "tag denied")
+            }
+            $0.entryOperationsAlertClient.showTagMutationFailureAlert = { _ in }
+        }
+        // store.exhaustivity = .off: 전체 실패 배치 terminal과 undo 미등록을 함께 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.tagging(.requestTagMutation(request: .init(
+            mode: .add,
+            tagName: "Red",
+            paths: ["/tmp/a.txt", "/tmp/b.txt"],
+        ))))
+        await store.receive { action in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return false }
+            return record.operationKind == .setTags
+                && record.targets.isEmpty
+                && record.failedCount == 2
+                && record.succeededCount == 0
+        }
+        await store.finish()
+
+        XCTAssertTrue(store.state.undoRecords.isEmpty)
     }
 }
 

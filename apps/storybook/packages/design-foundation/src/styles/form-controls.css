@@ -155,73 +155,21 @@
 }
 
 /* === ComboBox popover === */
+/* row 시각은 공통 fm-menu-item(MenuItem)이 소유하고, .vc-combo-box-option 클래스는
+ * 키보드 네비게이션 셀렉터 훅으로만 존재한다. */
 :where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
   .vc-combo-box-popover {
   position: absolute;
   z-index: 100;
   top: calc(100% + var(--fm-space-2));
   left: 0;
-  right: 0;
+  width: max-content;
   min-width: 100%;
+  max-width: calc(100vw - var(--fm-space-8));
   overflow: auto;
   border: 1px solid var(--macos-separator-color);
   border-radius: var(--fm-radius-lg);
   background: var(--macos-material-popover);
   padding: var(--fm-space-2);
   box-shadow: var(--fm-shadow-card);
-}
-
-:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
-  .vc-combo-box-option {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--fm-space-4);
-  width: 100%;
-  border: 0;
-  border-radius: var(--fm-radius-sm);
-  background: transparent;
-  padding: var(--fm-space-3) var(--fm-space-4);
-  color: var(--macos-label-color);
-  font: inherit;
-  font-size: var(--fm-font-size-body);
-  text-align: left;
-  cursor: default;
-  outline: none;
-  transition: background-color var(--fm-motion-fast) ease;
-}
-
-:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
-  .vc-combo-box-option:hover:not(:disabled),
-:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
-  .vc-combo-box-option[aria-selected="true"] {
-  background: var(--macos-unemphasized-selected-content-background-color);
-}
-
-:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
-  .vc-combo-box-option:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
-  .vc-combo-box-option-check {
-  flex-shrink: 0;
-  width: 12px;
-  height: 12px;
-  color: var(--macos-control-accent-color);
-  visibility: hidden;
-}
-
-:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
-  .vc-combo-box-option-check.visible {
-  visibility: visible;
-}
-
-:where([data-design-foundation], [data-file-manager-illustration], [data-settings-illustration])
-  .vc-combo-box-option-detail {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--macos-tertiary-label-color);
-  font-size: var(--fm-font-size-caption);
 }

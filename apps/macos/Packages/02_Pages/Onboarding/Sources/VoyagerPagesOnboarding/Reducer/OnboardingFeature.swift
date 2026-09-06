@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import Foundation
 
 @Reducer
 struct OnboardingFeature {
@@ -7,6 +8,9 @@ struct OnboardingFeature {
 
     @Dependency(\.onboardingProgressClient)
     var onboardingProgressClient
+
+    @Dependency(\.onboardingProductMetricsClient)
+    var onboardingProductMetricsClient
 
     @Dependency(\.onboardingWindowClient)
     var onboardingWindowClient
@@ -35,6 +39,7 @@ struct OnboardingFeature {
         action: Action,
     ) -> Effect<Action> {
         let progressClient = onboardingProgressClient
+        let metricsClient = onboardingProductMetricsClient
 
         switch action {
         case .onAppear:
@@ -46,21 +51,21 @@ struct OnboardingFeature {
         case .nextTapped:
             return handleNextTapped(state: &state, progressClient: progressClient)
 
-        case .complete(.startUsingTapped), .complete(.retryTapped):
-            return handleCompleteStart(state: &state, progressClient: progressClient)
-
-        case .complete(.openWindowResponse(true)):
-            return .run { _ in
-                await onboardingWindowClient.closeWindow()
-            }
-
-        case .complete(.openWindowResponse(false)):
-            return .none
+        case let .complete(completeAction):
+            return handleCompleteAction(
+                completeAction,
+                state: &state,
+                progressClient: progressClient,
+            )
 
         case .aiProviderSetup(.setUpLaterTapped):
-            return handleSetUpLaterTapped(state: &state, progressClient: progressClient)
+            return handleSetUpLaterTapped(
+                state: &state,
+                progressClient: progressClient,
+                metricsClient: metricsClient,
+            )
 
-        case .welcome, .permissions, .aiProviderSetup, .complete:
+        case .welcome, .permissions, .aiProviderSetup:
             let snapshot = state.progressSnapshot
             return Self.saveEffect(snapshot, progressClient: progressClient)
         }
@@ -119,16 +124,48 @@ struct OnboardingFeature {
         progressClient: OnboardingProgressClient,
     ) -> Effect<Action> {
         let snapshot = state.progressSnapshot
+        guard let operationID = state.complete.completionOperationID else { return .none }
         return .run { send in
-            _ = progressClient.save(snapshot)
-            let opened = await onboardingWindowClient.openMainWindow(.defaultTabPath)
-            await send(.complete(.openWindowResponse(opened)))
+            let saved = progressClient.save(snapshot) == .success
+            await send(.complete(.progressSaveResponse(operationID, saved)))
+        }
+    }
+
+    private func handleCompleteAction(
+        _ action: CompleteAction,
+        state: inout State,
+        progressClient: OnboardingProgressClient,
+    ) -> Effect<Action> {
+        switch action {
+        case .startUsingTapped, .retryTapped:
+            return handleCompleteStart(state: &state, progressClient: progressClient)
+
+        case let .progressSaveResponse(operationID, true):
+            guard state.complete.completionOperationID == operationID else { return .none }
+            return .run { send in
+                let opened = await onboardingWindowClient.openMainWindow(.defaultTabPath)
+                await send(.complete(.openWindowResponse(operationID, opened)))
+            }
+
+        case .progressSaveResponse:
+            return .none
+
+        case let .openWindowResponse(operationID, true):
+            guard state.complete.lastHandledCompletionOperationID == operationID else { return .none }
+            state.complete.lastHandledCompletionOperationID = nil
+            return .run { _ in
+                await onboardingWindowClient.closeWindow()
+            }
+
+        case .openWindowResponse:
+            return .none
         }
     }
 
     private func handleSetUpLaterTapped(
         state: inout State,
         progressClient: OnboardingProgressClient,
+        metricsClient: OnboardingProductMetricsClient,
     ) -> Effect<Action> {
         var skippedSetup = state.aiProviderSetup
         skippedSetup.choice = .setUpLater
@@ -142,6 +179,10 @@ struct OnboardingFeature {
         switch progressClient.save(snapshot) {
         case .success:
             state.aiProviderSetup = skippedSetup
+            metricsClient.record(.aiProvider(
+                operationID: UUID(),
+                result: .skipped,
+            ))
         case .failure:
             state.aiProviderSetup.choice = .none
             state.aiProviderSetup.loadError = "Failed to save onboarding progress."

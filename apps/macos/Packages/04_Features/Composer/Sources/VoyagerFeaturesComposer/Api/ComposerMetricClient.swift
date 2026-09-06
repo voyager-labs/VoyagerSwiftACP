@@ -9,6 +9,18 @@ public enum ComposerMetricLevel: Sendable {
     case error
 }
 
+public enum ComposerProductMetricResult: String, Sendable {
+    case success
+    case empty
+    case failure
+    case cancelled
+}
+
+public enum ComposerProductMetric: Sendable {
+    case queryResult(operationID: UUID, result: ComposerProductMetricResult, durationMilliseconds: Int?)
+    case applyResult(operationID: UUID, result: ComposerProductMetricResult, durationMilliseconds: Int?)
+}
+
 public struct ComposerMetricClient: Sendable {
     public var logMetric: @Sendable (
         _ name: String,
@@ -16,6 +28,7 @@ public struct ComposerMetricClient: Sendable {
         _ tags: [String: String]?,
         _ level: ComposerMetricLevel,
     ) -> Void
+    public var recordProductMetric: @Sendable (ComposerProductMetric) -> Void
 
     public init(
         logMetric: @Sendable @escaping (
@@ -23,6 +36,14 @@ public struct ComposerMetricClient: Sendable {
         ) -> Void,
     ) {
         self.logMetric = logMetric
+        recordProductMetric = { _ in }
+    }
+
+    public init(
+        recordProductMetric: @escaping @Sendable (ComposerProductMetric) -> Void,
+    ) {
+        logMetric = { _, _, _, _ in }
+        self.recordProductMetric = recordProductMetric
     }
 }
 
@@ -39,6 +60,10 @@ public extension DependencyValues {
 }
 
 public extension ComposerMetricClient {
+    func record(_ metric: ComposerProductMetric) {
+        recordProductMetric(metric)
+    }
+
     func logMetric(
         _ name: String,
         value: Double,

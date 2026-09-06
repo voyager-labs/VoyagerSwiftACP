@@ -39,6 +39,7 @@ public struct ContentTabDomainTransitionRequest: Equatable, Sendable {
     public let initiatingTabID: ContentTabID
     public let orderedTabIDs: [ContentTabID]
     public let placement: ContentTabPlacement
+    public let source: ContentTabActionSource
 
     public init(
         operationID: UUID,
@@ -48,6 +49,7 @@ public struct ContentTabDomainTransitionRequest: Equatable, Sendable {
         initiatingTabID: ContentTabID,
         orderedTabIDs: [ContentTabID],
         placement: ContentTabPlacement,
+        source: ContentTabActionSource,
     ) {
         self.operationID = operationID
         self.sourceWindowID = sourceWindowID
@@ -56,6 +58,7 @@ public struct ContentTabDomainTransitionRequest: Equatable, Sendable {
         self.initiatingTabID = initiatingTabID
         self.orderedTabIDs = orderedTabIDs
         self.placement = placement
+        self.source = source
     }
 }
 

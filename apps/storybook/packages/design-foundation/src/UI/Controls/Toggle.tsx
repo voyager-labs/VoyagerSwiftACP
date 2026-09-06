@@ -7,6 +7,8 @@ export interface ToggleProps {
   onChange: (checked: boolean) => void
   /** Optional label rendered next to the switch */
   label?: ReactNode
+  /** 보이는 라벨이 없을 때 사용할 접근성 이름 */
+  ariaLabel?: string
   /** Display size. Default: "regular" */
   size?: "small" | "regular"
   /** Disables interaction */
@@ -21,6 +23,7 @@ export const Toggle: FC<ToggleProps> = ({
   checked,
   onChange,
   label,
+  ariaLabel,
   size = "regular",
   disabled,
   className = "",
@@ -40,6 +43,7 @@ export const Toggle: FC<ToggleProps> = ({
       type="button"
       role="switch"
       aria-checked={checked}
+      aria-label={ariaLabel}
       disabled={disabled}
       className={classes}
       style={style}

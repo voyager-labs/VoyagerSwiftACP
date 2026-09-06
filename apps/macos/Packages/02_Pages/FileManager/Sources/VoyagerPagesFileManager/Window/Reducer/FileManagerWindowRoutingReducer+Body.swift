@@ -13,16 +13,25 @@ import VoyagerShared
 extension FileManagerWindowRoutingReducer {
     var routingBody: some ReducerOf<Self> {
         Reduce<Self.State, Self.Action> { state, action in
+            if case .request(.moveContentTabSwitcherFocus) = action {
+                // stale focus는 방향 정보를 보존해야 하므로 command handler가 직접 reconcile한다.
+            } else if case .request(.activateContentTabSwitcherSelection) = action {
+                // focused window command는 stale focus 보존을 위해 command handler가 직접 처리한다.
+            } else if case .view(.activateContentTabSwitcherCandidate) = action {
+            } else {
+                reconcileContentTabSwitcherPresentation(state: &state)
+            }
             switch action {
-            case let .applyPinnedContentTabRuntimeNavigation(tabID, navigationState):
+            case let .applyPinnedContentTabRuntimeNavigation(tabID, navigationState, pendingSelectEntryID):
                 return applyPinnedContentTabRuntimeNavigation(
                     tabID: tabID,
                     navigationState: navigationState,
+                    pendingSelectEntryID: pendingSelectEntryID,
                     state: &state,
                 )
 
-            case let .requestSelectedContentTabPinMutation(target):
-                return handleRequestSelectedContentTabPinMutation(target: target, state: &state)
+            case let .requestSelectedContentTabPinMutation(target, source):
+                return handleRequestSelectedContentTabPinMutation(target: target, source: source, state: &state)
 
             case let .requestContentTabDomainTransition(request):
                 return handleRequestContentTabDomainTransition(request, state: &state)
@@ -39,6 +48,7 @@ extension FileManagerWindowRoutingReducer {
                 )
 
             case let .selectedPinMutationBatchCompleted(result):
+                recordSelectedPinMutationBatchMetric(result)
                 let replayAction = takeDeferredPinnedContentTabsAction(state: &state)
                 let replaySnapshot: Effect<Action> = if case .applyAuthoritativePinnedContentTabs = replayAction,
                                                         let revision = state.lastConfirmedTopNavigationCommitRevision
@@ -66,7 +76,10 @@ extension FileManagerWindowRoutingReducer {
                 )
 
             case .requestCloseSelectedContentTabs:
-                return handleRequestCloseSelectedContentTabs(state: &state)
+                return handleRequestCloseSelectedContentTabs(source: .contentTabBar, state: &state)
+
+            case let .requestCloseSelectedTabs(source):
+                return handleRequestCloseSelectedContentTabs(source: source, state: &state)
 
             case .onAppear:
                 state.isClosing = false
@@ -150,19 +163,28 @@ extension FileManagerWindowRoutingReducer {
                 else { return .none }
                 return .send(.returnContentTabToPinnedLocation(tabID))
 
-            case let .returnContentTabToPinnedLocation(tabID):
+            case let .returnContentTabToPinnedLocation(tabID, pendingSelectEntryID, activateIfNeeded):
                 guard state.pendingSelectedContentTabClose == nil,
                       state.contentTabs.tabs[id: tabID] != nil
                 else { return .none }
-                return returnContentTabToPinnedLocationEffect(tabID: tabID, state: &state)
+                return returnContentTabToPinnedLocationEffect(
+                    tabID: tabID,
+                    pendingSelectEntryID: pendingSelectEntryID,
+                    activateIfNeeded: activateIfNeeded,
+                    state: &state,
+                )
 
             case let .sidebar(.delegate(.closeContentTab(tabID))):
                 guard state.contentTabRowInteractionSurface.isCloseEnabled else { return .none }
-                return .send(.closeContentTabRequested(tabID))
+                return .send(.closeContentTabRequestedWithSource(tabID, .contextMenu))
+
+            case let .sidebar(.delegate(.closeContentTabFromTrailingControl(tabID))):
+                guard state.contentTabRowInteractionSurface.isCloseEnabled else { return .none }
+                return .send(.closeContentTabRequestedWithSource(tabID, .contentTabBar))
 
             case .sidebar(.delegate(.closeSelectedContentTabs)):
                 guard state.contentTabRowInteractionSurface.isCloseEnabled else { return .none }
-                return .send(.request(.closeSelectedContentTabs))
+                return .send(.request(.contentTabAction(.closeSelected, source: .contextMenu)))
 
             case let .sidebar(.delegate(.pinContentTab(tabID))):
                 guard state.pendingSelectedContentTabClose == nil,
@@ -173,16 +195,22 @@ extension FileManagerWindowRoutingReducer {
                 guard state.canPinContentTab(tabID) else {
                     return cannotPinCollectionFeedbackEffect()
                 }
-                return .send(.contentTabs(.pin(tabID)))
+                return .send(.contentTabActionRequested(.pin(tabID), source: .contextMenu))
 
             case let .sidebar(.delegate(.unpinContentTab(tabID))):
                 guard state.pendingSelectedContentTabPinMutation == nil,
                       state.contentTabRowInteractionSurface.isCloseEnabled
                 else { return .none }
-                return .send(.contentTabs(.unpin(tabID)))
+                return .send(.contentTabActionRequested(.unpin(tabID), source: .contextMenu))
+
+            case let .sidebar(.delegate(.unpinContentTabFromTrailingControl(tabID))):
+                guard state.pendingSelectedContentTabPinMutation == nil,
+                      state.contentTabRowInteractionSurface.isCloseEnabled
+                else { return .none }
+                return .send(.contentTabActionRequested(.unpin(tabID), source: .contentTabBar))
 
             case let .sidebar(.delegate(.setSelectedContentTabsPinned(target))):
-                return .send(.requestSelectedContentTabPinMutation(target: target))
+                return .send(.requestSelectedContentTabPinMutation(target: target, source: .contextMenu))
 
             case let .sidebar(.delegate(.contentTabDomainTransitionRequested(request))):
                 return .send(.requestContentTabDomainTransition(request))
@@ -192,11 +220,11 @@ extension FileManagerWindowRoutingReducer {
                       state.pendingSelectedContentTabClose == nil,
                       state.contentTabs.tabs.count < ContentTabConstants.maxTabs
                 else { return .none }
-                return .send(.contentTabs(.open(.homeDefault)))
+                return .send(.request(.openNewContentTab(source: .contentTabBar)))
 
             case let .sidebar(.delegate(.duplicateContentTab(sourceID))):
                 guard state.pendingSelectedContentTabClose == nil else { return .none }
-                return .send(.request(.duplicateContentTab(sourceID)))
+                return .send(.request(.contentTabAction(.duplicate(sourceID), source: .contextMenu)))
 
             case let .tabContent(tabID, .delegate(.closeWindow)):
                 guard tabID == state.contentTabs.activeTabID else { return .none }
@@ -204,7 +232,7 @@ extension FileManagerWindowRoutingReducer {
 
             case .sidebar(.delegate(.duplicateSelectedContentTabs)):
                 guard state.pendingSelectedContentTabClose == nil else { return .none }
-                return .send(.request(.duplicateSelectedContentTabs))
+                return .send(.request(.contentTabAction(.duplicateSelected, source: .contextMenu)))
 
             case let .sidebar(.delegate(.toggleContentTabSelection(id))):
                 return .send(.contentTabs(.toggleSelection(id)))
@@ -222,11 +250,17 @@ extension FileManagerWindowRoutingReducer {
                 state.sidebar.topNavigationArrangementPresentation = nil
                 return .none
 
-            case let .sidebar(.delegate(.fileManagerTopNavigationReorderRequested(sourceID, anchorID, placement))):
+            case let .sidebar(.delegate(.fileManagerTopNavigationReorderRequested(
+                sourceID,
+                anchorID,
+                placement,
+                actionSource,
+            ))):
                 return sidebarReorderRequested(
                     sourceID: sourceID,
                     anchorID: anchorID,
                     placement: placement,
+                    actionSource: actionSource,
                     state: &state,
                 )
 
@@ -243,6 +277,9 @@ extension FileManagerWindowRoutingReducer {
                 return contentTabsSetCurrent(targetID: targetID, state: &state)
 
             case .contentTabs(.open):
+                return contentTabsOpen(state: &state)
+
+            case .contentTabActionRequested(.open, source: _):
                 return contentTabsOpen(state: &state)
 
             case let .contentTabs(.requestClose(tabID)):
@@ -385,8 +422,17 @@ extension FileManagerWindowRoutingReducer {
             case let .internal(.sidebarEntryDrop(.outcome(.entriesMutated(impact)))):
                 return handleEntriesMutated(impact, state: &state)
 
-            case let .internal(.sidebarEntryDrop(.lifecycle(.entryActionCompleted(record))))
-                where record.operationKind == .moveToTrash:
+            case let .internal(.sidebarEntryDrop(.lifecycle(.entryActionCompleted(record)))):
+                if let command = record.command {
+                    guard state.recordedSidebarEntryCommandIDs.insert(command.id).inserted else {
+                        return .none
+                    }
+                    if let metric = FileManagerProductMetricsProducer.entryTerminal(for: record) {
+                        productMetricsClient.record(metric)
+                    }
+                    state.pendingSidebarEntryCommands.removeValue(forKey: command.id)
+                }
+                guard record.operationKind == .moveToTrash else { return .none }
                 return handleAffectedDirectoryRefresh(
                     paths: parentDirectoryPaths(for: record.targets),
                     state: &state,
@@ -434,10 +480,12 @@ extension FileManagerWindowRoutingReducer {
                 )
 
             case let .closeContentTabRequested(tabID):
-                guard state.pendingSelectedContentTabClose == nil,
-                      state.pendingSelectedContentTabPinMutation == nil
-                else { return .none }
+                guard state.canStartSelectedContentTabClose else { return .none }
                 return handleCloseContentTabRequested(tabID: tabID, state: &state)
+
+            case let .closeContentTabRequestedWithSource(tabID, source):
+                guard state.canStartSelectedContentTabClose else { return .none }
+                return handleCloseContentTabRequested(tabID: tabID, state: &state, source: source)
 
             case let .contentTabCloseAlertResponse(choice):
                 guard state.pendingSelectedContentTabClose == nil else { return .none }

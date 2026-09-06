@@ -21,15 +21,18 @@ public enum FileManagerSidebarAction: CasePathable, Sendable {
         case duplicateContentTab(ContentTabID)
         case duplicateSelectedContentTabs
         case closeContentTab(ContentTabID)
+        case closeContentTabFromTrailingControl(ContentTabID)
         case closeSelectedContentTabs
         case pinContentTab(ContentTabID)
         case unpinContentTab(ContentTabID)
+        case unpinContentTabFromTrailingControl(ContentTabID)
         case setSelectedContentTabsPinned(target: SelectedContentTabPinMutationTargetState)
         case entryDropRequested(FileManagerSidebarEntryDropRequest)
         case fileManagerTopNavigationReorderRequested(
             sourceID: FileManagerTopNavigationItemID,
             anchorID: FileManagerTopNavigationItemID,
             placement: FileManagerTopNavigationReorderPlacement,
+            actionSource: ContentTabActionSource = .contentTabBar,
         )
         case contentTabDomainTransitionRequested(ContentTabDomainTransitionRequest)
         case moveContentTab(tabID: ContentTabID, targetWindowID: UUID)
@@ -68,9 +71,11 @@ public enum FileManagerSidebarAction: CasePathable, Sendable {
         case collapseContentTabSelectionToActive
         case dismissTopNavigationPresentation
         case closeContentTab(ContentTabID)
+        case closeContentTabFromTrailingControl(ContentTabID)
         case closeSelectedContentTabs
         case pinContentTab(ContentTabID)
         case unpinContentTab(ContentTabID)
+        case unpinContentTabFromTrailingControl(ContentTabID)
         case setSelectedContentTabsPinned(target: SelectedContentTabPinMutationTargetState)
         case openContentTab
         case duplicateContentTab(ContentTabID)
@@ -80,6 +85,7 @@ public enum FileManagerSidebarAction: CasePathable, Sendable {
             sourceID: FileManagerTopNavigationItemID,
             anchorID: FileManagerTopNavigationItemID,
             placement: FileManagerTopNavigationReorderPlacement,
+            actionSource: ContentTabActionSource,
         )
         case contentTabDomainTransitionRequested(ContentTabDomainTransitionRequest)
         case requestContentTabMove(ContentTabMoveRequest)

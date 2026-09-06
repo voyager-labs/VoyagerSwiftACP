@@ -127,6 +127,10 @@ mise run macos-build   # Dev build
 mise run macos-test    # Dev tests
 ```
 
+Swift 패키지를 변경할 때는 역의존 패키지의 전체 스위트도 1회 실행한다(예:
+EntryOperations → EntryViewLayout, FileManager). PR CI는 harness 검증만 수행하므로
+역의존 회귀는 자동으로 보이지 않는다(VOY-736 학습).
+
 Swift lint/format:
 
 ```bash

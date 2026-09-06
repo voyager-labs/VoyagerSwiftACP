@@ -37,10 +37,11 @@ struct EntryListHierarchyReducer {
                     state: &state,
                 )
 
-            case let .coarseHierarchyInvalidated(removedPrefixes):
+            case let .coarseHierarchyInvalidated(removedPrefixes, retainsCompleteSnapshots):
                 return invalidateHierarchy(
                     affectedPaths: [],
                     removedPrefixes: removedPrefixes,
+                    retainsCompleteSnapshots: retainsCompleteSnapshots,
                     reloadCachedFolders: true,
                     state: &state,
                 )
@@ -74,17 +75,17 @@ struct EntryListHierarchyReducer {
                     state.hierarchy.nodesByID[folder.id] = FolderNodeState()
                 }
                 // visible expanded intent 중 reload가 필요한 folder를 restart한다.
+                // startLoad와 같은 retained-snapshot 초기화 경로: root-first 응답 순서에서
+                // 완전 child snapshot을 비우지 않는다(중간 blank/flicker 방지).
                 var effects: [Effect<Action>] = []
                 for folder in rootFolders {
                     guard let nodeState = state.hierarchy.nodesByID[folder.id],
                           nodeState.expansionIntent,
                           nodeState.loadPhase != .loaded
                     else { continue }
-                    var refreshedNode = nodeState
-                    refreshedNode.generation &+= 1
-                    refreshedNode.loadPhase = .loadingCore
-                    refreshedNode.folder = FolderSnapshot()
-                    state.hierarchy.nodesByID[folder.id] = refreshedNode
+                    // startLoad와 동일하게 세대 재시작 전 이전 세대의 deferred staging을 폐기한다.
+                    state.hierarchy.discardDeferredFolderReplacement(folderID: folder.id)
+                    state.hierarchy.nodesByID[folder.id] = reloadedNodeState(for: nodeState)
                     effects.append(.send(.delegate(.expandRequested(folder.id))))
                 }
                 state.reconcileSelectionWithVisibleEntries()
@@ -105,6 +106,40 @@ struct EntryListHierarchyReducer {
                     renameEffects.append(.send(.delegate(.selectionChanged)))
                 }
                 return .merge(effects + renameEffects)
+
+            case let .rootSnapshotReconciled(rootContextGeneration, rootFolders):
+                guard rootContextGeneration == state.hierarchy.rootContextGeneration else { return .none }
+                let previousSelectedIds = state.selectedIds
+                let rootFolderIDs = Set(rootFolders.map(\.id))
+                let removedRootIDs = state.hierarchy.nodesByID.keys.filter { id in
+                    isImmediateRootFolder(id, rootPath: state.hierarchy.rootPath)
+                        && !rootFolderIDs.contains(id)
+                }
+                var idsToRemove = Set(removedRootIDs)
+                for id in removedRootIDs {
+                    let descendants = state.hierarchy.nodesByID.keys.filter {
+                        isDescendantViaParentID($0, of: id, in: state.hierarchy.nodesByID)
+                    }
+                    idsToRemove.formUnion(descendants)
+                }
+                for id in idsToRemove {
+                    state.hierarchy.nodesByID[id] = nil
+                }
+                for folder in rootFolders where state.hierarchy.nodesByID[folder.id] == nil {
+                    state.hierarchy.nodesByID[folder.id] = FolderNodeState()
+                }
+                state.reconcileSelectionWithVisibleEntries()
+                var effects: [Effect<Action>] = []
+                if let renamingID = state.entryOperations.renamingItemId,
+                   previousSelectedIds.contains(renamingID),
+                   !state.selectedIds.contains(renamingID)
+                {
+                    effects.append(.send(.delegate(.renameCanceled)))
+                }
+                if previousSelectedIds != state.selectedIds {
+                    effects.append(.send(.delegate(.selectionChanged)))
+                }
+                return .merge(effects)
 
             case .coarseHierarchyRefreshRequested:
                 return reloadFoldersForPresentationChange(state: &state)
@@ -200,6 +235,88 @@ struct EntryListHierarchyReducer {
                 let previousRevision = state.outlineProjectionRevision
                 let previousSelectedIds = state.selectedIds
                 let wasCoreFinished = nodeState.folder.coreFinished
+                if case let .event(.coreBatch(items, batchIndex)) = response,
+                   !nodeState.folder.hasAppliedContentBatch,
+                   !nodeState.folder.children.isEmpty,
+                   var replacement = state.hierarchy.deferredFolderReplacements[folderID]
+                {
+                    guard batchIndex == nodeState.folder.expectedBatchIndex else { return .none }
+                    let standardizedItems = items.map { item in
+                        (item, URL(fileURLWithPath: item.id).standardizedFileURL.path)
+                    }
+                    let standardizedDeferred = URL(fileURLWithPath: replacement.untilEntryID)
+                        .standardizedFileURL.path
+                    replacement.stagedChildren.append(contentsOf: items)
+                    nodeState.folder.expectedBatchIndex &+= 1
+                    if replacement.holdsUntilMigration {
+                        state.hierarchy.deferredFolderReplacements[folderID] = replacement
+                        state.hierarchy.nodesByID[folderID] = nodeState
+                        return .none
+                    }
+                    if !standardizedItems.contains(where: { $0.1 == standardizedDeferred }) {
+                        state.hierarchy.deferredFolderReplacements[folderID] = replacement
+                        state.hierarchy.nodesByID[folderID] = nodeState
+                        return .none
+                    }
+                    state.hierarchy.deferredFolderReplacements[folderID] = nil
+                    nodeState.folder.children = replacement.stagedChildren
+                    nodeState.folder.hasAppliedContentBatch = true
+                    nodeState.folder.retainsPreviousGenerationChildren = false
+                    state.hierarchy.nodesByID[folderID] = nodeState
+                    return .none
+                }
+                if case let .event(.coreFinished(batchCount)) = response,
+                   let replacement = state.hierarchy.deferredFolderReplacements[folderID]
+                {
+                    guard batchCount == nodeState.folder.expectedBatchIndex else { return .none }
+                    if replacement.holdsUntilMigration {
+                        if replacement.migrationCompleted {
+                            nodeState.folder.children = replacement.stagedChildren
+                            nodeState.folder.hasAppliedContentBatch = !replacement.stagedChildren.isEmpty
+                            nodeState.folder.retainsPreviousGenerationChildren = false
+                            nodeState.folder.coreFinished = true
+                            nodeState.loadPhase = .enriching
+                            state.hierarchy.deferredFolderReplacements[folderID] = nil
+                            state.hierarchy.nodesByID[folderID] = nodeState
+                            state.hierarchy.reconcileNodesAfterMigrationCommit(folderID: folderID)
+                            state.reconcileSelectionWithVisibleEntries()
+                            if state.outlineProjectionRevision == previousRevision {
+                                state.advanceOutlineProjectionRevision()
+                            }
+                            guard previousSelectedIds != state.selectedIds else { return .none }
+                            return .send(.delegate(.selectionChanged))
+                        } else {
+                            // 보존(소스) 폴더: destination migration까지 retained projection을 유지한다.
+                            // coreFinished는 terminal만 기록하고 children·staging을 건드리지 않는다.
+                            // 실제 staging 커밋은 migrateSelection이 담당한다.
+                            nodeState.folder.coreFinished = true
+                            nodeState.loadPhase = .enriching
+                            state.hierarchy.nodesByID[folderID] = nodeState
+                        }
+                        return .none
+                    }
+                    nodeState.folder.children = replacement.stagedChildren
+                    nodeState.folder.hasAppliedContentBatch = !replacement.stagedChildren.isEmpty
+                    nodeState.folder.retainsPreviousGenerationChildren = false
+                    nodeState.folder.coreFinished = true
+                    state.hierarchy.deferredFolderReplacements[folderID] = nil
+                    state.hierarchy.nodesByID[folderID] = nodeState
+                    state.hierarchy.reconcileNodesAfterMigrationCommit(folderID: folderID)
+                    state.reconcileSelectionWithVisibleEntries()
+                    if state.outlineProjectionRevision == previousRevision {
+                        state.advanceOutlineProjectionRevision()
+                    }
+                    guard previousSelectedIds != state.selectedIds else { return .none }
+                    return .send(.delegate(.selectionChanged))
+                }
+                if case let .event(.metadataPatches(patches)) = response,
+                   var replacement = state.hierarchy.deferredFolderReplacements[folderID]
+                {
+                    // migration까지 보류 중인 staging에도 같은 patch를 적용해
+                    // 커밋 시 metadata가 core 값으로 되돌아가지 않게 한다.
+                    replacement.stagedChildren = applyMetadataPatches(patches, to: replacement.stagedChildren)
+                    state.hierarchy.deferredFolderReplacements[folderID] = replacement
+                }
                 guard apply(response: response, to: &nodeState.folder) else { return .none }
                 // Update load phase based on response type
                 switch response {

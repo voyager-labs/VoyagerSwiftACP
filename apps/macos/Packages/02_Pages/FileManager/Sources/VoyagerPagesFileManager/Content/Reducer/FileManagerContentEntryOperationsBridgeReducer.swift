@@ -11,8 +11,8 @@ struct FileManagerContentEntryOperationsBridgeReducer {
     typealias State = FileManagerContentState
     typealias Action = FileManagerContentAction
 
-    @Dependency(\.metricsClient)
-    var metricsClient
+    @Dependency(\.fileManagerProductMetricsClient)
+    var productMetricsClient
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
@@ -49,12 +49,13 @@ struct FileManagerContentEntryOperationsBridgeReducer {
         state: inout State,
     ) -> Effect<Action>? {
         switch delegateAction {
-        case let .executeCommand(command):
+        case let .executeCommand(command, source):
             guard let entryCommand = entryOperationsCommand(from: command, currentPath: state.navigation.currentPath)
             else { return .none }
             let entryOperationsAction = EntryOperationsAction.routing(.executeCommand(
                 command: entryCommand,
                 context: makeEntryOperationsCommandContext(command: entryCommand, state: state),
+                metadata: makeCommandMetadata(command: entryCommand, source: source),
             ))
             return sendEntryOperations(entryOperationsAction)
 
@@ -67,26 +68,36 @@ struct FileManagerContentEntryOperationsBridgeReducer {
                     displayItems: [entry],
                     currentPath: state.navigation.currentPath,
                 ),
+                metadata: makeCommandMetadata(command: command, source: .fileManagerContent),
             )))
 
-        case let .openWithApp(bundleID):
+        case let .openWithApp(bundleID, source):
             let command = EntryOperationsCommand.navigation(.openWithSelectedItem(
                 bundleID: bundleID, shouldSetAsDefault: false,
             ))
             return sendEntryOperations(.routing(.executeCommand(
                 command: command,
                 context: makeEntryOperationsCommandContext(command: command, state: state),
+                metadata: makeCommandMetadata(command: command, source: source),
             )))
 
         case let .preloadOpenWithApplications(entries):
             return sendEntryOperations(.openWith(.loadCommonApplicationsForFiles(files: entries)))
 
         case let .dropItems(sourcePaths, destinationPath, isOptionDrag):
-            return sendEntryOperations(.routing(.dropItems(
-                sourcePaths: sourcePaths,
-                destinationPath: destinationPath,
-                isOptionDrag: isOptionDrag,
-            )))
+            let metadata = EntryCommandMetadata(
+                id: productMetricsClient.makeOperationID(),
+                interaction: isOptionDrag ? .copyEntries : .moveEntries,
+                source: .dragAndDrop,
+            )
+            return sendEntryOperations(.acceptedCommand(
+                metadata: metadata,
+                action: .routing(.dropItems(
+                    sourcePaths: sourcePaths,
+                    destinationPath: destinationPath,
+                    isOptionDrag: isOptionDrag,
+                )),
+            ))
 
         default:
             return handleMutationIntentDelegate(delegateAction, state: &state)
@@ -98,30 +109,51 @@ struct FileManagerContentEntryOperationsBridgeReducer {
         state: inout State,
     ) -> Effect<Action>? {
         switch delegateAction {
-        case let .startRename(item, text):
-            return sendEntryOperations(.edit(.startRename(item: item, text: text)))
+        case let .startRename(item, text, source):
+            return sendEntryOperations(.edit(.startRename(item: item, text: text, source: source)))
 
         case let .renameCommitted(_, newName):
+            let metadata = EntryCommandMetadata(
+                id: productMetricsClient.makeOperationID(),
+                interaction: .renameEntry,
+                source: state.entryViewLayout.entryOperations.renamingCommandSource ?? .fileManagerContent,
+            )
             return .concatenate(
                 sendEntryOperations(.edit(.updateRenamingText(newName))),
-                sendEntryOperations(.edit(.commitRename)),
+                sendEntryOperations(.acceptedCommand(metadata: metadata, action: .edit(.commitRename))),
             )
 
         case .renameCanceled:
             return sendEntryOperations(.edit(.cancelRename))
 
-        case let .tagMutation(tagName, mode):
+        case let .tagMutation(tagName, mode, source):
             let paths = selectedItemPaths(in: state)
             let featureMode: TagMutationRequest.Mode = mode == .add ? .add : .remove
-            return sendEntryOperations(.tagging(.requestTagMutation(
-                request: .init(mode: featureMode, tagName: tagName, paths: paths),
-            )))
+            let metadata = EntryCommandMetadata(
+                id: productMetricsClient.makeOperationID(),
+                interaction: .editEntryTags,
+                source: source,
+            )
+            return sendEntryOperations(.acceptedCommand(
+                metadata: metadata,
+                action: .tagging(.requestTagMutation(
+                    request: .init(mode: featureMode, tagName: tagName, paths: paths),
+                )),
+            ))
 
-        case let .toggleTag(tagName):
+        case let .toggleTag(tagName, source):
             let paths = selectedItemPaths(in: state)
-            return sendEntryOperations(.tagging(.requestTagMutation(
-                request: .init(mode: .toggle, tagName: tagName, paths: paths),
-            )))
+            let metadata = EntryCommandMetadata(
+                id: productMetricsClient.makeOperationID(),
+                interaction: .editEntryTags,
+                source: source,
+            )
+            return sendEntryOperations(.acceptedCommand(
+                metadata: metadata,
+                action: .tagging(.requestTagMutation(
+                    request: .init(mode: .toggle, tagName: tagName, paths: paths),
+                )),
+            ))
 
         default:
             return nil
@@ -144,11 +176,20 @@ struct FileManagerContentEntryOperationsBridgeReducer {
 
         case .selectionChanged:
             let currentContext = FileManagerAiChatContextAdapter.makeCurrentContextSnapshot(content: state)
-            return .concatenate(
+            var effects: [Effect<Action>] = [
                 .send(.entryViewLayout(.entryOperations(.lifecycle(.syncSelectedEntryIDs(state.entryViewLayout
                         .selectedIds))))),
                 .send(.delegate(.currentContextChanged(currentContext))),
-            )
+            ]
+            let orderedSelected = orderedSelectedEntries(in: state)
+            if !orderedSelected.isEmpty {
+                let selectedIndex = orderedSelected.firstIndex { $0.id == state.entryViewLayout.lastSelectedId } ?? 0
+                effects.append(.send(.entryViewLayout(.entryOperations(.open(.syncQuickLookSelection(
+                    paths: orderedSelected.map(\.fullPath),
+                    selectedIndex: selectedIndex,
+                ))))))
+            }
+            return .concatenate(effects)
 
         case let .sortChanged(sortKey, sortOrder):
             let featureSortKey = sortKey.sharedSortKey
@@ -275,14 +316,117 @@ struct FileManagerContentEntryOperationsBridgeReducer {
             return nil
         }
 
-        FileManagerContentFeature.logEntryActionMetricIfNeeded(for: entryOperationsAction, metricsClient: metricsClient)
+        handleProductMetrics(entryOperationsAction, state: &state)
+
         return FileManagerContentEntryOpsCoordinator.handleEntryOperationsAction(
             entryOperationsAction,
             state: &state,
         )
     }
 
+    private func handleProductMetrics(
+        _ action: EntryOperationsAction,
+        state: inout State,
+    ) {
+        if recordStreamingBrowsingTerminalIfAccepted(action, state: &state) {
+            return
+        }
+
+        if case let .loading(.itemsLoaded(generation, entries)) = action,
+           generation == state.entryViewLayout.entryOperations.loadingContext.generation,
+           let operationID = state.productBrowsingOperationID,
+           let identity = state.productBrowsingIdentity,
+           let source = state.productBrowsingSource,
+           let content = state.productBrowsingContent,
+           let metric = FileManagerProductMetricsProducer.browsingTerminal(
+               operationID: operationID,
+               content: content,
+               identity: identity,
+               source: source,
+               entryCount: entries.count,
+               failure: nil,
+           )
+        {
+            productMetricsClient.record(metric)
+            state.productBrowsingOperationID = nil
+            state.productBrowsingIdentity = nil
+            state.productBrowsingSource = nil
+            state.productBrowsingContent = nil
+        } else if case let .loading(.computerItemsLoadFailed(generation)) = action,
+                  generation == state.entryViewLayout.entryOperations.loadingContext.generation,
+                  let operationID = state.productBrowsingOperationID,
+                  let identity = state.productBrowsingIdentity,
+                  let source = state.productBrowsingSource,
+                  let content = state.productBrowsingContent,
+                  let metric = FileManagerProductMetricsProducer.browsingTerminal(
+                      operationID: operationID,
+                      content: content,
+                      identity: identity,
+                      source: source,
+                      entryCount: nil,
+                      failure: .unavailable,
+                  )
+        {
+            productMetricsClient.record(metric)
+            state.productBrowsingOperationID = nil
+            state.productBrowsingIdentity = nil
+            state.productBrowsingSource = nil
+            state.productBrowsingContent = nil
+        }
+    }
+
     // MARK: - Helpers
+
+    /// 실제 로딩 스트림 터미널(streamFinished/streamFailed)을 자식이 수락한 경우에만
+    /// browsing correlation을 소비해 typed terminal을 한 번 기록한다.
+    /// generation 불일치(stale) 터미널은 상관을 유지한 채 무시한다.
+    private func recordStreamingBrowsingTerminalIfAccepted(
+        _ action: EntryOperationsAction,
+        state: inout State,
+    ) -> Bool {
+        guard case let .loading(loadingAction) = action else {
+            return false
+        }
+        let context = state.entryViewLayout.entryOperations.loadingContext
+        let failure: ContentBrowsingResult?
+        let entryCount: Int?
+        switch loadingAction {
+        case let .streamFinished(generation):
+            guard generation == context.generation, context.streamTerminal else { return false }
+            failure = nil
+            entryCount = context.items.count
+
+        case let .streamFailed(generation, entryFailure):
+            guard generation == context.generation, context.streamTerminal else { return false }
+            failure = switch entryFailure {
+            case .permissionDenied: .failure
+            case .unavailable: .unavailable
+            }
+            entryCount = nil
+
+        default:
+            return false
+        }
+        guard let operationID = state.productBrowsingOperationID,
+              let identity = state.productBrowsingIdentity,
+              let source = state.productBrowsingSource,
+              let content = state.productBrowsingContent,
+              let metric = FileManagerProductMetricsProducer.browsingTerminal(
+                  operationID: operationID,
+                  content: content,
+                  identity: identity,
+                  source: source,
+                  entryCount: entryCount,
+                  failure: failure,
+              )
+        else { return false }
+        productMetricsClient.record(metric)
+        state.productBrowsingOperationID = nil
+        state.productBrowsingIdentity = nil
+        state.productBrowsingSource = nil
+        state.productBrowsingContent = nil
+        return true
+    }
 
     private func sendEntryOperations(_ action: EntryOperationsAction) -> Effect<Action> {
         .send(.entryViewLayout(.entryOperations(action)))
@@ -305,6 +449,17 @@ struct FileManagerContentEntryOperationsBridgeReducer {
             selectedIds: state.entryViewLayout.selectedIds,
             displayItems: displayItems,
             currentPath: state.navigation.currentPath,
+        )
+    }
+
+    private func makeCommandMetadata(
+        command: EntryOperationsCommand,
+        source: EntryCommandSource,
+    ) -> EntryCommandMetadata {
+        EntryCommandMetadata(
+            id: productMetricsClient.makeOperationID(),
+            interaction: command.interactionIdentity,
+            source: source,
         )
     }
 
@@ -347,6 +502,7 @@ struct FileManagerContentEntryOperationsBridgeReducer {
 
     private func mutationCommand(action: String) -> EntryOperationsCommand? {
         switch action {
+        case "createNewFolder": .mutation(.createNewFolder)
         case "emptyTrash": .mutation(.emptyTrash)
         case "deleteSelectedItemsImmediately": .mutation(.deleteSelectedItemsImmediately)
         case "moveSelectedItemsToTrash": .mutation(.moveSelectedItemsToTrash)
@@ -359,12 +515,15 @@ struct FileManagerContentEntryOperationsBridgeReducer {
     }
 
     private func selectedItemPaths(in state: State) -> [String] {
+        orderedSelectedEntries(in: state).map(\.fullPath)
+    }
+
+    private func orderedSelectedEntries(in state: State) -> [EntryModel] {
         let displayItems = state.entryViewLayout.hierarchyProjectionIsActive
             ? state.entryViewLayout.visibleSelectableEntries(isNormalDirectoryPage: true)
             : state.entryViewLayout.entries
         return displayItems
             .filter { state.entryViewLayout.selectedIds.contains($0.id) }
-            .map(\.fullPath)
     }
 
     private func lexicalAncestorPaths(for id: EntryModel.ID, state: State) -> [String] {

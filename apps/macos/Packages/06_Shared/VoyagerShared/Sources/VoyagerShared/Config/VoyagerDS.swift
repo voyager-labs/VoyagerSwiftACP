@@ -5,6 +5,7 @@ public enum VoyagerDS {
     public enum SurfaceMaterialRole {
         case windowShell
         case mainContentBackground
+        case listHeaderSurface
 
         public var material: NSVisualEffectView.Material {
             appKitConfiguration.material
@@ -33,6 +34,13 @@ public enum VoyagerDS {
                     blendingMode: .behindWindow,
                     state: .followsWindowActiveState,
                     opacity: 0.8,
+                )
+            case .listHeaderSurface:
+                AppKitMaterialConfiguration(
+                    material: .sidebar,
+                    blendingMode: .behindWindow,
+                    state: .followsWindowActiveState,
+                    opacity: 1.0,
                 )
             }
         }

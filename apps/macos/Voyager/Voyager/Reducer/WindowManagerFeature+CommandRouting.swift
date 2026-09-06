@@ -32,49 +32,198 @@ extension WindowManagerFeature {
         guard let application = ExternalOpenPlacementApplication.apply(
             plan,
             reservationsByItemID: reservationsByItemID,
-            to: state.windows,
-        ) else {
-            state.authorizedExternalOpenBatchID = nil
-            return .send(.delegate(.externalOpenApplyCompleted(.init(
-                batchID: plan.batchID,
-                result: .failure(.validationFailed),
-            ))))
-        }
+            to: state,
+        ) else { return recoverExternalOpenApplicationFailure(plan, state: &state) }
 
-        state.windows = application.windows
+        let transactionID = application.newWindowIDs.isEmpty ? nil : uuid()
+        state.externalOpenRegistrationTransactionID = transactionID
+        commitExternalOpenApplication(
+            application,
+            plan: plan,
+            includingExistingWindows: application.newWindowIDs.isEmpty,
+            state: &state,
+        )
+
+        var effects = externalOpenCommitEffects(
+            application,
+            state: state,
+            includingExistingWindows: application.newWindowIDs.isEmpty,
+        )
+        if let effect = cancelDefaultWindowBootstrapIfNeeded(state: &state) { effects.append(effect) }
+        if application.newWindowIDs.isEmpty {
+            effects.append(.send(.delegate(.externalOpenApplyCompleted(.init(
+                batchID: plan.batchID,
+                result: .success(plan),
+            )))))
+        } else {
+            guard let transactionID else { return .none }
+            effects.append(externalOpenWindowRegistrationEffect(
+                plan: plan,
+                windowIDs: application.newWindowIDs,
+                application: application,
+                transactionID: transactionID,
+            ))
+        }
+        return .concatenate(effects)
+    }
+
+    private func recoverExternalOpenApplicationFailure(
+        _ plan: ExternalOpenPlacementPlan,
+        state: inout State,
+    ) -> Effect<Action> {
+        if let request = plan.request?.retryRequest,
+           case let .success(replacementPlan) = ExternalOpenPlacementPlanner.make(
+               request,
+               state: state,
+               generateUUID: uuid(),
+           )
+        {
+            state.externalOpenRegistrationTransactionID = nil
+            return .send(.placement(.apply(
+                plan: replacementPlan,
+                reservationsByItemID: replacementPlan.reservationsByItemID,
+            )))
+        }
+        state.authorizedExternalOpenBatchID = nil
+        state.externalOpenRegistrationTransactionID = nil
+        return .send(.delegate(.externalOpenApplyCompleted(.init(
+            batchID: plan.batchID,
+            result: .failure(.validationFailed),
+        ))))
+    }
+
+    private func cancelDefaultWindowBootstrapIfNeeded(state: inout State) -> Effect<Action>? {
+        guard state.defaultWindowBootstrapWindowIDs.isEmpty,
+              state.defaultWindowBootstrapRequestID != nil
+        else { return nil }
+        state.defaultWindowBootstrapRequestID = nil
+        return .cancel(id: CancelID.defaultWindowBootstrap)
+    }
+
+    private func commitExternalOpenApplication(
+        _ application: ExternalOpenPlacementApplication.Result,
+        plan: ExternalOpenPlacementPlan,
+        includingExistingWindows: Bool,
+        state: inout State,
+    ) {
+        if includingExistingWindows {
+            state.windows = application.windows
+        } else {
+            for windowID in application.newWindowIDs {
+                if let window = application.windows[id: windowID] {
+                    state.windows[id: windowID] = window
+                }
+            }
+        }
         state.refreshContentTabMoveTargets()
-        retainExternalOpenPlacementOwnership(plan.batchID, application.newWindowIDs, state: &state)
+        retainExternalOpenPlacementOwnership(
+            plan.batchID,
+            application.newWindowIDs,
+            state: &state,
+        )
         for windowID in application.newWindowIDs {
             state.externalWindowBatchIDs[windowID] = plan.batchID
         }
         for windowID in plan.windows.map(\.windowID) {
             state.defaultWindowBootstrapWindowIDs.remove(windowID)
         }
+    }
 
-        var effects = externalOpenActivationEffects(application.existingWindowActivations)
-        effects.append(contentsOf: application.newWindowIDs.flatMap { windowID in
-            [
-                appPreferencesEffect(for: windowID, preferences: state.appPreferences),
-                Effect.run { [fileManagerWindowClient] _ in
-                    await fileManagerWindowClient.open(windowID)
-                },
-                Effect.send(.windows(.element(
-                    id: windowID,
+    func handleExternalOpenApplyCompletion(
+        _ completion: ExternalOpenPlacementApplicationCompletion,
+        state: inout State,
+    ) -> Effect<Action> {
+        switch completion.result {
+        case .failure:
+            cancelExternalOpenPlacement(batchID: completion.batchID, state: &state)
+        case let .success(plan):
+            .merge(plan.windows.compactMap { window in
+                guard window.isNewWindow else { return nil }
+                return .send(.windows(.element(
+                    id: window.windowID,
                     action: .window(.resyncActiveCollectionNavigation),
-                ))),
-            ]
-        })
-        if state.defaultWindowBootstrapWindowIDs.isEmpty,
-           state.defaultWindowBootstrapRequestID != nil
-        {
-            state.defaultWindowBootstrapRequestID = nil
-            effects.append(.cancel(id: CancelID.defaultWindowBootstrap))
+                )))
+            })
         }
+    }
+
+    func commitExternalOpenPlacement(
+        plan: ExternalOpenPlacementPlan,
+        application: ExternalOpenPlacementApplication.Result,
+        transactionID: UUID,
+        state: inout State,
+    ) -> Effect<Action> {
+        guard state.externalOpenRegistrationTransactionID == transactionID,
+              application.newWindowIDs.allSatisfy({ windowID in
+                  state.windows[id: windowID] != nil
+                      && state.externalWindowBatchIDs[windowID] == plan.batchID
+                      && !state.closingWindowIDs.contains(windowID)
+                      && !state.pendingWindowOpenIDs.contains(windowID)
+              }),
+              application.existingWindowPreconditions.allSatisfy({ windowID, precondition in
+                  state.windows[id: windowID]?.window == precondition
+              })
+        else {
+            return .concatenate(
+                cancelExternalOpenPlacement(batchID: plan.batchID, state: &state),
+                .send(.delegate(.externalOpenApplyCompleted(.init(
+                    batchID: plan.batchID,
+                    result: .failure(.validationFailed),
+                )))),
+            )
+        }
+        for activation in application.existingWindowActivations {
+            if let projectedWindow = application.windows[id: activation.windowID]?.window {
+                state.windows[id: activation.windowID]?.window = projectedWindow
+            }
+        }
+        state.externalOpenRegistrationTransactionID = nil
+        state.refreshContentTabMoveTargets()
+        var effects = externalOpenCommitEffects(application, state: state, includingExistingWindows: true)
         effects.append(.send(.delegate(.externalOpenApplyCompleted(.init(
             batchID: plan.batchID,
             result: .success(plan),
         )))))
         return .concatenate(effects)
+    }
+
+    private func externalOpenCommitEffects(
+        _ application: ExternalOpenPlacementApplication.Result,
+        state: State,
+        includingExistingWindows: Bool,
+    ) -> [Effect<Action>] {
+        (includingExistingWindows ? externalOpenActivationEffects(application.existingWindowActivations) : [])
+            + application.newWindowIDs.map { windowID in
+                appPreferencesEffect(for: windowID, preferences: state.appPreferences)
+            }
+    }
+
+    private func externalOpenWindowRegistrationEffect(
+        plan: ExternalOpenPlacementPlan,
+        windowIDs: [State.WindowID],
+        application: ExternalOpenPlacementApplication.Result,
+        transactionID: UUID,
+    ) -> Effect<Action> {
+        .run { [fileManagerWindowClient] send in
+            for windowID in windowIDs {
+                guard let isRegistered = await Self.openAndVerifyWindowRegistration(
+                    windowID,
+                    client: fileManagerWindowClient,
+                ) else { return }
+                guard isRegistered else {
+                    await send(.placement(.registrationFailed(
+                        batchID: plan.batchID,
+                        transactionID: transactionID,
+                    )))
+                    return
+                }
+            }
+            await send(.placement(.commit(
+                plan: plan,
+                application: application,
+                transactionID: transactionID,
+            )))
+        }
     }
 
     func routeFindCommand(_ state: State) -> Effect<Action> {
@@ -88,11 +237,31 @@ extension WindowManagerFeature {
         _ state: State,
         _ command: FileManagerWindowAction.WindowCommand,
     ) -> Effect<Action> {
-        guard let id = state.focusedWindowID,
-              !state.closingWindowIDs.contains(id),
+        guard let id = state.focusedWindowID else { return .none }
+        return sendCommandToWindow(state, id: id, command: command)
+    }
+
+    func sendCommandToWindow(
+        _ state: State,
+        id: WindowManagerState.WindowID,
+        command: FileManagerWindowAction.WindowCommand,
+    ) -> Effect<Action> {
+        guard !state.closingWindowIDs.contains(id),
               state.windows[id: id] != nil
         else { return .none }
         return .send(.windows(.element(id: id, action: .window(.request(command)))))
+    }
+
+    func sendCommandToWindowIfPresentationMatches(
+        _ state: State,
+        id: WindowManagerState.WindowID,
+        source: FileManagerContentTabSwitcherPresentation.Source,
+        command: FileManagerWindowAction.WindowCommand,
+    ) -> Effect<Action> {
+        guard state.windows[id: id]?.window.contentTabSwitcherPresentation?.source == source else {
+            return .none
+        }
+        return sendCommandToWindow(state, id: id, command: command)
     }
 
     func sendContentTabCommandToFocusedWindow(
@@ -122,7 +291,7 @@ extension WindowManagerFeature {
                 : .pinned
             return .send(.windows(.element(
                 id: id,
-                action: .window(.requestSelectedContentTabPinMutation(target: target)),
+                action: .window(.requestSelectedContentTabPinMutation(target: target, source: .menuCommand)),
             )))
         }
 
@@ -143,10 +312,10 @@ extension WindowManagerFeature {
         let command: FileManagerWindowAction.WindowCommand
         if projection.selectedContentTabCount > 1 {
             guard projection.canCloseSelectedContentTabs else { return .none }
-            command = .closeSelectedContentTabs
+            command = .contentTabAction(.closeSelected, source: .menuCommand)
         } else {
             guard projection.canCloseActiveContentTab else { return .none }
-            command = .closeActiveContentTab
+            command = .contentTabAction(.closeActive, source: .menuCommand)
         }
         return .send(.windows(.element(id: id, action: .window(.request(command)))))
     }
@@ -161,10 +330,10 @@ extension WindowManagerFeature {
         let command: FileManagerWindowAction.WindowCommand
         if projection.selectedContentTabCount > 1 {
             guard projection.canDuplicateSelectedContentTabs else { return .none }
-            command = .duplicateSelectedContentTabs
+            command = .contentTabAction(.duplicateSelected, source: .menuCommand)
         } else {
             guard projection.canDuplicateActiveContentTab else { return .none }
-            command = .duplicateActiveContentTab
+            command = .contentTabAction(.duplicateActive, source: .menuCommand)
         }
         return .send(.windows(.element(id: id, action: .window(.request(command)))))
     }
@@ -256,7 +425,11 @@ extension WindowManagerFeature {
         }
     }
 
-    func makeWindowSession(path: String?, selectEntryID: String? = nil) -> WindowSessionState {
+    func makeWindowSession(
+        path: String?,
+        startPage: StartPage? = nil,
+        selectEntryID: String? = nil,
+    ) -> WindowSessionState {
         let id = uuid()
 
         if let path {
@@ -268,15 +441,53 @@ extension WindowManagerFeature {
             return .init(id: id, window: windowState)
         }
 
-        // Default window: Home shell immediately, no synchronous IO.
-        // Pinned store restore/seed/validation runs asynchronously via
-        // runDefaultWindowBootstrapEffect() attached in openWindowSession.
+        let initialPath: String? = switch startPage ?? .home {
+        case .home:
+            nil
+        case let .directory(path):
+            path
+        }
         let windowState = FileManagerWindowFeature.State.makeInitial(
-            path: nil,
+            path: initialPath,
             selectEntryID: selectEntryID,
             windowID: id,
         )
         return .init(id: id, window: windowState)
+    }
+
+    /// 시작 페이지 디렉터리 프로브(stat/resourceValues)를 비동기 effect로 실행한다.
+    /// request-time snapshot 계약: 액션 시작 시 캡처한 snapshot만 사용하고,
+    /// 완료 후 preference를 재조회하지 않는다.
+    func resolveDefaultStartPageEffect(
+        resolutionID: UUID,
+        snapshot: StartPage,
+        makeAction: @escaping @Sendable (StartPage) -> Action,
+    ) -> Effect<Action> {
+        let availabilityClient = startPageAvailabilityClient
+        return .run { send in
+            let (resolutions, continuation) = AsyncStream<StartPageResolution>.makeStream()
+            DispatchQueue.global(qos: .userInitiated).async {
+                let resolution = withDependencies {
+                    $0.startPageAvailabilityClient = availabilityClient
+                } operation: {
+                    StartPageResolver.resolve(snapshot)
+                }
+                continuation.yield(resolution)
+                continuation.finish()
+            }
+            let resolution = await withTaskCancellationHandler(
+                operation: { () async -> StartPageResolution? in
+                    for await resolution in resolutions {
+                        return resolution
+                    }
+                    return nil
+                },
+                onCancel: { continuation.finish() },
+            )
+            guard let resolution, !Task.isCancelled else { return }
+            await send(makeAction(resolution.effectiveStartPage))
+        }
+        .cancellable(id: CancelID.defaultStartPageResolution(resolutionID))
     }
 }
 
@@ -284,11 +495,13 @@ extension WindowManagerFeature {
     func handleLifecycleAction(_ action: Action, state: inout State) -> Effect<Action>? {
         switch action {
         case .lifecycle(.openInitialWindowIfNeeded):
-            guard state.windows.ids.allSatisfy(state.closingWindowIDs.contains) else { return .none }
+            guard state.windows.ids.allSatisfy(state.closingWindowIDs.contains),
+                  state.pendingDefaultStartPageResolutions.isEmpty
+            else { return .none }
             return .send(.file(.newWindow(path: nil)))
 
         case let .lifecycle(.reopenWindowIfNeeded(hasVisibleWindows: flag)):
-            guard !flag else { return .none }
+            guard !flag, state.pendingDefaultStartPageResolutions.isEmpty else { return .none }
 
             guard let reopenWindowID = state.focusedWindowID.flatMap({ id in
                 isWindowReady(id, state: state) ? id : nil

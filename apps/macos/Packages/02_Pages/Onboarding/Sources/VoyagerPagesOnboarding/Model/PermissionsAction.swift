@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import Foundation
 import VoyagerEntitiesAppPreferences
 
 @CasePathable
@@ -13,7 +14,7 @@ enum PermissionsAction: CasePathable {
     case requestHelperFolderAccessTapped
     case helperFolderAccessResponse(FolderAccessResult)
     case openSystemSettingsTapped
-    case systemSettingsOpenResult(Bool)
+    case systemSettingsOpenResult(UUID, Bool)
     case launchAtLoginToggled(Bool)
     case launchAtLoginUpdateSucceeded
     case launchAtLoginUpdateFailed(Bool)

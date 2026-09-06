@@ -35,6 +35,9 @@ struct FileManagerSidebarContentTabDuplicateCloseRoutingReducer {
             case let .view(.closeContentTab(id)):
                 .send(.delegate(.closeContentTab(id)))
 
+            case let .view(.closeContentTabFromTrailingControl(id)):
+                .send(.delegate(.closeContentTabFromTrailingControl(id)))
+
             case .view(.closeSelectedContentTabs):
                 .send(.delegate(.closeSelectedContentTabs))
 
@@ -114,6 +117,9 @@ struct FileManagerSidebarContentTabPinRoutingReducer {
             case let .view(.unpinContentTab(id)):
                 .send(.delegate(.unpinContentTab(id)))
 
+            case let .view(.unpinContentTabFromTrailingControl(id)):
+                .send(.delegate(.unpinContentTabFromTrailingControl(id)))
+
             case let .view(.setSelectedContentTabsPinned(target)):
                 .send(.delegate(.setSelectedContentTabsPinned(target: target)))
 
@@ -146,7 +152,12 @@ struct FileManagerSidebarTopNavigationReorderRoutingReducer {
 
     var body: some Reducer<State, Action> {
         Reduce { _, action in
-            guard case let .view(.fileManagerTopNavigationReorderRequested(sourceID, anchorID, placement)) = action
+            guard case let .view(.fileManagerTopNavigationReorderRequested(
+                sourceID,
+                anchorID,
+                placement,
+                actionSource,
+            )) = action
             else {
                 return .none
             }
@@ -154,6 +165,7 @@ struct FileManagerSidebarTopNavigationReorderRoutingReducer {
                 sourceID: sourceID,
                 anchorID: anchorID,
                 placement: placement,
+                actionSource: actionSource,
             )))
         }
     }

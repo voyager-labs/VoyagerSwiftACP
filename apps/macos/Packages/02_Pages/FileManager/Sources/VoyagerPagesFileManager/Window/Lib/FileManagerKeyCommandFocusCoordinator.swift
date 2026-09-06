@@ -1,13 +1,23 @@
 import AppKit
 import SwiftUI
 import VoyagerShared
+import VoyagerWidgetsEntryViewLayout
 
 @MainActor
 final class FileManagerKeyCommandFocusCoordinator {
     private weak var keyCommandView: KeyCommandHostingView?
+    private weak var entryListView: EntryListView?
 
     func register(_ view: KeyCommandHostingView) {
         keyCommandView = view
+    }
+
+    func registerEntryListView(_ view: EntryListView?) {
+        entryListView = view
+    }
+
+    func routeEntryListKeyDown(_ event: NSEvent) -> Bool {
+        entryListView?.handleListKeyDown(with: event) == true
     }
 
     func requestFocus() {
@@ -16,6 +26,10 @@ final class FileManagerKeyCommandFocusCoordinator {
             guard !Self.isEditingText(window.firstResponder) else { return }
             window.makeFirstResponder(view)
         }
+    }
+
+    func cancelMarkedText() {
+        keyCommandView?.cancelMarkedTextComposition()
     }
 
     private static func isEditingText(_ responder: NSResponder?) -> Bool {

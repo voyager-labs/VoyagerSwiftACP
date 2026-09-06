@@ -19,6 +19,8 @@ public struct FileManagerFeature {
     var pinnedRecordPersistenceOwnership
     @Dependency(\.userDefaultsClient)
     var userDefaultsClient
+    @Dependency(\.fileManagerProductMetricsClient)
+    var productMetricsClient
 
     public var body: some Reducer<State, Action> {
         Reduce { state, action in
@@ -35,6 +37,8 @@ private extension FileManagerFeature {
         Reduce { state, action in
             switch action {
             case let .content(contentAction):
+                observeContentEntryMetricAction(contentAction, state: &state)
+                recordContentEntryTerminalIfNeeded(contentAction, state: &state)
                 guard state.pendingSelectedContentTabClose == nil
                     || !isComposerSaveRequest(contentAction)
                 else { return .none }
@@ -54,11 +58,26 @@ private extension FileManagerFeature {
                     )
                 }
 
+            case let .internal(.sidebarEntryDrop(entryAction)):
+                observeEntryMetricAction(
+                    entryAction,
+                    commandID: nil,
+                    pendingCommands: &state.pendingSidebarEntryCommands,
+                )
+                return .none
+
             case let .tabContent(tabID, contentAction):
+                observeContentEntryMetricAction(contentAction, state: &state)
+                recordContentEntryTerminalIfNeeded(contentAction, state: &state)
                 guard state.contentTabs.tabs[id: tabID] != nil else { return .none }
 
                 let generation = undoManagerGeneration(tabID: tabID, state: state)
                 let isActiveTab = state.contentTabs.activeTabID == tabID
+                // 프로세스 전역 Quick Look 패널 동기화는 포커스된 윈도우의 활성 탭만 수행한다.
+                // 비활성 탭이나 백그라운드 윈도우의 selectionChanged는 visible 패널을 덮어쓰지 않도록 억제한다.
+                if isQuickLookSelectionSync(contentAction), !(isActiveTab && state.isFocused) {
+                    return .none
+                }
                 guard var contentState = isActiveTab ? state.content : state.tabContentStates[tabID] else {
                     return .none
                 }
@@ -108,7 +127,7 @@ private extension FileManagerFeature {
                         outcome: .remaining,
                     ))
                 }
-                return .none
+                return pinnedReturnInvalidationEffect(tabID: tabID, state: &state)
 
             case let .performSelectedContentTabPinMutation(
                 operationID, tabID, .delegate(.persistPinnedRecord(request)),
@@ -177,9 +196,7 @@ private extension FileManagerFeature {
                 )
 
             case let .closeContentTabRequested(tabID):
-                guard state.contentTabMoveParticipantRequestID == nil,
-                      state.pendingSelectedContentTabClose == nil
-                else { return .none }
+                guard state.canStartSelectedContentTabClose else { return .none }
                 return requestTopNavigationClose(tabID: tabID, state: &state)
 
             case let .contentTabs(.delegate(.persistPinnedRecord(request))):
@@ -195,7 +212,15 @@ private extension FileManagerFeature {
                       state.pendingSelectedContentTabClose == nil,
                       state.pendingSelectedContentTabPinMutation == nil
                 else { return .none }
-                _ = requestTopNavigationPin(tabID: tabID, placement: placement, state: &state)
+                // 상관 삽입은 요청 수락 이후로 미루어 거부된 preflight가 기존 상관을 지우지 못하게 한다.
+                guard requestTopNavigationPin(tabID: tabID, placement: placement, state: &state) else {
+                    return .none
+                }
+                state.productContentTabPinMutationMetrics[tabID] = ProductContentTabPinMutationMetric(
+                    operationID: productMetricsClient.makeOperationID(),
+                    identity: .pinContentTabs,
+                    source: .contentTabBar,
+                )
                 return .none
 
             case let .contentTabs(.unpin(tabID, placement)):
@@ -203,8 +228,15 @@ private extension FileManagerFeature {
                       state.pendingSelectedContentTabClose == nil,
                       state.pendingSelectedContentTabPinMutation == nil
                 else { return .none }
-                _ = prepareTopNavigationUnpin(tabID: tabID, placement: placement, state: &state)
-                return .none
+                guard prepareTopNavigationUnpin(tabID: tabID, placement: placement, state: &state) else {
+                    return .none
+                }
+                state.productContentTabPinMutationMetrics[tabID] = ProductContentTabPinMutationMetric(
+                    operationID: productMetricsClient.makeOperationID(),
+                    identity: .unpinContentTabs,
+                    source: .contentTabBar,
+                )
+                return pinnedReturnInvalidationEffect(tabID: tabID, state: &state)
 
             case let .contentTabs(.updateActivePageAnchor(tabID, anchor)):
                 guard state.contentTabMoveParticipantRequestID == nil else { return .none }
@@ -229,16 +261,18 @@ private extension FileManagerFeature {
                 return .none
 
             case let .contentTabs(contentTabAction) where isPinnedRecordPersistenceTerminal(contentTabAction):
+                recordContentTabMetricIfNeeded(contentTabAction, state: &state)
                 return completeContentTabPinnedRecordPersistence(
                     action: contentTabAction,
                     state: &state,
                 )
 
-            case let .topNavigationMoveRequested(source, destination):
+            case let .topNavigationMoveRequested(source, destination, actionSource):
                 guard state.contentTabMoveParticipantRequestID == nil else { return .none }
                 return requestTopNavigationMove(
                     source: source,
                     destination: destination,
+                    actionSource: actionSource,
                     state: &state,
                 )
 
@@ -297,7 +331,12 @@ private extension FileManagerFeature {
                 state.topNavigationArrangementPresentation = .loadUnavailable
                 return .none
 
+            case let .cancelPendingPinnedCollectionReturn(tabID):
+                guard state.pendingPinnedCollectionReturnTabID == tabID else { return .none }
+                return cancelPendingCollectionOpen(state: &state)
+
             case let .internal(.entryActionCompleted(tabID, record, expectedGeneration)):
+                recordContentEntryTerminalIfNeeded(record, state: &state)
                 guard record.operationKind.isUndoable,
                       let expectedGeneration,
                       undoManagerGeneration(tabID: tabID, state: state) == expectedGeneration,
@@ -472,6 +511,7 @@ private extension FileManagerFeature {
             }
         }
 
+        FileManagerProductContentTabActionReducer()
         FileManagerWindowAiChatSelectionReducer()
 
         FileManagerWindowNavigationReducer()
@@ -490,6 +530,14 @@ private extension FileManagerFeature {
         }
 
         Reduce { state, action in
+            if case .request(.moveContentTabSwitcherFocus) = action {
+                // stale focus의 방향 정보는 command reducer에서 처리한다.
+            } else if case .request(.activateContentTabSwitcherSelection) = action {
+                // focused window command는 stale focus 보존을 위해 command reducer가 직접 처리한다.
+            } else if case .view(.activateContentTabSwitcherCandidate) = action {
+            } else {
+                reconcileContentTabSwitcherPresentation(state: &state)
+            }
             switch action {
             case let .contentTabs(.updateActivePageAnchor(tabID, _))
                 where state.contentTabs.activeTabID == tabID:
@@ -501,6 +549,17 @@ private extension FileManagerFeature {
             }
             return .none
         }
+    }
+
+    private func pinnedReturnInvalidationEffect(
+        tabID: ContentTabID,
+        state: inout State,
+    ) -> Effect<Action> {
+        guard state.pendingPinnedCollectionReturnTabID == tabID else { return .none }
+        return cancelPendingCollectionOpen(
+            state: &state,
+            failedPinnedReturnTabID: tabID,
+        )
     }
 
     private func isContentTabMoveParticipantActionAllowed(_ action: Action) -> Bool {
@@ -566,6 +625,75 @@ private extension FileManagerFeature {
             false
         }
     }
+
+    func recordContentEntryTerminalIfNeeded(
+        _ action: FileManagerContentAction,
+        state: inout State,
+    ) {
+        guard let record = Self.completedEntryActionRecord(from: action) else { return }
+        recordContentEntryTerminalIfNeeded(record, state: &state)
+    }
+
+    func recordContentEntryTerminalIfNeeded(
+        _ record: EntryActionRecord,
+        state: inout State,
+    ) {
+        guard let command = record.command,
+              state.recordedContentEntryCommandIDs.insert(command.id).inserted,
+              let metric = FileManagerProductMetricsProducer.entryTerminal(for: record)
+        else { return }
+        productMetricsClient.record(metric)
+        state.pendingContentEntryCommands.removeValue(forKey: command.id)
+    }
+
+    private func observeContentEntryMetricAction(
+        _ action: FileManagerContentAction,
+        state: inout State,
+    ) {
+        guard case let .entryViewLayout(.entryOperations(entryAction)) = action else { return }
+        observeEntryMetricAction(
+            entryAction,
+            commandID: nil,
+            pendingCommands: &state.pendingContentEntryCommands,
+        )
+    }
+
+    private func observeEntryMetricAction(
+        _ action: EntryOperationsAction,
+        commandID: UUID?,
+        pendingCommands: inout [UUID: FileManagerPendingEntryCommand],
+    ) {
+        switch action {
+        case let .acceptedCommand(metadata, nestedAction):
+            if pendingCommands[metadata.id] == nil {
+                pendingCommands[metadata.id] = .init(metadata: metadata)
+            }
+            observeEntryMetricAction(
+                nestedAction,
+                commandID: metadata.id,
+                pendingCommands: &pendingCommands,
+            )
+
+        case let .lifecycle(.operationStarted(path, _)):
+            guard let commandID else { return }
+            pendingCommands[commandID]?.pathResults[path] = .pending
+
+        case let .lifecycle(.operationFinished(path, _, result)),
+             let .lifecycle(.dropOperationFinished(path, _, result)):
+            guard let commandID else { return }
+            pendingCommands[commandID]?.pathResults[path] = switch result {
+            case .success:
+                .succeeded
+            case let .failure(error) where error == .cancelled:
+                .cancelled
+            case .failure:
+                .failed
+            }
+
+        default:
+            break
+        }
+    }
 }
 
 extension ContentTabPageAnchor {
@@ -584,6 +712,13 @@ func fileManagerContentState(
     state: FileManagerWindowState,
 ) -> FileManagerContentFeature.State? {
     state.contentTabs.activeTabID == tabID ? state.content : state.tabContentStates[tabID]
+}
+
+private func isQuickLookSelectionSync(_ action: FileManagerContentAction) -> Bool {
+    if case .entryViewLayout(.entryOperations(.open(.syncQuickLookSelection))) = action {
+        return true
+    }
+    return false
 }
 
 private func isComposerSaveRequest(_ action: FileManagerContentAction) -> Bool {
@@ -771,13 +906,10 @@ struct ContentTabPinnedRecordPersistenceResult {
 
 extension FileManagerWindowState {
     func isCurrentSelectedContentTabClose(operationID: UUID, tabID: ContentTabID) -> Bool {
-        guard !isClosing,
-              let batch = pendingSelectedContentTabClose,
+        guard !isClosing, let batch = pendingSelectedContentTabClose,
               let pendingClose = pendingContentTabClose
         else { return false }
-        return batch.operationID == operationID
-            && batch.currentTabID == tabID
-            && pendingClose.batchOperationID == operationID
-            && pendingClose.tabID == tabID
+        return batch.operationID == operationID && batch.currentTabID == tabID
+            && pendingClose.batchOperationID == operationID && pendingClose.tabID == tabID
     }
 }

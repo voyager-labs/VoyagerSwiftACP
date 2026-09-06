@@ -10,11 +10,8 @@ extension FileManagerContentFeature {
     }
 
     static func logEntryActionMetricIfNeeded(for action: EntryOperationsAction, metricsClient: MetricsClient) {
-        guard let payload = dauEntryActionPayload(for: action) else {
-            return
-        }
-
-        metricsClient.logDAUEntryAction(payload.actionKind, payload.entryKind)
+        _ = action
+        _ = metricsClient
     }
 
     private static func dauEntryActionPayload(for action: EntryOperationsAction) -> EntryActionPayload? {
@@ -202,6 +199,9 @@ extension FileManagerContentFeature {
             (.performService, paths)
         case let .revealInFinder(paths):
             (.revealInFinder, paths)
+        case let .syncQuickLookSelection(paths, _):
+            // Quick Look 패널 동기화는 사용자 직접 액션(DAU)이 아니므로 메트릭에서 제외한다.
+            nil
         }
     }
 

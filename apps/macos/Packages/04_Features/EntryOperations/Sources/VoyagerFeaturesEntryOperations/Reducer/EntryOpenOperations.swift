@@ -30,22 +30,30 @@ struct EntryOpenOperationsReducer {
                 let entryOpenClient = entryOpenClient
                 let workspaceClient = workspaceClient
                 return .run { [entryOpenClient, workspaceClient] (send: Send<Action>) in
-                    guard let firstFilePath = paths.first else { return }
-                    let isTrash = await MainActor.run {
+                    let rejectedPaths: [String] = await MainActor.run {
                         guard let trashPath = entryOpenClient.trashDirectoryPath(), !trashPath.isEmpty else {
-                            return false
+                            return []
                         }
-                        return firstFilePath.starts(with: trashPath + "/")
+                        return paths.filter { $0.starts(with: trashPath + "/") }
                     }
 
-                    if isTrash {
-                        for (index, path) in paths.enumerated() {
-                            let hasMoreFiles = index < paths.count - 1
+                    if !rejectedPaths.isEmpty {
+                        for (index, path) in rejectedPaths.enumerated() {
+                            let hasMoreFiles = index < rejectedPaths.count - 1
                             _ = await alertClient.showTrashFileAlert(
                                 URL(fileURLWithPath: path).lastPathComponent,
                                 hasMoreFiles,
                             )
                         }
+                        await send(.lifecycle(.entryActionCompleted(EntryActionRecord(
+                            operationKind: .openDefault,
+                            targets: [],
+                            failedCount: 0,
+                            cancelledCount: paths.count,
+                            succeededCount: 0,
+                            id: UUID(),
+                            timestamp: Date(),
+                        ))))
                         return
                     }
 
@@ -55,6 +63,8 @@ struct EntryOpenOperationsReducer {
                         groupedPaths[ext, default: []].append(path)
                     }
 
+                    var failedCount = 0
+                    var cancelledCount = 0
                     for (_, groupPaths) in groupedPaths {
                         let urls = groupPaths.map { URL(fileURLWithPath: $0) }
                         guard let firstURL = urls.first else { continue }
@@ -68,10 +78,16 @@ struct EntryOpenOperationsReducer {
                                     try await entryOpenClient.open(url, .defaultApp)
                                     await send(.lifecycle(.operationFinished(filePath, .openDefault, .success(()))))
                                 } catch {
+                                    let failure = error.fileOpError
+                                    if failure == .cancelled {
+                                        cancelledCount += 1
+                                    } else {
+                                        failedCount += 1
+                                    }
                                     await send(.lifecycle(.operationFinished(
                                         filePath,
                                         .openDefault,
-                                        .failure(error.fileOpError),
+                                        .failure(failure),
                                     )))
                                 }
                             }
@@ -96,15 +112,33 @@ struct EntryOpenOperationsReducer {
                                 )
                             }
                         } catch {
+                            let failure = error.fileOpError
+                            if failure == .cancelled {
+                                cancelledCount += groupPaths.count
+                            } else {
+                                failedCount += groupPaths.count
+                            }
                             for filePath in groupPaths {
                                 await send(.lifecycle(.operationFinished(
                                     filePath,
                                     .openDefault,
-                                    .failure(error.fileOpError),
+                                    .failure(failure),
                                 )))
                             }
                         }
                     }
+
+                    await send(.lifecycle(.entryActionCompleted(
+                        EntryActionRecord(
+                            operationKind: .openDefault,
+                            targets: [],
+                            failedCount: failedCount,
+                            cancelledCount: cancelledCount,
+                            succeededCount: paths.count - failedCount - cancelledCount,
+                            id: UUID(),
+                            timestamp: Date(),
+                        ),
+                    )))
                 }
 
             case let .open(.quickLookFiles(paths)):
@@ -145,6 +179,14 @@ struct EntryOpenOperationsReducer {
                 guard let keyPath = paths.first else { return .none }
                 return EntryOperationsExecutionSupport.run(for: keyPath, kind: .revealInFinder) {
                     try await entryOpenClient.revealInFinder(urls)
+                }
+
+            case let .open(.syncQuickLookSelection(paths, selectedIndex)):
+                guard !paths.isEmpty else { return .none }
+                let urls = paths.map { URL(fileURLWithPath: $0) }
+                let entryQuickLookClient = entryQuickLookClient
+                return .run { _ in
+                    await entryQuickLookClient.syncQuickLookSelection(urls, selectedIndex)
                 }
 
             default:

@@ -41,6 +41,7 @@ extension FileManagerWindowCommandRoutingReducer {
     func handleDuplicateContentTabRequested(
         sourceID: ContentTabID,
         state: inout State,
+        actionSource: ContentTabActionSource = .contentTabBar,
     ) -> Effect<Action> {
         guard state.pendingContentTabClose == nil,
               state.pendingContentTabTeardown == nil
@@ -63,10 +64,19 @@ extension FileManagerWindowCommandRoutingReducer {
         }
 
         let duplicateID = ContentTabID()
-        return .send(.contentTabs(.duplicate(sourceID: sourceID, duplicateID: duplicateID)))
+        if actionSource == .contentTabBar {
+            return .send(.contentTabs(.duplicate(sourceID: sourceID, duplicateID: duplicateID)))
+        }
+        return .send(.contentTabActionRequested(
+            .duplicate(sourceID: sourceID, duplicateID: duplicateID),
+            source: actionSource,
+        ))
     }
 
-    func handleDuplicateSelectedContentTabsRequested(state: inout State) -> Effect<Action> {
+    func handleDuplicateSelectedContentTabsRequested(
+        state: inout State,
+        actionSource: ContentTabActionSource = .contentTabBar,
+    ) -> Effect<Action> {
         guard state.pendingContentTabClose == nil,
               state.pendingContentTabTeardown == nil
         else { return .none }
@@ -113,7 +123,9 @@ extension FileManagerWindowCommandRoutingReducer {
         )
 
         guard !requests.isEmpty else { return feedbackEffect }
-        let duplicateEffect: Effect<Action> = .send(.contentTabs(.duplicateSelected(requests)))
+        let duplicateEffect: Effect<Action> = actionSource == .contentTabBar
+            ? .send(.contentTabs(.duplicateSelected(requests)))
+            : .send(.contentTabActionRequested(.duplicateSelected(requests), source: actionSource))
         guard skippedCount > 0 else { return duplicateEffect }
         return .concatenate(duplicateEffect, feedbackEffect)
     }

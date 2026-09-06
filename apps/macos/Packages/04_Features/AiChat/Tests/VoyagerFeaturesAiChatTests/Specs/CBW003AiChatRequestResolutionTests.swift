@@ -24,6 +24,282 @@ final class CBW003AiChatRequestResolutionTests: XCTestCase {
         )
     }
 
+    // MARK: - CBW-003-generate_contextual_chat_response
+
+    /// CBW-003-generate_contextual_chat_response: terminal result metrics are finite and typed.
+    /// 성공, 실패, 취소, unavailable만 terminal 결과로 전달되는지 검증합니다.
+    /// - 검증 내용: 동일 operation ID에 terminal result를 기록하고 finite enum을 확인합니다.
+    /// - 사전 조건: accepted request의 opaque operation ID가 존재합니다.
+    /// - 기대 결과: recorder가 response body나 error text 없이 typed result만 보관합니다.
+    func testTerminalResultMetricIsFiniteAndSanitized() {
+        let operationID = makeUUID("22222222-2222-2222-2222-222222222292")
+        let recorded = LockIsolated<[AiChatProductMetric]>([])
+        let client = AiChatProductMetricsClient { metric in
+            recorded.withValue { $0.append(metric) }
+        }
+
+        client.record(.turnResult(
+            operationID: operationID,
+            interaction: .generateContextualChatResponse,
+            result: .success,
+            sourceSurface: .aiChatContent,
+        ))
+        client.record(.turnResult(
+            operationID: operationID,
+            interaction: .cancelActiveChatRequest,
+            result: .cancelled,
+            sourceSurface: .aiChatContent,
+        ))
+
+        XCTAssertEqual(
+            recorded.value,
+            [
+                .turnResult(
+                    operationID: operationID,
+                    interaction: .generateContextualChatResponse,
+                    result: .success,
+                    sourceSurface: .aiChatContent,
+                ),
+                .turnResult(
+                    operationID: operationID,
+                    interaction: .cancelActiveChatRequest,
+                    result: .cancelled,
+                    sourceSurface: .aiChatContent,
+                ),
+            ],
+        )
+    }
+
+    /// CBW-003-generate_contextual_chat_response: reducer records one failure terminal for a matched execution.
+    /// requestPrepared establishes the opaque operation correlation before failure and duplicate callbacks arrive.
+    /// - 검증 내용: requestID/runID matching, submitted count, failure terminal count, duplicate callback dedupe를 확인합니다.
+    /// - 사전 조건: processing lock가 있고 provider failure가 동일 execution context로 전달됩니다.
+    /// - 기대 결과: submitted 1회와 failure result 1회만 기록됩니다.
+    func testReducerFailureTerminalUsesRequestRunCorrelationExactlyOnce() async {
+        let rows = makeCatalogRows()
+        let selectedHandle = rows[0].handle
+        let sessionID = AiChatSessionID(rawValue: makeUUID("33333333-3333-3333-3333-333333333391"))
+        let context = makeRequestContext(
+            sessionID: sessionID,
+            requestID: AiChatRequestID(rawValue: makeUUID("44444444-4444-4444-4444-444444444491")),
+            runID: AiChatRunID(rawValue: makeUUID("55555555-5555-5555-5555-555555555591")),
+            model: selectedHandle,
+            selectedRow: rows[0],
+        )
+        let request = AiChatRequest(context: context, messages: [AiChatMessage(role: .user, content: "Question")])
+        let lock = makeRequestLock(
+            kind: .submit,
+            request: request,
+            selectedHandle: selectedHandle,
+            selectedRow: rows[0],
+            assistantReplacementIndex: nil,
+        )
+        let metrics = LockIsolated<[AiChatProductMetric]>([])
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: sessionID,
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(),
+            catalogRows: rows,
+            selectedModelHandle: selectedHandle,
+            executionPhase: .processing(lock),
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: 1_700_000_003_391))
+            $0.aiChatProductMetricsClient = AiChatProductMetricsClient { metric in
+                metrics.withValue { $0.append(metric) }
+            }
+        }
+
+        await store.send(.executionEvent(.requestPrepared(context: context))) { state in
+            state.productMetricOperations[context.requestID] = AiChatProductMetricOperation(
+                runID: context.runID,
+                operationID: makeUUID("00000000-0000-0000-0000-000000000000"),
+            )
+        }
+        await store.send(.executionEvent(.failed(context: context, reason: .network))) { state in
+            state.executionPhase = .failed(
+                lock.recordingTerminal(
+                    at: 1_700_000_003_391,
+                    failure: .network,
+                    wasCancelled: false,
+                ),
+                .network,
+            )
+            state.lockedModelHandle = nil
+            state.lastExecutionFailure = .network
+            state.transcriptAutoScrollVersion += 1
+            state.productMetricOperations[context.requestID] = nil
+        }
+        await store.send(.executionEvent(.failed(context: context, reason: .network)))
+
+        let recorded = metrics.value
+        XCTAssertEqual(recorded.count(where: { if case .turnSubmitted = $0 { true } else { false } }), 1)
+        XCTAssertEqual(
+            recorded
+                .count(where: { if case let .turnResult(_, _, result, _) = $0 { result == .failure } else { false } }),
+            1,
+        )
+    }
+
+    // MARK: - CBW-003-product_metric_source_surface
+
+    /// CBW-003-product_metric_source_surface: state가 소유한 source surface가 submitted와 terminal metric에 그대로 기록된다.
+    /// Inspector 구성으로 초기화된 chat state의 요청 제출과 실패 종료가 .aiChatInspector로 기록되는지 검증합니다.
+    /// - 검증 내용: turnSubmitted와 turnResult 모두 state.productMetricSourceSurface 값을 사용하는지 확인합니다.
+    /// - 사전 조건: productMetricSourceSurface == .aiChatInspector인 processing lock 상태입니다.
+    /// - 기대 결과: recorder에 .aiChatInspector 소스의 submitted 1회와 failure result 1회가 기록됩니다.
+    func testReducerUsesStateConfiguredInspectorSourceForSubmittedAndTerminalMetrics() async {
+        let rows = makeCatalogRows()
+        let selectedHandle = rows[0].handle
+        let sessionID = AiChatSessionID(rawValue: makeUUID("33333333-3333-3333-3333-333333333392"))
+        let context = makeRequestContext(
+            sessionID: sessionID,
+            requestID: AiChatRequestID(rawValue: makeUUID("44444444-4444-4444-4444-444444444492")),
+            runID: AiChatRunID(rawValue: makeUUID("55555555-5555-5555-5555-555555555592")),
+            model: selectedHandle,
+            selectedRow: rows[0],
+        )
+        let request = AiChatRequest(context: context, messages: [AiChatMessage(role: .user, content: "Question")])
+        let lock = makeRequestLock(
+            kind: .submit,
+            request: request,
+            selectedHandle: selectedHandle,
+            selectedRow: rows[0],
+            assistantReplacementIndex: nil,
+        )
+        let metrics = LockIsolated<[AiChatProductMetric]>([])
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: sessionID,
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(),
+            catalogRows: rows,
+            selectedModelHandle: selectedHandle,
+            executionPhase: .processing(lock),
+            productMetricSourceSurface: .aiChatInspector,
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: 1_700_000_003_392))
+            $0.aiChatProductMetricsClient = AiChatProductMetricsClient { metric in
+                metrics.withValue { $0.append(metric) }
+            }
+        }
+
+        await store.send(.executionEvent(.requestPrepared(context: context))) { state in
+            state.productMetricOperations[context.requestID] = AiChatProductMetricOperation(
+                runID: context.runID,
+                operationID: makeUUID("00000000-0000-0000-0000-000000000000"),
+            )
+        }
+        await store.send(.executionEvent(.failed(context: context, reason: .network))) { state in
+            state.executionPhase = .failed(
+                lock.recordingTerminal(
+                    at: 1_700_000_003_392,
+                    failure: .network,
+                    wasCancelled: false,
+                ),
+                .network,
+            )
+            state.lockedModelHandle = nil
+            state.lastExecutionFailure = .network
+            state.transcriptAutoScrollVersion += 1
+            state.productMetricOperations[context.requestID] = nil
+        }
+
+        XCTAssertEqual(metrics.value, [
+            .turnSubmitted(
+                operationID: makeUUID("00000000-0000-0000-0000-000000000000"),
+                sourceSurface: .aiChatInspector,
+            ),
+            .turnResult(
+                operationID: makeUUID("00000000-0000-0000-0000-000000000000"),
+                interaction: .generateContextualChatResponse,
+                result: .failure,
+                sourceSurface: .aiChatInspector,
+            ),
+        ])
+    }
+
+    /// CBW-003-product_metric_source_surface: 기본 content chat state는 .aiChatContent 소스를 유지한다.
+    /// 명시적 구성이 없는 chat state의 요청 제출과 실패 종료가 기존 .aiChatContent 소스를 유지하는지 검증합니다.
+    /// - 검증 내용: 기본 상태에서 turnSubmitted와 turnResult가 .aiChatContent를 사용하는지 확인합니다.
+    /// - 사전 조건: productMetricSourceSurface를 지정하지 않은 processing lock 상태입니다.
+    /// - 기대 결과: recorder에 .aiChatContent 소스의 submitted 1회와 failure result 1회가 기록됩니다.
+    func testReducerDefaultsToContentSourceForSubmittedAndTerminalMetrics() async {
+        let rows = makeCatalogRows()
+        let selectedHandle = rows[0].handle
+        let sessionID = AiChatSessionID(rawValue: makeUUID("33333333-3333-3333-3333-333333333393"))
+        let context = makeRequestContext(
+            sessionID: sessionID,
+            requestID: AiChatRequestID(rawValue: makeUUID("44444444-4444-4444-4444-444444444493")),
+            runID: AiChatRunID(rawValue: makeUUID("55555555-5555-5555-5555-555555555593")),
+            model: selectedHandle,
+            selectedRow: rows[0],
+        )
+        let request = AiChatRequest(context: context, messages: [AiChatMessage(role: .user, content: "Question")])
+        let lock = makeRequestLock(
+            kind: .submit,
+            request: request,
+            selectedHandle: selectedHandle,
+            selectedRow: rows[0],
+            assistantReplacementIndex: nil,
+        )
+        let metrics = LockIsolated<[AiChatProductMetric]>([])
+        let store = TestStore(initialState: AiChatFeature.State(
+            sessionID: sessionID,
+            sessionStatus: .active,
+            currentContext: makeContextSnapshot(),
+            catalogRows: rows,
+            selectedModelHandle: selectedHandle,
+            executionPhase: .processing(lock),
+        )) {
+            AiChatFeature()
+        } withDependencies: {
+            $0.uuid = .incrementing
+            $0.date = .constant(makeFixedDate(milliseconds: 1_700_000_003_393))
+            $0.aiChatProductMetricsClient = AiChatProductMetricsClient { metric in
+                metrics.withValue { $0.append(metric) }
+            }
+        }
+
+        await store.send(.executionEvent(.requestPrepared(context: context))) { state in
+            state.productMetricOperations[context.requestID] = AiChatProductMetricOperation(
+                runID: context.runID,
+                operationID: makeUUID("00000000-0000-0000-0000-000000000000"),
+            )
+        }
+        await store.send(.executionEvent(.failed(context: context, reason: .network))) { state in
+            state.executionPhase = .failed(
+                lock.recordingTerminal(
+                    at: 1_700_000_003_393,
+                    failure: .network,
+                    wasCancelled: false,
+                ),
+                .network,
+            )
+            state.lockedModelHandle = nil
+            state.lastExecutionFailure = .network
+            state.transcriptAutoScrollVersion += 1
+            state.productMetricOperations[context.requestID] = nil
+        }
+
+        XCTAssertEqual(metrics.value, [
+            .turnSubmitted(
+                operationID: makeUUID("00000000-0000-0000-0000-000000000000"),
+                sourceSurface: .aiChatContent,
+            ),
+            .turnResult(
+                operationID: makeUUID("00000000-0000-0000-0000-000000000000"),
+                interaction: .generateContextualChatResponse,
+                result: .failure,
+                sourceSurface: .aiChatContent,
+            ),
+        ])
+    }
+
     /// CBW-003-prepare_contextual_chat_request: Make Session Snapshot Uses Locked Model And Thinking Instead Of Next
     /// Request Selection
     /// CBW-003 AC에 연결되는 legacy 동작을 새 Specs owner suite에서 검증합니다.
@@ -109,6 +385,7 @@ final class CBW003AiChatRequestResolutionTests: XCTestCase {
             preparedRequest: AiChatPreparedRequest(
                 prompt: originalPrompt,
                 messages: [AiChatMessage(role: .user, content: originalPrompt)],
+                persistenceTranscriptHistory: nil,
                 assistantReplacementIndex: nil,
                 historyTruncation: .init(
                     includedMessageCount: 1,

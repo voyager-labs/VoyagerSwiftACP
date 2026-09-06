@@ -76,12 +76,20 @@ export type SidebarSectionProps = {
   readonly compact?: boolean
 }
 
-export type ContextMenuAction = {
+// 판별 유니온: label 항목과 구분선은 상호 배타다(둘 다 없거나 둘 다 있는 상태를 타입에서 차단)
+export type ContextMenuAction = ContextMenuActionItem | ContextMenuActionSeparator
+
+export type ContextMenuActionItem = {
+  readonly kind: "item"
   readonly id: string
   readonly label: string
   readonly shortcut?: string
-  readonly destructive?: boolean
   readonly disabled?: boolean
+}
+
+export type ContextMenuActionSeparator = {
+  readonly kind: "separator"
+  readonly id: string
 }
 
 export type Entry = {

@@ -99,7 +99,11 @@ final class EOP003GlobalUndoCommandTests: XCTestCase {
         let ownerA = try XCTUnwrap(
             state.tabContentStates[tabA]?.entryViewLayout.entryOperations.undoOwnerID,
         )
-        let record = EntryActionRecord(operationKind: .rename, targets: [])
+        // 성공 target이 있는 record만 undo 등록 대상이다(전체 실패 배치 제외 계약).
+        let record = EntryActionRecord(
+            operationKind: .rename,
+            targets: [.init(beforePath: "/src/a.txt", afterPath: "/dest/a.txt")],
+        )
         let store = TestStore(initialState: state) {
             FileManagerFeature()
         } withDependencies: {
@@ -262,6 +266,100 @@ final class EOP003GlobalUndoCommandTests: XCTestCase {
             afterPath: sandbox.fileURL.path,
         )
     }
+
+    // MARK: - EOP-003-entry_command_teardown
+
+    /// EOP-003-entry_command_teardown: pending content command는 observed aggregate와 함께 unavailable로 종료된다.
+    /// non-undo/undo metadata 모두 window teardown에서 한 번만 기록되는지 검증한다.
+    /// - 검증 내용: partial observed result, command identity, 반복 teardown dedupe
+    /// - 사전 조건: copyPath와 pasteFileMove command가 수용되고 각각 하나의 path만 관측된다.
+    /// - 기대 결과: 두 command가 unavailable metric으로 정확히 한 번 기록된다.
+    func testPendingEntryCommandsSurviveWindowTeardown() async {
+        let metrics = LockIsolated<[FileManagerProductMetric]>([])
+        let store = TestStore(initialState: FileManagerWindowState()) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.fileManagerProductMetricsClient = .init(record: { metric in
+                metrics.withValue { $0.append(metric) }
+            })
+        }
+        // store.exhaustivity = .off: teardown child cleanup은 건너뛰고 command metric만 확인한다.
+        store.exhaustivity = .off
+
+        let commandCases = [
+            EntryCommandCase(
+                metadata: .init(id: UUID(), interaction: .copyAbsolutePaths, source: .menuCommand),
+                operationKind: .copyPath,
+                path: "/tmp/copy",
+            ),
+            EntryCommandCase(
+                metadata: .init(id: UUID(), interaction: .pasteEntries, source: .contextMenu),
+                operationKind: .pasteFileMove,
+                path: "/tmp/move",
+            ),
+        ]
+        let sidebarCommand = EntryCommandCase(
+            metadata: .init(id: UUID(), interaction: .copyEntries, source: .dragAndDrop),
+            operationKind: .pasteFileCopy,
+            path: "/tmp/sidebar-success",
+        )
+        for (index, commandCase) in commandCases.enumerated() {
+            let metadata = commandCase.metadata
+            let operationKind = commandCase.operationKind
+            let path = commandCase.path
+            await store.send(.content(.entryViewLayout(.entryOperations(.acceptedCommand(
+                metadata: metadata,
+                action: .lifecycle(.operationStarted(path, operationKind)),
+            )))))
+            if index == 0 {
+                await store.send(.content(.entryViewLayout(.entryOperations(.acceptedCommand(
+                    metadata: metadata,
+                    action: .lifecycle(.operationFinished(path, operationKind, .success(()))),
+                )))))
+                await store.send(.content(.entryViewLayout(.entryOperations(.acceptedCommand(
+                    metadata: metadata,
+                    action: .lifecycle(.operationStarted("/tmp/copy-pending", operationKind)),
+                )))))
+            }
+        }
+        await store.send(.internal(.sidebarEntryDrop(.acceptedCommand(
+            metadata: sidebarCommand.metadata,
+            action: .lifecycle(.operationStarted(sidebarCommand.path, sidebarCommand.operationKind)),
+        ))))
+        await store.send(.internal(.sidebarEntryDrop(.acceptedCommand(
+            metadata: sidebarCommand.metadata,
+            action: .lifecycle(.operationFinished(sidebarCommand.path, sidebarCommand.operationKind, .success(()))),
+        ))))
+        await store.send(.internal(.sidebarEntryDrop(.acceptedCommand(
+            metadata: sidebarCommand.metadata,
+            action: .lifecycle(.operationStarted("/tmp/sidebar-pending", sidebarCommand.operationKind)),
+        ))))
+        await store.send(.onDisappear)
+        await store.send(.onDisappear)
+
+        let entryMetrics = metrics.value.compactMap(entryActionMetric)
+        XCTAssertEqual(entryMetrics.map(\.result), [.unavailable, .unavailable, .unavailable])
+        XCTAssertEqual(
+            Set(entryMetrics.map(\.operationID)),
+            Set(commandCases.map(\.metadata.id) + [sidebarCommand.metadata.id]),
+        )
+        XCTAssertEqual(entryMetrics.map(\.aggregate).sorted { $0.attempted < $1.attempted }, [
+            .init(attempted: 1, succeeded: 0, failed: 0),
+            .init(attempted: 2, succeeded: 1, failed: 0),
+            .init(attempted: 2, succeeded: 1, failed: 0),
+        ])
+    }
+}
+
+private struct EntryCommandCase {
+    let metadata: EntryCommandMetadata
+    let operationKind: OperationKind
+    let path: String
+}
+
+private func entryActionMetric(_ metric: FileManagerProductMetric) -> EntryActionProductMetric? {
+    guard case let .entryAction(value) = metric else { return nil }
+    return value
 }
 
 private struct ReplayFixture {

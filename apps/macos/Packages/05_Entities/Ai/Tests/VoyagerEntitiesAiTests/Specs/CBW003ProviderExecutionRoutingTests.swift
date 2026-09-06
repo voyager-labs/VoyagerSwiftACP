@@ -14,7 +14,7 @@ final class CBW003ProviderExecutionRoutingTests: XCTestCase {
     /// OpenAI 실행 준비가 preflight 결과와 동일한 입력으로 executor에 전달되는지 추적합니다.
     /// - 검증 내용: OpenAI provider, credential, raw model ID가 registry route 입력에 보존되는지 확인합니다.
     /// - 사전 조건: OpenAI API key credential과 gpt-5.5 request fixture를 사용합니다.
-    /// - 기대 결과: started event만 방출되고 executor input이 preflight 결과와 일치합니다.
+    /// - 기대 결과: requestPrepared 다음 started가 방출되고 executor input이 preflight 결과와 일치합니다.
     func testExecute_openAIRoutesThroughRegistryExecutor() throws {
         try assertRegistryRoute(
             provider: .openai,
@@ -27,7 +27,7 @@ final class CBW003ProviderExecutionRoutingTests: XCTestCase {
     /// Anthropic 실행 준비가 provider별 credential과 model ID를 보존하는지 추적합니다.
     /// - 검증 내용: Anthropic provider route와 preflight input 일치를 확인합니다.
     /// - 사전 조건: Anthropic API key credential과 Claude model request fixture를 사용합니다.
-    /// - 기대 결과: registry executor가 Anthropic 입력을 받고 started event를 반환합니다.
+    /// - 기대 결과: registry executor가 Anthropic 입력을 받고 requestPrepared 다음 started를 반환합니다.
     func testExecute_anthropicRoutesThroughRegistryExecutor() throws {
         try assertRegistryRoute(
             provider: .anthropic,
@@ -585,7 +585,8 @@ extension CBW003ProviderExecutionRoutingTests {
             .oauth(OAuthCredentialFile(accessToken: "codex-token")),
         ))
 
-        XCTAssertEqual(events, [
+        XCTAssertEqual(events, try [
+            providerExecutionPreparedEvent(for: request),
             .started(context: request.context),
             .delta(context: request.context, text: "Codex "),
             .delta(context: request.context, text: "answer"),
@@ -625,7 +626,7 @@ extension CBW003ProviderExecutionRoutingTests {
             .oauth(OAuthCredentialFile(accessToken: "codex-token")),
         ))
 
-        XCTAssertEqual(events, codexTypedActivityExpectedEvents(context: request.context))
+        XCTAssertEqual(events, try codexTypedActivityExpectedEvents(request: request))
     }
 
     /// CBW-003-stream_contextual_chat_response: completed agent message만 수신해도 최종 응답을 보존한다.
@@ -879,7 +880,8 @@ extension CBW003ProviderExecutionRoutingTests {
             .apiKey(APIKeyCredentialFile(secret: "sk-openai")),
         ))
 
-        XCTAssertEqual(events, [
+        XCTAssertEqual(events, try [
+            providerExecutionPreparedEvent(for: request),
             .started(context: request.context),
             .failed(context: request.context, reason: .authentication),
         ])
@@ -1175,10 +1177,12 @@ extension CBW003ProviderExecutionRoutingTests {
     }
 
     private func codexTypedActivityExpectedEvents(
-        context: AiChatRequestContextSnapshot,
-    ) -> [AiChatProviderExecutionEvent] {
+        request: AiChatRequest,
+    ) throws -> [AiChatProviderExecutionEvent] {
+        let context = request.context
         let retryID = "\(context.requestID.rawValue.uuidString.lowercased()):codex:retry:turn-1"
-        return [
+        return try [
+            providerExecutionPreparedEvent(for: request),
             .started(context: context),
             providerExecutionStatus(context, "reason-1", .thinking, .began, "item/started"),
             providerExecutionStatus(context, "reason-1", .thinking, .ended, "item/completed"),

@@ -69,10 +69,14 @@ final class MenuCommandsFeatureTests: XCTestCase {
             (.togglePinTab, .file(.togglePinTab)),
             (.open, .file(.open)),
             (.quickLook, .file(.quickLook)),
+            (.getInfo, .file(.getInfo)),
             (.restoreLastClosedTab, .file(.restoreLastClosedTab)),
             (.duplicateTab, .file(.duplicateTab)),
             (.presentContentTabSwitcher, .file(.presentContentTabSwitcher)),
             (.selectMostRecentlyUsedContentTab, .file(.selectMostRecentlyUsedContentTab)),
+            (.moveNextContentTabSwitcher, .file(.moveNextContentTabSwitcher)),
+            (.movePreviousContentTabSwitcher, .file(.movePreviousContentTabSwitcher)),
+            (.dismissContentTabSwitcher, .file(.dismissContentTabSwitcher)),
         ]
 
         for (command, expected) in appCases {
@@ -674,15 +678,22 @@ final class MenuCommandsFeatureTests: XCTestCase {
         await store.send(.view(.app(command)))
         await store.receive {
             guard case let .delegate(.windowManager(action)) = $0 else { return false }
-            switch (action, expected) {
-            case (.file(.newTab), .file(.newTab)),
-                 (.file(.togglePinTab), .file(.togglePinTab)),
-                 (.file(.open), .file(.open)),
-                 (.file(.quickLook), .file(.quickLook)),
-                 (.file(.restoreLastClosedTab), .file(.restoreLastClosedTab)),
-                 (.file(.duplicateTab), .file(.duplicateTab)),
-                 (.file(.presentContentTabSwitcher), .file(.presentContentTabSwitcher)),
-                 (.file(.selectMostRecentlyUsedContentTab), .file(.selectMostRecentlyUsedContentTab)):
+            guard case let .file(actual) = action,
+                  case let .file(expectedFileCommand) = expected
+            else { return false }
+            switch (actual, expectedFileCommand) {
+            case (.newTab, .newTab),
+                 (.togglePinTab, .togglePinTab),
+                 (.open, .open),
+                 (.quickLook, .quickLook),
+                 (.getInfo, .getInfo),
+                 (.restoreLastClosedTab, .restoreLastClosedTab),
+                 (.duplicateTab, .duplicateTab),
+                 (.presentContentTabSwitcher, .presentContentTabSwitcher),
+                 (.selectMostRecentlyUsedContentTab, .selectMostRecentlyUsedContentTab),
+                 (.moveNextContentTabSwitcher, .moveNextContentTabSwitcher),
+                 (.movePreviousContentTabSwitcher, .movePreviousContentTabSwitcher),
+                 (.dismissContentTabSwitcher, .dismissContentTabSwitcher):
                 return true
             default:
                 return false

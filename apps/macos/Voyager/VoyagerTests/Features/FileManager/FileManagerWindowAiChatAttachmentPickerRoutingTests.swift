@@ -14,6 +14,11 @@ import XCTest
 @MainActor
 final class FileManagerWindowAiChatAttachmentPickerRoutingTests: XCTestCase {
     func testAiChatHostsExposeAttachmentPickerOnlyInInspector() async throws {
+        // Process-level AX queries are available only when macOS trusts the test host for Accessibility.
+        // Authorized hosts continue to execute every visibility and press assertion below.
+        guard AXIsProcessTrusted() else {
+            throw XCTSkip("Requires Accessibility permission to inspect the app-hosted SwiftUI AX tree")
+        }
         // 프로덕션 TCA AiChat 뷰를 호스팅하는 동안 발현되는 Perception "not being tracked" 디버그
         // 경고를 의도된 것으로 표기한다. 이 경고는 `#if DEBUG` 와 macOS 14+ Observation 호스트에서만
         // 발생하는 swift-perception 진단으로, 프로덕션(RELEASE/13.5) 동작에는 영향이 없다. 테스트는

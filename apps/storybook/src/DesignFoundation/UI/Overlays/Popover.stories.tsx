@@ -42,7 +42,7 @@ export const WithRichContent: Story = {
           Move to…
         </button>
         <div className="vc-divider" />
-        <button type="button" className="fm-menu-item destructive">
+        <button type="button" className="fm-menu-item">
           Delete
         </button>
       </div>

@@ -231,6 +231,8 @@ final class MainContainerSplitCoordinator: NSViewController, NSSplitViewDelegate
         guard let hostingView = contentHosting?.view else { return }
 
         let entryListViews = descendantViews(of: hostingView).compactMap { $0 as? EntryListView }
+        Self.applyEntryListMaterialOverride(materialOverride, to: entryListViews)
+        keyCommandFocusCoordinator.registerEntryListView(entryListViews.first)
         let existingChildren = hostingView.accessibilityChildren() ?? []
         let updatedChildren = Self.entryListAccessibilityChildren(
             existingChildren: existingChildren,
@@ -238,6 +240,22 @@ final class MainContainerSplitCoordinator: NSViewController, NSSplitViewDelegate
         )
         hostingView.setAccessibilityChildren(updatedChildren)
         NSAccessibility.post(element: hostingView, notification: .layoutChanged)
+    }
+
+    static func applyEntryListMaterialOverride(
+        _ materialOverride: FileManagerWindowMaterialOverride?,
+        to entryListViews: [EntryListView],
+    ) {
+        guard let materialOverride else { return }
+        for entryListView in entryListViews {
+            entryListView.updateMaterialAppearance(
+                headerMaterial: materialOverride.listHeader.material,
+                headerBlendingMode: materialOverride.listHeader.blendingMode,
+                headerAlphaValue: materialOverride.listHeader.alphaValue,
+                groupRowLightOpacity: materialOverride.groupRowLightOpacity,
+                groupRowDarkOpacity: materialOverride.groupRowDarkOpacity,
+            )
+        }
     }
 
     static func entryListAccessibilityChildren(
@@ -265,10 +283,18 @@ final class MainContainerSplitCoordinator: NSViewController, NSSplitViewDelegate
                 overlayProps: overlayProps,
                 activePageAnchor: activePageAnchor,
                 onNavigationAction: { [weak self] action in
-                    self?.store.send(.navigation(.view(action)))
+                    guard let self, let activeTabID = store.state.contentTabs.activeTabID else { return }
+                    store.send(.tabContent(
+                        tabID: activeTabID,
+                        action: .internal(.requestNavigation(.view(action))),
+                    ))
                 },
                 onNavigate: { [weak self] path in
-                    self?.store.send(.navigation(.view(.navigateToPath(path))))
+                    guard let self, let activeTabID = store.state.contentTabs.activeTabID else { return }
+                    store.send(.tabContent(
+                        tabID: activeTabID,
+                        action: .internal(.requestNavigation(.view(.navigateToPath(path)))),
+                    ))
                 },
             )
             .id(chromeProps.renderIdentity)

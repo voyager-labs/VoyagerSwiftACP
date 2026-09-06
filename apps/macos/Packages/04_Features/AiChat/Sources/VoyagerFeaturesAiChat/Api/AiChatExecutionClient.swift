@@ -51,7 +51,7 @@ public extension AiChatExecutionClient {
                                 break
                             }
 
-                            if let mappedEvent = mapProviderEvent(event) {
+                            if let mappedEvent = mapProviderEvent(event, context: request.context) {
                                 continuation.yield(mappedEvent)
                             }
                         }
@@ -72,10 +72,13 @@ public extension AiChatExecutionClient {
 }
 
 private extension AiChatExecutionClient {
-    static func mapProviderEvent(_ event: VoyagerEntitiesAi.AiChatProviderExecutionEvent) -> AiChatEvent? {
+    static func mapProviderEvent(
+        _ event: VoyagerEntitiesAi.AiChatProviderExecutionEvent,
+        context: AiChatRequestContextSnapshot,
+    ) -> AiChatEvent? {
         switch event {
         case .requestPrepared:
-            nil
+            .requestPrepared(context: context)
         case let .started(context):
             .started(context: context)
         case let .delta(context, text):

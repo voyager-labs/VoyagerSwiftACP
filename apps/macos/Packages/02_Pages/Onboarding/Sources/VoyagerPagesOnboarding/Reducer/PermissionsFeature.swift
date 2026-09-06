@@ -21,28 +21,63 @@ struct PermissionsFeature {
     var notificationCenterClient
     @Dependency(\.systemSettingsClient)
     var systemSettingsClient
+    @Dependency(\.onboardingProductMetricsClient)
+    var metricsClient
+    @Dependency(\.uuid)
+    var uuid
 
-    private let appDidBecomeActiveObserverCancelID = "PermissionsFeature.appDidBecomeActiveObserver"
+    private enum CancelID {
+        case appDidBecomeActiveObserver
+        case helperFolderAccessRequest
+        case initialStateLoad
+        case permissionRefresh
+    }
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
             case .onAppear:
                 return .merge(
-                    loadInitialState(),
+                    loadInitialState()
+                        .cancellable(id: CancelID.initialStateLoad, cancelInFlight: true),
                     observeAppDidBecomeActive(),
                 )
 
             case .onDisappear:
-                return .cancel(id: appDidBecomeActiveObserverCancelID)
+                if let operationID = state.pendingHelperFolderOperationID {
+                    metricsClient.record(.helperFolderAccess(
+                        operationID: operationID,
+                        result: .unavailable,
+                    ))
+                }
+                if let operationID = state.pendingFullDiskAccessOperationID {
+                    metricsClient.record(.fullDiskAccess(
+                        operationID: operationID,
+                        result: .unavailable,
+                    ))
+                }
+                state.pendingHelperFolderOperationID = nil
+                state.pendingFullDiskAccessOperationID = nil
+                state.pendingFullDiskAccessGeneration = nil
+                state.isRequestingHelperFolderAccess = false
+                return .merge(
+                    .cancel(id: CancelID.helperFolderAccessRequest),
+                    .cancel(id: CancelID.appDidBecomeActiveObserver),
+                    .cancel(id: CancelID.initialStateLoad),
+                    .cancel(id: CancelID.permissionRefresh),
+                )
 
             case .appDidBecomeActive:
                 state.latestAppActiveRefreshGeneration += 1
                 let generation = state.latestAppActiveRefreshGeneration
+                if state.pendingFullDiskAccessOperationID != nil {
+                    state.pendingFullDiskAccessGeneration = generation
+                }
                 return .merge(
                     refreshFullDiskAccess(generation: generation),
                     refreshHelperFolderAccess(generation: generation),
                 )
+                .cancellable(id: CancelID.permissionRefresh, cancelInFlight: true)
 
             case let .fullDiskAccessRefreshResponse(generation, status):
                 guard generation == state.latestAppActiveRefreshGeneration else { return .none }
@@ -52,6 +87,24 @@ struct PermissionsFeature {
                 )
                 state.fullDiskAccessStatus = resolvedStatus
                 refreshCompletionState(state: &state)
+                if let operationID = state.pendingFullDiskAccessOperationID,
+                   state.pendingFullDiskAccessGeneration == generation
+                {
+                    let metricResult: OnboardingProductMetric.PermissionResult = switch resolvedStatus {
+                    case .granted:
+                        .success
+                    case .denied:
+                        .failure
+                    case .needsAction, .unknown:
+                        .unavailable
+                    }
+                    state.pendingFullDiskAccessOperationID = nil
+                    state.pendingFullDiskAccessGeneration = nil
+                    metricsClient.record(.fullDiskAccess(
+                        operationID: operationID,
+                        result: metricResult,
+                    ))
+                }
                 return .none
 
             case let .helperFolderAccessRefreshLoaded(generation, result):
@@ -85,14 +138,18 @@ struct PermissionsFeature {
                 return .none
 
             case .requestHelperFolderAccessTapped:
+                state.pendingHelperFolderOperationID = UUID()
                 state.helperFolderAccessError = nil
                 state.isRequestingHelperFolderAccess = true
                 return .run { [helperFolderAccessClient] send in
                     let result = await helperFolderAccessClient.requestAccess()
                     await send(.helperFolderAccessResponse(result))
                 }
+                .cancellable(id: CancelID.helperFolderAccessRequest, cancelInFlight: true)
 
             case let .helperFolderAccessResponse(result):
+                guard let operationID = state.pendingHelperFolderOperationID else { return .none }
+                state.pendingHelperFolderOperationID = nil
                 state.isRequestingHelperFolderAccess = false
                 state.helperFolderAccess = result
                 state.helperFolderAccessError = result.status == .granted
@@ -101,18 +158,34 @@ struct PermissionsFeature {
                 let data = try? JSONEncoder().encode(result)
                 userDefaultsClient.setObject(data, SettingsKeys.helperFolderAccessSnapshot)
                 refreshCompletionState(state: &state)
+                metricsClient.record(.helperFolderAccess(
+                    operationID: operationID,
+                    result: result.status == .granted ? .success : .failure,
+                ))
                 return .none
 
             case .openSystemSettingsTapped:
+                guard state.pendingFullDiskAccessOperationID == nil else { return .none }
                 state.systemSettingsError = nil
+                let operationID = uuid()
+                state.pendingFullDiskAccessOperationID = operationID
                 return .run { [systemSettingsClient] send in
                     let opened = systemSettingsClient.openFullDiskAccess()
-                    await send(.systemSettingsOpenResult(opened))
+                    await send(.systemSettingsOpenResult(operationID, opened))
                 }
 
-            case let .systemSettingsOpenResult(opened):
+            case let .systemSettingsOpenResult(operationID, opened):
+                guard state.pendingFullDiskAccessOperationID == operationID else { return .none }
                 if !opened {
                     state.systemSettingsError = "We couldn't open System Settings. Please open it manually."
+                    if let operationID = state.pendingFullDiskAccessOperationID {
+                        state.pendingFullDiskAccessOperationID = nil
+                        state.pendingFullDiskAccessGeneration = nil
+                        metricsClient.record(.fullDiskAccess(
+                            operationID: operationID,
+                            result: .unavailable,
+                        ))
+                    }
                 } else {
                     state.hasAttemptedFullDiskAccessEnable = true
                 }
@@ -153,8 +226,10 @@ struct PermissionsFeature {
             let status = fullDiskAccessClient.status()
             await send(.fullDiskAccessStatusResponse(status))
             let helperFolderAccess = await helperFolderAccessClient.checkAccess()
+            guard !Task.isCancelled else { return }
             await send(.helperFolderAccessStatusLoaded(helperFolderAccess))
             let isEnabled = launchAtLoginClient.isEnabled()
+            guard !Task.isCancelled else { return }
             await send(.launchAtLoginStateLoaded(isEnabled))
         }
     }
@@ -168,12 +243,13 @@ struct PermissionsFeature {
                 await send(.appDidBecomeActive)
             }
         }
-        .cancellable(id: appDidBecomeActiveObserverCancelID, cancelInFlight: true)
+        .cancellable(id: CancelID.appDidBecomeActiveObserver, cancelInFlight: true)
     }
 
     private func refreshFullDiskAccess(generation: Int) -> Effect<Action> {
         .run { [fullDiskAccessClient] send in
             let status = fullDiskAccessClient.status()
+            guard !Task.isCancelled else { return }
             await send(.fullDiskAccessRefreshResponse(generation, status))
         }
     }
@@ -181,6 +257,7 @@ struct PermissionsFeature {
     private func refreshHelperFolderAccess(generation: Int) -> Effect<Action> {
         .run { [helperFolderAccessClient] send in
             let result = await helperFolderAccessClient.checkAccess()
+            guard !Task.isCancelled else { return }
             await send(.helperFolderAccessRefreshLoaded(generation, result))
         }
     }

@@ -30,7 +30,7 @@ final class EntryContextMenuCoordinator: NSObject, NSMenuDelegate, NSPopoverDele
     @discardableResult
     private func executeCommand(_ command: String) -> Bool {
         guard canPerformTargetBoundCommand else { return false }
-        store.send(.view(.executeCommand(command)))
+        store.send(.view(.executeCommand(command, source: .contextMenu)))
         return true
     }
 
@@ -102,14 +102,14 @@ final class EntryContextMenuCoordinator: NSObject, NSMenuDelegate, NSPopoverDele
     func contextMenuOpenSelectedItem() {
         guard canPerformTargetBoundCommand else { return }
         store.send(.view(.saveScrollOffset(.zero, forPath: store.state.currentPath)))
-        store.send(.view(.openSelectedItem))
+        store.send(.view(.openSelectedItem(source: .contextMenu)))
     }
 
     @objc
     func contextMenuOpenSelectedItemInNewWindow(_ sender: NSMenuItem) {
         guard let path = sender.representedObject as? String,
               canPerformTargetBoundCommand,
-              target.entries.contains(where: { $0.fullPath == path && $0.isFolder })
+              target.entries.contains(where: { $0.fullPath == path && $0.isDirectoryNavigationTarget })
         else {
             return
         }
@@ -139,7 +139,7 @@ final class EntryContextMenuCoordinator: NSObject, NSMenuDelegate, NSPopoverDele
             guard !currentPath.isEmpty,
                   canPerformCurrentPathCommand
             else { return }
-            store.send(.view(.executeCommand("navigation.getInfoForPath")))
+            store.send(.view(.executeCommand("navigation.getInfoForPath", source: .contextMenu)))
             return
         }
         executeCommand("navigation.getInfoForSelectedItems")
@@ -193,7 +193,7 @@ final class EntryContextMenuCoordinator: NSObject, NSMenuDelegate, NSPopoverDele
     @objc
     func contextMenuPasteItems() {
         guard canPaste else { return }
-        store.send(.view(.executeCommand("clipboard.pasteItems")))
+        store.send(.view(.executeCommand("clipboard.pasteItems", source: .contextMenu)))
     }
 
     @objc
@@ -211,7 +211,7 @@ final class EntryContextMenuCoordinator: NSObject, NSMenuDelegate, NSPopoverDele
               target.entries.count == 1,
               let item = target.entries.first
         else { return }
-        store.send(.view(.startRename(item: item, text: item.name)))
+        store.send(.view(.startRename(item: item, text: item.name, source: .contextMenu)))
     }
 
     @objc
@@ -252,13 +252,13 @@ final class EntryContextMenuCoordinator: NSObject, NSMenuDelegate, NSPopoverDele
     @objc
     func contextMenuEmptyTrash() {
         guard canPerformTargetBoundCommand else { return }
-        store.send(.view(.executeCommand("mutation.emptyTrash")))
+        store.send(.view(.executeCommand("mutation.emptyTrash", source: .contextMenu)))
     }
 
     @objc
     func contextMenuOpenWithOther() {
         guard canPerformTargetBoundCommand else { return }
-        store.send(.view(.openWithApp(bundleID: nil)))
+        store.send(.view(.openWithApp(bundleID: nil, source: .contextMenu)))
     }
 
     @objc
@@ -266,7 +266,7 @@ final class EntryContextMenuCoordinator: NSObject, NSMenuDelegate, NSPopoverDele
         guard canPerformTargetBoundCommand,
               let bundleID = sender.representedObject as? String
         else { return }
-        store.send(.view(.openWithApp(bundleID: bundleID)))
+        store.send(.view(.openWithApp(bundleID: bundleID, source: .contextMenu)))
     }
 
     @objc
@@ -274,12 +274,12 @@ final class EntryContextMenuCoordinator: NSObject, NSMenuDelegate, NSPopoverDele
         guard canPerformTargetBoundCommand,
               let tagName = sender.representedObject as? String
         else { return }
-        store.send(.view(.toggleTag(tagName)))
+        store.send(.view(.toggleTag(tagName, source: .contextMenu)))
     }
 
     func performTagMutation(name: String, mode: TagMutationMode) {
         guard canPerformTargetBoundCommand else { return }
-        store.send(.view(.mutateTag(name: name, mode: mode)))
+        store.send(.view(.mutateTag(name: name, mode: mode, source: .contextMenu)))
     }
 
     @objc

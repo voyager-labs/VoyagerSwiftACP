@@ -1,5 +1,6 @@
 @preconcurrency import AppKit
 import VoyagerEntitiesEntry
+import VoyagerFeaturesEntryOperations
 
 struct EntryGridSection {
     let title: String?
@@ -23,8 +24,10 @@ struct EntryGridRenderSnapshot: Equatable {
     let showHiddenFiles: Bool
     let shouldScrollToSelection: Bool
     let isDropTargeted: Bool
+    let pendingTypeScrollTargetId: EntryModel.ID?
     let currentPath: String
     let outlineProjectionRevision: Int
+    let activeExternalDrop: ExternalDropActiveSession?
 
     init(state: EntryViewLayoutState) {
         presentation = state.presentation
@@ -42,7 +45,9 @@ struct EntryGridRenderSnapshot: Equatable {
         showHiddenFiles = state.showHiddenFiles
         shouldScrollToSelection = state.shouldScrollToSelection
         isDropTargeted = state.isDropTargeted
+        pendingTypeScrollTargetId = state.pendingTypeScrollTargetId
         currentPath = state.currentPath
         outlineProjectionRevision = state.outlineProjectionRevision
+        activeExternalDrop = state.entryOperations.activeExternalDrop
     }
 }

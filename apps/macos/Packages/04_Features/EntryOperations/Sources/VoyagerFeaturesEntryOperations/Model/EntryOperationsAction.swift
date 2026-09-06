@@ -8,6 +8,7 @@ import VoyagerShared
 
 @CasePathable
 public enum EntryOperationsAction: CasePathable, Sendable {
+    indirect case acceptedCommand(metadata: EntryCommandMetadata, action: EntryOperationsAction)
     case delegate(Delegate)
     case outcome(Outcome)
     case routing(Routing)
@@ -21,6 +22,31 @@ public enum EntryOperationsAction: CasePathable, Sendable {
     case archive(Archive)
     case tagging(Tagging)
     case undoRedo(UndoRedo)
+    case externalDrop(ExternalDrop)
+
+    @CasePathable
+    public enum ExternalDrop: CasePathable, Sendable {
+        /// Grid/List `acceptDrop`이 동기적으로 받아들인 획득 요청. 배리어 세션을 연다.
+        case accepted(
+            request: ExternalDropAcceptedRequest,
+            command: EntryCommandMetadata,
+            logicalItemCount: Int,
+        )
+        /// reducer가 구독한 획득 이벤트 스트림에서 온 이벤트.
+        case event(ExternalDropAcquisitionEvent)
+        /// 정확한 세션을 취소한다 (멱등).
+        case cancelSession(ExternalDropSessionID)
+        /// 정확한 세션을 정상 종료한다 (멱등).
+        case finishSession(ExternalDropSessionID)
+        /// internal: all-promises 성공 시 reducer가 emit하는 import-placement action.
+        /// 실제 복사 배치는 Todo 7 seam이 이 action을 소비해 수행한다.
+        case applyImport(ExternalDropImportPlan)
+        /// internal: placement 진입 직전 source descriptor 고정 결과.
+        case placementSourcesPrepared(plan: ExternalDropImportPlan, isValid: Bool)
+        /// internal: placement의 모든 항목이 종료된 뒤 reducer가 emit하는 종합 완료 action.
+        /// 성공 목적지 경로/실패와 종단 상태를 담으며, FileManager가 정확히 한 번 reload한다.
+        case importFinished(ExternalDropImportResult)
+    }
 
     @CasePathable
     public enum Delegate: CasePathable, Sendable {
@@ -41,7 +67,11 @@ public enum EntryOperationsAction: CasePathable, Sendable {
 
     @CasePathable
     public enum Routing: CasePathable, @unchecked Sendable {
-        case executeCommand(command: EntryOperationsCommand, context: EntryOperationsCommandContext)
+        case executeCommand(
+            command: EntryOperationsCommand,
+            context: EntryOperationsCommandContext,
+            metadata: EntryCommandMetadata,
+        )
         case validateDrop(context: EntryDropValidationContext)
         case saveDragPaths([String])
         case handleDrop(providers: [NSItemProvider], destinationPath: String, isOptionDrag: Bool)
@@ -57,11 +87,11 @@ public enum EntryOperationsAction: CasePathable, Sendable {
         case loadTagItems(tagName: String, showHidden: Bool, priority: EntryMetadataPriority = .none)
         case loadComputerItems
         case cancelAndClearItems
-        case itemsLoaded([EntryModel])
-        case itemsLoadFailed
+        case itemsLoaded(generation: Int, items: [EntryModel])
+        case computerItemsLoadFailed(generation: Int)
         case streamEvent(EntryLoadingStreamEvent)
         case streamFinished(generation: Int)
-        case streamFailed(generation: Int)
+        case streamFailed(generation: Int, failure: EntryFolderLoadFailure)
         case loadFolderItems(EntryFolderLoadRequest)
         case cancelFolderItems(EntryFolderLoadRequest.RequestID)
         case cancelAllFolderItems
@@ -96,12 +126,14 @@ public enum EntryOperationsAction: CasePathable, Sendable {
         case shareItems(paths: [String], anchor: CGPoint?)
         case performService(paths: [String], name: String)
         case revealInFinder(paths: [String])
+        case syncQuickLookSelection(paths: [String], selectedIndex: Int)
     }
 
     @CasePathable
     public enum OpenWith: CasePathable, Sendable {
         case openFileWithApp(file: EntryModel)
         case openFileWithAppBundleID(filePath: String, bundleID: String, url: URL)
+        case openFilesWithAppBundleID(files: [EntryModel], bundleID: String, shouldSetAsDefault: Bool)
         case setDefaultAppForFile(type: UTType?, bundleID: String, file: EntryModel)
         case setDefaultAppWithOther(file: EntryModel)
         case openFilesWithAppFromOther(files: [EntryModel], shouldSetAsDefault: Bool)
@@ -121,7 +153,11 @@ public enum EntryOperationsAction: CasePathable, Sendable {
         case createNewFolder(parentPath: String, siblingNames: [String])
         case createAliases(paths: [String])
         case renameItem(oldPath: String, newPath: String)
-        case startRename(item: EntryModel, text: String)
+        case startRename(
+            item: EntryModel,
+            text: String,
+            source: EntryCommandSource = .fileManagerContent,
+        )
         case updateRenamingText(String)
         case commitRename
         case cancelRename
@@ -130,6 +166,7 @@ public enum EntryOperationsAction: CasePathable, Sendable {
     @CasePathable
     public enum Clipboard: CasePathable, Sendable {
         case copySelectedItems(files: [EntryModel])
+        case cutSelectedItems(files: [EntryModel])
         case copyAbsolutePaths(paths: [String])
         case copyURLs(paths: [String])
         case setClipboardOperation(operation: ClipboardOperation)
@@ -140,6 +177,7 @@ public enum EntryOperationsAction: CasePathable, Sendable {
             operation: ClipboardOperation,
             operationKind: OperationKind,
         )
+        case duplicateItems(groups: [EntryOperationsDuplicateGroup])
         case performDrop(sourcePaths: [String], destinationPath: String, isOptionDrag: Bool)
     }
 
@@ -148,6 +186,7 @@ public enum EntryOperationsAction: CasePathable, Sendable {
         case moveToTrash(paths: [String])
         case deleteImmediately(paths: [String])
         case deleteImmediatelyConfirmed(paths: [String])
+        case deleteImmediatelyCancelled
         case putBackFromTrash(paths: [String])
         case emptyTrash(paths: [String])
         case emptyTrashConfirmed(paths: [String])
@@ -181,9 +220,30 @@ public enum EntryOperationsAction: CasePathable, Sendable {
     }
 }
 
+public struct EntryOperationsDuplicateGroup: Equatable, Sendable {
+    public let sourcePaths: [String]
+    public let destinationPath: String
+
+    public init(sourcePaths: [String], destinationPath: String) {
+        self.sourcePaths = sourcePaths
+        self.destinationPath = destinationPath
+    }
+}
+
 public enum EntryFolderLoadFailure: Equatable, Sendable {
     case permissionDenied
     case unavailable(description: String)
+
+    public static func from(error: Error) -> Self {
+        let nsError = error as NSError
+        if nsError.domain == NSCocoaErrorDomain, nsError.code == NSFileReadNoPermissionError {
+            return .permissionDenied
+        }
+        if nsError.domain == NSPOSIXErrorDomain, nsError.code == EACCES || nsError.code == EPERM {
+            return .permissionDenied
+        }
+        return .unavailable(description: nsError.localizedDescription)
+    }
 }
 
 public struct EntryLoadingStreamEvent: Equatable, Sendable {

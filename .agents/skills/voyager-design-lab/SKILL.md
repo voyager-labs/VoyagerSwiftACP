@@ -32,8 +32,8 @@ Storybook is an inspectable review surface, not product or native-runtime truth.
 2. **Classify the state.** It is either root File Manager composition, a reusable specimen, or an independent experiment. Apply the state contract before adding a workflow.
 3. **Route alternatives.** When more than one design is active, load the design-version workflow and derive each candidate from the closest current variation instead of cloning the state matrix.
 4. **Gate parity claims.** Classify native evidence, require a deterministic fixture for runtime-dependent rendering, and map roles through `--macos-*` then `--fm-*`.
-5. **Implement boundedly.** Fixtures are deterministic and local: no network, clock, random data, or simulated production backend. A clickable control proves only the web prototype unless an executable test proves more.
-6. **Verify and hand off.** Run the matching checks and record only the evidence actually obtained. Retire a state when its review question is resolved and it has no root consumer.
+5. **Implement boundedly.** Define interaction-state acceptance criteria with the visual states: every interactive element declares its trigger→state transition mapping, native-parity behavior contract, guard/disabled conditions, and accessibility attributes in the same batch. Fixtures are deterministic and local: no network, clock, random data, or simulated production backend. A clickable control proves only the web prototype unless an executable test proves more.
+6. **Verify and hand off.** Run the matching checks and record only the evidence actually obtained. Record layout and composition decisions in the affected package's `DESIGN.md` when they are made. Retire a state when its review question is resolved and it has no root consumer.
 
 ## Storybook browser verification
 
@@ -59,4 +59,5 @@ Native evidence and full application E2E are opt-in for explicit named runtime c
 - Leaving an isolated workflow after its review question has been decided.
 - Encoding appearance, OS baseline, geometry, or UI state into candidate IDs and duplicating their stories.
 - Treating a successful build as visual-regression, accessibility, or native-parity proof.
+- Deferring interaction-state wiring, accessibility attributes, or layout-decision records out of the batch that introduced the change.
 - Adding a surface to the catalog without a registry entry and an app-owned story root — appearance in Storybook follows the app catalog (`src/<Surface>/` per `surface-registry.ts`), not a colocated `*.stories.tsx` beside package source.

@@ -1,4 +1,4 @@
-import { MenuItem } from "@voyager-labs/design-foundation"
+import { Menu, MenuItem, MenuSeparator } from "@voyager-labs/design-foundation"
 import type { FC } from "react"
 import type { ContextMenuAction } from "../../model/types"
 
@@ -8,17 +8,20 @@ export interface ContextMenuProps {
 
 export const ContextMenu: FC<ContextMenuProps> = ({ actions }) => {
   return (
-    <div className="fm-context-menu" role="menu" aria-label="File context menu">
-      {actions.map((action) => (
-        <MenuItem
-          key={action.id}
-          label={action.label}
-          shortcut={action.shortcut}
-          destructive={action.destructive}
-          disabled={action.disabled}
-        />
-      ))}
-    </div>
+    <Menu className="fm-context-menu" aria-label="File context menu">
+      {actions.map((action) =>
+        action.kind === "separator" ? (
+          <MenuSeparator key={action.id} />
+        ) : (
+          <MenuItem
+            key={action.id}
+            label={action.label}
+            shortcut={action.shortcut}
+            disabled={action.disabled}
+          />
+        ),
+      )}
+    </Menu>
   )
 }
 

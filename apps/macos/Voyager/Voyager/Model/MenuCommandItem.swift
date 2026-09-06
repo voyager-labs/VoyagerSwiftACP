@@ -17,10 +17,14 @@ struct MenuCommandItem: Identifiable, Equatable {
         case selectContentTab(position: Int)
         case presentContentTabSwitcher
         case selectMostRecentlyUsedContentTab
+        case moveNextContentTabSwitcher
+        case movePreviousContentTabSwitcher
+        case dismissContentTabSwitcher
 
         case newFolder
         case open
         case quickLook
+        case getInfo
 
         case saveCollection
         case saveCollectionAs
