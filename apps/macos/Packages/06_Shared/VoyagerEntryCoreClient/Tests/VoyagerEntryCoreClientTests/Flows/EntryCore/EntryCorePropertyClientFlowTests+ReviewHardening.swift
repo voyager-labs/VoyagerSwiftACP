@@ -276,13 +276,20 @@ extension EntryCorePropertyClientFlowTests {
                 editable: true,
                 revision: 1,
                 options: [],
-                conditionCapability: .unsupported(.sourceRuntimeUnavailable),
+                conditionCapability: .supported(
+                    catalogVersion: PropertyConditionCatalog.version,
+                    nativeType: .categorical,
+                    allowedOperators: PropertyConditionRelation.operators(for: .categorical),
+                ),
             ),
             label: "new-label",
         )
         let endpoint = try EntryCoreEndpoint(path: "/tmp/property-client.sock")
+        let operators = PropertyConditionRelation.operators(for: .categorical)
+            .map { "\"\($0.rawValue)\"" }
+            .joined(separator: ",")
         let recorder = PropertyTransportRecorder(
-            response: Data(presetOptionCreateResponse(optionID: optionID.rawValue).utf8),
+            response: Data(presetOptionCreateResponse(optionID: optionID.rawValue, operators: operators).utf8),
         )
         let client = EntryCorePropertyClient.makeLive(
             requestID: { "option-create-id" },
@@ -795,8 +802,9 @@ func optionCreateResponse(options: String, operators: String) -> String {
 }
 
 /// 프리셋 정의의 option create 응답이다. built_in origin + voyager_issued +
-/// editable 페어링과 built-in 정의의 runtime-unavailable capability를 운반한다.
-func presetOptionCreateResponse(optionID: String) -> String {
+/// editable 페어링과 로컬 assignment 평가 대상인 프리셋의 supported categorical
+/// capability를 운반한다.
+func presetOptionCreateResponse(optionID: String, operators: String) -> String {
     """
     {
       "request_id":"option-create-id",
@@ -809,7 +817,8 @@ func presetOptionCreateResponse(optionID: String) -> String {
         "options":[
           {"option_id":"\(optionID)","label":"new-label","position":1,"state":"active"}
         ],
-        "condition_capability":{"supported":false,"reason":"source_runtime_unavailable"}
+        "condition_capability":{"supported":true,"evaluation_scope":"local_assignment",
+          "catalog_version":"2.2.0","native_type":"categorical","allowed_operators":[\(operators)]}
       }}
     }
     """

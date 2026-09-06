@@ -178,7 +178,7 @@ private extension EntryCorePropertyResponseDecoder {
             matchesValueType: header.valueType,
             cardinality: header.cardinality,
             state: header.state,
-            origin: header.origin,
+            identityScheme: header.identityScheme,
         )
         return PropertyDefinition(
             id: header.id,
@@ -196,22 +196,22 @@ private extension EntryCorePropertyResponseDecoder {
         )
     }
 
-    /// capability가 definition origin·lifecycle과 value contract에서 유도되는
-    /// native type 및 Registry relation의 전체 operator 집합과 정확히 일치하는지
-    /// 검증한다 (Go protocol/schema/property_capability_validation.go와 같은 경계).
-    /// evaluator가 항상 false로 평가하는 operator를 광고하거나 origin·lifecycle과
-    /// 모순되는 지원 상태를 반환하면 client가 잘못된 operand UI·기능 상태를 구성할
-    /// 수 있으므로 fail-closed로 거절한다.
+    /// capability가 definition identity scheme·lifecycle과 value contract에서
+    /// 유도되는 native type 및 Registry relation의 전체 operator 집합과 정확히
+    /// 일치하는지 검증한다 (Go protocol/schema/property_capability_validation.go와
+    /// 같은 경계). evaluator가 항상 false로 평가하는 operator를 광고하거나
+    /// scheme·lifecycle과 모순되는 지원 상태를 반환하면 client가 잘못된 operand
+    /// UI·기능 상태를 구성할 수 있으므로 fail-closed로 거절한다.
     static func validate(
         _ capability: PropertyConditionCapability,
         matchesValueType valueType: PropertyValueType,
         cardinality: PropertyCardinality,
         state: PropertyDefinitionState,
-        origin: PropertyDefinitionOrigin,
+        identityScheme: PropertyIdentityScheme,
     ) throws {
         switch capability {
         case let .supported(_, nativeType, allowedOperators):
-            guard origin == .userDefined,
+            guard identityScheme == .voyagerIssued,
                   state == .active,
                   let expectedNativeType = PropertyConditionRelation.nativeType(
                       for: valueType,
@@ -225,10 +225,11 @@ private extension EntryCorePropertyResponseDecoder {
             case (.disabled, .definitionDisabled):
                 break
             case (.active, .sourceRuntimeUnavailable):
-                // ConditionCapabilityFor는 built-in 정의에만 이 사유를 발행한다.
-                guard origin == .builtIn else { throw mismatch }
+                // ConditionCapabilityFor는 registry-derived 정의에만 이 사유를
+                // 발행한다. origin이 아니라 identity scheme이 authority 계약이다.
+                guard identityScheme == .registryDerived else { throw mismatch }
             case (.active, .unsupportedValueContract):
-                guard origin == .userDefined,
+                guard identityScheme == .voyagerIssued,
                       PropertyConditionRelation.nativeType(for: valueType, cardinality: cardinality) == nil
                 else { throw mismatch }
             default:

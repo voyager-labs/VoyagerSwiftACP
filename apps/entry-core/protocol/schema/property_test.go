@@ -745,6 +745,7 @@ func TestPropertyCapabilityExactnessAgainstValueContract(t *testing.T) {
 
 	builtInRuntimeUnavailable := base("text", "one")
 	builtInRuntimeUnavailable.Origin = "built_in"
+	builtInRuntimeUnavailable.IdentityScheme = "registry_derived"
 	builtInRuntimeUnavailable.ConditionCapability = PropertyConditionCapability{Reason: "source_runtime_unavailable"}
 	if builtInRuntimeUnavailable.Validate() != nil {
 		t.Fatal("built-in definition with runtime-unavailable capability rejected")
@@ -758,6 +759,7 @@ func TestPropertyCapabilityExactnessAgainstValueContract(t *testing.T) {
 
 	builtInSupported := base("text", "one")
 	builtInSupported.Origin = "built_in"
+	builtInSupported.IdentityScheme = "registry_derived"
 	if builtInSupported.Validate() == nil {
 		t.Fatal("built-in definition with supported capability accepted")
 	}
@@ -774,8 +776,8 @@ func TestPropertyCapabilityExactnessAgainstValueContract(t *testing.T) {
 	}
 }
 
-// --- 11c. catalog version 고정과 origin 무결성: 다른 버전의 semantics와
-// 알 수 없는 ownership은 fail closed로 거절한다 ---
+// --- 11c. catalog version 고정과 identity scheme 무결성: 다른 버전의
+// semantics와 알 수 없는 ownership은 fail closed로 거절한다 ---
 
 func TestPropertyConditionCatalogVersionPinned(t *testing.T) {
 	t.Parallel()

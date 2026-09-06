@@ -98,9 +98,9 @@ final class EntryCorePropertyProtocolFlowTests: XCTestCase {
         assertProtocolMismatch(missingFields)
     }
 
-    /// source_runtime_unavailable은 built-in origin에서만 유도되는 사유다.
-    /// wire가 origin을 함께 검증하지 않으면 query 가능한 user-defined property가
-    /// unsupported로 숨겨진다.
+    /// source_runtime_unavailable은 registry-derived scheme에서만 유도되는
+    /// 사유다. wire가 identity scheme을 함께 검증하지 않으면 로컬 assignment로
+    /// query 가능한 voyager-issued property가 unsupported로 숨겨진다.
     func testDefinitionRejectsRuntimeUnavailableReasonForUserDefinedOrigin() throws {
         let wire = try propertyDefinitionPageResponse(
             valueType: "text",

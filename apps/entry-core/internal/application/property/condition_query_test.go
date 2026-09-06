@@ -102,7 +102,7 @@ func TestConditionCapabilityMappingCompleteness(t *testing.T) {
 		{domainentry.PropertyTypeBoolean, domainentry.PropertyCardinalityMany, "", false},
 	}
 	for _, test := range contracts {
-		capability := ConditionCapabilityFor(domainentry.WorkspacePropertyDefinition{Origin: domainentry.PropertyOriginUserDefined, ValueType: test.valueType, Cardinality: test.cardinality, Lifecycle: domainentry.PropertyLifecycleActive})
+		capability := ConditionCapabilityFor(domainentry.WorkspacePropertyDefinition{Origin: domainentry.PropertyOriginUserDefined, IdentityScheme: domainentry.PropertyIdentitySchemeVoyagerIssued, ValueType: test.valueType, Cardinality: test.cardinality, Lifecycle: domainentry.PropertyLifecycleActive})
 		if capability.Supported != test.supported || capability.NativeType != test.native {
 			t.Errorf("%s/%s capability = %+v", test.valueType, test.cardinality, capability)
 		}
@@ -111,10 +111,11 @@ func TestConditionCapabilityMappingCompleteness(t *testing.T) {
 		}
 	}
 	sourceBacked := ConditionCapabilityFor(domainentry.WorkspacePropertyDefinition{
-		Origin:      domainentry.PropertyOriginBuiltIn,
-		ValueType:   domainentry.PropertyTypeText,
-		Cardinality: domainentry.PropertyCardinalityOne,
-		Lifecycle:   domainentry.PropertyLifecycleActive,
+		Origin:         domainentry.PropertyOriginBuiltIn,
+		IdentityScheme: domainentry.PropertyIdentitySchemeRegistryDerived,
+		ValueType:      domainentry.PropertyTypeText,
+		Cardinality:    domainentry.PropertyCardinalityOne,
+		Lifecycle:      domainentry.PropertyLifecycleActive,
 	})
 	if sourceBacked.Supported || sourceBacked.Reason != "source_runtime_unavailable" {
 		t.Fatalf("source-backed capability = %+v", sourceBacked)
@@ -130,7 +131,7 @@ func TestConditionEvaluatorStateAndOperatorMatrix(t *testing.T) {
 	decimal := "10.5"
 	date := "2026-09-01"
 	definition := func(valueType domainentry.PropertyType, cardinality domainentry.PropertyCardinality) DefinitionView {
-		return DefinitionView{Definition: domainentry.WorkspacePropertyDefinition{PropertyID: propertyID, Origin: domainentry.PropertyOriginUserDefined, ValueType: valueType, Cardinality: cardinality, Lifecycle: domainentry.PropertyLifecycleActive}}
+		return DefinitionView{Definition: domainentry.WorkspacePropertyDefinition{PropertyID: propertyID, Origin: domainentry.PropertyOriginUserDefined, IdentityScheme: domainentry.PropertyIdentitySchemeVoyagerIssued, ValueType: valueType, Cardinality: cardinality, Lifecycle: domainentry.PropertyLifecycleActive}}
 	}
 	condition := func(operator, kind string, values ...string) QueryCondition {
 		return QueryCondition{PropertyID: propertyID, Operator: operator, Operand: ConditionOperand{Kind: kind, Values: values}}

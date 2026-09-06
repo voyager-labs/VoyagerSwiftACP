@@ -26,13 +26,20 @@ type ConditionCapability struct {
 	Reason           string
 }
 
-// ConditionCapabilityFor derives query support only from the immutable value
-// contract. It is deliberately unrelated to mutation/editability capability.
+// ConditionCapabilityFor derives query support from the immutable value
+// contract and the identity scheme authority boundary: registry-derived
+// definitions keep their values in the source runtime, so only Voyager-issued
+// definitions with local assignment facts are locally evaluable. It is
+// deliberately unrelated to mutation/editability capability.
 func ConditionCapabilityFor(definition domainentry.WorkspacePropertyDefinition) ConditionCapability {
 	if definition.Lifecycle != domainentry.PropertyLifecycleActive {
 		return ConditionCapability{Reason: "definition_disabled"}
 	}
-	if definition.Origin == domainentry.PropertyOriginBuiltIn {
+	if definition.IdentityScheme == domainentry.PropertyIdentitySchemeRegistryDerived {
+		// registry-derived 정의는 값 authority가 source runtime에 있으므로 로컬
+		// assignment fact로 조건을 평가할 수 없다. origin이 아니라 identity
+		// scheme이 authority 계약이다(built_in 프리셋은 voyager_issued 로컬
+		// 정의다).
 		return ConditionCapability{Reason: "source_runtime_unavailable"}
 	}
 	nativeType, ok := domainentry.ConditionNativeTypeForContract(definition.ValueType, definition.Cardinality)
