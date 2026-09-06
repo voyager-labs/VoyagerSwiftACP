@@ -103,6 +103,14 @@ nonisolated public struct PropertyOption: Equatable, Sendable {
     public let state: PropertyDefinitionState
 }
 
+/// PropertyID 발급 scheme이다(Go domainentry.PropertyIdentityScheme과 동일
+/// inventory). definition·option mutation 가능 여부는 origin이 아니라 이
+/// 계약이 결정한다(Go catalog_service.mutateDefinition).
+nonisolated public enum PropertyIdentityScheme: String, Codable, Sendable {
+    case registryDerived = "registry_derived"
+    case voyagerIssued = "voyager_issued"
+}
+
 nonisolated public struct PropertyDefinition: Equatable, Sendable {
     public let id: PropertyID
     public let key: String
@@ -111,6 +119,9 @@ nonisolated public struct PropertyDefinition: Equatable, Sendable {
     public let cardinality: PropertyCardinality
     public let state: PropertyDefinitionState
     public let origin: PropertyDefinitionOrigin
+    public let identityScheme: PropertyIdentityScheme
+    /// 값 지정 가능 여부 계약이다(Go change CAS의 not_editable 게이트).
+    public let editable: Bool
     public let revision: Int64
     public let options: [PropertyOption]
     public let conditionCapability: PropertyConditionCapability
@@ -297,7 +308,7 @@ nonisolated public struct PropertyDefinitionUpdateRequest: Encodable, Sendable {
               expectedDefinition.id == propertyID,
               expectedDefinition.revision == expectedDefinitionRevision,
               expectedDefinition.state == .active,
-              expectedDefinition.origin == .userDefined,
+              expectedDefinition.identityScheme == .voyagerIssued,
               PropertyWireValidation.short(name) else { throw EntryCoreClientError.protocolMismatch }
         self.propertyID = propertyID
         self.expectedDefinitionRevision = expectedDefinitionRevision
@@ -325,7 +336,7 @@ nonisolated public struct PropertyDefinitionDisableRequest: Encodable, Sendable 
               expectedDefinition.id == propertyID,
               expectedDefinition.revision == expectedDefinitionRevision,
               expectedDefinition.state == .active,
-              expectedDefinition.origin == .userDefined
+              expectedDefinition.identityScheme == .voyagerIssued
         else { throw EntryCoreClientError.protocolMismatch }
         self.propertyID = propertyID
         self.expectedDefinitionRevision = expectedDefinitionRevision

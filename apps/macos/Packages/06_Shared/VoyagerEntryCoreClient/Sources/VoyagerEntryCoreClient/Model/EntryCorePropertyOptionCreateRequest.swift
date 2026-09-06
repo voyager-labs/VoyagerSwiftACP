@@ -19,7 +19,7 @@ nonisolated public struct PropertyOptionCreateRequest: Encodable, Sendable {
               expectedDefinition.id == propertyID,
               expectedDefinition.revision == expectedDefinitionRevision,
               expectedDefinition.state == .active,
-              expectedDefinition.origin == .userDefined,
+              expectedDefinition.identityScheme == .voyagerIssued,
               PropertyWireValidation.short(label) else { throw EntryCoreClientError.protocolMismatch }
         self.propertyID = propertyID
         self.expectedDefinitionRevision = expectedDefinitionRevision
@@ -53,7 +53,7 @@ nonisolated public struct PropertyOptionUpdateRequest: Encodable, Sendable {
               expectedDefinition.id == propertyID,
               expectedDefinition.revision == expectedDefinitionRevision,
               expectedDefinition.state == .active,
-              expectedDefinition.origin == .userDefined,
+              expectedDefinition.identityScheme == .voyagerIssued,
               PropertyWireValidation.short(label) else { throw EntryCoreClientError.protocolMismatch }
         self.propertyID = propertyID
         self.optionID = optionID
@@ -88,7 +88,7 @@ nonisolated public struct PropertyOptionDisableRequest: Encodable, Sendable {
               expectedDefinition.id == propertyID,
               expectedDefinition.revision == expectedDefinitionRevision,
               expectedDefinition.state == .active,
-              expectedDefinition.origin == .userDefined
+              expectedDefinition.identityScheme == .voyagerIssued
         else { throw EntryCoreClientError.protocolMismatch }
         self.propertyID = propertyID
         self.optionID = optionID
@@ -123,7 +123,7 @@ nonisolated public struct PropertyOptionReorderRequest: Encodable, Sendable {
               expectedDefinition.id == propertyID,
               expectedDefinition.revision == expectedDefinitionRevision,
               expectedDefinition.state == .active,
-              expectedDefinition.origin == .userDefined
+              expectedDefinition.identityScheme == .voyagerIssued
         else { throw EntryCoreClientError.protocolMismatch }
         self.propertyID = propertyID
         self.expectedDefinitionRevision = expectedDefinitionRevision

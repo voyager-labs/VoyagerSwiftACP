@@ -76,6 +76,28 @@ final class EntryCorePropertyProtocolFlowTests: XCTestCase {
         assertProtocolMismatch(wire)
     }
 
+    /// identity scheme은 Go 계약의 정본 값이다. 미지 scheme과 누락 필드는
+    /// fail closed로 거절한다.
+    func testDefinitionRejectsUnknownAndMissingIdentityScheme() throws {
+        let unknownScheme = try propertyDefinitionPageResponse(
+            valueType: "text",
+            cardinality: "one",
+            nativeType: "string",
+            operators: PropertyConditionRelation.operators(for: .string).map(\.rawValue),
+            identityScheme: "future_scheme",
+        )
+        assertProtocolMismatch(unknownScheme)
+
+        let missingFields = Data(propertyJSON(
+            #"{"request_id":"id","ok":true,"result":{"definitions":[{"#,
+            #""property_id":"00000000-0000-0000-8000-000000000001","key":"k","name":"n","#,
+            #""value_type":"text","cardinality":"one","state":"active","origin":"user_defined","#,
+            #""revision":1,"options":[],"#,
+            #""condition_capability":{"supported":false,"reason":"unsupported_value_contract"}}],"has_more":false}}"#,
+        ).utf8)
+        assertProtocolMismatch(missingFields)
+    }
+
     /// source_runtime_unavailable은 built-in origin에서만 유도되는 사유다.
     /// wire가 origin을 함께 검증하지 않으면 query 가능한 user-defined property가
     /// unsupported로 숨겨진다.
@@ -408,6 +430,8 @@ private func propertyDefinitionPageResponse(
     operators: [String],
     state: String = "active",
     origin: String = "user_defined",
+    identityScheme: String? = nil,
+    editable: Bool? = nil,
     conditionCapability: [String: Any]? = nil,
     options: [[String: Any]] = [],
 ) throws -> Data {
@@ -426,6 +450,8 @@ private func propertyDefinitionPageResponse(
         "cardinality": cardinality,
         "state": state,
         "origin": origin,
+        "identity_scheme": identityScheme ?? (origin == "built_in" ? "registry_derived" : "voyager_issued"),
+        "editable": editable ?? (origin != "built_in"),
         "revision": 1,
         "options": options,
         "condition_capability": capability,

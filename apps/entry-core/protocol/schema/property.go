@@ -90,6 +90,8 @@ type PropertyDefinition struct {
 	Cardinality         string                      `json:"cardinality"`
 	State               string                      `json:"state"`
 	Origin              string                      `json:"origin"`
+	IdentityScheme      string                      `json:"identity_scheme"`
+	Editable            bool                        `json:"editable"`
 	Revision            int64                       `json:"revision"`
 	Options             []PropertyOption            `json:"options"`
 	ConditionCapability PropertyConditionCapability `json:"condition_capability"`
@@ -476,6 +478,7 @@ func (definition PropertyDefinition) Validate() error {
 	if !validPropertyIDText(definition.PropertyID) || !validUTF8Bytes(definition.Key, 1, maximumPropertyNameBytes) ||
 		!validUTF8Bytes(definition.Name, 1, maximumPropertyNameBytes) || !validPropertyValueType(definition.ValueType) ||
 		!validPropertyCardinality(definition.Cardinality) || !oneOf(definition.State, "active", "disabled") ||
+		!oneOf(definition.IdentityScheme, "registry_derived", "voyager_issued") ||
 		definition.Revision < 1 || definition.Options == nil || len(definition.Options) > maximumPropertyIDs || definition.ConditionCapability.Validate() != nil {
 		return ErrInvalidResponse
 	}
@@ -1239,8 +1242,8 @@ func decodePropertyConditionOperand(value jsonValue) (PropertyConditionOperand, 
 // --- 결과 디코딩 ---
 
 func decodePropertyDefinition(value jsonValue) (PropertyDefinition, bool) {
-	fields, ok := objectFields(value, "property_id", "key", "name", "value_type", "cardinality", "state", "origin", "revision", "options", "condition_capability")
-	if !ok || !allStrings(fields, "property_id", "key", "name", "value_type", "cardinality", "state", "origin") || fields["options"].kind != jsonArray {
+	fields, ok := objectFields(value, "property_id", "key", "name", "value_type", "cardinality", "state", "origin", "identity_scheme", "editable", "revision", "options", "condition_capability")
+	if !ok || !allStrings(fields, "property_id", "key", "name", "value_type", "cardinality", "state", "origin", "identity_scheme") || fields["options"].kind != jsonArray || fields["editable"].kind != jsonBool {
 		return PropertyDefinition{}, false
 	}
 	revision, valid := decodeExpectedRevision(fields["revision"])
@@ -1248,15 +1251,17 @@ func decodePropertyDefinition(value jsonValue) (PropertyDefinition, bool) {
 		return PropertyDefinition{}, false
 	}
 	definition := PropertyDefinition{
-		PropertyID:  fields["property_id"].text,
-		Key:         fields["key"].text,
-		Name:        fields["name"].text,
-		ValueType:   fields["value_type"].text,
-		Cardinality: fields["cardinality"].text,
-		State:       fields["state"].text,
-		Origin:      fields["origin"].text,
-		Revision:    revision,
-		Options:     make([]PropertyOption, len(fields["options"].items)),
+		PropertyID:     fields["property_id"].text,
+		Key:            fields["key"].text,
+		Name:           fields["name"].text,
+		ValueType:      fields["value_type"].text,
+		Cardinality:    fields["cardinality"].text,
+		State:          fields["state"].text,
+		Origin:         fields["origin"].text,
+		IdentityScheme: fields["identity_scheme"].text,
+		Editable:       fields["editable"].boolean,
+		Revision:       revision,
+		Options:        make([]PropertyOption, len(fields["options"].items)),
 	}
 	capability, valid := decodePropertyConditionCapability(fields["condition_capability"])
 	if !valid {

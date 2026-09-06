@@ -169,10 +169,11 @@ extension EntryCorePropertyClientFlowTests {
         XCTAssertEqual(created.origin, .userDefined)
     }
 
-    /// update/disable/option mutation 응답도 user-defined origin이어야 한다.
-    /// mutateDefinition은 Voyager-issued 정의만 대상으로 하므로 built-in
-    /// origin mutation 결과는 존재할 수 없다.
-    func testDefinitionUpdateRejectsBuiltInOriginResponse() async throws {
+    /// update/disable/option mutation 응답은 voyager_issued scheme이어야 한다.
+    /// Go mutateDefinition과 동일하게 mutation 가능 여부는 origin이 아니라
+    /// identity scheme이 결정하므로 registry-derived scheme mutation 결과는
+    /// 존재할 수 없다.
+    func testDefinitionUpdateRejectsRegistryDerivedSchemeResponse() async throws {
         let propertyID = "00000000-0000-0000-8000-000000000001"
         let request = try PropertyDefinitionUpdateRequest(
             propertyID: PropertyID(rawValue: propertyID),
@@ -185,6 +186,8 @@ extension EntryCorePropertyClientFlowTests {
                 cardinality: .one,
                 state: .active,
                 origin: .userDefined,
+                identityScheme: .voyagerIssued,
+                editable: true,
                 revision: 1,
                 options: [],
                 conditionCapability: .supported(
@@ -197,7 +200,7 @@ extension EntryCorePropertyClientFlowTests {
         )
         let endpoint = try EntryCoreEndpoint(path: "/tmp/property-client.sock")
 
-        func updateResponse(origin: String, capability: String) -> String {
+        func updateResponse(identityScheme: String, editable: Bool, capability: String) -> String {
             """
             {
               "request_id":"update-id",
@@ -205,7 +208,8 @@ extension EntryCorePropertyClientFlowTests {
               "result":{"definition":{
                 "property_id":"\(propertyID)",
                 "key":"created-key","name":"updated name",
-                "value_type":"text","cardinality":"one","state":"active","origin":"\(origin)",
+                "value_type":"text","cardinality":"one","state":"active",
+                "origin":"user_defined","identity_scheme":"\(identityScheme)","editable":\(editable),
                 "revision":2,"options":[],
                 "condition_capability":\(capability)
               }}
@@ -218,9 +222,13 @@ extension EntryCorePropertyClientFlowTests {
         "native_type":"string","allowed_operators":["all","any","cn","empty","eq","ew","exists","nc","neq","rx","sw"]}
         """.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        // decoder 관점에서 유효한 built-in 페어링도 mutation 응답으로는 승인되지 않는다.
+        // decoder 관점에서 유효한 registry-derived 페어링도 mutation 응답으로는
+        // 승인되지 않는다.
         let recorder = PropertyTransportRecorder(
-            response: Data(updateResponse(origin: "built_in", capability: runtimeUnavailable).utf8),
+            response: Data(
+                updateResponse(identityScheme: "registry_derived", editable: false, capability: runtimeUnavailable)
+                    .utf8,
+            ),
         )
         let client = EntryCorePropertyClient.makeLive(
             requestID: { "update-id" },
@@ -228,21 +236,64 @@ extension EntryCorePropertyClientFlowTests {
         )
         do {
             _ = try await client.definitionUpdate(endpoint, request)
-            XCTFail("built-in origin update response should be rejected")
+            XCTFail("registry-derived scheme update response should be rejected")
         } catch {
             XCTAssertEqual(error as? EntryCoreClientError, .protocolMismatch)
         }
         XCTAssertEqual(recorder.requests.count, 1)
 
         let acceptedRecorder = PropertyTransportRecorder(
-            response: Data(updateResponse(origin: "user_defined", capability: supported).utf8),
+            response: Data(
+                updateResponse(identityScheme: "voyager_issued", editable: true, capability: supported).utf8,
+            ),
         )
         let acceptedClient = EntryCorePropertyClient.makeLive(
             requestID: { "update-id" },
             makeTransport: acceptedRecorder.makeTransport,
         )
         let updated = try await acceptedClient.definitionUpdate(endpoint, request)
-        XCTAssertEqual(updated.origin, .userDefined)
+        XCTAssertEqual(updated.identityScheme, .voyagerIssued)
+    }
+
+    /// 프리셋 정의(built_in origin + voyager_issued + editable)는 option
+    /// mutation의 정상 대상이다. 선택지 없이 생성되는 Project 프리셋의 첫
+    /// 선택지 추가가 의도된 property.option.create 경로로 가능해야 한다.
+    func testOptionCreateAcceptsVoyagerIssuedPresetDefinition() async throws {
+        let propertyID = try PropertyID(rawValue: "00000000-0000-0000-8000-000000000001")
+        let optionID = try PropertyOptionID(rawValue: "00000000-0000-7000-8000-000000000001")
+        let request = try PropertyOptionCreateRequest(
+            propertyID: propertyID,
+            expectedDefinitionRevision: 1,
+            expectedDefinition: PropertyDefinition(
+                id: propertyID,
+                key: "project",
+                name: "Project",
+                valueType: .select,
+                cardinality: .one,
+                state: .active,
+                origin: .builtIn,
+                identityScheme: .voyagerIssued,
+                editable: true,
+                revision: 1,
+                options: [],
+                conditionCapability: .unsupported(.sourceRuntimeUnavailable),
+            ),
+            label: "new-label",
+        )
+        let endpoint = try EntryCoreEndpoint(path: "/tmp/property-client.sock")
+        let recorder = PropertyTransportRecorder(
+            response: Data(presetOptionCreateResponse(optionID: optionID.rawValue).utf8),
+        )
+        let client = EntryCorePropertyClient.makeLive(
+            requestID: { "option-create-id" },
+            makeTransport: recorder.makeTransport,
+        )
+
+        let created = try await client.optionCreate(endpoint, request)
+        XCTAssertEqual(recorder.requests.count, 1)
+        XCTAssertEqual(created.origin, .builtIn)
+        XCTAssertEqual(created.identityScheme, .voyagerIssued)
+        XCTAssertEqual(created.options.last?.label, "new-label")
     }
 
     /// CreateOption은 새 option을 항상 마지막 ordinal 뒤에 추가한다. 기존
@@ -344,6 +395,8 @@ extension EntryCorePropertyClientFlowTests {
                 cardinality: .one,
                 state: .active,
                 origin: .userDefined,
+                identityScheme: .voyagerIssued,
+                editable: true,
                 revision: 1,
                 options: [
                     PropertyOption(id: option1ID, label: "original-label", position: 1, state: .active),
@@ -634,7 +687,9 @@ private func definitionCreateResponse(origin: String, capability: String) -> Str
       "result":{"definition":{
         "property_id":"00000000-0000-0000-8000-000000000001",
         "key":"created-key","name":"created name",
-        "value_type":"text","cardinality":"one","state":"active","origin":"\(origin)",
+        "value_type":"text","cardinality":"one","state":"active","origin":"\(
+            origin
+        )","identity_scheme":"voyager_issued","editable":true,
         "revision":1,"options":[],
         "condition_capability":\(capability)
       }}
@@ -727,13 +782,34 @@ func optionCreateResponse(options: String, operators: String) -> String {
       "result":{"definition":{
         "property_id":"00000000-0000-0000-8000-000000000001",
         "key":"select-key","name":"select name",
-        "value_type":"select","cardinality":"one","state":"active","origin":"user_defined",
+        "value_type":"select","cardinality":"one","state":"active","origin":"user_defined","identity_scheme":"voyager_issued","editable":true,
         "revision":2,
         "options":[
           \(options)
         ],
         "condition_capability":{"supported":true,"evaluation_scope":"local_assignment",
           "catalog_version":"2.2.0","native_type":"categorical","allowed_operators":[\(operators)]}
+      }}
+    }
+    """
+}
+
+/// 프리셋 정의의 option create 응답이다. built_in origin + voyager_issued +
+/// editable 페어링과 built-in 정의의 runtime-unavailable capability를 운반한다.
+func presetOptionCreateResponse(optionID: String) -> String {
+    """
+    {
+      "request_id":"option-create-id",
+      "ok":true,
+      "result":{"definition":{
+        "property_id":"00000000-0000-0000-8000-000000000001",
+        "key":"project","name":"Project",
+        "value_type":"select","cardinality":"one","state":"active","origin":"built_in","identity_scheme":"voyager_issued","editable":true,
+        "revision":2,
+        "options":[
+          {"option_id":"\(optionID)","label":"new-label","position":1,"state":"active"}
+        ],
+        "condition_capability":{"supported":false,"reason":"source_runtime_unavailable"}
       }}
     }
     """

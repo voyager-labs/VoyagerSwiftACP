@@ -122,6 +122,8 @@ func selectDefinitionSnapshot(options: [PropertyOption]) throws -> PropertyDefin
         cardinality: .one,
         state: .active,
         origin: .userDefined,
+        identityScheme: .voyagerIssued,
+        editable: true,
         revision: 1,
         options: options,
         conditionCapability: .supported(

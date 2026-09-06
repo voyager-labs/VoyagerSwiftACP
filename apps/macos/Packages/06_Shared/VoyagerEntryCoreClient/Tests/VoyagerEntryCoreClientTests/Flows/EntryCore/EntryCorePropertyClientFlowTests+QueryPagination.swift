@@ -428,6 +428,8 @@ func testDefinitionMutationRequestsValidateExpectedDefinitionSnapshot() throws {
         cardinality: .one,
         state: .active,
         origin: .userDefined,
+        identityScheme: .voyagerIssued,
+        editable: true,
         revision: 1,
         options: [],
         conditionCapability: .unsupported(.unsupportedValueContract),
@@ -444,6 +446,8 @@ func testDefinitionMutationRequestsValidateExpectedDefinitionSnapshot() throws {
             cardinality: .one,
             state: state,
             origin: .userDefined,
+            identityScheme: .voyagerIssued,
+            editable: true,
             revision: revision,
             options: [],
             conditionCapability: .unsupported(.unsupportedValueContract),
@@ -492,6 +496,8 @@ func testDefinitionMutationRequestsValidateExpectedDefinitionSnapshot() throws {
         cardinality: .one,
         state: .active,
         origin: .builtIn,
+        identityScheme: .registryDerived,
+        editable: false,
         revision: 1,
         options: [],
         conditionCapability: .unsupported(.sourceRuntimeUnavailable),
@@ -695,7 +701,7 @@ private func paginationDefinitionJSON(id: Int) -> String {
     {
       "property_id":"00000000-0000-0000-8000-00000000000\(id)",
       "key":"paginated-key-\(id)","name":"paginated name",
-      "value_type":"text","cardinality":"one","state":"disabled","origin":"user_defined",
+      "value_type":"text","cardinality":"one","state":"disabled","origin":"user_defined","identity_scheme":"voyager_issued","editable":true,
       "revision":1,"options":[],
       "condition_capability":{"supported":false,"reason":"definition_disabled"}
     }

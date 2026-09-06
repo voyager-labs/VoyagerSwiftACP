@@ -268,6 +268,8 @@ extension EntryCorePropertyClient {
             cardinality: snapshot.cardinality,
             state: state,
             origin: snapshot.origin,
+            identityScheme: snapshot.identityScheme,
+            editable: snapshot.editable,
             revision: revision,
             options: snapshot.options,
             conditionCapability: capability,
@@ -395,6 +397,8 @@ extension EntryCorePropertyClient {
             cardinality: snapshot.cardinality,
             state: snapshot.state,
             origin: snapshot.origin,
+            identityScheme: snapshot.identityScheme,
+            editable: snapshot.editable,
             revision: revision,
             options: options,
             conditionCapability: snapshot.conditionCapability,
@@ -506,8 +510,10 @@ extension EntryCorePropertyClient {
         expectedDefinitionRevision: Int64,
         state: PropertyDefinitionState = .active,
     ) -> Bool {
+        // Go mutateDefinition과 동일한 게이트다: mutation 가능 여부는 origin이
+        // 아니라 identity scheme(voyager_issued)이 결정한다.
         guard expectedDefinitionRevision >= 1, expectedDefinitionRevision < Int64.max,
-              definition.origin == .userDefined
+              definition.identityScheme == .voyagerIssued
         else { return false }
         return definition.id == propertyID
             && definition.revision == expectedDefinitionRevision + 1

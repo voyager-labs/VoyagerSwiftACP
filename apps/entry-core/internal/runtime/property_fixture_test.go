@@ -207,14 +207,16 @@ func testDefinitionView(idText string, active bool) applicationproperty.Definiti
 	}
 	return applicationproperty.DefinitionView{
 		Definition: domainentry.WorkspacePropertyDefinition{
-			PropertyID:    domainentry.MustPropertyID(idText),
-			CanonicalKey:  "key_" + strings.ReplaceAll(idText[len(idText)-6:], "-", "_"),
-			DisplayName:   "display name",
-			Lifecycle:     lifecycle,
-			ValueType:     domainentry.PropertyTypeText,
-			Cardinality:   domainentry.PropertyCardinalityOne,
-			Origin:        domainentry.PropertyOriginUserDefined,
-			DefinitionRev: 1,
+			PropertyID:     domainentry.MustPropertyID(idText),
+			CanonicalKey:   "key_" + strings.ReplaceAll(idText[len(idText)-6:], "-", "_"),
+			DisplayName:    "display name",
+			Lifecycle:      lifecycle,
+			ValueType:      domainentry.PropertyTypeText,
+			Cardinality:    domainentry.PropertyCardinalityOne,
+			Origin:         domainentry.PropertyOriginUserDefined,
+			IdentityScheme: domainentry.PropertyIdentitySchemeVoyagerIssued,
+			Editable:       true,
+			DefinitionRev:  1,
 		},
 	}
 }

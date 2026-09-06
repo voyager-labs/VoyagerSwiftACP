@@ -92,7 +92,24 @@ private extension EntryCorePropertyResponseDecoder {
         return PropertyDefinitionPage(definitions: definitions, nextPageToken: token, hasMore: hasMore)
     }
 
-    static func definition(_ value: StrictJSONValue) throws -> PropertyDefinition {
+    /// definition 응답 헤더의 엄격 스칼라 추출 결과다. 필드 집합과 각 primitive의
+    /// wire 형식은 Go decodePropertyDefinition의 strict field 목록과 같은 경계다.
+    private struct ParsedDefinitionHeader {
+        let id: PropertyID
+        let key: String
+        let name: String
+        let valueType: PropertyValueType
+        let cardinality: PropertyCardinality
+        let state: PropertyDefinitionState
+        let origin: PropertyDefinitionOrigin
+        let identityScheme: PropertyIdentityScheme
+        let editable: Bool
+        let revision: Int64
+        let capabilityValue: StrictJSONValue?
+        let optionValues: [StrictJSONValue]
+    }
+
+    private static func parseDefinitionHeader(_ value: StrictJSONValue) throws -> ParsedDefinitionHeader {
         guard let fields = value.objectFields(exactly: [
             "property_id",
             "key",
@@ -101,6 +118,8 @@ private extension EntryCorePropertyResponseDecoder {
             "cardinality",
             "state",
             "origin",
+            "identity_scheme",
+            "editable",
             "revision",
             "options",
             "condition_capability",
@@ -110,25 +129,20 @@ private extension EntryCorePropertyResponseDecoder {
             case let .string(typeRaw)? = fields["value_type"],
             case let .string(cardinalityRaw)? = fields["cardinality"],
             case let .string(stateRaw)? = fields["state"],
-            case let .string(originRaw)? = fields["origin"], let revision = integer(fields["revision"]), revision >= 1,
-            case let .array(optionValues)? = fields["options"], optionValues.count <= 256,
+            case let .string(originRaw)? = fields["origin"],
+            case let .string(schemeRaw)? = fields["identity_scheme"],
+            case let .bool(editable)? = fields["editable"],
+            let revision = integer(fields["revision"]), revision >= 1,
+            case let .array(optionValues)? = fields["options"],
             let type = PropertyValueType(rawValue: typeRaw),
             let cardinality = PropertyCardinality(rawValue: cardinalityRaw),
             let state = PropertyDefinitionState(rawValue: stateRaw),
-            let origin = PropertyDefinitionOrigin(rawValue: originRaw), PropertyWireValidation.short(key),
-            PropertyWireValidation.short(name) else { throw mismatch }
-        let options = try optionValues.map(option)
-        guard type == .select || options.isEmpty, Set(options.map(\.id)).count == options.count,
-              zip(options, options.dropFirst()).allSatisfy({ $0.position < $1.position }) else { throw mismatch }
-        let conditionCapability = try capability(fields["condition_capability"])
-        try validate(
-            conditionCapability,
-            matchesValueType: type,
-            cardinality: cardinality,
-            state: state,
-            origin: origin,
-        )
-        return try PropertyDefinition(
+            let origin = PropertyDefinitionOrigin(rawValue: originRaw),
+            let identityScheme = PropertyIdentityScheme(rawValue: schemeRaw),
+            PropertyWireValidation.short(key),
+            PropertyWireValidation.short(name)
+        else { throw mismatch }
+        return try ParsedDefinitionHeader(
             id: PropertyID(rawValue: id),
             key: key,
             name: name,
@@ -136,7 +150,47 @@ private extension EntryCorePropertyResponseDecoder {
             cardinality: cardinality,
             state: state,
             origin: origin,
+            identityScheme: identityScheme,
+            editable: editable,
             revision: revision,
+            capabilityValue: fields["condition_capability"],
+            optionValues: optionValues,
+        )
+    }
+
+    /// option 배열의 wire 불변식(select 이외의 정의는 빼고, ID 유일, position
+    /// 오름차순)을 검증한다. Go decodePropertyDefinition과 같은 경계다.
+    private static func definitionOptions(_ values: [StrictJSONValue]) throws -> [PropertyOption] {
+        guard values.count <= 256 else { throw mismatch }
+        let options = try values.map(option)
+        guard Set(options.map(\.id)).count == options.count,
+              zip(options, options.dropFirst()).allSatisfy({ $0.position < $1.position }) else { throw mismatch }
+        return options
+    }
+
+    static func definition(_ value: StrictJSONValue) throws -> PropertyDefinition {
+        let header = try parseDefinitionHeader(value)
+        let options = try definitionOptions(header.optionValues)
+        guard header.valueType == .select || options.isEmpty else { throw mismatch }
+        let conditionCapability = try capability(header.capabilityValue)
+        try validate(
+            conditionCapability,
+            matchesValueType: header.valueType,
+            cardinality: header.cardinality,
+            state: header.state,
+            origin: header.origin,
+        )
+        return PropertyDefinition(
+            id: header.id,
+            key: header.key,
+            name: header.name,
+            valueType: header.valueType,
+            cardinality: header.cardinality,
+            state: header.state,
+            origin: header.origin,
+            identityScheme: header.identityScheme,
+            editable: header.editable,
+            revision: header.revision,
             options: options,
             conditionCapability: conditionCapability,
         )
