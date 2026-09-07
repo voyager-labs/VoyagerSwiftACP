@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "swift-acp",
+    name: "VoyagerSwiftACP",
     platforms: [
         .macOS(.v12),
         .iOS(.v15),
