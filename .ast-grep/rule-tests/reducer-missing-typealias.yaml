@@ -6,7 +6,8 @@ valid:
       typealias State = S
       typealias Action = A
     }
-  - struct Ordinary { let value: Int }
+  - |
+    struct Ordinary { let value: Int }
 invalid:
   - |
     @Reducer

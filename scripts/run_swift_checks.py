@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Run read-only Swift checks against an explicit Git snapshot.
+"""Read-only Swift checks against an explicit Git content snapshot.
 
-The index is exported through a private index, never by stashing or checking out
-user files. stdout is a receipt; child output goes to stderr. This is not a
-compiler, a semantic ownership proof, or an agent-behavior evaluation.
+This runner checks syntax/style, not compiler correctness or global ownership.
+It never stashes, resets, formats, stages, or checks out user working-tree files.
 """
 from __future__ import annotations
 
 import argparse
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 import json
@@ -16,7 +16,6 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
-from collections.abc import Iterator, Sequence
 
 
 @dataclass(frozen=True)
@@ -28,9 +27,13 @@ class CheckResult:
 
 
 def git(root: Path, *args: str, env: dict[str, str] | None = None) -> bytes:
-    result = subprocess.run(
-        ["git", *args], cwd=root, env=env, capture_output=True, check=False,
-    )
+    try:
+        result = subprocess.run(
+            ["git", *args], cwd=root, env=env, capture_output=True,
+            timeout=60, check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise RuntimeError(f"Git scope discovery blocked: {error}") from error
     if result.returncode:
         raise RuntimeError(result.stderr.decode(errors="replace").strip())
     return result.stdout
@@ -49,9 +52,9 @@ def changed_paths(root: Path, mode: str, base: str | None) -> list[str]:
         base_sha = git(root, "rev-parse", "--verify", f"{base}^{{commit}}").decode().strip()
         ancestor = git(root, "merge-base", base_sha, "HEAD").decode().strip()
         return paths_from_nul(git(root, "diff", "--name-only", "-z", "--diff-filter=ACMRD", ancestor, "HEAD"))
-    unstaged = paths_from_nul(git(root, "diff", "--name-only", "-z", "--diff-filter=ACMRD", "HEAD"))
+    local = paths_from_nul(git(root, "diff", "--name-only", "-z", "--diff-filter=ACMRD", "HEAD"))
     untracked = paths_from_nul(git(root, "ls-files", "--others", "--exclude-standard", "-z"))
-    return sorted(set(unstaged + untracked))
+    return sorted(set(local + untracked))
 
 
 @contextmanager
@@ -91,6 +94,23 @@ def safe_file(root: Path, relative: str) -> Path:
     return path
 
 
+def path_batches(paths: Sequence[str], budget: int = 32768) -> Iterator[list[str]]:
+    """Bound argv bytes, including UTF-8, below macOS ARG_MAX for large packages."""
+    batch: list[str] = []
+    size = 0
+    for path in paths:
+        cost = len(os.fsencode(path)) + 1
+        if cost > budget:
+            raise RuntimeError("one source path exceeds the argv budget")
+        if batch and size + cost > budget:
+            yield batch
+            batch, size = [], 0
+        batch.append(path)
+        size += cost
+    if batch:
+        yield batch
+
+
 def run_check(name: str, args: Sequence[str], root: Path) -> CheckResult:
     try:
         completed = subprocess.run(
@@ -105,15 +125,20 @@ def run_check(name: str, args: Sequence[str], root: Path) -> CheckResult:
 
 
 def check_exit(results: Sequence[CheckResult]) -> int:
-    if any(result.status == "blocked" for result in results):
+    if any(result.status not in {"passed", "failed", "notApplicable"} for result in results):
         return 2
     return 1 if any(result.status == "failed" for result in results) else 0
 
 
 def check_sources(root: Path, paths: list[str], checks: list[str]) -> list[CheckResult]:
-    files = sorted(path for path in set(paths) if is_swift_source(path) and (root / path).is_file())
-    for path in files:
-        safe_file(root, path)
+    candidates = sorted(path for path in set(paths) if is_swift_source(path))
+    files = []
+    for path in candidates:
+        if (root / path).is_symlink():
+            raise RuntimeError(f"source symlink is not a regular snapshot input: {path}")
+        if (root / path).is_file():
+            safe_file(root, path)
+            files.append(path)
     results: list[CheckResult] = []
     tools = {"ast": ("ast-grep", "--version"), "format": ("swiftformat", "--version"), "lint": ("swiftlint", "version")}
     for check in checks:
@@ -122,20 +147,19 @@ def check_sources(root: Path, paths: list[str], checks: list[str]) -> list[Check
             continue
         probe = run_check(f"{check}:tool", ["mise", "exec", "--", *tools[check]], root)
         if probe.status != "passed":
-            results.append(CheckResult(check, "blocked", probe.returncode, "required pinned tool unavailable"))
+            results.append(CheckResult(check, "blocked", probe.returncode, "required pinned tool or snapshot config trust unavailable"))
             continue
+        commands = []
         if check == "format":
             config = safe_file(root, "apps/macos/.swiftformat")
-            commands = [("format", ["mise", "exec", "--", "swiftformat", "--lint", "--config", str(config), *files])]
+            commands.append(("format", ["mise", "exec", "--", "swiftformat", "--lint", "--config", str(config)], files))
         elif check == "lint":
-            commands = []
             for tests, config_name in [(False, ".swiftlint.yml"), (True, ".swiftlint-tests.yml")]:
                 selected = [path for path in files if is_test(path) == tests]
                 if selected:
                     config = safe_file(root, f"apps/macos/{config_name}")
-                    commands.append((f"lint:{'tests' if tests else 'sources'}", ["mise", "exec", "--", "swiftlint", "--config", str(config), *selected]))
+                    commands.append((f"lint:{'tests' if tests else 'sources'}", ["mise", "exec", "--", "swiftlint", "--config", str(config)], selected))
         else:
-            commands = []
             rules = sorted((root / ".ast-grep/rules").rglob("*.yaml"))
             if not rules:
                 raise RuntimeError("no AST rule files found in snapshot")
@@ -147,11 +171,12 @@ def check_sources(root: Path, paths: list[str], checks: list[str]) -> list[Check
                     raise RuntimeError(f"unregistered AST rule scope: {segment}")
                 selected = [path for path in production if "/Ui/" in path] if segment == "ui" else production
                 if selected:
-                    commands.append((f"ast:{rule.stem}", ["mise", "exec", "--", "ast-grep", "scan", "--rule", str(rule), *selected]))
+                    commands.append((f"ast:{rule.stem}", ["mise", "exec", "--", "ast-grep", "scan", "--rule", str(rule)], selected))
             if not commands:
                 results.append(CheckResult("ast", "notApplicable", reason="no production Swift sources"))
-        for name, command in commands:
-            results.append(run_check(name, command, root))
+        for name, prefix, selected in commands:
+            for batch_index, batch in enumerate(path_batches(selected), 1):
+                results.append(run_check(f"{name}:batch-{batch_index}", [*prefix, *batch], root))
     return results
 
 
@@ -178,10 +203,13 @@ def main() -> int:
     root = args.root.resolve()
     mode = "staged" if args.staged else "base-ref" if args.base_ref else "all" if args.all else "working-tree"
     tree_sha = None
+    results: list[CheckResult] = []
     try:
         paths = changed_paths(root, mode, args.base_ref)
         with snapshot(root, mode) as (content_root, tree_sha):
-            results = []
+            # Detect a changed file set while selecting the frozen content tree.
+            if mode in {"staged", "base-ref"} and paths != changed_paths(root, mode, args.base_ref):
+                raise RuntimeError("Git scope changed during snapshot selection; rerun")
             all_paths = paths_from_nul(
                 git(root, "ls-tree", "-r", "--name-only", "-z", tree_sha)
                 if tree_sha else git(root, "ls-files", "-z")
@@ -190,12 +218,13 @@ def main() -> int:
                 selected = sorted(set(all_paths + paths)) if policy_changed(paths, check) else paths
                 results.extend(check_sources(content_root, selected, [check]))
                 if check == "ast" and (policy_changed(paths, check) or args.all):
+                    safe_file(content_root, "sgconfig.yml")
                     if not list((content_root / ".ast-grep/rule-tests").glob("*.yaml")):
                         raise RuntimeError("AST rule fixtures are missing")
                     results.append(run_check("ast:fixtures", ["mise", "exec", "--", "ast-grep", "test", "--skip-snapshot-tests"], content_root))
     except (RuntimeError, OSError) as error:
-        results = [CheckResult("scope", "blocked", reason=str(error))]
-    print(json.dumps({"tool": "swift-checks", "mode": mode, "tree": tree_sha, "checks": [asdict(result) for result in results]}, ensure_ascii=True, sort_keys=True))
+        results.append(CheckResult("scope", "blocked", reason=str(error)))
+    print(json.dumps({"tool": "swift-checks", "mode": mode, "tree": tree_sha, "selectedChecks": args.checks, "checks": [asdict(result) for result in results]}, ensure_ascii=True, sort_keys=True))
     return check_exit(results)
 
 
