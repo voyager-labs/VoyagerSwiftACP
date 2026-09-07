@@ -79,7 +79,9 @@ class SwiftCheckContractTests(unittest.TestCase):
             required = subprocess.run([*command, "--with-build-matrix"], capture_output=True, text=True, check=False)
             self.assertEqual(required.returncode, 1, required.stderr)
             self.assertEqual(json.loads(required.stdout)["buildMatrix"]["status"], "failed")
-            matrix.write_text("raise SystemExit(0)\n")
+            # Change source size as well as content: timestamp-based .pyc caches
+            # can otherwise reuse the failure fixture within the same second.
+            matrix.write_text("raise SystemExit(0)  # corrected fixture\n")
             corrected = subprocess.run([*command, "--with-build-matrix"], capture_output=True, text=True, check=False)
             self.assertEqual(corrected.returncode, 0, corrected.stderr)
             self.assertEqual(json.loads(corrected.stdout)["buildMatrix"]["status"], "passed")
