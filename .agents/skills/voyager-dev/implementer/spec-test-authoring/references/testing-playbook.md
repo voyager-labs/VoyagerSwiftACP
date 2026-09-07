@@ -203,7 +203,7 @@ spec 테스트 파일이 SwiftLint `file_length`(기본 400줄) 또는 `type_bod
 | **B (차선)** | 별개 테스트 클래스로 spec 분할  | `ONB001RestorationTests: XCTestCase` 처럼 별개 클래스로 분할. spec ID는 유지하되 테스트 클래스를 나눔                                      |
 | **C (정책)** | `.swiftlint.yml` threshold 상향 | `file_length: 1200` 등 limit 자체 상향. project-wide policy change이므로 user 명시적 승인 필요                                             |
 
-extension 파일 분할(`+Subtopic.swift`)도 동작하지만, 같은 타입을 여러 파일에 분산시켜 가독성이 떨어질 수 있다. Support 추출을 우선 시도할 것.
+Spec-owner test methods must stay in the canonical suite file; do not introduce `+Subtopic.swift` extension files. When an existing suite is split this way, merge its methods into the canonical file and keep only fixtures, doubles, recorders, and builders under `Support/`.
 
 > **출처:** PR #329 Task 8. `kw-20260712-swiftlint-file-length-type-body-length-spec`
 
@@ -283,11 +283,14 @@ rg --files apps/macos/Packages -g 'Package.swift' | sort
 # Find package test targets in the current manifests
 rg -n --glob 'Package.swift' '\.testTarget\(' apps/macos/Packages
 
-# Find declared test suites and methods after selecting a package
-rg -n --glob '*Tests.swift' '^[[:space:]]*(final[[:space:]]+)?(class|struct)[[:space:]].*Tests|^[[:space:]]*func[[:space:]]+test|@Test' apps/macos/Packages/<package>/Tests
+# Inventory every Swift test source for topology violations
+rg --files apps/macos/Packages/<package>/Tests -g '*.swift' | sort
+
+# Find declared canonical test suites and methods after selecting a package
+rg -n --glob '*Tests.swift' '^[[:space:]]*(final[[:space:]]+)?(class|struct)[[:space:]]+[A-Z].*Tests|^[[:space:]]*func[[:space:]]+test|@Test' apps/macos/Packages/<package>/Tests
 ```
 
-The manifest identifies the package test target. The suite declaration identifies the focused filter. A package without a `.testTarget` has no package-local test execution evidence to collect; record that owner-level gap instead of inferring status from an app scheme or changing an app test plan.
+The manifest identifies the package test target. The complete Swift inventory identifies non-canonical files that must be corrected before treating the package topology as valid; `Specs/` accepts only the canonical `<SpecID><PascalCaseSpecTitle>Tests.swift` suite file, not `+Subtopic.swift` extensions. The suite declaration identifies the focused filter. A package without a `.testTarget` has no package-local test execution evidence to collect; record that owner-level gap instead of inferring status from an app scheme or changing an app test plan.
 
 ### Per-package test execution
 

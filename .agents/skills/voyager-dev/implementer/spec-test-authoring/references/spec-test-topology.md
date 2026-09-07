@@ -85,6 +85,7 @@ Use `--filter <SpecID><PascalCaseSpecTitle>Tests`, not the test target name.
 - Component or infrastructure unit test files (e.g. `AccountTokenFileStoreTests.swift`, `SomeClientTests.swift`, `TokenMapperTests.swift`).
 - Implementation-named suites that are not traceable to a spec AC.
 - Any file whose class name does not match `<SpecID><PascalCaseSpecTitle>Tests`.
+- Extension-suffixed suite files such as `SET002ConfigureGeneralSettingsTests+StartPageResolution.swift`. Move their test methods into the canonical suite file; keep only fixtures, doubles, recorders, and builders in `Support/`.
 
 ### Component behavior coverage workflow
 

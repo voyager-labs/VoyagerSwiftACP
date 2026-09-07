@@ -123,6 +123,18 @@
         "Output identifies scripts/lint-and-format-macos.sh and .swiftlint-tests.yml for test-file lint",
         "Output reports test execution, lockfile integrity, and test lint as independent evidence"
       ]
+    },
+    {
+      "id": 11,
+      "prompt": "A canonical spec-owner suite named SET002ConfigureGeneralSettingsTests.swift has an additional SET002ConfigureGeneralSettingsTests+StartPageResolution.swift extension file under Specs/. The tests belong to the same spec owner. What topology action should the agent take?",
+      "expected_output": "The agent merges the extension test methods into SET002ConfigureGeneralSettingsTests.swift, removes the +StartPageResolution.swift file, and keeps only fixtures/doubles/recorders/builders under Support/. It does not treat a suite extension file as an allowed second spec-owner file.",
+      "files": [],
+      "assertions": [
+        "Output merges extension test methods into the canonical SET002ConfigureGeneralSettingsTests.swift file",
+        "Output removes the +StartPageResolution.swift suite extension file",
+        "Output allows fixtures, doubles, recorders, or builders under Support/ rather than another Specs file",
+        "Output does not recommend keeping a second spec-owner extension file"
+      ]
     }
   ]
 }
