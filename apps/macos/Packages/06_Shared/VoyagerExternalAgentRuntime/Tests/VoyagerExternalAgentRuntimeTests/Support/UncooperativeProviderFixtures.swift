@@ -35,15 +35,110 @@ private func makeUncooperativeStoredSession(
 
 private func makeUncooperativeAdapter(
     events: [[RuntimeEventEnvelope]],
+    launchGate: RuntimeTestGate? = nil,
+    launchReceiptRunReference: RuntimeRunReference? = nil,
+    onLaunchReceiptReady: (@Sendable () -> Void)? = nil,
+    ignoresLaunchCancellation: Bool = false,
     invocationGate: RuntimeTestGate? = nil,
+    providerReference: ProviderInternalSessionReference,
 ) -> DeterministicRuntimeAdapter {
     DeterministicRuntimeAdapter(
         id: "sdk",
         transport: .sdkAsyncStream,
         capabilities: uncooperativeStreamCapabilities,
         eventsByEventStream: events,
+        launchGate: launchGate,
+        launchReceiptRunReference: launchReceiptRunReference,
+        launchReceiptProviderReference: providerReference,
+        onLaunchReceiptReady: onLaunchReceiptReady,
+        ignoresLaunchCancellation: ignoresLaunchCancellation,
         eventStreamInvocationGate: invocationGate,
     )
+}
+
+struct UncooperativeProviderLaunchFixture {
+    let clock: DeterministicRuntimeRestorationClock
+    let host: ExternalAgentSessionReference
+    let run: RuntimeRunReference
+    let context: RuntimeContextPolicy
+    let launchGate: RuntimeTestGate
+    let store: InMemoryRuntimeStateStore
+    let adapter: DeterministicRuntimeAdapter
+    let plane: RuntimeControlPlane
+    let hostTerminal: RuntimeEventEnvelope
+}
+
+func makeUncooperativeProviderLaunchFixture(
+    launchReceiptRunReference: RuntimeRunReference? = nil,
+    onLaunchReceiptReady: (@Sendable () -> Void)? = nil,
+    ignoresLaunchCancellation: Bool = false,
+) -> UncooperativeProviderLaunchFixture {
+    let now = Date(timeIntervalSince1970: 4_102_444_800)
+    let clock = DeterministicRuntimeRestorationClock(currentDate: now)
+    let host: ExternalAgentSessionReference = "uncooperative-launch"
+    let run = RuntimeRunReference("uncooperative-launch-run")
+    let context = makeContext()
+    let launchGate = RuntimeTestGate()
+    let completed = makeEvent(
+        host: host,
+        run: run,
+        sequence: 1,
+        idempotencyKey: "uncooperative-launch-completed",
+        kind: .completed,
+    )
+    let stored = makeUncooperativeStoredSession(
+        host: host,
+        run: run,
+        context: context,
+        receipt: "uncooperative-launch-receipt",
+    )
+    let store = InMemoryRuntimeStateStore(state: makeState([stored]))
+    let adapter = makeUncooperativeAdapter(
+        events: [[completed]],
+        launchGate: launchGate,
+        launchReceiptRunReference: launchReceiptRunReference,
+        onLaunchReceiptReady: onLaunchReceiptReady,
+        ignoresLaunchCancellation: ignoresLaunchCancellation,
+        providerReference: ProviderInternalSessionReference("uncooperative-launch-receipt"),
+    )
+    let plane = RuntimeControlPlane(
+        store: store,
+        restorationHeartbeatInterval: .seconds(20),
+        restorationClock: clock.runtimeClock,
+    )
+    let hostTerminal = makeHostTerminalEvent(
+        host: host,
+        run: run,
+        timestamp: now,
+        providerEventID: "uncooperative-launch-host-terminal",
+        idempotencyKey: "uncooperative-launch-host-terminal",
+    )
+    return UncooperativeProviderLaunchFixture(
+        clock: clock,
+        host: host,
+        run: run,
+        context: context,
+        launchGate: launchGate,
+        store: store,
+        adapter: adapter,
+        plane: plane,
+        hostTerminal: hostTerminal,
+    )
+}
+
+actor ResumeCancellationTrigger {
+    private var task: Task<Void, Never>?
+    private var requested = false
+
+    func set(_ task: Task<Void, Never>) {
+        self.task = task
+        if requested { task.cancel() }
+    }
+
+    func cancel() {
+        requested = true
+        task?.cancel()
+    }
 }
 
 private func makeHostTerminalEvent(
@@ -99,7 +194,11 @@ func makeUncooperativeProviderHostTerminalFixture() -> UncooperativeProviderHost
         receipt: "uncooperative-host-terminal-receipt",
     )
     let store = InMemoryRuntimeStateStore(state: makeState([stored]))
-    let adapter = makeUncooperativeAdapter(events: [[lateEvent]], invocationGate: streamGate)
+    let adapter = makeUncooperativeAdapter(
+        events: [[lateEvent]],
+        invocationGate: streamGate,
+        providerReference: ProviderInternalSessionReference("uncooperative-host-terminal-receipt"),
+    )
     let plane = RuntimeControlPlane(
         store: store,
         restorationHeartbeatInterval: .seconds(20),
@@ -168,6 +267,7 @@ func makeUncooperativeProviderCancellationFixture() -> UncooperativeProviderCanc
     let adapter = makeUncooperativeAdapter(
         events: [[oldEvent], [replacementEvent]],
         invocationGate: streamGate,
+        providerReference: ProviderInternalSessionReference("uncooperative-cancellation-receipt"),
     )
     let plane = RuntimeControlPlane(
         store: store,
@@ -223,7 +323,10 @@ func makeUncooperativeProviderCASFixture() -> UncooperativeProviderCASFixture {
         state: makeState([stored]),
         saveGates: [3: providerApplyGate],
     )
-    let adapter = makeUncooperativeAdapter(events: [[providerEvent]])
+    let adapter = makeUncooperativeAdapter(
+        events: [[providerEvent]],
+        providerReference: ProviderInternalSessionReference("provider-terminal-cas-loss-receipt"),
+    )
     let plane = RuntimeControlPlane(
         store: store,
         restorationHeartbeatInterval: .seconds(20),

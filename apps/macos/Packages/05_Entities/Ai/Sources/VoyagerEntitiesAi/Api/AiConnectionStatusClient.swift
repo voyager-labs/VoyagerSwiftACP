@@ -36,17 +36,25 @@ extension AiConnectionStatusClient: DependencyKey {
         return persistenceClient(store: store)
     }
 
-    nonisolated private static func persistenceClient(store: AIConnectionFileStore) -> AiConnectionStatusClient {
-        let runtimeClient = AiConnectionRuntimeClient.live()
-        return AiConnectionStatusClient(
+    nonisolated static func persistenceClient(
+        store: AIConnectionFileStore,
+        runtimeClient: AiConnectionRuntimeClient = .live(),
+    ) -> AiConnectionStatusClient {
+        AiConnectionStatusClient(
             checkStatus: { provider in
                 try? await store.migrateFromHomeIfNeeded()
+                if provider == .chatgptCodex {
+                    _ = try? await store.update { AIConnectionsNormalizer.normalize($0) }
+                }
                 let file = await (try? store.load()) ?? AIConnectionsFile.empty()
-                guard let record = file.providers[provider.rawValue],
-                      record.credential != nil
-                else {
+                guard let record = file.providers[provider.rawValue] else {
                     return .notConfigured
                 }
+                if provider == .chatgptCodex {
+                    let result = await runtimeClient.verifyProvider(provider, record.credential)
+                    return Self.status(from: result)
+                }
+                guard record.credential != nil else { return .notConfigured }
                 if record.snapshot.lastKnownStatus == .connected {
                     let result = await runtimeClient.verifyProvider(provider, record.credential)
                     return Self.status(from: result)

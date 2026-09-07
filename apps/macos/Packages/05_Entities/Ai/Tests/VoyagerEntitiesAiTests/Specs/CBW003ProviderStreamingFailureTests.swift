@@ -39,9 +39,9 @@ final class CBW003ProviderStreamingFailureTests: XCTestCase {
             finished: consumerFinished,
         )
 
-        XCTAssertEqual(XCTWaiter.wait(for: [executorEntered, startedObserved], timeout: 1.0), .completed)
+        await fulfillment(of: [executorEntered, startedObserved], timeout: 1.0)
         consumerTask.cancel()
-        XCTAssertEqual(XCTWaiter.wait(for: [executorCancelled, consumerFinished], timeout: 1.0), .completed)
+        await fulfillment(of: [executorCancelled, consumerFinished], timeout: 1.0)
 
         let events = await consumerTask.value
         XCTAssertEqual(events, [.started(context: request.context)])
@@ -81,7 +81,7 @@ final class CBW003ProviderStreamingFailureTests: XCTestCase {
     }
 
     /// CBW-003-stream_contextual_chat_response: malformed known Codex notification은 classified failure로 수렴한다.
-    /// App Server parser가 known lifecycle 손상을 unknown처럼 무시하지 않고 기존 failure surface로 전달하는지 검증합니다.
+    /// Codex exec decoder의 malformed lifecycle 손상이 unknown처럼 무시되지 않고 기존 failure surface로 전달되는지 검증합니다.
     /// - 검증 내용: injected executor의 malformed-known parsing error가 invalidRequest event로 변환되는지 확인합니다.
     /// - 사전 조건: Codex OAuth request와 `item/started` malformed parsing error fixture를 사용합니다.
     /// - 기대 결과: started 이후 invalidRequest failed event가 한 번만 반환됩니다.
@@ -89,7 +89,7 @@ final class CBW003ProviderStreamingFailureTests: XCTestCase {
         let request = providerExecutionMakeRequest(provider: .chatgptCodex, rawModelID: "gpt-5-codex")
         let client = AiChatProviderExecutionClient.live(
             codexExecutor: { _, _ in
-                throw CodexAppServerParsingError.malformedKnownEvent("item/started")
+                throw CodexCLIExecutionError.protocolFailure(.invalidRequest)
             },
         )
 

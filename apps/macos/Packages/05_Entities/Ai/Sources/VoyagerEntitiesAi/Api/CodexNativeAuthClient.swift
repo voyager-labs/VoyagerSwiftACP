@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import Darwin
 import Foundation
 
 // MARK: - Supporting Models
@@ -25,6 +26,12 @@ public struct DeviceAuthChallenge: Equatable, Sendable {
 public enum BrowserLoginState: Equatable, Sendable {
     case inProgress
     case completed(OAuthCredentialFile)
+    case failed(CodexNativeAuthError)
+}
+
+public enum CodexProviderLoginState: Equatable, Sendable {
+    case inProgress
+    case completed
     case failed(CodexNativeAuthError)
 }
 
@@ -135,6 +142,8 @@ public struct CodexNativeAuthClient: Sendable {
     public var completeDeviceAuth: @Sendable (_ challenge: DeviceAuthChallenge) async throws -> OAuthCredentialFile
     public var cancelCurrentFlow: @Sendable () async -> Void
     public var refreshCredential: @Sendable (OAuthCredentialFile) async throws -> OAuthCredentialFile
+    public var startProviderLogin: (@Sendable () -> AsyncThrowingStream<CodexProviderLoginState, Error>)?
+    public var logout: @Sendable () async throws -> Void
 
     nonisolated public init(
         startBrowserLogin: @escaping @Sendable () -> AsyncThrowingStream<BrowserLoginState, Error>,
@@ -144,12 +153,16 @@ public struct CodexNativeAuthClient: Sendable {
         refreshCredential: @escaping @Sendable (OAuthCredentialFile) async throws -> OAuthCredentialFile = { _ in
             throw CodexNativeAuthError.loginUnavailable
         },
+        startProviderLogin: (@Sendable () -> AsyncThrowingStream<CodexProviderLoginState, Error>)? = nil,
+        logout: @escaping @Sendable () async throws -> Void = {},
     ) {
         self.startBrowserLogin = startBrowserLogin
         self.startDeviceAuth = startDeviceAuth
         self.completeDeviceAuth = completeDeviceAuth
         self.cancelCurrentFlow = cancelCurrentFlow
         self.refreshCredential = refreshCredential
+        self.startProviderLogin = startProviderLogin
+        self.logout = logout
     }
 }
 
@@ -165,7 +178,10 @@ extension CodexNativeAuthClient: DependencyKey {
 
         return CodexNativeAuthClient(
             startBrowserLogin: {
-                browserLoginStream(flow: browserLoginFlow, session: session)
+                AsyncThrowingStream<BrowserLoginState, Error> { continuation in
+                    continuation.yield(.failed(.loginUnavailable))
+                    continuation.finish()
+                }
             },
             startDeviceAuth: {
                 throw CodexNativeAuthError.loginUnavailable
@@ -192,13 +208,21 @@ extension CodexNativeAuthClient: DependencyKey {
                     chatGPTAccountId: Self.chatGPTAccountId(from: response.id_token) ?? credential.chatGPTAccountId,
                 )
             },
+            startProviderLogin: {
+                providerLoginStream(session: session, runner: { arguments in
+                    try await runProviderCommand(arguments: arguments, session: session)
+                })
+            },
+            logout: {
+                try await runProviderCommand(arguments: ["logout"], session: session)
+            },
         )
     }
 
     nonisolated public static var testValue: CodexNativeAuthClient {
         CodexNativeAuthClient(
             startBrowserLogin: {
-                AsyncThrowingStream { continuation in
+                AsyncThrowingStream<BrowserLoginState, Error> { continuation in
                     continuation.yield(.failed(.loginUnavailable))
                     continuation.finish()
                 }
@@ -211,13 +235,14 @@ extension CodexNativeAuthClient: DependencyKey {
             },
             cancelCurrentFlow: {},
             refreshCredential: { _ in throw CodexNativeAuthError.loginUnavailable },
+            logout: {},
         )
     }
 
     nonisolated public static var previewValue: CodexNativeAuthClient {
         CodexNativeAuthClient(
             startBrowserLogin: {
-                AsyncThrowingStream { continuation in
+                AsyncThrowingStream<BrowserLoginState, Error> { continuation in
                     continuation.yield(.inProgress)
                     continuation.yield(
                         .completed(
@@ -257,13 +282,153 @@ extension CodexNativeAuthClient: DependencyKey {
             },
             cancelCurrentFlow: {},
             refreshCredential: { credential in credential },
+            startProviderLogin: {
+                AsyncThrowingStream<CodexProviderLoginState, Error> { continuation in
+                    continuation.yield(.inProgress)
+                    continuation.yield(.completed)
+                    continuation.finish()
+                }
+            },
+            logout: {},
         )
     }
 }
 
 // MARK: - Live Helpers
 
+private final class CodexProviderLoginResultGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Void, Error>?
+    private var result: Result<Void, Error>?
+
+    func install(_ continuation: CheckedContinuation<Void, Error>) {
+        let pendingResult: Result<Void, Error>? = lock.withLock {
+            if let result {
+                return result
+            }
+            self.continuation = continuation
+            return nil
+        }
+        if let pendingResult {
+            continuation.resume(with: pendingResult)
+        }
+    }
+
+    func resolve(_ result: Result<Void, Error>) {
+        let continuation: CheckedContinuation<Void, Error>? = lock.withLock {
+            guard self.result == nil else { return nil }
+            self.result = result
+            let continuation = self.continuation
+            self.continuation = nil
+            return continuation
+        }
+        continuation?.resume(with: result)
+    }
+}
+
 extension CodexNativeAuthClient {
+    static func providerLoginStream(
+        session _: URLSession,
+        runner: @escaping @Sendable ([String]) async throws -> Void = { arguments in
+            try await runProviderCommand(arguments: arguments)
+        },
+    ) -> AsyncThrowingStream<CodexProviderLoginState, Error> {
+        AsyncThrowingStream { continuation in
+            continuation.yield(.inProgress)
+            let task = Task {
+                do {
+                    try await runProviderCommand(arguments: ["login"], runner: runner)
+                    try Task.checkCancellation()
+                    try await runProviderCommand(arguments: ["login", "status"], runner: runner)
+                    try Task.checkCancellation()
+                    continuation.yield(.completed)
+                } catch is CancellationError {
+                    if !Task.isCancelled { continuation.yield(.failed(.cancelled)) }
+                } catch let error as CodexNativeAuthError {
+                    continuation.yield(.failed(error))
+                } catch {
+                    continuation.yield(.failed(.networkError(error.localizedDescription)))
+                }
+                continuation.finish()
+            }
+            continuation.onTermination = { @Sendable _ in task.cancel() }
+        }
+    }
+
+    private static func runProviderCommand(
+        arguments: [String],
+        runner: @escaping @Sendable ([String]) async throws -> Void,
+    ) async throws {
+        let gate = CodexProviderLoginResultGate()
+        let task = Task.detached {
+            do {
+                try await runner(arguments)
+                gate.resolve(.success(()))
+            } catch {
+                gate.resolve(.failure(error))
+            }
+        }
+        do {
+            try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { continuation in
+                    gate.install(continuation)
+                }
+            } onCancel: {
+                task.cancel()
+                gate.resolve(.failure(CancellationError()))
+            }
+        } catch {
+            task.cancel()
+            throw error
+        }
+    }
+
+    private static func runProviderCommand(
+        arguments: [String],
+        session _: URLSession = .shared,
+    ) async throws {
+        guard let executableURL = CodexExecReadinessProbe.discoverExecutable() else {
+            throw CodexNativeAuthError.loginUnavailable
+        }
+        let process = Process()
+        process.executableURL = executableURL
+        process.arguments = arguments
+        process.environment = AiChatProviderExecutionClient.codexProcessEnvironment(
+            codexHomeURL: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex"),
+        )
+        try process.run()
+        do {
+            try await withTaskCancellationHandler {
+                while process.isRunning {
+                    try Task.checkCancellation()
+                    try await Task.sleep(for: .milliseconds(50))
+                }
+            } onCancel: {
+                if process.isRunning { process.terminate() }
+            }
+            try Task.checkCancellation()
+        } catch is CancellationError {
+            terminateProviderProcess(process)
+            throw CancellationError()
+        }
+        guard process.terminationStatus == 0 else {
+            throw CodexNativeAuthError.networkError("Codex CLI command failed")
+        }
+    }
+
+    private static func terminateProviderProcess(_ process: Process) {
+        guard process.isRunning else { return }
+        process.terminate()
+        let deadline = Date().addingTimeInterval(1)
+        while process.isRunning, Date() < deadline {
+            usleep(10000)
+        }
+        if process.isRunning {
+            kill(process.processIdentifier, SIGKILL)
+        }
+        process.waitUntilExit()
+    }
+
     private static func browserLoginStream(
         flow: CodexBrowserLoginFlow,
         session: URLSession,

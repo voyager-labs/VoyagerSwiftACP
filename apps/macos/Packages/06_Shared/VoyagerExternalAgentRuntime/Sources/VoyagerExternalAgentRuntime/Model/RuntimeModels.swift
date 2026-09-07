@@ -156,6 +156,7 @@ public struct RuntimeRestartBinding: Sendable,
     public let providerBranch: RuntimeProviderBranch
     public let capabilitySnapshot: RuntimeCapabilities
     public let contextPolicy: RuntimeContextPolicy
+    public let providerEventSequence: UInt64
     public init(
         externalAgentSessionReference: ExternalAgentSessionReference,
         providerInternalSessionReference: ProviderInternalSessionReference,
@@ -166,6 +167,7 @@ public struct RuntimeRestartBinding: Sendable,
         providerBranch: RuntimeProviderBranch,
         capabilitySnapshot: RuntimeCapabilities,
         contextPolicy: RuntimeContextPolicy,
+        providerEventSequence: UInt64 = 0,
     ) {
         self.externalAgentSessionReference = externalAgentSessionReference
         self.providerInternalSessionReference = providerInternalSessionReference
@@ -176,6 +178,7 @@ public struct RuntimeRestartBinding: Sendable,
         self.providerBranch = providerBranch
         self.capabilitySnapshot = capabilitySnapshot
         self.contextPolicy = contextPolicy
+        self.providerEventSequence = providerEventSequence
     }
 }
 

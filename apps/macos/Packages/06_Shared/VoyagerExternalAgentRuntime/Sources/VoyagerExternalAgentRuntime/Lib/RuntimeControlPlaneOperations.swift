@@ -104,6 +104,7 @@ public extension RuntimeControlPlane {
             providerBranch: stored.providerBranch,
             capabilitySnapshot: stored.capabilitySnapshot,
             contextPolicy: expectedContext,
+            providerEventSequence: stored.lastSequence,
         )
         let compatibility = try await probeRestartCompatibility(
             using: adapter,
@@ -112,7 +113,26 @@ public extension RuntimeControlPlane {
         guard sessionUnchanged(original, at: hostReference) else { return .stale }
         switch compatibility {
         case .compatible:
-            return try await acquireRestoreClaim(original, at: hostReference)
+            let result = try await acquireRestoreClaim(original, at: hostReference)
+            guard result == .restored,
+                  let current = sessions[hostReference],
+                  case let .restored(lease) = current.lease,
+                  current.stored.runReference == stored.runReference,
+                  current.stored.providerInternalSessionReference == providerInternalSessionReference,
+                  current.stored.restorationClaim?.ownerToken == restorationOwnerToken
+            else { return result }
+            validatedRestoreContexts[hostReference] = RuntimeValidatedRestoreContext(
+                runReference: stored.runReference,
+                adapterID: stored.adapterID,
+                adapter: adapter,
+                persistedReceipt: RuntimeLaunchReceipt(
+                    runReference: stored.runReference,
+                    providerInternalSessionReference: providerInternalSessionReference,
+                ),
+                contextPolicy: expectedContext,
+                lease: lease,
+            )
+            return result
         case .stale, .incompatible:
             return try await releaseStaleRestoreReservation(original, at: hostReference)
         }

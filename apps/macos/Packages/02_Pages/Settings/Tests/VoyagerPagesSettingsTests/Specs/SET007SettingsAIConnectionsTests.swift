@@ -153,7 +153,16 @@ final class SET007SettingsAIConnectionsTests: XCTestCase {
                 _ = await refreshCount.increment()
                 throw CodexCredentialRefreshError.invalidGrant
             }
-            $0.aiProviderVerificationClient = .liveValue
+            $0.aiProviderVerificationClient = AIProviderVerificationClient(
+                verify: { _, _ in .invalid(.expired) },
+                verifyWithCredential: { _, _ in
+                    AiProviderVerificationOutcome(
+                        result: .invalid(.expired),
+                        sourceCredential: nil,
+                        effectiveCredential: nil,
+                    )
+                },
+            )
         }
 
         await store.send(.onAppear) {
@@ -164,17 +173,17 @@ final class SET007SettingsAIConnectionsTests: XCTestCase {
             $0.bootstrapPhase = .loaded
             $0.rows[id: .chatgptCodex]?.connectionState = .checkingStatus
         }
-        let persistedFile = try expiredCodexFile(file, credential: credential)
+        let persistedFile = try expiredCodexFile(file)
         await store.receive(.delegate(.connectionsFileUpdated(persistedFile)))
         await store.receive(\.bootstrapVerificationCompleted) {
             $0.rows[id: .chatgptCodex]?.connectionState = .connectionFailed
             $0.rows[id: .chatgptCodex]?.statusReason = .expired
-            $0.rows[id: .chatgptCodex]?.tokenExpiresAtMs = 0
+            $0.rows[id: .chatgptCodex]?.tokenExpiresAtMs = nil
         }
         await store.finish()
 
         let refreshes = await refreshCount.currentValue()
-        XCTAssertEqual(refreshes, 1)
+        XCTAssertEqual(refreshes, 0)
     }
 
     /// SET-007-codex_oauth_runtime: live bootstrap resolves the overridden model-list dependency.
@@ -208,11 +217,21 @@ final class SET007SettingsAIConnectionsTests: XCTestCase {
             $0.aiConnectionsFileClient.atomicUpdate = { transform in
                 try .success(transform(file))
             }
-            $0.aiProviderModelListClient.loadModels = { _, _ in
+            $0.aiProviderModelListClient.loadModels = { _, credential in
+                XCTAssertNil(credential)
                 _ = await modelLoadCount.increment()
                 return [model]
             }
-            $0.aiProviderVerificationClient = .liveValue
+            $0.aiProviderVerificationClient = AIProviderVerificationClient(
+                verify: { _, _ in .valid },
+                verifyWithCredential: { _, _ in
+                    AiProviderVerificationOutcome(
+                        result: .valid,
+                        sourceCredential: nil,
+                        effectiveCredential: nil,
+                    )
+                },
+            )
             $0.uuid = .incrementing
         }
 
@@ -224,22 +243,19 @@ final class SET007SettingsAIConnectionsTests: XCTestCase {
             $0.bootstrapPhase = .loaded
             $0.rows[id: .chatgptCodex]?.connectionState = .checkingStatus
         }
-        let persistedFile = try connectedCodexFile(file, credential: credential)
+        let persistedFile = try connectedCodexFile(file)
         await store.receive(.delegate(.connectionsFileUpdated(persistedFile)))
         await store.receive(\.bootstrapVerificationCompleted) {
             $0.rows[id: .chatgptCodex]?.connectionState = .connected
-            $0.rows[id: .chatgptCodex]?.tokenExpiresAtMs = Int64.max
+            $0.rows[id: .chatgptCodex]?.tokenExpiresAtMs = nil
         }
         await store.finish()
 
         let modelLoads = await modelLoadCount.currentValue()
-        XCTAssertEqual(modelLoads, 1)
+        XCTAssertEqual(modelLoads, 0)
     }
 
-    private func expiredCodexFile(
-        _ file: AIConnectionsFile,
-        credential: OAuthCredentialFile,
-    ) throws -> AIConnectionsFile {
+    private func expiredCodexFile(_ file: AIConnectionsFile) throws -> AIConnectionsFile {
         try XCTUnwrap(AIProviderConnectionBootstrap.updatedConnectionsFile(
             verificationSourceFile: file,
             latestFile: file,
@@ -248,17 +264,14 @@ final class SET007SettingsAIConnectionsTests: XCTestCase {
                     provider: .chatgptCodex,
                     connectionState: .connectionFailed,
                     statusReason: .expired,
-                    sourceCredential: .oauth(credential),
-                    effectiveCredential: .oauth(credential),
+                    sourceCredential: nil,
+                    effectiveCredential: nil,
                 ),
             ],
         ))
     }
 
-    private func connectedCodexFile(
-        _ file: AIConnectionsFile,
-        credential: OAuthCredentialFile,
-    ) throws -> AIConnectionsFile {
+    private func connectedCodexFile(_ file: AIConnectionsFile) throws -> AIConnectionsFile {
         try XCTUnwrap(AIProviderConnectionBootstrap.updatedConnectionsFile(
             verificationSourceFile: file,
             latestFile: file,
@@ -266,8 +279,8 @@ final class SET007SettingsAIConnectionsTests: XCTestCase {
                 AIProviderBootstrapResult(
                     provider: .chatgptCodex,
                     connectionState: .connected,
-                    sourceCredential: .oauth(credential),
-                    effectiveCredential: .oauth(credential),
+                    sourceCredential: nil,
+                    effectiveCredential: nil,
                 ),
             ],
         ))
@@ -354,6 +367,52 @@ final class SET007SettingsAIConnectionsTests: XCTestCase {
         XCTAssertEqual(savedFile?.updatedAtMs, competingFile.updatedAtMs)
     }
 
+    /// SET-007-codex_oauth_runtime: same credential with newer snapshot wins the CAS boundary.
+    /// A status-only concurrent write must not be overwritten by stale verification.
+    /// - 검증 내용: 동일 credential과 변경된 snapshot이 full-record CAS miss를 만드는지 확인합니다.
+    /// - 사전 조건: verification source record와 latest record는 credential이 같고 snapshot만 다릅니다.
+    /// - 기대 결과: stale result는 nil을 반환하고 newer snapshot은 유지됩니다.
+    func testBootstrapPersistence_sameCredentialWithNewerSnapshotIsNotOverwritten() {
+        let credential = StoredCredentialPayload.oauth(OAuthCredentialFile.testFixture())
+        let source = AIConnectionsFile(
+            updatedAtMs: 1,
+            providers: [
+                AiProvider.chatgptCodex.rawValue: ProviderRecordFile(
+                    providerId: .chatgptCodex,
+                    authMethod: .oauth,
+                    credential: credential,
+                    snapshot: ProviderSnapshotFile(lastKnownStatus: .connectionFailed),
+                ),
+            ],
+        )
+        let latest = AIConnectionsFile(
+            updatedAtMs: 2,
+            providers: [
+                AiProvider.chatgptCodex.rawValue: ProviderRecordFile(
+                    providerId: .chatgptCodex,
+                    authMethod: .oauth,
+                    credential: credential,
+                    snapshot: ProviderSnapshotFile(lastKnownStatus: .connected),
+                ),
+            ],
+        )
+        let result = AIProviderBootstrapResult(
+            provider: .chatgptCodex,
+            connectionState: .connected,
+            sourceCredential: credential,
+            effectiveCredential: credential,
+        )
+
+        let updated = AIProviderConnectionBootstrap.updatedConnectionsFile(
+            verificationSourceFile: source,
+            latestFile: latest,
+            applying: [result],
+        )
+
+        XCTAssertNil(updated)
+        XCTAssertEqual(latest.providers[AiProvider.chatgptCodex.rawValue]?.snapshot.lastKnownStatus, .connected)
+    }
+
     /// SET-007-codex_oauth_runtime: unchanged connected snapshot still persists a refreshed credential.
     /// Credential rotation and snapshot transitions are independent bootstrap mutations.
     /// - 검증 내용: connected snapshot이 이미 동일한 경우에도 effective OAuth credential 저장 여부를 확인한다.
@@ -414,7 +473,7 @@ final class SET007SettingsAIConnectionsTests: XCTestCase {
         )
 
         let savedRecord = await savedConnectionsFile.value()?.providers[AiProvider.chatgptCodex.rawValue]
-        XCTAssertEqual(savedRecord?.credential, .oauth(effectiveCredential))
+        XCTAssertNil(savedRecord?.credential)
         XCTAssertEqual(savedRecord?.snapshot, snapshot)
     }
 
@@ -466,11 +525,11 @@ final class SET007SettingsAIConnectionsTests: XCTestCase {
                     try await .success(connectionsStore.update(transform))
                 },
             )
-            $0.aiProviderVerificationClient.verifyWithCredential = { _, credential in
+            $0.aiProviderVerificationClient.verifyWithCredential = { _, _ in
                 AiProviderVerificationOutcome(
                     result: .valid,
-                    sourceCredential: credential,
-                    effectiveCredential: .oauth(effectiveCredential),
+                    sourceCredential: nil,
+                    effectiveCredential: nil,
                 )
             }
             $0.aiChatDefaultSettingsClient.load = {
@@ -481,7 +540,7 @@ final class SET007SettingsAIConnectionsTests: XCTestCase {
                 )
             }
             $0.aiProviderModelListClient.loadModels = { _, credential in
-                try await credentialRecorder.record(XCTUnwrap(credential))
+                XCTAssertNil(credential)
                 return [model]
             }
             $0.uuid = .incrementing
@@ -504,23 +563,25 @@ final class SET007SettingsAIConnectionsTests: XCTestCase {
         await store.receive(.delegate(.connectionsFileUpdated(savedFile)))
         await store.receive(\.bootstrapVerificationCompleted) {
             $0.rows[id: .chatgptCodex]?.connectionState = .connected
-            $0.rows[id: .chatgptCodex]?.tokenExpiresAtMs = Int64.max
+            $0.rows[id: .chatgptCodex]?.tokenExpiresAtMs = nil
             $0.chatModelCatalogPhase = .loading
             $0.chatModelRequestID = UUID(0)
         }
-        await store.receive(\.chatModelsLoaded) {
-            $0.chatModelsByProvider[.chatgptCodex] = [model]
-            $0.chatModelCatalogPhase = .loaded
-            $0.chatModelRequestID = nil
+        await store.receive(.chatModelsLoaded(
+            provider: .chatgptCodex,
+            requestID: UUID(0),
+            models: [model],
+        )) { state in
+            state.chatModelsByProvider[.chatgptCodex] = [model]
+            state.chatModelCatalogPhase = .loaded
+            state.chatModelRequestID = nil
+            state.chatModelLoadError = nil
         }
         await store.finish()
 
         let loadedCredentials = await credentialRecorder.values()
-        XCTAssertEqual(loadedCredentials, [.oauth(effectiveCredential)])
-        XCTAssertEqual(
-            savedFile.providers[AiProvider.chatgptCodex.rawValue]?.credential,
-            .oauth(effectiveCredential),
-        )
+        XCTAssertEqual(loadedCredentials, [])
+        XCTAssertNil(savedFile.providers[AiProvider.chatgptCodex.rawValue]?.credential)
     }
 
     /// SET-007-codex_oauth_runtime: persistence failure suppresses verified success state.
@@ -779,7 +840,7 @@ final class SET007SettingsAIConnectionsTests: XCTestCase {
         await store.receive(.delegate(.connectionsFileUpdated(savedFile)))
         await store.receive(\.bootstrapVerificationCompleted) {
             $0.rows[id: .chatgptCodex]?.connectionState = .connected
-            $0.rows[id: .chatgptCodex]?.tokenExpiresAtMs = 0
+            $0.rows[id: .chatgptCodex]?.tokenExpiresAtMs = nil
         }
         await store.finish()
 
@@ -795,7 +856,7 @@ final class SET007SettingsAIConnectionsTests: XCTestCase {
 
     /// SET-007-show_ai_provider_list: 지원 provider row는 연결 방식과 primary action을 노출하고 기본/최근 사용 UI를 만들지 않는다.
     /// Settings AI 탭의 provider 목록이 현재 빌드의 지원 provider와 계약상 허용된 연결 방식만 표시하는지 검증한다.
-    /// - 검증 내용: ChatGPT Codex/OAuth, OpenAI/API Key, Anthropic/API Key, fresh action, connected/retry action
+    /// - 검증 내용: ChatGPT Codex/CLI, OpenAI/API Key, Anthropic/API Key, fresh action, connected/retry action
     /// - 사전 조건: Settings AI provider catalog를 기본 상태로 구성한다.
     /// - 기대 결과: 3개 provider row가 정해진 순서와 method label/action으로 노출되고 default/last-used 상태는 없다.
     func testProviderRowsExposeSupportedProvidersMethodsAndActions() {
@@ -803,7 +864,12 @@ final class SET007SettingsAIConnectionsTests: XCTestCase {
 
         XCTAssertEqual(rows.map(\.provider), [.chatgptCodex, .openai, .anthropic])
         XCTAssertEqual(rows.map(\.displayName), ["ChatGPT Codex", "OpenAI", "Anthropic"])
-        XCTAssertEqual(rows.map(\.authMethodLabel), ["OAuth", "API Key", "API Key"])
+        XCTAssertEqual(rows.map(\.authMethodLabel), ["Codex CLI", "API Key", "API Key"])
+        let codexDescriptor = ProviderDescriptor.descriptor(for: .chatgptCodex)
+        XCTAssertEqual(codexDescriptor?.authMethod, .codexCLI)
+        XCTAssertEqual(codexDescriptor?.primaryConnectPath, .providerManaged)
+        XCTAssertNotEqual(codexDescriptor?.browserLoginAvailable, true)
+        XCTAssertEqual(codexDescriptor?.secondaryConnectPaths.isEmpty, true)
         XCTAssertTrue(rows.allSatisfy { $0.connectionState == .notVerified })
         XCTAssertTrue(rows.allSatisfy { $0.primaryAction == .connect })
         XCTAssertEqual(AiConnectionRowState(provider: .openai, connectionState: .connected).primaryAction, .disconnect)
@@ -814,6 +880,103 @@ final class SET007SettingsAIConnectionsTests: XCTestCase {
     }
 
     // MARK: - SET-007-connect_ai_provider
+
+    /// SET-007-connect_ai_provider: CLI logged-in Codex bootstrap sanitizes stored OAuth metadata.
+    /// Provider-owned authentication must expose connected metadata without persisting native OAuth bytes.
+    /// - 검증 내용: CLI login status success 결과의 connected snapshot과 credential nil sanitization을 확인합니다.
+    /// - 사전 조건: 기존 Codex record에 OAuth access/refresh token이 저장되어 있고 provider-owned verification이 valid입니다.
+    /// - 기대 결과: connected Codex record의 credential은 nil이며 OAuth bytes가 canonical file에 남지 않습니다.
+    func testCodexBootstrap_cliLoggedIn_sanitizesStoredOAuthToNilCredential() throws {
+        let sourceFile = AIConnectionsFile.singleProvider(
+            .chatgptCodex,
+            state: .connected,
+            credential: .oauth(OAuthCredentialFile.testFixture(
+                accessToken: "stored-oauth-access",
+                refreshToken: "stored-oauth-refresh",
+            )),
+        )
+        let result = AIProviderBootstrapResult(
+            provider: .chatgptCodex,
+            connectionState: .connected,
+            sourceCredential: nil,
+            effectiveCredential: nil,
+        )
+
+        let sanitized = try XCTUnwrap(AIProviderConnectionBootstrap.updatedConnectionsFile(
+            verificationSourceFile: sourceFile,
+            latestFile: sourceFile,
+            applying: [result],
+        ))
+
+        XCTAssertNil(sanitized.providers[AiProvider.chatgptCodex.rawValue]?.credential)
+        XCTAssertEqual(
+            sanitized.providers[AiProvider.chatgptCodex.rawValue]?.snapshot.lastKnownStatus,
+            .connected,
+        )
+    }
+
+    /// SET-007-connect_ai_provider: CLI logged-out Codex bootstrap sanitizes OAuth and reports auth failure.
+    /// A stored OAuth projection must not keep a provider connected when the owning CLI is logged out.
+    /// - 검증 내용: CLI login status failure의 auth failure snapshot과 credential nil sanitization을 확인합니다.
+    /// - 사전 조건: 기존 Codex record에 OAuth bytes가 있고 provider-owned verification이 auth failure를 반환합니다.
+    /// - 기대 결과: connectionFailed/auth failure 상태가 저장되고 credential은 nil입니다.
+    func testCodexBootstrap_cliLoggedOut_sanitizesOAuthAndReportsAuthFailure() throws {
+        let sourceFile = AIConnectionsFile.singleProvider(
+            .chatgptCodex,
+            state: .connected,
+            credential: .oauth(OAuthCredentialFile.testFixture(
+                accessToken: "stored-oauth-access",
+                refreshToken: "stored-oauth-refresh",
+            )),
+        )
+        let result = AIProviderBootstrapResult(
+            provider: .chatgptCodex,
+            connectionState: .connectionFailed,
+            statusReason: .verificationFailed,
+            sourceCredential: nil,
+            effectiveCredential: nil,
+        )
+
+        let sanitized = try XCTUnwrap(AIProviderConnectionBootstrap.updatedConnectionsFile(
+            verificationSourceFile: sourceFile,
+            latestFile: sourceFile,
+            applying: [result],
+        ))
+
+        let record = try XCTUnwrap(sanitized.providers[AiProvider.chatgptCodex.rawValue])
+        XCTAssertNil(record.credential)
+        XCTAssertEqual(record.snapshot.lastKnownStatus, ProviderConnectionState.connectionFailed)
+        XCTAssertEqual(record.snapshot.lastErrorCode, ProviderStatusReason.verificationFailed)
+    }
+
+    func testCodexVerificationResults_passesNilForCredentiallessAndLegacyOAuth() async throws {
+        let file = AIConnectionsFile(
+            updatedAtMs: 1,
+            providers: [
+                "chatgptCodex": ProviderRecordFile(
+                    providerId: .chatgptCodex,
+                    authMethod: .oauth,
+                    credential: .oauth(OAuthCredentialFile(accessToken: "sentinel-oauth")),
+                    snapshot: ProviderSnapshotFile(lastKnownStatus: .connected),
+                ),
+            ],
+        )
+        let received = LockIsolated<[StoredCredentialPayload?]>([])
+        let client = AIProviderVerificationClient(
+            verify: { _, _ in .valid },
+            verifyWithCredential: { _, credential in
+                received.withValue { $0.append(credential) }
+                return AiProviderVerificationOutcome(
+                    result: .valid,
+                    sourceCredential: credential,
+                    effectiveCredential: credential,
+                )
+            },
+        )
+
+        _ = try await AIProviderConnectionBootstrap.verificationResults(from: file, verificationClient: client)
+        XCTAssertEqual(received.value, [nil])
+    }
 
     // MARK: - SET-007-connect_ai_provider
 
@@ -992,8 +1155,8 @@ final class SET007SettingsAIConnectionsTests: XCTestCase {
             providers: [
                 AiProvider.chatgptCodex.rawValue: ProviderRecordFile(
                     providerId: .chatgptCodex,
-                    authMethod: .oauth,
-                    credential: .oauth(OAuthCredentialFile.testFixture()),
+                    authMethod: .codexCLI,
+                    credential: nil,
                     snapshot: ProviderSnapshotFile(lastKnownStatus: .connectInProgress),
                 ),
             ],
@@ -1070,7 +1233,7 @@ final class SET007SettingsAIConnectionsTests: XCTestCase {
                 AiProvider.chatgptCodex.rawValue: ProviderRecordFile(
                     providerId: .chatgptCodex,
                     authMethod: .oauth,
-                    credential: .oauth(OAuthCredentialFile.testFixture()),
+                    credential: nil,
                     snapshot: ProviderSnapshotFile(lastKnownStatus: .connected),
                 ),
                 AiProvider.openai.rawValue: ProviderRecordFile(
@@ -1376,8 +1539,8 @@ final class SET007SettingsAIConnectionsTests: XCTestCase {
             providers: [
                 AiProvider.chatgptCodex.rawValue: ProviderRecordFile(
                     providerId: .chatgptCodex,
-                    authMethod: .oauth,
-                    credential: staleFile.providers[AiProvider.chatgptCodex.rawValue]?.credential,
+                    authMethod: .codexCLI,
+                    credential: nil,
                     snapshot: ProviderSnapshotFile(
                         lastKnownStatus: .unavailable,
                         lastVerifiedAtMs: nil,
@@ -1670,7 +1833,7 @@ final class SET007SettingsAIConnectionsTests: XCTestCase {
         await store.receive(\.bootstrapCompleted) { state in
             state.bootstrapPhase = .loaded
             state.rows[id: .chatgptCodex]?.connectionState = .notVerified
-            state.rows[id: .chatgptCodex]?.statusReason = .missingCredential
+            state.rows[id: .chatgptCodex]?.statusReason = .none
         }
 
         await store.finish()
@@ -1951,9 +2114,8 @@ final class SET007SettingsAIConnectionsTests: XCTestCase {
             AiSettingsFeature()
         } withDependencies: {
             $0.aiConnectionsFileClient.load = { file }
-            $0.aiProviderVerificationClient.verify = { provider, _ in
-                XCTFail("Verification should not run when credential is nil: \(provider)")
-                return .valid
+            $0.aiProviderVerificationClient.verify = { _, _ in
+                .valid
             }
         }
 
@@ -1968,20 +2130,25 @@ final class SET007SettingsAIConnectionsTests: XCTestCase {
 
         await store.receive(\.bootstrapCompleted) { state in
             state.bootstrapPhase = .loaded
-            state.rows[id: .chatgptCodex]?.connectionState = .notVerified
-            state.rows[id: .chatgptCodex]?.statusReason = .missingCredential
+            state.rows[id: .chatgptCodex]?.connectionState = .checkingStatus
+            state.rows[id: .chatgptCodex]?.statusReason = .none
             state.rows[id: .openai]?.connectionState = .notVerified
             state.rows[id: .openai]?.statusReason = .missingCredential
             state.rows[id: .anthropic]?.connectionState = .notVerified
             state.rows[id: .anthropic]?.statusReason = .missingCredential
         }
+        await store.receive(\.bootstrapVerificationCompleted) { state in
+            state.rows[id: .chatgptCodex]?.connectionState = .connected
+            state.rows[id: .chatgptCodex]?.statusReason = .none
+        }
         await store.finish()
 
         XCTAssertEqual(store.state.bootstrapPhase, .loaded)
         XCTAssertEqual(store.state.rows.count, 3)
-        XCTAssertTrue(store.state.rows.allSatisfy { $0.connectionState == .notVerified })
-        XCTAssertTrue(store.state.rows.allSatisfy { $0.statusReason == .missingCredential })
-        XCTAssertTrue(store.state.rows.allSatisfy { $0.primaryAction == .connect })
+        XCTAssertEqual(store.state.rows[id: .chatgptCodex]?.connectionState, .connected)
+        XCTAssertEqual(store.state.rows[id: .openai]?.connectionState, .notVerified)
+        XCTAssertEqual(store.state.rows[id: .anthropic]?.connectionState, .notVerified)
+        XCTAssertEqual(store.state.rows[id: .chatgptCodex]?.primaryAction, .disconnect)
     }
 
     /// File load 실패 → `.failed` phase + rows 3개 보존 → retry 시도 → bootstrap 재실행 성공.
@@ -2103,7 +2270,7 @@ final class SET007SettingsAIConnectionsTests: XCTestCase {
 // MARK: - Bootstrap fixtures
 
 private extension SET007SettingsAIConnectionsTests {
-    /// 3 provider가 모두 credential을 가지며 snapshot이 verification 결과와 일치하는 파일.
+    /// OpenAI/Anthropic credential만 보유하고 Codex는 provider-owned 상태로 검증하는 파일.
     /// 기본: chatgpt/anthropic=`.connected`, openai=`.connectionFailed/.expired`.
     /// snapshot이 결과와 동일하므로 persist 단계가 생략되어
     /// `.delegate(.connectionsFileUpdated)` 수신 예측이 불필요하다.
@@ -2117,7 +2284,7 @@ private extension SET007SettingsAIConnectionsTests {
                 AiProvider.chatgptCodex.rawValue: ProviderRecordFile(
                     providerId: .chatgptCodex,
                     authMethod: .oauth,
-                    credential: .oauth(OAuthCredentialFile.testFixture()),
+                    credential: nil,
                     snapshot: ProviderSnapshotFile(lastKnownStatus: .connected),
                 ),
                 AiProvider.openai.rawValue: ProviderRecordFile(

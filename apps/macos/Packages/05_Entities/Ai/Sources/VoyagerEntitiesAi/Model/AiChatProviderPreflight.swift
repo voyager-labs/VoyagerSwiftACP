@@ -9,6 +9,7 @@ public enum AiChatProviderPreflightError: Error, Equatable, Sendable {
 public enum AiChatProviderValidatedCredential: Equatable, Sendable {
     case apiKey(String)
     case oauth(OAuthCredentialFile)
+    case providerManaged
 }
 
 public enum AiChatProviderPreflightWarning: Equatable, Sendable {
@@ -102,6 +103,9 @@ public enum AiChatProviderPreflight {
         for provider: AiProvider,
         credential: StoredCredentialPayload?,
     ) throws -> AiChatProviderValidatedCredential {
+        if provider == .chatgptCodex {
+            return .providerManaged
+        }
         guard let credential else {
             throw AiChatProviderPreflightError.missingCredential(provider)
         }
@@ -113,18 +117,11 @@ public enum AiChatProviderPreflight {
             }
             return .apiKey(secret)
 
-        case let (.chatgptCodex, .oauth(payload)):
-            let accessToken = payload.accessToken.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !accessToken.isEmpty else {
-                throw AiChatProviderPreflightError.missingCredential(provider)
-            }
-            return .oauth(payload)
-
         case (.openai, .oauth), (.anthropic, .oauth):
             throw AiChatProviderPreflightError.invalidCredential(provider: provider, expected: .apiKey)
 
-        case (.chatgptCodex, .apiKey):
-            throw AiChatProviderPreflightError.invalidCredential(provider: provider, expected: .oauth)
+        case (.chatgptCodex, _):
+            return .providerManaged
         }
     }
 

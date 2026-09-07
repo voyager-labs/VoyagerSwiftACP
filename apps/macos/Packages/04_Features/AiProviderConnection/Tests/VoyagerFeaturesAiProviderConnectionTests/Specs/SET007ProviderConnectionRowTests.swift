@@ -22,11 +22,11 @@ private actor APIKeyConnectionController {
     }
 }
 
-private final class BrowserLoginStreamController: @unchecked Sendable {
+private final class ProviderLoginStreamController: @unchecked Sendable {
     private let lock = NSLock()
-    private var continuation: AsyncThrowingStream<BrowserLoginState, Error>.Continuation?
+    private var continuation: AsyncThrowingStream<CodexProviderLoginState, Error>.Continuation?
 
-    func stream() -> AsyncThrowingStream<BrowserLoginState, Error> {
+    func stream() -> AsyncThrowingStream<CodexProviderLoginState, Error> {
         AsyncThrowingStream { continuation in
             lock.lock()
             self.continuation = continuation
@@ -35,13 +35,13 @@ private final class BrowserLoginStreamController: @unchecked Sendable {
         }
     }
 
-    func complete(_ credential: OAuthCredentialFile) {
+    func complete() {
         lock.lock()
         let continuation = continuation
         self.continuation = nil
         lock.unlock()
 
-        continuation?.yield(.completed(credential))
+        continuation?.yield(.completed)
         continuation?.finish()
     }
 }
@@ -137,6 +137,113 @@ final class SET007ProviderConnectionRowTests: XCTestCase {
     }
 
     // MARK: - SET-007-connect_ai_provider
+
+    /// SET-007-connect_ai_provider: Codex connect waits for provider CLI login status before connected.
+    /// ChatGPT Codex owns authentication in its CLI, so the row must not complete native OAuth persistence first.
+    /// - 검증 내용: connect 경로가 browser OAuth credential과 OAuth persistence를 우회하고 CLI status 완료를 기다리는지 확인합니다.
+    /// - 사전 조건: Codex provider row가 idle/notVerified이고 native browser login이 호출되지 않도록 구성합니다.
+    /// - 기대 결과: CLI login status 성공 전에는 connected 상태나 OAuth persistence가 발생하지 않습니다.
+    func testCodexConnect_waitsForProviderCLILoginStatusBeforeConnected() async {
+        let store = TestStore(
+            initialState: AiConnectionRowState(provider: .chatgptCodex),
+        ) {
+            AiConnectionRowReducer()
+        } withDependencies: {
+            $0.codexNativeAuthClient.startProviderLogin = {
+                AsyncThrowingStream { continuation in
+                    continuation.yield(.inProgress)
+                }
+            }
+            $0.aiProviderConnectionClient.connectOAuth = { _, _, _ in
+                XCTFail("Codex CLI-owned connect must not persist OAuth bytes")
+                return .connectSuccess(provider: .chatgptCodex)
+            }
+        }
+
+        await store.send(.connectButtonTapped)
+        await store.receive(.startProviderLogin) { state in
+            state.connectionState = .connectInProgress
+            state.flowState = .browserLoginInProgress
+        }
+        await store.skipInFlightEffects()
+
+        XCTAssertEqual(store.state.connectionState, .connectInProgress)
+        XCTAssertEqual(store.state.flowState, .browserLoginInProgress)
+    }
+
+    /// SET-007-connect_ai_provider: Codex provider login invokes login before login status.
+    /// The injected provider-command seam keeps command order deterministic without launching Codex.
+    /// - 검증 내용: provider login command가 login, login status 순서로 실행되는지 확인합니다.
+    /// - 사전 조건: provider login과 managed connection seam을 테스트 dependency로 주입합니다.
+    /// - 기대 결과: 두 명령이 정확한 순서로 기록되고 row가 connected가 됩니다.
+    func testCodexProviderLogin_usesLoginThenStatusOrder() async {
+        let commands = LockIsolated<[String]>([])
+        let store = TestStore(
+            initialState: AiConnectionRowState(provider: .chatgptCodex),
+        ) {
+            AiConnectionRowReducer()
+        } withDependencies: {
+            $0.codexNativeAuthClient.startProviderLogin = {
+                commands.withValue { $0.append("login") }
+                commands.withValue { $0.append("login status") }
+                return AsyncThrowingStream { continuation in
+                    continuation.yield(.completed)
+                    continuation.finish()
+                }
+            }
+            $0.aiProviderConnectionClient.connectProviderManaged = { provider, state in
+                .connectSuccess(provider: provider, state: state)
+            }
+        }
+
+        await store.send(.connectButtonTapped)
+        await store.receive(.startProviderLogin) { state in
+            state.flowState = .browserLoginInProgress
+            state.connectionState = .connectInProgress
+        }
+        await store.receive(\.connectionResponse) { state in
+            state.flowState = .idle
+            state.connectionState = .connected
+        }
+        await store.finish()
+
+        XCTAssertEqual(commands.value, ["login", "login status"])
+    }
+
+    /// SET-007-connect_ai_provider: Codex provider login completion persists no credential.
+    /// Provider-owned CLI login must connect without copying browser OAuth bytes.
+    /// - 검증 내용: provider login completion이 credential 없이 managed connection을 호출하는지 확인합니다.
+    /// - 사전 조건: provider login stream이 완료되고 managed connection client를 주입합니다.
+    /// - 기대 결과: row가 connected가 되고 OAuth persistence 경로는 호출되지 않습니다.
+    func testCodexNativeOAuthCompletion_doesNotPersistConnectedCredential() async {
+        let store = TestStore(
+            initialState: AiConnectionRowState(provider: .chatgptCodex),
+        ) {
+            AiConnectionRowReducer()
+        } withDependencies: {
+            $0.codexNativeAuthClient.startProviderLogin = {
+                AsyncThrowingStream { continuation in
+                    continuation.yield(.completed)
+                    continuation.finish()
+                }
+            }
+            $0.aiProviderConnectionClient.connectProviderManaged = { _, _ in
+                .connectSuccess(provider: .chatgptCodex)
+            }
+        }
+
+        await store.send(.startProviderLogin) { state in
+            state.flowState = .browserLoginInProgress
+            state.connectionState = .connectInProgress
+        }
+        await store.receive(\.connectionResponse) { state in
+            state.connectionState = .connected
+            state.flowState = .idle
+        }
+        await store.finish()
+
+        XCTAssertEqual(store.state.connectionState, .connected)
+    }
 
     /// SET-007-connect_ai_provider: open AIAPIKey Connect Success Moves Row To Connected
     /// 사용자가 AI provider 연결을 시작·재시도·취소할 때 row 상태가 SET-007 연결 흐름에 맞게 전환되는지 검증합니다.
@@ -411,25 +518,18 @@ final class SET007ProviderConnectionRowTests: XCTestCase {
     /// - 사전 조건: provider row reducer에 연결 방식별 dependency 응답과 credential fixture를 구성합니다.
     /// - 기대 결과: row가 connect_in_progress, connected, connection_failed, notVerified 상태를 SET-007 기대 동작대로 표시합니다.
     func testBrowserLogin_delayedCompletion_waitsForVerificationBeforePersisting() async {
-        let credential = makeCredential()
-        let controller = BrowserLoginStreamController()
+        let controller = ProviderLoginStreamController()
         let log = OAuthEventLog()
         let gate = SuspensionGate()
-        let verificationStarted = expectation(description: "verification started")
 
         let store = TestStore(
             initialState: AiConnectionRowState(provider: .chatgptCodex),
         ) {
             AiConnectionRowReducer()
         } withDependencies: {
-            $0.codexNativeAuthClient.startBrowserLogin = { controller.stream() }
-            $0.aiProviderVerificationClient.verify = { _, _ in
-                await log.record("verify")
-                verificationStarted.fulfill()
+            $0.codexNativeAuthClient.startProviderLogin = { controller.stream() }
+            $0.aiProviderConnectionClient.connectProviderManaged = { provider, connectionState in
                 await gate.wait()
-                return .valid
-            }
-            $0.aiProviderConnectionClient.connectOAuth = { provider, _, connectionState in
                 await log.record("connect")
                 return AiProviderConnectionResult(
                     provider: provider,
@@ -442,16 +542,16 @@ final class SET007ProviderConnectionRowTests: XCTestCase {
 
         await store.send(.connectButtonTapped)
 
-        await store.receive(\.startBrowserLogin) { state in
+        await store.receive(\.startProviderLogin) { state in
             state.flowState = .browserLoginInProgress
             state.connectionState = .connectInProgress
         }
 
-        controller.complete(credential)
-        await fulfillment(of: [verificationStarted], timeout: 1)
+        controller.complete()
+        await Task.yield()
 
         let snapshotBeforeOpen = await log.snapshot()
-        XCTAssertEqual(snapshotBeforeOpen, ["verify"])
+        XCTAssertEqual(snapshotBeforeOpen, [])
         XCTAssertEqual(store.state.connectionState, .connectInProgress)
         XCTAssertEqual(store.state.flowState, .browserLoginInProgress)
 
@@ -463,10 +563,8 @@ final class SET007ProviderConnectionRowTests: XCTestCase {
             state.flowState = .idle
         }
 
-        await store.receive(\.browserLoginCompleted)
-
         let snapshotAfterOpen = await log.snapshot()
-        XCTAssertEqual(snapshotAfterOpen, ["verify", "connect"])
+        XCTAssertEqual(snapshotAfterOpen, ["connect"])
 
         await store.finish()
 
@@ -485,7 +583,7 @@ final class SET007ProviderConnectionRowTests: XCTestCase {
         ) {
             AiConnectionRowReducer()
         } withDependencies: {
-            $0.codexNativeAuthClient.startBrowserLogin = {
+            $0.codexNativeAuthClient.startProviderLogin = {
                 AsyncThrowingStream { continuation in
                     continuation.yield(.inProgress)
                     continuation.yield(.failed(.cancelled))
@@ -494,7 +592,7 @@ final class SET007ProviderConnectionRowTests: XCTestCase {
             }
         }
 
-        await store.send(.startBrowserLogin) { state in
+        await store.send(.startProviderLogin) { state in
             state.flowState = .browserLoginInProgress
             state.connectionState = .connectInProgress
         }
@@ -511,6 +609,44 @@ final class SET007ProviderConnectionRowTests: XCTestCase {
         XCTAssertEqual(store.state.flowState, .idle)
     }
 
+    /// SET-007-connect_ai_provider: provider login stream cancellation before command start is recoverable.
+    /// Provider-owned login may terminate without a failure event when cancellation happens before command execution
+    /// starts.
+    /// - 검증 내용: 완료 이벤트 없는 provider login stream 종료가 row 복구 action으로 라우팅되는지 확인합니다.
+    /// - 사전 조건: Codex provider login stream이 in-progress 이후 완료 없이 종료되고 persistence client는 호출되지 않습니다.
+    /// - 기대 결과: row가 `.notVerified/.idle`로 복귀하고 connected persistence가 발생하지 않습니다.
+    func testProviderLoginStreamCancellationBeforeCommandStart_isRecoverable() async {
+        let store = TestStore(
+            initialState: AiConnectionRowState(provider: .chatgptCodex),
+        ) {
+            AiConnectionRowReducer()
+        } withDependencies: {
+            $0.codexNativeAuthClient.startProviderLogin = {
+                AsyncThrowingStream { continuation in
+                    continuation.yield(.inProgress)
+                    continuation.finish()
+                }
+            }
+            $0.aiProviderConnectionClient.connectProviderManaged = { _, _ in
+                XCTFail("Cancelled provider login must not persist a connection")
+                return .connectSuccess(provider: .chatgptCodex)
+            }
+        }
+
+        await store.send(.startProviderLogin) { state in
+            state.flowState = .browserLoginInProgress
+            state.connectionState = .connectInProgress
+        }
+
+        await store.receive(\.browserLoginFailed) { state in
+            state.flowState = .idle
+            state.connectionState = .notVerified
+            state.statusReason = .none
+        }
+
+        await store.finish()
+    }
+
     /// SET-007-connect_ai_provider: browser Login failure marks Connection Failed
     /// 사용자가 AI provider 연결을 시작·재시도·취소할 때 row 상태가 SET-007 연결 흐름에 맞게 전환되는지 검증합니다.
     /// - 검증 내용: API key/OAuth/device auth 흐름의 진행, 성공, 실패, 취소 상태 전이를 확인합니다.
@@ -522,7 +658,7 @@ final class SET007ProviderConnectionRowTests: XCTestCase {
         ) {
             AiConnectionRowReducer()
         } withDependencies: {
-            $0.codexNativeAuthClient.startBrowserLogin = {
+            $0.codexNativeAuthClient.startProviderLogin = {
                 AsyncThrowingStream { continuation in
                     continuation.yield(.inProgress)
                     continuation.yield(.failed(.networkError("server error")))
@@ -531,7 +667,7 @@ final class SET007ProviderConnectionRowTests: XCTestCase {
             }
         }
 
-        await store.send(.startBrowserLogin) { state in
+        await store.send(.startProviderLogin) { state in
             state.flowState = .browserLoginInProgress
             state.connectionState = .connectInProgress
         }
@@ -559,7 +695,7 @@ final class SET007ProviderConnectionRowTests: XCTestCase {
         ) {
             AiConnectionRowReducer()
         } withDependencies: {
-            $0.codexNativeAuthClient.startBrowserLogin = {
+            $0.codexNativeAuthClient.startProviderLogin = {
                 AsyncThrowingStream { continuation in
                     continuation.yield(.failed(.timeout))
                     continuation.finish()
@@ -567,7 +703,7 @@ final class SET007ProviderConnectionRowTests: XCTestCase {
             }
         }
 
-        await store.send(.startBrowserLogin) { state in
+        await store.send(.startProviderLogin) { state in
             state.flowState = .browserLoginInProgress
             state.connectionState = .connectInProgress
         }
@@ -592,7 +728,7 @@ final class SET007ProviderConnectionRowTests: XCTestCase {
         ) {
             AiConnectionRowReducer()
         } withDependencies: {
-            $0.codexNativeAuthClient.startBrowserLogin = {
+            $0.codexNativeAuthClient.startProviderLogin = {
                 AsyncThrowingStream { continuation in
                     continuation.yield(.failed(.callbackMismatch))
                     continuation.finish()
@@ -600,7 +736,7 @@ final class SET007ProviderConnectionRowTests: XCTestCase {
             }
         }
 
-        await store.send(.startBrowserLogin) { state in
+        await store.send(.startProviderLogin) { state in
             state.flowState = .browserLoginInProgress
             state.connectionState = .connectInProgress
         }
@@ -620,24 +756,19 @@ final class SET007ProviderConnectionRowTests: XCTestCase {
     /// - 사전 조건: provider row reducer에 연결 방식별 dependency 응답과 credential fixture를 구성합니다.
     /// - 기대 결과: row가 connect_in_progress, connected, connection_failed, notVerified 상태를 SET-007 기대 동작대로 표시합니다.
     func testBrowserLogin_verificationFailure_doesNotPersistConnected() async {
-        let credential = makeCredential()
-
         let store = TestStore(
             initialState: AiConnectionRowState(provider: .chatgptCodex),
         ) {
             AiConnectionRowReducer()
         } withDependencies: {
-            $0.codexNativeAuthClient.startBrowserLogin = {
+            $0.codexNativeAuthClient.startProviderLogin = {
                 AsyncThrowingStream { continuation in
-                    continuation.yield(.completed(credential))
+                    continuation.yield(.failed(.networkError("provider verification failed")))
                     continuation.finish()
                 }
             }
-            $0.aiProviderVerificationClient.verify = { _, _ in
-                .invalid(.verificationFailed)
-            }
-            $0.aiProviderConnectionClient.connectOAuth = { _, _, _ in
-                XCTFail("connectOAuth must not be called before verification succeeds")
+            $0.aiProviderConnectionClient.connectProviderManaged = { _, _ in
+                XCTFail("connectProviderManaged must not be called before provider login succeeds")
                 return AiProviderConnectionResult(
                     provider: .chatgptCodex,
                     state: .connected,
@@ -647,21 +778,21 @@ final class SET007ProviderConnectionRowTests: XCTestCase {
             }
         }
 
-        await store.send(.startBrowserLogin) { state in
+        await store.send(.startProviderLogin) { state in
             state.flowState = .browserLoginInProgress
             state.connectionState = .connectInProgress
         }
 
-        await store.receive(\.verificationFailed) { state in
+        await store.receive(\.browserLoginFailed) { state in
             state.flowState = .idle
             state.connectionState = .connectionFailed
-            state.statusReason = .verificationFailed
+            state.statusReason = .networkUnavailable
         }
 
         await store.finish()
 
         XCTAssertEqual(store.state.connectionState, .connectionFailed)
-        XCTAssertEqual(store.state.statusReason, .verificationFailed)
+        XCTAssertEqual(store.state.statusReason, .networkUnavailable)
     }
 
     /// SET-007-connect_ai_provider: cancel Button during Browser Login resets To Not Verified
@@ -670,20 +801,16 @@ final class SET007ProviderConnectionRowTests: XCTestCase {
     /// - 사전 조건: provider row reducer에 연결 방식별 dependency 응답과 credential fixture를 구성합니다.
     /// - 기대 결과: row가 connect_in_progress, connected, connection_failed, notVerified 상태를 SET-007 기대 동작대로 표시합니다.
     func testCancelButton_duringBrowserLogin_resetsToNotVerified() async {
-        let controller = BrowserLoginStreamController()
+        let controller = ProviderLoginStreamController()
 
         let store = TestStore(
             initialState: AiConnectionRowState(provider: .chatgptCodex),
         ) {
             AiConnectionRowReducer()
         } withDependencies: {
-            $0.codexNativeAuthClient.startBrowserLogin = { controller.stream() }
-            $0.aiProviderVerificationClient.verify = { _, _ in
-                XCTFail("verify must not be called after cancellation")
-                return .valid
-            }
-            $0.aiProviderConnectionClient.connectOAuth = { _, _, _ in
-                XCTFail("connectOAuth must not be called after cancellation")
+            $0.codexNativeAuthClient.startProviderLogin = { controller.stream() }
+            $0.aiProviderConnectionClient.connectProviderManaged = { _, _ in
+                XCTFail("connectProviderManaged must not be called after cancellation")
                 return AiProviderConnectionResult(
                     provider: .chatgptCodex,
                     state: .connected,
@@ -695,7 +822,7 @@ final class SET007ProviderConnectionRowTests: XCTestCase {
 
         await store.send(.connectButtonTapped)
 
-        await store.receive(\.startBrowserLogin) { state in
+        await store.receive(\.startProviderLogin) { state in
             state.flowState = .browserLoginInProgress
             state.connectionState = .connectInProgress
         }
@@ -705,7 +832,7 @@ final class SET007ProviderConnectionRowTests: XCTestCase {
             state.connectionState = .notVerified
         }
 
-        controller.complete(makeCredential())
+        controller.complete()
         await Task.yield()
 
         await store.finish()
@@ -725,8 +852,9 @@ final class SET007ProviderConnectionRowTests: XCTestCase {
         ) {
             AiConnectionRowReducer()
         } withDependencies: {
-            $0.codexNativeAuthClient.startBrowserLogin = {
+            $0.codexNativeAuthClient.startProviderLogin = {
                 AsyncThrowingStream { continuation in
+                    continuation.yield(.failed(.networkError("provider login unavailable")))
                     continuation.finish()
                 }
             }
@@ -734,7 +862,7 @@ final class SET007ProviderConnectionRowTests: XCTestCase {
 
         await store.send(.connectButtonTapped)
 
-        await store.receive(\.startBrowserLogin) { state in
+        await store.receive(\.startProviderLogin) { state in
             state.flowState = .browserLoginInProgress
             state.connectionState = .connectInProgress
         }
@@ -835,20 +963,18 @@ final class SET007ProviderConnectionRowTests: XCTestCase {
     /// - 사전 조건: provider row reducer에 연결 방식별 dependency 응답과 credential fixture를 구성합니다.
     /// - 기대 결과: row가 connect_in_progress, connected, connection_failed, notVerified 상태를 SET-007 기대 동작대로 표시합니다.
     func testBrowserLogin_verificationFailure_marksConnectionFailed() async {
-        let credential = makeCredential()
-
         let store = TestStore(
             initialState: AiConnectionRowState(provider: .chatgptCodex),
         ) {
             AiConnectionRowReducer()
         } withDependencies: {
-            $0.codexNativeAuthClient.startBrowserLogin = {
+            $0.codexNativeAuthClient.startProviderLogin = {
                 AsyncThrowingStream { continuation in
-                    continuation.yield(.completed(credential))
+                    continuation.yield(.failed(.networkError("provider login failed")))
                     continuation.finish()
                 }
             }
-            $0.aiProviderConnectionClient.connectOAuth = { provider, _, connectionState in
+            $0.aiProviderConnectionClient.connectProviderManaged = { provider, connectionState in
                 AiProviderConnectionResult(
                     provider: provider,
                     state: connectionState,
@@ -856,53 +982,9 @@ final class SET007ProviderConnectionRowTests: XCTestCase {
                     updatedFile: AIConnectionsFile.empty(),
                 )
             }
-            $0.aiProviderVerificationClient.verify = { _, _ in .invalid(.verificationFailed) }
         }
 
-        await store.send(.startBrowserLogin) { state in
-            state.flowState = .browserLoginInProgress
-            state.connectionState = .connectInProgress
-        }
-
-        await store.receive(\.verificationFailed) { state in
-            state.flowState = .idle
-            state.connectionState = .connectionFailed
-            state.statusReason = .verificationFailed
-        }
-
-        await store.finish()
-    }
-
-    /// SET-007-connect_ai_provider: browser Login persist Failure marks Connection Failed
-    /// 사용자가 AI provider 연결을 시작·재시도·취소할 때 row 상태가 SET-007 연결 흐름에 맞게 전환되는지 검증합니다.
-    /// - 검증 내용: API key/OAuth/device auth 흐름의 진행, 성공, 실패, 취소 상태 전이를 확인합니다.
-    /// - 사전 조건: provider row reducer에 연결 방식별 dependency 응답과 credential fixture를 구성합니다.
-    /// - 기대 결과: row가 connect_in_progress, connected, connection_failed, notVerified 상태를 SET-007 기대 동작대로 표시합니다.
-    func testBrowserLogin_persistFailure_marksConnectionFailed() async {
-        let credential = makeCredential()
-
-        let store = TestStore(
-            initialState: AiConnectionRowState(provider: .chatgptCodex),
-        ) {
-            AiConnectionRowReducer()
-        } withDependencies: {
-            $0.codexNativeAuthClient.startBrowserLogin = {
-                AsyncThrowingStream { continuation in
-                    continuation.yield(.completed(credential))
-                    continuation.finish()
-                }
-            }
-            $0.aiProviderConnectionClient.connectOAuth = { provider, _, _ in
-                AiProviderConnectionResult(
-                    provider: provider,
-                    state: .connectionFailed,
-                    reason: .unknown,
-                    updatedFile: AIConnectionsFile.empty(),
-                )
-            }
-        }
-
-        await store.send(.startBrowserLogin) { state in
+        await store.send(.startProviderLogin) { state in
             state.flowState = .browserLoginInProgress
             state.connectionState = .connectInProgress
         }
@@ -916,87 +998,74 @@ final class SET007ProviderConnectionRowTests: XCTestCase {
         await store.finish()
     }
 
-    /// SET-007-connect_ai_provider: device Auth success marks Connected
+    /// SET-007-connect_ai_provider: browser Login persist Failure marks Connection Failed
     /// 사용자가 AI provider 연결을 시작·재시도·취소할 때 row 상태가 SET-007 연결 흐름에 맞게 전환되는지 검증합니다.
     /// - 검증 내용: API key/OAuth/device auth 흐름의 진행, 성공, 실패, 취소 상태 전이를 확인합니다.
     /// - 사전 조건: provider row reducer에 연결 방식별 dependency 응답과 credential fixture를 구성합니다.
     /// - 기대 결과: row가 connect_in_progress, connected, connection_failed, notVerified 상태를 SET-007 기대 동작대로 표시합니다.
-    func testDeviceAuth_success_marksConnected() async {
-        let credential = makeCredential()
-        guard let verificationURL = URL(string: "https://chatgpt.com/device") else {
-            XCTFail("device auth verification URL fixture should be valid")
-            return
-        }
-
+    func testBrowserLogin_persistFailure_marksConnectionFailed() async {
         let store = TestStore(
             initialState: AiConnectionRowState(provider: .chatgptCodex),
         ) {
             AiConnectionRowReducer()
         } withDependencies: {
-            $0.codexNativeAuthClient.startDeviceAuth = {
-                DeviceAuthChallenge(
-                    userCode: "ABCD-1234",
-                    verificationURL: verificationURL,
-                    pollIntervalMs: 5000,
-                    expiresAt: Date().addingTimeInterval(900),
-                )
+            $0.codexNativeAuthClient.startProviderLogin = {
+                AsyncThrowingStream { continuation in
+                    continuation.yield(.completed)
+                    continuation.finish()
+                }
             }
-            $0.codexNativeAuthClient.completeDeviceAuth = { _ in credential }
-            $0.aiProviderConnectionClient.connectOAuth = { provider, _, connectionState in
+            $0.aiProviderConnectionClient.connectProviderManaged = { provider, _ in
                 AiProviderConnectionResult(
                     provider: provider,
-                    state: connectionState,
-                    reason: .none,
+                    state: .connectionFailed,
+                    reason: .unknown,
                     updatedFile: AIConnectionsFile.empty(),
                 )
             }
-            $0.aiProviderVerificationClient.verify = { _, _ in .valid }
         }
 
-        await store.send(.startDeviceAuth) { state in
-            state.flowState = .deviceAuthInProgress
+        await store.send(.startProviderLogin) { state in
+            state.flowState = .browserLoginInProgress
             state.connectionState = .connectInProgress
         }
 
-        await store.receive(\.connectionResponse) { state in
-            state.connectionState = .connected
-            state.statusReason = .none
+        await store.receive(\.browserLoginFailed) { state in
             state.flowState = .idle
+            state.connectionState = .connectionFailed
+            state.statusReason = .networkUnavailable
         }
-
-        await store.receive(\.deviceAuthCompleted)
 
         await store.finish()
     }
 
-    /// SET-007-connect_ai_provider: device Auth failure marks Connection Failed
-    /// 사용자가 AI provider 연결을 시작·재시도·취소할 때 row 상태가 SET-007 연결 흐름에 맞게 전환되는지 검증합니다.
-    /// - 검증 내용: API key/OAuth/device auth 흐름의 진행, 성공, 실패, 취소 상태 전이를 확인합니다.
-    /// - 사전 조건: provider row reducer에 연결 방식별 dependency 응답과 credential fixture를 구성합니다.
-    /// - 기대 결과: row가 connect_in_progress, connected, connection_failed, notVerified 상태를 SET-007 기대 동작대로 표시합니다.
-    func testDeviceAuth_failure_marksConnectionFailed() async {
+    /// SET-007-connect_ai_provider: direct device Auth action is ignored for Codex
+    /// ChatGPT Codex accepts only provider-managed CLI authentication and never persists a native OAuth credential.
+    /// - 검증 내용: legacy device auth action이 상태와 OAuth persistence를 건드리지 않는지 확인합니다.
+    /// - 사전 조건: Codex row에 device auth dependency와 OAuth persistence 감시를 구성합니다.
+    /// - 기대 결과: row가 idle/notVerified를 유지하고 device auth 또는 connectOAuth가 호출되지 않습니다.
+    func testDeviceAuth_legacyCodexPathIsIgnored() async {
         let store = TestStore(
             initialState: AiConnectionRowState(provider: .chatgptCodex),
         ) {
             AiConnectionRowReducer()
         } withDependencies: {
             $0.codexNativeAuthClient.startDeviceAuth = {
+                XCTFail("Codex device auth must not be invoked")
                 throw CodexNativeAuthError.loginUnavailable
+            }
+            $0.aiProviderConnectionClient.connectOAuth = { _, _, _ in
+                XCTFail("Codex OAuth persistence must not be invoked")
+                return .connectSuccess(provider: .chatgptCodex)
             }
         }
 
-        await store.send(.startDeviceAuth) { state in
-            state.flowState = .deviceAuthInProgress
-            state.connectionState = .connectInProgress
-        }
-
-        await store.receive(\.deviceAuthFailed) { state in
-            state.flowState = .idle
-            state.connectionState = .connectionFailed
-            state.statusReason = .providerUnsupportedInBuild
-        }
-
+        await store.send(.startDeviceAuth)
+        await store.send(.deviceAuthCompleted(OAuthCredentialFile(accessToken: "sentinel-oauth")))
         await store.finish()
+
+        XCTAssertEqual(store.state.connectionState, .notVerified)
+        XCTAssertEqual(store.state.flowState, .idle)
     }
 
     /// SET-007-connect_ai_provider: connect Button api Key Provider does Not Start Browser Login
@@ -1024,8 +1093,6 @@ final class SET007ProviderConnectionRowTests: XCTestCase {
     /// - 사전 조건: provider row reducer에 연결 방식별 dependency 응답과 credential fixture를 구성합니다.
     /// - 기대 결과: row가 connect_in_progress, connected, connection_failed, notVerified 상태를 SET-007 기대 동작대로 표시합니다.
     func testRetryForOAuth_retriggersBrowserLogin() async {
-        let credential = makeCredential()
-
         let store = TestStore(
             initialState: AiConnectionRowState(
                 provider: .chatgptCodex,
@@ -1039,14 +1106,14 @@ final class SET007ProviderConnectionRowTests: XCTestCase {
         ) {
             AiConnectionRowReducer()
         } withDependencies: {
-            $0.codexNativeAuthClient.startBrowserLogin = {
+            $0.codexNativeAuthClient.startProviderLogin = {
                 AsyncThrowingStream { continuation in
                     continuation.yield(.inProgress)
-                    continuation.yield(.completed(credential))
+                    continuation.yield(.completed)
                     continuation.finish()
                 }
             }
-            $0.aiProviderConnectionClient.connectOAuth = { provider, _, connectionState in
+            $0.aiProviderConnectionClient.connectProviderManaged = { provider, connectionState in
                 AiProviderConnectionResult(
                     provider: provider,
                     state: connectionState,
@@ -1054,12 +1121,11 @@ final class SET007ProviderConnectionRowTests: XCTestCase {
                     updatedFile: AIConnectionsFile.empty(),
                 )
             }
-            $0.aiProviderVerificationClient.verify = { _, _ in .valid }
         }
 
         await store.send(.retryButtonTapped)
 
-        await store.receive(\.startBrowserLogin) { state in
+        await store.receive(\.startProviderLogin) { state in
             state.flowState = .browserLoginInProgress
             state.connectionState = .connectInProgress
         }
@@ -1069,8 +1135,6 @@ final class SET007ProviderConnectionRowTests: XCTestCase {
             state.statusReason = .none
             state.flowState = .idle
         }
-
-        await store.receive(\.browserLoginCompleted)
 
         await store.finish()
 
@@ -1158,6 +1222,52 @@ final class SET007ProviderConnectionRowTests: XCTestCase {
         XCTAssertEqual(store.state.primaryAction, .disconnect)
     }
 
+    /// SET-007-disconnect_ai_provider: Codex logout failure is retryable.
+    /// A failed provider-owned logout must not be projected as a successful connected state.
+    /// - 검증 내용: logout failure가 connectionFailed와 non-none reason으로 라우팅되는지 확인합니다.
+    /// - 사전 조건: connected Codex row와 실패하는 provider logout dependency가 있습니다.
+    /// - 기대 결과: disconnect client는 호출되지 않고 row는 retry 가능한 실패 상태가 됩니다.
+    func testCodexLogoutFailure_preservesRetryableFailureState() async {
+        let store = TestStore(
+            initialState: AiConnectionRowState(
+                provider: .chatgptCodex,
+                connectionState: .connected,
+            ),
+        ) {
+            AiConnectionRowReducer()
+        } withDependencies: {
+            $0.codexNativeAuthClient.logout = {
+                throw CodexNativeAuthError.networkError("logout failed")
+            }
+            $0.aiProviderConnectionClient.disconnect = { _ in
+                XCTFail("Persistence disconnect must not run after CLI logout failure")
+                return .init(
+                    provider: .chatgptCodex,
+                    state: .notVerified,
+                    reason: .none,
+                    updatedFile: .empty(),
+                )
+            }
+        }
+
+        await store.send(.disconnectButtonTapped) { state in
+            state.isShowingDisconnectConfirmation = true
+        }
+        await store.send(.disconnectConfirm) { state in
+            state.isShowingDisconnectConfirmation = false
+            state.flowState = .disconnecting
+            state.connectionState = .disconnecting
+        }
+        await store.receive(\.disconnectResponse) { state in
+            state.flowState = .idle
+            state.connectionState = .connectionFailed
+            state.statusReason = .verificationFailed
+        }
+        await store.finish()
+
+        XCTAssertEqual(store.state.primaryAction, .retry)
+    }
+
     /// SET-007-disconnect_ai_provider: disconnect Button non Connected State is Ignored
     /// 사용자가 AI provider 연결을 시작·재시도·취소할 때 row 상태가 SET-007 연결 흐름에 맞게 전환되는지 검증합니다.
     /// - 검증 내용: API key/OAuth/device auth 흐름의 진행, 성공, 실패, 취소 상태 전이를 확인합니다.
@@ -1204,6 +1314,35 @@ final class SET007ProviderConnectionRowTests: XCTestCase {
     }
 
     // MARK: - SET-007-show_ai_provider_list
+
+    /// SET-007-show_ai_provider_list: direct legacy browser login is ignored for Codex.
+    /// Codex native OAuth remains decodable for migration but cannot be started or persisted by the row reducer.
+    /// - 검증 내용: direct browser action이 native login과 OAuth persistence를 호출하지 않는지 확인합니다.
+    /// - 사전 조건: Codex row가 notVerified이고 legacy dependencies를 호출 감시로 구성합니다.
+    /// - 기대 결과: row가 idle/notVerified 상태를 유지합니다.
+    func testLegacyBrowserLoginAction_forCodexIsIgnored() async {
+        let store = TestStore(
+            initialState: AiConnectionRowState(provider: .chatgptCodex),
+        ) {
+            AiConnectionRowReducer()
+        } withDependencies: {
+            $0.codexNativeAuthClient.startBrowserLogin = {
+                XCTFail("Codex browser OAuth must not be invoked")
+                return AsyncThrowingStream { $0.finish() }
+            }
+            $0.aiProviderConnectionClient.connectOAuth = { _, _, _ in
+                XCTFail("Codex OAuth persistence must not be invoked")
+                return .connectSuccess(provider: .chatgptCodex)
+            }
+        }
+
+        await store.send(.startBrowserLogin)
+        await store.send(.browserLoginCompleted(OAuthCredentialFile(accessToken: "sentinel-oauth")))
+        await store.finish()
+
+        XCTAssertEqual(store.state.connectionState, .notVerified)
+        XCTAssertEqual(store.state.flowState, .idle)
+    }
 
     /// SET-007-show_ai_provider_list: connect Button unavailable api Key Provider is Ignored
     /// 지원되지 않는 AI provider row가 SET-007 provider 목록에서 비활성 상태로 유지되는지 검증합니다.
@@ -1279,8 +1418,8 @@ final class SET007ProviderConnectionRowTests: XCTestCase {
         ) {
             AiConnectionRowReducer()
         } withDependencies: {
-            $0.codexNativeAuthClient.startBrowserLogin = {
-                XCTFail("startBrowserLogin must not be invoked for unavailable OAuth provider")
+            $0.codexNativeAuthClient.startProviderLogin = {
+                XCTFail("startProviderLogin must not be invoked for unavailable Codex provider")
                 return AsyncThrowingStream { $0.finish() }
             }
             $0.codexNativeAuthClient.startDeviceAuth = {
@@ -1315,8 +1454,8 @@ final class SET007ProviderConnectionRowTests: XCTestCase {
         ) {
             AiConnectionRowReducer()
         } withDependencies: {
-            $0.codexNativeAuthClient.startBrowserLogin = {
-                XCTFail("startBrowserLogin must not be invoked for unavailable OAuth provider")
+            $0.codexNativeAuthClient.startProviderLogin = {
+                XCTFail("startProviderLogin must not be invoked for unavailable Codex provider")
                 return AsyncThrowingStream { $0.finish() }
             }
             $0.codexNativeAuthClient.startDeviceAuth = {
@@ -1351,8 +1490,8 @@ final class SET007ProviderConnectionRowTests: XCTestCase {
         ) {
             AiConnectionRowReducer()
         } withDependencies: {
-            $0.codexNativeAuthClient.startBrowserLogin = {
-                XCTFail("startBrowserLogin must not be invoked for unavailable OAuth provider")
+            $0.codexNativeAuthClient.startProviderLogin = {
+                XCTFail("startProviderLogin must not be invoked for unavailable Codex provider")
                 return AsyncThrowingStream { $0.finish() }
             }
             $0.codexNativeAuthClient.startDeviceAuth = {
@@ -1369,7 +1508,7 @@ final class SET007ProviderConnectionRowTests: XCTestCase {
             }
         }
 
-        await store.send(.startBrowserLogin)
+        await store.send(.startProviderLogin)
         await store.send(.startDeviceAuth)
         await store.finish()
 

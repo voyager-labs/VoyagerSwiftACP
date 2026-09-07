@@ -292,15 +292,21 @@ extension AiChatProviderExecutionClient {
                 let activityState = CodexActivityStateBox(context: context)
 
                 do {
-                    let prompt = makeCodexPrompt(payload: preflight.payload)
-                    let readablePaths = codexReadablePaths(payload: preflight.payload)
-                    let credential = try codexCredential(from: preflight.credential)
+                    let workingDirectory = codexSourceScopeRoot(payload: preflight.payload)
+                    let prompt = makeCodexPrompt(
+                        payload: preflight.payload,
+                        workingDirectory: workingDirectory,
+                    )
                     let finalText = try await executor(CodexExecutionRequest(
+                        runID: context.runID.rawValue.uuidString,
                         model: preflight.payload.rawModelID,
                         prompt: prompt,
                         thinking: preflight.payload.thinking,
-                        readablePaths: readablePaths,
-                        credential: credential,
+                        workingDirectory: workingDirectory,
+                        readablePaths: codexReadablePaths(
+                            payload: preflight.payload,
+                            workingDirectory: workingDirectory,
+                        ),
                     )) { event in
                         for emission in activityState.consume(event) {
                             emitProviderPayload(emission, context: context, continuation: continuation)
@@ -318,8 +324,6 @@ extension AiChatProviderExecutionClient {
                     return
                 } catch let error as CodexCLIExecutionError {
                     yieldCodexError(context: context, error: error, continuation: continuation)
-                } catch is CodexAppServerParsingError {
-                    continuation.yield(.failed(context: context, reason: .invalidRequest))
                 } catch {
                     yieldCodexUnknownError(context: context, error: error, continuation: continuation)
                 }
@@ -406,6 +410,8 @@ private func codexLogReason(_ error: CodexCLIExecutionError) -> String {
     switch error {
     case .launchFailed:
         "launchFailed"
+    case let .readinessFailed(error):
+        "readinessFailed(\(error))"
     case let .outputMissing(message):
         "outputMissing(\(redactedProviderErrorBody(message)))"
     case let .nonZeroExit(message):

@@ -35,7 +35,7 @@ public enum AIProviderConnectionBootstrap {
     private struct VerifiableProvider {
         let catalogIndex: Int
         let provider: AiProvider
-        let credential: StoredCredentialPayload
+        let credential: StoredCredentialPayload?
     }
 
     private enum PersistenceOutcome {
@@ -96,12 +96,12 @@ public enum AIProviderConnectionBootstrap {
             .compactMap { index, descriptor in
                 guard let record = file.providers[descriptor.provider.rawValue],
                       shouldVerify(snapshotState: record.snapshot.lastKnownStatus),
-                      let credential = record.credential
+                      record.credential != nil || descriptor.provider == .chatgptCodex
                 else { return nil }
                 return VerifiableProvider(
                     catalogIndex: index,
                     provider: descriptor.provider,
-                    credential: credential,
+                    credential: descriptor.provider == .chatgptCodex ? nil : record.credential,
                 )
             }
 
@@ -160,7 +160,7 @@ public enum AIProviderConnectionBootstrap {
             )
         }
 
-        guard record.credential != nil else {
+        guard record.credential != nil || provider == .chatgptCodex else {
             return AIProviderBootstrapResult(
                 provider: provider,
                 connectionState: .notVerified,
@@ -265,13 +265,14 @@ public enum AIProviderConnectionBootstrap {
         for result in results {
             let providerKey = result.provider.rawValue
             guard let sourceRecord = verificationSourceFile.providers[providerKey],
-                  var record = providers[providerKey],
-                  record.credential != nil,
-                  record.credential == result.sourceCredential ?? sourceRecord.credential
+                  var record = providers[providerKey]
             else { return .casMiss }
+            guard record == sourceRecord else { return .casMiss }
 
             let lastErrorCode: ProviderStatusReason = result.connectionState == .connected ? .none : result.statusReason
-            let credential = result.effectiveCredential ?? record.credential
+            let credential = result.provider == .chatgptCodex
+                ? nil
+                : (result.effectiveCredential ?? record.credential)
             let credentialDidChange = record.credential != credential
             let snapshotDidChange = record.snapshot.lastKnownStatus != result.connectionState
                 || record.snapshot.lastErrorCode != lastErrorCode
@@ -289,7 +290,7 @@ public enum AIProviderConnectionBootstrap {
 
             record = ProviderRecordFile(
                 providerId: record.providerId,
-                authMethod: record.authMethod,
+                authMethod: result.provider == .chatgptCodex ? .codexCLI : record.authMethod,
                 credential: credential,
                 snapshot: snapshot,
                 provenance: record.provenance,

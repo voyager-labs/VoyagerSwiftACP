@@ -56,7 +56,7 @@ public struct AiConnectionRowState: Equatable, Identifiable {
         switch method {
         case .oauth: return "OAuth"
         case .apiKey: return "API Key"
-        case .codexCLI: return "Legacy"
+        case .codexCLI: return "Codex CLI"
         }
     }
 

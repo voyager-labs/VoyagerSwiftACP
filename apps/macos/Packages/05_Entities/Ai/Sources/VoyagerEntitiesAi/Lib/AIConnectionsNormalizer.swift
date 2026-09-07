@@ -38,6 +38,16 @@ public enum AIConnectionsNormalizer {
     }
 
     private static func normalizeRecord(_ record: ProviderRecordFile) -> ProviderRecordFile {
+        if record.providerId == .chatgptCodex {
+            return ProviderRecordFile(
+                providerId: record.providerId,
+                authMethod: .codexCLI,
+                credential: nil,
+                snapshot: record.snapshot,
+                provenance: record.provenance,
+            )
+        }
+
         let expectedAuthMethod = ProviderDescriptor.descriptor(for: record.providerId)?.authMethod
         let credentialMatchesAuth = credentialKindMatches(
             record.credential,

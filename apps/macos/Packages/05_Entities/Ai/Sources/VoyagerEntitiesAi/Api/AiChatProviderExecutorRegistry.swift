@@ -1,11 +1,28 @@
 import Foundation
 
 struct CodexExecutionRequest {
+    var runID: String
     var model: String
     var prompt: String
     var thinking: AiChatProviderThinkingPayload?
+    var workingDirectory: URL?
     var readablePaths: [URL]
-    var credential: OAuthCredentialFile
+
+    init(
+        runID: String,
+        model: String,
+        prompt: String,
+        thinking: AiChatProviderThinkingPayload?,
+        workingDirectory: URL? = nil,
+        readablePaths: [URL] = [],
+    ) {
+        self.runID = runID
+        self.model = model
+        self.prompt = prompt
+        self.thinking = thinking
+        self.workingDirectory = workingDirectory
+        self.readablePaths = readablePaths
+    }
 }
 
 typealias AiChatProviderCodexExecutor = @Sendable (

@@ -76,6 +76,7 @@ public actor AIConnectionFileStore {
         _ transform: @Sendable (AIConnectionsFile) throws -> AIConnectionsFile,
     ) throws -> AIConnectionsFile {
         try withExclusiveLock {
+            try requireSupportedSchemaUnlocked()
             let current = try loadUnlocked()
             let updated = try transform(current)
             let data = try encoder.encode(updated)
@@ -93,6 +94,7 @@ public actor AIConnectionFileStore {
 
     public func deleteCredential(for provider: AiProvider) throws {
         try withExclusiveLock {
+            try requireSupportedSchemaUnlocked()
             let current: AIConnectionsFile
             if fileManager.fileExists(atPath: payloadURL.path) {
                 let data = try Data(contentsOf: payloadURL)
@@ -162,6 +164,18 @@ public actor AIConnectionFileStore {
         }
 
         return AIConnectionsNormalizer.normalize(file)
+    }
+
+    /// 이 버전이 해석할 수 없는 schema의 연결 파일을 정규화 결과로 덮어 쓰지 않도록
+    /// 쓰기 경계에서 지원 버전만 허용한다. 미지원 schema 파일은 디스크에 그대로 보존된다.
+    private func requireSupportedSchemaUnlocked() throws {
+        guard fileManager.fileExists(atPath: payloadURL.path) else { return }
+        let data = try Data(contentsOf: payloadURL)
+        guard !data.isEmpty else { return }
+        guard let file = try? decoder.decode(AIConnectionsFile.self, from: data) else { return }
+        guard file.schemaVersion == 1 else {
+            throw AIConnectionFileStoreError.unsupportedSchemaVersion(file.schemaVersion)
+        }
     }
 
     private func quarantineAndRemove() throws {
@@ -234,6 +248,10 @@ public actor AIConnectionFileStore {
         defer { flock(descriptor, LOCK_UN) }
         return try operation()
     }
+}
+
+public enum AIConnectionFileStoreError: Error, Equatable {
+    case unsupportedSchemaVersion(Int)
 }
 
 public enum POSIXLockError: Error, Equatable {

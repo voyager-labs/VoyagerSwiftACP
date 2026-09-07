@@ -23,12 +23,22 @@ struct RuntimeRestoredResumeContext {
     let lease: UInt64
 }
 
+struct RuntimeValidatedRestoreContext {
+    let runReference: RuntimeRunReference
+    let adapterID: RuntimeAdapterID
+    let adapter: any ExternalAgentRuntimeAdapter
+    let persistedReceipt: RuntimeLaunchReceipt
+    let contextPolicy: RuntimeContextPolicy
+    let lease: UInt64
+}
+
 enum RuntimeRestoredResumeAttemptError: Error {
     case lost
 }
 
 extension RuntimeRestoreResumeAttemptID: Sendable {}
 extension RuntimeRestoredResumeContext: Sendable {}
+extension RuntimeValidatedRestoreContext: Sendable {}
 extension RuntimeRestoredResumeAttemptError: Sendable {}
 
 public actor RuntimeControlPlane {
@@ -118,6 +128,7 @@ public actor RuntimeControlPlane {
     var cleanupFailureEvidenceByHost: [ExternalAgentSessionReference: RuntimeCleanupFailureEvidence] = [:]
     var nextRestoredResumeAttemptID: UInt64 = 0
     var activeRestoredResumeAttempts: [ExternalAgentSessionReference: RuntimeRestoreResumeAttemptID] = [:]
+    var validatedRestoreContexts: [ExternalAgentSessionReference: RuntimeValidatedRestoreContext] = [:]
 
     var hydrationWaiterCount: Int {
         hydrationWaiterCounts.values.reduce(0, +)
@@ -232,6 +243,18 @@ public actor RuntimeControlPlane {
             lease: context.lease,
             in: registry,
         )
+    }
+
+    func clearValidatedRestoreContext(
+        host: ExternalAgentSessionReference,
+        runReference: RuntimeRunReference,
+        lease: UInt64,
+    ) {
+        guard let context = validatedRestoreContexts[host],
+              context.runReference == runReference,
+              context.lease == lease
+        else { return }
+        validatedRestoreContexts.removeValue(forKey: host)
     }
 }
 
