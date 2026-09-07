@@ -1,4 +1,5 @@
 import Foundation
+import os
 @testable import VoyagerEntitiesAi
 import VoyagerExternalAgentRuntime
 import XCTest
@@ -385,6 +386,99 @@ final class ATI006CoordinateExternalAgentSessionsTests: XCTestCase {
             Thread.sleep(forTimeInterval: 0.05)
         }
         XCTAssertFalse(isAlive())
+    }
+
+    /// ATI-006-fresh_codex_launch: launch cancellation unblocks a stalled stdin write before session install.
+    /// stdin 쓰기가 pipe로 차단되어도 entry 설치 전 취소가 프로세스를 회수해 정산이 반환되는지 검증합니다.
+    /// - 검증 내용: 1MB stdin 쓰기가 차단된 launch에서 cancelAndWait가 제한 시간 안에 반환되는지 확인합니다.
+    /// - 사전 조건: stdin을 읽지 않는 실제 프로세스와 실제 FileHandle 쓰기 runner가 제공됩니다.
+    /// - 기대 결과: 취소가 프로세스를 회수해 차단된 쓰기를 풀고 cancelAndWait가 반환됩니다.
+    func testStartCancellation_unblocksStdinWriteBeforeSessionInstall() async throws {
+        let input = Pipe()
+        let output = Pipe()
+        let errorPipe = Pipe()
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sleep")
+        process.arguments = ["30"]
+        process.standardInput = input
+        process.standardOutput = output
+        process.standardError = errorPipe
+        try process.run()
+        defer { CodexExecProcessTerminator.stop(process) }
+        _ = fcntl(input.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1)
+
+        let outPair = AsyncThrowingStream<Data, Error>.makeStream()
+        let errPair = AsyncThrowingStream<Data, Error>.makeStream()
+        output.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            if data.isEmpty {
+                output.fileHandleForReading.readabilityHandler = nil
+                outPair.continuation.finish()
+            } else {
+                outPair.continuation.yield(data)
+            }
+        }
+        errorPipe.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            if data.isEmpty {
+                errorPipe.fileHandleForReading.readabilityHandler = nil
+                errPair.continuation.finish()
+            } else {
+                errPair.continuation.yield(data)
+            }
+        }
+        let termination = Task { () -> Int32 in
+            await withCheckedContinuation { continuation in
+                process.terminationHandler = { process in
+                    continuation.resume(returning: process.terminationStatus)
+                }
+            }
+        }
+        let codexProcess = CodexExecProcess(
+            stdout: outPair.stream,
+            stderr: errPair.stream,
+            writeStdin: { data in try? input.fileHandleForWriting.write(contentsOf: data) },
+            closeStdin: { try? input.fileHandleForWriting.close() },
+            wait: { await termination.value },
+            terminate: { CodexExecProcessTerminator.stop(process) },
+            cleanup: {
+                output.fileHandleForReading.readabilityHandler = nil
+                errorPipe.fileHandleForReading.readabilityHandler = nil
+                try? input.fileHandleForWriting.close()
+            },
+        )
+        let command = CodexExecCommand(
+            executableURL: URL(fileURLWithPath: "/bin/sleep"),
+            arguments: ["30"],
+            environment: [:],
+            stdin: String(repeating: "x", count: 1_048_576),
+        )
+        let handle = CodexExecInvocationCancellationHandle()
+        let cancelReturned = OSAllocatedUnfairLock(initialState: false)
+        let startTask = Task {
+            defer { handle.completeWithoutEntry() }
+            _ = try await CodexExecProcessController.start(
+                runID: "stdin-cancel",
+                command: command,
+                runner: { _ in codexProcess },
+                registry: CodexExecProcessRegistry(),
+                rawEventsEnabled: false,
+                cancellationHandle: handle,
+            )
+        }
+        try await Task.sleep(nanoseconds: 500_000_000)
+
+        let cancelTask = Task {
+            await handle.cancelAndWait()
+            cancelReturned.withLock { $0 = true }
+        }
+        let deadline = Date().addingTimeInterval(10)
+        while Date() < deadline {
+            if cancelReturned.withLock({ $0 }) { break }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        XCTAssertTrue(cancelReturned.withLock { $0 })
+        startTask.cancel()
     }
 
     /// ATI-006-fresh_codex_launch: cancelling event consumption after handshake stops the process once.

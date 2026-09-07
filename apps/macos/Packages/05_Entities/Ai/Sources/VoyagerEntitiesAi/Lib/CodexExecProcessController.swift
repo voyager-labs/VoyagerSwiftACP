@@ -896,7 +896,7 @@ struct CodexExecProcessController {
         await registry.debugCounts()
     }
 
-    private static func start(
+    static func start(
         runID: String,
         command: CodexExecCommand,
         runner: Runner,
@@ -912,6 +912,11 @@ struct CodexExecProcessController {
             throw CancellationError()
         } catch {
             throw CodexExecProcessFailure.launchFailed
+        }
+        // stdin 쓰기는 reader가 소비하지 않으면 pipe 버퍼로 차단될 수 있고, 이 구간에는
+        // session/entry가 없으므로 취소가 sink로 프로세스를 회수해 차단을 풀게 한다.
+        cancellationHandle?.installPreEntryCancellationSink { [process] in
+            process.terminate()
         }
         process.writeStdin(Data(command.stdin.utf8))
         process.closeStdin()
@@ -1388,6 +1393,9 @@ struct CodexExecProcessController {
         process: Process,
         pipes: CodexExecLaunchPipes,
     ) -> CodexExecProcess {
+        // 차단된 stdin 쓰기가 취소로 프로세스가 회수될 때 SIGPIPE 대신 EPIPE로
+        // 반환되도록 stdin 쓰기 fd에 no-SIGPIPE를 설정한다.
+        _ = fcntl(pipes.input.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1)
         let termination = Task { () -> Int32 in
             await withCheckedContinuation { continuation in
                 process.terminationHandler = { process in
@@ -1442,21 +1450,6 @@ struct CodexExecProcessController {
         let stdout: AsyncThrowingStream<Data, Error>
         let stderr: AsyncThrowingStream<Data, Error>
         let failRawStreams: @Sendable (Error) -> Void
-    }
-
-    private static func configure(
-        _ process: Process,
-        command: CodexExecCommand,
-        input: Pipe,
-        output: Pipe,
-        error: Pipe,
-    ) {
-        process.executableURL = command.executableURL
-        process.arguments = command.arguments
-        process.environment = command.environment
-        process.standardInput = input
-        process.standardOutput = output
-        process.standardError = error
     }
 
     private static func installReadabilityHandler(

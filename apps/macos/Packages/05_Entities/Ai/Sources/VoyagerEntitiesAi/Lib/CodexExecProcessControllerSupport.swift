@@ -21,6 +21,17 @@ final class CodexExecInvocationCancellationHandle: @unchecked Sendable {
     private var cancellationTask: Task<Void, Never>?
     private var entryWaiters: [CheckedContinuation<CodexExecProcessRegistry.Entry?, Never>] = []
     private var onCancelled: (@Sendable () async -> Void)?
+    private var preEntryCancellationSink: (@Sendable () -> Void)?
+
+    /// entry 설치 전에 취소가 요청되면 즉시 실행되는 회수 동작을 설치한다.
+    /// stdin 쓰기처럼 entry 설치 전에 차단할 수 있는 launch 구간의 소유자가 사용한다.
+    func installPreEntryCancellationSink(_ sink: @escaping @Sendable () -> Void) {
+        lock.lock()
+        preEntryCancellationSink = sink
+        let shouldStart = cancelled
+        lock.unlock()
+        if shouldStart { startCancellationIfNeeded() }
+    }
 
     func install(
         entry: CodexExecProcessRegistry.Entry,
@@ -92,12 +103,18 @@ final class CodexExecInvocationCancellationHandle: @unchecked Sendable {
 
     private func startCancellationIfNeededLocked() -> Task<Void, Never>? {
         guard cancellationTask == nil else { return cancellationTask }
+        let sink = preEntryCancellationSink
         let task = Task { [self] in
             let nonOwningWaiter = isNonOwningWaiter()
             if nonOwningWaiter {
                 let onCancelled = cancellationCompletion()
                 await onCancelled?()
                 return
+            }
+            // sink는 entry 설치 전 차단 구간의 회수 전용이다. entry가 있으면
+            // entry 경로가 종료를 소유하므로 이중 terminate를 만들지 않는다.
+            if !hasEntry() {
+                sink?()
             }
             let entry = await waitForEntry()
             await entry?.cancelAndWait()
@@ -106,6 +123,12 @@ final class CodexExecInvocationCancellationHandle: @unchecked Sendable {
         }
         cancellationTask = task
         return task
+    }
+
+    private func hasEntry() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return entry != nil
     }
 
     private func waitForEntry() async -> CodexExecProcessRegistry.Entry? {
@@ -309,4 +332,21 @@ struct CodexExecConsumeContext: @unchecked Sendable {
     let onProducerFinished: @Sendable () async -> Void
     let cancelSession: @Sendable () async -> Void
     let onRawFailure: @Sendable (Error) -> Void
+}
+
+extension CodexExecProcessController {
+    static func configure(
+        _ process: Process,
+        command: CodexExecCommand,
+        input: Pipe,
+        output: Pipe,
+        error: Pipe,
+    ) {
+        process.executableURL = command.executableURL
+        process.arguments = command.arguments
+        process.environment = command.environment
+        process.standardInput = input
+        process.standardOutput = output
+        process.standardError = error
+    }
 }
