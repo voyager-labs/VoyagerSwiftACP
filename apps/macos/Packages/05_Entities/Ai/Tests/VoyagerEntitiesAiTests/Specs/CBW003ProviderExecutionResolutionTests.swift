@@ -229,6 +229,112 @@ final class CBW003ProviderExecutionResolutionTests: XCTestCase {
         )
     }
 
+    /// CBW-003-provider_managed_codex_state: update refuses to overwrite a newer schema file.
+    /// 상위 schemaVersion 연결 파일을 빈 v1 정규화 결과로 덮어 쓰지 않는지 검증합니다.
+    /// - 검증 내용: schemaVersion > 1 파일에 update가 오류를 반환하고 원본 바이트를 보존하는지 확인합니다.
+    /// - 사전 조건: schemaVersion 2 연결 파일이 저장소에 기록되어 있습니다.
+    /// - 기대 결과: update는 unsupportedSchemaVersion 오류를 반환하고 디스크 파일이 그대로 유지됩니다.
+    func testUpdate_unsupportedSchemaVersionThrowsAndPreservesFile() async throws {
+        let (store, payloadURL) = try makeTemporaryStore()
+        let newerSchemaFile = AIConnectionsFile(
+            updatedAtMs: 7,
+            schemaVersion: 2,
+            providers: [
+                AiProvider.chatgptCodex.rawValue: ProviderRecordFile(
+                    providerId: .chatgptCodex,
+                    authMethod: .codexCLI,
+                    credential: nil,
+                    snapshot: ProviderSnapshotFile(lastKnownStatus: .connected),
+                ),
+            ],
+        )
+        try await store.write(newerSchemaFile)
+        let originalBytes = try Data(contentsOf: payloadURL)
+
+        do {
+            _ = try await store.update { AIConnectionsNormalizer.normalize($0) }
+            XCTFail("update must refuse a newer schema file")
+        } catch {
+            XCTAssertEqual(error as? AIConnectionFileStoreError, .unsupportedSchemaVersion(2))
+        }
+        XCTAssertEqual(try Data(contentsOf: payloadURL), originalBytes)
+    }
+
+    /// CBW-003-provider_managed_codex_state: deleteCredential refuses a newer schema file.
+    /// 상위 schemaVersion 파일을 재인코딩으로 훼손하지 않는지 검증합니다.
+    /// - 검증 내용: schemaVersion > 1 파일에 deleteCredential이 오류를 반환하는지 확인합니다.
+    /// - 사전 조건: schemaVersion 2 연결 파일이 저장소에 기록되어 있습니다.
+    /// - 기대 결과: deleteCredential은 unsupportedSchemaVersion 오류를 반환하고 디스크 파일이 유지됩니다.
+    func testDeleteCredential_unsupportedSchemaVersionThrowsAndPreservesFile() async throws {
+        let (store, payloadURL) = try makeTemporaryStore()
+        let newerSchemaFile = AIConnectionsFile(
+            updatedAtMs: 7,
+            schemaVersion: 2,
+            providers: [
+                AiProvider.chatgptCodex.rawValue: ProviderRecordFile(
+                    providerId: .chatgptCodex,
+                    authMethod: .codexCLI,
+                    credential: nil,
+                    snapshot: ProviderSnapshotFile(lastKnownStatus: .connected),
+                ),
+            ],
+        )
+        try await store.write(newerSchemaFile)
+        let originalBytes = try Data(contentsOf: payloadURL)
+
+        do {
+            try await store.deleteCredential(for: .chatgptCodex)
+            XCTFail("deleteCredential must refuse a newer schema file")
+        } catch {
+            XCTAssertEqual(error as? AIConnectionFileStoreError, .unsupportedSchemaVersion(2))
+        }
+        XCTAssertEqual(try Data(contentsOf: payloadURL), originalBytes)
+    }
+
+    /// CBW-003-provider_managed_codex_state: status check never persists a newer schema file away.
+    /// 상태 조회가 상위 schemaVersion 파일을 덮어 쓰지 않는지 검증합니다.
+    /// - 검증 내용: checkStatus가 미지원 schema에서 상태만 판정하고 디스크를 보존하는지 확인합니다.
+    /// - 사전 조건: schemaVersion 2 연결 파일과 유효한 runtime client가 제공됩니다.
+    /// - 기대 결과: status는 notConfigured이고 원본 파일 바이트가 그대로 유지됩니다.
+    func testCodexStatus_unsupportedSchemaVersionDoesNotOverwriteFile() async throws {
+        let (store, payloadURL) = try makeTemporaryStore()
+        let newerSchemaFile = AIConnectionsFile(
+            updatedAtMs: 7,
+            schemaVersion: 2,
+            providers: [
+                AiProvider.chatgptCodex.rawValue: ProviderRecordFile(
+                    providerId: .chatgptCodex,
+                    authMethod: .codexCLI,
+                    credential: nil,
+                    snapshot: ProviderSnapshotFile(lastKnownStatus: .connected),
+                ),
+            ],
+        )
+        try await store.write(newerSchemaFile)
+        let originalBytes = try Data(contentsOf: payloadURL)
+
+        let runtimeClient = AiConnectionRuntimeClient(
+            verifyProvider: { _, _ in .valid },
+            resolveAdapter: { _, _ in nil },
+        )
+        let client = AiConnectionStatusClient.persistenceClient(
+            store: store,
+            runtimeClient: runtimeClient,
+        )
+        let status = await client.checkStatus(.chatgptCodex)
+
+        XCTAssertEqual(status, .notConfigured)
+        XCTAssertEqual(try Data(contentsOf: payloadURL), originalBytes)
+    }
+
+    private func makeTemporaryStore() throws -> (AIConnectionFileStore, URL) {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CodexStatus-\(UUID().uuidString)", isDirectory: true)
+        let payloadURL = directory.appendingPathComponent("auth.json")
+        let lockURL = directory.appendingPathComponent("auth.lock")
+        return (AIConnectionFileStore(payloadURL: payloadURL, lockURL: lockURL), payloadURL)
+    }
+
     // MARK: - CBW-003-prepare_contextual_chat_request
 
     /// CBW-003-prepare_contextual_chat_request: locked context와 active provider/model을 실행 입력으로 확정한다.
