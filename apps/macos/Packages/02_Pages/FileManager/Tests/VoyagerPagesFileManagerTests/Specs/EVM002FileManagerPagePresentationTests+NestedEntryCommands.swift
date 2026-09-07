@@ -89,7 +89,10 @@ extension EVM002FileManagerPagePresentationTests {
         ))
         store.exhaustivity = .off
 
-        await store.send(.entryViewLayout(.delegate(.executeCommand("navigation.openSelectedItem"))))
+        await store.send(.entryViewLayout(.delegate(.executeCommand(
+            "navigation.openSelectedItem",
+            source: .fileManagerContent,
+        ))))
         await store.receive(\.entryViewLayout.entryOperations.routing.executeCommand)
         await store.receive {
             guard case let .entryViewLayout(.entryOperations(.delegate(.navigateToPath(path)))) = $0 else {
@@ -132,10 +135,16 @@ extension EVM002FileManagerPagePresentationTests {
         ))
         store.exhaustivity = .off // Quick Look success 후 root reload chain은 nested path routing 계약과 무관하다.
 
-        await store.send(.entryViewLayout(.delegate(.executeCommand("navigation.quickLookSelectedItem"))))
+        await store.send(.entryViewLayout(.delegate(.executeCommand(
+            "navigation.quickLookSelectedItem",
+            source: .fileManagerContent,
+        ))))
         await store.receive(\.entryViewLayout.entryOperations.routing.executeCommand)
         await store.receive {
-            guard case let .entryViewLayout(.entryOperations(.open(.quickLookFiles(paths)))) = $0 else {
+            guard case let .entryViewLayout(.entryOperations(.acceptedCommand(
+                _,
+                .open(.quickLookFiles(paths)),
+            ))) = $0 else {
                 return false
             }
             return paths == [child.fullPath]
@@ -174,7 +183,8 @@ extension EVM002FileManagerPagePresentationTests {
         await store.send(.entryViewLayout(.delegate(.openEntry(folder))))
         // Bridge가 command planner를 통해 라우팅 — clicked entry만 context에 포함
         await store.receive {
-            guard case let .entryViewLayout(.entryOperations(.routing(.executeCommand(command, context)))) = $0 else {
+            guard case let .entryViewLayout(.entryOperations(.routing(.executeCommand(command, context, _)))) = $0
+            else {
                 return false
             }
             guard case .navigation(.openSelectedItem) = command else { return false }
@@ -238,7 +248,8 @@ extension EVM002FileManagerPagePresentationTests {
         await store.send(.entryViewLayout(.delegate(.openEntry(appPackage))))
         // Bridge가 command planner를 통해 라우팅 — clicked entry만 context에 포함
         await store.receive {
-            guard case let .entryViewLayout(.entryOperations(.routing(.executeCommand(command, context)))) = $0 else {
+            guard case let .entryViewLayout(.entryOperations(.routing(.executeCommand(command, context, _)))) = $0
+            else {
                 return false
             }
             guard case .navigation(.openSelectedItem) = command else { return false }
@@ -249,7 +260,10 @@ extension EVM002FileManagerPagePresentationTests {
         }
         // Planner가 package 디렉터리를 openFiles(Launch Services)로 변환
         await store.receive {
-            guard case let .entryViewLayout(.entryOperations(.open(.openFiles(paths)))) = $0 else {
+            guard case let .entryViewLayout(.entryOperations(.acceptedCommand(
+                _,
+                .open(.openFiles(paths)),
+            ))) = $0 else {
                 return false
             }
             return paths == [appPath]
@@ -305,7 +319,10 @@ extension EVM002FileManagerPagePresentationTests {
         await store.receive(\.entryViewLayout.entryOperations.routing.executeCommand)
         // Planner가 일반 파일을 openFiles로 변환
         await store.receive {
-            guard case let .entryViewLayout(.entryOperations(.open(.openFiles(paths)))) = $0 else {
+            guard case let .entryViewLayout(.entryOperations(.acceptedCommand(
+                _,
+                .open(.openFiles(paths)),
+            ))) = $0 else {
                 return false
             }
             return paths == [fileURL.path]

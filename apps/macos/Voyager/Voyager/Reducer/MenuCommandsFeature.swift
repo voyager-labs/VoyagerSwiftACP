@@ -84,6 +84,10 @@ struct MenuCommandsFeature {
     }
 
     private func routeFileAppCommand(_ command: MenuCommandItem.AppCommand) -> Effect<Action>? {
+        routeFileSessionAppCommand(command) ?? routeContentTabAppCommand(command)
+    }
+
+    private func routeFileSessionAppCommand(_ command: MenuCommandItem.AppCommand) -> Effect<Action>? {
         switch command {
         case let .newWindow(path): .send(.delegate(.windowManager(.file(.newWindow(path: path)))))
         case .newTab: .send(.delegate(.windowManager(.file(.newTab))))
@@ -91,6 +95,12 @@ struct MenuCommandsFeature {
         case .togglePinTab: .send(.delegate(.windowManager(.file(.togglePinTab))))
         case .restoreLastClosedTab: .send(.delegate(.windowManager(.file(.restoreLastClosedTab))))
         case .duplicateTab: .send(.delegate(.windowManager(.file(.duplicateTab))))
+        default: nil
+        }
+    }
+
+    private func routeContentTabAppCommand(_ command: MenuCommandItem.AppCommand) -> Effect<Action>? {
+        switch command {
         case let .selectContentTab(position):
             .send(.delegate(.windowManager(.file(.selectContentTab(position: position)))))
         case .presentContentTabSwitcher:
@@ -112,6 +122,7 @@ struct MenuCommandsFeature {
         case .newFolder: .send(.delegate(.windowManager(.file(.newFolder))))
         case .open: .send(.delegate(.windowManager(.file(.open))))
         case .quickLook: .send(.delegate(.windowManager(.file(.quickLook))))
+        case .getInfo: .send(.delegate(.windowManager(.file(.getInfo))))
         case .saveCollection: .send(.delegate(.windowManager(.file(.saveCollection))))
         case .saveCollectionAs: .send(.delegate(.windowManager(.file(.saveCollectionAs))))
         default: nil

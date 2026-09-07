@@ -6,6 +6,9 @@ struct FileManagerWindowContentTabMoveReducer {
     typealias State = FileManagerWindowState
     typealias Action = FileManagerWindowAction
 
+    @Dependency(\.fileManagerProductMetricsClient)
+    var fileManagerProductMetricsClient
+
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
@@ -74,6 +77,7 @@ struct FileManagerWindowContentTabMoveReducer {
                 guard isMatchingInFlightRequest(request, state: state) else {
                     return .none
                 }
+                recordMoveTerminalMetric(result: .success, request: request, state: state)
                 clearPendingRequest(request, state: &state)
                 return .none
 
@@ -81,6 +85,11 @@ struct FileManagerWindowContentTabMoveReducer {
                 guard isMatchingInFlightRequest(request, state: state) else {
                     return .none
                 }
+                recordMoveTerminalMetric(
+                    result: Self.metricResult(for: category),
+                    request: request,
+                    state: state,
+                )
                 clearPendingRequest(request, state: &state)
                 state.contentTabMoveFailurePresentation = ContentTabMoveFailurePresentation(
                     requestID: request.requestID,
@@ -150,7 +159,10 @@ struct FileManagerWindowContentTabMoveReducer {
               request.orderedTabIDs == payload.orderedTabIDs,
               request.targetWindowID == targetWindowID
         else { return }
-        state.pendingContentTabMove = FileManagerWindowContentTabMovePending(request: request)
+        state.pendingContentTabMove = FileManagerWindowContentTabMovePending(
+            request: request,
+            metricSource: .dragAndDrop,
+        )
     }
 
     private func requestHasValidIdentity(_ request: ContentTabMoveRequest, state: State) -> Bool {
@@ -173,6 +185,36 @@ struct FileManagerWindowContentTabMoveReducer {
     private func isMatchingInFlightRequest(_ request: ContentTabMoveRequest, state: State) -> Bool {
         state.pendingContentTabMove?.lifecycle == .inFlight
             && state.pendingContentTabMove?.request == request
+    }
+
+    /// 매칭된 in-flight 터미널에 한해 이동 메트릭을 한 건 기록한다.
+    /// prepared 거절과 stale/duplicate 터미널은 이벤트를 만들지 않는다.
+    private func recordMoveTerminalMetric(
+        result: ContentTabActionResult,
+        request: ContentTabMoveRequest,
+        state: State,
+    ) {
+        guard let metricSource = state.pendingContentTabMove?.metricSource else { return }
+        fileManagerProductMetricsClient.record(FileManagerProductMetricsProducer.contentTabTerminal(
+            operationID: request.operationID,
+            identity: request.orderedTabIDs.count > 1
+                ? .moveSelectedContentTabsToAnotherWindow
+                : .moveContentTabToAnotherWindow,
+            source: metricSource,
+            result: result,
+        ))
+    }
+
+    /// 실패 presentation category를 제품 메트릭 결과로 매핑한다. unavailable만 unavailable이고 나머지는 failure다.
+    private static func metricResult(
+        for category: ContentTabMoveFailurePresentation.Category,
+    ) -> ContentTabActionResult {
+        switch category {
+        case .unavailable:
+            .unavailable
+        case .busy, .capacity, .generic:
+            .failure
+        }
     }
 
     private func rejectPreparedRequest(_ request: ContentTabMoveRequest, state: inout State) {

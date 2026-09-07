@@ -13,12 +13,15 @@ extension FileManagerContentFeature.State {
             && pendingSelectEntryID == baseline.pendingSelectEntryID
             && pendingSelectEntryDestinationPath == baseline.pendingSelectEntryDestinationPath
             && pendingSelectEntryLoadGeneration == baseline.pendingSelectEntryLoadGeneration
+            && pendingIdentityTransition == baseline.pendingIdentityTransition
+            && pendingExternalRefresh == baseline.pendingExternalRefresh
             && homeFavoriteItems == baseline.homeFavoriteItems
             && homeLocationItems == baseline.homeLocationItems
             && homeDirectoryItemCounts == baseline.homeDirectoryItemCounts
             && homeChatHistoryItems == baseline.homeChatHistoryItems
             && homeChatHistoryLoadFailed == baseline.homeChatHistoryLoadFailed
             && resetComposerOnNextDirectoryNavigation == baseline.resetComposerOnNextDirectoryNavigation
+            && skipCollectionRestoreSearchOnNextDiscard == baseline.skipCollectionRestoreSearchOnNextDiscard
             && suppressAutomaticRefreshFeedback == baseline.suppressAutomaticRefreshFeedback
     }
 

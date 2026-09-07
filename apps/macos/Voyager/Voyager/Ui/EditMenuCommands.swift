@@ -135,11 +135,13 @@ struct EditMenuCommands: Commands {
             Button(copyAbsolutePathTitle) {
                 sendEditCommand(.copyAbsolutePaths)
             }
+            .keyboardShortcut("c", modifiers: [.command, .option])
             .disabled(!canPerformEntryCommands || !hasSelectedItems)
 
             Button(copyURLTitle) {
                 sendEditCommand(.copyURLs)
             }
+            .keyboardShortcut("u", modifiers: [.command, .option])
             .disabled(!canPerformEntryCommands || !hasSelectedItems)
 
             Button("Paste") {

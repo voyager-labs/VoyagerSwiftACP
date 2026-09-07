@@ -31,6 +31,7 @@ public enum EntryOperationsClipboardCommand: Sendable {
 }
 
 public enum EntryOperationsMutationCommand: Sendable {
+    case createNewFolder
     case createAliasForSelectedItems
     case compressSelectedItems
     case extractSelectedItem
@@ -144,6 +145,13 @@ enum EntryOperationsCommandPlanner {
         context: EntryOperationsCommandContext,
     ) -> [EntryOperationsCommandOutput] {
         switch command {
+        case .createNewFolder:
+            [
+                .entryOperations(.edit(.createNewFolder(
+                    parentPath: context.currentPath,
+                    siblingNames: context.displayItems.map(\.name),
+                ))),
+            ]
         case .createAliasForSelectedItems:
             planCreateAliasForSelectedItems(context)
         case .compressSelectedItems:
@@ -273,10 +281,7 @@ enum EntryOperationsCommandPlanner {
     {
         let selected = topmostSelectedItems(in: context)
         guard !selected.isEmpty else { return [] }
-        return [
-            .entryOperations(.clipboard(.copySelectedItems(files: selected))),
-            .entryOperations(.clipboard(.setClipboardOperation(operation: .cut))),
-        ]
+        return [.entryOperations(.clipboard(.cutSelectedItems(files: selected)))]
     }
 
     private static func planDuplicateSelectedItems(_ context: EntryOperationsCommandContext)
@@ -295,14 +300,11 @@ enum EntryOperationsCommandPlanner {
             }
         }
 
-        return pathsByParent.map { group in
-            .entryOperations(.clipboard(.pasteItems(
-                sourcePaths: group.sourcePaths,
-                destinationPath: group.destinationPath,
-                operation: .copy,
-                operationKind: .pasteFileDuplicate,
-            )))
-        }
+        return [
+            .entryOperations(.clipboard(.duplicateItems(groups: pathsByParent.map {
+                EntryOperationsDuplicateGroup(sourcePaths: $0.sourcePaths, destinationPath: $0.destinationPath)
+            }))),
+        ]
     }
 
     private static func planCopySelectedAbsolutePaths(_ context: EntryOperationsCommandContext)
@@ -408,22 +410,13 @@ enum EntryOperationsCommandPlanner {
         guard !selectedFiles.isEmpty else { return [] }
 
         if let bundleID {
-            return selectedFiles.flatMap { file -> [EntryOperationsCommandOutput] in
-                var outputs: [EntryOperationsCommandOutput] = []
-                if shouldSetAsDefault {
-                    outputs.append(.entryOperations(.openWith(.setDefaultAppForFile(
-                        type: nil,
-                        bundleID: bundleID,
-                        file: file,
-                    ))))
-                }
-                outputs.append(.entryOperations(.openWith(.openFileWithAppBundleID(
-                    filePath: file.fullPath,
+            return [
+                .entryOperations(.openWith(.openFilesWithAppBundleID(
+                    files: selectedFiles,
                     bundleID: bundleID,
-                    url: URL(fileURLWithPath: file.fullPath),
-                ))))
-                return outputs
-            }
+                    shouldSetAsDefault: shouldSetAsDefault,
+                ))),
+            ]
         }
 
         if selectedFiles.count == 1, let file = selectedFiles.first {
@@ -444,5 +437,44 @@ enum EntryOperationsCommandPlanner {
                 )),
             ),
         ]
+    }
+}
+
+public extension EntryOperationsCommand {
+    var interactionIdentity: EntryInteractionIdentity {
+        switch self {
+        case let .navigation(command):
+            switch command {
+            case .openSelectedItem: .openEntryWithDefaultApp
+            case .quickLookSelectedItem: .quickLookEntry
+            case .getInfoForSelectedItems, .getInfoForPath: .getEntryInfo
+            case .shareSelectedItems: .shareEntries
+            case .revealSelectedItemsInFinder: .revealEntriesInFinder
+            case .performService: .performService
+            case .openWithSelectedItem: .openEntryWithSelectedApp
+            case .openInNewTab: .openEntryWithDefaultApp
+            }
+        case let .clipboard(command):
+            switch command {
+            case .copySelectedItems: .copyEntries
+            case .cutSelectedItems: .cutEntries
+            case .pasteItems: .pasteEntries
+            case .duplicateSelectedItems: .duplicateEntries
+            case .copySelectedAbsolutePaths: .copyAbsolutePaths
+            case .copySelectedURLs: .copyURLs
+            }
+        case let .mutation(command):
+            switch command {
+            case .createNewFolder: .createNewFolder
+            case .createAliasForSelectedItems: .createEntryAlias
+            case .compressSelectedItems: .compressEntries
+            case .extractSelectedItem: .extractEntries
+            case .toggleTagForSelectedItem, .setTagForSelectedItems: .editEntryTags
+            case .moveSelectedItemsToTrash: .moveEntriesToTrash
+            case .deleteSelectedItemsImmediately: .deleteEntriesImmediately
+            case .putBackSelectedItems: .putDeletedEntriesBack
+            case .emptyTrash: .emptyTrash
+            }
+        }
     }
 }

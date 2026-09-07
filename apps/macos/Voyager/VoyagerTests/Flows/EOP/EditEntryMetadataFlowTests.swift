@@ -62,6 +62,7 @@ final class EditEntryMetadataFlowTests: XCTestCase {
         await store.send(.entryViewLayout(.delegate(.startRename(
             item: sourceEntry,
             text: sourceEntry.name,
+            source: .fileManagerContent,
         ))))
         await store.send(.entryViewLayout(.delegate(.renameCommitted(
             itemID: sourceEntry.id,
@@ -123,6 +124,7 @@ final class EditEntryMetadataFlowTests: XCTestCase {
         await store.send(.entryViewLayout(.delegate(.startRename(
             item: sourceEntry,
             text: sourceEntry.name,
+            source: .fileManagerContent,
         ))))
         await store.send(.entryViewLayout(.delegate(.renameCommitted(
             itemID: sourceEntry.id,

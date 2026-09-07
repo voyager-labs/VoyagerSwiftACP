@@ -2,6 +2,7 @@ import AppKit
 import ComposableArchitecture
 import Dependencies
 import Foundation
+import UniformTypeIdentifiers
 import VoyagerEntitiesEntry
 @testable import VoyagerFeaturesEntryOperations
 import VoyagerShared
@@ -138,6 +139,37 @@ actor EntryOperationsLoadSuspensionGate {
     }
 }
 
+private actor OpenWithCommandCompletionGate {
+    private var waiters: [String: CheckedContinuation<Void, Never>] = [:]
+    private var started: Set<String> = []
+
+    func wait(_ path: String) async {
+        started.insert(path)
+        await withCheckedContinuation { waiters[path] = $0 }
+    }
+
+    func resume(_ path: String) {
+        waiters.removeValue(forKey: path)?.resume()
+    }
+
+    func isStarted(_ path: String) -> Bool {
+        started.contains(path)
+    }
+}
+
+struct OpenWithCommandEvidence {
+    let openStartedPaths: [String]
+    let openFinishedPaths: [String]
+    let defaultFinishedPaths: [String]
+    let defaultFailedPaths: [String]
+    let lastErrors: [String: FileOpError]
+    let terminals: [EntryActionRecord]
+    let setDefaultCallCount: Int
+    let reloadCallCount: Int
+    let openCallCount: Int
+    let batchActionCount: Int
+}
+
 @MainActor
 enum EntryOperationsTestSupport {
     enum CancelledLoadScenario {
@@ -205,6 +237,75 @@ enum EntryOperationsTestSupport {
             $0.trashMetadataStoreClient = .testValue
             configure(&$0)
         }
+    }
+
+    static func runOpenWithCommand(
+        files: [EntryModel],
+        currentPath: String,
+        bundleID: String,
+        metadata: EntryCommandMetadata,
+        shouldSetAsDefault: Bool = false,
+        failingPath: String? = nil,
+        failingDefaultTypeIDs: Set<String> = [],
+        cancelledDefaultTypeIDs: Set<String> = [],
+        completionOrder: [String] = [],
+        usesOtherPicker: Bool = false,
+        cancelsOtherPicker: Bool = false,
+        trashPath: String? = nil,
+    ) async -> OpenWithCommandEvidence {
+        let gate = OpenWithCommandCompletionGate()
+        let actions = LockIsolated<[EntryOperationsAction]>([])
+        let (setDefaultCalls, reloadCalls, openCalls) = (LockIsolated(0), LockIsolated(0), LockIsolated(0))
+        let store = makeObservedStore(
+            observeAction: { action in actions.withValue { $0.append(action) } },
+            configure: {
+                $0.entryOpenClient.trashDirectoryPath = { trashPath }
+                $0.entryOpenClient.setDefaultApp = makeSetDefaultAppRecorder(
+                    calls: setDefaultCalls,
+                    failingTypeIDs: failingDefaultTypeIDs,
+                    cancelledTypeIDs: cancelledDefaultTypeIDs,
+                )
+                $0.entryOpenClient.invalidateApplicationsForType = { _ in }
+                $0.entryOpenClient.applicationsForType = { _, _ in
+                    reloadCalls.withValue { $0 += 1 }
+                    return []
+                }
+                $0.entryOpenClient.defaultApplication = { _ in nil }
+                $0.entryOpenClient.open = { url, _ in
+                    openCalls.withValue { $0 += 1 }
+                    if !completionOrder.isEmpty {
+                        await gate.wait(url.path)
+                    }
+                    if url.path == failingPath {
+                        throw FileOpError.system(message: "open denied")
+                    }
+                }
+                if usesOtherPicker {
+                    $0.openWithPanelClient.selectApplication = { _, _, _ in
+                        if cancelsOtherPicker { return nil }
+                        return OpenWithPanelSelection(bundleID: bundleID, setAsDefault: shouldSetAsDefault)
+                    }
+                }
+            },
+        )
+        // store.exhaustivity = .off: observer와 dependency recorder가 전체 command lifecycle을 검증한다.
+        store.exhaustivity = .off
+
+        let command = EntryOperationsNavigationCommand.openWithSelectedItem(
+            bundleID: usesOtherPicker ? nil : bundleID,
+            shouldSetAsDefault: shouldSetAsDefault,
+        )
+        let context = makeOpenWithContext(files: files, currentPath: currentPath)
+        await store.send(.routing(.executeCommand(command: .navigation(command), context: context, metadata: metadata)))
+        await completeOpenWithCommand(store, gate: gate, completionOrder: completionOrder)
+
+        return makeOpenWithEvidence(
+            actions: actions.value,
+            setDefaultCallCount: setDefaultCalls.value,
+            reloadCallCount: reloadCalls.value,
+            openCallCount: openCalls.value,
+            lastErrors: store.state.itemStates.compactMapValues(\.lastError),
+        )
     }
 
     static func completeReplacementAfterCancellation(
@@ -329,6 +430,108 @@ enum EntryOperationsTestSupport {
             }
         }
         return items == [latestEntry]
+    }
+
+    private static func completeOpenWithCommand(
+        _ store: TestStore<EntryOperationsFeature.State, EntryOperationsFeature.Action>,
+        gate: OpenWithCommandCompletionGate,
+        completionOrder: [String],
+    ) async {
+        for path in completionOrder {
+            while await !gate.isStarted(path) {
+                await Task.yield()
+            }
+        }
+        for path in completionOrder {
+            await gate.resume(path)
+            await Task.yield()
+        }
+        await store.finish()
+        await store.skipReceivedActions()
+    }
+
+    private static func makeSetDefaultAppRecorder(
+        calls: LockIsolated<Int>,
+        failingTypeIDs: Set<String>,
+        cancelledTypeIDs: Set<String>,
+    ) -> @Sendable (UTType, String) async throws -> Void {
+        { type, _ in
+            calls.withValue { $0 += 1 }
+            if cancelledTypeIDs.contains(type.identifier) {
+                throw FileOpError.cancelled
+            }
+            if failingTypeIDs.contains(type.identifier) {
+                throw FileOpError.system(message: "set default denied")
+            }
+        }
+    }
+
+    private static func makeOpenWithContext(
+        files: [EntryModel],
+        currentPath: String,
+    ) -> EntryOperationsCommandContext {
+        EntryOperationsCommandContext(
+            selectedIds: Set(files.map(\.id)),
+            displayItems: files,
+            currentPath: currentPath,
+        )
+    }
+
+    private static func makeOpenWithEvidence(
+        actions: [EntryOperationsAction],
+        setDefaultCallCount: Int,
+        reloadCallCount: Int,
+        openCallCount: Int,
+        lastErrors: [String: FileOpError],
+    ) -> OpenWithCommandEvidence {
+        let openStartedPaths = actions.compactMap { action -> String? in
+            guard case let .acceptedCommand(
+                _,
+                .lifecycle(.operationStarted(path, .openWithApp)),
+            ) = action else { return nil }
+            return path
+        }
+        let openFinishedPaths = actions.compactMap { action -> String? in
+            guard case let .acceptedCommand(
+                _,
+                .lifecycle(.operationFinished(path, .openWithApp, _)),
+            ) = action else { return nil }
+            return path
+        }
+        let defaultFinishedPaths = actions.compactMap { action -> String? in
+            guard case let .acceptedCommand(
+                _,
+                .lifecycle(.operationFinished(path, .setDefaultApp, .success)),
+            ) = action else { return nil }
+            return path
+        }
+        let defaultFailedPaths = actions.compactMap { action -> String? in
+            guard case let .acceptedCommand(
+                _,
+                .lifecycle(.operationFinished(path, .setDefaultApp, .failure)),
+            ) = action else { return nil }
+            return path
+        }
+        let terminals = actions.compactMap { action -> EntryActionRecord? in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return nil }
+            return record
+        }
+        let batchActionCount = actions.reduce(into: 0) { count, action in
+            guard case .acceptedCommand(_, .openWith(.openFilesWithAppBundleID)) = action else { return }
+            count += 1
+        }
+        return OpenWithCommandEvidence(
+            openStartedPaths: openStartedPaths,
+            openFinishedPaths: openFinishedPaths,
+            defaultFinishedPaths: defaultFinishedPaths,
+            defaultFailedPaths: defaultFailedPaths,
+            lastErrors: lastErrors,
+            terminals: terminals,
+            setDefaultCallCount: setDefaultCallCount,
+            reloadCallCount: reloadCallCount,
+            openCallCount: openCallCount,
+            batchActionCount: batchActionCount,
+        )
     }
 
     private static func makeStaleEntry(_ suffix: String) -> EntryModel {

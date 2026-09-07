@@ -2,8 +2,27 @@ import AppKit
 import ComposableArchitecture
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
+import VoyagerShared
 @testable import VoyagerWidgetsEntryViewLayout
 import XCTest
+
+private final class TrackingTableHeaderView: NSTableHeaderView {
+    private(set) var invalidationCount = 0
+
+    override var needsDisplay: Bool {
+        get { super.needsDisplay }
+        set {
+            if newValue {
+                invalidationCount += 1
+            }
+            super.needsDisplay = newValue
+        }
+    }
+
+    func resetInvalidationCount() {
+        invalidationCount = 0
+    }
+}
 
 @MainActor
 final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
@@ -90,6 +109,176 @@ final class EVM002ManageEntriesViewPresentationTests: XCTestCase {
             $0.gridIconSize = 64
             $0.gridTextSize = 12
             $0.showHiddenFiles = true
+        }
+    }
+
+    // MARK: - EVM-002-set_entries_view_as_list_table
+
+    /// EVM-002-set_entries_view_as_list_table: 목록 헤더는 behindWindow material 백드롭으로 블러 배경을 유지한다.
+    /// 가로 스크롤로 오른쪽 컬럼이 새로 노출되어도 백드롭이 보이는 헤더 프레임 전체를 계속 덮는지 검증한다.
+    /// - 검증 내용: 두 번 tile해도 NSVisualEffectView 백드롭이 정확히 1개이며 header clip의 화면 프레임을 따른다.
+    /// - 사전 조건: 실제 EntryListScrollView와 NSTableHeaderView를 구성하고 header clip을 가로로 120pt 이동한다.
+    /// - 기대 결과: 백드롭이 스크롤뷰에서 header clip 아래에 고정되고 새로 노출된 오른쪽 영역까지 채운다.
+    func testListHeaderBackdropUsesListHeaderMaterialAcrossTilePasses() throws {
+        let view = EntryListView(frame: NSRect(x: 0, y: 0, width: 640, height: 360))
+        view.layoutSubtreeIfNeeded()
+        view.scrollView.tile()
+
+        let headerClip = try XCTUnwrap(view.scrollView.subviews
+            .compactMap { $0 as? NSClipView }
+            .first { $0.documentView is NSTableHeaderView })
+        let headerView = try XCTUnwrap(headerClip.documentView as? NSTableHeaderView)
+        let decorationView = NSView(frame: .zero)
+        headerClip.addSubview(decorationView)
+        headerClip.bounds.origin.x = 120
+
+        XCTAssertEqual(view.layer?.backgroundColor?.alpha, 0)
+        XCTAssertFalse(view.scrollView.drawsBackground)
+        XCTAssertEqual(view.scrollView.layer?.backgroundColor?.alpha, 0)
+        XCTAssertFalse(view.scrollView.contentView.drawsBackground)
+        XCTAssertEqual(view.scrollView.contentView.backgroundColor.alphaComponent, 0)
+        XCTAssertEqual(view.scrollView.contentView.layer?.backgroundColor?.alpha, 0)
+        XCTAssertEqual(view.tableView.backgroundColor.alphaComponent, 0)
+        XCTAssertEqual(view.tableView.layer?.backgroundColor?.alpha, 0)
+
+        for _ in 0 ..< 2 {
+            headerClip.drawsBackground = true
+            headerClip.backgroundColor = .red
+
+            view.scrollView.tile()
+            view.layoutSubtreeIfNeeded()
+
+            let backdrops = view.scrollView.subviews.compactMap { $0 as? NSVisualEffectView }
+            XCTAssertEqual(backdrops.count, 1)
+            let backdrop = try XCTUnwrap(backdrops.first)
+            XCTAssertEqual(backdrop.blendingMode, .behindWindow)
+            XCTAssertEqual(backdrop.state, .followsWindowActiveState)
+            XCTAssertEqual(
+                backdrop.alphaValue,
+                VoyagerDS.SurfaceMaterialRole.listHeaderSurface.alphaValue,
+                accuracy: 0.001,
+            )
+            XCTAssertFalse(headerClip.drawsBackground)
+
+            let backdropIndex = try XCTUnwrap(view.scrollView.subviews.firstIndex(of: backdrop))
+            let headerClipIndex = try XCTUnwrap(view.scrollView.subviews.firstIndex(of: headerClip))
+            XCTAssertLessThan(backdropIndex, headerClipIndex)
+            XCTAssertEqual(backdrop.frame, headerClip.frame)
+
+            XCTAssertFalse(headerView.isHidden)
+            XCTAssertTrue(decorationView.isHidden)
+        }
+    }
+
+    /// EVM-002-set_entries_view_as_list_table: 그룹 헤더가 시야 상단에서 가려지기 시작하면 Name 컬럼 제목이 그룹 제목으로 대체된다.
+    /// Finder 리스트뷰처럼 현재 섹션의 그룹 제목이 헤더 행 1열을 대체하는지 검증한다.
+    /// - 검증 내용: G1 헤더가 1pt 가려지면 Name 컬럼 제목이 G1로 바뀌고, 최상단 복귀 시 원래 제목으로 복원된다.
+    /// - 사전 조건: 그룹 3개와 자식 항목으로 구성된 실제 EntryListView를 세로 스크롤이 가능한 크기로 구성한다.
+    /// - 기대 결과: 스크롤 후 헤더 제목이 G1이고, 최상단에서는 원래 Name 컬럼 제목으로 돌아온다.
+    func testGroupTitleReplacesNameHeaderDuringNormalScrolling() throws {
+        var state = EntryViewLayoutState()
+        state.listIconSize = 30
+        func folder(_ id: String) -> EntryModel {
+            EntryModel.temporaryFolder(id: "/\(id)", name: id)
+        }
+        state.entryArrangements.groupedItems = [
+            .init(groupName: "G1", items: [folder("a"), folder("b"), folder("c")], colorCode: nil),
+            .init(groupName: "G2", items: [folder("d")], colorCode: nil),
+            .init(groupName: "G3", items: [folder("e")], colorCode: nil),
+        ]
+        let coordinator = EntryListCoordinator(store: Store(initialState: state) { EntryViewLayoutFeature() })
+        let view = EntryListView(frame: NSRect(x: 0, y: 0, width: 800, height: 150))
+        view.layoutSubtreeIfNeeded()
+        coordinator.bind(to: view)
+        view.layoutSubtreeIfNeeded()
+
+        let clip = view.scrollView.contentView
+        let nameColumn = try XCTUnwrap(
+            view.tableView.tableColumns.first { $0.identifier.rawValue == EntryListColumn.name.rawValue },
+        )
+        let headerView = TrackingTableHeaderView()
+        view.tableView.headerView = headerView
+        let originalTitle = nameColumn.title
+        let firstGroupRow = view.tableView.rect(ofRow: 0)
+
+        headerView.resetInvalidationCount()
+        clip.scroll(to: NSPoint(x: 0, y: firstGroupRow.minY + 1))
+        view.scrollView.reflectScrolledClipView(clip)
+        view.layoutSubtreeIfNeeded()
+        XCTAssertEqual(nameColumn.title, "G1")
+        XCTAssertGreaterThan(headerView.invalidationCount, 0)
+
+        clip.scroll(to: NSPoint(x: 0, y: 0))
+        view.scrollView.reflectScrolledClipView(clip)
+        view.layoutSubtreeIfNeeded()
+        XCTAssertEqual(nameColumn.title, originalTitle)
+    }
+
+    /// EVM-002-set_entries_view_as_list_table: projection reload은 scroll bounds 변화 없이도 현재 그룹 제목을 갱신한다.
+    /// 같은 viewport에서 group section이 재구성되면 bounds observer에 의존하지 않고 Name header를 다시 계산하는지 검증한다.
+    /// - 검증 내용: G1을 G1-renamed로 교체한 뒤 동일한 scroll offset에서 Name 컬럼 제목이 새 그룹명으로 바뀐다.
+    /// - 사전 조건: 스크롤된 grouped list와 동일한 row shape를 가진 새 group projection
+    /// - 기대 결과: reload 완료 후 scroll event 없이 Name 컬럼 제목이 G1-renamed가 된다.
+    func testGroupTitleUpdatesAfterProjectionReloadWithoutScrollChange() throws {
+        var state = EntryViewLayoutState()
+        state.listIconSize = 30
+        func folder(_ id: String) -> EntryModel {
+            EntryModel.temporaryFolder(id: "/" + id, name: id)
+        }
+        let entries = ["a", "b", "c", "d", "e"].map(folder)
+        state.entryArrangements.groupedItems = [
+            .init(groupName: "G1", items: Array(entries[0 ... 2]), colorCode: nil),
+            .init(groupName: "G2", items: [entries[3]], colorCode: nil),
+            .init(groupName: "G3", items: [entries[4]], colorCode: nil),
+        ]
+        let store = Store(initialState: state) { EntryViewLayoutFeature() }
+        let coordinator = EntryListCoordinator(store: store)
+        let view = EntryListView(frame: NSRect(x: 0, y: 0, width: 800, height: 150))
+        coordinator.bind(to: view)
+        view.layoutSubtreeIfNeeded()
+
+        let clip = view.scrollView.contentView
+        let nameColumn = try XCTUnwrap(
+            view.tableView.tableColumns.first { $0.identifier.rawValue == EntryListColumn.name.rawValue },
+        )
+        let firstGroupRow = view.tableView.rect(ofRow: 0)
+        clip.scroll(to: NSPoint(x: 0, y: firstGroupRow.minY + 1))
+        view.scrollView.reflectScrolledClipView(clip)
+        view.layoutSubtreeIfNeeded()
+        XCTAssertEqual(nameColumn.title, "G1")
+        let expectedScrollOrigin = clip.bounds.origin
+
+        var updatedState = state
+        updatedState.entryArrangements.groupedItems[0] = .init(
+            groupName: "G1-renamed",
+            items: Array(entries[0 ... 2]),
+            colorCode: nil,
+        )
+        let updatedItems = coordinator.makeOutlineItems(presentation: updatedState.presentation)
+        coordinator.applyPostReloadPresentation(
+            pathChanged: false,
+            structureChanged: true,
+            updateKind: .fullReload,
+            selectionChanged: false,
+        ) {
+            coordinator.outlineItems = updatedItems
+            coordinator.rebuildItemIndexes()
+            view.tableView.reloadData()
+            coordinator.applyGroupExpansionState()
+        }
+
+        XCTAssertEqual(nameColumn.title, "G1-renamed")
+        XCTAssertEqual(clip.bounds.origin, expectedScrollOrigin)
+    }
+
+    /// EVM-002-set_entries_view_as_list_table: 그룹 행은 상태와 appearance에 맞는 반투명 오버레이 배경과 28pt 높이를 사용한다.
+    /// 사용자가 그룹화된 목록을 펼치거나 접어도 일반 행의 줄무늬가 보존되는지 검증한다.
+    /// - 검증 내용: Aqua와 Dark Aqua의 그룹 배경(material 투과 유지), 재사용 초기화, 행 높이와 인접 간격을 실제 AppKit 행으로 확인한다.
+    /// - 사전 조건: 펼침·접힘 그룹과 두 일반 항목을 실제 EntryListCoordinator와 EntryListView에 바인딩한다.
+    /// - 기대 결과: 미선택 그룹은 전체 폭의 상태별 반투명 오버레이, 선택 그룹은 AppKit 기본 배경, 그룹은 28pt이고 기존 지표는 유지된다.
+    func testGroupedListRowsUseTranslucentOverlayAndCompactSpacing() throws {
+        for appearanceName in [NSAppearance.Name.aqua, .darkAqua] {
+            try assertTask3Appearance(appearanceName)
         }
     }
 
@@ -1617,6 +1806,91 @@ extension EVM002ManageEntriesViewPresentationTests {
     }
 }
 
+@MainActor
+private func assertTask3Appearance(_ appearanceName: NSAppearance.Name) throws {
+    let appearance = try XCTUnwrap(NSAppearance(named: appearanceName))
+    let entry = EntryModel.temporaryFolder(id: "/group/child", name: "child")
+    var state = EntryViewLayoutState()
+    state.listIconSize = 30
+    state.entryArrangements.groupedItems = [.init(groupName: "Group", items: [entry], colorCode: nil)]
+    let coordinator = EntryListCoordinator(store: Store(initialState: state) { EntryViewLayoutFeature() })
+    let view = EntryListView(frame: NSRect(x: 0, y: 0, width: 240, height: 120))
+    view.appearance = appearance
+    coordinator.bind(to: view)
+    let groupItem = try XCTUnwrap(coordinator.outlineItems.first)
+    let groupRow = try XCTUnwrap(view.tableView.rowView(atRow: 0, makeIfNecessary: true))
+    let expectedGroupColor = try XCTUnwrap(
+        (appearanceName == .darkAqua ? NSColor.white : NSColor.black)
+            .withAlphaComponent(
+                appearanceName == .darkAqua
+                    ? view.tableView.groupRowDarkOpacity
+                    : view.tableView.groupRowLightOpacity,
+            )
+            .usingColorSpace(.sRGB),
+    )
+    try assertTask3Solid(task3Render(groupRow, appearance), expectedGroupColor)
+    view.tableView.collapseItem(groupItem)
+    try assertTask3Solid(task3Render(groupRow, appearance), expectedGroupColor)
+    view.tableView.expandItem(groupItem)
+    view.layoutSubtreeIfNeeded()
+    let (groupRect, childRect) = (view.tableView.rect(ofRow: 0), view.tableView.rect(ofRow: 1))
+    XCTAssertEqual(groupRect.height, 28, accuracy: 0.001)
+    XCTAssertEqual(childRect.height, 34, accuracy: 0.001)
+    XCTAssertEqual(childRect.minY - groupRect.maxY, 0, accuracy: 0.001)
+    let intersection = groupRect.intersection(childRect)
+    XCTAssertEqual(intersection.width * intersection.height, 0)
+    let status = EntryListOutlineItem(kind: .empty(parent: entry.id))
+    XCTAssertEqual(coordinator.outlineView(view.tableView, heightOfRowByItem: status), 24)
+    XCTAssertEqual(view.tableView.intercellSpacing.height, 0)
+    state.entryArrangements.groupedItems = []
+    state.entries = [entry, EntryModel.temporaryFolder(id: "/ordinary/second", name: "second")]
+    let ordinaryCoordinator = EntryListCoordinator(store: Store(initialState: state) { EntryViewLayoutFeature() })
+    let ordinaryView = EntryListView(frame: view.frame)
+    ordinaryView.appearance = appearance
+    ordinaryCoordinator.bind(to: ordinaryView)
+    ordinaryView.tableView.deselectAll(nil)
+    let even = try task3Render(XCTUnwrap(ordinaryView.tableView.rowView(atRow: 0, makeIfNecessary: true)), appearance)
+    let oddRow = try XCTUnwrap(
+        ordinaryView.tableView.rowView(atRow: 1, makeIfNecessary: true) as? EntryListSelectionRowView,
+    )
+    XCTAssertEqual(try XCTUnwrap(even.colorAt(x: even.pixelsWide - 2, y: even.pixelsHigh / 2)).alphaComponent, 0)
+    oddRow.appearance = appearance
+    let stripe = appearanceName == .darkAqua
+        ? NSColor.white.withAlphaComponent(0.035)
+        : NSColor.black.withAlphaComponent(0.055)
+    let resolvedStripe = try XCTUnwrap(stripe.usingColorSpace(.sRGB))
+    XCTAssertEqual(
+        try XCTUnwrap(oddRow.unselectedBackgroundColor()).usingColorSpace(.sRGB),
+        resolvedStripe,
+    )
+    oddRow.configure(isGroupRow: true)
+    oddRow.configure(isGroupRow: false)
+    XCTAssertEqual(
+        try XCTUnwrap(oddRow.unselectedBackgroundColor()).usingColorSpace(.sRGB),
+        resolvedStripe,
+    )
+}
+
+@MainActor
+private func task3Render(_ row: NSTableRowView, _ appearance: NSAppearance) throws -> NSBitmapImageRep {
+    row.appearance = appearance
+    let bitmap = try XCTUnwrap(row.bitmapImageRepForCachingDisplay(in: row.bounds))
+    appearance.performAsCurrentDrawingAppearance {
+        row.cacheDisplay(in: row.bounds, to: bitmap)
+    }
+    return bitmap
+}
+
+private func assertTask3Solid(_ bitmap: NSBitmapImageRep, _ expected: NSColor) throws {
+    for sampleX in [1, bitmap.pixelsWide / 2, bitmap.pixelsWide - 2] {
+        let color = try XCTUnwrap(bitmap.colorAt(x: sampleX, y: bitmap.pixelsHigh / 2)?.usingColorSpace(.sRGB))
+        XCTAssertEqual(color.redComponent, expected.redComponent, accuracy: 0.01)
+        XCTAssertEqual(color.greenComponent, expected.greenComponent, accuracy: 0.01)
+        XCTAssertEqual(color.blueComponent, expected.blueComponent, accuracy: 0.01)
+        XCTAssertEqual(color.alphaComponent, expected.alphaComponent, accuracy: 0.01)
+    }
+}
+
 extension EVM002ManageEntriesViewPresentationTests {
     /// EVM-002-toggle_directory_expansion_in_list: 동일 folder의 loading expansion은 중복 요청을 만들지 않는다.
     /// - 검증 내용: loading phase에서 다시 expand해도 generation이 유지된다.
@@ -1822,5 +2096,128 @@ extension EVM002ManageEntriesViewPresentationTests {
         XCTAssertEqual(store.state.collectionItems.first?.facets.tags, [favoriteTag])
         XCTAssertEqual(store.state.entries.count, 1)
         XCTAssertEqual(store.state.entries.first?.facets.tags, [favoriteTag])
+    }
+
+    // MARK: - EVM-002-toggle_directory_expansion_in_list
+
+    /// EVM-002-toggle_directory_expansion_in_list: terminal staging의 취소 커밋은 stale descendant cache를 제거한다.
+    /// - 검증 내용: coreFinished로 확정된 staging을 취소 커밋한 뒤 제거된 child와 descendant node가 함께 사라진다.
+    /// - 사전 조건: retained subtree를 가진 보류 폴더가 새 children staging과 coreFinished에 도달한다.
+    /// - 기대 결과: 새 children만 남고 제거된 subtree의 node cache는 재사용되지 않는다.
+    func testTerminalCancellationCommitReconcilesStaleDescendants() {
+        let folder = EntryModel.temporaryFolder(id: "/root/source", name: "source")
+        let removedFolder = EntryModel.temporaryFolder(id: "/root/source/removed", name: "removed")
+        let removedDescendant = EntryModel.temporaryFolder(
+            id: "/root/source/removed/descendant",
+            name: "descendant",
+        )
+        let kept = EntryModel.temporaryFolder(id: "/root/source/kept", name: "kept")
+        var hierarchy = EntryListHierarchyState(nodesByID: [
+            folder.id: FolderNodeState(
+                folder: .init(children: [removedFolder], coreFinished: true, hasAppliedContentBatch: true),
+                generation: 4,
+                loadPhase: .loadingCore,
+            ),
+            removedFolder.id: FolderNodeState(
+                folder: .init(children: [removedDescendant], coreFinished: true, hasAppliedContentBatch: true),
+                generation: 3,
+                loadPhase: .loaded,
+            ),
+            removedDescendant.id: FolderNodeState(
+                parentID: removedFolder.id,
+                generation: 3,
+                loadPhase: .loaded,
+            ),
+        ])
+        hierarchy.beginDeferredFolderReplacement(
+            folderID: folder.id,
+            untilEntryID: "/root/destination/moved",
+            holdsUntilMigration: false,
+        )
+        hierarchy.deferredFolderReplacements[folder.id]?.stagedChildren = [kept]
+
+        hierarchy.commitDeferredFolderReplacementsOnCancel()
+
+        XCTAssertEqual(hierarchy.nodesByID[folder.id]?.folder.children, [kept])
+        XCTAssertNil(hierarchy.nodesByID[removedFolder.id])
+        XCTAssertNil(hierarchy.nodesByID[removedDescendant.id])
+    }
+
+    /// EVM-002-toggle_directory_expansion_in_list: terminal empty staging도 authoritative 빈 snapshot으로 정리한다.
+    /// - 검증 내용: 빈 staging의 terminal 취소 커밋 뒤 기존 child subtree가 제거된다.
+    /// - 사전 조건: coreFinished 폴더와 빈 deferred replacement가 있다.
+    /// - 기대 결과: children과 stale descendant cache가 모두 비워진다.
+    func testTerminalEmptyCancellationCommitReconcilesStaleDescendants() {
+        let folder = EntryModel.temporaryFolder(id: "/root/source", name: "source")
+        let removedFolder = EntryModel.temporaryFolder(id: "/root/source/removed", name: "removed")
+        let removedDescendant = EntryModel.temporaryFolder(
+            id: "/root/source/removed/descendant",
+            name: "descendant",
+        )
+        var hierarchy = EntryListHierarchyState(nodesByID: [
+            folder.id: FolderNodeState(
+                folder: .init(children: [removedFolder], coreFinished: true, hasAppliedContentBatch: true),
+                generation: 4,
+                loadPhase: .loadingCore,
+            ),
+            removedFolder.id: FolderNodeState(generation: 3, loadPhase: .loaded),
+            removedDescendant.id: FolderNodeState(
+                parentID: removedFolder.id,
+                generation: 3,
+                loadPhase: .loaded,
+            ),
+        ])
+        hierarchy.beginDeferredFolderReplacement(
+            folderID: folder.id,
+            untilEntryID: "/root/destination/moved",
+            holdsUntilMigration: false,
+        )
+
+        hierarchy.commitDeferredFolderReplacementsOnCancel()
+
+        XCTAssertEqual(hierarchy.nodesByID[folder.id]?.folder.children, [])
+        XCTAssertNil(hierarchy.nodesByID[removedFolder.id])
+        XCTAssertNil(hierarchy.nodesByID[removedDescendant.id])
+    }
+
+    /// EVM-002-toggle_directory_expansion_in_list: nonterminal partial 취소는 staging과 retained snapshot을 유지한다.
+    /// - 검증 내용: 미완료 source staging을 terminal까지 보존하고 기존 child subtree cache를 유지한다.
+    /// - 사전 조건: coreFinished가 아닌 폴더에 일부 staged children이 있다.
+    /// - 기대 결과: 기존 children과 descendant cache가 유지되고 staging은 terminal commit 대기 상태로 남는다.
+    func testNonterminalPartialCancellationCommitKeepsDescendantCache() {
+        let folder = EntryModel.temporaryFolder(id: "/root/source", name: "source")
+        let removedFolder = EntryModel.temporaryFolder(id: "/root/source/removed", name: "removed")
+        let removedDescendant = EntryModel.temporaryFolder(
+            id: "/root/source/removed/descendant",
+            name: "descendant",
+        )
+        let staged = EntryModel.temporaryFolder(id: "/root/source/staged", name: "staged")
+        var hierarchy = EntryListHierarchyState(nodesByID: [
+            folder.id: FolderNodeState(
+                folder: .init(children: [removedFolder]),
+                generation: 4,
+                loadPhase: .loadingCore,
+            ),
+            removedFolder.id: FolderNodeState(generation: 3, loadPhase: .loaded),
+            removedDescendant.id: FolderNodeState(
+                parentID: removedFolder.id,
+                generation: 3,
+                loadPhase: .loaded,
+            ),
+        ])
+        hierarchy.beginDeferredFolderReplacement(
+            folderID: folder.id,
+            untilEntryID: "/root/destination/moved",
+            holdsUntilMigration: true,
+        )
+        hierarchy.deferredFolderReplacements[folder.id]?.stagedChildren = [staged]
+
+        hierarchy.commitDeferredFolderReplacementsOnCancel()
+
+        XCTAssertEqual(hierarchy.nodesByID[folder.id]?.folder.children, [removedFolder])
+        XCTAssertEqual(hierarchy.deferredFolderReplacements[folder.id]?.stagedChildren, [staged])
+        XCTAssertTrue(hierarchy.deferredFolderReplacements[folder.id]?.migrationCompleted ?? false)
+        XCTAssertNotNil(hierarchy.nodesByID[removedFolder.id])
+        XCTAssertNotNil(hierarchy.nodesByID[removedDescendant.id])
     }
 }

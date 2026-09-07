@@ -16,7 +16,7 @@ final class CBW003ProviderStreamingFailureTests: XCTestCase {
     /// Provider stream, cancellation, failure event가 CBW003 응답 흐름에 맞게 보존되는지 추적합니다.
     /// - 검증 내용: Codex executor cancellation 전달과 terminal event 부재를 확인합니다.
     /// - 사전 조건: 취소 대기 가능한 Codex executor fixture를 사용합니다.
-    /// - 기대 결과: started event만 남고 final/failed event는 없습니다.
+    /// - 기대 결과: requestPrepared와 started만 남고 final/failed event는 없습니다.
     func testExecute_chatgptCodexStreamCancellation_stopsExecutorWithoutTerminalEvent() async throws {
         let request = providerExecutionMakeRequest(
             provider: .chatgptCodex,
@@ -44,7 +44,10 @@ final class CBW003ProviderStreamingFailureTests: XCTestCase {
         await fulfillment(of: [executorCancelled, consumerFinished], timeout: 1.0)
 
         let events = await consumerTask.value
-        XCTAssertEqual(events, [.started(context: request.context)])
+        XCTAssertEqual(events, try [
+            providerExecutionPreparedEvent(for: request),
+            .started(context: request.context),
+        ])
         XCTAssertFalse(events.providerExecutionContainsTerminalEvent)
     }
 
@@ -52,7 +55,7 @@ final class CBW003ProviderStreamingFailureTests: XCTestCase {
     /// Provider stream, cancellation, failure event가 CBW003 응답 흐름에 맞게 보존되는지 추적합니다.
     /// - 검증 내용: registry stream producer 취소와 terminal event 부재를 확인합니다.
     /// - 사전 조건: cancellable registry stream fixture를 사용합니다.
-    /// - 기대 결과: started event만 남고 producer/consumer cancellation이 완료됩니다.
+    /// - 기대 결과: requestPrepared와 started만 남고 producer/consumer cancellation이 완료됩니다.
     func testExecute_registryExecutorCancellation_stopsProducerWithoutTerminalEvent() async throws {
         let request = providerExecutionMakeRequest(provider: .openai, rawModelID: "gpt-5.5")
         let producerEntered = XCTestExpectation(description: "Registry executor entered")
@@ -76,7 +79,10 @@ final class CBW003ProviderStreamingFailureTests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [producerCancelled, consumerFinished], timeout: 1.0), .completed)
 
         let events = await consumerTask.value
-        XCTAssertEqual(events, [.started(context: request.context)])
+        XCTAssertEqual(events, try [
+            providerExecutionPreparedEvent(for: request),
+            .started(context: request.context),
+        ])
         XCTAssertFalse(events.providerExecutionContainsTerminalEvent)
     }
 
@@ -98,7 +104,8 @@ final class CBW003ProviderStreamingFailureTests: XCTestCase {
             .oauth(OAuthCredentialFile(accessToken: "codex-token")),
         ))
 
-        XCTAssertEqual(events, [
+        XCTAssertEqual(events, try [
+            providerExecutionPreparedEvent(for: request),
             .started(context: request.context),
             .failed(context: request.context, reason: .invalidRequest),
         ])
@@ -204,7 +211,8 @@ final class CBW003ProviderStreamingFailureTests: XCTestCase {
         ))
 
         let answerID = "\(request.context.requestID.rawValue.uuidString.lowercased()):openai:answerGeneration:0"
-        XCTAssertEqual(events, [
+        XCTAssertEqual(events, try [
+            providerExecutionPreparedEvent(for: request),
             .started(context: request.context),
             providerExecutionStatus(request.context, answerID, .answerGeneration, .began, "response.output_text.delta"),
             .delta(context: request.context, text: "Hel"),
@@ -244,7 +252,8 @@ final class CBW003ProviderStreamingFailureTests: XCTestCase {
             .apiKey(APIKeyCredentialFile(secret: "sk-openai")),
         ))
 
-        XCTAssertEqual(events, [
+        XCTAssertEqual(events, try [
+            providerExecutionPreparedEvent(for: request),
             .started(context: request.context),
             providerExecutionStatus(
                 request.context,
@@ -361,7 +370,8 @@ final class CBW003ProviderStreamingFailureTests: XCTestCase {
             .apiKey(APIKeyCredentialFile(secret: "sk-openai")),
         ))
 
-        XCTAssertEqual(events, [
+        XCTAssertEqual(events, try [
+            providerExecutionPreparedEvent(for: request),
             .started(context: request.context),
             .failed(context: request.context, reason: .invalidRequest),
         ])
@@ -388,7 +398,8 @@ final class CBW003ProviderStreamingFailureTests: XCTestCase {
             .apiKey(APIKeyCredentialFile(secret: "sk-openai")),
         ))
 
-        XCTAssertEqual(events, [
+        XCTAssertEqual(events, try [
+            providerExecutionPreparedEvent(for: request),
             .started(context: request.context),
             .final(response: AiChatResponse(
                 context: request.context,
@@ -418,7 +429,8 @@ final class CBW003ProviderStreamingFailureTests: XCTestCase {
             .apiKey(APIKeyCredentialFile(secret: "sk-openai")),
         ))
 
-        XCTAssertEqual(events, [
+        XCTAssertEqual(events, try [
+            providerExecutionPreparedEvent(for: request),
             .started(context: request.context),
             .failed(context: request.context, reason: .authentication),
         ])
@@ -444,7 +456,8 @@ final class CBW003ProviderStreamingFailureTests: XCTestCase {
             .apiKey(APIKeyCredentialFile(secret: "sk-openai")),
         ))
 
-        XCTAssertEqual(events, [
+        XCTAssertEqual(events, try [
+            providerExecutionPreparedEvent(for: request),
             .started(context: request.context),
             .failed(context: request.context, reason: .modelUnavailable),
         ])
@@ -466,7 +479,8 @@ final class CBW003ProviderStreamingFailureTests: XCTestCase {
             .apiKey(APIKeyCredentialFile(secret: "sk-openai")),
         ))
 
-        XCTAssertEqual(events, [
+        XCTAssertEqual(events, try [
+            providerExecutionPreparedEvent(for: request),
             .started(context: request.context),
             .failed(context: request.context, reason: .network),
         ])
@@ -511,7 +525,8 @@ final class CBW003ProviderStreamingFailureAnthropicTests: XCTestCase {
         ))
 
         let answerID = "\(request.context.requestID.rawValue.uuidString.lowercased()):anthropic:block:0"
-        XCTAssertEqual(events, [
+        XCTAssertEqual(events, try [
+            providerExecutionPreparedEvent(for: request),
             .started(context: request.context),
             providerExecutionStatus(request.context, answerID, .answerGeneration, .began, "content_block_start"),
             .delta(context: request.context, text: "Hi"),
@@ -553,7 +568,8 @@ final class CBW003ProviderStreamingFailureAnthropicTests: XCTestCase {
             .apiKey(APIKeyCredentialFile(secret: "sk-ant")),
         ))
 
-        XCTAssertEqual(events, [
+        XCTAssertEqual(events, try [
+            providerExecutionPreparedEvent(for: request),
             .started(context: request.context),
             providerExecutionStatus(request.context, thinkingID, .thinking, .began, "content_block_start"),
             providerExecutionStatus(request.context, thinkingID, .thinking, .ended, "content_block_stop"),
@@ -601,7 +617,8 @@ final class CBW003ProviderStreamingFailureAnthropicTests: XCTestCase {
         ))
 
         let requestScope = request.context.requestID.rawValue.uuidString.lowercased()
-        XCTAssertEqual(events, [
+        XCTAssertEqual(events, try [
+            providerExecutionPreparedEvent(for: request),
             .started(context: request.context),
             providerExecutionStatus(
                 request.context,
@@ -670,7 +687,8 @@ final class CBW003ProviderStreamingFailureAnthropicTests: XCTestCase {
             .apiKey(APIKeyCredentialFile(secret: "sk-ant")),
         ))
 
-        XCTAssertEqual(events.first, .started(context: request.context))
+        XCTAssertEqual(events.first, try providerExecutionPreparedEvent(for: request))
+        XCTAssertEqual(events.dropFirst().first, .started(context: request.context))
         XCTAssertEqual(events.last, .final(response: AiChatResponse(
             context: request.context,
             assistantMessage: AiChatMessage(role: .assistant, content: "Hi there"),
@@ -708,7 +726,8 @@ final class CBW003ProviderStreamingFailureAnthropicTests: XCTestCase {
             .apiKey(APIKeyCredentialFile(secret: "sk-ant")),
         ))
 
-        XCTAssertEqual(events, [
+        XCTAssertEqual(events, try [
+            providerExecutionPreparedEvent(for: request),
             .started(context: request.context),
             .final(response: AiChatResponse(
                 context: request.context,
@@ -747,7 +766,8 @@ final class CBW003ProviderStreamingFailureAnthropicTests: XCTestCase {
             .apiKey(APIKeyCredentialFile(secret: "sk-ant")),
         ))
 
-        XCTAssertEqual(events.first, .started(context: request.context))
+        XCTAssertEqual(events.first, try providerExecutionPreparedEvent(for: request))
+        XCTAssertEqual(events.dropFirst().first, .started(context: request.context))
         XCTAssertEqual(events.last, .final(response: AiChatResponse(
             context: request.context,
             assistantMessage: AiChatMessage(role: .assistant, content: "Hi there"),
@@ -784,8 +804,9 @@ final class CBW003ProviderStreamingFailureAnthropicTests: XCTestCase {
             .apiKey(APIKeyCredentialFile(secret: "sk-ant")),
         ))
 
-        XCTAssertEqual(events.count, 2)
-        XCTAssertEqual(events.first, .started(context: request.context))
+        XCTAssertEqual(events.count, 3)
+        XCTAssertEqual(events.first, try providerExecutionPreparedEvent(for: request))
+        XCTAssertEqual(events.dropFirst().first, .started(context: request.context))
     }
 
     /// CBW-003-stream_contextual_chat_response: Anthropic 401 응답은 authentication failure로 변환된다.
@@ -808,7 +829,8 @@ final class CBW003ProviderStreamingFailureAnthropicTests: XCTestCase {
             .apiKey(APIKeyCredentialFile(secret: "sk-ant")),
         ))
 
-        XCTAssertEqual(events, [
+        XCTAssertEqual(events, try [
+            providerExecutionPreparedEvent(for: request),
             .started(context: request.context),
             .failed(context: request.context, reason: .authentication),
         ])
@@ -834,7 +856,8 @@ final class CBW003ProviderStreamingFailureAnthropicTests: XCTestCase {
             .apiKey(APIKeyCredentialFile(secret: "sk-ant")),
         ))
 
-        XCTAssertEqual(events, [
+        XCTAssertEqual(events, try [
+            providerExecutionPreparedEvent(for: request),
             .started(context: request.context),
             .failed(context: request.context, reason: .modelUnavailable),
         ])
@@ -860,7 +883,8 @@ final class CBW003ProviderStreamingFailureAnthropicTests: XCTestCase {
             .apiKey(APIKeyCredentialFile(secret: "sk-ant")),
         ))
 
-        XCTAssertEqual(events, [
+        XCTAssertEqual(events, try [
+            providerExecutionPreparedEvent(for: request),
             .started(context: request.context),
             .failed(context: request.context, reason: .quotaExceeded),
         ])
@@ -886,7 +910,8 @@ final class CBW003ProviderStreamingFailureAnthropicTests: XCTestCase {
             .apiKey(APIKeyCredentialFile(secret: "sk-ant")),
         ))
 
-        XCTAssertEqual(events, [
+        XCTAssertEqual(events, try [
+            providerExecutionPreparedEvent(for: request),
             .started(context: request.context),
             .failed(context: request.context, reason: .quotaExceeded),
         ])
@@ -912,7 +937,8 @@ final class CBW003ProviderStreamingFailureAnthropicTests: XCTestCase {
             .apiKey(APIKeyCredentialFile(secret: "sk-ant")),
         ))
 
-        XCTAssertEqual(events, [
+        XCTAssertEqual(events, try [
+            providerExecutionPreparedEvent(for: request),
             .started(context: request.context),
             .failed(context: request.context, reason: .invalidRequest),
         ])
@@ -939,7 +965,8 @@ final class CBW003ProviderStreamingFailureAnthropicTests: XCTestCase {
             .apiKey(APIKeyCredentialFile(secret: "sk-ant")),
         ))
 
-        XCTAssertEqual(events, [
+        XCTAssertEqual(events, try [
+            providerExecutionPreparedEvent(for: request),
             .started(context: request.context),
             .failed(context: request.context, reason: .invalidRequest),
         ])

@@ -7,11 +7,71 @@ import VoyagerFeaturesEntryOperations
 import VoyagerFeaturesEntryThumbnail
 import VoyagerShared
 
+/// The immutable identity mapping supplied by the page that owns the filesystem
+/// operation. The view-layout feature never re-derives these paths from a later
+/// callback, which keeps lexical row identity separate from canonical scope matching.
+public struct EntryIdentityReplacementPair: Equatable, Sendable {
+    public let beforePath: String
+    public let beforeLexicalPath: String
+    public let afterPath: String
+    public let afterLexicalPath: String
+
+    public init(
+        beforePath: String,
+        afterPath: String,
+        beforeLexicalPath: String = "",
+        afterLexicalPath: String = "",
+    ) {
+        self.beforePath = beforePath
+        self.beforeLexicalPath = beforeLexicalPath
+        self.afterPath = afterPath
+        self.afterLexicalPath = afterLexicalPath
+    }
+}
+
+public struct EntryIdentityReplacementPlan: Equatable, Sendable {
+    public let transactionID: UUID
+    public let rootPath: String
+    public let pairs: [EntryIdentityReplacementPair]
+
+    public init(
+        transactionID: UUID,
+        rootPath: String,
+        pairs: [EntryIdentityReplacementPair],
+    ) {
+        self.transactionID = transactionID
+        self.rootPath = rootPath
+        self.pairs = pairs
+    }
+}
+
+public enum EntryIdentityReplacementCancelReason: Equatable, Sendable {
+    case navigationChanged
+    case superseded
+    case userCollapsedSource
+    case destinationCollapsed
+    case failed
+}
+
+public enum EntryIdentityReplacementOutcome: Equatable, Sendable {
+    case completed
+    case failed
+    case cancelled(EntryIdentityReplacementCancelReason)
+}
+
+@CasePathable
+public enum EntryIdentityReplacementAction: CasePathable, Sendable {
+    case begin(EntryIdentityReplacementPlan)
+    case cancel(id: UUID, reason: EntryIdentityReplacementCancelReason)
+    case settle(id: UUID, outcome: EntryIdentityReplacementOutcome)
+}
+
 @CasePathable
 public enum EntryViewLayoutAction: ViewAction, CasePathable, Sendable {
     case view(View)
     case delegate(Delegate)
     case `internal`(Internal)
+    case identityReplacement(EntryIdentityReplacementAction)
     case hierarchy(EntryListHierarchyAction)
     case entryOperations(EntryOperationsFeature.Action)
     case entryThumbnail(EntryThumbnailFeature.Action)
@@ -47,6 +107,9 @@ public enum EntryViewLayoutAction: ViewAction, CasePathable, Sendable {
             rangeAnchorId: EntryModel.ID?,
             shouldScrollToSelection: Bool,
         )
+        /// UI adapter가 확정한 사용자 제스처 clear(빈 영역 클릭, 마지막 항목 Command 해제, 빈 lasso 종료).
+        /// `updateSelection`의 authoritative setter 의미와 달리 “선택을 비운다”는 의도만 전달한다.
+        case clearSelection
         case selectAll(orderedItemIds: [EntryModel.ID])
         case selectNextItem(isShiftPressed: Bool)
         case selectPreviousItem(isShiftPressed: Bool)
@@ -57,31 +120,35 @@ public enum EntryViewLayoutAction: ViewAction, CasePathable, Sendable {
         case moveListColumn(from: Int, to: Int)
         case resetListVisibleColumns
         case resetScrollFlag
-        case setTypeScrollTarget(EntryModel.ID)
         case resetTypeScrollTarget
         case setDropTargeted(Bool)
         case startDrag(paths: [String])
         case handleDrop(providers: [NSItemProvider], destinationPath: String)
         case dropItems(sourcePaths: [String], destinationPath: String, isOptionDrag: Bool)
-        // 외부 drop 획득 세션의 semantic view action. coordinator가 child reducer에
-        // 직접 주입하지 않고 이 경계를 통해 EntryViewLayoutFeature가 라우팅한다.
-        case externalDropAccepted(request: ExternalDropAcceptedRequest)
+        /// 외부 drop 획득 세션의 semantic view action. coordinator가 child reducer에
+        /// 직접 주입하지 않고 이 경계를 통해 EntryViewLayoutFeature가 라우팅한다.
+        case externalDropAccepted(
+            request: ExternalDropAcceptedRequest,
+            command: EntryCommandMetadata,
+            logicalItemCount: Int,
+        )
         case externalDropCancelSession(ExternalDropSessionID)
-        case openSelectedItem
-        case executeCommand(String)
+        case openSelectedItem(source: EntryCommandSource)
+        case executeCommand(String, source: EntryCommandSource)
         case openPathInNewWindow(String)
         case openInNewTab([String])
         case performService(serviceName: String)
-        case startRename(item: EntryModel, text: String)
+        case startRename(item: EntryModel, text: String, source: EntryCommandSource)
+        case updateRenamingText(String)
         case commitRename(itemID: EntryModel.ID, newName: String)
         case openEntry(EntryModel)
         case saveScrollOffset(CGPoint, forPath: String)
         case changeSort(EntryViewLayoutSortKey, VoyagerShared.SortOrder)
         case toggleGroup(String)
         case preloadOpenWithApplications([EntryModel])
-        case openWithApp(bundleID: String?)
-        case toggleTag(String)
-        case mutateTag(name: String, mode: TagMutationMode)
+        case openWithApp(bundleID: String?, source: EntryCommandSource)
+        case toggleTag(String, source: EntryCommandSource)
+        case mutateTag(name: String, mode: TagMutationMode, source: EntryCommandSource)
         case expandFolder(EntryModel.ID)
         case collapseFolder(EntryModel.ID)
         case retryFolder(EntryModel.ID)
@@ -91,11 +158,11 @@ public enum EntryViewLayoutAction: ViewAction, CasePathable, Sendable {
 
     @CasePathable
     public enum Delegate: Sendable {
-        case executeCommand(String)
+        case executeCommand(String, source: EntryCommandSource)
         case openPathInNewWindow(String)
         case openInNewTab([String])
         case performService(serviceName: String)
-        case startRename(item: EntryModel, text: String)
+        case startRename(item: EntryModel, text: String, source: EntryCommandSource)
         case saveScrollOffset(CGPoint, forPath: String)
         case selectionChanged
         // Feature로 라우팅할 intent
@@ -110,10 +177,14 @@ public enum EntryViewLayoutAction: ViewAction, CasePathable, Sendable {
         case groupChanged(EntryViewLayoutGroupKey)
         case toggleGroup(String)
         case preloadOpenWithApplications([EntryModel])
-        case tagMutation(tagName: String, mode: TagMutationMode)
-        case toggleTag(tagName: String)
-        case openWithApp(bundleID: String?)
+        case tagMutation(tagName: String, mode: TagMutationMode, source: EntryCommandSource)
+        case toggleTag(tagName: String, source: EntryCommandSource)
+        case openWithApp(bundleID: String?, source: EntryCommandSource)
         case dropItems(sourcePaths: [String], destinationPath: String, isOptionDrag: Bool)
+        case identityReplacementSettled(
+            id: UUID,
+            outcome: EntryIdentityReplacementOutcome,
+        )
     }
 
     @CasePathable
@@ -127,6 +198,7 @@ public enum EntryViewLayoutAction: ViewAction, CasePathable, Sendable {
         case applySelectAll(orderedItemIds: [EntryModel.ID])
         case applyClearSelection
         case applySelectionOffset(offset: Int, isShiftPressed: Bool, orderedItemIds: [EntryModel.ID])
+        case selectTypeScrollTarget(EntryModel.ID)
         case updateGridColumnCount(Int)
         case setMode(EntryViewLayoutState.Mode)
         case setListVisibleColumns([EntryListColumn])

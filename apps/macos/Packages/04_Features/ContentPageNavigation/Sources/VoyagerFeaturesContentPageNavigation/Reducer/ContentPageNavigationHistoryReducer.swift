@@ -37,6 +37,11 @@ struct ContentPageNavigationHistoryReducer {
             )
         case .enclosingDirectory:
             performEnclosingDirectoryNavigation(state: &state)
+        case .navigateToPath, .showRecents, .showComputer, .showTag, .showAiChat, .showAiChatSessions:
+            ContentPageNavigationDirectTransition.perform(pending, state: &state)
+        case .openCollectionFile:
+            // Collection file loading belongs to the FileManager window boundary.
+            .none
         }
     }
 
@@ -50,6 +55,7 @@ struct ContentPageNavigationHistoryReducer {
         return historyNavigationEffects(
             previousNavigationState: previousNavigationState,
             nextNavigationState: state.navigationState,
+            identity: .back,
             shouldRevealEntry: true,
         )
     }
@@ -64,6 +70,7 @@ struct ContentPageNavigationHistoryReducer {
         return historyNavigationEffects(
             previousNavigationState: previousNavigationState,
             nextNavigationState: state.navigationState,
+            identity: .forward,
             shouldRevealEntry: false,
         )
     }
@@ -90,6 +97,7 @@ struct ContentPageNavigationHistoryReducer {
             return historyNavigationEffects(
                 previousNavigationState: previousNavigationState,
                 nextNavigationState: state.navigationState,
+                identity: .back,
                 shouldRevealEntry: false,
             )
         }
@@ -109,6 +117,7 @@ struct ContentPageNavigationHistoryReducer {
         return historyNavigationEffects(
             previousNavigationState: previousNavigationState,
             nextNavigationState: state.navigationState,
+            identity: .forward,
             shouldRevealEntry: false,
         )
     }
@@ -125,6 +134,7 @@ struct ContentPageNavigationHistoryReducer {
         return historyNavigationEffects(
             previousNavigationState: previousNavigationState,
             nextNavigationState: state.navigationState,
+            identity: .enclosingDirectory,
             shouldRevealEntry: true,
         )
     }
@@ -132,6 +142,7 @@ struct ContentPageNavigationHistoryReducer {
     private func historyNavigationEffects(
         previousNavigationState: ContentPageNavigationRoute,
         nextNavigationState: ContentPageNavigationRoute,
+        identity: ContentPageNavigationInteractionIdentity,
         shouldRevealEntry: Bool,
     ) -> Effect<Action> {
         var effects: [Effect<Action>] = []
@@ -142,7 +153,11 @@ struct ContentPageNavigationHistoryReducer {
         }
 
         effects.append(
-            .send(.delegate(.logDAUNavigation(previous: previousNavigationState, next: nextNavigationState))),
+            .send(.delegate(.logDAUNavigation(
+                previous: previousNavigationState,
+                next: nextNavigationState,
+                identity: identity,
+            ))),
         )
         if shouldRevealEntry,
            let revealEffect = revealEffect(

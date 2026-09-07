@@ -1712,6 +1712,7 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
             preparedRequest: AiChatPreparedRequest(
                 prompt: "Live prompt",
                 messages: [],
+                persistenceTranscriptHistory: nil,
                 assistantReplacementIndex: nil,
                 historyTruncation: .init(
                     includedMessageCount: 0,

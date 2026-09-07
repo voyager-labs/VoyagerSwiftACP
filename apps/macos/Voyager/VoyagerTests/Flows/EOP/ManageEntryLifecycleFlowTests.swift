@@ -61,7 +61,10 @@ final class ManageEntryLifecycleFlowTests: XCTestCase {
         let initialRoute = store.state.navigation.navigationState
         let initialHistory = store.state.navigation.backHistory
 
-        await store.send(.entryViewLayout(.delegate(.executeCommand("mutation.moveSelectedItemsToTrash"))))
+        await store.send(.entryViewLayout(.delegate(.executeCommand(
+            "mutation.moveSelectedItemsToTrash",
+            source: .fileManagerContent,
+        ))))
         await store.finish()
         await store.skipReceivedActions()
 
@@ -126,7 +129,10 @@ final class ManageEntryLifecycleFlowTests: XCTestCase {
         store.exhaustivity = .off
 
         // 1. Move to trash
-        await store.send(.entryViewLayout(.delegate(.executeCommand("mutation.moveSelectedItemsToTrash"))))
+        await store.send(.entryViewLayout(.delegate(.executeCommand(
+            "mutation.moveSelectedItemsToTrash",
+            source: .fileManagerContent,
+        ))))
         await store.finish()
         await store.skipReceivedActions()
 
@@ -194,7 +200,10 @@ final class ManageEntryLifecycleFlowTests: XCTestCase {
         }
         store.exhaustivity = .off
 
-        await store.send(.entryViewLayout(.delegate(.executeCommand("mutation.moveSelectedItemsToTrash"))))
+        await store.send(.entryViewLayout(.delegate(.executeCommand(
+            "mutation.moveSelectedItemsToTrash",
+            source: .fileManagerContent,
+        ))))
         await store.finish()
         await store.skipReceivedActions()
 

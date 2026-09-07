@@ -45,6 +45,7 @@ public actor PostHogProductAnalyticsProvider {
         let event = request.event
         var properties = event.properties.mapValues(Self.postHogValue)
         properties["event_version"] = event.eventVersion.rawValue
+        properties["operation_id"] = event.operationID.uuidString.lowercased()
         properties["occurred_at_utc"] = ISO8601DateFormatter().string(from: event.occurredAtUTC)
         properties["environment"] = event.environment
         properties["app_version"] = event.appVersion

@@ -172,8 +172,8 @@ extension EntryListCoordinator: NSTextFieldDelegate {
         guard let renamingItemId = state.entryOperations.renamingItemId else { return }
         guard let textField = notification.object as? NSTextField else { return }
         guard (textField.delegate as AnyObject?) === self else { return }
-        guard let renamingItem = state.entries.first(where: { $0.id == renamingItemId }) else { return }
-        store.send(.view(.startRename(item: renamingItem, text: textField.stringValue)))
+        guard state.entries.contains(where: { $0.id == renamingItemId }) else { return }
+        store.send(.view(.updateRenamingText(textField.stringValue)))
     }
 
     public func control(_ control: NSControl, textView _: NSTextView, doCommandBy commandSelector: Selector) -> Bool {

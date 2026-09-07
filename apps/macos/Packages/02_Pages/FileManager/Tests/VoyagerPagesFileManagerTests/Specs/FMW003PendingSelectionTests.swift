@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import IdentifiedCollections
 import VoyagerEntitiesEntry
 import VoyagerFeaturesEntryOperations
 @testable import VoyagerPagesFileManager
@@ -75,7 +76,7 @@ final class FMW003PendingSelectionTests: XCTestCase {
         // pendingSelectEntryID와 무관한 state 필드의 부수 변경 검증을 제외하기 위해
         store.exhaustivity = .off
 
-        await store.send(.bridge(.loading(.itemsLoaded(entries)))) {
+        await store.send(.bridge(.loading(.itemsLoaded(generation: 0, items: entries)))) {
             $0.content.pendingSelectEntryID = nil
             $0.content.entryViewLayout.selectedIds = Set([targetID])
             $0.content.entryViewLayout.lastSelectedId = targetID
@@ -118,7 +119,7 @@ final class FMW003PendingSelectionTests: XCTestCase {
         }
         store.exhaustivity = .off
 
-        await store.send(.bridge(.loading(.itemsLoaded(entries)))) {
+        await store.send(.bridge(.loading(.itemsLoaded(generation: 0, items: entries)))) {
             $0.content.pendingSelectEntryID = nil
             $0.content.entryViewLayout.selectedIds = Set([loadedEntryID])
             $0.content.entryViewLayout.lastSelectedId = loadedEntryID
@@ -163,7 +164,7 @@ final class FMW003PendingSelectionTests: XCTestCase {
         }
         store.exhaustivity = .off
 
-        await store.send(.bridge(.loading(.itemsLoaded(entries)))) {
+        await store.send(.bridge(.loading(.itemsLoaded(generation: 0, items: entries)))) {
             $0.content.pendingSelectEntryID = nil
             $0.content.entryViewLayout.selectedIds = [aliasB.path]
             $0.content.entryViewLayout.lastSelectedId = aliasB.path
@@ -192,7 +193,7 @@ final class FMW003PendingSelectionTests: XCTestCase {
         // exhaustiveness 비활성화 사유: pendingSelectEntryID 외 무관한 state 필드 검증 제외
         store.exhaustivity = .off
 
-        await store.send(.bridge(.loading(.itemsLoaded(entries))))
+        await store.send(.bridge(.loading(.itemsLoaded(generation: 0, items: entries))))
         XCTAssertEqual(store.state.content.pendingSelectEntryID, targetID)
         // 매칭 엔트리 없음 → 수신 액션 없음
         await store.finish()
@@ -221,10 +222,10 @@ final class FMW003PendingSelectionTests: XCTestCase {
         }
         store.exhaustivity = .off
 
-        await store.send(.bridge(.loading(.itemsLoaded(firstEntries))))
+        await store.send(.bridge(.loading(.itemsLoaded(generation: 0, items: firstEntries))))
         XCTAssertEqual(store.state.content.pendingSelectEntryID, targetID)
 
-        await store.send(.bridge(.loading(.itemsLoaded(secondEntries)))) {
+        await store.send(.bridge(.loading(.itemsLoaded(generation: 0, items: secondEntries)))) {
             $0.content.pendingSelectEntryID = nil
             $0.content.entryViewLayout.selectedIds = Set([targetID])
             $0.content.entryViewLayout.lastSelectedId = targetID
@@ -310,7 +311,7 @@ final class FMW003PendingSelectionTests: XCTestCase {
         let store = makeFileManagerContentFeatureStore(initialState: state)
         store.exhaustivity = .off
 
-        await store.send(.entryViewLayout(.entryOperations(.loading(.itemsLoaded(entries))))) {
+        await store.send(.entryViewLayout(.entryOperations(.loading(.itemsLoaded(generation: 0, items: entries))))) {
             $0.pendingSelectEntryID = nil
             $0.entryViewLayout.selectedIds = Set([targetID])
             $0.entryViewLayout.lastSelectedId = targetID
@@ -408,7 +409,10 @@ final class FMW003PendingSelectionTests: XCTestCase {
         let store = makeFileManagerContentFeatureStore(initialState: state)
         store.exhaustivity = .off
 
-        await store.send(.entryViewLayout(.entryOperations(.loading(.streamFailed(generation: 4))))) {
+        await store.send(.entryViewLayout(.entryOperations(.loading(.streamFailed(
+            generation: 4,
+            failure: .unavailable(description: "test"),
+        ))))) {
             $0.pendingSelectEntryID = nil
             $0.pendingSelectEntryDestinationPath = nil
             $0.entryViewLayout.selectedIds = [targetID]
@@ -436,25 +440,28 @@ final class FMW003PendingSelectionTests: XCTestCase {
         let store = makeFileManagerContentFeatureStore(initialState: state)
         store.exhaustivity = .off
 
-        await store.send(.entryViewLayout(.entryOperations(.loading(.streamFailed(generation: 4))))) {
+        await store.send(.entryViewLayout(.entryOperations(.loading(.streamFailed(
+            generation: 4,
+            failure: .unavailable(description: "test"),
+        ))))) {
             $0.pendingSelectEntryID = nil
             $0.pendingSelectEntryDestinationPath = nil
         }
         await store.finish()
     }
 
-    /// FMW-003-handle_external_file_open_requests: itemsLoadFailed ends navigation-origin selection.
-    /// - Verification: the unversioned load failure clears both pending-selection fields when the
-    ///   pending pair is bound to the current loading generation.
+    /// FMW-003-handle_external_file_open_requests: Computer load failure ends navigation-origin selection.
+    /// - Verification: the generation-bearing load failure clears both pending-selection fields when the
+    ///   pending pair is bound to the same current loading generation.
     /// - Preconditions: the guarded destination route is current and the pair is bound to generation 4.
     /// - Expected result: both pending-selection fields are nil.
-    func test_contentFeature_navigationItemsLoadFailedClearsPendingPair() async {
+    func test_contentFeature_navigationComputerItemsLoadFailureClearsPendingPair() async {
         var state = makeNavigationSelectionState(loadGeneration: 4)
         state.entryViewLayout.entryOperations.loadingContext.generation = 4
         let store = makeFileManagerContentFeatureStore(initialState: state)
         store.exhaustivity = .off
 
-        await store.send(.entryViewLayout(.entryOperations(.loading(.itemsLoadFailed)))) {
+        await store.send(.entryViewLayout(.entryOperations(.loading(.computerItemsLoadFailed(generation: 4))))) {
             $0.pendingSelectEntryID = nil
             $0.pendingSelectEntryDestinationPath = nil
         }
@@ -469,13 +476,63 @@ final class FMW003PendingSelectionTests: XCTestCase {
         let store = makeFileManagerContentFeatureStore(initialState: makeNavigationSelectionState())
         store.exhaustivity = .off
 
-        await store.send(.entryViewLayout(.entryOperations(.loading(.itemsLoaded([
+        await store.send(.entryViewLayout(.entryOperations(.loading(.itemsLoaded(generation: 0, items: [
             Self.makeEntry(fullPath: "/test/other.txt"),
         ]))))) {
             $0.pendingSelectEntryID = nil
             $0.pendingSelectEntryDestinationPath = nil
         }
         await store.finish()
+    }
+
+    /// FMW-003-handle_external_file_open_requests: 이전 Computer 결과는 새 폴더의 pending selection을 소비하지 않는다.
+    /// Computer A 이후 폴더 B reveal이 세대에 바인딩된 상태에서 늦은 A 결과가 도착하는 경쟁 상태를 검증한다.
+    /// - 검증 내용: stale Computer itemsLoaded가 pending pair와 현재 selection을 변경하지 않는다.
+    /// - 사전 조건: 폴더 B가 generation 2를 소유하고 B의 target pending selection도 generation 2에 바인딩돼 있다.
+    /// - 기대 결과: pending pair가 유지되고 stale A entry는 선택되지 않는다.
+    func test_contentFeature_staleComputerItemsLoadedPreservesCurrentFolderPendingSelection() async {
+        var state = makeNavigationSelectionState(
+            entryID: "/folder-b/target.txt",
+            destinationPath: "/folder-b",
+            loadGeneration: 2,
+        )
+        state.entryViewLayout.entryOperations.loadingContext.generation = 2
+        state.entryViewLayout.entryOperations.loadingContext.sourceKind = .directory
+        let store = makeFileManagerContentFeatureStore(initialState: state)
+        // store.exhaustivity = .off: 통합 reducer의 projection 부수 action보다 pending selection 불변식을 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.entryViewLayout(.entryOperations(.loading(.itemsLoaded(generation: 1, items: [
+            Self.makeEntry(fullPath: "/computer-a"),
+        ])))))
+
+        XCTAssertEqual(store.state.pendingSelectEntryID, "/folder-b/target.txt")
+        XCTAssertEqual(store.state.pendingSelectEntryDestinationPath, "/folder-b")
+        XCTAssertEqual(store.state.pendingSelectEntryLoadGeneration, 2)
+        XCTAssertTrue(store.state.entryViewLayout.selectedIds.isEmpty)
+    }
+
+    /// FMW-003-handle_external_file_open_requests: stale Computer 실패는 현재 폴더 pending selection을 보존한다.
+    /// 이전 Computer 요청의 실패가 새 폴더 reveal 상관관계를 소비하지 않는 경쟁 상태를 검증한다.
+    /// - 검증 내용: stale computerItemsLoadFailed 전후 pending selection과 전체 content state 동등성을 비교한다.
+    /// - 사전 조건: 폴더 B와 pending selection은 generation 2에 바인딩되고 실패는 이전 요청에서 도착한다.
+    /// - 기대 결과: pending pair, generation, selection을 포함한 전체 state가 변경되지 않는다.
+    func test_contentFeature_staleComputerItemsLoadFailurePreservesCurrentFolderPendingSelection() async {
+        var state = makeNavigationSelectionState(
+            entryID: "/folder-b/target.txt",
+            destinationPath: "/folder-b",
+            loadGeneration: 2,
+        )
+        state.entryViewLayout.entryOperations.loadingContext.generation = 2
+        state.entryViewLayout.entryOperations.loadingContext.sourceKind = .directory
+        let originalState = state
+        let store = makeFileManagerContentFeatureStore(initialState: state)
+        // store.exhaustivity = .off: stale terminal의 pending selection 전체 no-op 계약을 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.entryViewLayout(.entryOperations(.loading(.computerItemsLoadFailed(generation: 1)))))
+
+        XCTAssertEqual(store.state, originalState)
     }
 
     /// FMW-003: pendingSelectEntryID가 nil인 경우 기존 동작 유지 (no-op).
@@ -490,7 +547,7 @@ final class FMW003PendingSelectionTests: XCTestCase {
         // exhaustiveness 비활성화 사유: no-op 케이스로 side effect 검증만 수행
         store.exhaustivity = .off
 
-        await store.send(.bridge(.loading(.itemsLoaded(entries))))
+        await store.send(.bridge(.loading(.itemsLoaded(generation: 0, items: entries))))
         // pendingSelectEntryID가 nil이므로 coordinator가 즉시 .none 반환
         await store.finish()
     }
@@ -548,6 +605,45 @@ final class FMW003PendingSelectionTests: XCTestCase {
         XCTAssertNil(store.state.content.pendingSelectEntryID)
         XCTAssertEqual(store.state.content.entryViewLayout.selectedIds, [filePath])
         XCTAssertTrue(store.state.content.entryViewLayout.shouldScrollToSelection)
+    }
+
+    /// FMW-003-handle_external_file_open_requests: 이미 로드된 Directory tab은 pending selection을 즉시 소비한다.
+    /// 같은 tab이 다시 활성화되지 않아도 이미 있는 entries에서 파일을 선택하는지 검증한다.
+    /// - 검증 내용: pending 저장 후 loaded entries 매칭, pending 제거, selection/scroll 반영
+    /// - 사전 조건: active Directory tab에 대상 파일이 이미 로드되어 있음
+    /// - 기대 결과: itemsLoaded 없이 selectedIds가 대상 파일이고 pendingSelectEntryID는 nil
+    func test_applyExternalPendingSelection_alreadyLoadedMatchingEntry_appliesSelectionImmediately() {
+        let tabID = ContentTabID(rawValue: "reused-directory")
+        let directoryPath = "/tmp/reused"
+        let filePath = "/tmp/reused/last.txt"
+        let entry = Self.makeEntry(fullPath: filePath)
+        var state = FileManagerWindowState()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: tabID,
+                    page: .directory,
+                    anchor: .directory(path: directoryPath),
+                    isPinned: false,
+                    title: "reused",
+                    iconName: "folder",
+                ),
+            ],
+            activeTabID: tabID,
+        )
+        state.content.navigation.seedInitialFolderPath(directoryPath)
+        state.content.entryViewLayout.entryOperations.items = IdentifiedArrayOf(uniqueElements: [entry])
+        state.syncActiveTabContentState()
+
+        XCTAssertTrue(state.applyExternalPendingSelection(
+            filePath,
+            tabID: tabID,
+            anchor: .directory(path: directoryPath),
+        ))
+        XCTAssertNil(state.content.pendingSelectEntryID)
+        XCTAssertEqual(state.content.entryViewLayout.selectedIds, [filePath])
+        XCTAssertEqual(state.content.entryViewLayout.lastSelectedId, filePath)
+        XCTAssertTrue(state.content.entryViewLayout.shouldScrollToSelection)
     }
 }
 

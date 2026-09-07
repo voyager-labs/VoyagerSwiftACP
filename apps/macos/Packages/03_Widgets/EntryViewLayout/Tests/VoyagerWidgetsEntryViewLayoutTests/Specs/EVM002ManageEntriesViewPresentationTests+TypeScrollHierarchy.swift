@@ -20,8 +20,8 @@ extension EVM002ManageEntriesViewPresentationTests {
         coordinator.isRenderObservationEnabled = false
         let before = EntryListCoordinatorRenderSnapshot(state: store.state)
 
-        store.send(.view(.setTypeScrollTarget(fixture.child.id)))
-        store.send(.entryOperations(.loading(.itemsLoaded([fixture.root]))))
+        store.send(.internal(.selectTypeScrollTarget(fixture.child.id)))
+        store.send(.entryOperations(.loading(.itemsLoaded(generation: 0, items: [fixture.root]))))
 
         XCTAssertEqual(store.state.pendingTypeScrollTargetId, fixture.child.id)
         let synchronized = EntryListCoordinatorRenderSnapshot(state: store.state)
@@ -48,7 +48,7 @@ extension EVM002ManageEntriesViewPresentationTests {
         coordinator.isRenderObservationEnabled = false
         let before = EntryListCoordinatorRenderSnapshot(state: store.state)
 
-        store.send(.view(.setTypeScrollTarget(fixture.child.id)))
+        store.send(.internal(.selectTypeScrollTarget(fixture.child.id)))
         var synchronizedState = store.state
         synchronizedState.synchronizeEntries([fixture.root])
 

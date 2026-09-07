@@ -24,6 +24,7 @@ struct MenuCommandItem: Identifiable, Equatable {
         case newFolder
         case open
         case quickLook
+        case getInfo
 
         case saveCollection
         case saveCollectionAs

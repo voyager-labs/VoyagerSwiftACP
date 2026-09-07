@@ -1,6 +1,7 @@
 import AppKit
 import ComposableArchitecture
 import Foundation
+import VoyagerEntitiesEntry
 import VoyagerFeaturesEntryOperations
 @testable import VoyagerPagesFileManager
 import XCTest
@@ -367,6 +368,164 @@ final class EOP003ManageEntryLifecycleTests: XCTestCase {
         XCTAssertNil(store.state.tabContentStates[tabA])
         XCTAssertTrue(store.state.content.entryViewLayout.entryOperations.undoRecords.isEmpty)
         XCTAssertEqual(store.state.tabContentStates[tabB]?.entryViewLayout.entryOperations.undoRecords.isEmpty, true)
+    }
+
+    /// EOP-003-undo_entry_action: 닫힌 origin tab의 수용된 terminal도 Product metric을 정확히 한 번 기록한다.
+    /// terminal telemetry는 window가 소유하고, 사라진 tab의 undo/history/reload lifecycle은 계속 억제하는지 검증한다.
+    /// - 검증 내용: 실제 rename effect를 보류한 채 A를 닫고 terminal 재개 후 같은 window terminal을 중복 전달한다.
+    /// - 사전 조건: W1/A에서 수용된 rename이 실행 중이고 A를 닫은 뒤 B만 남아 있다.
+    /// - 기대 결과: 원래 command ID/rename/source/success metric 한 건만 기록되고 A/undo/history/reload는 부활하지 않는다.
+    func testClosedOriginAcceptedRenameRecordsSingleTerminalMetricWithoutTabSideEffects() async throws {
+        let registry = FileOperationUndoManagerRegistry()
+        let client = makeClient(registry: registry)
+        let gate = EntryOperationSuspensionGate()
+        let recorder = FileManagerProductMetricRecorder()
+        let reloadActionCount = LockIsolated(0)
+        let windowID = UUID()
+        let tabA = ContentTabID(rawValue: "A")
+        let tabB = ContentTabID(rawValue: "B")
+        let scope = UndoManagerScope(windowID: windowID, contentTabID: tabA.rawValue)
+        let commandID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x45))
+        let sandbox = try FileManagerFixtureSandbox.copyingFileWithDirectorySymlink(
+            from: "fixtures/fixtures/texts/plain/11.txt",
+        )
+        defer { sandbox.cleanup() }
+        let oldPath = sandbox.fileURL.path
+        let newPath = sandbox.fileURL
+            .deletingLastPathComponent()
+            .appendingPathComponent("renamed-\(sandbox.fileURL.lastPathComponent)")
+            .path
+        var fileOpsClient = EntryFileOpsClient.previewValue
+        fileOpsClient.renameFile = { _, _ in await gate.wait() }
+        _ = client.activate(scope)
+        let store = makeStore(
+            state: makeTwoTabState(windowID: windowID, activeTabID: tabA),
+            client: client,
+            entryFileOpsClient: fileOpsClient,
+            productMetricsClient: recorder.client,
+            reloadActionCount: reloadActionCount,
+        )
+        // store.exhaustivity = .off: 실제 rename/close flow의 부수 action보다 closed-origin terminal 경계를 검증한다.
+        store.exhaustivity = .off
+        let terminalRecord = LockIsolated<EntryActionRecord?>(nil)
+        let renameAction: FileManagerContentAction = .entryViewLayout(.entryOperations(.acceptedCommand(
+            metadata: .init(id: commandID, interaction: .renameEntry, source: .contextMenu),
+            action: .edit(.renameItem(oldPath: oldPath, newPath: newPath)),
+        )))
+
+        await store.send(.content(renameAction))
+        await store.receive { action in
+            guard case let .tabContent(
+                receivedTabID,
+                .entryViewLayout(.entryOperations(.acceptedCommand(
+                    metadata,
+                    .lifecycle(.operationStarted(path, kind)),
+                ))),
+            ) = action else { return false }
+            return receivedTabID == tabA
+                && metadata.id == commandID
+                && path == oldPath
+                && kind == .rename
+        }
+        await gate.waitUntilWaiting()
+        await store.send(.contentTabs(.close(tabA)))
+        XCTAssertNil(store.state.contentTabs.tabs[id: tabA])
+        XCTAssertNil(store.state.tabContentStates[tabA])
+
+        await gate.resume()
+        await store.receive { action in
+            guard case let .internal(.entryActionCompleted(receivedTabID, record, _)) = action,
+                  receivedTabID == tabA
+            else { return false }
+            terminalRecord.setValue(record)
+            return true
+        }
+        let record = try XCTUnwrap(terminalRecord.value)
+        await store.send(.internal(.entryActionCompleted(
+            tabID: tabA,
+            record: record,
+            undoManagerGeneration: nil,
+        )))
+        await store.finish()
+        let removedManager = await client.undoManager(scope)
+
+        let entryMetrics: [EntryActionProductMetric] = recorder.metrics().compactMap { metric in
+            guard case let .entryAction(entryMetric) = metric else { return nil }
+            return entryMetric
+        }
+        XCTAssertEqual(entryMetrics, [
+            EntryActionProductMetric(
+                result: .success,
+                identity: .renameEntry,
+                source: .contextMenu,
+                operationID: commandID,
+                aggregate: .init(attempted: 1, succeeded: 1, failed: 0),
+            ),
+        ])
+        XCTAssertNil(removedManager)
+        XCTAssertNil(store.state.contentTabs.tabs[id: tabA])
+        XCTAssertNil(store.state.tabContentStates[tabA])
+        XCTAssertEqual(store.state.contentTabs.activeTabID, tabB)
+        XCTAssertTrue(store.state.content.entryViewLayout.entryOperations.undoRecords.isEmpty)
+        XCTAssertEqual(store.state.tabContentStates[tabB]?.entryViewLayout.entryOperations.undoRecords.isEmpty, true)
+        XCTAssertEqual(reloadActionCount.value, 0)
+    }
+
+    /// EOP-003-undo_entry_action: 닫힌 origin tab의 비-undo effect terminal도 Product metric을 정확히 한 번 기록한다.
+    /// window가 tab 존재 여부보다 command terminal을 먼저 소비하는 실제 `.tabContent` 경계를 검증한다.
+    /// - 검증 내용: Quick Look effect를 보류한 채 origin tab을 닫고 terminal 재개 후 metric과 중복 억제를 확인한다.
+    /// - 사전 조건: A에서 수용된 Quick Look이 실행 중이고 A를 닫은 뒤 fresh Home tab만 남아 있다.
+    /// - 기대 결과: keyboard source와 원 operation ID를 가진 success metric 한 건만 기록되고 닫힌 A는 부활하지 않는다.
+    func testClosedOriginAcceptedQuickLookRecordsSingleTerminalMetricWithoutTabSideEffects() async throws {
+        let gate = EntryOperationSuspensionGate()
+        let recorder = FileManagerProductMetricRecorder()
+        let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x46))
+        let tabA = ContentTabID(rawValue: "A")
+        let entry = EntryModel.temporaryFolder(id: "/tmp/closed-quick-look", name: "closed-quick-look")
+        var state = makeSingleTabState(windowID: UUID(), tabID: tabA)
+        state.content.navigation.navigationState = .folder("/tmp")
+        state.content.entryViewLayout.entries = [entry]
+        state.content.entryViewLayout.selectedIds = [entry.id]
+        state.tabContentStates[tabA] = state.content
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.fileManagerProductMetricsClient = FileManagerProductMetricsClient(
+                record: recorder.client.record,
+                makeOperationID: { operationID },
+            )
+            $0.entryQuickLookClient = EntryQuickLookClient(quickLook: { _, _ in await gate.wait() })
+            $0.date = .constant(Date())
+        }
+        // store.exhaustivity = .off: Quick Look/close의 부수 action보다 닫힌 tab terminal 소유권을 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.content(.view(.handleKeyCommand(.init(
+            keyCode: 49,
+            modifiers: [],
+            characters: " ",
+            charactersIgnoringModifiers: " ",
+        )))))
+        await gate.waitUntilWaiting()
+        await store.send(.contentTabs(.close(tabA)))
+        XCTAssertNil(store.state.contentTabs.tabs[id: tabA])
+
+        await gate.resume()
+        await store.finish()
+        let entryMetrics = recorder.metrics().compactMap { recorded -> EntryActionProductMetric? in
+            guard case let .entryAction(metric) = recorded else { return nil }
+            return metric
+        }
+        XCTAssertEqual(entryMetrics.count, 1)
+        let metric = try XCTUnwrap(entryMetrics.first)
+        XCTAssertEqual(metric.result, .success)
+        XCTAssertEqual(metric.identity, .quickLookEntry)
+        XCTAssertEqual(metric.source, .keyboardShortcut)
+        XCTAssertEqual(metric.operationID, operationID)
+        XCTAssertEqual(metric.aggregate, .init(attempted: 1, succeeded: 1, failed: 0))
+        XCTAssertNil(store.state.contentTabs.tabs[id: tabA])
+        XCTAssertNil(store.state.tabContentStates[tabA])
+        XCTAssertTrue(store.state.content.entryViewLayout.entryOperations.undoRecords.isEmpty)
     }
 
     /// EOP-003-undo_entry_action: pinned tab close는 unpin으로 끝나며 같은 scope history를 유지한다.
@@ -1193,12 +1352,21 @@ private extension EOP003ManageEntryLifecycleTests {
         client: FileOperationUndoManagerClient? = nil,
         entryFileOpsClient: EntryFileOpsClient = .previewValue,
         closeWindowActionCount: LockIsolated<Int>? = nil,
+        productMetricsClient: FileManagerProductMetricsClient = .testValue,
+        reloadActionCount: LockIsolated<Int>? = nil,
     ) -> TestStore<FileManagerWindowState, FileManagerWindowAction> {
         TestStore(initialState: state) {
             CombineReducers {
                 Reduce<FileManagerWindowState, FileManagerWindowAction> { _, action in
                     if case .delegate(.closeWindow) = action {
                         closeWindowActionCount?.withValue { $0 += 1 }
+                    }
+                    switch action {
+                    case .content(.internal(.reloadDirectoryListing)),
+                         .tabContent(_, .internal(.reloadDirectoryListing)):
+                        reloadActionCount?.withValue { $0 += 1 }
+                    default:
+                        break
                     }
                     return .none
                 }
@@ -1209,6 +1377,7 @@ private extension EOP003ManageEntryLifecycleTests {
             $0.uuid = .incrementing
             $0.entryFileOpsClient = entryFileOpsClient
             $0.undoManagerClient = .previewValue
+            $0.fileManagerProductMetricsClient = productMetricsClient
             if let client {
                 $0.fileOperationUndoManagerClient = client
             }

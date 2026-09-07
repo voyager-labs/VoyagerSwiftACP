@@ -2,95 +2,82 @@
 
 ## Structural rules
 
-- Use `@Reducer` for feature reducers.
-- Use `@Dependency` for external interactions.
-- Prefer split model for non-trivial slices:
-    - `Model/*State.swift`
-    - `Model/*Action.swift`
-    - `Reducer/*Feature.swift`
-- Avoid decomposing TCA core types through `State+*`, `Action+*`, `Feature+*`, or `Reducer+*` files when that makes state movement and ownership harder to trace.
-- When a feature grows too large, prefer separate model types, helper/coordinator types, or child reducers/features that are composed explicitly from the parent.
-- When composing an owned child reducer with `Scope(state:action:)`, keep the corresponding parent action case as a direct child-action case rather than nesting it under `delegate`.
-- Reserve `delegate` for semantic outward/upward events leaving the feature boundary. If a scoped child needs to notify its parent, prefer `child(.delegate(...))` over moving scoped child routing into the parent's `delegate` namespace.
-
-Preferred parent boundary shape:
+- Use `@Reducer` for feature reducers and `@Dependency` for external interactions.
+- Prefer split models for non-trivial slices: `Model/*State.swift`, `Model/*Action.swift`, `Reducer/*Feature.swift`. Small local reducers may keep inline types; file length alone must not force a split.
+- Avoid `State+*`, `Action+*`, `Feature+*`, or `Reducer+*` decomposition when it hides state movement. Protocol conformances and focused same-owner helpers may use extensions; the concern's writer and lifetime must stay traceable.
+- Split State, Action, transitions and effect lifecycle together. Several reducers with `State = ParentState` are implementation partitions of one aggregate, not independently owned children.
+- Compose child reducers with `Scope`, `ifLet`, `forEach` and ReducerBuilder. `Effect.merge` combines independent effects and does not define reducer order or child domains.
+- Use `.concatenate` or a single `.run` only when sequential effects are required. Do not assume `.merge` establishes an ordering contract.
+- Run the real composed reducers in tests and override clients. Injecting mock reducer objects or creating Controller/Service pairs is not mandatory.
+- Keep child Action cases direct. `delegate` is for semantic outward/upward outputs, not for hiding scoped child routes.
 
 ```swift
 enum ParentAction {
     case view(View)
-    case delegate(Delegate)
     case child(ChildFeature.Action)
+    case delegate(Delegate)
 }
 
 Scope(state: \.child, action: \.child) {
     ChildFeature()
 }
-
-// Parent consumes semantic child output here:
-// case .child(.delegate(.didFinish))
+// The parent handles .child(.delegate(.didFinish)).
 ```
 
-Avoid collapsing owned child routing into the parent's delegate namespace:
+## State mutation and execution boundaries
 
-```swift
-enum ParentAction {
-    case view(View)
-    case delegate(Delegate)
-
-    enum Delegate {
-        case child(ChildFeature.Action)
-        case didFinish
-    }
-}
-```
+- Each concern has one authoritative writer/transition boundary. A parent may own child initialization, removal or transfer, but must not duplicate the child's phase logic.
+- Same-owner synchronous work belongs in a private method or pure policy, not a chain of setter/sync actions. User intents, cross-owner commands and async completions remain typed actions.
+- Direct `reduce(into:action:)` calls are allowed only when the child is executed once and the returned effect is preserved/mapped with dependency and cancellation semantics intact. Never ignore the effect to reuse a calculation.
+- Put fields with atomic invariants in the same small aggregate. Commit a new presentation and its reconciled selection together rather than repairing inconsistent intermediate states through extra actions.
+- Distinguish canonical state, edit draft, committed baseline, candidate reload and immutable projection. Eliminate competing writable authority, not every legitimate snapshot.
+- Immutable async inputs include the relevant owner/request identity and revision. Reject stale results at the receiving owner before initiating persistence.
 
 ## View boundary rules
 
-- "UI adapters" include SwiftUI views, representables, and coordinators.
-- UI adapters emit only `Action.view` (or `@ViewAction`) for the feature store they are initialized with.
-- UI adapters must not construct or send `delegate` / internal actions directly.
-- Keep `view`, `delegate`, and internal/effect-result responsibilities distinct.
-- Treat system events, callback routing, and async completions as reducer-owned internal flow.
-- In UIKit/AppKit coordinators with observable state, use `observe { ... }` for state-driven UI updates.
-- Do not add new `Store.publisher`/`ViewStore.publisher`-based state subscriptions in coordinators.
-- For external UI events (scroll/notification/delegate), prefer notification tokens + delegate callbacks + imperative schedulers (throttle/debounce), not Combine pipelines.
+- UI adapters include SwiftUI views, representables and coordinators. They emit semantic `Action.view` (or `@ViewAction`) for their store, not delegate/internal/effect-result actions.
+- Do not call network/filesystem/persistence SDKs from views or merely move that work to a view-local dependency. The owning reducer initiates domain work through its client.
+- In native coordinators with observable state, prefer `observe { ... }`. Do not add new `Store.publisher`/`ViewStore.publisher` state subscriptions. Existing paths migrate with behavior/performance tests, not a blind syntax swap.
+- Native row maps, responder bookkeeping, programmatic-selection guards, bounds/frame observation and teardown tokens belong to the adapter when they are physical UI state.
+- Native geometry observation may remain in the coordinator with explicit mount/unmount cleanup and late-callback tests. Do not introduce a dependency client and high-frequency reducer actions solely to wrap scroll notifications.
+- Domain/system observation, background processing and external side effects remain reducer/client-owned. The Coordinator filename allowance in lint is not semantic proof of this boundary.
+- Distinguish explicit user clear intent from empty lifecycle selection callbacks. Preserve ID-based selection after insertion, remount and tab switching.
 
 ## Side-effect rules
 
-- Wrap async IO in reducer effects (e.g. `.run { send in ... }`).
-- Route success/failure back through typed actions.
-- Prefer emitting follow-up actions with `.send(...)` over directly invoking downstream handlers when an effect result should remain observable in tests and logs.
-- Do not call network/filesystem/system SDK directly from SwiftUI views.
-- Give long-lived work a feature-owned `CancelID` and cancel it explicitly from reducer lifecycle.
-- Use `cancelInFlight` only when repeated user intent should replace the earlier in-flight work.
-- Keep every step of a multi-stage async user intent under one cancellation boundary when later steps depend on earlier steps (for example acquire input → verify → persist durable state).
-- Before emitting durable state or persistence effects from an async completion, verify the completion still matches the current user intent/session and was not cancelled or superseded.
-- Protect mutation phases from lifecycle probes: `onAppear`, manual retry, and follow-up diagnostics must not overwrite an in-flight setting/restoring/saving phase unless the reducer explicitly models that transition.
-- Preserve failure ownership through follow-up effects: automatic re-diagnosis may update health/status, but it must not clear a user-visible error unless the source and phase prove the original failed operation has been superseded.
-- Do not read nondeterministic globals such as `UUID()`, `Date()`, clocks, `Task.sleep`, or persistent stores directly when the value should be controlled in tests.
-- In `.run` effects, capture immutable snapshots and dependencies explicitly; do not rely on mutable reducer state escaping into async work.
-- Treat fallback behavior as a typed policy decision, not a catch-all error branch; distinguish network, configuration, authorization, decoding, and server failures before using cached or synthetic state.
+- Wrap async IO in effects and route typed success/failure back to the owner.
+- Capture immutable inputs and dependency values; mutable reducer State must not escape into async work.
+- Use cancellable effects for long-lived work. `cancelInFlight` is appropriate only when the new intent replaces the earlier work.
+- Dependent stages of one user intent need a coherent cancellation boundary, including verification and persistence. A late completion must match current intent/session and legal phase before producing durable follow-up writes.
+- Cancellation does not prove that an external mutation was undone. Model partial application, ambiguous execution, rollback or read-back recovery instead of retrying destructive work blindly.
+- Lifecycle probes (`onAppear`, retry, re-diagnosis) must not overwrite an in-flight setting/restoring/saving phase or erase the error of an operation that has not been superseded.
+- Use controlled clocks, UUID/date clients and injected external stores where tests need deterministic values. Do not read nondeterministic globals in reducer transitions.
+- Classify network, configuration, authorization, decoding and server failures before applying a fallback policy; no catch-all synthetic success.
+- Heavy CPU work must have an explicit execution/isolation plan. Merely putting synchronous work inside `.run` is not sufficient evidence that it leaves the main actor; measure the actual path.
+- Selection-only and thumbnail-only changes should not rebuild/sort/diff unchanged content. Coalesce before expensive projection work and verify invocation counts rather than inventing speedup numbers.
 
 ## Dependency client rules
 
-- Introduce an `Api/*Client.swift` when the code touches system APIs, IO, process or network boundaries, global services, time/UUID/randomness, or any dependency that tests should fake.
-- Keep pure calculations, filtering, sorting, formatting, and local presentation logic out of dependency clients.
-- Put app-wide or shared environment clients in `01_App/Api` or `06_Shared/Api`; otherwise prefer the nearest owning slice `Api/`.
-- Dependency surfaces used across concurrency boundaries should be designed so their usage remains `Sendable`-safe.
-- Verify externally owned payloads, URLs, and config contracts with real or captured fixtures instead of relying only on mocks that mirror Swift property names.
-- Separate sensitive credential storage from non-sensitive snapshot/cache persistence; credentials must flow through secure storage clients, while status snapshots may use ordinary persistence clients.
-- For clients that mutate external system state in multiple steps, model partial failure deliberately: read the prior state from the write boundary, stop on uncertain reads, rollback earlier steps when a later step fails, and never persist sentinel/error placeholder values as real state.
+- Put clients around system/process/network/persistence/time/randomness boundaries that need replacement in tests, usually in the nearest owning `Api/`.
+- Keep pure filtering, sorting, normalization and projection out of dependency clients.
+- Use `01_App/Api` for genuinely app-global composition and `06_Shared/Api` only for layer-agnostic boundaries. DI does not legitimize an upward FSD dependency.
+- Design concurrency-crossing values as Sendable-safe. Validate external payloads/URLs with real or captured fixtures, not mocks that only mirror Swift property names.
+- Separate sensitive credential storage from non-sensitive snapshots/cache. Credentials use secure-storage clients.
+- Multi-step external mutations read prior state from the write boundary, stop on uncertain reads, and expose partial failure/rollback. Never persist error/sentinel values as real state.
 
-For client granularity, capability-boundary splitting, composition patterns (`live(_:)` factory vs `@Dependency` in closure), phantom dependency elimination, and `@DependencyClient` macro policy, see `.agents/skills/voyager-dev/orchestrator/references/11-dependency-client-design.md`.
+Client granularity, `live(...)` factory semantics, late dependency resolution and the manual `DependencyKey` convention are owned by `.agents/skills/voyager-dev/orchestrator/references/11-dependency-client-design.md`.
 
 ## Dependency direction stance
 
-- Follow the structural dependency direction defined in `../../../reviewer/review/references/layer-and-segment-rules.md`.
-- Keep `tca-contract.md` focused on TCA ownership and execution mechanics that sit inside those boundaries.
+Follow `../../../reviewer/review/references/layer-and-segment-rules.md` and `../../../reviewer/review/references/public-boundary-spec.md`. A TCA feature may remain page-local. Do not create a package per reducer or promote one-slice contracts into Shared just to avoid a peer import.
 
 ## Cancellation ownership
 
-- Keep cancellation ownership close to the reducer orchestrating the effect.
-- Prefer `enum CancelID: Hashable, Sendable` inside the feature or reducer owner.
-- Do not scatter cancellation IDs across helper extensions when a parent reducer owns the lifecycle.
-- Choose `CancelID` granularity by concern/user intent, not by individual implementation step, so cancellation aborts the whole flow including post-verification persistence.
+- Keep CancelID near the reducer that launches and settles the effect. Prefer a typed `Hashable, Sendable` ID with real owner identity where needed.
+- The parent owns aggregate lifetime, not every child CancelID. Document cancellation/transfer when a tab/window/session is removed.
+- Visibility, State existence and effect lifetime are separate. Hidden retained tabs/background chat may keep State and work; optional presentation State is for actual presentation lifetime, not a blanket optimization.
+- Do not scatter cancellation logic through helper extensions or duplicate it in AppKit and reducer owners.
+
+## Verification boundary
+
+AST/lint rules verify only declared syntax. Use compiler/access-control checks for type boundaries, TestStore for transitions and stale/cancel behavior, and native tests for physical mount/selection/teardown. A passing syntactic rule or a filled owner table is not proof of global single-writer correctness.

@@ -71,7 +71,16 @@ final class ExternalDropSessionController {
             context: .init(
                 client: clientProvider(),
                 sendAccepted: { [store] request in
-                    store.send(.view(.externalDropAccepted(request: request)))
+                    let command = EntryCommandMetadata(
+                        id: UUID(),
+                        interaction: .copyEntries,
+                        source: .dragAndDrop,
+                    )
+                    store.send(.view(.externalDropAccepted(
+                        request: request,
+                        command: command,
+                        logicalItemCount: max(1, negotiation.acceptableLogicalItemCount),
+                    )))
                 },
                 clearDropState: clearDropState,
             ),

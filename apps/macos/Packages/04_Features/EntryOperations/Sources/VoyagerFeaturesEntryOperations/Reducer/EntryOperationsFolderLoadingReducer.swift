@@ -54,7 +54,7 @@ public struct EntryOperationsFolderLoadingReducer {
                         return
                     } catch {
                         guard !Task.isCancelled else { return }
-                        await send(.loading(.folderStreamFailed(request: request, failure: Self.failure(from: error))))
+                        await send(.loading(.folderStreamFailed(request: request, failure: .from(error: error))))
                     }
                 }
                 .cancellable(id: cancelID, cancelInFlight: true)
@@ -124,13 +124,5 @@ public struct EntryOperationsFolderLoadingReducer {
             guard context.coreFinished else { return false }
         }
         return true
-    }
-
-    private static func failure(from error: Error) -> EntryFolderLoadFailure {
-        let nsError = error as NSError
-        if nsError.code == NSFileReadNoPermissionError {
-            return .permissionDenied
-        }
-        return .unavailable(description: nsError.localizedDescription)
     }
 }

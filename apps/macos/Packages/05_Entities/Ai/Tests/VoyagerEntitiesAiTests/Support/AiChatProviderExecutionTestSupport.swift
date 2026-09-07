@@ -76,7 +76,11 @@ func assertRegistryRoute(
 
     let events = try providerExecutionCollect(client.execute(request, credential))
 
-    XCTAssertEqual(events, [.started(context: request.context)])
+    let prepared = try AiChatProviderPreflight.prepare(request, credential: credential)
+    XCTAssertEqual(events, [
+        .requestPrepared(prepared.payload),
+        .started(context: request.context),
+    ])
     XCTAssertEqual(executedProviders, [provider])
     let input = try XCTUnwrap(observedInput)
     XCTAssertEqual(input.preflight, try AiChatProviderPreflight.prepare(request, credential: credential))
@@ -84,6 +88,20 @@ func assertRegistryRoute(
     XCTAssertEqual(input.now(), expectedNow)
 
     assertCodexProbe(provider: provider, rawModelID: rawModelID, input: input)
+}
+
+func providerExecutionPreparedEvent(
+    for request: AiChatRequest,
+) throws -> AiChatProviderExecutionEvent {
+    let credential: StoredCredentialPayload = switch request.context.provider {
+    case .openai:
+        .apiKey(APIKeyCredentialFile(secret: "sk-openai"))
+    case .anthropic:
+        .apiKey(APIKeyCredentialFile(secret: "sk-ant"))
+    case .chatgptCodex:
+        .oauth(OAuthCredentialFile(accessToken: "codex-token"))
+    }
+    return try .requestPrepared(AiChatProviderPreflight.prepare(request, credential: credential).payload)
 }
 
 func assertCodexProbe(

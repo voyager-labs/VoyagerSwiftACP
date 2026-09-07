@@ -1,0 +1,15 @@
+id: nested-state-in-reducer
+valid:
+  - |
+    @Reducer
+    struct Good { typealias State = S; typealias Action = A }
+  - |
+    @Reducer
+    struct Parent { typealias State = S; typealias Action = A; struct Child { struct State {} } }
+invalid:
+  - |
+    @Reducer
+    struct Inline { struct State {} }
+  - |
+    @Reducer
+    struct Inline { enum Action { case tapped } }

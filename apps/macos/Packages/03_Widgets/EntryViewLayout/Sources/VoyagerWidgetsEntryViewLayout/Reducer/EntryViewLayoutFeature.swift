@@ -41,6 +41,23 @@ public struct EntryViewLayoutFeature {
     }
 
     public var body: some Reducer<State, Action> {
+        Reduce { state, action in
+            if case let .entryOperations(.lifecycle(.entryActionCompleted(record))) = action {
+                return beginIdentityReplacementFromRecord(record, state: &state)
+            }
+            if case let .entryOperations(.undoRedo(.replaySucceeded(
+                direction: direction,
+                sourceRecordID: _,
+                updatedRecord: record,
+            ))) = action {
+                return beginIdentityReplacementFromRecord(
+                    record.applying(direction: direction),
+                    state: &state,
+                )
+            }
+            return .none
+        }
+
         Scope(state: \.entryOperations, action: \.entryOperations) {
             EntryOperationsFeature()
         }
@@ -57,6 +74,9 @@ public struct EntryViewLayoutFeature {
 
         Reduce { state, action in
             switch action {
+            case let .identityReplacement(identityAction):
+                return handleIdentityReplacementAction(identityAction, state: &state)
+
             case let .internal(.setSelectionState(ids, lastSelectedId, rangeAnchorId, shouldScrollToSelection)):
                 return setSelectionState(
                     ids: ids,
@@ -168,6 +188,9 @@ public struct EntryViewLayoutFeature {
                     shouldScrollToSelection: shouldScrollToSelection,
                 )))
 
+            case .view(.clearSelection):
+                return .send(.internal(.applyClearSelection))
+
             case let .view(.selectAll(orderedItemIds)):
                 return .send(.internal(.applySelectAll(orderedItemIds: orderedItemIds)))
 
@@ -189,9 +212,17 @@ public struct EntryViewLayoutFeature {
             case .view(.resetScrollFlag):
                 return .send(.internal(.resetScrollFlag))
 
-            case let .view(.setTypeScrollTarget(id)):
+            case let .internal(.selectTypeScrollTarget(id)):
+                // 문자 탐색은 selection navigation이다. pending target은 물리 reveal 소비 경로만 소유하고
+                // tuple 교체와 selectionChanged 발행은 setSelectionState 단일 owner에 위임한다.
                 state.pendingTypeScrollTargetId = id
-                return .none
+                return setSelectionState(
+                    ids: [id],
+                    lastSelectedId: id,
+                    rangeAnchorId: id,
+                    shouldScrollToSelection: false,
+                    state: &state,
+                )
 
             case .view(.resetTypeScrollTarget):
                 state.pendingTypeScrollTargetId = nil
@@ -204,14 +235,21 @@ public struct EntryViewLayoutFeature {
                     isOptionDrag: isOptionDrag,
                 )))
 
-            case let .view(.externalDropAccepted(request)):
-                return .send(.entryOperations(.externalDrop(.accepted(request: request))))
+            case let .view(.externalDropAccepted(request, command, logicalItemCount)):
+                return .send(.entryOperations(.acceptedCommand(
+                    metadata: command,
+                    action: .externalDrop(.accepted(
+                        request: request,
+                        command: command,
+                        logicalItemCount: logicalItemCount,
+                    )),
+                )))
 
             case let .view(.externalDropCancelSession(sessionID)):
                 return .send(.entryOperations(.externalDrop(.cancelSession(sessionID))))
 
-            case let .view(.executeCommand(command)):
-                return .send(.delegate(.executeCommand(command)))
+            case let .view(.executeCommand(command, source)):
+                return .send(.delegate(.executeCommand(command, source: source)))
 
             case let .view(.openPathInNewWindow(path)):
                 return .send(.delegate(.openPathInNewWindow(path)))
@@ -222,8 +260,11 @@ public struct EntryViewLayoutFeature {
             case let .view(.performService(serviceName)):
                 return .send(.delegate(.performService(serviceName: serviceName)))
 
-            case let .view(.startRename(item, text)):
-                return .send(.delegate(.startRename(item: item, text: text)))
+            case let .view(.startRename(item, text, source)):
+                return .send(.delegate(.startRename(item: item, text: text, source: source)))
+
+            case let .view(.updateRenamingText(text)):
+                return .send(.entryOperations(.edit(.updateRenamingText(text))))
 
             case let .view(.commitRename(itemID, newName)):
                 return .send(.delegate(.renameCommitted(itemID: itemID, newName: newName)))
@@ -243,14 +284,14 @@ public struct EntryViewLayoutFeature {
             case let .view(.preloadOpenWithApplications(entries)):
                 return .send(.delegate(.preloadOpenWithApplications(entries)))
 
-            case let .view(.openWithApp(bundleID)):
-                return .send(.delegate(.openWithApp(bundleID: bundleID)))
+            case let .view(.openWithApp(bundleID, source)):
+                return .send(.delegate(.openWithApp(bundleID: bundleID, source: source)))
 
-            case let .view(.toggleTag(tagName)):
-                return .send(.delegate(.toggleTag(tagName: tagName)))
+            case let .view(.toggleTag(tagName, source)):
+                return .send(.delegate(.toggleTag(tagName: tagName, source: source)))
 
-            case let .view(.mutateTag(name, mode)):
-                return .send(.delegate(.tagMutation(tagName: name, mode: mode)))
+            case let .view(.mutateTag(name, mode, source)):
+                return .send(.delegate(.tagMutation(tagName: name, mode: mode, source: source)))
 
             case let .view(.expandFolder(id)):
                 return .send(.hierarchy(.folderExpansionRequested(id: id)))
@@ -261,8 +302,8 @@ public struct EntryViewLayoutFeature {
             case let .view(.retryFolder(id)):
                 return .send(.hierarchy(.folderRetryRequested(id: id)))
 
-            case .view(.openSelectedItem):
-                return .send(.delegate(.executeCommand("navigation.openSelectedItem")))
+            case let .view(.openSelectedItem(source)):
+                return .send(.delegate(.executeCommand("navigation.openSelectedItem", source: source)))
 
             case .view(.selectNextItem),
                  .view(.selectPreviousItem),
@@ -279,11 +320,17 @@ public struct EntryViewLayoutFeature {
 
             case let .view(.applyContentProjection(projection)):
                 let previousSelectedIds = state.selectedIds
+                let previousRenamingItemID = state.entryOperations.renamingItemId
+                let replacementEffect = applyIdentityReplacementEntries(projection.entries, state: &state)
+                let replacementChangedSelection = state.selectedIds != previousSelectedIds
                 state.entries = projection.entries
                 state.trashDirectoryPath = projection.trashDirectoryPath
                 state.entryOperations.isLoading = projection.isLoading
                 state.entryOperations.renamingItemId = projection.renamingItemId
                 state.entryOperations.renamingText = projection.renamingText
+                if projection.renamingItemId != previousRenamingItemID {
+                    state.entryOperations.renamingCommandSource = nil
+                }
                 state.entryOperations.windowID = projection.collectionWindowID
                 state.entryOperations.loadingCancellationOwnerID = projection.collectionLoadingCancellationOwnerID
                 state.reconcileSelectionWithVisibleEntries(preservesScrollIntent: true)
@@ -294,10 +341,10 @@ public struct EntryViewLayoutFeature {
                 {
                     reconcileEffects.append(.send(.delegate(.renameCanceled)))
                 }
-                if previousSelectedIds != state.selectedIds {
+                if previousSelectedIds != state.selectedIds, !replacementChangedSelection {
                     reconcileEffects.append(.send(.delegate(.selectionChanged)))
                 }
-                return .merge(reconcileEffects)
+                return .merge(reconcileEffects + [replacementEffect])
 
             case let .internal(.setCollectionMode(isCollectionMode)):
                 state.isCollectionMode = isCollectionMode
@@ -467,30 +514,41 @@ public struct EntryViewLayoutFeature {
                 return .none
 
             case let .entryOperations(entryOperationsAction):
-                switch entryOperationsAction {
-                case .loading(.itemsLoaded),
-                     .loading(.itemsLoadFailed):
-                    return Self.updateEntriesAndReapply(&state)
-                default:
-                    return .none
+                if case let .loading(.itemsLoaded(generation, items)) = entryOperationsAction {
+                    guard generation == state.entryOperations.loadingContext.generation else { return .none }
+                    let replacementEffect = handleIdentityReplacementEntryOperationsAction(
+                        .loading(.itemsLoaded(generation: generation, items: items)),
+                        state: &state,
+                    )
+                    return .merge(
+                        Self.updateEntriesAndReapply(&state),
+                        replacementEffect,
+                    )
                 }
+                if case let .loading(.computerItemsLoadFailed(generation)) = entryOperationsAction {
+                    guard generation == state.entryOperations.loadingContext.generation else { return .none }
+                    return Self.updateEntriesAndReapply(&state)
+                }
+                return handleIdentityReplacementEntryOperationsAction(
+                    entryOperationsAction,
+                    state: &state,
+                )
 
             case let .entryArrangements(entryArrangementsAction):
-                switch entryArrangementsAction {
-                case .delegate(.requestApply):
+                if case .delegate(.requestApply) = entryArrangementsAction {
                     return .send(.entryArrangements(.apply(
                         items: state.entries,
                         isCollectionMode: state.isCollectionMode,
                     )))
-                case let .delegate(.applied(sortedItems, _)):
+                }
+                if case let .delegate(.applied(sortedItems, _)) = entryArrangementsAction {
                     state.entries = sortedItems
                     return .send(.internal(.reconcileHierarchySelection))
-                default:
-                    return .none
                 }
-
-            case .hierarchy:
                 return .none
+
+            case let .hierarchy(hierarchyAction):
+                return handleIdentityReplacementHierarchyAction(hierarchyAction, state: &state)
             }
         }
     }
@@ -515,4 +573,8 @@ public struct EntryViewLayoutFeature {
     }
 
     // MARK: - Helpers
+
+    func standardizedPath(_ path: String) -> String {
+        URL(fileURLWithPath: path).standardizedFileURL.path
+    }
 }

@@ -5,6 +5,7 @@ import VoyagerFeaturesAiChat
 import VoyagerFeaturesComposer
 import VoyagerFeaturesContentPageNavigation
 import VoyagerShared
+import VoyagerWidgetsEntryViewLayout
 
 struct FileManagerContentPaneView: View {
     @ObserveInjection private var injection
@@ -15,6 +16,10 @@ struct FileManagerContentPaneView: View {
     let activePageAnchor: ContentTabPageAnchor
     let onNavigationAction: (ContentPageNavigationAction.View) -> Void
     let onNavigate: (String) -> Void
+
+    @Environment(\.accessibilityReduceMotion)
+    private var accessibilityReduceMotion
+    @State private var historySwipeProgress: EntryHistorySwipeProgress?
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -27,6 +32,19 @@ struct FileManagerContentPaneView: View {
                         .strokeBorder(Color.primary.opacity(0.03), lineWidth: 1)
                         .allowsHitTesting(false),
                 )
+
+            if let historySwipeProgress = visibleHistorySwipeProgress {
+                FileManagerHistorySwipeProgressHUD(
+                    progress: historySwipeProgress,
+                    reduceMotion: accessibilityReduceMotion,
+                )
+                .transition(
+                    accessibilityReduceMotion
+                        ? .opacity
+                        : .move(edge: historySwipeProgress.direction == .back ? .leading : .trailing)
+                        .combined(with: .opacity),
+                )
+            }
 
             if overlayProps.isComposerPresented {
                 Color.clear
@@ -65,6 +83,59 @@ struct FileManagerContentPaneView: View {
         }
         .ignoresSafeArea(.all, edges: .top)
         .enableInjection()
+        .onChange(of: chromeProps.renderIdentity) { _ in
+            historySwipeProgress = nil
+        }
+        .onChange(of: store.navigation.canGoBack) { _ in
+            clearUnavailableHistorySwipeProgress()
+        }
+        .onChange(of: store.navigation.canGoForward) { _ in
+            clearUnavailableHistorySwipeProgress()
+        }
+    }
+
+    private var visibleHistorySwipeProgress: EntryHistorySwipeProgress? {
+        guard let historySwipeProgress,
+              activePageAnchor != .homeDefault,
+              !activePageAnchor.isAiChat,
+              isHistorySwipeAvailable(for: historySwipeProgress.direction)
+        else {
+            return nil
+        }
+        return historySwipeProgress
+    }
+
+    private func updateHistorySwipeProgress(_ progress: EntryHistorySwipeProgress?) {
+        guard let progress else {
+            withAnimation(.easeOut(duration: FileManagerHistorySwipeProgressHUD.terminalAnimationDuration)) {
+                historySwipeProgress = nil
+            }
+            return
+        }
+
+        guard isHistorySwipeAvailable(for: progress.direction) else {
+            historySwipeProgress = nil
+            return
+        }
+        historySwipeProgress = progress
+    }
+
+    private func isHistorySwipeAvailable(for direction: EntryHistorySwipeProgress.Direction) -> Bool {
+        switch direction {
+        case .back:
+            store.navigation.canGoBack
+        case .forward:
+            store.navigation.canGoForward
+        }
+    }
+
+    private func clearUnavailableHistorySwipeProgress() {
+        guard let historySwipeProgress,
+              !isHistorySwipeAvailable(for: historySwipeProgress.direction)
+        else {
+            return
+        }
+        self.historySwipeProgress = nil
     }
 
     private var contentBody: some View {
@@ -85,6 +156,17 @@ struct FileManagerContentPaneView: View {
                 )
                 ContentPageView(
                     store: store,
+                    onGoBack: {
+                        guard store.navigation.canGoBack else { return }
+                        onNavigationAction(.goBack)
+                    },
+                    onGoForward: {
+                        guard store.navigation.canGoForward else { return }
+                        onNavigationAction(.goForward)
+                    },
+                    onSwipeProgress: { progress in
+                        updateHistorySwipeProgress(progress)
+                    },
                 )
                 Rectangle()
                     .fill(Color.primary.opacity(0.12))

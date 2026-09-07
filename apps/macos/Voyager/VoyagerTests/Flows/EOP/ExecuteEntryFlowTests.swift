@@ -36,9 +36,12 @@ final class ExecuteEntryFlowTests: XCTestCase {
         let initialHistory = store.state.navigation.backHistory
         let initialSelection = store.state.entryViewLayout.selectedIds
 
-        await store.send(.entryViewLayout(.delegate(.executeCommand("navigation.openSelectedItem"))))
+        await store.send(.entryViewLayout(.delegate(.executeCommand(
+            "navigation.openSelectedItem",
+            source: .fileManagerContent,
+        ))))
         await store.receive { action in
-            guard case let .entryViewLayout(.entryOperations(.routing(.executeCommand(command, context)))) = action,
+            guard case let .entryViewLayout(.entryOperations(.routing(.executeCommand(command, context, _)))) = action,
                   case .navigation(.openSelectedItem) = command
             else { return false }
             return context.selectedIds == [entry.id]
@@ -46,7 +49,10 @@ final class ExecuteEntryFlowTests: XCTestCase {
                 && context.currentPath == sandbox.root.path
         }
         await store.receive { action in
-            guard case let .entryViewLayout(.entryOperations(.open(.openFiles(paths)))) = action else { return false }
+            guard case let .entryViewLayout(.entryOperations(.acceptedCommand(
+                _,
+                .open(.openFiles(paths)),
+            ))) = action else { return false }
             return paths == [sandbox.fileURL.path]
         }
         await store.receive(\.entryViewLayout.entryOperations.lifecycle.operationStarted)
@@ -85,7 +91,10 @@ final class ExecuteEntryFlowTests: XCTestCase {
         let initialHistory = store.state.navigation.backHistory
         let initialSelection = store.state.entryViewLayout.selectedIds
 
-        await store.send(.entryViewLayout(.delegate(.executeCommand("navigation.openSelectedItem"))))
+        await store.send(.entryViewLayout(.delegate(.executeCommand(
+            "navigation.openSelectedItem",
+            source: .fileManagerContent,
+        ))))
         await store.receive(\.entryViewLayout.entryOperations.routing.executeCommand)
         await store.finish()
 

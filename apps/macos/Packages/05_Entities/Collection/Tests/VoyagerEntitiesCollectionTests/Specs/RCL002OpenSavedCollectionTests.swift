@@ -63,6 +63,160 @@ final class RCL002OpenSavedCollectionTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
     }
 
+    /// RCL-002-open_saved_collection: identity가 있는 semantic-empty package는 저장 identity를 그대로 복원한다.
+    /// 검색 정의가 비어 있어도 유효한 persisted identity가 document validity를 유지하는 현재 계약을 고정한다.
+    /// - 검증 내용: package decode, semantic-empty definition, identity byte-for-byte 보존
+    /// - 사전 조건: `fixtures/fixtures/collections/empty_definition_collection.voycoll` sandbox 복사본
+    /// - 기대 결과: query/scope/condition은 비어 있고 model identity는 fixture 원문과 정확히 같음
+    func testOpenSavedCollection_withIdentityBearingEmptyFixture_preservesIdentity() async throws {
+        let sandbox = try CollectionFixtureSandbox.copyingDirectory(
+            from: "fixtures/fixtures/collections/empty_definition_collection.voycoll",
+        )
+        defer { try? sandbox.cleanup() }
+
+        let result = try await CollectionFileClient.liveValue.load(sandbox.fileURL)
+
+        XCTAssertEqual(result.file.id, "rcl-empty-definition-collection")
+        XCTAssertEqual(result.file.query, "")
+        XCTAssertTrue(result.file.scopes.isEmpty)
+        XCTAssertTrue(result.file.conditions.isEmpty)
+    }
+
+    /// RCL-002-open_saved_collection: property-list가 아닌 payload는 malformed category를 유지한다.
+    /// identity validation 추가 전후에 parser-level corruption이 definition failure로 합쳐지지 않는지 고정한다.
+    /// - 검증 내용: malformed bytes의 compatibility error taxonomy
+    /// - 사전 조건: property-list dictionary로 해석할 수 없는 raw bytes
+    /// - 기대 결과: `.invalidPropertyListPayload`를 반환함
+    func testOpenSavedCollection_malformedPayloadRemainsInvalidPropertyList() {
+        XCTAssertThrowsError(
+            try VoyagerCollectionFileCompatibilityOwner.decode(
+                Data("not a property list".utf8),
+                containerFormat: .package,
+            ),
+        ) { error in
+            XCTAssertEqual(error as? CollectionFileCompatibilityError, .invalidPropertyListPayload)
+        }
+    }
+
+    /// RCL-002-open_saved_collection: 지원 범위를 넘는 future-major payload는 unsupported category를 유지한다.
+    /// payload definition을 decode하기 전에 schema compatibility가 거부되는 현재 계약을 고정한다.
+    /// - 검증 내용: future-major schema의 typed compatibility error
+    /// - 사전 조건: schema 2.0과 그 외 유효한 required definition field를 가진 binary plist
+    /// - 기대 결과: `.unsupportedFutureSchemaVersion`에 발견/현재 version이 보존됨
+    func testOpenSavedCollection_futureMajorSchemaRemainsUnsupported() throws {
+        let data = try makeCollectionPayload(schemaVersion: ["major": 2, "minor": 0])
+
+        XCTAssertThrowsError(
+            try VoyagerCollectionFileCompatibilityOwner.decode(data, containerFormat: .package),
+        ) { error in
+            XCTAssertEqual(
+                error as? CollectionFileCompatibilityError,
+                .unsupportedFutureSchemaVersion(
+                    found: SchemaVersion(major: 2, minor: 0),
+                    current: CollectionFileSchemaVersion.current,
+                ),
+            )
+        }
+    }
+
+    /// RCL-002-open_saved_collection: current schema의 whitespace-only identity는 유효하지 않다.
+    /// 필수 identity의 trimmed semantic value가 비어 있는 direct decode 경로를 거부하는 계약을 검증한다.
+    /// - 검증 내용: current direct decode identity validation
+    /// - 사전 조건: schema 1.1과 `" \n\t "` identity를 가진 binary plist
+    /// - 기대 결과: `.invalidDefinitionPayload`를 반환함
+    func testOpenSavedCollection_currentSchemaWhitespaceIdentityIsInvalid() throws {
+        let data = try makeCollectionPayload(id: " \n\t ")
+
+        try assertCollectionDecodeError(.invalidDefinitionPayload, data: data, containerFormat: .package)
+    }
+
+    /// RCL-002-open_saved_collection: current schema의 empty identity는 유효하지 않다.
+    /// 빈 문자열도 whitespace identity와 같은 definition validity 규칙을 적용하는지 검증한다.
+    /// - 검증 내용: current direct decode empty identity validation
+    /// - 사전 조건: schema 1.1과 empty identity를 가진 binary plist
+    /// - 기대 결과: `.invalidDefinitionPayload`를 반환함
+    func testOpenSavedCollection_currentSchemaEmptyIdentityIsInvalid() throws {
+        let data = try makeCollectionPayload(id: "")
+
+        try assertCollectionDecodeError(.invalidDefinitionPayload, data: data, containerFormat: .package)
+    }
+
+    /// RCL-002-open_saved_collection: current schema에서 identity key가 없으면 invalid definition이다.
+    /// 다른 required-field corruption과 구분해 `id` keyNotFound만 identity failure로 mapping하는지 검증한다.
+    /// - 검증 내용: direct/fallback decode의 missing-id error mapping
+    /// - 사전 조건: schema 1.1 payload에서 `id` key만 누락됨
+    /// - 기대 결과: `.invalidDefinitionPayload`를 반환함
+    func testOpenSavedCollection_currentSchemaMissingIdentityIsInvalid() throws {
+        let data = try makeCollectionPayload(id: nil)
+
+        try assertCollectionDecodeError(.invalidDefinitionPayload, data: data, containerFormat: .package)
+    }
+
+    /// RCL-002-open_saved_collection: future-minor readable payload도 blank identity를 허용하지 않는다.
+    /// read-only compatibility가 document identity validity를 우회하지 않는지 검증한다.
+    /// - 검증 내용: future-minor direct decode identity validation
+    /// - 사전 조건: schema 1.2와 whitespace-only identity를 가진 binary plist
+    /// - 기대 결과: `.invalidDefinitionPayload`를 반환함
+    func testOpenSavedCollection_futureMinorWhitespaceIdentityIsInvalid() throws {
+        let data = try makeCollectionPayload(
+            schemaVersion: ["major": 1, "minor": 2],
+            id: "   ",
+        )
+
+        try assertCollectionDecodeError(.invalidDefinitionPayload, data: data, containerFormat: .package)
+    }
+
+    /// RCL-002-open_saved_collection: lossy snapshot fallback도 blank identity를 허용하지 않는다.
+    /// malformed snapshot을 제거해 definition을 복구하는 성공 후보가 동일한 identity gate를 통과하는지 검증한다.
+    /// - 검증 내용: snapshot fallback decode 후 identity validation
+    /// - 사전 조건: schema 1.1, blank identity, path-string이 아닌 malformed snapshot item
+    /// - 기대 결과: fallback load result 대신 `.invalidDefinitionPayload`를 반환함
+    func testOpenSavedCollection_snapshotFallbackWhitespaceIdentityIsInvalid() throws {
+        let data = try makeCollectionPayload(id: "\n") {
+            $0["snapshot"] = ["items": [42]]
+        }
+
+        try assertCollectionDecodeError(.invalidDefinitionPayload, data: data, containerFormat: .package)
+    }
+
+    /// RCL-002-open_saved_collection: legacy decode normalization 전에도 blank identity를 거부한다.
+    /// schema 없는 legacy single-file 경로가 current route와 동일한 required identity 규칙을 적용하는지 검증한다.
+    /// - 검증 내용: legacy compatibility fallback identity validation
+    /// - 사전 조건: schemaVersion이 없고 newline-only identity인 legacy binary plist
+    /// - 기대 결과: `.invalidDefinitionPayload`를 반환함
+    func testOpenSavedCollection_legacyWhitespaceIdentityIsInvalid() throws {
+        let data = try makeCollectionPayload(schemaVersion: nil, id: "\r\n")
+
+        try assertCollectionDecodeError(.invalidDefinitionPayload, data: data, containerFormat: .legacySingleFile)
+    }
+
+    /// RCL-002-open_saved_collection: identity 이외 required field corruption은 기존 category를 유지한다.
+    /// identity-specific keyNotFound mapping이 unrelated definition corruption을 오분류하지 않는지 검증한다.
+    /// - 검증 내용: missing required `name` error taxonomy
+    /// - 사전 조건: valid identity를 유지하고 `name` key만 제거한 current payload
+    /// - 기대 결과: `.unrecoverableDocumentCorruption`을 반환함
+    func testOpenSavedCollection_unrelatedRequiredFieldCorruptionRemainsUnrecoverable() throws {
+        let data = try makeCollectionPayload {
+            $0.removeValue(forKey: "name")
+        }
+
+        try assertCollectionDecodeError(.unrecoverableDocumentCorruption, data: data, containerFormat: .package)
+    }
+
+    /// RCL-002-open_saved_collection: trimmed-nonempty identity의 원문은 normalization하지 않는다.
+    /// validity check에는 trimmed view만 사용하고 model identity는 persisted text 그대로 보존하는지 검증한다.
+    /// - 검증 내용: valid identity text의 byte-for-byte preservation
+    /// - 사전 조건: 양쪽에 whitespace가 있지만 trimmed value가 nonempty인 current payload
+    /// - 기대 결과: decode된 model identity가 원래 `"  semantic-id  "`와 정확히 같음
+    func testOpenSavedCollection_validIdentityPreservesOriginalText() throws {
+        let identity = "  semantic-id  "
+        let data = try makeCollectionPayload(id: identity)
+
+        let result = try VoyagerCollectionFileCompatibilityOwner.decode(data, containerFormat: .package)
+
+        XCTAssertEqual(result.file.id, identity)
+    }
+
     /// RCL-002-open_saved_collection: 현재 포맷으로 저장한 collection은 다시 열었을 때 filter 정의를 유지한다.
     /// fixture에서 읽은 Collection을 live save 경로로 다시 저장해 save/open/reopen 계약을 검증한다.
     /// - 검증 내용: `CollectionFileClient.save`가 `.voycoll/collection.plist` binary plist를 만들고 재로드 시 condition을 유지
@@ -492,6 +646,124 @@ final class RCL002OpenSavedCollectionTests: XCTestCase {
         XCTAssertEqual(saved.file.scopes, ["/VoyagerFixtures/Documents"])
     }
 
+    /// RCL-002-save_collection_filter_changes: scope-only draft는 copied package의 기존 URL에 저장하고 clean reopen된다.
+    /// live file client와 Collection writeback owner를 함께 구동해 baseline/dirty/completion/reload 계약을 검증한다.
+    /// - 검증 내용: original/copy URL, dirty transition, persisted scope rule, completion baseline, reopened clean state
+    /// - 사전 조건: semantic-empty fixture package 복사본과 scope/exclusion/include 변경 context
+    /// - 기대 결과: copied URL만 갱신되고 reopen한 exact scope가 새 clean baseline이 됨
+    func testSaveCollectionFilterChanges_scopeOnlyDraftWritesExistingURLAndReloadsClean() async throws {
+        let sandbox = try CollectionFixtureSandbox.copyingDirectory(
+            from: "fixtures/fixtures/collections/empty_definition_collection.voycoll",
+        )
+        defer { try? sandbox.cleanup() }
+        let sourcePayloadURL = sandbox.originalFixture.appendingPathComponent("collection.plist")
+        let sourcePayload = try Data(contentsOf: sourcePayloadURL)
+        let opened = try await CollectionFileClient.liveValue.load(sandbox.fileURL)
+        let baseline = CollectionContext(
+            query: opened.file.query,
+            scopes: opened.file.scopes,
+            excludedScopes: opened.file.excludedScopes,
+            includeSubfolders: opened.file.includeSubfolders,
+            includeDirectories: opened.file.includeDirectories,
+            conditions: [],
+        )
+        let changed = CollectionContext(
+            query: "",
+            scopes: ["/VoyagerFixtures/Documents"],
+            excludedScopes: ["/VoyagerFixtures/Documents/Archive"],
+            includeSubfolders: false,
+            includeDirectories: false,
+            conditions: [],
+        )
+        var state = CollectionState(collectionContext: changed)
+        state.collectionSession.document = .init(
+            url: sandbox.fileURL,
+            name: opened.file.name,
+            compatibility: opened.compatibility,
+        )
+        state.collectionSession.metadata.baseline = .init(context: baseline)
+        state.collectionSession.phase = .opened(kind: .definition, base: .ready, inflight: .none)
+        let store = TestStore(initialState: state) {
+            CollectionFeature()
+        } withDependencies: {
+            $0.collectionFileClient = .liveValue
+            $0.collectionStalenessClient = .testValue
+            $0.fileManagerClient = .testValue
+            $0.userDefaultsClient = .testValue
+        }
+
+        XCTAssertTrue(store.state.isDirty)
+        await store.send(.saveToExisting(makeScopeOnlySavePayload(context: changed), sandbox.fileURL)) {
+            $0.isSaving = true
+        }
+        await store.receive(\.saveCompleted) {
+            $0.isSaving = false
+        }
+
+        let reopened = try await CollectionFileClient.liveValue.load(sandbox.fileURL)
+        XCTAssertEqual(reopened.file.scopes, changed.scopes)
+        XCTAssertEqual(reopened.file.excludedScopes, changed.excludedScopes)
+        XCTAssertEqual(reopened.file.includeSubfolders, changed.includeSubfolders)
+        XCTAssertEqual(try Data(contentsOf: sourcePayloadURL), sourcePayload)
+
+        await store.send(.writeBackCompleted(.init(
+            url: sandbox.fileURL,
+            file: reopened.file,
+            savedContext: changed,
+        ))) {
+            $0.collectionSession.document = .init(
+                url: sandbox.fileURL,
+                name: sandbox.fileURL.deletingPathExtension().lastPathComponent,
+                compatibility: VoyagerCollectionFileCompatibilityOwner.compatibilityForCurrentFile(reopened.file),
+            )
+            $0.collectionSession.metadata.lastRefreshAt = reopened.file.updatedAt
+            $0.collectionSession.metadata.baseline = .init(context: changed)
+            $0.collectionContext = changed
+        }
+        await store.receive(\.delegate.writeBackNavigationPrepared)
+
+        XCTAssertEqual(store.state.collectionSession.document?.url, sandbox.fileURL)
+        XCTAssertEqual(store.state.collectionContext, changed)
+        XCTAssertEqual(store.state.collectionSession.metadata.baseline?.context, changed)
+        XCTAssertFalse(store.state.isDirty)
+    }
+
+    /// RCL-002-save_collection_filter_changes: scope-only same-file save failure는 baseline과 dirty draft를 보존한다.
+    /// file client failure가 document ownership이나 현재 scope context를 부분 commit하지 않는지 검증한다.
+    /// - 검증 내용: save completion failure, feedback, original URL/baseline/current context, dirty state
+    /// - 사전 조건: file-backed empty baseline과 scope-only dirty context, throwing save client
+    /// - 기대 결과: save 종료 후에도 같은 URL의 dirty draft가 남고 baseline은 empty 상태를 유지함
+    func testSaveCollectionFilterChanges_scopeOnlyFailurePreservesDirtyDraftAndExistingURL() async {
+        let existingURL = URL(fileURLWithPath: "/tmp/scope-only-failure.voycoll")
+        let baseline = CollectionContext()
+        let changed = CollectionContext(query: "", scopes: ["/VoyagerFixtures/Documents"], conditions: [])
+        var state = CollectionState(collectionContext: changed)
+        state.collectionSession.document = .init(url: existingURL, name: "scope-only-failure", compatibility: nil)
+        state.collectionSession.metadata.baseline = .init(context: baseline)
+        state.collectionSession.phase = .opened(kind: .definition, base: .ready, inflight: .none)
+        let store = TestStore(initialState: state) {
+            CollectionFeature()
+        } withDependencies: {
+            $0.collectionFileClient.save = { _, _ in throw CollectionSaveTestError() }
+            $0.collectionStalenessClient = .testValue
+            $0.fileManagerClient = .testValue
+            $0.userDefaultsClient = .testValue
+        }
+
+        await store.send(.saveToExisting(makeScopeOnlySavePayload(context: changed), existingURL)) {
+            $0.isSaving = true
+        }
+        await store.receive(\.saveCompleted) {
+            $0.isSaving = false
+        }
+        await store.receive(\.delegate.saveFeedback)
+
+        XCTAssertEqual(store.state.collectionSession.document?.url, existingURL)
+        XCTAssertEqual(store.state.collectionSession.metadata.baseline?.context, baseline)
+        XCTAssertEqual(store.state.collectionContext, changed)
+        XCTAssertTrue(store.state.isDirty)
+    }
+
     // MARK: - RCL-002-discard_collection_filter_changes
 
     /// RCL-002-discard_collection_filter_changes: discard는 baseline filter 정의로 draft를 되돌린다.
@@ -866,4 +1138,68 @@ private func makeSaveSnapshot(
         capturedAt: Date(timeIntervalSince1970: 1_700_000_000),
         relevanceRoots: ["/VoyagerFixtures/Documents"],
     )
+}
+
+private func makeScopeOnlySavePayload(context: CollectionContext) -> SaveRequestPayload {
+    SaveRequestPayload(
+        context: context,
+        isSearchLoading: false,
+        isFiltersLoading: false,
+        snapshotItems: nil,
+        definitionFingerprint: "rcl-002-scope-only",
+        capturedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        relevanceRoots: context.scopes,
+        openedCompatibility: nil,
+    )
+}
+
+private func makeCollectionPayload(
+    schemaVersion: Any? = ["major": 1, "minor": 1],
+    id: String? = "rcl-002-valid-identity",
+    mutate: (inout [String: Any]) -> Void = { _ in },
+) throws -> Data {
+    var payload: [String: Any] = [
+        "name": "RCL-002 Collection",
+        "createdAt": Date(timeIntervalSince1970: 1_700_000_000),
+        "updatedAt": Date(timeIntervalSince1970: 1_700_000_100),
+        "query": "",
+        "scopes": [],
+        "excludedScopes": [],
+        "includeSubfolders": true,
+        "includeDirectories": false,
+        "conditions": [],
+    ]
+    if let schemaVersion {
+        payload["schemaVersion"] = schemaVersion
+    }
+    if let id {
+        payload["id"] = id
+    }
+    mutate(&payload)
+    return try PropertyListSerialization.data(
+        fromPropertyList: payload,
+        format: .binary,
+        options: 0,
+    )
+}
+
+private func assertCollectionDecodeError(
+    _ expectedError: CollectionFileCompatibilityError,
+    data: Data,
+    containerFormat: CollectionFileContainerFormat,
+    file: StaticString = #filePath,
+    line: UInt = #line,
+) throws {
+    XCTAssertThrowsError(
+        try VoyagerCollectionFileCompatibilityOwner.decode(data, containerFormat: containerFormat),
+        file: file,
+        line: line,
+    ) { error in
+        XCTAssertEqual(
+            error as? CollectionFileCompatibilityError,
+            expectedError,
+            file: file,
+            line: line,
+        )
+    }
 }

@@ -91,7 +91,7 @@ extension EVM002FileManagerPagePresentationTests {
         let view = EntryListView(frame: .zero)
         coordinator.bind(to: view)
 
-        store.send(.entryViewLayout(.entryOperations(.loading(.itemsLoaded([entry])))))
+        store.send(.entryViewLayout(.entryOperations(.loading(.itemsLoaded(generation: 0, items: [entry])))))
         let renderSettled = expectation(description: "ordinary list render settled")
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
             renderSettled.fulfill()
@@ -336,11 +336,20 @@ extension EVM002FileManagerPagePresentationTests {
                 "default",
                 "progressive-entry-loading",
                 "progressive-entry-loading-failure",
+                "contentTabSwitcherContent",
+                "contentTabSwitcherFallback",
+                "contentTabSwitcherEmpty",
+                "contentTabSwitcherLoading",
+                "contentTabSwitcherError",
                 "delayed-root-navigation",
                 "delayed-tab-switch",
                 "permission-denied",
                 "permission-retry",
                 "collection-directory",
+                "material-tuning",
+                "fixture-documents",
+                "fixture-media",
+                "fixture-stress",
                 "large-folder-1000",
                 "concurrent-large-folders",
             ],

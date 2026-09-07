@@ -35,10 +35,13 @@ final class PackageEntriesFlowTests: XCTestCase {
         let initialHistory = store.state.navigation.backHistory
         let initialSelection = store.state.entryViewLayout.selectedIds
 
-        await store.send(.entryViewLayout(.delegate(.executeCommand("mutation.compressSelectedItems"))))
+        await store.send(.entryViewLayout(.delegate(.executeCommand(
+            "mutation.compressSelectedItems",
+            source: .fileManagerContent,
+        ))))
 
         await store.receive { action in
-            guard case let .entryViewLayout(.entryOperations(.routing(.executeCommand(command, context)))) = action,
+            guard case let .entryViewLayout(.entryOperations(.routing(.executeCommand(command, context, _)))) = action,
                   case .mutation(.compressSelectedItems) = command
             else { return false }
             return context.selectedIds == [entry.id]
@@ -47,7 +50,10 @@ final class PackageEntriesFlowTests: XCTestCase {
         }
 
         await store.receive { action in
-            guard case let .entryViewLayout(.entryOperations(.archive(.compressItems(paths)))) = action
+            guard case let .entryViewLayout(.entryOperations(.acceptedCommand(
+                metadata: _,
+                action: .archive(.compressItems(paths)),
+            ))) = action
             else { return false }
             return paths == [sandbox.fileURL.path]
         }
@@ -99,7 +105,10 @@ final class PackageEntriesFlowTests: XCTestCase {
         let initialRoute = store.state.navigation.navigationState
         let initialHistory = store.state.navigation.backHistory
 
-        await store.send(.entryViewLayout(.delegate(.executeCommand("mutation.compressSelectedItems"))))
+        await store.send(.entryViewLayout(.delegate(.executeCommand(
+            "mutation.compressSelectedItems",
+            source: .fileManagerContent,
+        ))))
         await store.receive(\.entryViewLayout.entryOperations.routing.executeCommand)
         await store.finish()
 

@@ -55,7 +55,11 @@ struct SidebarFixedLocationsSection<MenuContent: View>: View {
     let reorderDropDestination: (FileManagerTopNavigationReorderDropBoundary)
         -> FileManagerTopNavigationReorderDropDestination
     let entryDropDelegate: (FileManagerSidebarEntryDropTarget, Bool) -> FileManagerSidebarEntryDropDelegate
-    let onMove: (FileManagerTopNavigationItemID, FileManagerSidebarTopNavigationMoveDirection) -> Void
+    let onMove: (
+        FileManagerTopNavigationItemID,
+        FileManagerSidebarTopNavigationMoveDirection,
+        ContentTabActionSource,
+    ) -> Void
     let onSelect: (FileManagerFixedLocationItem.ID) -> Void
     let onHover: (FileManagerFixedLocationItem.ID?) -> Void
 
@@ -223,7 +227,11 @@ enum FileManagerSidebarTopNavigationMoveKeyCommandClassifier {
 
 struct FileManagerSidebarTopNavigationMoveCommandsModifier: ViewModifier {
     let sourceID: FileManagerTopNavigationItemID
-    let onMove: (FileManagerTopNavigationItemID, FileManagerSidebarTopNavigationMoveDirection) -> Void
+    let onMove: (
+        FileManagerTopNavigationItemID,
+        FileManagerSidebarTopNavigationMoveDirection,
+        ContentTabActionSource,
+    ) -> Void
 
     func body(content: Content) -> some View {
         content
@@ -234,9 +242,9 @@ struct FileManagerSidebarTopNavigationMoveCommandsModifier: ViewModifier {
 
                 switch direction {
                 case .up:
-                    onMove(sourceID, .previous)
+                    onMove(sourceID, .previous, .keyboardShortcut)
                 case .down:
-                    onMove(sourceID, .next)
+                    onMove(sourceID, .next, .keyboardShortcut)
                 case .left, .right:
                     break
                 @unknown default:
@@ -244,10 +252,10 @@ struct FileManagerSidebarTopNavigationMoveCommandsModifier: ViewModifier {
                 }
             }
             .accessibilityAction(named: Text("Move Up")) {
-                onMove(sourceID, .previous)
+                onMove(sourceID, .previous, .contentTabBar)
             }
             .accessibilityAction(named: Text("Move Down")) {
-                onMove(sourceID, .next)
+                onMove(sourceID, .next, .contentTabBar)
             }
     }
 }
@@ -310,7 +318,7 @@ enum ContentTabSidebarTrailingCommand: Equatable {
     func viewAction(tabID: ContentTabID) -> FileManagerSidebarAction.View {
         switch self {
         case .unpin:
-            .unpinContentTab(tabID)
+            .unpinContentTabFromTrailingControl(tabID)
         case .close:
             .closeContentTab(tabID)
         }
@@ -362,12 +370,18 @@ struct ContentTabSidebarRow: View {
             backgroundColor: backgroundColor,
             accessibilityStateValue: accessibilityStateValue,
             duplicateTitle: duplicatePresentation.title,
+            duplicateKeyEquivalent: duplicatePresentation.keyEquivalent,
+            duplicateKeyEquivalentModifierMask: duplicatePresentation.keyEquivalentModifierMask,
             duplicateAccessibilityIdentifier: duplicatePresentation.accessibilityIdentifier,
             isDuplicateEnabled: duplicatePresentation.isEnabled,
             pinTitle: pinPresentation.title,
+            pinKeyEquivalent: pinPresentation.keyEquivalent,
+            pinKeyEquivalentModifierMask: pinPresentation.keyEquivalentModifierMask,
             pinAccessibilityIdentifier: pinPresentation.accessibilityIdentifier,
             isPinEnabled: pinPresentation.isEnabled,
             closeTitle: closePresentation.title,
+            closeKeyEquivalent: closePresentation.keyEquivalent,
+            closeKeyEquivalentModifierMask: closePresentation.keyEquivalentModifierMask,
             closeAccessibilityIdentifier: closePresentation.accessibilityIdentifier,
             isCloseEnabled: closePresentation.isEnabled,
             usesUnpinCommand: pinPresentation.usesUnpinCommand,
@@ -451,12 +465,18 @@ private struct ContentTabSidebarButtonHost: NSViewRepresentable {
     let backgroundColor: Color
     let accessibilityStateValue: String
     let duplicateTitle: String
+    let duplicateKeyEquivalent: String
+    let duplicateKeyEquivalentModifierMask: NSEvent.ModifierFlags
     let duplicateAccessibilityIdentifier: String
     let isDuplicateEnabled: Bool
     let pinTitle: String
+    let pinKeyEquivalent: String
+    let pinKeyEquivalentModifierMask: NSEvent.ModifierFlags
     let pinAccessibilityIdentifier: String
     let isPinEnabled: Bool
     let closeTitle: String
+    let closeKeyEquivalent: String
+    let closeKeyEquivalentModifierMask: NSEvent.ModifierFlags
     let closeAccessibilityIdentifier: String
     let isCloseEnabled: Bool
     let usesUnpinCommand: Bool
@@ -516,11 +536,17 @@ private struct ContentTabSidebarButtonHost: NSViewRepresentable {
             onClose: onClose,
             onMove: onMove,
             duplicateTitle: duplicateTitle,
+            duplicateKeyEquivalent: duplicateKeyEquivalent,
+            duplicateKeyEquivalentModifierMask: duplicateKeyEquivalentModifierMask,
             isDuplicateEnabled: isDuplicateEnabled,
             pinTitle: pinTitle,
+            pinKeyEquivalent: pinKeyEquivalent,
+            pinKeyEquivalentModifierMask: pinKeyEquivalentModifierMask,
             pinAccessibilityIdentifier: pinAccessibilityIdentifier,
             isPinEnabled: isPinEnabled,
             closeTitle: closeTitle,
+            closeKeyEquivalent: closeKeyEquivalent,
+            closeKeyEquivalentModifierMask: closeKeyEquivalentModifierMask,
             closeAccessibilityIdentifier: closeAccessibilityIdentifier,
             isCloseEnabled: isCloseEnabled,
             usesUnpinCommand: usesUnpinCommand,

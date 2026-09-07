@@ -121,12 +121,13 @@ public extension AiChatProviderExecutionClient {
                 )
 
                 let executor = try executorRegistry.executor(for: result.payload.provider)
-                return executor.execute(AiChatProviderExecutionInput(
+                let providerStream = executor.execute(AiChatProviderExecutionInput(
                     preflight: result,
                     session: session,
                     now: now,
                     codexExecutor: codexExecution,
                 ))
+                return streamPreparedFirst(result.payload, providerStream: providerStream)
             },
         )
         guard let composition else { return client }
@@ -134,6 +135,27 @@ public extension AiChatProviderExecutionClient {
             execute: client.execute,
             codexControllerIdentity: composition.controllerIdentity,
         )
+    }
+}
+
+private func streamPreparedFirst(
+    _ payload: AiChatProviderRequestPayload,
+    providerStream: AsyncThrowingStream<AiChatProviderExecutionEvent, Error>,
+) -> AsyncThrowingStream<AiChatProviderExecutionEvent, Error> {
+    AsyncThrowingStream { continuation in
+        let task = Task {
+            continuation.yield(.requestPrepared(payload))
+            do {
+                for try await event in providerStream {
+                    if Task.isCancelled { break }
+                    continuation.yield(event)
+                }
+                continuation.finish()
+            } catch {
+                continuation.finish(throwing: error)
+            }
+        }
+        continuation.onTermination = { @Sendable _ in task.cancel() }
     }
 }
 

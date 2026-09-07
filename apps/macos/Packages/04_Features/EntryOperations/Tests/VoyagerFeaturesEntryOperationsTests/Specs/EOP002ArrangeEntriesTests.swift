@@ -7,6 +7,12 @@ import VoyagerEntitiesEntry
 import VoyagerShared
 import XCTest
 
+private let externalDropTestCommand = EntryCommandMetadata(
+    id: UUID(),
+    interaction: .copyEntries,
+    source: .dragAndDrop,
+)
+
 // StagingDirectory가 provider에 공개되지 않은 보관 디렉터리 경로를 재현한다.
 // 세션 구현과 동일한 파생 규칙(`<parent>/.voyager-claimed-<rootName>`)을 쓴다.
 
@@ -225,6 +231,11 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             $0.cutClearSession = nil
         }
 
+        await store.receive { action in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return false }
+            return record.succeededCount == 1 && record.failedCount == 0
+        }
+
         await store.finish()
 
         XCTAssertEqual(recorder.writtenObjectPaths, [[sandbox.fileURL.path]])
@@ -251,8 +262,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
 
     /// EOP-002-cut_entries: 선택한 Entry가 이동용 잘라내기 상태로 저장되는지 검증한다.
     /// 사용자가 `fixtures/fixtures/texts/plain/11.txt`를 선택한 뒤 cut으로 전환할 때 clipboard marker와 cut session이 설정되는지 확인한다.
-    /// - 검증 내용: `.clipboard(.copySelectedItems)`와 `.clipboard(.setClipboardOperation(.cut))`가 clipboard state와 cut
-    /// session을 갱신한다.
+    /// - 검증 내용: `.clipboard(.cutSelectedItems)`가 URL과 cut marker를 함께 기록하고 clipboard state와 cut session을 갱신한다.
     /// - 사전 조건: `fixtures/fixtures/texts/plain/11.txt`를 FixtureSandbox로 복사하고, clipboard recorder와 session recorder를
     /// 주입한다.
     /// - 기대 결과: clipboard는 cut 상태가 되고, cut session이 현재 선택 경로를 포함하며, 원본 fixture 경로는 그대로 유지된다.
@@ -278,11 +288,10 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             $0.uuid = .constant(UUID())
         }
 
-        // store.exhaustivity = .off: setClipboardOperation이 cutClearSession을 내부 갱신하므로 최종 상태만 검증한다.
+        // store.exhaustivity = .off: cut action의 terminal보다 최종 clipboard 상태와 기록을 검증한다.
         store.exhaustivity = .off
 
-        await store.send(.clipboard(.copySelectedItems(files: [entry])))
-        await store.send(.clipboard(.setClipboardOperation(operation: .cut)))
+        await store.send(.clipboard(.cutSelectedItems(files: [entry])))
         await store.finish()
 
         XCTAssertEqual(recorder.setStrings.map(\.value), ["cut"])
@@ -297,13 +306,72 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
     }
 
+    /// EOP-002-cut_entries: Cut marker 기록 실패는 명령 성공으로 확정하지 않는다.
+    /// URL 기록과 Cut marker 기록을 하나의 명령 terminal로 집계하는지 검증한다.
+    /// - 검증 내용: URL 기록 성공 뒤 marker 기록 실패 시 failure terminal 한 건과 copy fallback 상태를 확인한다.
+    /// - 사전 조건: 실제 fixture 파일, URL 기록 성공 pasteboard, marker 기록 실패 pasteboard가 있다.
+    /// - 기대 결과: accepted metadata를 보존한 failure terminal 한 건, copy operation, 비어 있는 Cut session이다.
+    func testCutEntries_markerFailureEmitsSingleFailureTerminal() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+
+        let recorder = ClipboardRecorder()
+        let entry = EntryModelFixtures.makeFileEntry(
+            id: sandbox.fileURL.path,
+            name: sandbox.fileURL.lastPathComponent,
+            fileExtension: sandbox.fileURL.pathExtension,
+        )
+        let commandID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000202"))
+        let metadata = EntryCommandMetadata(
+            id: commandID,
+            interaction: .cutEntries,
+            source: .keyboardShortcut,
+        )
+        let store = EntryOperationsTestSupport.makeStore(initialState: .init()) {
+            $0.pasteboardClient = makeClipboardClient(
+                recorder: recorder,
+                setStringResult: { _, type in
+                    type.rawValue != "fm.voyager.clipboard.operation"
+                },
+            )
+            $0.entryFileOpsClient.saveClipboardCutSessionId = { _ in }
+            $0.uuid = .constant(UUID())
+        }
+        // store.exhaustivity = .off: command 내부 accepted action은 건너뛰고 최종 terminal 계약을 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.routing(.executeCommand(
+            command: .clipboard(.cutSelectedItems),
+            context: .init(
+                selectedIds: [entry.id],
+                displayItems: [entry],
+                currentPath: sandbox.root.path,
+            ),
+            metadata: metadata,
+        )))
+        await store.receive { action in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return false }
+            return record.command?.id == commandID
+                && record.command?.interaction == .cutEntries
+                && record.command?.source == .keyboardShortcut
+                && record.succeededCount == 0
+                && record.failedCount == 1
+        }
+        await store.finish()
+
+        XCTAssertEqual(recorder.writtenObjectPaths, [[sandbox.fileURL.path]])
+        XCTAssertEqual(store.state.clipboardItems, [sandbox.fileURL.path])
+        XCTAssertEqual(store.state.clipboardOperation, .copy)
+        XCTAssertNil(store.state.cutClearSession)
+    }
+
     /// EOP-002-cut_entries: 선택된 부모와 하위 항목은 표시 순서와 무관하게 부모만 잘라내기 payload로 계획한다.
     /// 사용자가 폴더, 그 하위 파일, 그리고 문자열 접두사만 같은 peer 파일을 함께 선택할 때 하위 파일은 제외하고 topmost source만 유지하는지 확인한다.
-    /// - 검증 내용: `.clipboard(.copySelectedItems)`가 URL pathComponents의 엄격한 조상 관계로 하위 항목만 제거하고, 뒤이어 cut operation을 설정하며
-    /// 남은 source의 표시 순서와 원본 fullPath를 보존한다.
+    /// - 검증 내용: `.clipboard(.cutSelectedItems)`가 URL pathComponents의 엄격한 조상 관계로 하위 항목만 제거하고 남은 source의 표시 순서와 원본
+    /// fullPath를 보존한다.
     /// - 사전 조건: 동일한 폴더와 하위 파일을 선택하되 descendant-first 및 ancestor-first 표시 순서를 각각 구성하고, 경로 구성요소상 조상이 아닌 raw-prefix peer를
     /// 포함한다.
-    /// - 기대 결과: 두 표시 순서 모두 parent와 raw-prefix peer만 cut의 copy payload에 포함되고, 하위 파일은 포함되지 않으며 cut operation이 뒤따른다.
+    /// - 기대 결과: 두 표시 순서 모두 parent와 raw-prefix peer만 단일 cut payload에 포함되고 하위 파일은 포함되지 않는다.
     func testCutEntries_excludesSelectedDescendantsRegardlessOfDisplayOrder() throws {
         try assertCutEntriesExcludingSelectedDescendant(isDescendantFirst: true)
         try assertCutEntriesExcludingSelectedDescendant(isDescendantFirst: false)
@@ -390,10 +458,160 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             $0.itemStates[sourcePath] = ItemOperationState(isBusy: false, lastError: error)
         }
 
+        // 전체 실패 paste 배치도 실패 aggregate를 담은 command-level terminal을 한 건 수신한다.
+        await store.receive(\.lifecycle.entryActionCompleted)
+
         XCTAssertEqual(store.state.itemStates[sourcePath]?.lastError, error)
         XCTAssertTrue(FileManager.default.fileExists(atPath: sourcePath))
         XCTAssertFalse(FileManager.default.fileExists(atPath: destinationPath))
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
+    }
+
+    /// EOP-002-paste_entries: 수용된 metadata-bearing same-parent Cut Paste가 취소 terminal 하나로 끝나는지 검증한다.
+    /// 같은 부모의 두 source를 붙여넣을 때 command metadata와 aggregate terminal을 보존한다.
+    /// - 검증 내용: operation ID/source, pasteFileMove, attempted/cancelled 2, 빈 target과 zero mutation을 확인한다.
+    /// - 사전 조건: 비어 있지 않은 두 source가 destination과 같은 부모에 있고 accepted Cut Paste command를 보낸다.
+    /// - 기대 결과: entryActionCompleted terminal 정확히 한 건, operationFinished/mutation/filesystem/undo/reload 없음, source 유지.
+    func testAcceptedCutPaste_sameParentEmitsCancelledCommandTerminal() async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+        let secondSource = sandbox.root.appendingPathComponent("second.txt")
+        try FileManager.default.copyItem(at: sandbox.fileURL, to: secondSource)
+        let sources = [sandbox.fileURL.path, secondSource.path]
+        let metadata = try EntryCommandMetadata(
+            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000223")),
+            interaction: .moveEntries,
+            source: .keyboardShortcut,
+        )
+        let actionRecorder = CallRecorder<EntryOperationsAction>()
+        let mutationCalls = LockIsolated(0)
+        let reloadRecorder = CallRecorder<[String]>()
+        var fileOps = EntryFileOpsClient.previewValue
+        fileOps.moveFile = { _, _ in mutationCalls.withValue { $0 += 1 } }
+        fileOps.pasteFile = { _, _ in mutationCalls.withValue { $0 += 1 } }
+        fileOps.postFileSystemChanged = reloadRecorder.record
+        let store = EntryOperationsTestSupport.makeObservedStore(
+            observeAction: actionRecorder.record,
+        ) { $0.entryFileOpsClient = fileOps }
+        // store.exhaustivity = .off: accepted command 전파의 내부 lifecycle은 recorder로 terminal 개수를 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.acceptedCommand(metadata: metadata, action: .clipboard(.pasteItems(
+            sourcePaths: sources,
+            destinationPath: sandbox.root.path,
+            operation: .cut,
+            operationKind: .pasteFileMove,
+        ))))
+        await store.receive { action in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return false }
+            return record.command == metadata
+                && record.id == metadata.id
+                && record.operationKind == .pasteFileMove
+                && record.attemptedCount == 2
+                && record.cancelledCount == 2
+                && record.succeededCount == 0
+                && record.failedCount == 0
+                && record.targets.isEmpty
+        }
+        await store.finish()
+
+        XCTAssertEqual(actionRecorder.recorded.count(where: {
+            if case .lifecycle(.entryActionCompleted) = $0 { return true }
+            return false
+        }), 1)
+        XCTAssertFalse(actionRecorder.recorded.contains {
+            if case .lifecycle(.operationFinished) = $0 { return true }
+            return false
+        })
+        XCTAssertTrue(mutationCalls.value == 0 && reloadRecorder.recorded.isEmpty && store.state.undoRecords.isEmpty)
+        XCTAssertTrue(sources.allSatisfy { FileManager.default.fileExists(atPath: $0) })
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
+    }
+
+    // MARK: - EOP-002-paste_entries
+
+    /// EOP-002-paste_entries: 수용된 metadata-bearing 빈 Paste가 취소 terminal 하나로 끝나는지 검증한다.
+    /// accepted command의 clipboard snapshot이 비어 있어도 operation metadata와 aggregate terminal을 보존한다.
+    /// - 검증 내용: copy metadata, pasteFileCopy, attempted/cancelled 1, zero success/failure, 빈 target을 확인한다.
+    /// - 사전 조건: 빈 clipboard snapshot을 반환하는 accepted Paste command를 보낸다.
+    /// - 기대 결과: entryActionCompleted terminal 정확히 한 건, clipboard snapshot 1회, mutation/undo/reload 없음.
+    func testAcceptedEmptyPaste_emitsMetadataPreservingCancelledTerminal() async throws {
+        let metadata = try EntryCommandMetadata(
+            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000224")),
+            interaction: .pasteEntries,
+            source: .menuCommand,
+        )
+        let loadCount = LockIsolated(0)
+        let actionRecorder = CallRecorder<EntryOperationsAction>()
+        let mutationCalls = LockIsolated(0)
+        let reloadRecorder = CallRecorder<[String]>()
+        var fileOps = EntryFileOpsClient.previewValue
+        fileOps.loadClipboardPaths = {
+            loadCount.withValue { $0 += 1 }
+            return ([], .copy)
+        }
+        fileOps.pasteFile = { _, _ in mutationCalls.withValue { $0 += 1 } }
+        fileOps.moveFile = { _, _ in mutationCalls.withValue { $0 += 1 } }
+        fileOps.postFileSystemChanged = reloadRecorder.record
+        let store = EntryOperationsTestSupport.makeObservedStore(observeAction: actionRecorder.record) {
+            $0.entryFileOpsClient = fileOps
+        }
+        // store.exhaustivity = .off: accepted command의 terminal과 외부 mutation 부재만 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.acceptedCommand(
+            metadata: metadata,
+            action: .clipboard(.pasteItemsFromClipboard(destinationPath: "/destination")),
+        ))
+        await store.receive { action in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return false }
+            return record.command == metadata
+                && record.operationKind == .pasteFileCopy
+                && record.attemptedCount == 1
+                && record.cancelledCount == 1
+                && record.succeededCount == 0
+                && record.failedCount == 0
+                && record.targets.isEmpty
+        }
+        await store.finish()
+
+        XCTAssertEqual(loadCount.value, 1)
+        XCTAssertEqual(actionRecorder.recorded.count(where: {
+            if case .lifecycle(.entryActionCompleted) = $0 { return true }
+            return false
+        }), 1)
+        XCTAssertEqual(mutationCalls.value, 0)
+        XCTAssertTrue(reloadRecorder.recorded.isEmpty)
+        XCTAssertTrue(store.state.undoRecords.isEmpty)
+    }
+
+    /// EOP-002-paste_entries: 직접 전달된 빈 Paste는 조용히 종료되는지 검증한다.
+    /// metadata가 없는 raw/direct command는 accepted command terminal 정책을 적용하지 않는다.
+    /// - 검증 내용: 빈 clipboard snapshot 1회와 terminal/계정 가능한 부수효과 0회를 확인한다.
+    /// - 사전 조건: 빈 clipboard snapshot을 반환하는 unwrapped Paste command를 보낸다.
+    /// - 기대 결과: entryActionCompleted, mutation, undo, reload가 발생하지 않는다.
+    func testDirectEmptyPaste_remainsSilent() async {
+        let loadCount = LockIsolated(0)
+        let actionRecorder = CallRecorder<EntryOperationsAction>()
+        var fileOps = EntryFileOpsClient.previewValue
+        fileOps.loadClipboardPaths = {
+            loadCount.withValue { $0 += 1 }
+            return ([], .cut)
+        }
+        let store = EntryOperationsTestSupport.makeObservedStore(observeAction: actionRecorder.record) {
+            $0.entryFileOpsClient = fileOps
+        }
+        store.exhaustivity = .off
+
+        await store.send(.clipboard(.pasteItemsFromClipboard(destinationPath: "/destination")))
+        await store.finish()
+
+        XCTAssertEqual(loadCount.value, 1)
+        XCTAssertFalse(actionRecorder.recorded.contains {
+            if case .lifecycle(.entryActionCompleted) = $0 { return true }
+            return false
+        })
+        XCTAssertTrue(store.state.undoRecords.isEmpty)
     }
 
     // MARK: - EOP-002-duplicate_entries
@@ -439,9 +657,9 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
 
     /// EOP-002-duplicate_entries: 서로 다른 계층의 선택 항목을 각 원본 부모에 복제한다.
     /// 계층 projection에서 선택된 중첩 항목이 현재 root로 이동하지 않고 원래 sibling 위치에 복제되는지 검증한다.
-    /// - 검증 내용: duplicate command plan이 선택 path를 원본 부모별 paste action으로 분리함
+    /// - 검증 내용: duplicate command plan이 선택 path를 원본 부모별 group으로 분리함
     /// - 사전 조건: 서로 다른 부모를 가진 두 항목이 선택되고 currentPath는 상위 root임
-    /// - 기대 결과: 각 paste destination은 해당 source의 deletingLastPathComponent 경로임
+    /// - 기대 결과: 각 group destination은 해당 source의 deletingLastPathComponent 경로임
     func testDuplicateCommandPlansEachSourceParentDestination() {
         let first = EntryModelFixtures.makeEntry(path: "/root/folder/first.txt")
         let second = EntryModelFixtures.makeEntry(path: "/root/other/second.txt")
@@ -456,25 +674,22 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             context: context,
         )
 
-        XCTAssertEqual(outputs.count, 2)
-        guard outputs.count == 2,
-              case let .entryOperations(.clipboard(.pasteItems(firstPaths, firstDestination, _, _))) = outputs[0],
-              case let .entryOperations(.clipboard(.pasteItems(secondPaths, secondDestination, _, _))) = outputs[1]
+        XCTAssertEqual(outputs.count, 1)
+        guard case let .entryOperations(.clipboard(.duplicateItems(groups))) = outputs.first,
+              groups.count == 2
         else {
-            XCTFail("Expected duplicate paste plans grouped by source parent")
+            XCTFail("Expected one duplicate plan grouped by source parent")
             return
         }
-        XCTAssertEqual(firstPaths, [first.fullPath])
-        XCTAssertEqual(firstDestination, "/root/folder")
-        XCTAssertEqual(secondPaths, [second.fullPath])
-        XCTAssertEqual(secondDestination, "/root/other")
+        XCTAssertEqual(groups[0], .init(sourcePaths: [first.fullPath], destinationPath: "/root/folder"))
+        XCTAssertEqual(groups[1], .init(sourcePaths: [second.fullPath], destinationPath: "/root/other"))
     }
 
     /// EOP-002-duplicate_entries: 부모와 자식을 함께 선택하면 부모만 복제한다.
     /// 계층 projection에서 선택된 폴더의 하위 항목을 별도 복제해 중복 결과를 만들지 않는지 검증한다.
     /// - 검증 내용: duplicate command plan이 선택된 ancestor의 descendant path를 제외함
     /// - 사전 조건: 폴더와 해당 폴더의 자식 파일이 동시에 선택됨
-    /// - 기대 결과: paste source에는 부모 폴더만 포함됨
+    /// - 기대 결과: duplicate group source에는 부모 폴더만 포함됨
     func testDuplicateCommandOmitsDescendantOfSelectedFolder() {
         let folder = EntryModelFixtures.makeEntry(path: "/root/folder")
         let child = EntryModelFixtures.makeEntry(path: "/root/folder/child.txt")
@@ -490,12 +705,13 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         )
 
         XCTAssertEqual(outputs.count, 1)
-        guard case let .entryOperations(.clipboard(.pasteItems(paths, destination, _, _))) = outputs.first else {
-            XCTFail("Expected one duplicate paste plan")
+        guard case let .entryOperations(.clipboard(.duplicateItems(groups))) = outputs.first,
+              let group = groups.first
+        else {
+            XCTFail("Expected one duplicate group plan")
             return
         }
-        XCTAssertEqual(paths, [folder.fullPath])
-        XCTAssertEqual(destination, "/root")
+        XCTAssertEqual(group, .init(sourcePaths: [folder.fullPath], destinationPath: "/root"))
     }
 
     /// EOP-002-duplicate_entries: 일부 선택 항목이 사라진 상태에서도 앞선 항목 복제는 유지되는지 검증한다.
@@ -556,9 +772,9 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
     /// EOP-002-duplicate_entries: 서로 다른 부모의 교차 선택은 부모별로 같은 디렉터리에 복제하도록 계획한다.
     /// 사용자가 root와 두 nested 폴더의 항목을 표시 순서대로 교차 선택해 duplicate할 때 각 항목이 원래 부모에 남는 경로를 확인한다.
     /// - 검증 내용: `.routing(.executeCommand)`가 display 순서로 선택을 필터링하고, 첫 등장 부모 순서 및 부모별 source 순서를 보존한
-    /// `.clipboard(.pasteItems)`를 만든다.
+    /// `.clipboard(.duplicateItems)` group을 만든다.
     /// - 사전 조건: `fixtures/fixtures/texts/plain/11.txt`를 FixtureSandbox로 복사하고, 샌드박스 root 및 두 nested 디렉터리에 실제 파일을 준비한다.
-    /// - 기대 결과: root, 첫 번째 nested 부모, 두 번째 nested 부모 순서로 각각 하나의 duplicate paste action이 방출되고, root 항목의 destination은
+    /// - 기대 결과: root, 첫 번째 nested 부모, 두 번째 nested 부모 순서의 group 하나가 방출되고, root 항목의 destination은
     /// context.currentPath와 같다.
     func testDuplicateEntries_groupsInterleavedSelectionsByParentInDisplayOrder() async throws {
         let scenario = try makeInterleavedDuplicateScenario()
@@ -571,17 +787,17 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         await store.send(.routing(.executeCommand(
             command: .clipboard(.duplicateSelectedItems),
             context: scenario.context,
+            metadata: .init(id: UUID(), interaction: .duplicateEntries, source: .fileManagerContent),
         )))
-        for group in scenario.expectedGroups {
-            await store.receive { action in
-                guard case let .clipboard(.pasteItems(sourcePaths, destinationPath, operation, operationKind)) = action
-                else {
-                    return false
-                }
-                return sourcePaths == group.sourcePaths
-                    && destinationPath == group.destinationPath
-                    && operation == .copy
-                    && operationKind == .pasteFileDuplicate
+        await store.receive { action in
+            guard case let .acceptedCommand(_, .clipboard(.duplicateItems(groups))) = action else {
+                return false
+            }
+            return groups == scenario.expectedGroups.map {
+                EntryOperationsDuplicateGroup(
+                    sourcePaths: $0.sourcePaths,
+                    destinationPath: $0.destinationPath,
+                )
             }
         }
         await store.finish()
@@ -1563,6 +1779,96 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: failedSandbox.originalFixture.path))
     }
 
+    /// EOP-002-provider_drop_impact: 일부 성공 뒤 취소된 copy drop도 단일 terminal로 수렴한다.
+    /// - 검증 내용: accepted metadata, 성공 target, 나머지 cancelled aggregate, undo와 mutation impact를 보존한다.
+    /// - 사전 조건: 실제 fixture 3개 중 첫 복사가 성공한 직후 effect task가 취소된다.
+    /// - 기대 결과: attempted 3, succeeded 1, cancelled 2인 terminal 한 건과 성공 항목만의 undo/impact가 남는다.
+    func testAcceptedProviderDrop_cancelAfterFirstSuccessPreservesTerminalAndImpact() async throws {
+        let sandbox = try FixtureSandbox.copyingDirectory(from: "fixtures/fixtures/images/jpeg")
+        defer { sandbox.cleanup() }
+        let names = try FileManager.default.contentsOfDirectory(atPath: sandbox.fileURL.path).sorted()
+        let sourceURLs = try names.prefix(3).map { name in
+            try XCTUnwrap(URL(string: name, relativeTo: sandbox.fileURL)?.standardizedFileURL)
+        }
+        XCTAssertEqual(sourceURLs.count, 3)
+        let destinationFolder = sandbox.root.appendingPathComponent("CancelledCopyTarget")
+        try FileManager.default.createDirectory(at: destinationFolder, withIntermediateDirectories: true)
+        let metadata = try makeCancelledDropMetadata()
+        let startedCopies = CallRecorder<String>()
+        let actionRecorder = CallRecorder<EntryOperationsAction>()
+        var fileOps = EntryFileOpsClient.previewValue
+        fileOps.pasteFile = { sourceURL, destinationURL in
+            startedCopies.record(sourceURL.path)
+            try await EntryFileOpsClient.liveValue.pasteFile(sourceURL, destinationURL)
+            if startedCopies.recorded.count == 1 {
+                withUnsafeCurrentTask { $0?.cancel() }
+            }
+        }
+        let store = EntryOperationsTestSupport.makeObservedStore(observeAction: actionRecorder.record) {
+            $0.entryFileOpsClient = fileOps
+        }
+        // store.exhaustivity = .off: 취소된 effect의 terminal과 최종 aggregate만 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.acceptedCommand(
+            metadata: metadata,
+            action: .clipboard(.performDrop(
+                sourcePaths: sourceURLs.map(\.path),
+                destinationPath: destinationFolder.path,
+                isOptionDrag: true,
+            )),
+        ))
+        await store.finish()
+        await store.skipReceivedActions()
+
+        try assertCancelledProviderDropRecord(
+            in: actionRecorder.recorded,
+            metadata: metadata,
+            sourceURLs: sourceURLs,
+            destinationFolder: destinationFolder,
+        )
+        XCTAssertEqual(store.state.undoRecords.count, 1)
+        XCTAssertEqual(mutationImpacts(in: actionRecorder.recorded), [
+            EntryOperationsMutationImpact(
+                sourceParentPaths: [sandbox.fileURL.path],
+                destinationPath: destinationFolder.path,
+            ),
+        ])
+        XCTAssertEqual(startedCopies.recorded, [sourceURLs[0].path])
+    }
+
+    private func assertCancelledProviderDropRecord(
+        in actions: [EntryOperationsAction],
+        metadata: EntryCommandMetadata,
+        sourceURLs: [URL],
+        destinationFolder: URL,
+    ) throws {
+        let records = actions.compactMap { action -> EntryActionRecord? in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return nil }
+            return record
+        }
+        XCTAssertEqual(records.count, 1)
+        let record = try XCTUnwrap(records.first)
+        XCTAssertEqual(record.command, metadata)
+        XCTAssertEqual(record.operationKind, .pasteFileCopy)
+        XCTAssertEqual(record.attemptedCount, 3)
+        XCTAssertEqual(record.succeededCount, 1)
+        XCTAssertEqual(record.failedCount, 0)
+        XCTAssertEqual(record.cancelledCount, 2)
+        XCTAssertEqual(record.targets.map(\.beforePath), [sourceURLs[0].path])
+        XCTAssertEqual(record.targets.map(\.afterPath), [
+            destinationFolder.appendingPathComponent(sourceURLs[0].lastPathComponent).path,
+        ])
+    }
+
+    private func makeCancelledDropMetadata() throws -> EntryCommandMetadata {
+        try EntryCommandMetadata(
+            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000522")),
+            interaction: .copyEntries,
+            source: .dragAndDrop,
+        )
+    }
+
     /// 모든 provider mutation이 실패하면 outward success outcome을 내보내지 않는다.
     func testProviderDrop_allFailureEmitsNoMutationImpact() async throws {
         let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
@@ -1726,6 +2032,80 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertTrue(fileOpsRecorder.movedPaths.isEmpty)
         XCTAssertTrue(fileOpsRecorder.copiedPaths.isEmpty)
         XCTAssertTrue(mutationImpacts(in: actionRecorder.recorded).isEmpty)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.fileURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
+    }
+
+    /// EOP-002-provider_drop_impact: 수용된 Sidebar Option-copy provider decode 실패는 취소 terminal을 한 번 보냄
+    /// - 검증 내용: accepted metadata, operation kind, provider 수 기반 cancelled aggregate, 빈 target
+    /// - 사전 조건: 유효한 file URL provider 뒤에 잘못된 file URL data provider가 있는 Option-copy 요청
+    /// - 기대 결과: copy metadata를 보존한 cancelled terminal 한 건만 만들고 filesystem mutation은 없음
+    func testAcceptedProviderDrop_optionCopyDecodeFailureEmitsCancelledTerminal() async throws {
+        try await assertAcceptedProviderDropDecodeFailure(
+            id: "00000000-0000-0000-0000-000000000221",
+            interaction: .copyEntries,
+            operationKind: .pasteFileCopy,
+            isOptionDrag: true,
+        )
+    }
+
+    /// EOP-002-provider_drop_impact: 수용된 Sidebar move provider decode 실패는 취소 terminal을 한 번 보냄
+    /// - 검증 내용: accepted metadata, operation kind, provider 수 기반 cancelled aggregate, 빈 target
+    /// - 사전 조건: 유효한 file URL provider 뒤에 잘못된 file URL data provider가 있는 move 요청
+    /// - 기대 결과: move metadata를 보존한 cancelled terminal 한 건만 만들고 filesystem mutation은 없음
+    func testAcceptedProviderDrop_moveDecodeFailureEmitsCancelledTerminal() async throws {
+        try await assertAcceptedProviderDropDecodeFailure(
+            id: "00000000-0000-0000-0000-000000000222",
+            interaction: .moveEntries,
+            operationKind: .pasteFileMove,
+            isOptionDrag: false,
+        )
+    }
+
+    private func assertAcceptedProviderDropDecodeFailure(
+        id: String,
+        interaction: EntryInteractionIdentity,
+        operationKind: OperationKind,
+        isOptionDrag: Bool,
+    ) async throws {
+        let sandbox = try FixtureSandbox.copyingFile(from: "fixtures/fixtures/texts/plain/11.txt")
+        defer { sandbox.cleanup() }
+        let destination = sandbox.root.appendingPathComponent("RejectedTarget")
+        let metadata = try EntryCommandMetadata(
+            id: XCTUnwrap(UUID(uuidString: id)),
+            interaction: interaction,
+            source: .dragAndDrop,
+        )
+        let validProvider = NSItemProvider(item: sandbox.fileURL as NSURL, typeIdentifier: UTType.fileURL.identifier)
+        let failingProvider = NSItemProvider()
+        failingProvider.registerDataRepresentation(forTypeIdentifier: UTType.fileURL.identifier, visibility: .all) {
+            $0(Data("not-a-file-url".utf8), nil)
+            return nil
+        }
+        let mutationCalls = LockIsolated(0)
+        let reloadRecorder = CallRecorder<[String]>()
+        var fileOps = EntryFileOpsClient.previewValue
+        fileOps.pasteFile = { _, _ in mutationCalls.withValue { $0 += 1 } }
+        fileOps.moveFile = { _, _ in mutationCalls.withValue { $0 += 1 } }
+        fileOps.postFileSystemChanged = reloadRecorder.record
+        let store = EntryOperationsTestSupport.makeStore(initialState: .init()) { $0.entryFileOpsClient = fileOps }
+
+        await store.send(.acceptedCommand(metadata: metadata, action: .routing(.handleDrop(
+            providers: [validProvider, failingProvider],
+            destinationPath: destination.path,
+            isOptionDrag: isOptionDrag,
+        ))))
+        await store.receive { action in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return false }
+            return record.command == metadata && record.operationKind == operationKind
+                && record.attemptedCount == 2 && record.cancelledCount == 2
+                && record.succeededCount == 0 && record.failedCount == 0 && record.targets.isEmpty
+        }
+        await store.finish()
+
+        XCTAssertEqual(mutationCalls.value, 0)
+        XCTAssertTrue(reloadRecorder.recorded.isEmpty)
+        XCTAssertTrue(store.state.undoRecords.isEmpty)
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.fileURL.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: sandbox.originalFixture.path))
     }
@@ -2728,7 +3108,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         let receiver = FilePromiseReceiverSpy(names: ["a.txt"])
         _ = client.begin([receiver], [], "/dest", false, [], [], [])
         XCTAssertNotNil(receiver.receivedOperationQueue)
-        XCTAssertFalse(receiver.receivedOperationQueue === OperationQueue.main)
+        XCTAssertNotIdentical(receiver.receivedOperationQueue, OperationQueue.main)
     }
 
     /// EOP-002-import_external_objects (VOY-736 회귀): AppKit이 reader 콜백을 non-main
@@ -4218,10 +4598,14 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         )
 
         let events: [ExternalDropAcquisitionEvent] = await collectEvents(from: client.events(request.sessionID))
-        XCTAssertEqual(events.compactMap { event -> ExternalDropReceivedFile? in
-            guard case let .received(file) = event else { return nil }
-            return file
-        }.map(\.stagedPath), [claimedContainer(staging).appendingPathComponent("a.txt").path])
+        XCTAssertEqual(
+            events.compactMap { event -> ExternalDropReceivedFile? in
+                guard case let .received(file) = event else { return nil }
+                return file
+            }
+            .map(\.stagedPath),
+            [claimedContainer(staging).appendingPathComponent("a.txt").path],
+        )
         XCTAssertEqual(events.last, .failed(request.sessionID, .callbackError))
     }
 
@@ -4727,8 +5111,12 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             sessionID: request.sessionID, itemOrdinal: 1, callbackOrdinal: 0, stagedPath: "/staging/a.txt",
         )
 
-        await store.send(.externalDrop(.accepted(request: request))) {
-            $0.activeExternalDrop = .init(request: request)
+        await store.send(.externalDrop(.accepted(
+            request: request,
+            command: externalDropTestCommand,
+            logicalItemCount: 2,
+        ))) {
+            $0.activeExternalDrop = .init(request: request, command: externalDropTestCommand, logicalItemCount: 2)
             $0.externalObjectImportStatus = .pending
         }
         await store.send(.externalDrop(.event(.received(file)))) {
@@ -4753,8 +5141,12 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             sessionID: request.sessionID, itemOrdinal: 1, callbackOrdinal: 0, stagedPath: "/staging/a.txt",
         )
 
-        await store.send(.externalDrop(.accepted(request: request))) {
-            $0.activeExternalDrop = .init(request: request)
+        await store.send(.externalDrop(.accepted(
+            request: request,
+            command: externalDropTestCommand,
+            logicalItemCount: 2,
+        ))) {
+            $0.activeExternalDrop = .init(request: request, command: externalDropTestCommand, logicalItemCount: 2)
             $0.externalObjectImportStatus = .pending
         }
         await store.send(.externalDrop(.event(.received(file)))) {
@@ -4764,6 +5156,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             $0.activeExternalDrop = nil
             $0.externalObjectImportStatus = .failed
         }
+        await store.receive(\.lifecycle.entryActionCompleted)
         await store.finish()
 
         XCTAssertEqual(store.state.externalObjectImportStatus, .failed)
@@ -4787,8 +5180,12 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             sessionID: request.sessionID, itemOrdinal: 2, callbackOrdinal: 1, stagedPath: "/staging/b.txt",
         )
 
-        await store.send(.externalDrop(.accepted(request: request))) {
-            $0.activeExternalDrop = .init(request: request)
+        await store.send(.externalDrop(.accepted(
+            request: request,
+            command: externalDropTestCommand,
+            logicalItemCount: 2,
+        ))) {
+            $0.activeExternalDrop = .init(request: request, command: externalDropTestCommand, logicalItemCount: 2)
             $0.externalObjectImportStatus = .pending
         }
         await store.send(.externalDrop(.event(.received(fileA)))) {
@@ -4803,6 +5200,8 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         let expectedPlan = ExternalDropImportPlan(
             sessionID: request.sessionID,
             destination: request.destination,
+            command: externalDropTestCommand,
+            logicalItemCount: 2,
             forcedCopy: request.forcedCopy,
             orderedPromisedNames: request.orderedPromisedNames,
             promisedOrdinals: request.promisedOrdinals,
@@ -4826,8 +5225,12 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         let request = makeMixedAcceptedRequest()
         let otherSession = ExternalDropSessionID(rawValue: "other-session")
 
-        await store.send(.externalDrop(.accepted(request: request))) {
-            $0.activeExternalDrop = .init(request: request)
+        await store.send(.externalDrop(.accepted(
+            request: request,
+            command: externalDropTestCommand,
+            logicalItemCount: 2,
+        ))) {
+            $0.activeExternalDrop = .init(request: request, command: externalDropTestCommand, logicalItemCount: 2)
             $0.externalObjectImportStatus = .pending
         }
         await store.send(.externalDrop(.event(.received(ExternalDropReceivedFile(
@@ -4852,14 +5255,19 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         let (store, recorder) = makeExternalDropBarrierHarness()
         let request = makeMixedAcceptedRequest()
 
-        await store.send(.externalDrop(.accepted(request: request))) {
-            $0.activeExternalDrop = .init(request: request)
+        await store.send(.externalDrop(.accepted(
+            request: request,
+            command: externalDropTestCommand,
+            logicalItemCount: 2,
+        ))) {
+            $0.activeExternalDrop = .init(request: request, command: externalDropTestCommand, logicalItemCount: 2)
             $0.externalObjectImportStatus = .pending
         }
         await store.send(.externalDrop(.cancelSession(request.sessionID))) {
             $0.activeExternalDrop = nil
             $0.externalObjectImportStatus = nil
         }
+        await store.receive(\.lifecycle.entryActionCompleted)
         await store.finish()
 
         XCTAssertEqual(recorder.cancels.count, 1)
@@ -4879,8 +5287,12 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         let request = makeMixedAcceptedRequest()
         let newWindowID = UUID()
 
-        await store.send(.externalDrop(.accepted(request: request))) {
-            $0.activeExternalDrop = .init(request: request)
+        await store.send(.externalDrop(.accepted(
+            request: request,
+            command: externalDropTestCommand,
+            logicalItemCount: 2,
+        ))) {
+            $0.activeExternalDrop = .init(request: request, command: externalDropTestCommand, logicalItemCount: 2)
             $0.externalObjectImportStatus = .pending
         }
         await store.send(.lifecycle(.windowIDChanged(newWindowID))) {
@@ -4888,6 +5300,7 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
             $0.activeExternalDrop = nil
             $0.externalObjectImportStatus = nil
         }
+        await store.receive(\.lifecycle.entryActionCompleted)
         await store.finish()
 
         XCTAssertNil(store.state.activeExternalDrop)
@@ -4917,8 +5330,12 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         let request = makeMixedAcceptedRequest()
         let newWindowID = UUID()
 
-        await store.send(.externalDrop(.accepted(request: request))) {
-            $0.activeExternalDrop = .init(request: request)
+        await store.send(.externalDrop(.accepted(
+            request: request,
+            command: externalDropTestCommand,
+            logicalItemCount: 2,
+        ))) {
+            $0.activeExternalDrop = .init(request: request, command: externalDropTestCommand, logicalItemCount: 2)
             $0.externalObjectImportStatus = .pending
         }
         await store.send(.lifecycle(.resetForDuplicate(windowID: newWindowID))) {
@@ -5926,6 +6343,52 @@ final class EOP002ArrangeEntriesTests: XCTestCase {
         XCTAssertEqual(cleanup.finishes, [sessionID])
         XCTAssertTrue(cleanup.cancels.isEmpty)
     }
+
+    /// EOP-002-import_external_objects: stale importFinished는 newer placement를 지우지 않는다.
+    /// - 검증 내용: old session 결과는 newer placement/command를 유지하고 matching 결과만 clear한다.
+    /// - 사전 조건: newer session의 placement state가 이미 설치되어 있다.
+    /// - 기대 결과: stale/duplicate 결과는 no-op이고 matching 결과는 정확히 한 번 clear한다.
+    func testExternalDropImport_staleImportFinishedCannotClearNewerPlacement() {
+        let oldSessionID = ExternalDropSessionID(rawValue: "old-session")
+        let newSessionID = ExternalDropSessionID(rawValue: "new-session")
+        let command = EntryCommandMetadata(
+            id: UUID(),
+            interaction: .copyEntries,
+            source: .dragAndDrop,
+        )
+        var state = EntryOperationsState()
+        state.externalDropImportPlacement = ExternalDropImportPlacementState(
+            sessionID: newSessionID,
+            destination: "/destination",
+            command: command,
+            logicalItemCount: 1,
+            pendingPaths: ["/staging/item"],
+        )
+        let staleResult = ExternalDropImportResult(
+            sessionID: oldSessionID,
+            succeededPaths: [],
+            failedPaths: [],
+            status: .failed,
+        )
+        let matchingResult = ExternalDropImportResult(
+            sessionID: newSessionID,
+            succeededPaths: ["/destination/item"],
+            failedPaths: [],
+            status: .applied,
+        )
+        let reducer = EntryExternalDropOperationsReducer()
+
+        _ = reducer.reduce(into: &state, action: .externalDrop(.importFinished(staleResult)))
+        XCTAssertEqual(state.externalDropImportPlacement?.sessionID, newSessionID)
+        XCTAssertEqual(state.externalDropImportPlacement?.command, command)
+
+        _ = reducer.reduce(into: &state, action: .externalDrop(.importFinished(matchingResult)))
+        XCTAssertNil(state.externalDropImportPlacement)
+
+        _ = reducer.reduce(into: &state, action: .externalDrop(.importFinished(staleResult)))
+        _ = reducer.reduce(into: &state, action: .externalDrop(.importFinished(matchingResult)))
+        XCTAssertNil(state.externalDropImportPlacement)
+    }
 }
 
 /// begin seam이 지연 flavor를 받으므로(코멘트 #3837956591) 고정 바이트 flavor를 감싼다.
@@ -6058,7 +6521,10 @@ private final class CutSessionRecorder: @unchecked Sendable {
     }
 }
 
-private func makeClipboardClient(recorder: ClipboardRecorder) -> PasteboardClient {
+private func makeClipboardClient(
+    recorder: ClipboardRecorder,
+    setStringResult: @Sendable @escaping (String, NSPasteboard.PasteboardType) -> Bool = { _, _ in true },
+) -> PasteboardClient {
     .init(
         changeCount: { 0 },
         clearContents: {
@@ -6071,7 +6537,7 @@ private func makeClipboardClient(recorder: ClipboardRecorder) -> PasteboardClien
         readObjects: { _, _ in nil },
         setString: { string, type in
             recorder.recordSetString(string, type: type)
-            return true
+            return setStringResult(string, type)
         },
         string: { _ in nil },
     )

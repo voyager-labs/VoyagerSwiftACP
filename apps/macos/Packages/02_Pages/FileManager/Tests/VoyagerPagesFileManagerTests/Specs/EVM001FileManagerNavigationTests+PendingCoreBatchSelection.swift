@@ -1,7 +1,7 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesEntry
-import VoyagerFeaturesEntryOperations
+@testable import VoyagerFeaturesEntryOperations
 @testable import VoyagerPagesFileManager
 import XCTest
 
@@ -120,6 +120,8 @@ extension EVM001FileManagerNavigationTests {
                 AsyncThrowingStream { _ in }
             }
         }
+        // store.exhaustivity = .off: internal directoryPath materialization보다 pending-selection generation 결속을 검증한다.
+        store.exhaustivity = .off
 
         await store.send(.entryViewLayout(.entryOperations(.loading(.streamEvent(.init(
             generation: 7,
@@ -154,6 +156,7 @@ extension EVM001FileManagerNavigationTests {
             $0.entryViewLayout.entryOperations.loadingContext.generation = 8
             $0.entryViewLayout.entryOperations.loadingContext.expectedCoreBatchIndex = 0
             $0.entryViewLayout.entryOperations.loadingContext.sourceKind = .directory
+            $0.entryViewLayout.entryOperations.loadingContext.directoryPath = parentPath
             $0.entryViewLayout.entryOperations.isLoading = true
             $0.pendingSelectEntryLoadGeneration = 8
         }

@@ -71,7 +71,7 @@ struct FileManagerContentPendingSelectionReducer {
 
         switch action {
         case let .entryViewLayout(.entryOperations(.loading(.streamFinished(generation)))),
-             let .entryViewLayout(.entryOperations(.loading(.streamFailed(generation)))):
+             let .entryViewLayout(.entryOperations(.loading(.streamFailed(generation, _)))):
             // 네비게이션 기원 pending은 목적지 로드 세대에 바인딩된 경우에만 소비한다.
             // 목적지 loadItems가 세대를 증가시키기 전에 도착한 이전 로딩의 터미널은 무시한다.
             guard generation == state.entryViewLayout.entryOperations.loadingContext.generation,
@@ -89,10 +89,10 @@ struct FileManagerContentPendingSelectionReducer {
             state.setPendingEntrySelection(entryID: nil, destinationPath: nil)
             return .none
 
-        case .entryViewLayout(.entryOperations(.loading(.itemsLoadFailed))):
-            // itemsLoadFailed는 바인딩된 pending 세대가 현재 로딩 세대와 일치할 때만 pending을 정리한다.
-            guard state.pendingSelectEntryLoadGeneration == state.entryViewLayout.entryOperations.loadingContext
-                .generation
+        case let .entryViewLayout(.entryOperations(.loading(.computerItemsLoadFailed(generation)))):
+            // Computer 실패는 바인딩된 pending 세대와 현재 로딩 세대가 모두 일치할 때만 pending을 정리한다.
+            guard generation == state.entryViewLayout.entryOperations.loadingContext.generation,
+                  state.pendingSelectEntryLoadGeneration == generation
             else {
                 return .none
             }
@@ -125,7 +125,8 @@ struct FileManagerContentPendingSelectionReducer {
             state.pendingSelectEntryLoadGeneration = state.entryViewLayout.entryOperations.loadingContext
                 .generation
             return .none
-        case let .entryViewLayout(.entryOperations(.loading(.itemsLoaded(loadedEntries)))):
+        case let .entryViewLayout(.entryOperations(.loading(.itemsLoaded(generation, loadedEntries)))):
+            guard generation == state.entryViewLayout.entryOperations.loadingContext.generation else { return .none }
             return handleLegacyItemsLoaded(loadedEntries, state: &state)
         case .entryViewLayout(.entryOperations(.loading(.streamEvent))):
             return .none

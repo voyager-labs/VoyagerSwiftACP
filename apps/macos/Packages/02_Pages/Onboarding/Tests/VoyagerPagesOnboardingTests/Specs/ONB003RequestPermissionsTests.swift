@@ -51,18 +51,21 @@ final class ONB003RequestPermissionsTests: XCTestCase {
     /// ONB-003-request_onboarding_permission_access: FDA 요청 후 거부 상태가 유지될 때 응답을 처리하면 denied 상태와 blocking을 유지한다.
     /// 사용자가 시스템 설정 열기를 시도한 후 FDA가 여전히 거부 상태인 경우를 검증합니다.
     ///
-    /// - 검증 내용: systemSettingsOpenResult(true)로 hasAttemptedFullDiskAccessEnable를 true로
+    /// - 검증 내용: systemSettingsOpenResult(operationID, true)로 hasAttemptedFullDiskAccessEnable를 true로
     ///   설정한 후, fullDiskAccessStatusResponse(.needsAction)이 오면
     ///   fullDiskAccessStatus가 `.denied`로 처리됩니다.
     ///   사용자가 시도했으나 권한을 부여하지 않은 경우 `.needsAction` → `.denied` 전환을 보장합니다.
     /// - 사전 조건: 의존성 기본값.
     /// - 기대 결과: fullDiskAccessStatus == `.denied`, isComplete == false.
-    func testFullDiskAccessDeniedAfterAttempt() async {
-        let store = TestStore(initialState: PermissionsFeature.State()) {
+    func testFullDiskAccessDeniedAfterAttempt() async throws {
+        let operationID = try XCTUnwrap(UUID(uuidString: "11111111-1111-1111-1111-111111111111"))
+        var initialState = PermissionsFeature.State()
+        initialState.pendingFullDiskAccessOperationID = operationID
+        let store = TestStore(initialState: initialState) {
             PermissionsFeature()
         }
 
-        await store.send(.systemSettingsOpenResult(true)) { state in
+        await store.send(.systemSettingsOpenResult(operationID, true)) { state in
             state.systemSettingsError = nil
             state.hasAttemptedFullDiskAccessEnable = true
         }
@@ -79,18 +82,21 @@ final class ONB003RequestPermissionsTests: XCTestCase {
     /// ONB-003-request_onboarding_permission_access: 시스템 설정 열기가 실패할 때 FDA action을 실행하면 retry 가능한 error를 표시한다.
     /// 시스템 설정 열기 실패 시 에러 메시지가 표시되는지 검증합니다.
     ///
-    /// - 검증 내용: systemSettingsOpenResult(false)가 반환되면 systemSettingsError에
+    /// - 검증 내용: systemSettingsOpenResult(operationID, false)가 반환되면 systemSettingsError에
     ///   "We couldn't open System Settings. Please open it manually." 메시지가 설정되고,
     ///   hasAttemptedFullDiskAccessEnable는 false로 유지됩니다.
     ///   시스템 설정 URL 열기 실패는 사용자 환경에서 발생할 수 있는 예외 상황입니다.
     /// - 사전 조건: 의존성 기본값.
     /// - 기대 결과: systemSettingsError != nil, hasAttemptedFullDiskAccessEnable == false.
-    func testOpenSystemSettingsFailureShowsError() async {
-        let store = TestStore(initialState: PermissionsFeature.State()) {
+    func testOpenSystemSettingsFailureShowsError() async throws {
+        let operationID = try XCTUnwrap(UUID(uuidString: "22222222-2222-2222-2222-222222222222"))
+        var initialState = PermissionsFeature.State()
+        initialState.pendingFullDiskAccessOperationID = operationID
+        let store = TestStore(initialState: initialState) {
             PermissionsFeature()
         }
 
-        await store.send(.systemSettingsOpenResult(false)) { state in
+        await store.send(.systemSettingsOpenResult(operationID, false)) { state in
             state.systemSettingsError = "We couldn't open System Settings. Please open it manually."
             state.hasAttemptedFullDiskAccessEnable = false
         }
@@ -167,17 +173,50 @@ final class ONB003RequestPermissionsTests: XCTestCase {
     ///   hasAttemptedFullDiskAccessEnable가 true로 설정됩니다.
     /// - 사전 조건: systemSettingsClient openFullDiskAccess가 true 반환.
     /// - 기대 결과: hasAttemptedFullDiskAccessEnable == true.
-    func testOpenSystemSettingsTappedCallsSystemSettingsClient() async {
+    func testOpenSystemSettingsTappedCallsSystemSettingsClient() async throws {
+        let operationID = try XCTUnwrap(UUID(uuidString: "33333333-3333-3333-3333-333333333333"))
         let store = TestStore(initialState: PermissionsFeature.State()) {
             PermissionsFeature()
         } withDependencies: {
             $0.systemSettingsClient = SystemSettingsClient(openFullDiskAccess: { true })
+            $0.uuid = .constant(operationID)
+        }
+
+        await store.send(.openSystemSettingsTapped)
+        await store.receive(\.systemSettingsOpenResult) { state in
+            state.pendingFullDiskAccessOperationID = operationID
+            state.hasAttemptedFullDiskAccessEnable = true
+        }
+        await store.finish()
+    }
+
+    /// ONB-003-request_onboarding_permission_access: FDA 설정 열기 요청이 pending일 때 두 번째 탭을 보내도 첫 요청만 유지한다.
+    /// 중복 탭이 시스템 설정 열기 client를 재호출하거나 첫 correlation ID를 덮어쓰지 않는지 검증합니다.
+    ///
+    /// - 검증 내용: 첫 요청의 UUID를 주입하고 성공 결과를 받은 뒤 두 번째 탭을 전송합니다.
+    /// - 사전 조건: 첫 FDA 설정 열기 요청이 성공했고 성공 결과가 pending 상태를 유지합니다.
+    /// - 기대 결과: client 호출은 1회이고 pending ID는 첫 요청 UUID입니다.
+    func testOpenSystemSettingsTappedIgnoresSecondTapWhilePending() async throws {
+        let operationID = try XCTUnwrap(UUID(uuidString: "55555555-5555-5555-5555-555555555555"))
+        let openCount = LockIsolated(0)
+        let store = TestStore(initialState: PermissionsFeature.State()) {
+            PermissionsFeature()
+        } withDependencies: {
+            $0.uuid = .constant(operationID)
+            $0.systemSettingsClient = SystemSettingsClient(openFullDiskAccess: {
+                openCount.withValue { $0 += 1 }
+                return true
+            })
         }
 
         await store.send(.openSystemSettingsTapped)
         await store.receive(\.systemSettingsOpenResult) { state in
             state.hasAttemptedFullDiskAccessEnable = true
         }
+        await store.send(.openSystemSettingsTapped)
+
+        XCTAssertEqual(openCount.value, 1)
+        XCTAssertEqual(store.state.pendingFullDiskAccessOperationID, operationID)
         await store.finish()
     }
 
@@ -337,19 +376,22 @@ final class ONB003RequestPermissionsTests: XCTestCase {
     /// 회복한다.
     /// FDA 권한이 거부에서 허용으로 전환되는 재시도 성공 시나리오를 검증합니다.
     ///
-    /// - 검증 내용: systemSettingsOpenResult(true)로 시도 기록 후
+    /// - 검증 내용: systemSettingsOpenResult(operationID, true)로 시도 기록 후
     ///   fullDiskAccessStatusResponse(.needsAction)에서 `.denied`로 처리되고,
     ///   이후 fullDiskAccessStatusResponse(.granted)에서 권한이 허용으로 전환됩니다.
     ///   단, 헬퍼 접근 상태가 아직 로드되지 않았으므로 nextDisabledMessage는 여전히 존재합니다.
     /// - 사전 조건: 의존성 기본값.
     /// - 기대 결과: 최종 fullDiskAccessStatus == `.granted`, nextDisabledMessage != nil
     ///   (헬퍼 상태 미확정으로 인해).
-    func testFDARetryFromDeniedToGranted() async {
-        let store = TestStore(initialState: PermissionsFeature.State()) {
+    func testFDARetryFromDeniedToGranted() async throws {
+        let operationID = try XCTUnwrap(UUID(uuidString: "44444444-4444-4444-4444-444444444444"))
+        var initialState = PermissionsFeature.State()
+        initialState.pendingFullDiskAccessOperationID = operationID
+        let store = TestStore(initialState: initialState) {
             PermissionsFeature()
         }
 
-        await store.send(.systemSettingsOpenResult(true)) { state in
+        await store.send(.systemSettingsOpenResult(operationID, true)) { state in
             state.hasAttemptedFullDiskAccessEnable = true
         }
         await store.send(.fullDiskAccessStatusResponse(.needsAction)) { state in

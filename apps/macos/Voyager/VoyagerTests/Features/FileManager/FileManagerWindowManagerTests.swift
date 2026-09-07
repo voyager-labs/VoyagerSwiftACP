@@ -1199,20 +1199,40 @@ final class FileManagerWindowManagerTests: XCTestCase {
     func test_newTabCommand_routesToFocusedFileManagerWindow() async {
         let focusedID = UUID()
         let otherID = UUID()
+        let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 22))
+        let metrics = LockIsolated<[FileManagerProductMetric]>([])
 
         let store = makeStore(initialState: makeState(
             focusedID: focusedID,
             windows: [(focusedID, Spec.focusedPath), (otherID, Spec.backgroundPath)],
-        ))
+        )) {
+            $0.fileManagerProductMetricsClient = .init(
+                record: { metric in metrics.withValue { $0.append(metric) } },
+                makeOperationID: { operationID },
+            )
+        }
         store.exhaustivity = .off
 
         await store.send(.file(.newTab))
         await store.receive { action in
-            guard case let .windows(.element(id: id, action: .window(.request(.openNewContentTab)))) = action else {
+            guard case let .windows(.element(
+                id: id,
+                action: .window(.request(.openNewContentTab(source: source))),
+            )) = action else {
                 return false
             }
-            return id == focusedID
+            return id == focusedID && source == .menuCommand
         }
+        await store.skipReceivedActions(strict: false)
+
+        XCTAssertEqual(metrics.value, [
+            .contentTabAction(
+                result: .success,
+                identity: .openNewContentTab,
+                source: .menuCommand,
+                operationID: operationID,
+            ),
+        ])
     }
 
     /// CTM-001-open_new_content_tab: focused window가 없으면 새 Content Tab 입력은 no-op.

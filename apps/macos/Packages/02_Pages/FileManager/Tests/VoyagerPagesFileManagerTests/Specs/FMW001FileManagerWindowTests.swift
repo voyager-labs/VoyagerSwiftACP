@@ -2,15 +2,54 @@ import AppKit
 import ComposableArchitecture
 import Foundation
 import PerceptionCore
+import QuickLookUI
 import SwiftUI
 import UniformTypeIdentifiers
+import VoyagerEntitiesAi
 import VoyagerEntitiesAppPreferences
 import VoyagerEntitiesEntry
+import VoyagerFeaturesAiChat
+import VoyagerFeaturesComposer
 import VoyagerFeaturesEntryOperations
 @testable import VoyagerPagesFileManager
 import VoyagerShared
 import VoyagerWidgetsEntryViewLayout
 import XCTest
+
+private actor FMW001SearchCancellationGate {
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var startWaiters: [CheckedContinuation<Void, Never>] = []
+    private var wasCancelled = false
+
+    func wait() async throws -> SearchResponsePayload {
+        try await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                self.continuation = continuation
+                let waiters = startWaiters
+                startWaiters.removeAll()
+                waiters.forEach { $0.resume() }
+            }
+            throw CancellationError()
+        } onCancel: {
+            Task { await self.cancel() }
+        }
+    }
+
+    func waitUntilStarted() async {
+        guard continuation == nil else { return }
+        await withCheckedContinuation { startWaiters.append($0) }
+    }
+
+    func cancellationObserved() -> Bool {
+        wasCancelled
+    }
+
+    private func cancel() {
+        wasCancelled = true
+        continuation?.resume()
+        continuation = nil
+    }
+}
 
 @MainActor
 final class FMW001FileManagerWindowTests: XCTestCase {
@@ -49,7 +88,367 @@ final class FMW001FileManagerWindowTests: XCTestCase {
             .selectAll,
             .copyAbsolutePaths,
             .copyURLs,
+            .getInfo,
         ]
+    }
+
+    // MARK: - FMW-001-close_file_manager_window
+
+    /// FMW-001-close_file_manager_window: window teardown은 모든 child operation을 정확히 한 번 terminalize한다.
+    /// canonical child cleanup을 모든 content, inspector, tab snapshot, background AI owner에 적용한다.
+    /// - 검증 내용: unique operation별 cancelled terminal, alias dedupe, correlation 소비, 반복 teardown과 late response no-op.
+    /// - 사전 조건: accepted AiChat operation과 active Composer query/apply가 모든 합법적 window-owned 저장소에 존재한다.
+    /// - 기대 결과: unique operation마다 terminal이 1회 기록되고 모든 owner state가 idle이 된다.
+    func testOnDisappearTerminalizesEveryUniqueWindowOwnedChildOperationOnce() async throws {
+        let aiMetrics = LockIsolated<[AiChatProductMetric]>([])
+        let composerMetrics = LockIsolated<[ComposerProductMetric]>([])
+        let activeTabID = try XCTUnwrap(FileManagerWindowState().contentTabs.activeTabID)
+        let inactiveTabID = ContentTabID(rawValue: "teardown-inactive")
+        let aiOperationIDs = (0 ..< 6).map { _ in UUID() }
+        let queryOperationID = UUID()
+        let applyOperationID = UUID()
+
+        let activeAiChat = makeAcceptedAiChatState(operationID: aiOperationIDs[0], surface: .aiChatContent)
+        let inspectorAiChat = makeAcceptedAiChatState(operationID: aiOperationIDs[1], surface: .aiChatInspector)
+        let inactiveAiChat = makeAcceptedAiChatState(operationID: aiOperationIDs[2], surface: .aiChatContent)
+        let inactiveInspectorAiChat = makeAcceptedAiChatState(
+            operationID: aiOperationIDs[3],
+            surface: .aiChatInspector,
+        )
+        let backgroundAiChat = makeAcceptedAiChatState(operationID: aiOperationIDs[4], surface: .aiChatContent)
+        let backgroundInspectorAiChat = makeAcceptedAiChatState(
+            operationID: aiOperationIDs[5],
+            surface: .aiChatInspector,
+        )
+
+        var state = FileManagerWindowState()
+        state.contentTabs.tabs.append(ContentTabItem(
+            id: inactiveTabID,
+            page: .directory,
+            anchor: .directory(path: "/tmp/inactive"),
+            isPinned: false,
+            title: "Inactive",
+            iconName: "folder",
+        ))
+        state.content.aiChat = activeAiChat.state
+        state.content.composer = makeActiveComposerQuery(operationID: queryOperationID)
+        state.tabContentStates[activeTabID] = state.content
+
+        var inactiveContent = FileManagerContentFeature.State()
+        inactiveContent.aiChat = inactiveAiChat.state
+        inactiveContent.composer = makeActiveComposerApply(operationID: applyOperationID)
+        state.tabContentStates[inactiveTabID] = inactiveContent
+
+        state.inspector.aiChat = inspectorAiChat.state
+        state.tabInspectorStates[activeTabID] = state.inspector.tabSnapshot()
+        var inactiveInspector = FileManagerInspectorFeature.State()
+        inactiveInspector.aiChat = inactiveInspectorAiChat.state
+        state.tabInspectorStates[inactiveTabID] = inactiveInspector.tabSnapshot()
+
+        var backgroundContent = FileManagerContentFeature.State()
+        backgroundContent.aiChat = backgroundAiChat.state
+        let backgroundSessionID = try XCTUnwrap(backgroundAiChat.state.sessionID)
+        state.backgroundAiChatStates[backgroundSessionID] = backgroundContent
+        var backgroundInspector = FileManagerInspectorFeature.State()
+        backgroundInspector.aiChat = backgroundInspectorAiChat.state
+        let backgroundInspectorSessionID = try XCTUnwrap(backgroundInspectorAiChat.state.sessionID)
+        state.backgroundInspectorAiChatStates[backgroundInspectorSessionID] = backgroundInspector
+
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.aiChatProductMetricsClient = AiChatProductMetricsClient { metric in
+                aiMetrics.withValue { $0.append(metric) }
+            }
+            $0.composerMetricClient = ComposerMetricClient(recordProductMetric: { metric in
+                composerMetrics.withValue { $0.append(metric) }
+            })
+        }
+        // store.exhaustivity = .off: teardown은 기존 window close cancellation effect 전체를 함께 반환한다.
+        store.exhaustivity = .off
+
+        await store.send(.onDisappear)
+
+        XCTAssertEqual(cancelledAiChatOperationIDs(aiMetrics.value), Set(aiOperationIDs))
+        XCTAssertEqual(cancelledComposerOperationIDs(composerMetrics.value), [queryOperationID, applyOperationID])
+        assertWindowChildCorrelationsConsumed(store.state)
+
+        await store.send(.onDisappear)
+        await store.send(.content(.aiChat(.executionEvent(.final(response: AiChatResponse(
+            context: activeAiChat.context,
+            assistantMessage: AiChatMessage(role: .assistant, content: "late"),
+            completedAtMs: 1,
+        ))))))
+        await store.send(.content(.composer(.internal(.searchResponse(
+            queryOperationID,
+            .success(SearchResponsePayload(itemCount: 1)),
+        )))))
+        await store.finish()
+
+        XCTAssertEqual(cancelledAiChatOperationIDs(aiMetrics.value), Set(aiOperationIDs))
+        XCTAssertEqual(cancelledComposerOperationIDs(composerMetrics.value), [queryOperationID, applyOperationID])
+    }
+
+    /// FMW-001-close_file_manager_window: teardown terminalizes active and cached browsing correlations once.
+    /// active correlation A, cached alias A, cached inactive B가 window teardown에서 exactly-once unavailable
+    /// terminalize되는지 검증한다.
+    /// - 검증 내용: onDisappear의 A+B metric count, alias dedupe, 다섯 correlation field clear, 반복 teardown 무중복
+    /// - 사전 조건: active content A, inactive cached alias A, inactive cached content B와 기존 AiChat/Composer operation이
+    /// 존재한다.
+    /// - 기대 결과: A와 B unavailable metric만 기록되고 active/cached browsing state 및 기존 child teardown이 모두 정리된다.
+    func testOnDisappearTerminalizesActiveAndCachedBrowsingCorrelationsExactlyOnce() async throws {
+        let aliasTabID = ContentTabID(rawValue: "fmw001-browsing-alias")
+        let secondTabID = ContentTabID(rawValue: "fmw001-browsing-second")
+        let operationA = try XCTUnwrap(UUID(uuidString: "F0010000-0000-0000-0000-000000000001"))
+        let operationB = try XCTUnwrap(UUID(uuidString: "F0010000-0000-0000-0000-000000000002"))
+        var state = FileManagerWindowState()
+        state.contentTabs.tabs.append(contentsOf: [
+            ContentTabItem(
+                id: aliasTabID,
+                page: .directory,
+                anchor: .directory(path: "/tmp/alias"),
+                isPinned: false,
+                title: "Alias",
+                iconName: "folder",
+            ),
+            ContentTabItem(
+                id: secondTabID,
+                page: .directory,
+                anchor: .directory(path: "/tmp/second"),
+                isPinned: false,
+                title: "Second",
+                iconName: "folder",
+            ),
+        ])
+        let activeTabID = try XCTUnwrap(state.contentTabs.activeTabID)
+        state.content.productBrowsingOperationID = operationA
+        state.content.productBrowsingContent = .folder
+        state.content.productBrowsingIdentity = .direct
+        state.content.productBrowsingSource = .fileManagerContent
+        var alias = FileManagerContentFeature.State()
+        alias.productBrowsingOperationID = operationA
+        alias.productBrowsingContent = .folder
+        alias.productBrowsingIdentity = .direct
+        alias.productBrowsingSource = .fileManagerContent
+        state.tabContentStates[aliasTabID] = alias
+        var second = FileManagerContentFeature.State()
+        second.productBrowsingOperationID = operationB
+        second.productBrowsingContent = .folder
+        second.productBrowsingIdentity = .back
+        second.productBrowsingSource = .fileManagerSidebar
+        state.tabContentStates[secondTabID] = second
+
+        let browsingMetrics = LockIsolated<[FileManagerProductMetric]>([])
+        let aiMetrics = LockIsolated<[AiChatProductMetric]>([])
+        let composerMetrics = LockIsolated<[ComposerProductMetric]>([])
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.fileManagerProductMetricsClient = FileManagerProductMetricsClient { metric in
+                browsingMetrics.withValue { $0.append(metric) }
+            }
+            $0.aiChatProductMetricsClient = AiChatProductMetricsClient { metric in
+                aiMetrics.withValue { $0.append(metric) }
+            }
+            $0.composerMetricClient = ComposerMetricClient(recordProductMetric: { metric in
+                composerMetrics.withValue { $0.append(metric) }
+            })
+        }
+        // store.exhaustivity = .off: teardown child effects와 browsing terminal payload에 집중한다.
+        store.exhaustivity = .off
+
+        await store.send(.onDisappear)
+
+        XCTAssertEqual(browsingMetrics.value, [
+            .contentBrowsing(
+                result: .unavailable,
+                content: .folder,
+                identity: .direct,
+                source: .fileManagerContent,
+                operationID: operationA,
+            ),
+            .contentBrowsing(
+                result: .unavailable,
+                content: .folder,
+                identity: .back,
+                source: .fileManagerSidebar,
+                operationID: operationB,
+            ),
+        ])
+        for content in [store.state.content] + Array(store.state.tabContentStates.values) {
+            XCTAssertNil(content.productBrowsingOperationID)
+            XCTAssertNil(content.productBrowsingContent)
+            XCTAssertNil(content.productBrowsingIdentity)
+            XCTAssertNil(content.productBrowsingSource)
+            XCTAssertNil(content.pendingProductBrowsingSource)
+        }
+        XCTAssertEqual(store.state.contentTabs.activeTabID, activeTabID)
+
+        await store.send(.onDisappear)
+        XCTAssertEqual(browsingMetrics.value.count, 2)
+        XCTAssertTrue(aiMetrics.value.allSatisfy { metric in
+            guard case .turnResult(_, _, .cancelled, _) = metric else { return false }
+            return true
+        })
+        XCTAssertTrue(composerMetrics.value.allSatisfy { metric in
+            switch metric {
+            case .queryResult(_, .cancelled, _), .applyResult(_, .cancelled, _): true
+            default: false
+            }
+        })
+    }
+
+    /// FMW-001-close_file_manager_window: window teardown은 child reducer가 반환한 cancellation effect를 실행한다.
+    /// reducer state 정리만으로 끝나지 않고 실제 suspended search task가 취소되는지 검증한다.
+    /// - 검증 내용: onDisappear 이후 search dependency cancellation handler 실행.
+    /// - 사전 조건: active content Composer에서 accepted query effect가 대기 중이다.
+    /// - 기대 결과: teardown effect가 실행되어 suspended query가 취소된다.
+    func testOnDisappearExecutesReturnedChildCancellationEffect() async {
+        let gate = FMW001SearchCancellationGate()
+        var state = FileManagerWindowState()
+        state.content.composer.text = "find invoices"
+        state.content.composer.scopes = ["/tmp"]
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.searchClient.search = { _ in try await gate.wait() }
+        }
+        // store.exhaustivity = .off: UUID 기반 query lifecycle보다 실제 cancellation handler 실행을 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.content(.composer(.submit)))
+        await gate.waitUntilStarted()
+        await store.send(.onDisappear)
+        await store.finish()
+
+        let cancellationObserved = await gate.cancellationObserved()
+        XCTAssertTrue(cancellationObserved)
+    }
+
+    private func makeAcceptedAiChatState(
+        operationID: UUID,
+        surface: AiChatProductMetricSourceSurface,
+    ) -> (state: AiChatFeature.State, context: AiChatRequestContextSnapshot) {
+        let sessionID = AiChatSessionID(rawValue: UUID())
+        let requestID = AiChatRequestID(rawValue: UUID())
+        let runID = AiChatRunID(rawValue: UUID())
+        let modelHandle = AiModelHandle(provider: .openai, rawValue: "gpt-4.1-mini")
+        let modelRow = AiModelCatalogRow(
+            handle: modelHandle,
+            displayName: "GPT-4.1 Mini",
+            authMethod: .apiKey,
+            sortOrder: 10,
+        )
+        let context = AiChatRequestContextSnapshot(
+            sessionID: sessionID,
+            requestID: requestID,
+            runID: runID,
+            provider: .openai,
+            model: modelHandle,
+            selectedModel: AiProviderModel(
+                id: modelHandle,
+                provider: .openai,
+                rawModelID: "gpt-4.1-mini",
+                displayName: "GPT-4.1 Mini",
+                providerDisplayName: "OpenAI",
+                thinkingCapability: .unknown(reason: .init(message: "Not loaded")),
+            ),
+            selectedModelRow: modelRow,
+            sessionStatus: .active,
+            promptSummary: "teardown",
+            submittedAtMs: 0,
+        )
+        let lock = AiChatRequestLock(
+            kind: .submit,
+            requestID: requestID,
+            runID: runID,
+            context: context,
+            request: AiChatRequest(
+                context: context,
+                messages: [AiChatMessage(role: .user, content: "teardown")],
+            ),
+            selectedModelHandle: modelHandle,
+            selectedModelRow: modelRow,
+            assistantReplacementIndex: nil,
+            persistenceTranscriptHistory: nil,
+        )
+        var state = AiChatFeature.State(sessionID: sessionID, sessionStatus: .active)
+        state.executionPhase = .processing(lock)
+        state.productMetricSourceSurface = surface
+        withDependencies {
+            $0.uuid = .constant(operationID)
+        } operation: {
+            _ = AiChatFeature().reduce(
+                into: &state,
+                action: .executionEvent(.requestPrepared(context: context)),
+            )
+        }
+        return (state, context)
+    }
+
+    private func makeActiveComposerQuery(operationID: UUID) -> ComposerFeature.State {
+        var state = ComposerFeature.State()
+        state.isLoadingSearch = true
+        state.activeSearchRequestID = operationID
+        state.lastAcceptedSearchRequestID = operationID
+        state.searchStartedAt = Date(timeIntervalSince1970: 1)
+        state.queryRenderPhase = .searching
+        return state
+    }
+
+    private func makeActiveComposerApply(operationID: UUID) -> ComposerFeature.State {
+        var state = ComposerFeature.State()
+        state.isLoadingFilters = true
+        state.isFilteringInFlight = true
+        state.activeFiltersRequestID = operationID
+        state.lastAcceptedFiltersRequestID = operationID
+        state.filtersStartedAt = Date(timeIntervalSince1970: 1)
+        return state
+    }
+
+    private func cancelledAiChatOperationIDs(_ metrics: [AiChatProductMetric]) -> Set<UUID> {
+        Set(metrics.compactMap { metric in
+            guard case let .turnResult(operationID, _, result, _) = metric,
+                  result == .cancelled
+            else { return nil }
+            return operationID
+        })
+    }
+
+    private func cancelledComposerOperationIDs(_ metrics: [ComposerProductMetric]) -> Set<UUID> {
+        Set(metrics.compactMap { metric in
+            switch metric {
+            case let .queryResult(operationID, result, _) where result == .cancelled:
+                operationID
+            case let .applyResult(operationID, result, _) where result == .cancelled:
+                operationID
+            default:
+                nil
+            }
+        })
+    }
+
+    private func assertWindowChildCorrelationsConsumed(
+        _ state: FileManagerWindowState,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+    ) {
+        let contentStates = [state.content] + Array(state.tabContentStates.values)
+            + Array(state.backgroundAiChatStates.values)
+        for content in contentStates {
+            XCTAssertTrue(content.aiChat.productMetricOperations.isEmpty, file: file, line: line)
+            XCTAssertEqual(content.aiChat.executionPhase, .idle, file: file, line: line)
+        }
+        for content in [state.content] + Array(state.tabContentStates.values) {
+            XCTAssertNil(content.composer.activeSearchRequestID, file: file, line: line)
+            XCTAssertNil(content.composer.activeFiltersRequestID, file: file, line: line)
+        }
+        let inspectorStates = [state.inspector] + Array(state.tabInspectorStates.values)
+            + Array(state.backgroundInspectorAiChatStates.values)
+        for inspector in inspectorStates {
+            XCTAssertTrue(inspector.aiChat.productMetricOperations.isEmpty, file: file, line: line)
+            XCTAssertEqual(inspector.aiChat.executionPhase, .idle, file: file, line: line)
+        }
     }
 
     // MARK: - VOY-578-entry_commands
@@ -103,7 +502,7 @@ final class FMW001FileManagerWindowTests: XCTestCase {
 
     /// VOY-578-entry_commands: 일반 Directory loading 중 모든 전역 entry 명령 차단
     /// stale 선택이 유지되어도 menu capability와 최종 routing이 함께 명령 실행을 막는지 검증한다.
-    /// - 검증 내용: capability false 및 11개 entry command의 하위 action 미방출
+    /// - 검증 내용: capability false 및 12개 entry command의 하위 action 미방출
     /// - 사전 조건: 일반 Directory mode, entry loading 중, stale 선택 ID 유지
     /// - 기대 결과: 모든 entry command가 no-op으로 종료
     func testOrdinaryDirectoryLoadingDisablesAndBlocksAllEntryCommands() async {
@@ -119,11 +518,14 @@ final class FMW001FileManagerWindowTests: XCTestCase {
 
     /// VOY-578-entry_commands: 일반 Directory 정상 상태의 전역 entry 명령 유지
     /// loading이 아닐 때 기존 entry 명령 routing이 모두 보존되는지 검증한다.
-    /// - 검증 내용: capability true 및 11개 entry command의 기존 하위 action 전달
+    /// - 검증 내용: capability true 및 12개 entry command의 기존 하위 action 전달
     /// - 사전 조건: 일반 Directory mode, entry loading 아님, 선택 ID 존재
     /// - 기대 결과: 모든 entry command가 대응하는 하위 reducer로 전달
     func testNormalDirectoryAllowsAllEntryCommands() async {
-        let state = makeSelectedState(isLoading: false, isCollectionMode: false)
+        var state = makeSelectedState(isLoading: false, isCollectionMode: false)
+        let selectedEntry = EntryModel.temporaryFolder(id: "/tmp/selected-entry", name: "selected-entry")
+        state.content.entryViewLayout.selectedIds = [selectedEntry.id]
+        state.content.entryViewLayout.entryOperations.items = [selectedEntry]
         XCTAssertTrue(state.menuCommandProjection.canPerformEntryCommands)
 
         for command in entryCommands {
@@ -133,16 +535,191 @@ final class FMW001FileManagerWindowTests: XCTestCase {
 
     /// VOY-578-entry_commands: Collection loading의 전역 entry 명령 정책 유지
     /// Collection loading은 ordinary Directory loading guard에 포함되지 않는지 검증한다.
-    /// - 검증 내용: capability true 및 11개 entry command의 기존 하위 action 전달
+    /// - 검증 내용: capability true 및 12개 entry command의 기존 하위 action 전달
     /// - 사전 조건: Collection mode, entry loading 중, 선택 ID 존재
     /// - 기대 결과: 모든 entry command가 대응하는 하위 reducer로 전달
     func testCollectionLoadingAllowsAllEntryCommands() async {
-        let state = makeSelectedState(isLoading: true, isCollectionMode: true)
+        var state = makeSelectedState(isLoading: true, isCollectionMode: true)
+        let selectedEntry = EntryModel.temporaryFolder(id: "/tmp/selected-entry", name: "selected-entry")
+        state.content.entryViewLayout.selectedIds = [selectedEntry.id]
+        state.content.entryViewLayout.collectionItems = [selectedEntry]
         XCTAssertTrue(state.menuCommandProjection.canPerformEntryCommands)
 
         for command in entryCommands {
             await assertEntryCommand(command, routesFrom: state)
         }
+    }
+
+    // MARK: - FMW-001-get_info
+
+    /// FMW-001-get_info: 선택 항목이 없으면 현재 폴더를 Get Info 대상으로 라우팅한다.
+    /// App menu Get Info가 focused FileManager window의 active folder를 기존 navigation command로 전달하는지 검증한다.
+    /// - 검증 내용: request(.getInfo)가 navigation.getInfoForPath delegate command를 한 번 방출한다.
+    /// - 사전 조건: 일반 Directory 상태이며 선택 항목이 없고 현재 경로가 /tmp다.
+    /// - 기대 결과: navigation.getInfoForPath가 한 번 수신되고 추가 action은 없다.
+    func testGetInfoWithoutSelectionRoutesActiveFolderPath() async {
+        var state = FileManagerWindowState()
+        state.content.navigation.navigationState = .folder("/tmp")
+        let store = makeStore(initialState: state)
+
+        await store.send(.request(.getInfo))
+        await store.receive {
+            guard case .content(.entryViewLayout(.delegate(.executeCommand(
+                "navigation.getInfoForPath",
+                source: .menuCommand,
+            )))) = $0
+            else { return false }
+            return true
+        }
+        await store.finish()
+    }
+
+    /// FMW-001-get_info: stale selectedIds만 있으면 현재 폴더를 Get Info 대상으로 라우팅한다.
+    /// 표시 항목과 일치하지 않는 선택 상태가 남아도 유효한 active folder fallback을 사용하는지 검증한다.
+    /// - 검증 내용: stale selectedIds에서 navigation.getInfoForPath delegate command를 정확히 한 번 방출한다.
+    /// - 사전 조건: /tmp folder route에 표시 entry는 있지만 선택 ID는 표시 목록에 없는 stale ID다.
+    /// - 기대 결과: navigation.getInfoForPath가 한 번 수신되고 추가 action은 없다.
+    func testGetInfoWithOnlyStaleSelectionRoutesActiveFolderPath() async {
+        var state = FileManagerWindowState()
+        state.content.navigation.navigationState = .folder("/tmp")
+        state.content.entryViewLayout.entryOperations.items = [
+            EntryModel.temporaryFolder(id: "/tmp/displayed", name: "displayed"),
+        ]
+        state.content.entryViewLayout.selectedIds = ["/tmp/stale"]
+        let store = makeStore(initialState: state)
+
+        await store.send(.request(.getInfo))
+        await store.receive {
+            guard case .content(.entryViewLayout(.delegate(.executeCommand(
+                "navigation.getInfoForPath",
+                source: .menuCommand,
+            )))) = $0
+            else { return false }
+            return true
+        }
+        await store.finish()
+    }
+
+    /// FMW-001-get_info: expanded hierarchy의 visible child만 선택해도 selected-items Get Info를 실행한다.
+    /// Entry bridge와 동일한 visible selection projection이 child entry를 selected-items 대상으로 포함하는지 검증한다.
+    /// - 검증 내용: visible child 선택에서 navigation.getInfoForSelectedItems delegate command를 정확히 한 번 방출한다.
+    /// - 사전 조건: list/non-collection/no-grouping 상태에서 /root/root가 expanded되고 visible child가 존재한다.
+    /// - 기대 결과: navigation.getInfoForSelectedItems가 한 번 수신되고 추가 action은 없다.
+    func testGetInfoWithVisibleHierarchyChildSelectionRoutesSelectedItems() async {
+        let rootEntry = EntryModel.temporaryFolder(id: "/root/root", name: "root")
+        let childEntry = EntryModel.temporaryFolder(id: "/root/root/child", name: "child")
+        var state = FileManagerWindowState()
+        state.content.navigation.navigationState = .folder("/root")
+        state.content.entryViewLayout.mode = .list
+        state.content.entryViewLayout.isCollectionMode = false
+        state.content.entryViewLayout.entryArrangements.groupKey = .none
+        state.content.entryViewLayout.entries = [rootEntry]
+        state.content.entryViewLayout.entryOperations.items = [rootEntry]
+        state.content.entryViewLayout.hierarchy = .init(rootPath: "/root")
+        state.content.entryViewLayout.hierarchy.nodesByID[rootEntry.id] = .init(
+            children: [childEntry],
+            loadPhase: .loaded,
+            generation: 0,
+        )
+        state.content.entryViewLayout.hierarchy.setExpandedIDs([rootEntry.id])
+        state.content.entryViewLayout.selectedIds = [childEntry.id]
+        XCTAssertTrue(state.content.entryViewLayout.hierarchyProjectionIsActive)
+        XCTAssertEqual(
+            state.content.entryViewLayout.visibleSelectableEntries(isNormalDirectoryPage: true).map(\.id),
+            [rootEntry.id, childEntry.id],
+        )
+        let store = makeStore(initialState: state)
+
+        await store.send(.request(.getInfo))
+        await store.receive {
+            guard case .content(.entryViewLayout(.delegate(.executeCommand(
+                "navigation.getInfoForSelectedItems",
+                source: .menuCommand,
+            )))) = $0 else { return false }
+            return true
+        }
+        await store.finish()
+    }
+
+    /// FMW-001-get_info: root와 visible busy child를 함께 선택하면 Get Info를 실행하지 않는다.
+    /// 계층 projection에 포함된 child의 busy 상태가 전체 selected-items 요청을 차단하는지 검증한다.
+    /// - 검증 내용: root와 busy child mixed selection에서 navigation.getInfoForSelectedItems를 방출하지 않는 no-op 경로.
+    /// - 사전 조건: list/non-collection/no-grouping 상태에서 /root/root가 expanded되고 child만 busy다.
+    /// - 기대 결과: Get Info delegate action 없이 종료한다.
+    func testGetInfoWithVisibleHierarchyBusyChildSelectionIsNoOp() async {
+        let rootEntry = EntryModel.temporaryFolder(id: "/root/root", name: "root")
+        let childEntry = EntryModel.temporaryFolder(id: "/root/root/child", name: "child")
+        var state = FileManagerWindowState()
+        state.content.navigation.navigationState = .folder("/root")
+        state.content.entryViewLayout.mode = .list
+        state.content.entryViewLayout.isCollectionMode = false
+        state.content.entryViewLayout.entryArrangements.groupKey = .none
+        state.content.entryViewLayout.entries = [rootEntry]
+        state.content.entryViewLayout.entryOperations.items = [rootEntry]
+        state.content.entryViewLayout.hierarchy = .init(rootPath: "/root")
+        state.content.entryViewLayout.hierarchy.nodesByID[rootEntry.id] = .init(
+            children: [childEntry],
+            loadPhase: .loaded,
+            generation: 0,
+        )
+        state.content.entryViewLayout.hierarchy.setExpandedIDs([rootEntry.id])
+        state.content.entryViewLayout.selectedIds = [rootEntry.id, childEntry.id]
+        state.content.entryViewLayout.entryOperations.itemStates[childEntry.id] = .init(isBusy: true)
+        XCTAssertTrue(state.content.entryViewLayout.hierarchyProjectionIsActive)
+        XCTAssertEqual(
+            state.content.entryViewLayout.visibleSelectableEntries(isNormalDirectoryPage: true).map(\.id),
+            [rootEntry.id, childEntry.id],
+        )
+        let store = makeStore(initialState: state)
+
+        await store.send(.request(.getInfo))
+        await store.finish()
+    }
+
+    /// FMW-001-get_info: 선택 항목 중 하나라도 busy이면 Get Info를 실행하지 않는다.
+    /// Entry context menu와 동일하게 mixed selection의 busy entry가 전체 Finder 정보 요청을 차단하는지 검증한다.
+    /// - 검증 내용: 선택된 두 ID 중 하나가 busy일 때 request(.getInfo)가 navigation.getInfoForSelectedItems를 방출하지 않는 no-op 경로.
+    /// - 사전 조건: /tmp/selected와 /tmp/busy가 선택되고 /tmp/busy의 itemStates가 busy다.
+    /// - 기대 결과: navigation.getInfoForSelectedItems action 없이 종료한다.
+    func testGetInfoWithAnySelectedBusyEntryIsNoOp() async {
+        let selectedEntry = EntryModel.temporaryFolder(id: "/tmp/selected", name: "selected")
+        let busyEntry = EntryModel.temporaryFolder(id: "/tmp/busy", name: "busy")
+        var state = FileManagerWindowState()
+        state.content.navigation.navigationState = .folder("/tmp")
+        state.content.entryViewLayout.entryOperations.items = [selectedEntry, busyEntry]
+        state.content.entryViewLayout.selectedIds = [selectedEntry.id, busyEntry.id]
+        state.content.entryViewLayout.entryOperations.itemStates[busyEntry.id] = .init(isBusy: true)
+        let store = makeStore(initialState: state)
+
+        await store.send(.request(.getInfo))
+        await store.finish()
+    }
+
+    /// FMW-001-get_info: 현재 폴더가 busy이면 선택 항목 없는 Get Info를 실행하지 않는다.
+    /// Entry context menu와 동일하게 current-path operation busy 상태가 Finder 정보 요청을 차단하는지 검증한다.
+    /// - 검증 내용: busy current path에서 request(.getInfo)가 navigation.getInfoForPath를 방출하지 않는 no-op 경로.
+    /// - 사전 조건: 선택 항목이 없고 /tmp Directory route의 itemStates["/tmp"].isBusy가 true다.
+    /// - 기대 결과: navigation.getInfoForPath action 없이 종료한다.
+    func testGetInfoWithoutSelectionIsNoOpWhenCurrentPathIsBusy() async {
+        var state = FileManagerWindowState()
+        state.content.navigation.navigationState = .folder("/tmp")
+        state.content.entryViewLayout.entryOperations.itemStates["/tmp"] = .init(isBusy: true)
+        let store = makeStore(initialState: state)
+
+        await store.send(.request(.getInfo))
+        await store.finish()
+    }
+
+    /// FMW-001-get_info: 유효한 active folder가 없으면 무선택 Get Info를 실행하지 않는다.
+    /// Home과 같은 비파일시스템 route에서 Cmd-I가 Finder 정보 effect를 만들지 않는지 검증한다.
+    /// - 검증 내용: request(.getInfo)가 navigation command를 방출하지 않는 no-op 경로.
+    /// - 사전 조건: focused FileManager window가 기본 Home route이고 선택 항목이 없다.
+    /// - 기대 결과: 하위 navigation action 없이 종료한다.
+    func testGetInfoWithoutSelectionIsNoOpOutsideActiveFolder() async {
+        let store = makeStore()
+
+        await store.send(.request(.getInfo))
+        await store.finish()
     }
 
     /// VOY-578-entry_commands: 일반 Directory loading 중 비-entry 명령 보존
@@ -167,7 +744,7 @@ final class FMW001FileManagerWindowTests: XCTestCase {
         await store.receive(\.navigation.view.goBack)
         await store.send(.request(.setViewLayout(.grid)))
         await store.receive(\.content.view.changeLayout)
-        await store.send(.request(.openNewContentTab))
+        await store.send(.request(.openNewContentTab(source: .contentTabBar)))
         await store.receive(\.contentTabs.open, .homeDefault)
         XCTAssertEqual(store.state.contentTabs.selectedTabIDs, [selectedTabID])
         XCTAssertEqual(store.state.contentTabs.selectionAnchorID, selectedTabID)
@@ -328,7 +905,10 @@ final class FMW001FileManagerWindowTests: XCTestCase {
 
         await store.send(.request(.openSelectedItem))
         await store.receive {
-            guard case .content(.entryViewLayout(.delegate(.executeCommand("navigation.openSelectedItem")))) = $0
+            guard case .content(.entryViewLayout(.delegate(.executeCommand(
+                "navigation.openSelectedItem",
+                source: .menuCommand,
+            )))) = $0
             else { return false }
             return true
         }
@@ -347,7 +927,10 @@ final class FMW001FileManagerWindowTests: XCTestCase {
 
         await store.send(.request(.openSelectedItem))
         await store.receive {
-            guard case .content(.entryViewLayout(.delegate(.executeCommand("navigation.openSelectedItem")))) = $0
+            guard case .content(.entryViewLayout(.delegate(.executeCommand(
+                "navigation.openSelectedItem",
+                source: .menuCommand,
+            )))) = $0
             else { return false }
             return true
         }
@@ -394,7 +977,10 @@ final class FMW001FileManagerWindowTests: XCTestCase {
 
         await store.send(.request(.quickLookSelectedItem))
         await store.receive {
-            guard case .content(.entryViewLayout(.delegate(.executeCommand("navigation.quickLookSelectedItem")))) = $0
+            guard case .content(.entryViewLayout(.delegate(.executeCommand(
+                "navigation.quickLookSelectedItem",
+                source: .menuCommand,
+            )))) = $0
             else { return false }
             return true
         }
@@ -413,7 +999,10 @@ final class FMW001FileManagerWindowTests: XCTestCase {
 
         await store.send(.request(.quickLookSelectedItem))
         await store.receive {
-            guard case .content(.entryViewLayout(.delegate(.executeCommand("navigation.quickLookSelectedItem")))) = $0
+            guard case .content(.entryViewLayout(.delegate(.executeCommand(
+                "navigation.quickLookSelectedItem",
+                source: .menuCommand,
+            )))) = $0
             else { return false }
             return true
         }
@@ -1665,18 +2254,36 @@ final class FMW001FileManagerWindowTests: XCTestCase {
         _ action: FileManagerWindowAction,
     ) -> Bool {
         switch (command, action) {
-        case (.newFolder, .content(.entryViewLayout(.entryOperations(.edit(.createNewFolder))))),
-             (
-                 .openSelectedItem,
-                 .content(.entryViewLayout(.delegate(.executeCommand("navigation.openSelectedItem")))),
-             ),
-             (
-                 .quickLookSelectedItem,
-                 .content(.entryViewLayout(.delegate(.executeCommand("navigation.quickLookSelectedItem")))),
-             ),
-             (.cut, .content(.entryViewLayout(.delegate(.executeCommand("clipboard.cutSelectedItems"))))),
-             (.copy, .content(.entryViewLayout(.delegate(.executeCommand("clipboard.copySelectedItems"))))),
-             (.paste, .content(.entryViewLayout(.delegate(.executeCommand("clipboard.pasteItems"))))):
+        case (
+            .newFolder,
+            .content(.entryViewLayout(.delegate(.executeCommand("mutation.createNewFolder", source: .menuCommand)))),
+        ),
+        (
+            .openSelectedItem,
+            .content(.entryViewLayout(.delegate(.executeCommand(
+                "navigation.openSelectedItem",
+                source: .menuCommand,
+            )))),
+        ),
+        (
+            .quickLookSelectedItem,
+            .content(.entryViewLayout(.delegate(.executeCommand(
+                "navigation.quickLookSelectedItem",
+                source: .menuCommand,
+            )))),
+        ),
+        (.cut, .content(.entryViewLayout(.delegate(.executeCommand(
+            "clipboard.cutSelectedItems",
+            source: .menuCommand,
+        ))))),
+        (.copy, .content(.entryViewLayout(.delegate(.executeCommand(
+            "clipboard.copySelectedItems",
+            source: .menuCommand,
+        ))))),
+        (.paste, .content(.entryViewLayout(.delegate(.executeCommand(
+            "clipboard.pasteItems",
+            source: .menuCommand,
+        ))))):
             true
 
         default:
@@ -1689,17 +2296,33 @@ final class FMW001FileManagerWindowTests: XCTestCase {
         _ action: FileManagerWindowAction,
     ) -> Bool {
         switch (command, action) {
-        case (.duplicate, .content(.entryViewLayout(.delegate(.executeCommand("clipboard.duplicateSelectedItems"))))),
-             (
-                 .makeAlias,
-                 .content(.entryViewLayout(.delegate(.executeCommand("mutation.createAliasForSelectedItems")))),
-             ),
-             (.selectAll, .content(.view(.selectAllEntries))),
-             (
-                 .copyAbsolutePaths,
-                 .content(.entryViewLayout(.delegate(.executeCommand("clipboard.copySelectedAbsolutePaths")))),
-             ),
-             (.copyURLs, .content(.entryViewLayout(.delegate(.executeCommand("clipboard.copySelectedURLs"))))):
+        case (.duplicate, .content(.entryViewLayout(.delegate(.executeCommand(
+            "clipboard.duplicateSelectedItems",
+            source: .menuCommand,
+        ))))),
+        (
+            .makeAlias,
+            .content(.entryViewLayout(.delegate(.executeCommand(
+                "mutation.createAliasForSelectedItems",
+                source: .menuCommand,
+            )))),
+        ),
+        (.selectAll, .content(.view(.selectAllEntries))),
+        (
+            .copyAbsolutePaths,
+            .content(.entryViewLayout(.delegate(.executeCommand(
+                "clipboard.copySelectedAbsolutePaths",
+                source: .menuCommand,
+            )))),
+        ),
+        (.copyURLs, .content(.entryViewLayout(.delegate(.executeCommand(
+            "clipboard.copySelectedURLs",
+            source: .menuCommand,
+        ))))),
+        (.getInfo, .content(.entryViewLayout(.delegate(.executeCommand(
+            "navigation.getInfoForSelectedItems",
+            source: .menuCommand,
+        ))))):
             true
 
         default:
@@ -1861,6 +2484,91 @@ extension FMW001FileManagerWindowTests {
 }
 
 extension FMW001FileManagerWindowTests {
+    // MARK: - FMW-001-toolbar_shortcuts
+
+    /// FMW-001-toolbar_shortcuts: New Chat toolbar context menu는 Show Chat History shortcut을 표시한다.
+    /// 실제 ToolbarView를 AppKit hosting surface에 올려 context menu의 presentation metadata를 검증한다.
+    /// - 검증 내용: Show Chat History NSMenuItem의 keyEquivalent와 keyEquivalentModifierMask
+    /// - 사전 조건: contextual AI chat이 표시되지 않는 실제 ToolbarView와 New Chat toolbar button
+    /// - 기대 결과: Show Chat History가 Cmd-Shift-L을 표시하고 다른 toolbar 동작은 변경하지 않는다.
+    func testNewChatToolbarContextMenuPresentsShowChatHistoryShortcut() throws {
+        let fixture = makeNewChatToolbarFixture()
+        let menu = try XCTUnwrap(findHistoryMenu(in: fixture.hostingView, window: fixture.window))
+        let historyItem = try XCTUnwrap(menu.items.first { $0.title == "Show Chat History" })
+
+        XCTAssertEqual(historyItem.keyEquivalent, "l")
+        XCTAssertEqual(historyItem.keyEquivalentModifierMask, [.command, .shift])
+    }
+
+    private func makeNewChatToolbarFixture() -> (
+        window: NSWindow,
+        hostingView: NSHostingView<AnyView>,
+    ) {
+        _ = NSApplication.shared
+        let store = Store(initialState: FileManagerContentState()) {
+            FileManagerContentFeature()
+        }
+        let chromeProps = FileManagerContentChromeProps(
+            computerName: "Computer",
+            breadcrumbRoots: FileManagerBreadcrumbRoots(homePath: NSHomeDirectory(), trashPath: nil),
+            pathDisplayNames: [:],
+            specialDirectoryIconNames: [:],
+            isContextualAiChatPresented: false,
+            activeTabID: nil,
+            activePageAnchor: .directory(path: "/tmp"),
+        )
+        let hostingView = NSHostingView(rootView: AnyView(ToolbarView(
+            store: store,
+            chromeProps: chromeProps,
+            onNavigationAction: { _ in },
+        ).frame(width: 400, height: 40)))
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 400, height: 40),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false,
+        )
+        window.contentView = hostingView
+        hostingView.frame = window.contentView?.bounds ?? .zero
+        hostingView.layoutSubtreeIfNeeded()
+        return (window: window, hostingView: hostingView)
+    }
+
+    private func findHistoryMenu(in view: NSView, window: NSWindow) -> NSMenu? {
+        if view.window != nil,
+           let eventLocation = view.window.map({ _ in
+               view.convert(
+                   NSPoint(x: view.bounds.midX, y: view.bounds.midY),
+                   to: nil,
+               )
+           }),
+           let event = NSEvent.mouseEvent(
+               with: .rightMouseDown,
+               location: eventLocation,
+               modifierFlags: [],
+               timestamp: 0,
+               windowNumber: window.windowNumber,
+               context: nil,
+               eventNumber: 1,
+               clickCount: 1,
+               pressure: 1,
+           ),
+           let menu = view.menu(for: event),
+           menu.items.contains(where: { $0.title == "Show Chat History" })
+        {
+            return menu
+        }
+
+        for subview in view.subviews {
+            if let menu = findHistoryMenu(in: subview, window: window) {
+                return menu
+            }
+        }
+        return nil
+    }
+}
+
+extension FMW001FileManagerWindowTests {
     // MARK: - FMW-001-entry_commands
 
     /// FMW-001-entry_commands: blank-area AppKit menu container disables automatic item validation.
@@ -1956,6 +2664,202 @@ extension FMW001FileManagerWindowTests {
         await drainMainQueue()
 
         XCTAssertIdentical(window.firstResponder, keyCommandView)
+    }
+
+    /// FMW-001-key_command_focus: Quick Look 방향키는 Window view action을 거쳐 canonical selection을 갱신한다.
+    /// - 검증 내용: responder-chain control begin 후 down-arrow를 전달하면 FileManager reducer가 다음 entry를 선택하고 Quick Look sync를
+    /// 요청한다.
+    /// - 사전 조건: 첫 entry가 선택된 focused window와 panel-control recording client
+    /// - 기대 결과: begin/end가 호출되고 선택과 Quick Look sync 대상이 두 번째 entry로 이동한다.
+    func testQuickLookPanelControlRoutesArrowThroughWindowViewAction() async throws {
+        let first = EntryModel.temporaryFolder(id: "/root/first", name: "first")
+        let second = EntryModel.temporaryFolder(id: "/root/second", name: "second")
+        var state = FileManagerFeature.State()
+        state.isFocused = true
+        state.content.navigation.seedInitialFolderPath("/root")
+        state.content.entryViewLayout.entries = [first, second]
+        state.content.entryViewLayout.selectedIds = [first.id]
+        state.content.entryViewLayout.lastSelectedId = first.id
+        state.content.entryViewLayout.rangeAnchorId = first.id
+        state.syncActiveTabContentState()
+
+        let beginCount = LockIsolated(0)
+        let endCount = LockIsolated(0)
+        let syncCalls = LockIsolated<[[String]]>([])
+        let syncCalled = expectation(description: "Quick Look selection synchronized")
+        let quickLookClient = EntryQuickLookClient(
+            quickLook: { _, _ in },
+            syncQuickLookSelection: { urls, _ in
+                syncCalls.withValue { $0.append(urls.map(\.path)) }
+                syncCalled.fulfill()
+            },
+            acceptsPreviewPanelControl: { true },
+            beginPreviewPanelControl: { _, _ in beginCount.withValue { $0 += 1 } },
+            endPreviewPanelControl: { _, _ in endCount.withValue { $0 += 1 } },
+        )
+        let registry = FileOperationUndoManagerRegistry()
+        let undoClient = FileOperationUndoManagerClient.live(registry: registry)
+        let store = Store(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.entryQuickLookClient = quickLookClient
+            $0.fileOperationUndoManagerClient = undoClient
+        }
+        let coordinator = withDependencies {
+            $0.entryQuickLookClient = quickLookClient
+        } operation: {
+            FileManagerWindowCoordinator(
+                windowID: UUID(),
+                store: store,
+                fileOperationUndoManagerRegistry: registry,
+                makeContentViewController: { _, _ in NSViewController() },
+            )
+        }
+        defer { coordinator.close() }
+        let panel = try XCTUnwrap(QLPreviewPanel.shared())
+        let event = try makeDownArrowEvent(windowNumber: panel.windowNumber)
+
+        XCTAssertTrue(coordinator.acceptsPreviewPanelControl(panel))
+        coordinator.beginPreviewPanelControl(panel)
+        XCTAssertTrue(coordinator.handleQuickLookPanelEvent(event))
+        for _ in 0 ..< 100 where store.withState({ $0.content.entryViewLayout.selectedIds }) != [second.id] {
+            await Task.yield()
+        }
+        await fulfillment(of: [syncCalled], timeout: 2)
+        coordinator.endPreviewPanelControl(panel)
+
+        XCTAssertEqual(beginCount.value, 1)
+        XCTAssertEqual(endCount.value, 1)
+        XCTAssertEqual(store.withState { $0.content.entryViewLayout.selectedIds }, [second.id])
+        XCTAssertEqual(syncCalls.value, [[second.fullPath]])
+    }
+
+    /// FMW-001-key_command_focus: Space와 Escape는 Voyager가 삼키지 않고 Quick Look에 남긴다.
+    func testQuickLookPanelEventHandlerRejectsNonArrowKeys() throws {
+        let registry = FileOperationUndoManagerRegistry()
+        let coordinator = makeCoordinator(
+            windowID: UUID(),
+            fileOperationUndoManagerRegistry: registry,
+            fileOperationUndoManagerClient: .live(registry: registry),
+        )
+        defer { coordinator.close() }
+
+        for keyCode in [UInt16(49), UInt16(53)] {
+            let event = try XCTUnwrap(NSEvent.keyEvent(
+                with: .keyDown,
+                location: .zero,
+                modifierFlags: [],
+                timestamp: 0,
+                windowNumber: 0,
+                context: nil,
+                characters: keyCode == 49 ? " " : "\u{1B}",
+                charactersIgnoringModifiers: keyCode == 49 ? " " : "\u{1B}",
+                isARepeat: false,
+                keyCode: keyCode,
+            ))
+            XCTAssertFalse(coordinator.handleQuickLookPanelEvent(event))
+        }
+    }
+
+    /// FMW-001-key_command_focus: QL이 key이고 document가 main이면 논리적 window ownership을 유지한다.
+    func testQuickLookKeyTransitionRetainsLogicalDocumentFocusOnlyForMainWindow() throws {
+        _ = NSApplication.shared
+        let panel = try XCTUnwrap(QLPreviewPanel.shared())
+
+        XCTAssertTrue(FileManagerWindowCoordinator.shouldRetainLogicalFocus(
+            documentIsMain: true,
+            keyWindow: panel,
+        ))
+        XCTAssertFalse(FileManagerWindowCoordinator.shouldRetainLogicalFocus(
+            documentIsMain: false,
+            keyWindow: panel,
+        ))
+        XCTAssertFalse(FileManagerWindowCoordinator.shouldRetainLogicalFocus(
+            documentIsMain: true,
+            keyWindow: NSWindow(),
+        ))
+    }
+
+    /// FMW-001-key_command_focus: 제어 종료 후 document가 key로 돌아오지 않으면 보류된 resign을 정산한다.
+    /// Quick Look이 key를 비-FileManager window에 넘기거나 앱이 비활성화되면 document는 두 번째
+    /// resignKey를 받지 못하므로 panel control 종료 시점에 정산해야 한다.
+    /// - 검증 내용: begin으로 logical focus를 유지한 뒤 document가 non-key인 채 control을 끝내면
+    ///   `onResignedKey`가 windowID로 한 번 호출되는지 확인한다.
+    /// - 사전 조건: panel-control recording client와 onResignedKey recorder를 단 coordinator
+    /// - 기대 결과: endPreviewPanelControl에서 resign이 정산된다.
+    func testEndPreviewPanelControlSettlesRetainedResignKeyWhenDocumentNotKeyAgain() throws {
+        _ = NSApplication.shared
+        let panel = try XCTUnwrap(QLPreviewPanel.shared())
+        let windowID = UUID()
+        let beginCount = LockIsolated(0)
+        let endCount = LockIsolated(0)
+        let resignedWindowIDs = LockIsolated<[UUID]>([])
+        let quickLookClient = EntryQuickLookClient(
+            quickLook: { _, _ in },
+            acceptsPreviewPanelControl: { true },
+            beginPreviewPanelControl: { _, _ in beginCount.withValue { $0 += 1 } },
+            endPreviewPanelControl: { _, _ in endCount.withValue { $0 += 1 } },
+        )
+        let entry = EntryModel.temporaryFolder(id: "/root/preview", name: "preview")
+        var state = FileManagerFeature.State()
+        state.isFocused = true
+        state.content.entryViewLayout.entries = [entry]
+        state.content.entryViewLayout.selectedIds = [entry.id]
+        state.syncActiveTabContentState()
+
+        let registry = FileOperationUndoManagerRegistry()
+        let store = Store(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.entryQuickLookClient = quickLookClient
+            $0.fileOperationUndoManagerClient = .live(registry: registry)
+        }
+        let coordinator = withDependencies {
+            $0.entryQuickLookClient = quickLookClient
+        } operation: {
+            FileManagerWindowCoordinator(
+                windowID: windowID,
+                store: store,
+                fileOperationUndoManagerRegistry: registry,
+                onResignedKey: { id in resignedWindowIDs.withValue { $0.append(id) } },
+                makeContentViewController: { _, _ in NSViewController() },
+            )
+        }
+        defer { coordinator.close() }
+
+        coordinator.beginPreviewPanelControl(panel)
+        coordinator.endPreviewPanelControl(panel)
+
+        XCTAssertEqual(beginCount.value, 1)
+        XCTAssertEqual(endCount.value, 1)
+        XCTAssertEqual(resignedWindowIDs.value, [windowID])
+    }
+
+    /// FMW-001-key_command_focus: resign 정산은 document가 key로 돌아왔거나 유지 조건이 성립할 때 생략한다.
+    func testShouldSettleRetainedResignKeyOnlyWhenDocumentNotKeyAndNotRetained() throws {
+        _ = NSApplication.shared
+        let panel = try XCTUnwrap(QLPreviewPanel.shared())
+
+        XCTAssertFalse(FileManagerWindowCoordinator.shouldSettleRetainedResignKey(
+            documentIsKey: true,
+            documentIsMain: false,
+            keyWindow: nil,
+        ))
+        XCTAssertFalse(FileManagerWindowCoordinator.shouldSettleRetainedResignKey(
+            documentIsKey: false,
+            documentIsMain: true,
+            keyWindow: panel,
+        ))
+        XCTAssertTrue(FileManagerWindowCoordinator.shouldSettleRetainedResignKey(
+            documentIsKey: false,
+            documentIsMain: true,
+            keyWindow: NSWindow(),
+        ))
+        XCTAssertTrue(FileManagerWindowCoordinator.shouldSettleRetainedResignKey(
+            documentIsKey: false,
+            documentIsMain: false,
+            keyWindow: nil,
+        ))
     }
 
     /// FMW-001-key_command_focus: mounted ContentPage restore가 편집 중인 NSTextView를 교체하지 않는다.
@@ -2061,14 +2965,16 @@ extension FMW001FileManagerWindowTests {
         XCTAssertIdentical(fixture.window.firstResponder, textView)
     }
 
-    /// FMW-001-type_scroll_mounted_content_page: mounted host의 insertText가 handleTextInput으로 라우팅돼 pending target을 설정한다.
+    /// FMW-001-type_scroll_mounted_content_page: mounted host의 insertText가 handleTextInput으로 라우팅돼
+    /// target 단일 선택과 pending reveal을 설정한다.
     /// 실제 mounted ContentPage의 KeyCommandHostingView에 한 글자를 커밋하면 host→handleTextInput→typeScrollEffect→
-    /// setTypeScrollTarget 체인으로 entryViewLayout.pendingTypeScrollTargetId가 첫 매칭 id로 설정되는지 검증한다.
+    /// selectTypeScrollTarget 체인으로 selection tuple과 pendingTypeScrollTargetId가 첫 매칭 id로 설정되는지 검증한다.
     /// (list/grid 소비·reset은 위젯 테스트가 소유하므로 여기서는 host→action→state 체인만 검증한다.)
-    /// - 검증 내용: host.insertText("가") 후 entryViewLayout.pendingTypeScrollTargetId == 첫 매칭 id
+    /// - 검증 내용: host.insertText("가") 후 entryViewLayout.pendingTypeScrollTargetId와
+    ///   selectedIds/lastSelectedId/rangeAnchorId가 모두 첫 매칭 id가 된다.
     /// - 사전 조건: /root 폴더 페이지에 "가나다" 엔트리가 있고 host가 first responder
-    /// - 기대 결과: pendingTypeScrollTargetId가 "가"로 시작하는 첫 엔트리 id로 설정됨
-    func testMountedContentPageHostInsertTextSetsPendingTypeScrollTarget() async {
+    /// - 기대 결과: pending target과 selection tuple이 "가"로 시작하는 첫 엔트리 id로 설정됨
+    func testMountedContentPageHostInsertTextSelectsTypeScrollTarget() async {
         let perceptionCheckingWasEnabled = disablePerceptionChecking()
         defer { PerceptionCore.isPerceptionCheckingEnabled = perceptionCheckingWasEnabled }
         let target = EntryModel.temporaryFolder(id: "/root/가나다", name: "가나다")
@@ -2087,9 +2993,11 @@ extension FMW001FileManagerWindowTests {
         }
 
         host.insertText("가", replacementRange: NSRange(location: 0, length: 0))
-        await drainMountedFocusUpdates()
-
+        await waitForMountedTypeScrollTarget(target.id, in: fixture.store)
         XCTAssertEqual(fixture.store.state.entryViewLayout.pendingTypeScrollTargetId, target.id)
+        XCTAssertEqual(fixture.store.state.entryViewLayout.selectedIds, [target.id])
+        XCTAssertEqual(fixture.store.state.entryViewLayout.lastSelectedId, target.id)
+        XCTAssertEqual(fixture.store.state.entryViewLayout.rangeAnchorId, target.id)
     }
 
     private func makeMountedTypeScrollContentPageFixture(
@@ -2103,7 +3011,7 @@ extension FMW001FileManagerWindowTests {
         ) {
             Reduce<FileManagerContentState, FileManagerContentAction> { state, action in
                 guard case .view(.selectAllEntries) = action else { return .none }
-                state.entryViewLayout.selectedIds = ["mounted-focus-trigger"]
+                state.entryViewLayout.selectedIds = Set(entries.map(\.id))
                 return .none
             }
             FileManagerContentKeyCommandReducer()
@@ -2125,6 +3033,23 @@ extension FMW001FileManagerWindowTests {
         window.makeKey()
         await drainMountedFocusUpdates()
         return (window, store)
+    }
+
+    private func waitForMountedTypeScrollTarget(
+        _ expectedTargetID: EntryModel.ID,
+        in store: Store<FileManagerContentState, FileManagerContentAction>,
+    ) async {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(1))
+
+        while store.state.entryViewLayout.pendingTypeScrollTargetId != expectedTargetID,
+              clock.now < deadline
+        {
+            await drainMountedFocusUpdates()
+            try? await clock.sleep(for: .milliseconds(10))
+        }
+
+        XCTAssertEqual(store.state.entryViewLayout.pendingTypeScrollTargetId, expectedTargetID)
     }
 
     private func disablePerceptionChecking() -> Bool {
@@ -2169,6 +3094,21 @@ extension FMW001FileManagerWindowTests {
             await drainMainQueue()
             await Task.yield()
         }
+    }
+
+    private func makeDownArrowEvent(windowNumber: Int) throws -> NSEvent {
+        try XCTUnwrap(NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: windowNumber,
+            context: nil,
+            characters: "\u{F701}",
+            charactersIgnoringModifiers: "\u{F701}",
+            isARepeat: false,
+            keyCode: 125,
+        ))
     }
 
     private func makeFocusWindow(containing views: [NSView]) -> NSWindow {
@@ -2902,7 +3842,10 @@ extension FMW001FileManagerWindowTests {
         )))) {
             $0.sidebar.contentTabDragSnapshot = nil
             $0.sidebar.pendingContentTabMoveRequest = fixture.request
-            $0.pendingContentTabMove = FileManagerWindowContentTabMovePending(request: fixture.request)
+            $0.pendingContentTabMove = FileManagerWindowContentTabMovePending(
+                request: fixture.request,
+                metricSource: .dragAndDrop,
+            )
         }
         await store.receive(\.sidebar.delegate.requestContentTabMove, fixture.request) {
             $0.pendingContentTabMove?.lifecycle = .inFlight

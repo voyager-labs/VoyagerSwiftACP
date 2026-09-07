@@ -12,6 +12,8 @@ struct AiProviderSetupFeature {
     var connectionsFileClient
     @Dependency(\.aiProviderVerificationClient)
     var verificationClient
+    @Dependency(\.onboardingProductMetricsClient)
+    var metricsClient
 
     private enum CancelID: Hashable {
         case bootstrap
@@ -45,7 +47,13 @@ struct AiProviderSetupFeature {
                     )
 
                 case .setUpLaterTapped:
-                    return .none
+                    let providers = Array(state.pendingConnectionOperationIDs.keys)
+                    state.pendingConnectionOperationIDs.removeAll()
+                    var effects: [Effect<Action>] = providers.map { provider in
+                        .send(.row(.element(id: provider, action: .cancelButtonTapped)))
+                    }
+                    effects.append(.cancel(id: CancelID.bootstrap))
+                    return .merge(effects)
 
                 case let .bootstrapCompleted(results):
                     Self.applyBootstrapResults(results, to: &state)
@@ -67,7 +75,13 @@ struct AiProviderSetupFeature {
                     state.refreshStatus()
                     return .none
 
-                case let .row(.element(id: _, action: rowAction)):
+                case let .row(.element(id: provider, action: rowAction)):
+                    Self.recordTerminalMetric(
+                        for: rowAction,
+                        provider: provider,
+                        state: &state,
+                        metricsClient: metricsClient,
+                    )
                     state.refreshStatus()
                     if Self.shouldReloadLatestStatus(after: rowAction) {
                         return Self.bootstrapEffect(
@@ -128,6 +142,47 @@ struct AiProviderSetupFeature {
         default:
             false
         }
+    }
+
+    private static func recordTerminalMetric(
+        for action: AiConnectionRowAction,
+        provider: AiProvider,
+        state: inout State,
+        metricsClient: OnboardingProductMetricsClient,
+    ) {
+        let result: OnboardingProductMetric.AIProviderResult?
+        switch action {
+        case let .connectionResponse(response):
+            result = response.state == .connected ? .success : .failure
+        case .verificationResponse(.invalid),
+             .verificationResponse(.unsupportedProvider),
+             .verificationResponse(.networkError):
+            result = .failure
+        case .browserLoginFailed(.cancelled), .deviceAuthFailed(.cancelled), .cancelButtonTapped:
+            state.pendingConnectionOperationIDs.removeValue(forKey: provider)
+            return
+        case .browserLoginFailed, .deviceAuthFailed, .verificationFailed:
+            result = .failure
+        default:
+            guard state.pendingConnectionOperationIDs[provider] == nil else { return }
+            switch action {
+            case .connectButtonTapped, .submitAPIKey, .retryButtonTapped:
+                state.choice = .none
+                state.pendingConnectionOperationIDs[provider] = UUID()
+            default:
+                break
+            }
+            return
+        }
+
+        guard let result,
+              let operationID = state.pendingConnectionOperationIDs.removeValue(forKey: provider)
+        else { return }
+        metricsClient.record(.aiProviderWithKind(
+            operationID: operationID,
+            provider: .init(provider: provider),
+            result: result,
+        ))
     }
 }
 

@@ -233,6 +233,7 @@ final class EOP004EditEntryMetadataTests: XCTestCase {
             XCTAssertEqual(menu.items.first { $0.title == title }?.keyEquivalentModifierMask, .command)
         }
         XCTAssertEqual(menu.items.first { $0.title == "Rename" }?.keyEquivalent, "\r")
+        XCTAssertEqual(menu.items.first { $0.title == "Rename" }?.keyEquivalentModifierMask, [])
         XCTAssertEqual(menu.items.first { $0.title == "Move to Trash" }?.keyEquivalentModifierMask, .command)
         XCTAssertEqual(menu.items.first { $0.title == "Get Info" }?.keyEquivalent, "i")
         XCTAssertEqual(menu.items.first { $0.title == "Get Info" }?.keyEquivalentModifierMask, .command)

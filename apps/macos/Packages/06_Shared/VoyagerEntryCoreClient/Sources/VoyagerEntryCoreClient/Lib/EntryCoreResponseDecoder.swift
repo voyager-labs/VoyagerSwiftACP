@@ -95,6 +95,11 @@ private extension EntryCoreResponseDecoder {
                 throw EntryCoreClientError.protocolMismatch
             }
             return try .version(EntryCoreVersionResult(appVersion: appVersion))
+        case .propertyDefinitionList, .propertyDefinitionCreate, .propertyDefinitionUpdate,
+             .propertyDefinitionDisable, .propertyOptionCreate, .propertyOptionUpdate,
+             .propertyOptionReorder, .propertyOptionDisable, .propertyAssignmentList,
+             .propertyChangePrepare, .propertyChangeExecute, .propertyConditionQuery:
+            throw EntryCoreClientError.protocolMismatch
         }
     }
 

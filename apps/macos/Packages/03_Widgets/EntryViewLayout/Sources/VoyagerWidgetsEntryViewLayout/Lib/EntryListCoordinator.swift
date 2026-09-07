@@ -375,6 +375,7 @@ public final class EntryListCoordinator: NSObject {
             restoredScrollForCurrentPath = false
         }
         let shouldRestoreSavedOffset = pathChanged || !restoredScrollForCurrentPath
+        let capturedScrollOrigin = pathChanged ? nil : scrollView.contentView.bounds.origin
         let capturedAnchor = pathChanged ? nil : captureScrollAnchor()
         materialize()
 
@@ -395,13 +396,18 @@ public final class EntryListCoordinator: NSObject {
                     preservesScrollAnchor
                 }
                 if !preservesScrollAnchor {
-                    restoreScrollAnchor(capturedAnchor)
+                    if let capturedAnchor {
+                        restoreScrollAnchor(capturedAnchor)
+                    } else if let capturedScrollOrigin {
+                        scrollView.contentView.scroll(to: capturedScrollOrigin)
+                    }
                 }
             }
         }
         if structureChanged {
             syncListRenamingFromStore()
         }
+        view?.updateGroupHeaderTitle()
         requestThumbnailsForVisibleRows()
     }
 

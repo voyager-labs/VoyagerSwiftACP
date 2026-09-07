@@ -49,6 +49,11 @@ struct FileManagerContentNavigationBridgeReducer {
                     state.entryViewLayout.entryOperations.isReloading = !state.entryViewLayout.entryOperations.items
                         .isEmpty
                 }
+                // 탭 복원 등 같은 folder 재적용 reload도 세대를 올리므로 대기 전이를 재기준화한다.
+                FileManagerContentIdentityTransitionCoordinator.rebaseForSameRootReload(
+                    navigationState: navigationState,
+                    state: &state,
+                )
                 return applyNavigationStateEffect(navigationState, state: state)
 
             case .view(.selectAllEntries):
@@ -60,6 +65,11 @@ struct FileManagerContentNavigationBridgeReducer {
 
             case .view(.toggleShowHiddenFilesAndReload):
                 let showHidden = !state.entryViewLayout.showHiddenFiles
+                // hidden toggle reload도 세대를 올리므로 대기 전이를 재기준화한다.
+                FileManagerContentIdentityTransitionCoordinator.rebaseForSameRootReload(
+                    navigationState: state.navigation.navigationState,
+                    state: &state,
+                )
                 return .concatenate(
                     .send(.entryViewLayout(.view(.toggleShowHiddenFiles))),
                     FileManagerContentEntryOpsCoordinator.reloadEntryItemsEffect(

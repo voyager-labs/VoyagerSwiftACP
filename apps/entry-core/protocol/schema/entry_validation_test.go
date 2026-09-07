@@ -106,7 +106,7 @@ func TestDerivedHasMore(t *testing.T) {
 
 func TestCanonicalErrors(t *testing.T) {
 	t.Parallel()
-	for _, code := range []ErrorCode{ErrorInvalidSelector, ErrorContextMismatch, ErrorScopeTooLarge, ErrorInvalidPageToken, ErrorPermissionDenied, ErrorSourceUnavailable, ErrorSourceDeleted, ErrorEntryNotFound, ErrorUnsupported, ErrorConflict} {
+	for _, code := range []ErrorCode{ErrorInvalidSelector, ErrorContextMismatch, ErrorScopeTooLarge, ErrorInvalidPageToken, ErrorPermissionDenied, ErrorSourceUnavailable, ErrorSourceRuntimeUnavailable, ErrorSourceDeleted, ErrorEntryNotFound, ErrorUnsupported, ErrorConflict} {
 		encoded := EncodeResponse(NewErrorResponse("id", code))
 		if bytes.Contains(encoded, []byte(`"code":"internal_error"`)) {
 			t.Fatalf("canonical code %q rejected: %s", code, encoded)
