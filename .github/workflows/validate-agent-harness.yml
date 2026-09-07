@@ -11,24 +11,28 @@ jobs:
   structural-validation:
     name: Validate agent harness contracts
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          persist-credentials: false
       - name: Validator regression tests
         run: python3 -m unittest discover -s scripts/tests
       - name: AST rule regression fixtures
+        if: success() || failure()
         shell: bash
         run: |
           set -euo pipefail
           AST_GREP_VERSION="$(python3 -c 'import tomllib; print(tomllib.load(open("mise.toml", "rb"))["tools"]["github:ast-grep/ast-grep"]["version"])')"
           npm exec --yes --package="@ast-grep/cli@${AST_GREP_VERSION}" -- ast-grep test --skip-snapshot-tests
       - name: Validate changed harness contracts
+        if: success() || failure()
         shell: bash
         env:
           BASE_REF: origin/${{ github.base_ref || 'develop' }}
         run: |
           set -euo pipefail
-          python3 -m scripts.validate_harness --base-ref "${BASE_REF}"
+          python3 -m scripts.validate_harness --base-ref "${BASE_REF}" --with-build-matrix
           python3 -m scripts.verify_plan --base-ref "${BASE_REF}"

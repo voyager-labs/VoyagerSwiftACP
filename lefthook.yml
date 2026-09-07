@@ -34,8 +34,8 @@ pre-commit:
     agent-harness:
       run: |
         set -eu
-        # validate_harness runs build-matrix once in its own index snapshot.
-        python3 -m scripts.validate_harness --staged
+        # Include the matrix explicitly; harness-only fixture checks omit it.
+        python3 -m scripts.validate_harness --staged --with-build-matrix
         python3 -m scripts.verify_plan --staged
     swift-checks:
       # No glob: a policy/config-only change must expand the relevant engine scope.
