@@ -1401,7 +1401,7 @@ struct CodexExecProcessController {
             writeStdin: { data in try? pipes.input.fileHandleForWriting.write(contentsOf: data) },
             closeStdin: { try? pipes.input.fileHandleForWriting.close() },
             wait: { await termination.value },
-            terminate: { if process.isRunning { process.terminate() } },
+            terminate: { CodexExecProcessTerminator.stop(process) },
             cleanup: {
                 pipes.output.fileHandleForReading.readabilityHandler = nil
                 pipes.error.fileHandleForReading.readabilityHandler = nil

@@ -327,6 +327,28 @@ final class ATI004ManageExternalAgentRuntimesTests: XCTestCase {
         XCTAssertEqual(CodexCLIExecutionError.launchFailed.failureReason, .cliUnavailable)
     }
 
+    /// ATI-004-manage_external_agent_runtimes: hanging probe processes are reclaimed with a typed timeout.
+    /// 멈춘 probe 프로세스가 무한 대기 없이 회수되고 typed failure로 반환되는지 검증합니다.
+    /// - 검증 내용: 종료되지 않는 실행에 probeTimeout 오류와 프로세스 회수, 경과 시간 상한을 확인합니다.
+    /// - 사전 조건: 60초 동안 실행되는 실제 프로세스와 1초 timeout이 제공됩니다.
+    /// - 기대 결과: probeTimeout 오류가 반환되고 호출이 1초 + grace 안에 끝납니다.
+    func testRunProcess_hangingExecutable_timesOutAndReclaimsProcess() throws {
+        let start = Date()
+        XCTAssertThrowsError(
+            try CodexExecReadinessProbe.runProcess(
+                executableURL: URL(fileURLWithPath: "/bin/sleep"),
+                arguments: ["60"],
+                environment: [:],
+                timeout: 1,
+            ),
+        ) { error in
+            guard case CodexExecReadinessError.probeTimeout = error else {
+                return XCTFail("expected probeTimeout, got \(error)")
+            }
+        }
+        XCTAssertLessThan(Date().timeIntervalSince(start), 10)
+    }
+
     /// ATI-004-manage_external_agent_runtimes: legacy session preparation is canonical and idempotent.
     /// Git initialization is isolated from user configuration and validation runs on every preparation.
     /// - 검증 내용: exact Git init/validation argv/environment, canonical session, and idempotent preparation.

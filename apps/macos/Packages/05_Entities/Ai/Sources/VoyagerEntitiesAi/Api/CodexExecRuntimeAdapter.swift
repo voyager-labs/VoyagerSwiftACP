@@ -699,6 +699,7 @@ extension CodexExecRuntimeAdapter {
         case .unsupportedVersion: "unsupported_version"
         case .loginRequired: "login_required"
         case .loginProbeFailed: "login_probe_failed"
+        case .probeTimeout: "probe_timeout"
         }
     }
 

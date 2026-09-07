@@ -346,6 +346,47 @@ final class ATI006CoordinateExternalAgentSessionsTests: XCTestCase {
         XCTAssertEqual(counts.staged, 0)
     }
 
+    /// ATI-006-fresh_codex_launch: cancellation escalates to SIGKILL when SIGTERM is ignored.
+    /// SIGTERM을 무시하는 프로세스도 취소 정산 안에 실제로 종료되는지 검증합니다.
+    /// - 검증 내용: SIGTERM 무시 프로세스에 대한 terminate, grace 대기, SIGKILL 에스컬레이션을 확인합니다.
+    /// - 사전 조건: `trap '' TERM`으로 SIGTERM을 무시하는 실제 프로세스가 있습니다.
+    /// - 기대 결과: stop 호출이 grace 안에 프로세스를 종료시킵니다.
+    func testTerminateProcess_escalatesToKill_whenSIGTERMIgnored() throws {
+        let markerURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codex-terminator-\(UUID().uuidString).marker")
+        defer { try? FileManager.default.removeItem(at: markerURL) }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
+        process.arguments = [
+            "-c",
+            "import signal, time, sys; signal.signal(signal.SIGTERM, signal.SIG_IGN);"
+                + "open(sys.argv[1], 'w').write('ready'); time.sleep(30)",
+            markerURL.path,
+        ]
+        try process.run()
+        func isAlive() -> Bool {
+            kill(process.processIdentifier, 0) == 0
+        }
+        XCTAssertTrue(isAlive())
+        defer {
+            if isAlive() { kill(process.processIdentifier, SIGKILL) }
+        }
+
+        let readyDeadline = Date().addingTimeInterval(10)
+        while !FileManager.default.fileExists(atPath: markerURL.path), Date() < readyDeadline {
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: markerURL.path))
+
+        CodexExecProcessTerminator.stop(process, graceInterval: 1)
+
+        let deadline = Date().addingTimeInterval(3)
+        while isAlive(), Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        XCTAssertFalse(isAlive())
+    }
+
     /// ATI-006-fresh_codex_launch: cancelling event consumption after handshake stops the process once.
     /// receipt 이후 event consumer cancellation이 provider process를 방치하지 않는지 검증합니다.
     /// - 검증 내용: handshake 이후 consumer cancellation, terminate 호출, cleanup 횟수를 확인합니다.

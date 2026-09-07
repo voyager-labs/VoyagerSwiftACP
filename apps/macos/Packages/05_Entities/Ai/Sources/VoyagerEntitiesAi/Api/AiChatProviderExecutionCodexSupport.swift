@@ -82,6 +82,7 @@ enum CodexCLIExecutionError: Error, Equatable {
             switch error {
             case .executableMissing, .versionUnreadable, .unsupportedVersion: .cliUnavailable
             case .loginRequired, .loginProbeFailed: .authentication
+            case .probeTimeout: .network
             }
         case let .outputMissing(message), let .nonZeroExit(message):
             AiChatProviderExecutionClient.codexFailureReason(forCLIErrorOutput: message)

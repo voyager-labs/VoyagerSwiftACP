@@ -29,6 +29,7 @@ enum CodexExecReadinessError: Error, Equatable {
     case unsupportedVersion(String)
     case loginRequired
     case loginProbeFailed(Int32)
+    case probeTimeout(TimeInterval)
 }
 
 struct CodexExecReadiness: Equatable {
@@ -38,6 +39,10 @@ struct CodexExecReadiness: Equatable {
 
 struct CodexExecReadinessProbe {
     typealias Runner = @Sendable (URL, [String], [String: String]) throws -> CodexExecProbeResult
+
+    /// probe 프로세스가 이 시간 안에 끝나지 않으면 회수하고 typed failure로 실패한다.
+    /// 무한 대기는 launch와 취소 경계를 함께 막는다.
+    static let defaultProbeTimeout: TimeInterval = 10
 
     private let runner: Runner
 
@@ -55,6 +60,7 @@ struct CodexExecReadinessProbe {
         executableURL: URL,
         arguments: [String],
         environment: [String: String],
+        timeout: TimeInterval = Self.defaultProbeTimeout,
     ) throws -> CodexExecProbeResult {
         let process = Process()
         let output = Pipe()
@@ -78,8 +84,13 @@ struct CodexExecReadinessProbe {
             try? output.fileHandleForReading.close()
             try? error.fileHandleForReading.close()
         }
+        let exited = DispatchSemaphore(value: 0)
+        process.terminationHandler = { _ in exited.signal() }
         try process.run()
-        process.waitUntilExit()
+        guard exited.wait(timeout: .now() + timeout) == .success else {
+            CodexExecProcessTerminator.stop(process)
+            throw CodexExecReadinessError.probeTimeout(timeout)
+        }
         output.fileHandleForReading.readabilityHandler = nil
         error.fileHandleForReading.readabilityHandler = nil
         stdoutCollector.append(output.fileHandleForReading.readDataToEndOfFile())
