@@ -1,6 +1,0 @@
-id: ui-direct-userdefaults
-valid:
-  - store.send(.view(.toggleHiddenFiles))
-  - let value = "UserDefaults.standard"
-invalid:
-  - 'let value = UserDefaults.standard.bool(forKey: "hidden")'

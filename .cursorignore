@@ -1,4 +1,0 @@
-.cspell/*
-.vscode/*
-!.env.example
-!.env.prod

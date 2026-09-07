@@ -1,9 +1,0 @@
-id: ui-direct-observation
-valid:
-  - final class Coordinator { func bind() { let center = NotificationCenter.default } }
-  - final class EntryListCoordinator { func bind() { let center = NotificationCenter.default } }
-  - struct ExampleView { func appear() { store.send(.view(.appeared)) } }
-invalid:
-  - struct ExampleView { func observe() { let center = NotificationCenter.default } }
-  - final class Coordinator { func observe() { let center = DistributedNotificationCenter.default() } }
-  - struct ExampleView { let note = "Coordinator"; func observe() { let center = NotificationCenter.default } }

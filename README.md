@@ -1,242 +1,587 @@
-# Voyager App
+# swift-acp
 
-프로젝트 개요와 실행/문서 진입점을 간단히 제공합니다.
+[![GitHub](https://img.shields.io/badge/-GitHub-181717?style=flat-square&logo=github&logoColor=white)](https://github.com/wiedymi)
+[![Twitter](https://img.shields.io/badge/-Twitter-1DA1F2?style=flat-square&logo=twitter&logoColor=white)](https://x.com/wiedymi)
+[![Email](https://img.shields.io/badge/-Email-EA4335?style=flat-square&logo=gmail&logoColor=white)](mailto:contact@wiedymi.com)
+[![Discord](https://img.shields.io/badge/-Discord-5865F2?style=flat-square&logo=discord&logoColor=white)](https://discord.gg/zemMZtrkSb)
+[![Support me](https://img.shields.io/badge/-Support%20me-ff69b4?style=flat-square&logo=githubsponsors&logoColor=white)](https://github.com/sponsors/vivy-company)
 
-## Monorepo Layout
+Swift SDK for the [Agent Client Protocol (ACP)](https://agentclientprotocol.com/). Build Apple platform applications that communicate with AI coding agents, or create your own ACP-compliant agents.
 
-- `apps/entry-core`: Go CLI와 foreground daemon runtime foundation
-- `apps/macos/Voyager`: macOS SwiftUI + TCA 앱과 Helper/XPC
-- `docs/`: AI 에이전트용 PRD/아키텍처 문서 인덱스
+Built for [Aizen](https://aizen.win) — a native macOS app for managing git worktrees and AI coding agents. Check out the [source code](https://github.com/vivy-company/aizen).
 
-## Environment Setup
+## Features
 
-### 환경 파일
+- Core ACP protocol implementation over JSON-RPC/stdio
+- Client and Agent (server) runtime support
+- Multi-platform: macOS 12+, iOS 15+, tvOS 15+, watchOS 8+
+- Pluggable transport layer (stdio, WebSocket)
+- Actor-based concurrency for thread safety
+- Async/await APIs with Swift Concurrency
+- Streaming session updates via AsyncStream
+- Stable `session/list` support and session metadata updates
+- Boolean session config options and usage update decoding
+- Built-in file system and terminal delegates
+- Debug mode for inspecting raw protocol messages
 
-프로젝트 루트에 환경별 `.env` 파일을 생성합니다:
+## Installation
 
-- **`.env.dev`** (Git ignored): 로컬 개발 환경
-    - 로컬 개발 시크릿을 포함할 수 있으며, 커밋하거나 산출물에 번들하지 않음
-    - 생성: `cp .env.example .env.dev`
-- **`.env.prod`** (Git tracked): 프로덕션 환경 템플릿
-    - 비밀키 제외한 기본 설정만 포함
-    - `Prod-Release` production artifact에만 포함할 수 있는 공개 런타임 설정
-    - Secrets는 파일이나 앱 번들에 포함하지 않음
+Add to your `Package.swift`:
 
-### 환경 선택
+```swift
+dependencies: [
+    .package(url: "https://github.com/wiedymi/swift-acp", from: "1.0.0")
+]
+```
 
-VOY-580 승인 목표에서 런타임 환경(`APP_ENV=dev|prod`)과 컴파일 모드(`Debug|Release`)는 독립 축입니다. 스킴 이름이나 컴파일 모드만으로 런타임 환경을 추론하지 않습니다.
+Then add the dependency to your target:
 
-- 4개 config: `Dev-Debug`(APP_ENV=dev, Debug compile), `Dev-Release`(APP_ENV=dev, Release compile), `Prod-Debug`(APP_ENV=prod, Debug compile), `Prod-Release`(APP_ENV=prod, Release compile)
-- 스킴 매핑: `Voyager-Dev` → Dev-Debug/Dev-Release, `Voyager-Prod` → Prod-Debug/Prod-Release
-- 운영 배포는 `Prod-Release`만 허용합니다.
-- 전체 계약과 Dotenv 소유권은 [canonical 환경 문서](docs/canonical/ENGINEERING/common/environment.md)를 따릅니다.
+```swift
+.target(
+    name: "YourApp",
+    dependencies: [
+        "ACP",           // Core client & agent runtime
+        "ACPHTTP",       // Optional: WebSocket transport
+        "ACPRegistry"    // Optional: Agent discovery & installation
+    ]
+)
+```
 
-### macOS 런타임 구성
+## Packages
 
-macOS 앱은 로컬 Python API 서버를 번들하거나 실행하지 않습니다.
-
-- **로컬 검색/인덱싱**: VoyagerHelper와 FilterSearchXPC가 폴더 접근, 파일 변경 감지, Spotlight 검색을 담당
-- **원격 계정/접근**: `PUBLIC_GATEWAY_URL`로 설정한 Gateway가 인증 및 접근 API를 담당
-
-### 보안
-
-- 비밀키는 커밋 금지
-- 로컬 개발: `.env.dev` 파일 사용 (Git ignored)
-- VOY-580 목표 production packaging: `Prod-Release`에서만 시크릿 없는 `.env.prod`를 포함할 수 있음
+| Package | Description |
+|---------|-------------|
+| `ACPModel` | Platform-independent protocol types (shared by client and agent) |
+| `ACP` | Core client and agent runtime for ACP communication |
+| `ACPHTTP` | WebSocket transport for network-based communication |
+| `ACPRegistry` | Agent discovery and installation from the [ACP Registry](https://github.com/agentclientprotocol/registry) |
 
 ## Quick Start
 
-- Entry Core
-    - Go runtime guide: [`apps/entry-core/README.md`](apps/entry-core/README.md)
-    - Swift client package: [`apps/macos/Packages/06_Shared/VoyagerEntryCoreClient`](apps/macos/Packages/06_Shared/VoyagerEntryCoreClient)
-    - Go-only check: `mise run entry-core-check`
-    - Go + Swift interoperability check: `mise run entry-core-interop-check`
+```swift
+import ACP
 
-- macOS App
-    - Xcode에서 시작(권장): `xed apps/macos/Voyager/Voyager.xcworkspace` (열기 후 `Cmd+R` 실행)
-        - Workspace에 Voyager.xcodeproj, OnboardingHost.xcodeproj, SettingsHost.xcodeproj, FileManagerHost.xcodeproj가 포함되어 있습니다
-    - (대안) Xcode 프로젝트: `xed apps/macos/Voyager/Voyager.xcodeproj`
-    - Terminal/Agent에서 실행:
-        - 기본 개발 앱 실행: `mise run macos-launch`
-        - 온보딩 표시 토글(Debug 전용): `Voyager-Dev`가 유일한 개발 scheme입니다. `VOYAGER_SCHEME_FORCE_ONBOARDING` launch 환경변수가 `0`이거나 없으면 저장된 진행 상태에 따라 동작하고, 정확히 `1`이면 저장된 진행 상태를 지우지 않은 채 온보딩을 강제로 표시합니다. 이 값은 `.env` 설정이 아니며 Release/Prod에서는 지원하지 않습니다.
-- 일회성 강제 표시: `mise run macos-launch -- --scheme Voyager-Dev --configuration Dev-Debug --env VOYAGER_SCHEME_FORCE_ONBOARDING=1`
-- 다른 scheme 실행: `mise run macos-launch -- --scheme SettingsHost-Dev --configuration Dev-Debug`
-- 빌드만 확인: `mise run macos-launch -- --scheme Voyager-Dev --configuration Dev-Debug --no-launch`
-    - Xcode에서 실행:
-        - `Voyager-Dev` scheme의 Dev-Debug Run 환경변수 `VOYAGER_SCHEME_FORCE_ONBOARDING`을 `0` 또는 제거하면 저장된 진행 상태를 사용합니다.
-        - 같은 환경변수를 정확히 `1`로 설정하면 진행 상태를 유지한 채 온보딩을 강제로 표시합니다.
-    - VSCode 류 IDE(Sweetpad Extension)에서 실행:
-        - Xcode 프로젝트 열기: Sweetpad로 `apps/macos/Voyager/Voyager.xcodeproj` 오픈
-        - 태스크로 실행 (권장):
-            - `Cmd+Shift+P` (또는 `Ctrl+Shift+P`)로 Command Palette 열기
-            - "Tasks: Run Task" 입력 후 다음 태스크 중 선택:
-            - `Voyager Dev: Launch (Dev-Debug)` / `Voyager Dev: Launch (Dev-Release)` / `Voyager Prod: Launch (Prod-Debug)` / `Voyager Prod: Launch (Prod-Release)`
-                - `OnboardingHost Dev: Launch (Dev-Debug)` - 온보딩 호스트 Dev-Debug 모드로 빌드 및 실행
-                - `OnboardingHost Dev: Launch (Dev-Release)` - 온보딩 호스트 Dev-Release 모드로 빌드 및 실행
-                - `SettingsHost Dev: Launch (Dev-Debug)` - 설정 호스트 Dev-Debug 모드로 빌드 및 실행
-                - `SettingsHost Dev: Launch (Dev-Release)` - 설정 호스트 Dev-Release 모드로 빌드 및 실행
-                - `ComposerHost Dev: Launch (Dev-Debug)` - Composer 전용 deterministic 호스트를 Dev-Debug 모드로 실행
-                - `ComposerHost Dev: Launch (Dev-Release)` - Composer 전용 deterministic 호스트를 Dev-Release 모드로 실행
-            - `Voyager Dev: Launch (Dev-Debug)` task의 `VOYAGER_SCHEME_FORCE_ONBOARDING` 값을 `0` 또는 제거하면 저장된 진행 상태를 사용하고, 정확히 `1`로 바꾸면 진행 상태를 유지한 채 온보딩을 강제로 표시합니다. 이 값은 launch 환경이며 `.env` 설정이 아니고 Release/Prod에서는 지원하지 않습니다.
-            - 참고: Sweetpad는 `.vscode/settings.json`의 shared xcodebuild wrapper를 사용합니다. 버튼을 통한 직접 실행은 xcscheme의 환경변수가 제대로 주입되지 않을 수 있어 태스크 실행을 권장합니다.
-    - Zed 에디터에서 실행 (`.zed/tasks.json`):
-        - 태스크 실행: `task: spawn` (단축키 `opt-shift-t`)으로 태스크 선택 모달 열기
-        - 재실행: `task: rerun` (단축키 `opt-t`)
-        - 사용 가능한 태스크 (VSCode Sweetpad와 동일):
-            - `Voyager Dev: Launch (Dev-Debug)` / `Voyager Dev: Launch (Dev-Release)`
-            - `Voyager Prod: Launch (Prod-Debug)` / `Voyager Prod: Launch (Prod-Release)`
-            - `VoyagerHelper Dev: Launch (Dev-Debug)` / `VoyagerHelper Dev: Launch (Dev-Release)`
-            - `OnboardingHost Dev: Launch (Dev-Debug)` / `OnboardingHost Dev: Launch (Dev-Release)`
-            - `SettingsHost Dev: Launch (Dev-Debug)` / `SettingsHost Dev: Launch (Dev-Release)`
-            - `FileManagerHost Dev: Launch (Dev-Debug)` / `FileManagerHost Dev: Launch (Dev-Release)`
-            - `FileManagerHost Dev: Launch with Injection (Dev-Debug)` - InjectionNext 앱 실행과 감시 환경을 포함한 전용 task
-            - `ComposerHost Dev: Launch (Dev-Debug)` / `ComposerHost Dev: Launch (Dev-Release)`
-            - `Voyager Dev: Build Only (Dev-Debug)` - 빌드만 (런치 없음)
-            - `Voyager Dev: Test` - Voyager-Dev 스킴 테스트
-        - `Voyager Dev: Launch (Dev-Debug)` task의 `VOYAGER_SCHEME_FORCE_ONBOARDING` 값을 `0` 또는 제거하면 저장된 진행 상태를 사용하고, 정확히 `1`로 바꾸면 진행 상태를 유지한 채 온보딩을 강제로 표시합니다. 이 값은 launch 환경이며 `.env` 설정이 아니고 Release/Prod에서는 지원하지 않습니다.
-        - 내부 동작: `scripts/dev/macos-launch.sh`가 xcodebuild 빌드 → `.app` 산출물 해석 → 태스크별 launch 환경변수 주입 후 실행파일 직접 실행
-        - Zed 태스크의 환경변수는 `.zed/tasks.json`에서 명시적으로 전달합니다. 런타임 `.env` 표준화는 별도 이슈(VOY-432)에서 다룹니다.
-    - Build (CLI): `mise run macos-build`
-    - Prod build/archive (CLI): `mise run macos-launch -- --scheme Voyager-Prod --configuration Prod-Release --no-launch`
-    - Tests (CLI): `mise run macos-test`
-    - Helper focused test: `mise run macos-helper-test -- -only-testing:VoyagerHelperTests/XPCSearchServiceRecentTagDispatchTests`
-    - Helper full test: `mise run macos-helper-test`
-    - FilterSearchXPC build: `mise run macos-filter-search-xpc-build`
-    - OnboardingHost Build (CLI): `mise run macos-launch -- --scheme OnboardingHost-Dev --configuration Dev-Debug --no-launch`
-    - SettingsHost Build (CLI): `mise run macos-launch -- --scheme SettingsHost-Dev --configuration Dev-Debug --no-launch`
-    - ComposerHost Launch (CLI): `mise run macos-launch -- --scheme ComposerHost-Dev --configuration Dev-Debug`
-    - ComposerHost Smoke (CLI): `mise run macos-launch -- --scheme ComposerHost-Dev --configuration Dev-Debug --env COMPOSER_HOST_SMOKE=1`
+let client = Client()
 
-### Xcode 버전 관리
+// Launch an ACP-compatible agent
+try await client.launch(agentPath: "/path/to/claude-code")
 
-이 레포에서는 루트 디렉터리의 `.xcode-version` 파일로 **공식 Xcode 버전**을 고정해서 사용합니다.
-현재 기준 버전은 Xcode 26.1이며, 이 Xcode가 제공하는 Swift 6.2.1을 사용합니다.
-Swift 기대 버전은 루트 `.swift-toolchain-version`에 별도로 명시합니다.
-모든 로컬 개발 환경과 CI는 이 버전에 맞추는 것을 원칙으로 합니다.
+// Initialize with capabilities
+let initResponse = try await client.initialize(
+    capabilities: ClientCapabilities(
+        fs: FileSystemCapabilities(readTextFile: true, writeTextFile: true),
+        terminal: true
+    )
+)
 
-Swift toolchain 선택은 현재 활성 Xcode를 따릅니다. `.swift-toolchain-version`은 설치 도구를 선택하지 않고, 활성 Xcode가 제공하는 Swift 버전을 `mise run swift-version`으로 검증하는 기준입니다.
+// Create a session
+let session = try await client.newSession(workingDirectory: "/path/to/project")
 
-#### 사전 준비
+// Send a prompt
+let response = try await client.sendPrompt(
+    sessionId: session.sessionId,
+    content: [.text(TextContent(text: "Explain this codebase"))]
+)
 
-- macOS
-- Xcode 설치 및 업데이트 권한
-
-#### 이 프로젝트용 Xcode 설정 방법
-
-처음 클론했거나, Xcode 버전을 다시 맞추고 싶을 때 **레포 루트에서** 다음을 실행합니다.
-
-```bash
-mise run xcode
+// Cleanup
+await client.terminate()
 ```
 
-이 스크립트는 다음 작업을 수행합니다.
+## Client Lifecycle
 
-1. 레포 루트의 `.xcode-version` 파일을 읽어, 필요한 Xcode 버전을 확인합니다.
-2. `xcodes` CLI가 설치되어 있지 않으면 설치합니다.
-3. `xcodes install <버전>`으로 해당 Xcode 버전을 설치합니다. (이미 설치되어 있다면 건너뜁니다)
-4. `xcodes select <버전>`으로 해당 버전을 현재 macOS의 활성 Xcode로 설정합니다.
+### 1. Create and Configure
 
-`mise run swift-version`은 활성 Xcode toolchain이 `.swift-toolchain-version`과 일치하는지 확인합니다.
+```swift
+let client = Client()
 
-설정이 제대로 되었는지 확인하려면:
+// Set delegate to handle agent requests
+await client.setDelegate(myDelegate)
 
-```bash
-xcodebuild -version
+// Optional: enable debug mode
+await client.enableDebugStream()
 ```
 
-을 실행했을 때 출력되는 Xcode 버전이 `.xcode-version`에 적힌 값과 일치해야 합니다.
+### 2. Launch Agent
 
-#### 스크립트를 실행해야 하는 시점
-
-- 이 레포를 처음 clone하고 `mise run setup`을 실행할 때 자동으로 수행됩니다.
-- `.xcode-version` 버전이 설치되어 있지 않거나 시스템 기본 Xcode를 해당 버전으로 명시적으로 바꿀 때
-
-## Development Bootstrap (Git hooks)
-
-커밋 시점에 Swift 포맷·린트와 프로젝트 검증을 변경 없이 실행하고, 문제가 있으면 커밋을 막습니다.
-
-처음 클론한 후(그리고 새로운 머신에서) **레포 루트에서 한 번만** 실행하세요:
-
-```bash
-bash scripts/setup.sh
+```swift
+try await client.launch(
+    agentPath: "/usr/local/bin/claude-code",
+    arguments: ["--some-flag"],
+    workingDirectory: "/path/to/project"
+)
 ```
 
-이 명령은 pinned tool, `.xcode-version`의 Xcode 설치·선택, Git hook, submodule, `docs/canonical` npm 의존성을 모두 설정합니다. 문서 lock이 변경된 경우에만 `mise run docs-setup`이 `npm ci`를 다시 실행합니다.
+### 3. Initialize
 
-Lefthook은 저장소의 Git hooks 디렉터리에 hook을 설치합니다. hook이 사라졌다면 `mise run hooks`로 복구할 수 있습니다.
-새 worktree의 최초 checkout에서는 `post-checkout` hook이 `scripts/setup.sh`를 실행해 같은 개발 환경을 자동으로 준비합니다. 일반 branch checkout과 merge에서는 현재 `mise.toml` 신뢰, submodule 동기화, 문서 lock 기반 npm 의존성 동기화를 수행합니다.
+```swift
+let response = try await client.initialize(
+    protocolVersion: 1,
+    capabilities: ClientCapabilities(
+        fs: FileSystemCapabilities(readTextFile: true, writeTextFile: true),
+        terminal: true
+    ),
+    clientInfo: ClientInfo(name: "MyApp", title: "My App", version: "1.0.0"),
+    timeout: 30.0
+)
 
-- 다른 프로젝트 때문에 Xcode 버전을 변경했다가, **다시 Voyager 앱을 개발하려고 할 때**
-- `.xcode-version`이 변경된 PR이 머지되어, **새로운 공식 Xcode 버전에 맞추어야 할 때**
-
-> 이 레포에서 작업할 때는 항상 `.xcode-version`에 적힌 Xcode 버전으로 빌드하는 것을 원칙으로 합니다.
-> 다른 프로젝트와 혼용해서 Xcode 버전을 바꾼 경우, Voyager 작업 전에 `mise run xcode`를 한 번 실행해 Xcode 버전을 다시 맞춰 주세요.
-
-## Cupertino Apple Docs MCP
-
-이 레포는 Apple 플랫폼 문서 검색용 Cupertino를 `mise`로 버전 고정 관리합니다. `mise run setup`에 포함된 `mise install`이 Cupertino를 설치하므로 도구별 설치 명령은 필요하지 않습니다.
-
-`opencode.json`의 Cupertino MCP 항목은 기본적으로 `enabled: false`입니다. 따라서 실행 파일 설치와 OpenCode MCP 서버 활성화는 별도 상태이며, 설치만으로 서버가 시작되지는 않습니다.
-
-- 지원 플랫폼: macOS 15+
-- 설치:
-
-```bash
-mise install
+// Check agent capabilities
+print("Agent: \(response.agentInfo?.name ?? "Unknown")")
+print("Auth required: \(response.authMethods != nil)")
 ```
 
-## Conventions
+### 4. Authenticate (if required)
 
-- Git Flow
-    - **브랜치 구조**
-        - `main`: 운영/배포 브랜치 (태그: `vX.Y.Z`)
-        - `develop`: 개발 통합 브랜치
-        - `release/v<X.Y.Z>`: 릴리즈 준비/안정화 브랜치
-        - `<type>/<linear-issue>`: 이슈별 개발 브랜치
-            - `type`: `feature`, `fix`, `chore`, `refactor`, `docs`, `test`, `ci`
-            - 예: `feature/voy-123`, `fix/voy-456`
-        - `hotfix/<linear-issue>`: 운영 긴급 수정 브랜치
+```swift
+if let authMethods = response.authMethods {
+    let authResponse = try await client.authenticate(
+        authMethodId: authMethods.first!.id,
+        credentials: ["token": "your-api-key"]
+    )
+}
+```
 
-    - **일반 개발 워크플로우**
-        1. `develop`에서 `<type>/<linear-issue>` 브랜치 생성
-        2. 개발 완료 후 `develop`으로 PR 생성 및 머지
-        3. 머지 후 작업 브랜치 삭제
+### 5. Create Session
 
-    - **릴리즈 워크플로우**
-        1. `develop`에서 `release/v<X.Y.Z>` 브랜치 생성
-        2. 릴리즈 브랜치에서 버그 수정이 필요한 경우 `fix/<linear-issue>` 분기 후 `release/v<X.Y.Z>`로 PR 머지
-        3. 릴리즈 준비 완료 후 `release/v<X.Y.Z> -> main` PR 머지 및 `vX.Y.Z` 태그 생성
-        4. `main -> develop` (또는 `release/v<X.Y.Z> -> develop`)로 back-merge
+```swift
+let session = try await client.newSession(
+    workingDirectory: "/path/to/project",
+    mcpServers: [] // Optional MCP server configurations
+)
 
-    - **Hotfix 워크플로우**
-        1. `main`에서 `hotfix/<linear-issue>` 브랜치 생성
-        2. 수정 후 `main`으로 PR 머지
-        3. 동일 변경사항을 `develop` 및 진행 중인 `release/*` 브랜치에도 반영
+// Access session info
+print("Session ID: \(session.sessionId.value)")
+print("Current mode: \(session.modes?.currentModeId ?? "default")")
+print("Current model (if the agent exposes preview model selection): \(session.models?.currentModelId ?? "default")")
+```
 
-- Conventional Commits
-    - Subject: `<type>(<scope>): <short description>` (명령형, ≲ 50자)
-    - Scope: 모노레포 명확성을 위해 `(macos)` 또는 `(harness)` 권장
-    - Types: `feat`, `fix`, `ui`, `refactor`, `style`, `docs`, `chore`, `test`, `ci`, `build`
-    - Body: `- ` 불릿으로 WHAT/WHY, 현재형, 영향 범위/파일 필요 시 명시
-    - 예시:
-        - `fix(macos): resolve crash on QuickLook preview`
-        - `ui(macos): improve sidebar navigation layout`
-        - `docs: consolidate API contract guidelines`
+### 6. Send Prompts
 
-- Pull Requests
-    - PR 설명에 의도/범위/리스크/검증 증거/롤백 포함, 관련 이슈 링크 및 UI 변경 시 스크린샷 첨부
-    - 문서/코드 변경이 함께 있을 때는 범위를 분리하고 작은 PR을 선호
+```swift
+let response = try await client.sendPrompt(
+    sessionId: session.sessionId,
+    content: [
+        .text(TextContent(text: "Create a new Swift file"))
+    ]
+)
 
-## Documentation for Agents
+switch response.stopReason {
+case .endTurn:
+    print("Agent completed")
+case .maxTokens:
+    print("Reached token limit")
+case .cancelled:
+    print("Request was cancelled")
+default:
+    break
+}
+```
 
-- 진입점: `docs/index.md`
-- Active engineering 문서: `docs/canonical/ENGINEERING/index.md`
-- Canonical product/docs SSOT: `docs/canonical/README.md`
-- Engineering quick refs:
-    - `docs/canonical/ENGINEERING/common/coding-standards.md`
-    - `docs/canonical/ENGINEERING/common/tech-stack.md`
-    - `docs/canonical/ENGINEERING/app/topology/source-tree.md`
+### 7. Handle Streaming Updates
 
-## Back to Docs
+```swift
+Task {
+    for await notification in client.notifications {
+        guard notification.method == "session/update",
+              let params = notification.params,
+              let data = try? JSONEncoder().encode(params),
+              let update = try? JSONDecoder().decode(SessionUpdateNotification.self, from: data) else {
+            continue
+        }
 
-- 전체 문서 인덱스: `docs/index.md`
+        switch update.update {
+        case .agentMessageChunk(let content):
+            if case .text(let text) = content {
+                print("Agent: \(text.text)")
+            }
+
+        case .toolCall(let toolCall):
+            print("Tool: \(toolCall.title ?? "Unknown") [\(toolCall.status?.rawValue ?? "unknown")]")
+
+        case .plan(let plan):
+            for entry in plan.entries {
+                print("- \(entry.content) [\(entry.status)]")
+            }
+
+        case .currentModeUpdate(let mode):
+            print("Mode changed to: \(mode)")
+
+        default:
+            break
+        }
+    }
+}
+```
+
+### 8. Session Management
+
+```swift
+// Change mode
+try await client.setMode(sessionId: session.sessionId, modeId: "plan")
+
+// Change model if the agent exposes preview model-selection support
+try await client.setModel(sessionId: session.sessionId, modelId: "claude-3-opus")
+
+// Cancel ongoing operation
+try await client.cancelSession(sessionId: session.sessionId)
+
+// Discover existing sessions when the agent supports sessionCapabilities.list
+let sessions = try await client.listSessions()
+
+// Load existing session
+let loaded = try await client.loadSession(
+    sessionId: existingSessionId,
+    cwd: "/path/to/project",
+    mcpServers: []
+)
+```
+
+### 9. Cleanup
+
+```swift
+await client.terminate()
+```
+
+## Implementing the Delegate
+
+The delegate handles requests from the agent for file access, terminal operations, and permissions.
+
+```swift
+final class MyDelegate: ClientDelegate, Sendable {
+
+    // File System
+
+    func handleFileReadRequest(_ path: String, sessionId: String, line: Int?, limit: Int?) async throws -> ReadTextFileResponse {
+        let content = try String(contentsOfFile: path, encoding: .utf8)
+        let lines = content.components(separatedBy: .newlines)
+        return ReadTextFileResponse(content: content, totalLines: lines.count)
+    }
+
+    func handleFileWriteRequest(_ path: String, content: String, sessionId: String) async throws -> WriteTextFileResponse {
+        try content.write(toFile: path, atomically: true, encoding: .utf8)
+        return WriteTextFileResponse()
+    }
+
+    // Terminal
+
+    func handleTerminalCreate(command: String, sessionId: String, args: [String]?, cwd: String?, env: [EnvVariable]?, outputByteLimit: Int?) async throws -> CreateTerminalResponse {
+        // Create and track terminal process
+        let terminalId = TerminalId(UUID().uuidString)
+        // ... spawn process ...
+        return CreateTerminalResponse(terminalId: terminalId)
+    }
+
+    func handleTerminalOutput(terminalId: TerminalId, sessionId: String) async throws -> TerminalOutputResponse {
+        // Return current output buffer
+        return TerminalOutputResponse(output: "...", exitStatus: nil, truncated: false)
+    }
+
+    func handleTerminalWaitForExit(terminalId: TerminalId, sessionId: String) async throws -> WaitForExitResponse {
+        // Wait for process to complete
+        return WaitForExitResponse(exitStatus: TerminalExitStatus(exitCode: 0))
+    }
+
+    func handleTerminalKill(terminalId: TerminalId, sessionId: String) async throws -> KillTerminalResponse {
+        // Kill the process
+        return KillTerminalResponse()
+    }
+
+    func handleTerminalRelease(terminalId: TerminalId, sessionId: String) async throws -> ReleaseTerminalResponse {
+        // Release resources
+        return ReleaseTerminalResponse()
+    }
+
+    // Permissions
+
+    func handlePermissionRequest(request: RequestPermissionRequest) async throws -> RequestPermissionResponse {
+        // Show UI or auto-approve based on policy
+        print("Permission requested for tool call: \(request.toolCall.toolCallId)")
+
+        if let allowOption = request.options.first(where: { $0.kind.hasPrefix("allow") }) {
+            return RequestPermissionResponse(outcome: PermissionOutcome(optionId: allowOption.optionId))
+        }
+
+        return RequestPermissionResponse(outcome: PermissionOutcome(optionId: "deny"))
+    }
+}
+```
+
+### Using Default Delegates
+
+For simple use cases, use the built-in delegates:
+
+```swift
+let fileDelegate = FileSystemDelegate()
+let terminalDelegate = TerminalDelegate()
+
+// Compose into your delegate or use directly
+let content = try await fileDelegate.handleFileReadRequest("/path/to/file", sessionId: "s1", line: nil, limit: nil)
+```
+
+## Session Updates
+
+The agent sends real-time updates via notifications:
+
+| Update Type | Description |
+|-------------|-------------|
+| `agentMessageChunk` | Streaming text from the agent |
+| `agentThoughtChunk` | Agent's internal reasoning (if exposed) |
+| `toolCall` | Tool invocation with status and content |
+| `toolCallUpdate` | Updates to an existing tool call |
+| `plan` | Task plan with entries and progress |
+| `currentModeUpdate` | Mode changed (code, chat, plan, etc.) |
+| `availableCommandsUpdate` | Available slash commands updated |
+| `configOptionUpdate` | Configuration options changed |
+| `sessionInfoUpdate` | Session title / metadata changed |
+| `usageUpdate` | Context window / cumulative cost changed |
+
+## Tool Calls
+
+Tool calls represent agent actions like reading files, running commands, or editing code:
+
+```swift
+case .toolCall(let toolCall):
+    print("Tool: \(toolCall.title ?? "")")
+    print("Kind: \(toolCall.kind?.rawValue ?? "unknown")")
+    print("Status: \(toolCall.status?.rawValue ?? "unknown")")
+
+    // Tool kinds: read, edit, execute, search, delete, think, fetch, plan, switchMode, exitPlanMode, other
+
+    for content in toolCall.content {
+        switch content {
+        case .content(let block):
+            // ContentBlock (text, image)
+        case .diff(let diff):
+            print("Modified: \(diff.path)")
+        case .terminal(let term):
+            print("Terminal: \(term.terminalId)")
+        }
+    }
+
+    if let locations = toolCall.locations {
+        for loc in locations {
+            print("Location: \(loc.path):\(loc.line ?? 0)")
+        }
+    }
+```
+
+## Debug Mode
+
+Enable debug streaming to inspect raw JSON-RPC messages:
+
+```swift
+await client.enableDebugStream()
+
+Task {
+    guard let stream = await client.debugMessages else { return }
+
+    for await message in stream {
+        let direction = message.direction == .outgoing ? "→" : "←"
+        let method = message.method ?? "response"
+        print("\(direction) \(method): \(message.jsonString ?? "")")
+    }
+}
+
+// Later: disable debug mode
+await client.disableDebugStream()
+```
+
+## Error Handling
+
+```swift
+do {
+    let response = try await client.sendPrompt(sessionId: session.sessionId, content: [...])
+} catch ClientError.processNotRunning {
+    print("Agent process is not running")
+} catch ClientError.processFailed(let exitCode) {
+    print("Agent exited with code: \(exitCode)")
+} catch ClientError.requestTimeout {
+    print("Request timed out")
+} catch ClientError.agentError(let rpcError) {
+    print("Agent error: \(rpcError.message) (code: \(rpcError.code))")
+} catch ClientError.delegateNotSet {
+    print("No delegate set to handle agent requests")
+} catch ClientError.invalidResponse {
+    print("Invalid response from agent")
+}
+```
+
+## MCP Server Configuration
+
+Pass MCP (Model Context Protocol) servers when creating a session:
+
+```swift
+let session = try await client.newSession(
+    workingDirectory: "/project",
+    mcpServers: [
+        .stdio(StdioServerConfig(
+            name: "my-mcp-server",
+            command: "/path/to/server",
+            args: ["--port", "3000"],
+            env: [EnvVariable(name: "API_KEY", value: "...")]
+        )),
+        .http(HTTPServerConfig(
+            name: "remote-server",
+            url: "https://api.example.com/mcp",
+            headers: [HTTPHeader(name: "Authorization", value: "Bearer ...")]
+        ))
+    ]
+)
+```
+
+## Building Agents (Server Mode)
+
+The SDK supports building ACP-compliant agents that can be invoked by clients.
+
+```swift
+import ACP
+
+// Create transport and agent
+let transport = StdinTransport()
+let agent = Agent(transport: transport)
+
+// Implement the delegate
+final class MyAgentDelegate: AgentDelegate, Sendable {
+    let agent: Agent
+
+    init(agent: Agent) {
+        self.agent = agent
+    }
+
+    func handleInitialize(_ request: InitializeRequest) async throws -> InitializeResponse {
+        return InitializeResponse(
+            protocolVersion: 1,
+            agentCapabilities: AgentCapabilities(),
+            agentInfo: AgentInfo(name: "MyAgent", version: "1.0.0")
+        )
+    }
+
+    func handleNewSession(_ request: NewSessionRequest) async throws -> NewSessionResponse {
+        return NewSessionResponse(sessionId: SessionId(UUID().uuidString))
+    }
+
+    func handlePrompt(_ request: SessionPromptRequest) async throws -> SessionPromptResponse {
+        // Send streaming updates
+        try await agent.sendMessageChunk(sessionId: request.sessionId, text: "Processing...")
+
+        // Return final response
+        return SessionPromptResponse(stopReason: .endTurn)
+    }
+
+    func handleCancel(_ sessionId: SessionId) async throws {
+        // Handle cancellation
+    }
+}
+
+// Start the agent
+await agent.setDelegate(MyAgentDelegate(agent: agent))
+await transport.start()
+await agent.start()
+```
+
+## WebSocket Transport
+
+For network-based communication, use the `ACPHTTP` module:
+
+```swift
+import ACPHTTP
+
+// Connect to a WebSocket server
+let transport = WebSocketTransport(url: URL(string: "ws://localhost:8080")!)
+try await transport.connect()
+
+// Send and receive messages
+try await transport.send(jsonData)
+
+for await message in transport.messages {
+    // Handle incoming messages
+}
+
+await transport.close()
+```
+
+## Agent Registry
+
+The `ACPRegistry` module provides agent discovery and installation from the [ACP Registry](https://github.com/agentclientprotocol/registry).
+
+```swift
+import ACPRegistry
+
+// Fetch available agents
+let registry = RegistryClient()
+let agents = try await registry.agents()
+
+for agent in agents {
+    print("\(agent.name) v\(agent.version)")
+}
+
+// Find a specific agent
+if let claude = try await registry.agent(id: "claude-acp") {
+    print("Found: \(claude.name)")
+}
+
+// Install an agent
+let installer = AgentInstaller()
+let installed = try await installer.install(claude)
+
+// Launch with ACP client
+import ACP
+let client = Client()
+try await client.launch(
+    agentPath: installed.executablePath,
+    arguments: installed.arguments
+)
+```
+
+### Distribution Types
+
+The registry supports three distribution methods:
+
+| Type | Description |
+|------|-------------|
+| `binary` | Platform-specific executables (`.zip`, `.tar.gz`, `.tgz`, `.tar.bz2`, `.tbz2`, or raw binaries) |
+| `npx` | npm packages via `npx` |
+| `uvx` | Python packages via `uvx` |
+
+```swift
+// Check available distribution for current platform
+if let method = agent.distribution.preferred(for: .current) {
+    switch method {
+    case .binary(let target):
+        print("Binary: \(target.archive)")
+    case .npx(let pkg):
+        print("NPX: \(pkg.package)")
+    case .uvx(let pkg):
+        print("UVX: \(pkg.package)")
+    }
+}
+```
+
+## Requirements
+
+- macOS 12.0+, iOS 15.0+, tvOS 15.0+, watchOS 8.0+
+- Swift 5.9+
+
+> **Note:** Process spawning (stdio transport for launching agents) is only available on macOS. Other platforms can use WebSocket transport or implement custom transports.
+
+## Protocol Reference
+
+This SDK implements the [Agent Client Protocol](https://agentclientprotocol.com/) specification.
+
+See the `reference/` directory for:
+- `reference/agent-client-protocol/` - Protocol specification
+- `reference/rust-sdk/` - Reference Rust implementation
+- `reference/registry/` - Agent registry specification
+- `reference/typescript-sdk/` - Official TypeScript SDK
+- `reference/python-sdk/` - Official Python SDK
+- `reference/kotlin-sdk/` - Official Kotlin SDK
+- `reference/PARSING_LOGIC_COMPARISON.md` - Cross-SDK JSON-RPC parsing behavior matrix
+
+Those directories are tracked as git submodules. Refresh them with:
+
+```bash
+git submodule update --init --remote reference/agent-client-protocol reference/rust-sdk reference/registry reference/typescript-sdk reference/python-sdk reference/kotlin-sdk
+```
+
+## License
+
+MIT
