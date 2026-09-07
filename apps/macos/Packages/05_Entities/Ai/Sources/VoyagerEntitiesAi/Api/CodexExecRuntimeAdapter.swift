@@ -601,6 +601,16 @@ struct CodexExecDebugStorageCounts {
 }
 
 extension CodexExecRuntimeAdapter {
+    /// `codex exec resume <thread> -`는 빈 stdin prompt를 "No prompt provided via stdin."으로
+    /// 거부하므로, 복원 재개처럼 새 사용자 입력 없이 resume하는 실행에 사용하는 canonical
+    /// continuation prompt다.
+    static let resumeContinuationPrompt = "Continue the interrupted run."
+
+    static func launchPrompt(input: String, resumeThreadID: String?) -> String {
+        guard input.isEmpty, resumeThreadID != nil else { return input }
+        return resumeContinuationPrompt
+    }
+
     func makeCommand(request: RuntimeLaunchRequest, threadID: String?) throws -> CodexExecCommand {
         guard let directory = request.contextPolicy.workingDirectory else {
             throw RuntimeHostError.malformedAdapterResponse
@@ -625,7 +635,7 @@ extension CodexExecRuntimeAdapter {
         return try CodexExecCommandBuilder.build(
             request: CodexExecCommandRequest(
                 model: "gpt-5-codex",
-                prompt: request.input.rawValue,
+                prompt: Self.launchPrompt(input: request.input.rawValue, resumeThreadID: threadID),
                 workingDirectory: URL(fileURLWithPath: directory),
                 sandbox: roots.isEmpty ? .readOnly : .workspaceWrite,
                 primaryWritableRoot: primaryRoot,

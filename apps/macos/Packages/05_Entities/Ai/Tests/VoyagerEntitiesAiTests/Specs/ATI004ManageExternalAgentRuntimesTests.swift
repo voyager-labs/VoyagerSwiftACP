@@ -234,6 +234,28 @@ final class ATI004ManageExternalAgentRuntimesTests: XCTestCase {
         XCTAssertFalse(command.arguments.contains("danger-full-access"))
     }
 
+    /// ATI-004-manage_external_agent_runtimes: restored resume substitutes canonical continuation input.
+    /// codex exec resume는 빈 stdin prompt를 거부하므로 복원 재개처럼 새 사용자 입력 없이
+    /// resume하는 실행에 canonical continuation prompt를 stdin으로 제공하는지 검증합니다.
+    /// - 검증 내용: 빈 input + resume thread 조합의 stdin 치환과 argv 미노출을 확인합니다.
+    /// - 사전 조건: 빈 RuntimeSensitiveInput과 persisted thread id가 제공됩니다.
+    /// - 기대 결과: resume command의 stdin이 canonical continuation prompt이고 argv에 노출되지 않습니다.
+    func testMakeCommand_restoredResumeSubstitutesCanonicalContinuationInput() async throws {
+        let process = CodexExecFakeProcess(stdout: [], stderr: [], terminationStatus: 0)
+        let harness = CodexExecCommandTestHarness()
+        let adapter = CodexExecRuntimeAdapter(
+            controller: CodexExecProcessController(runner: harness.processRunner(process: process)),
+            readinessProbe: CodexExecReadinessProbe(runner: harness.runner),
+            executableURL: URL(fileURLWithPath: "/tmp/codex"),
+        )
+        let command = try await adapter.makeCommand(
+            request: makeRuntimeRequest(input: ""),
+            threadID: "opaque/provider/thread-id",
+        )
+        XCTAssertEqual(command.stdin, CodexExecRuntimeAdapter.resumeContinuationPrompt)
+        XCTAssertFalse(command.arguments.contains(CodexExecRuntimeAdapter.resumeContinuationPrompt))
+    }
+
     /// ATI-004-manage_external_agent_runtimes: process environment remains provider-owned and allowlisted.
     /// Codex_HOME/auth/session ownership과 환경 변수 allowlist를 확인합니다.
     /// - 검증 내용: 기존 canonical environment helper가 unrelated secret을 전달하지 않는지 확인합니다.
