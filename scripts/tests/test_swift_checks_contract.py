@@ -44,7 +44,7 @@ class SwiftCheckContractTests(unittest.TestCase):
             source.parent.mkdir(parents=True)
             source.symlink_to("missing.swift")
             with self.assertRaises(RuntimeError):
-                check_sources(root, [source.relative_to(root).as_posix()], ["ast"])
+                check_sources(root, [source.relative_to(root).as_posix()], ["ast"], root)
 
     def test_later_scope_error_keeps_earlier_failure_in_receipt(self):
         output = io.StringIO()

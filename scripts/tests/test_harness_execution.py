@@ -49,7 +49,7 @@ class HarnessExecutionTests(unittest.TestCase):
 
     def test_empty_source_scope_does_not_claim_tools_ran(self):
         with patch("scripts.run_swift_checks.run_check") as run:
-            results = check_sources(ROOT, [], ["ast", "lint", "format"])
+            results = check_sources(ROOT, [], ["ast", "lint", "format"], ROOT)
         run.assert_not_called()
         self.assertEqual([result.status for result in results], ["notApplicable"] * 3)
 
@@ -132,7 +132,17 @@ class HarnessExecutionTests(unittest.TestCase):
             self.assertEqual(result.returncode, 2)
             self.assertNotIn("--config", log.read_text())
 
-    def test_all_ast_failures_are_aggregated(self):
+    def test_unresolved_pinned_tool_blocks_its_check(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = "apps/macos/Sources/A.swift"
+            (root / source).parent.mkdir(parents=True)
+            (root / source).write_text("struct A {}")
+            with patch("scripts.run_swift_checks.resolve_tool", return_value=None):
+                results = check_sources(root, [source], ["lint"], root)
+            self.assertEqual([(result.name, result.status) for result in results], [("lint", "blocked")])
+
+    def test_all_ast_failures_are_aggregated_and_run_resolved_binary(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             source = "apps/macos/Sources/A.swift"
@@ -142,8 +152,31 @@ class HarnessExecutionTests(unittest.TestCase):
                 rule = root / f".ast-grep/rules/common/{name}.yaml"
                 rule.parent.mkdir(parents=True, exist_ok=True)
                 rule.write_text("id: fixture")
-            with patch("scripts.run_swift_checks.run_check", side_effect=[CheckResult("probe", "passed", 0), CheckResult("first", "failed", 1), CheckResult("last", "passed", 0)]):
-                self.assertEqual(check_exit(check_sources(root, [source], ["ast"])), 1)
+            with patch("scripts.run_swift_checks.resolve_tool", return_value="/resolved/ast-grep") as resolve, patch(
+                "scripts.run_swift_checks.run_check",
+                side_effect=[CheckResult("probe", "passed", 0), CheckResult("first", "failed", 1), CheckResult("last", "passed", 0)],
+            ) as run:
+                self.assertEqual(check_exit(check_sources(root, [source], ["ast"], root)), 1)
+            resolve.assert_called_once_with(root, "ast-grep")
+            self.assertEqual([call.args[1][0] for call in run.call_args_list], ["/resolved/ast-grep"] * 3)
+
+    def test_staged_rename_keeps_both_policy_paths_in_scope(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            git(root, "init", "-q")
+            git(root, "config", "user.email", "fixture@example.invalid")
+            git(root, "config", "user.name", "Fixture")
+            policy = root / "apps/macos/.swiftformat"
+            policy.parent.mkdir(parents=True)
+            policy.write_text("# fixture format config\n")
+            git(root, "add", ".")
+            git(root, "commit", "-qm", "fixture")
+            policy.rename(root / "apps/macos/ignored.txt")
+            git(root, "add", "-A")
+            self.assertEqual(
+                sorted(changed_paths(root, "staged", None)),
+                ["apps/macos/.swiftformat", "apps/macos/ignored.txt"],
+            )
 
 
 if __name__ == "__main__":

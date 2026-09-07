@@ -44,15 +44,17 @@ def paths_from_nul(data: bytes) -> list[str]:
 
 
 def changed_paths(root: Path, mode: str, base: str | None) -> list[str]:
+    # --no-renames keeps both sides of a rename visible so a moved policy
+    # file still expands the affected engine scope instead of vanishing.
     if mode == "all":
         return paths_from_nul(git(root, "ls-files", "-z"))
     if mode == "staged":
-        return paths_from_nul(git(root, "diff", "--cached", "--name-only", "-z", "--diff-filter=ACMRD"))
+        return paths_from_nul(git(root, "diff", "--cached", "--name-only", "--no-renames", "-z", "--diff-filter=ACMRD"))
     if mode == "base-ref":
         base_sha = git(root, "rev-parse", "--verify", f"{base}^{{commit}}").decode().strip()
         ancestor = git(root, "merge-base", base_sha, "HEAD").decode().strip()
-        return paths_from_nul(git(root, "diff", "--name-only", "-z", "--diff-filter=ACMRD", ancestor, "HEAD"))
-    local = paths_from_nul(git(root, "diff", "--name-only", "-z", "--diff-filter=ACMRD", "HEAD"))
+        return paths_from_nul(git(root, "diff", "--name-only", "--no-renames", "-z", "--diff-filter=ACMRD", ancestor, "HEAD"))
+    local = paths_from_nul(git(root, "diff", "--name-only", "--no-renames", "-z", "--diff-filter=ACMRD", "HEAD"))
     untracked = paths_from_nul(git(root, "ls-files", "--others", "--exclude-standard", "-z"))
     return sorted(set(local + untracked))
 
@@ -130,7 +132,30 @@ def check_exit(results: Sequence[CheckResult]) -> int:
     return 1 if any(result.status == "failed" for result in results) else 0
 
 
-def check_sources(root: Path, paths: list[str], checks: list[str]) -> list[CheckResult]:
+def resolve_tool(tool_root: Path, tool: str) -> str | None:
+    """Resolve the pinned executable in the trusted original checkout.
+
+    The staged snapshot is a fresh temp directory, so its copied mise.toml is
+    always untrusted to mise; tools must be resolved outside of it.
+    """
+    try:
+        result = subprocess.run(
+            ["mise", "exec", "--", "which", tool], cwd=tool_root,
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            text=True, errors="replace", timeout=60, check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode:
+        return None
+    for line in reversed(result.stdout.splitlines()):
+        binary = line.strip()
+        if os.path.isabs(binary):
+            return binary
+    return None
+
+
+def check_sources(root: Path, paths: list[str], checks: list[str], tool_root: Path) -> list[CheckResult]:
     candidates = sorted(path for path in set(paths) if is_swift_source(path))
     files = []
     for path in candidates:
@@ -140,25 +165,33 @@ def check_sources(root: Path, paths: list[str], checks: list[str]) -> list[Check
             safe_file(root, path)
             files.append(path)
     results: list[CheckResult] = []
-    tools = {"ast": ("ast-grep", "--version"), "format": ("swiftformat", "--version"), "lint": ("swiftlint", "version")}
+    tools = {
+        "ast": ("ast-grep", ("--version",)),
+        "format": ("swiftformat", ("--version",)),
+        "lint": ("swiftlint", ("version",)),
+    }
     for check in checks:
         if not files:
             results.append(CheckResult(check, "notApplicable", reason="no Swift files in selected source scope"))
             continue
-        probe = run_check(f"{check}:tool", ["mise", "exec", "--", *tools[check]], root)
-        if probe.status != "passed":
-            results.append(CheckResult(check, "blocked", probe.returncode, "required pinned tool or snapshot config trust unavailable"))
+        tool, probe = tools[check]
+        binary = resolve_tool(tool_root, tool)
+        if binary is None:
+            results.append(CheckResult(check, "blocked", reason=f"pinned {tool} unavailable in the trusted original checkout"))
+            continue
+        if run_check(f"{check}:tool", [binary, *probe], root).status != "passed":
+            results.append(CheckResult(check, "blocked", reason=f"pinned {tool} unavailable inside the snapshot"))
             continue
         commands = []
         if check == "format":
             config = safe_file(root, "apps/macos/.swiftformat")
-            commands.append(("format", ["mise", "exec", "--", "swiftformat", "--lint", "--config", str(config)], files))
+            commands.append(("format", [binary, "--lint", "--config", str(config)], files))
         elif check == "lint":
             for tests, config_name in [(False, ".swiftlint.yml"), (True, ".swiftlint-tests.yml")]:
                 selected = [path for path in files if is_test(path) == tests]
                 if selected:
                     config = safe_file(root, f"apps/macos/{config_name}")
-                    commands.append((f"lint:{'tests' if tests else 'sources'}", ["mise", "exec", "--", "swiftlint", "--config", str(config)], selected))
+                    commands.append((f"lint:{'tests' if tests else 'sources'}", [binary, "--config", str(config)], selected))
         else:
             rules = sorted((root / ".ast-grep/rules").rglob("*.yaml"))
             if not rules:
@@ -171,7 +204,7 @@ def check_sources(root: Path, paths: list[str], checks: list[str]) -> list[Check
                     raise RuntimeError(f"unregistered AST rule scope: {segment}")
                 selected = [path for path in production if "/Ui/" in path] if segment == "ui" else production
                 if selected:
-                    commands.append((f"ast:{rule.stem}", ["mise", "exec", "--", "ast-grep", "scan", "--rule", str(rule)], selected))
+                    commands.append((f"ast:{rule.stem}", [binary, "scan", "--rule", str(rule)], selected))
             if not commands:
                 results.append(CheckResult("ast", "notApplicable", reason="no production Swift sources"))
         for name, prefix, selected in commands:
@@ -216,12 +249,16 @@ def main() -> int:
             )
             for check in dict.fromkeys(args.checks):
                 selected = sorted(set(all_paths + paths)) if policy_changed(paths, check) else paths
-                results.extend(check_sources(content_root, selected, [check]))
+                results.extend(check_sources(content_root, selected, [check], root))
                 if check == "ast" and (policy_changed(paths, check) or args.all):
                     safe_file(content_root, "sgconfig.yml")
                     if not list((content_root / ".ast-grep/rule-tests").glob("*.yaml")):
                         raise RuntimeError("AST rule fixtures are missing")
-                    results.append(run_check("ast:fixtures", ["mise", "exec", "--", "ast-grep", "test", "--skip-snapshot-tests"], content_root))
+                    binary = resolve_tool(root, "ast-grep")
+                    if binary is None:
+                        results.append(CheckResult("ast:fixtures", "blocked", reason="pinned ast-grep unavailable in the trusted original checkout"))
+                    else:
+                        results.append(run_check("ast:fixtures", [binary, "test", "--skip-snapshot-tests"], content_root))
     except (RuntimeError, OSError) as error:
         results.append(CheckResult("scope", "blocked", reason=str(error)))
     print(json.dumps({"tool": "swift-checks", "mode": mode, "tree": tree_sha, "selectedChecks": args.checks, "checks": [asdict(result) for result in results]}, ensure_ascii=True, sort_keys=True))
