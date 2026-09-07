@@ -135,6 +135,18 @@
         "Output allows fixtures, doubles, recorders, or builders under Support/ rather than another Specs file",
         "Output does not recommend keeping a second spec-owner extension file"
       ]
+    },
+    {
+      "id": 12,
+      "prompt": "A package task intentionally updates its tracked Package.resolved pin, while an unrelated user change may already exist before the run. How should the test receipt classify the lockfile and decide whether to stop?",
+      "expected_output": "The agent captures the task baseline and declared write set, treats only pre-existing changes outside that write set as contamination, and allows the task-owned Package.resolved update when its exact before/after hash and diff are recorded. It does not reset the unrelated user change or call every pre-run lockfile difference a blocker.",
+      "files": [],
+      "assertions": [
+        "Output distinguishes task-owned Package.resolved changes from pre-existing changes outside the declared write set",
+        "Output requires baseline and post-run hash/diff evidence for a task-owned lockfile update",
+        "Output treats only unrelated pre-existing lockfile mutation as contamination",
+        "Output does not recommend resetting or restoring the user's unrelated lockfile change"
+      ]
     }
   ]
 }

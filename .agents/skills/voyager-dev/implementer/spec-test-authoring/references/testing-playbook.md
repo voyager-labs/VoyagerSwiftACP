@@ -337,8 +337,9 @@ xcrun swift test --package-path apps/macos/Packages/05_Entities/AppPreferences \
 
 ### Lockfile and test-lint integrity
 
-- When a tracked `Package.resolved` participates in the representative package run, record its status and hash before and after the run. Use `--only-use-versions-from-resolved-file` for that run.
-- If the lockfile is already changed before the run, record baseline contamination and stop collecting that receipt until a clean execution location is available. Do not reset or restore the user's change.
+- When a tracked `Package.resolved` participates in the representative package run, capture its status and hash at the task baseline and after the run, record the declared write set, and use `--only-use-versions-from-resolved-file` for the pinned verification run.
+- Treat a pre-existing lockfile diff outside the task's declared write set as baseline contamination. Do not reset or restore it; stop that receipt or move to a clean execution location.
+- A task-owned lockfile update is not contamination when it is declared before execution. Record the baseline and post-run hash/diff, verify the exact intended pin change, and report it as scope-integrity evidence alongside the test result.
 - A passing suite with an unexplained tracked lockfile mutation is not a passing task. Test execution and scope integrity are separate checks.
 - Use the existing `scripts/lint-and-format-macos.sh` routing for Swift lint. Test files under `*Tests/*.swift` use `.swiftlint-tests.yml`; production files use `.swiftlint.yml`. A test pass does not prove test lint, and general Swift lint does not prove the test configuration was applied.
 
