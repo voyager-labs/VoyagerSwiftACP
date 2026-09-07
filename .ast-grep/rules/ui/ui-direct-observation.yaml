@@ -1,33 +1,20 @@
 id: ui-direct-observation
 language: swift
 severity: error
-message: "Ui 파일에서 NotificationCenter를 직접 사용하지 마세요. Reducer-owned observation을 사용하세요."
-note: >
-  Observation (NotificationCenter, Timer, etc.) must be owned by the Reducer, not the View.
-  Views should only send lifecycle events; actual observation logic belongs in Reducer effects.
-  Instead:
-    - Encapsulate observation in a DependencyClient
-    - Start/stop observation in Reducer .run effects
-    - Views only call store.send(.view(.startObserving))
-  Exception: NotificationCenter.default is allowed inside `class Coordinator` / `final class Coordinator`
-  within NSViewRepresentable types. Coordinators handle UI geometry observation (e.g. scroll bounds)
-  which is AppKit plumbing, not reducer-owned system lifecycle.
-  DistributedNotificationCenter.default() remains forbidden everywhere in Ui — no exception.
-  Implementation: uses ast-grep relational `not` + `inside` with `stopBy: end` to exclude matches
-  nested inside any class_declaration whose name matches "Coordinator".
-  TODO: 이 예외는 NSClipView.boundsDidChangeNotification 같은 AppKit geometry observation이
-  NSViewRepresentable.Coordinator에서 불가피하게 발생하는 false positive를 회피하기 위한 임시 조치입니다.
-  장기적으로 AiChatTranscriptScrollObservationClient 같은 feature-local DependencyClient를 도입하여
-  Coordinator는 NSClipView 등록만 하고 실제 관찰 lifecycle(시작/중지)은 reducer effect가 소유하도록
-  리팩터링해야 합니다. 그 후 이 예외를 제거할 수 있습니다.
-  참조: EntryListCoordinator, EntryGridCoordinator도 동일한 패턴을 사용 중입니다.
-  Scan: sg scan --rule .ast-grep/rules/ui/ui-direct-observation.yaml **/Ui/*.swift
+message: Ui의 도메인·시스템 관찰은 reducer/client로 이동하세요. Coordinator의 물리 UI 관찰은 mount/unmount에서
+  정리하세요.
+note: Distributed observation is forbidden in Ui. The named Coordinator allowance
+  covers native geometry plumbing only, not domain work. It is a syntactic allowance,
+  not proof of lifecycle ownership; verify teardown and late callbacks in tests. Do
+  not create clients solely to wrap scroll notifications.
 rule:
   any:
-    - pattern: "DistributedNotificationCenter.default()"
-    - pattern: "NotificationCenter.default"
-      not:
-        inside:
-          stopBy: end
-          kind: class_declaration
-          regex: "Coordinator"
+  - pattern: DistributedNotificationCenter.default()
+  - pattern: NotificationCenter.default
+    not:
+      inside:
+        kind: class_declaration
+        has:
+          field: name
+          regex: Coordinator$
+        stopBy: end

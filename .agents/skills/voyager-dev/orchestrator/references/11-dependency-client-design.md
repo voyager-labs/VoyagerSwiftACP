@@ -1,53 +1,46 @@
 ---
-description: "Design rules for TCA dependency clients: granularity, composition, phantom elimination, and macro policy."
+description: "Design rules for TCA dependency clients: capability boundaries, composition, override safety and macro policy."
 globs: "apps/macos/**"
 ---
 
 # Dependency Client Design
 
-Governs how `Api/*Client.swift` types are split, composed, and registered. Extends the client introduction rules in `.agents/skills/voyager-dev/implementer/tca-contract/references/tca-contract.md` (Dependency client rules). Read that reference first for placement and introduction criteria.
+This reference owns client granularity and composition. Placement and effect lifecycle remain in `.agents/skills/voyager-dev/implementer/tca-contract/references/tca-contract.md`.
 
 ## Must
 
-- Split clients along reducer-capability boundaries that map to a single infrastructure seam (file I/O, network, system API, persistence).
-- Register a client as `DependencyKey` only when at least one reducer consumes it via `@Dependency(\.clientKey)`.
-- Compose clients that depend on other clients using one of:
-    - A `static func live(_:otherClient:) -> Self` factory that accepts the dependency as a parameter, called from `liveValue`.
-    - `@Dependency(\.otherClient)` resolved inside the closure body, not in the `liveValue` computed property body (which caches the resolution once).
-- Provide `testValue` and `previewValue` for every registered client. Prefer explicit, named mocks over `unimplemented` stubs so test intent stays readable.
-- Name clients after the capability they expose (`AccountSessionClient`, `AuthNetworkClient`), not the implementation (`KeychainClient`, `URLSessionClient`) when the capability spans multiple backends.
-- Treat a client as a private implementation detail (not a `DependencyKey`) when only another client's `liveValue` consumes it; inline it as a helper type or function.
-- Sequence cross-seam operations (e.g., network result → file persist) via a reducer-private helper function. Do not introduce a new `DependencyKey` for this purpose.
+- Define a coherent external capability that tests or composition need to replace. Prefer the nearest owning slice's `Api/`; do not add a client for pure sorting, projection, normalization or a one-line delegation.
+- Split unrelated capabilities and security/lifetime boundaries. Do not split mechanically per SDK call or public method, and do not require Interface/Live/Testing targets for every package.
+- Prefer concrete client structs and manual `DependencyKey` registration, consistent with the existing codebase.
+- Register only a real replacement/override boundary. Inspect legitimate consumers, including native adapters and composed clients; "no reducer reads the key directly" alone does not prove a phantom dependency.
+- Purely private implementation helpers do not need a `DependencyKey`. A new client must provide translation, isolation, lifecycle or protection value rather than hide a peer/upward dependency.
+- Compose via explicit `live(dependency: ...)` factories or resolve `@Dependency` at the execution point where override scope must apply. Test transitive overrides; an eagerly captured `.liveValue` must not bypass them.
+- Provide `testValue` and `previewValue`. Unexpected test calls fail loudly; use explicit named fixtures for intended fake behavior, not silent default successes.
+- Keep public capability names about what the caller needs, while implementation SDK details stay private where practical.
+- Group dependent cross-seam steps under the real workflow owner with immutable input and a coherent cancellation policy. Reducer-private helpers may sequence calls inside one effect without a new orchestration client.
 
 ## Must not
 
-- Register a client as `DependencyKey` when no reducer uses it directly. This is a phantom dependency; inline the logic into the sole consumer or remove the registration.
-- Reference `OtherClient.liveValue` inside a method closure of another client's `liveValue`. This bypasses `withDependencies` overrides (Premature Dependency Capture).
-- Mix multiple infrastructure seams in a single client (e.g., file token read + network refresh + system URL open). Split per seam.
-- Introduce the `@DependencyClient` macro in a single package. The codebase uses manual `DependencyKey` conformance everywhere; adopt the macro only as a coordinated migration across all packages.
-- Add a new `*Client.swift` for a capability an existing client already owns. Extend the existing client or split both along the seam, do not overlap.
-- Expose `refreshToken`-style internal lifecycle methods on a public client when only one other client calls them; make them private helpers.
+- Do not introduce overlapping clients for an existing capability without migrating its owner and consumers together.
+- Do not reach directly into `OtherClient.liveValue` from a live operation closure to bypass dependency overrides.
+- Do not put hidden authoritative UI State or a second business state machine inside an actor/client to shorten a reducer.
+- Do not introduce a client solely to wrap native scroll/bounds notifications. Physical observation can remain in the adapter with explicit cleanup; domain/system observation remains client/reducer-owned.
+- Do not add `@DependencyClient` in a single package as incidental refactoring. A macro migration is a deliberate cross-package convention change, not required by this work.
+- Do not make internal token-refresh or lifecycle details public unless there is a real external consumer contract.
+- Do not treat task cancellation as proof of rollback. External mutations may need partial-result, ambiguity, rollback or read-back contracts.
 
 ## Execution steps
 
-1. Identify the reducer capability the new work needs (e.g., "restore session", "exchange handoff ticket", "open billing URL").
-2. Map each capability to exactly one infrastructure seam: file I/O, network HTTP, system API (NSWorkspace/Keychain/UserDefaults), or actor-backed state.
-3. Check existing clients in the package and `06_Shared/Api` for a capability match:
-    - Match found and same seam → extend the existing client.
-    - Match found but different seam → split the existing client per seam first.
-    - No match → introduce a new client.
-4. Verify the candidate client has at least one reducer consumer. If only another client's `liveValue` will call it, treat it as a private helper, not a `DependencyKey`.
-5. Choose the composition pattern:
-    - Single dependency → factory function `static func live(_:)`.
-    - Multiple dependencies or test override needed → `@Dependency(\.)` inside each closure.
-6. Write `liveValue`, `testValue`, and `previewValue`. Ensure `testValue` fails loud (throw or assert) on unintended use.
-7. Add the `DependencyValues` extension in the same file as the client struct.
-8. When a flow spans multiple client seams (e.g., exchange ticket → persist session), extract a private helper in the reducer (e.g., `performHandoffExchange`) that sequences the calls. The helper captures the needed clients and chains their methods inside a single `.run` effect.
+1. Name the caller's capability, external boundary, lifetime, mutable authority and failure behavior.
+2. Inspect existing clients and consumers before adding a type or registration.
+3. Separate UI/domain workflow decisions from external IO implementation and pure policy.
+4. Choose factory or execution-time resolution deliberately; record how override inheritance is tested.
+5. Capture immutable inputs and Sendable-safe dependencies. Define where results are accepted/rejected by owner identity and phase.
+6. Add explicit test/preview implementations and failure-path tests, including transitive override and cancellation after partial external mutation where applicable.
+7. Keep client and `DependencyValues` registration discoverable together. Narrow the public surface only after reference/compile evidence.
 
 ## Verification
 
-- Every registered `DependencyKey` has at least one `@Dependency(\.key)` reference in a `@Reducer` struct under `apps/macos/**`. Search: `ast-grep` or `grep` for the key path.
-- No `OtherClient.liveValue` reference appears inside a closure literal within a different client's `liveValue`. Search: `grep -rn '\.liveValue\.' apps/macos/Packages/**/Api/*Client.swift` and inspect each hit's enclosing scope.
-- No client struct mixes more than one infrastructure seam. Inspect `liveValue` body: file `URL`, `URLSession`, `NSWorkspace`, `UserDefaults`, `Keychain`, or actor `shared` should not co-occur in the same struct.
-- `@DependencyClient` macro is absent from the codebase until a coordinated migration is approved. Search: `grep -rn '@DependencyClient' apps/macos/`.
-- `testValue` and `previewValue` are present for every `DependencyKey` conformance.
+Search/AST can locate `.liveValue`, direct SDK calls, new registrations and missing fixture surfaces. Inspect their actual ownership and execution context before classifying a finding. Run tests that override the lower-level client through the public feature path; a text match alone does not prove eager capture or correct propagation.
+
+Use compiler evidence for Sendable/access constraints, tests for client behavior and composition overrides, and fixtures for externally owned payloads. Do not claim a client graph is correct from naming or from one `@Dependency` reference count.

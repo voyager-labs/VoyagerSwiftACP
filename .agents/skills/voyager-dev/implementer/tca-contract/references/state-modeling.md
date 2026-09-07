@@ -1,191 +1,90 @@
 # State Modeling
 
-Voyager macOS TCA Feature 설계 시 State 구조와 데이터 모델링 패턴. State의 생명주기, scope 성능, Optional State 활용, computed property 위험성, UI State 분리 기준을 다룬다.
+Voyager TCA State 설계는 권위 있는 값의 owner, 유효한 상태 조합, 실행 수명, 표시 비용을 함께 정의한다. 파일 수나 enum 개수를 목표로 삼지 않는다.
 
 ## 핵심 원칙
 
-- **State는 최소화하라.** Feature가 필요로 하는 가장 작은 State로 시작하고, 필요할 때만 확장한다.
-- **Optional State로 조건부 작업을 방지하라.** State가 항상 존재하면 reducer와 effect가 불필요하게 실행된다. Optional + `ifLet`으로 필요할 때만 실행한다.
-- **scope 함수는 매 action마다 호출된다.** scope 내 계산은 반드시 가벼워야 한다. O(n) 연산도 hot path에서는 문제가 된다.
-- **UI State는 View 계층에 두라.** reducer State에 두면 불필요한 action/effect 트래픽이 발생한다.
-- **computed property는 scope에서 절대 사용하지 마라.** TCA 1.5+에서 scoped store는 매 access마다 root store에서 변환하므로 computed property가 매번 재생성된다.
+- State는 필요한 최소 도메인으로 시작한다. child reducer를 추출하면 그 관심사의 State/Action/전이/실행 수명도 함께 분리한다.
+- State가 존재한다는 이유만으로 effect가 자동 실행되지는 않는다. 화면 표시 여부, State 보존 여부, 작업 수명을 별도로 결정한다.
+- Scope는 stored child property를 기본으로 한다. 매 접근마다 정렬·필터·새 child State를 만드는 computed scope는 금지한다.
+- 단순 getter, 이미 소유한 child의 optional presentation bridge는 예외가 될 수 있다. 비용과 lifetime을 명시하고 회귀 테스트를 둔다. 이를 이유로 writable child 사본을 하나 더 저장하지 않는다.
+- 같은 의미의 canonical 값에 writer가 여러 개 생기는 것을 막는다. draft, baseline, reload candidate, immutable render snapshot은 역할이 다른 값이며 일괄 제거 대상이 아니다.
 
-## 의사결정 기준
+## State 배치 결정
 
-### "이 State는 reducer가 가져야 하는가?"
+| 값 | 기본 owner |
+| --- | --- |
+| domain identity, committed definition | 해당 Entity/aggregate |
+| 작업 phase, request/generation, recovery | 해당 workflow/capability reducer |
+| 편집 중 text/condition draft, undo history | 편집 Feature |
+| selected Entry IDs, focus/range anchor | selection/presentation aggregate |
+| row/index map, responder, isApplyingProjection | native adapter |
+| hover, drag pixel offset, animation progress | View/Coordinator |
+| 이미지·대용량 재사용 캐시 | 명시적 cache boundary; State에는 key/version/수요 |
 
-```text
-State가 UI 전용인가? (hover, drag offset, animation progress)
-├── YES -> @State in View (reducer 불필요)
-└── NO -> reducer State 계속
+Selection은 파일 작업·키보드·복원에 영향을 주므로 단지 UI에서 사용된다는 이유로 View에 숨기지 않는다. 반대로 pixel 단위 geometry를 action으로 모두 전달하지 않는다.
 
-State가 비즈니스 로직에 필요한가?
-├── YES -> reducer State 유지
-└── NO -> view만 필요하므로 @State로 이동
+## Optional State와 retained State
 
-State 변경이 action을 트리거해야 하는가?
-├── YES -> reducer State 유지
-└── NO -> view의 @State로 충분
-```
-
-### "Optional State로 만들어야 하는가?"
-
-```text
-해당 State가 항상 화면에 보이는가?
-├── YES -> 일반(non-optional) State
-└── NO -> Optional State + ifLet
-
-해당 State의 reducer/effect가 보이지 않을 때도 실행되어야 하는가?
-├── YES -> 일반 State (예: 백그라운드 업데이트)
-└── NO -> Optional State (불필요한 작업 방지)
-```
-
-### "어떤 scope 방식을 선택할까?"
-
-```text
-자식 State가 stored property인가?
-├── YES -> scope(state:action:) 직접 사용 (가장 빠름)
-└── NO (computed property) ->
-    ├── computed property를 stored property로 리팩토링 가능?
-    │   ├── YES -> stored property로 변경
-    │   └── NO -> view layer에서 필요한 데이터만 계산, scope 사용 금지
-```
-
-## 코드 사례
-
-### Optional State로 불필요한 작업 방지
-
-```swift
-// BAD: State가 항상 존재 -> 보이지 않을 때도 reducer/effect 실행
-@ObservableState
-struct State {
-    var commandBar: CommandBarFeature.State = .init()
-}
-
-// GOOD: Optional State -> ifLet으로 필요할 때만 실행
-@ObservableState
-struct State {
-    @Presents var commandBar: CommandBarFeature.State?  // nil이면 child reducer 미실행
-}
-```
-
-```swift
-var body: some Reducer<State, Action> {
-    Reduce { state, action in
-        // Core logic
-        return .none
-    }
-    .ifLet(\.$commandBar, action: \.commandBar) {
-        CommandBarFeature()
-    }
-}
-```
-
-### UI State는 View 계층에
-
-```swift
-// BAD: UI-only state가 reducer에 있음
-@ObservableState
-struct State {
-    var sidebarHoveredItemId: UUID?  // hover는 순수 UI 상태
-}
-
-// GOOD: View에서 관리
-struct SidebarView: View {
-    @State private var hoveredItemId: UUID?  // View 소유
-    let store: StoreOf<SidebarFeature>
-
-    var body: some View {
-        List(store.items) { item in
-            RowView(item: item)
-                .onHover { isHovered in
-                    hoveredItemId = isHovered ? item.id : nil
-                }
-        }
-    }
-}
-```
-
-### scope는 반드시 stored property로
-
-```swift
-// GOOD: stored property로 scope
-@ObservableState
-struct State {
-    var settings: SettingsFeature.State = .init()
-}
-
-// ParentView
-ChildView(
-    store: store.scope(state: \.settings, action: \.settings)  // 직접 key path
-)
-```
-
-```swift
-// BAD: computed property로 scope
-extension ParentFeature.State {
-    var computedSettings: SettingsFeature.State {
-        SettingsFeature.State(
-            // 매번 재생성되는 계산
-        )
-    }
-}
-
-// scope 호출 시마다 computedSettings가 재계산됨
-ChildView(
-    store: store.scope(state: \.computedSettings, action: \.settings)  // 성능 저하
-)
-```
-
-### State 변화 감지 비용 인지
-
-```swift
-// BAD: UserDefaults를 scope 함수에서 참조
-var body: some Reducer<State, Action> {
-    Scope(state: \.child, action: \.child) {
-        // scope closure 내부에서 UserDefaults 읽기 -> action마다 호출
-    }
-}
-
-// scope closure는 외부 상태를 참조하지 않고 State만 사용해야 함
-```
-
-## 비옵셔널 child + 옵셔널 projection 패턴 (Guard Overlay)
-
-비옵셔널 canonical child state를 유지하면서 조건부 view 마운팅이 필요한 경우, computed 옵셔널 projection을 사용한다. 이 패턴은 `IfLetStore`가 항상 렌더링되는 문제를 해결한다.
-
-**문제:** 비옵셔널 `Store<Child.State, Child.Action>`을 `IfLetStore`에 직접 연결하면 store가 항상 non-nil이므로 overlay가 항상 렌더링된다.
-
-**해결:** 부모 State에는 비옵셔널 child를 유지하고, computed property로 phase에 따라 옵셔널을 반환한다.
+실제 presentation 또는 child lifetime이 시작·종료될 때 optional State와 `ifLet`/`@Presents`를 사용한다. 비활성 탭, 보존된 편집 초안, 백그라운드 채팅·파일 작업은 화면이 사라져도 수명이 남을 수 있다. 이런 State를 visibility만으로 nil로 만들지 않는다.
 
 ```swift
 @ObservableState
-struct State {
-    var accessGatePhase: AccessGatePhase = .unresolved
-    var accountAccess: AccountAccessFeature.State = .init()  // 비옵셔널 canonical child
+struct ParentState {
+    var session: SessionState
+    @Presents var confirmation: ConfirmationState?
 }
+```
 
-// phase에 따라 옵셔널 projection
+Parent는 child의 생성·제거·이동을 소유할 수 있지만, 유지되는 child의 내부 phase 전이를 대신 구현하지 않는다. 제거 시 취소되는 작업과 별도 owner로 이전되는 작업을 구분한다.
+
+## Phase와 모델 불변식
+
+- 한 작업의 배타적 단계는 enum으로 모델링하여 불가능한 조합을 줄인다. phase에만 필요한 payload는 해당 case/작업 모델과 함께 둔다.
+- 병렬로 가능한 검색과 저장은 별도의 상태 머신을 유지한다. 모든 bool을 하나의 거대 enum으로 합치지 않는다.
+- request identity, owner identity, generation/revision과 legal phase를 함께 검사해 late result를 수용한다.
+- 외부 쓰기 취소는 실제 rollback을 보장하지 않는다. ambiguous/applied-unverified/read-back 상태를 단순 idle로 바꾸지 않는다.
+- 새 content snapshot과 정착된 selection처럼 동시에 맞아야 하는 값은 하나의 작은 aggregate에서 원자적으로 commit한다. 후속 setter Action 사슬로 깨진 불변식을 복구하지 않는다.
+
+## Model 구분
+
+Wire DTO, domain value, operation input/result, edit draft, persisted baseline, render projection을 구분한다. 이들을 위해 무조건 별도 target·protocol·wrapper를 만들지는 않는다. 변환이나 보호 책임이 있는 경계에서만 타입을 분리한다.
+
+Operation에는 실행 시점의 immutable target/context를 전달한다. selection이나 전체 FileManagerContentState를 서비스가 계속 복제·동기화하는 방식은 피한다. stable identity와 현재 path, 화면 occurrence와 native row index도 서로 다른 개념이다.
+
+공개 State의 mutation surface는 가능한 한 좁힌다. SwiftPM module 밖 쓰기를 제한할 때 `public internal(set)`이나 opaque Action factory가 유용하지만, composition에 필요한 writable key path와 공개 associated-value 접근 수준을 실제 컴파일로 확인한다. 모든 Action에 동일한 형태를 강요하지 않는다.
+
+## Projection과 관찰 비용
+
+- 일반 계산은 leaf 가까이에 둔다. 무거운 projection은 관련 입력 변경에만 계산하고 selection-only 갱신과 분리한다.
+- native adapter는 ID/row map을 재사용한다. 썸네일 완료만으로 전체 content를 정렬하지 않는다.
+- 캐시에는 소유자, invalidation 입력, 보존 수명과 revision 의미가 필요하다. canonical writable state와 경쟁하는 캐시는 만들지 않는다.
+- debounce/throttle은 비싼 계산 뒤가 아니라 계산 전에 적용한다. 실제 필요한 중간 상태·응답 지연은 측정하여 결정한다.
+- `State: Equatable` 구현에서 의미 있는 변경을 임의로 숨기지 않는다. observation 회피를 위해 비교가 항상 true인 wrapper를 늘리지 않는다.
+
+## 기존 optional projection bridge (Guard Overlay)
+
+기존 access gate처럼 canonical child는 보존하면서 특정 phase에서만 overlay를 표시하는 경우, 새로운 writable State를 저장하는 대신 기존 child의 가벼운 optional projection을 유지할 수 있다.
+
+```swift
 var presentedAccountAccess: AccountAccessFeature.State? {
     switch accessGatePhase {
     case .recoveryRequired, .signedOut:
-        accountAccess  // guard가 필요한 phase에서만 반환
+        accountAccess
     case .unresolved, .checking, .granted, .terminating:
-        nil            // otherwise nil
+        nil
     }
 }
 ```
 
-```swift
-// View에서 scope 시 projection 사용
-appRootStore.scope(state: \.lifecycle.presentedAccountAccess, action: \.lifecycle.accountAccess)
-```
+이 예외는 새 child State를 계산·정렬·조립하는 computed scope를 허용하지 않는다. 외부 optional store API와 내부 retained child의 lifetime을 테스트하고, 기존 `IfLetStore` 소비자 계약을 보존한다. State가 존재한다는 것과 overlay가 mount된다는 것을 동일시하지 않는다.
 
-**주의:** FileManager 등 외부 API는 `Store<Child.State?, Child.Action>` 옵셔널 semantic을 유지해야 `IfLetStore`가 정상 동작한다. 부모의 비옵셔널 child와 외부 옵셔널 store 사이의 bridge가 이 projection이다.
+## 검증
 
-> **출처:** PR #329 Task 3 QA fix. `kw-20260712-tca-optional-projection-guard-overlay`
+소유권 변경 시 stale completion, cancel/replace, close/remount, reload 실패, draft 보존 등 영향을 받는 시나리오를 검증한다. 선택-only path는 projection/sort/diff 호출 수로 검증한다. AST는 일부 문법만 확인할 수 있으며 전역 single-writer나 성능 향상을 증명하지 않는다.
 
 ## 관련 문서
 
-- `action-design.md` -- State 변화를 유발하는 action 설계
-- `performance.md` -- State scope의 성능 비용
+- `tca-contract.md` — reducer 합성·실행·cancel 경계
+- `action-design.md` — 의미 있는 Action 설계
+- `performance.md` — 성능 비용 및 계측
