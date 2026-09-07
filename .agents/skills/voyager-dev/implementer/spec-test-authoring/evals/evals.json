@@ -85,6 +85,44 @@
         "Output mentions @MainActor and async as the modernization pattern.",
         "Output does not suggest making nested enums public for test access."
       ]
+    },
+    {
+      "id": 8,
+      "prompt": "Run the representative AppPreferences suite SET002ConfigureGeneralSettingsTests for VOY-741. What exact focused command and receipt fields are required before the package acceptance criterion can be marked complete?",
+      "expected_output": "The agent runs the AppPreferences package through xcrun swift test with the package path, --filter SET002ConfigureGeneralSettingsTests, and --only-use-versions-from-resolved-file. The receipt names the VoyagerEntitiesAppPreferencesTests target and intended suite, records the exact command, exit code, positive executed count, suite identity, phase, result, proof gap, and log path. An app dry-run is recorded separately and does not prove the package suite.",
+      "files": [],
+      "assertions": [
+        "Output includes xcrun swift test --package-path apps/macos/Packages/05_Entities/AppPreferences --filter SET002ConfigureGeneralSettingsTests",
+        "Output includes --only-use-versions-from-resolved-file for the tracked-lockfile representative run",
+        "Output names VoyagerEntitiesAppPreferencesTests and SET002ConfigureGeneralSettingsTests in the receipt",
+        "Output requires a positive executed count and exit code 0 before marking the package suite pass",
+        "Output keeps the app selector dry-run separate from package execution proof"
+      ]
+    },
+    {
+      "id": 9,
+      "prompt": "A focused verification can fail during selection, dependency resolution, compilation, linking, test discovery with zero matching tests, or test execution. Define the receipt and outcome rules for each case, including an exit-zero zero-test run.",
+      "expected_output": "The agent records selection, dependency-resolution, compilation, linking, test-discovery, and test-execution as distinct phases. It treats an absent suite or zero matching tests as test-discovery even with exit code 0, records no executed count before execution, and keeps the phase separate from the canonical task outcome values pass, fail, degraded, exception, and blocked.",
+      "files": [],
+      "assertions": [
+        "Output distinguishes selection, dependency-resolution, compilation, linking, test-discovery, and test-execution phases",
+        "Output classifies an exit-zero run with zero matching tests as test-discovery rather than success",
+        "Output does not invent an executed test count when execution did not start",
+        "Output separates failure phase from task outcome values pass, fail, degraded, exception, and blocked"
+      ]
+    },
+    {
+      "id": 10,
+      "prompt": "The representative package suite passes, but Package.resolved may mutate and the repository has separate SwiftLint configs for source and test files. What independent integrity checks must be captured before closeout?",
+      "expected_output": "The agent records Package.resolved status and hash before and after the run, uses --only-use-versions-from-resolved-file, treats unexplained tracked mutation as a scope-integrity failure, and verifies test Swift files through scripts/lint-and-format-macos.sh with .swiftlint-tests.yml. Test pass, lockfile integrity, and test lint are reported separately.",
+      "files": [],
+      "assertions": [
+        "Output requires Package.resolved status and hash before and after the representative run",
+        "Output requires --only-use-versions-from-resolved-file when the tracked lockfile participates",
+        "Output treats unexplained tracked lockfile mutation as a separate scope-integrity problem",
+        "Output identifies scripts/lint-and-format-macos.sh and .swiftlint-tests.yml for test-file lint",
+        "Output reports test execution, lockfile integrity, and test lint as independent evidence"
+      ]
     }
   ]
 }

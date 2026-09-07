@@ -60,12 +60,15 @@ When a spec owns suites in two targets (app and package), run focused filters ag
 # Package target
 xcrun swift test --package-path <package-path> --filter <SpecID><PascalCaseSpecTitle>Tests
 
-# App target (xcodebuild)
-xcodebuild test -scheme Voyager-Dev -project apps/macos/Voyager/Voyager.xcodeproj \
-  -only-testing:VoyagerTests/<SpecID><PascalCaseSpecTitle>Tests
+# App target (repository wrapper)
+mise run macos-test -- -only-testing:VoyagerTests/<SpecID><PascalCaseSpecTitle>Tests
 ```
 
 If the spec ID is the same in both targets, a grep for the spec ID should find tests in both locations. Report pass/fail per target; do not merge results.
+
+The executor matrix in `../../../../code-tooling/SKILL.md` is the single route-selection owner. Use these commands only after identifying the owner, target, and suite or flow. A package run and an app run produce separate receipts; a broader run does not replace a missing focused selection.
+
+For a package build or package-wide test, use `xcrun swift build --package-path <package-path>` or `xcrun swift test --package-path <package-path>`. For a mapped app flow, use `mise run macos-test-flow -- --flow <flow-id>`. For an explicitly broad app check, use `mise run macos-test`.
 
 ### Flow suite selection
 
@@ -269,51 +272,72 @@ When helper extraction happens as part of duplicate-test cleanup, pair it with t
 
 ## SPM Package Test Guidance
 
-### Package inventory (8 macOS packages)
+### Manifest and suite discovery
 
-| #   | Package         | Path                                               | Testable          |
-| --- | --------------- | -------------------------------------------------- | ----------------- |
-| 1   | Onboarding      | `apps/macos/Packages/02_Pages/Onboarding/`         | ✅                |
-| 2   | Settings        | `apps/macos/Packages/02_Pages/Settings/`           | ✅                |
-| 3   | BetaAccess      | `apps/macos/Packages/04_Features/BetaAccess/`      | ✅                |
-| 4   | EntryOperations | `apps/macos/Packages/04_Features/EntryOperations/` | ✅                |
-| 5   | Ai              | `apps/macos/Packages/05_Entities/Ai/`              | ✅                |
-| 6   | AppPreferences  | `apps/macos/Packages/05_Entities/AppPreferences/`  | ❌ No test target |
-| 7   | Entry           | `apps/macos/Packages/05_Entities/Entry/`           | ✅                |
-| 8   | VoyagerShared   | `apps/macos/Packages/06_Shared/VoyagerShared/`     | ❌ No test target |
-
-### Discovery commands
+Treat each package manifest and its current test declarations as the inventory. Do not maintain a static package count or a hand-written list of packages with or without tests.
 
 ```bash
-# List all macOS packages with test targets
-find apps/macos/Packages -name "Package.swift" -maxdepth 3 -exec sh -c 'grep -q "testTarget" "$1" && echo "$1"' _ {} \;
+# List package manifests
+rg --files apps/macos/Packages -g 'Package.swift' | sort
 
-# Or per-package check
-grep "testTarget" apps/macos/Packages/05_Entities/Ai/Package.swift
+# Find package test targets in the current manifests
+rg -n --glob 'Package.swift' '\.testTarget\(' apps/macos/Packages
+
+# Find declared test suites and methods after selecting a package
+rg -n --glob '*Tests.swift' '^[[:space:]]*(final[[:space:]]+)?(class|struct)[[:space:]].*Tests|^[[:space:]]*func[[:space:]]+test|@Test' apps/macos/Packages/<package>/Tests
 ```
+
+The manifest identifies the package test target. The suite declaration identifies the focused filter. A package without a `.testTarget` has no package-local test execution evidence to collect; record that owner-level gap instead of inferring status from an app scheme or changing an app test plan.
 
 ### Per-package test execution
 
 ```bash
+# Build one package
+xcrun swift build --package-path apps/macos/Packages/05_Entities/Ai
+
 # Run all tests in a specific package
 xcrun swift test --package-path apps/macos/Packages/05_Entities/Ai
 
 # Run filtered tests (preferred for evidence capture)
 xcrun swift test --package-path apps/macos/Packages/05_Entities/Ai \
   --filter 'AiRuntimeAdapterTests|ProviderConnectionStateTests'
+
+# Use the tracked pin for a representative receipt
+xcrun swift test --package-path apps/macos/Packages/05_Entities/AppPreferences \
+  --filter SET002ConfigureGeneralSettingsTests \
+  --only-use-versions-from-resolved-file
 ```
 
 ### Evidence capture
 
-- Split evidence per package or per test class, not full package runs.
-- For packages with >100 tests, use `--filter` to capture incremental evidence.
-- No-test-target packages: explicitly document as skipped with reason.
+- Keep package and app receipts separate. For each receipt record:
+  - **Owner**: package name or app suite/flow owner
+  - **Route**: the exact matrix route used
+  - **Package/project path** and **target**
+  - **Suite/filter** and the exact command
+  - **Exit code** and **executed test count** from runner output
+  - **Suite identity** confirmed in the output
+  - **Failure phase**: `selection`, `dependency-resolution`, `compilation`, `linking`, `test-discovery`, `test-execution`, or `N/A`
+  - **Test result**: `PASS`, `FAIL`, or `BLOCKED`
+  - **Task outcome**: `pass`, `fail`, `degraded`, `exception`, or `blocked`
+  - **Proof gap** and **log path**
+- A receipt is successful only when the intended suite identity matches, the executed count is positive, the exit code is zero, and its assertions pass. Exit zero with no matching tests is `test-discovery`, not success.
+- Split evidence per package or per test class when focused evidence is requested. For packages with >100 tests, use `--filter` to capture incremental evidence.
+- A package with no `.testTarget` is an owner-level coverage gap; document the reason and keep app coverage independent.
 
 ### Failure handling
 
-- A failed package test must propagate nonzero exit code.
+- A failed package or app test must propagate its nonzero exit code when the runner reaches test execution.
+- A dependency-resolution, compiler, linker, or test-discovery failure has no test-execution count; record `N/A` or `unknown` rather than zero.
 - Do not silence failures by wrapping in `|| true`.
-- Report per-package pass/fail status separately.
+- Report per-owner pass/fail status separately from route selection and scope integrity.
+
+### Lockfile and test-lint integrity
+
+- When a tracked `Package.resolved` participates in the representative package run, record its status and hash before and after the run. Use `--only-use-versions-from-resolved-file` for that run.
+- If the lockfile is already changed before the run, record baseline contamination and stop collecting that receipt until a clean execution location is available. Do not reset or restore the user's change.
+- A passing suite with an unexplained tracked lockfile mutation is not a passing task. Test execution and scope integrity are separate checks.
+- Use the existing `scripts/lint-and-format-macos.sh` routing for Swift lint. Test files under `*Tests/*.swift` use `.swiftlint-tests.yml`; production files use `.swiftlint.yml`. A test pass does not prove test lint, and general Swift lint does not prove the test configuration was applied.
 
 ## Few-shot examples
 
@@ -325,21 +349,14 @@ xcrun swift test --package-path apps/macos/Packages/05_Entities/Ai \
 
 ## Verification Evidence Requirements
 
-When recording focused test verification results, always include:
+When recording focused test verification results, always include the owner, route, exact package or app command, target, suite/filter, numeric exit code, executed test count, suite identity, test result, task outcome, failure phase, proof gap, and log path.
 
-- **Command**: The exact `xcrun swift test` command used
-- **Exit code**: The numeric exit code
-- **Suite filter**: The `--filter` value used
-- **Executed test count**: How many tests ran (from XCTest output)
-- **Result**: PASS, FAIL, or BLOCKED
-- **Failure phase**: `compilation`, `test-execution`, or `N/A`
+For packages or app routes where source-level errors prevent test compilation:
 
-For packages where source-level build errors prevent test compilation:
-
-- Record as **BLOCKED** (not PASS or FAIL)
+- Record the test result as **BLOCKED** and the task outcome as **blocked** when the prerequisite is external
 - Include the **first failure path** (file and line)
-- Classify as **pre-existing source build blocker** or **test-caused blocker**
-- Mark as a **proof gap** — changed tests were NOT proven to compile/execute
+- Classify the phase as `compilation`, `linking`, or `dependency-resolution` as applicable
+- Mark as a **proof gap** — the intended suite was not proven to compile or execute
 - Never claim verification passed if tests did not compile
 
 Example evidence matrix:
