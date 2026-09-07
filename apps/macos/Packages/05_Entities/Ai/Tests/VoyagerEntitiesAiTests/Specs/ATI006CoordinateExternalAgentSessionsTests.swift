@@ -97,7 +97,7 @@ final class ATI006CoordinateExternalAgentSessionsTests: XCTestCase {
                 "-",
             ],
         )
-        XCTAssertEqual(commands[0].stdin, "")
+        XCTAssertEqual(commands[0].stdin, CodexExecRuntimeAdapter.resumeContinuationPrompt)
         let adapterCounts = await adapter.debugStorageCounts()
         XCTAssertEqual(adapterCounts.receipts, 0)
         XCTAssertEqual(adapterCounts.restartBindings, 0)

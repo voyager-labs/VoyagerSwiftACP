@@ -1150,7 +1150,7 @@ struct CodexExecProcessController {
         state.ordinal += 1
         let kind: CodexExecLifecycleKind = switch event.type {
         case .turnCompleted: .completed
-        case .turnFailed, .error: .failed
+        case .turnFailed: .failed
         default: .progress
         }
         if kind != .progress || event.type != .threadStarted {

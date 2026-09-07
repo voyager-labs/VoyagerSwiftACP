@@ -1099,7 +1099,7 @@ extension CBW003ProviderExecutionResolutionTests {
         }
         await runner.waitUntilReady()
         runner.send(#"{"type":"thread.started","thread_id":"legacy-duplicate-failed"}"#)
-        runner.send(#"{"type":"error","turn_id":"turn","message":"failed"}"#)
+        runner.send(#"{"type":"turn.failed","turn_id":"turn","message":"failed"}"#)
         runner.send(#"{"type":"turn.completed","turn_id":"turn","status":"completed"}"#)
         runner.finishStreams()
         do {

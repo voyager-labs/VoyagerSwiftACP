@@ -1157,14 +1157,15 @@ final class ATI008ObserveExternalAgentResultsTests: XCTestCase {
 
     /// ATI-008-observe_external_agent_results: first failed terminal owns the run permanently.
     /// 첫 terminal 이후 후속 terminal이 raw/lifecycle projection과 cached result를 덮어쓰지 않는지 검증합니다.
-    /// - 검증 내용: error 후 turn.completed 순서에서 단일 failed lifecycle/result, duplicate-terminal failure, 단일 cleanup을 확인합니다.
-    /// - 사전 조건: actor-backed fake process가 thread.started, error, turn.completed를 순서대로 제공합니다.
+    /// - 검증 내용: turn.failed 후 turn.completed 순서에서 단일 failed lifecycle/result, duplicate-terminal failure, 단일 cleanup을
+    /// 확인합니다.
+    /// - 사전 조건: actor-backed fake process가 thread.started, turn.failed, turn.completed를 순서대로 제공합니다.
     /// - 기대 결과: 첫 terminalError 결과가 보존되고 후속 terminal은 duplicateTerminal으로 거부됩니다.
     func testObserve_firstFailedTerminal_rejectsLaterCompletionWithoutOverwrite() async throws {
         let process = CodexExecFakeProcess(
             stdout: [
                 Data(#"{"type":"thread.started","thread_id":"thread-duplicate-failure"}"#.utf8),
-                Data(#"{"type":"error","turn_id":"turn-1","message":"Unauthorized: Bearer ati008-secret-sentinel"}"#
+                Data(#"{"type":"turn.failed","turn_id":"turn-1","message":"Unauthorized: Bearer ati008-sentinel"}"#
                     .utf8),
                 Data(#"{"type":"turn.completed","turn_id":"turn-1"}"#.utf8),
             ],
@@ -1208,18 +1209,60 @@ final class ATI008ObserveExternalAgentResultsTests: XCTestCase {
         XCTAssertEqual(result.outcome, .failed)
         XCTAssertEqual(result.failure, .terminalError)
         XCTAssertTrue(result.diagnostics.stderr.contains("Unauthorized"))
-        XCTAssertFalse(result.diagnostics.stderr.contains("ati008-secret-sentinel"))
+        XCTAssertFalse(result.diagnostics.stderr.contains("ati008-sentinel"))
         XCTAssertNotNil(String(data: Data(result.diagnostics.stderr.utf8), encoding: .utf8))
         XCTAssertLessThanOrEqual(
             result.diagnostics.stderr.utf8.count,
             CodexExecDiagnosticsBuilder.maximumStderrBytes,
         )
         XCTAssertEqual(lifecycle.map(\.kind), [.failed])
-        XCTAssertEqual(rawTypes, ["thread.started", "error"])
+        XCTAssertEqual(rawTypes, ["thread.started", "turn.failed"])
         XCTAssertEqual(process.terminationCount, 1)
         XCTAssertEqual(process.cleanupCount, 1)
         let counts = await controller.debugRegistryCounts()
         XCTAssertEqual(counts.fresh, 0)
+    }
+
+    /// ATI-008-observe_external_agent_results: transient error frames do not finalize the run.
+    /// 재연결 등 일시적 error 프레임이 실행을 terminal 실패로 확정하지 않는지 검증합니다.
+    /// - 검증 내용: error 프레임 이후 progress와 turn.completed가 도착하면 completed로 종료되는지 확인합니다.
+    /// - 사전 조건: error → item.completed → turn.completed 프레임과 exit 0인 fake process가 있습니다.
+    /// - 기대 결과: duplicateTerminal 없이 terminal outcome은 completed이고 failure는 없습니다.
+    func testObserve_transientErrorFrame_doesNotFinalizeTerminal() async throws {
+        let process = CodexExecFakeProcess(
+            stdout: [
+                Data(#"{"type":"thread.started","thread_id":"thread-reconnect"}"#.utf8),
+                Data(#"{"type":"error","message":"Reconnecting... 2/5"}"#.utf8),
+                Data(
+                    #"{"type":"item.completed","item":{"id":"m1","type":"agent_message","text":"done"}}"#.utf8,
+                ),
+                Data(#"{"type":"turn.completed","turn_id":"turn-1"}"#.utf8),
+            ],
+            stderr: [],
+            terminationStatus: 0,
+        )
+        let receipt = try await CodexExecProcessController(
+            runner: CodexExecFakeRunner(process: process).run,
+        ).acquire(
+            runID: "run-reconnect",
+            command: CodexExecCommand(
+                executableURL: URL(fileURLWithPath: "/usr/bin/codex"),
+                arguments: [],
+                environment: [:],
+                stdin: "prompt",
+            ),
+        )
+
+        var lifecycle: [CodexExecLifecycleEvent] = []
+        for try await event in try await receipt.eventStream() {
+            lifecycle.append(event)
+        }
+        XCTAssertEqual(lifecycle.map(\.kind), [.progress, .progress, .completed])
+        XCTAssertEqual(lifecycle.first { $0.rawType == "error" }?.kind, .progress)
+        let result = try await receipt.terminalResult()
+        XCTAssertEqual(result.outcome, .completed)
+        XCTAssertNil(result.failure)
+        XCTAssertEqual(process.cleanupCount, 1)
     }
 
     /// ATI-008-observe_external_agent_results: first completed terminal owns the run permanently.
