@@ -1,5 +1,12 @@
 # VoyagerSwiftACP upstream and subtree policy
 
+## Branch policy
+
+- `main` is the upstream-compatible mirror line. Keep it close to `wiedymi/swift-acp/main`; do not use it as the app's moving integration source.
+- `production` is the long-lived Voyager distribution line. It contains only reviewed Voyager compatibility/vendoring patches on top of the upstream baseline and is the branch consumed by `voyager-app`.
+- `feature/*` branches are temporary issue/review branches. Merge verified work into `production`, then delete the feature branch when no longer needed.
+- ACP protocol experiments such as upstream `feature/acp-v2` remain separate until explicitly promoted through review and conformance testing.
+
 ## Upstream
 
 - Upstream repository: `https://github.com/wiedymi/swift-acp.git`
@@ -24,8 +31,8 @@
 For app-to-fork push-back, preserve subtree ancestry and avoid squashed imports:
 
 ```bash
-git subtree pull --prefix=apps/macos/Packages/VoyagerSwiftACP voyager-swift-acp <branch>
-git subtree push --prefix=apps/macos/Packages/VoyagerSwiftACP voyager-swift-acp <branch>
+git subtree pull --prefix=apps/macos/Packages/VoyagerSwiftACP voyager-swift-acp production
+git subtree push --prefix=apps/macos/Packages/VoyagerSwiftACP voyager-swift-acp production
 ```
 
 Run package tests in the fork and app integration tests before publishing or updating the fork's default branch.
