@@ -68,7 +68,7 @@
       "assertions": [
         "Response selects mise run macos-test-flow -- --flow onb.access_unlock for the mapped flow",
         "Response selects mise run macos-test -- -only-testing:VoyagerTests/SettingsGeneralFlowTests for the general app suite",
-        "Response does not require mise run macos-test for the named focused app suite",
+        "Response distinguishes the selector-bearing mise run macos-test -- -only-testing:VoyagerTests/SettingsGeneralFlowTests command from an unfiltered full-scheme run and does not require the latter for focused coverage",
         "Response treats mapped-flow and general-suite receipts as app-owned routes"
       ]
     },
