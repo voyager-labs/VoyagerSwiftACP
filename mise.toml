@@ -193,8 +193,8 @@ dir = "apps/entry-core"
 run = "go test ./integration -run '^TestDaemonProcessSmoke$' -count=1"
 
 [tasks.entry-core-check]
-description = "Entry Core build, test, race, smoke, 정적 검사와 module 불변식 검증"
-depends = ["entry-core-build", "entry-core-test", "entry-core-test-race", "entry-core-smoke"]
+description = "Entry Core build, test, race, smoke, 정적 검사, catalog/migration 검증과 module 불변식 검증"
+depends = ["entry-core-build", "entry-core-test", "entry-core-test-race", "entry-core-smoke", "entry-core-property-catalog-validate", "entry-core-migration-validate", "entry-core-schema-parity"]
 dir = "apps/entry-core"
 run = '''
 set -eu
@@ -211,6 +211,52 @@ test ! -f ../../go.work
 description = "Entry Core embedded migration 디렉터리 무결성 검증 (atlas.sum vs 실제 파일)"
 dir = "apps/entry-core"
 run = "mise exec -- atlas migrate validate --dir-format golang-migrate --dir file://internal/persistence/sqlite/migrations"
+
+[tasks.entry-core-schema-parity]
+description = "Entry Core GORM model ↔ migration head schema parity 게이트 (빈 diff 또는 allowlist 일치)"
+dir = "apps/entry-core"
+run = '''
+set -eu
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+cp internal/persistence/sqlite/migrations/* "$tmp"/
+ls "$tmp" | sort > "$tmp/.before"
+mise exec -- atlas migrate diff parity_gate --env gorm --dir "file://$tmp" --dir-format golang-migrate
+ls "$tmp" | sort > "$tmp/.after"
+new=$(comm -13 "$tmp/.before" "$tmp/.after" | grep '\.up\.sql$' || true)
+if [ -z "$new" ]; then
+  echo "schema parity: clean"
+  exit 0
+fi
+for f in $new; do
+  cat "$tmp/$f"
+done > "$tmp/.divergence"
+# CHECK constraint 출력 순서는 결정적이지 않다(이름에 테이블이 인코딩되어 있어
+# 정렬 정규화가 정보를 잃지 않는다). 양쪽에 동일 정규화를 적용해 비교한다.
+normalize() {
+  grep -v '^  CONSTRAINT' "$1"
+  grep '^  CONSTRAINT' "$1" | sed 's/,$//' | sort
+}
+normalize internal/persistence/sqlite/migration-divergence.allowlist > "$tmp/.expected"
+normalize "$tmp/.divergence" > "$tmp/.actual"
+if diff -u "$tmp/.expected" "$tmp/.actual" > /dev/null; then
+  echo "schema parity: known divergence (allowlist match)"
+else
+  echo "schema parity: model/migration drift not covered by allowlist" >&2
+  diff -u "$tmp/.expected" "$tmp/.actual" >&2 || true
+  exit 1
+fi
+'''
+
+[tasks.entry-core-property-catalog-generate]
+description = "Entry Core System Property catalog SQL seed와 Condition Go catalog 생성 (--write)"
+dir = "apps/entry-core"
+run = "go run ./internal/tools/property-catalog/cmd/property-catalog --system-registry ../../shared/system_property_registry.json --condition-registry ../../shared/property_condition_registry.json --seeds-dir internal/persistence/sqlite/seeds --condition-out internal/domain/entry/property_condition_catalog_gen.go --write"
+
+[tasks.entry-core-property-catalog-validate]
+description = "Entry Core catalog 생성 산출물이 최신인지 검증 (missing/stale 거부)"
+dir = "apps/entry-core"
+run = "go run ./internal/tools/property-catalog/cmd/property-catalog --system-registry ../../shared/system_property_registry.json --condition-registry ../../shared/property_condition_registry.json --seeds-dir internal/persistence/sqlite/seeds --condition-out internal/domain/entry/property_condition_catalog_gen.go --check"
 
 [tasks.entry-core-swift-test]
 description = "VoyagerEntryCoreClient unit 테스트 (process smoke 제외)"

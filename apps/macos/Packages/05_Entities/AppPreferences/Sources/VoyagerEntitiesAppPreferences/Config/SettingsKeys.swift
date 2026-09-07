@@ -2,6 +2,7 @@ import Foundation
 
 public enum SettingsKeys {
     public static let defaultTabPath = "defaultTabPath"
+    public static let defaultStartPageType = "defaultStartPageType"
     public static let launchAtStartup = "launchAtStartup"
     public static let automaticUpdate = "SUAutomaticallyUpdate"
     public static let alertBeforeQuit = "alertBeforeQuit"

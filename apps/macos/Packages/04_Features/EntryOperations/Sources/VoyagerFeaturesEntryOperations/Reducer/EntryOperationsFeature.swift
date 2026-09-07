@@ -15,6 +15,18 @@ public struct EntryOperationsFeature {
             EntryOperationsMetricsReducer()
             EntryOperationsLifecycleReducer()
             EntryUndoRedoOperationsReducer()
+            EntryOperationsExecutionReducer()
+        }
+    }
+}
+
+@Reducer
+struct EntryOperationsExecutionReducer {
+    typealias State = EntryOperationsState
+    typealias Action = EntryOperationsAction
+
+    var body: some Reducer<State, Action> {
+        CombineReducers {
             EntryOpenOperationsReducer()
             EntryOpenWithOperationsReducer()
             EntryEditOperationsReducer()
@@ -22,6 +34,7 @@ public struct EntryOperationsFeature {
             EntryTrashOperationsReducer()
             EntryArchiveOperationsReducer()
             EntryTaggingOperationsReducer()
+            EntryExternalDropOperationsReducer()
         }
     }
 }

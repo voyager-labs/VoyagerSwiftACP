@@ -1,5 +1,7 @@
 import { type CSSProperties, type FC, useCallback, useId, useRef, useState } from "react"
 import type { ControlOption } from "./ControlOption"
+import { Menu } from "./Menu"
+import { MenuItem } from "./MenuItem"
 
 export interface PullDownButtonProps<Value = string> {
   /** Action label displayed on the trigger button */
@@ -27,6 +29,7 @@ export const PullDownButton: FC<PullDownButtonProps> = <Value,>({
   const [open, setOpen] = useState(false)
   const menuId = useId()
   const containerRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
 
   const handleTrigger = useCallback(() => {
     if (!disabled) {
@@ -39,6 +42,7 @@ export const PullDownButton: FC<PullDownButtonProps> = <Value,>({
       if (opt.disabled) return
       onSelect(opt.value)
       setOpen(false)
+      triggerRef.current?.focus()
     },
     [onSelect],
   )
@@ -54,6 +58,7 @@ export const PullDownButton: FC<PullDownButtonProps> = <Value,>({
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
     if (e.key === "Escape") {
       setOpen(false)
+      triggerRef.current?.focus()
     }
   }, [])
 
@@ -68,6 +73,7 @@ export const PullDownButton: FC<PullDownButtonProps> = <Value,>({
       onKeyDown={handleKeyDown}
     >
       <button
+        ref={triggerRef}
         type="button"
         aria-expanded={open}
         aria-haspopup="menu"
@@ -80,22 +86,17 @@ export const PullDownButton: FC<PullDownButtonProps> = <Value,>({
       </button>
 
       {open ? (
-        <div id={menuId} className="vc-pulldown-menu" role="menu">
+        <Menu id={menuId} className="vc-pulldown-menu" focusOnMount>
           {options.map((opt) => (
-            <button
+            <MenuItem
               key={String(opt.value)}
-              type="button"
-              role="menuitem"
-              aria-disabled={opt.disabled || undefined}
+              label={opt.label}
+              detail={opt.detail}
               disabled={opt.disabled}
-              className="vc-pulldown-option"
               onClick={() => handleSelect(opt)}
-            >
-              <span className="vc-pulldown-option-label">{opt.label}</span>
-              {opt.detail ? <span className="vc-pulldown-option-detail">{opt.detail}</span> : null}
-            </button>
+            />
           ))}
-        </div>
+        </Menu>
       ) : null}
     </div>
   )

@@ -629,7 +629,7 @@ func (adapter *ResourceAdapter) List(ctx context.Context, request source.Adapter
 		if locatorErr != nil {
 			return source.AdapterListResult{}, locatorErr
 		}
-		items[index], err = source.CanonicalizeSourceItemWithLocator(item, locatorRef, request.RequestedProperties, listResult.Freshness.ObservedAt, listResult.SourceRevision, listResult.Availability, listResult.Freshness, entry.PropertyProvenanceProviderDefined)
+		items[index], err = source.CanonicalizeSourceItemWithLocator(item, locatorRef, request.RequestedProperties, request.PropertyDefinitions, request.SourceSelectors, request.ReadTransforms, listResult.Freshness.ObservedAt, listResult.SourceRevision, listResult.Availability, listResult.Freshness, entry.PropertyProvenanceProviderDefined)
 		if err != nil {
 			return source.AdapterListResult{}, source.ErrAdapterFailure
 		}
@@ -694,7 +694,7 @@ func (adapter *ResourceAdapter) Resolve(ctx context.Context, request source.Adap
 	if err != nil {
 		return source.AdapterResolveResult{}, source.ErrAdapterFailure
 	}
-	canonical, err := source.CanonicalizeSourceItemWithLocator(sourceItem, locatorRef, request.RequestedProperties, result.Freshness.ObservedAt, result.SourceRevision, result.Availability, result.Freshness, entry.PropertyProvenanceProviderDefined)
+	canonical, err := source.CanonicalizeSourceItemWithLocator(sourceItem, locatorRef, request.RequestedProperties, request.PropertyDefinitions, request.SourceSelectors, request.ReadTransforms, result.Freshness.ObservedAt, result.SourceRevision, result.Availability, result.Freshness, entry.PropertyProvenanceProviderDefined)
 	if err != nil {
 		return source.AdapterResolveResult{}, source.ErrAdapterFailure
 	}

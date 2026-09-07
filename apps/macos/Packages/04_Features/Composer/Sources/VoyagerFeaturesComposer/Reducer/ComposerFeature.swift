@@ -36,6 +36,8 @@ public struct ComposerFeature {
     var uuid
     @Dependency(\.continuousClock)
     var continuousClock
+    @Dependency(\.composerMetricClient)
+    var composerMetricClient
 
     nonisolated enum CancelID: Hashable {
         case search(ownerID: UUID?)
@@ -66,10 +68,14 @@ public struct ComposerFeature {
         Reduce { state, action in
             switch action {
             case let .view(.setPresented(isPresented)):
-                return handleSetPresented(state: &state, isPresented: isPresented)
+                return handleSetPresented(
+                    state: &state,
+                    isPresented: isPresented,
+                    composerMetricClient: composerMetricClient,
+                )
 
             case let .view(.setText(text)):
-                state.text = text
+                state.setTextFromUserIntent(text)
                 state.transientFeedback = nil
                 return .cancel(id: CancelID.feedbackDismiss(ownerID: state.cancellationOwnerID))
 
@@ -111,28 +117,35 @@ public struct ComposerFeature {
                 return .cancel(id: CancelID.feedbackDismiss(ownerID: state.cancellationOwnerID))
 
             case .internal(.cleanupCollectionWork):
-                if let requestID = state.activeSearchRequestID {
-                    state.resolveScopeChangeFeedback(.search(requestID), phase: .visible)
-                }
-                if let requestID = state.activeFiltersRequestID {
-                    state.resolveScopeChangeFeedback(.filters(requestID), phase: .visible)
-                }
+                let searchCancellation = handleCancelSearch(
+                    state: &state,
+                    composerMetricClient: composerMetricClient,
+                )
+                let filtersCancellation = handleCancelFilters(
+                    state: &state,
+                    registryClient: registryClient,
+                    uuid: { uuid() },
+                    composerMetricClient: composerMetricClient,
+                )
                 state.transientFeedback = nil
                 state.isLoadingSearch = false
                 state.isLoadingFilters = false
                 state.isFilteringInFlight = false
                 state.activeSearchRequestID = nil
                 state.activeFiltersRequestID = nil
+                state.activeFiltersRequestQuery = nil
                 state.lastAcceptedSearchRequestID = nil
                 state.lastAcceptedFiltersRequestID = nil
+                state.lastFailedFiltersRequestID = nil
                 state.pendingSearchQuery = nil
                 state.searchStartedAt = nil
                 state.filtersStartedAt = nil
                 state.activeFiltersMetricSource = nil
+                state.discardQueryRecovery()
                 applyQueryPhaseTransition(.reset, state: &state)
                 return .merge(
-                    .cancel(id: CancelID.search(ownerID: state.cancellationOwnerID)),
-                    .cancel(id: CancelID.filters(ownerID: state.cancellationOwnerID)),
+                    searchCancellation,
+                    filtersCancellation,
                     .cancel(id: CancelID.feedbackDismiss(ownerID: state.cancellationOwnerID)),
                 )
 
@@ -179,12 +192,26 @@ public struct ComposerFeature {
 
             case let .internal(.resetComposerAndSync(context, url, compatibility, isCollectionMode)):
                 let cancellationOwnerID = state.cancellationOwnerID
+                let searchCancellation = handleCancelSearch(
+                    state: &state,
+                    composerMetricClient: composerMetricClient,
+                )
+                let filtersCancellation = handleCancelFilters(
+                    state: &state,
+                    registryClient: registryClient,
+                    uuid: { uuid() },
+                    composerMetricClient: composerMetricClient,
+                )
                 state = .init()
                 state.cancellationOwnerID = cancellationOwnerID
                 state.collectionContext = context
                 state.openedCollectionURL = url
                 state.openedCollectionCompatibility = compatibility
                 state.isCollectionMode = isCollectionMode
+                return .merge(searchCancellation, filtersCancellation)
+
+            case .view(.clearAll):
+                state.lastFailedFiltersRequestID = nil
                 return .none
 
             case .view(.applyFilters),
@@ -192,7 +219,6 @@ public struct ComposerFeature {
                  .view(.removeCondition),
                  .view(.candidateScope),
                  .view(.currentScope),
-                 .view(.clearAll),
                  .view(.saveCollection),
                  .view(.saveCollectionAs),
                  .view(.scopeEditorOpen),
@@ -218,6 +244,7 @@ public struct ComposerFeature {
 private func handleSetPresented(
     state: inout ComposerFeature.State,
     isPresented: Bool,
+    composerMetricClient: ComposerMetricClient,
 ) -> Effect<ComposerFeature.Action> {
     state.isPresented = isPresented
     if !isPresented {
@@ -229,14 +256,24 @@ private func handleSetPresented(
             || state.isLoadingFilters
         let shouldKeepFiltersAlive = shouldPreserveFilterLifecycle || hasActiveFilterLifecycle
         let shouldCloseScopeEditorWithoutCommit = state.scopeEditor.isPresented && !shouldPreserveFilterLifecycle
+        let hadActiveSearch = state.activeSearchRequestID != nil
+        let searchCancellation = handleCancelSearch(
+            state: &state,
+            composerMetricClient: composerMetricClient,
+        )
+        let shouldRetainQueryRecovery = shouldKeepFiltersAlive
+            && state.activeFiltersRequestID.map { state.queryRecoveryContext?.stage == .filters($0) } == true
+
+        if !shouldRetainQueryRecovery {
+            state.discardQueryRecovery()
+            if hadActiveSearch {
+                state.clearTextForSubmit()
+            }
+        }
 
         state.hasSubmittedInSession = false
-        state.searchStartedAt = nil
         state.transientFeedback = nil
-        state.isLoadingSearch = false
-        state.activeSearchRequestID = nil
         state.lastAcceptedSearchRequestID = nil
-        applyQueryPhaseTransition(.reset, state: &state)
 
         if !shouldKeepFiltersAlive {
             state.filtersStartedAt = nil
@@ -245,11 +282,13 @@ private func handleSetPresented(
             state.isFilteringInFlight = false
             state.activeFiltersRequestID = nil
             state.lastAcceptedFiltersRequestID = nil
+            state.lastFailedFiltersRequestID = nil
             state.lastScopeChangeFeedback = nil
         }
 
         var effects: [Effect<ComposerFeature.Action>] = [
-            .cancel(id: ComposerFeature.CancelID.search(ownerID: state.cancellationOwnerID)),
+            searchCancellation,
+            .cancel(id: ComposerFeature.CancelID.scopeEditorSearch),
             .cancel(id: ComposerFeature.CancelID.feedbackDismiss(ownerID: state.cancellationOwnerID)),
         ]
         if shouldPreserveFilterLifecycle {
@@ -294,6 +333,7 @@ func applyAppliedFilters(
     state: inout ComposerFeature.State,
     registryClient: RegistryClient,
     uuid: () -> UUID = UUID.init,
+    preserveLocalMultiScope: Bool = true,
 ) {
     if let includeSubfolders = appliedFilters?.includeSubfolders {
         state.scopeEditor.includeSubfolders = includeSubfolders
@@ -310,7 +350,8 @@ func applyAppliedFilters(
         exceptions: resolved.excludedScopes,
         includeSubfolders: state.scopeEditor.includeSubfolders,
     )
-    let shouldPreserveLocalMultiScope = state.scopeEditor.selection.explicitBases.count > 1
+    let shouldPreserveLocalMultiScope = preserveLocalMultiScope
+        && state.scopeEditor.selection.explicitBases.count > 1
         && resolved.excludedScopes.isEmpty
         && selection.legacyScopePaths != state.scopeEditor.selection.legacyScopePaths
     if !shouldPreserveLocalMultiScope {
@@ -422,16 +463,23 @@ func applyFiltersIfNeeded(
     state.isLoadingFilters = true
     state.isFilteringInFlight = true
     state.activeFiltersRequestID = requestID
+    state.activeFiltersRequestQuery = state.pendingSearchQuery
+        ?? state.collectionContext?.query
+        ?? ""
+    state.lastFailedFiltersRequestID = nil
     state.activeFiltersMetricSource = metricSource
     let filters = buildFilters(from: state)
     guard !filters.conditions.isEmpty else {
         state.isLoadingFilters = false
         state.isFilteringInFlight = false
         state.activeFiltersRequestID = nil
+        state.activeFiltersRequestQuery = nil
         state.activeFiltersMetricSource = nil
+        state.filtersStartedAt = nil
         state.pendingSearchQuery = nil
         return .cancel(id: ComposerFeature.CancelID.filters(ownerID: state.cancellationOwnerID))
     }
+    state.filtersStartedAt = Date()
     state.markScopeChangeFeedbackPending(.filters(requestID))
     return .run { send in
         do {

@@ -110,7 +110,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             await windowStore.receive { action in
                 guard case let .windows(.element(
                     id: routedWindowID,
-                    action: .window(.requestSelectedContentTabPinMutation(target: target)),
+                    action: .window(.requestSelectedContentTabPinMutation(target: target, source: .menuCommand)),
                 )) = action else { return false }
                 return routedWindowID == windowID && target == expectedTarget
             }
@@ -163,7 +163,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         await store.receive { action in
             guard case let .windows(.element(
                 id: routedWindowID,
-                action: .window(.requestSelectedContentTabPinMutation(target: target)),
+                action: .window(.requestSelectedContentTabPinMutation(target: target, source: .menuCommand)),
             )) = action else { return false }
             return routedWindowID == windowID && target == .pinned
         }
@@ -215,7 +215,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
 
         let batchTask = store.send(.windows(.element(
             id: sourceWindowID,
-            action: .window(.requestSelectedContentTabPinMutation(target: .pinned)),
+            action: .window(.requestSelectedContentTabPinMutation(target: .pinned, source: .menuCommand)),
         )))
         await batchTask.finish()
 
@@ -263,7 +263,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
 
         let task = store.send(.windows(.element(
             id: windowID,
-            action: .window(.requestSelectedContentTabPinMutation(target: .pinned)),
+            action: .window(.requestSelectedContentTabPinMutation(target: .pinned, source: .menuCommand)),
         )))
         await task.finish()
 
@@ -317,7 +317,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
         for _ in 0 ..< 2 {
             let batchTask = store.send(.windows(.element(
                 id: sourceWindowID,
-                action: .window(.requestSelectedContentTabPinMutation(target: .pinned)),
+                action: .window(.requestSelectedContentTabPinMutation(target: .pinned, source: .menuCommand)),
             )))
             await batchTask.finish()
             store.withState { state in
@@ -420,6 +420,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             operationID: operationID,
             target: .pinned,
             orderedTargetIDs: [targetID],
+            source: .contextMenu,
             currentTabID: targetID,
         )
         source.syncContentTabSidebarItems()
@@ -654,6 +655,7 @@ final class CTM003ManagePinnedContentTabsTests: XCTestCase {
             operationID: operationID,
             target: .pinned,
             orderedTargetIDs: [tabID],
+            source: .contextMenu,
             currentTabID: tabID,
         )
         _ = state.contentTabs.markLatestPinnedRecordPersistenceIntent(for: tabID)

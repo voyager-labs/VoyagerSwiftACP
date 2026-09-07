@@ -8,7 +8,7 @@ schemaVersion: 2
 
 ## Outcome
 
-- This is the canonical owner for entry fixtures: real entry scenarios use the root `fixtures/` submodule payload at `fixtures/fixtures/**`, helpers live in the consuming target's `Support/`, mutations use isolated sandbox copies, and OS side effects stay mocked.
+- This reference owns macOS/Swift entry fixture mechanics under the global [Entry Test Fixtures](.agents/rules/07-entry-test-fixtures.md) policy: helpers live in the consuming target's `Support/`, mutations use isolated sandbox copies, and OS side effects stay mocked.
 
 ## Default Actions
 

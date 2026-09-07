@@ -493,7 +493,12 @@ private extension SidebarView {
                 _ = sidebarStore.send(.view(.closeContentTab(item.id)))
             },
             onTrailingAction: {
-                _ = sidebarStore.send(.view(presentations.trailingAction.viewAction(tabID: item.id)))
+                switch presentations.trailingAction {
+                case .close:
+                    _ = sidebarStore.send(.view(.closeContentTabFromTrailingControl(item.id)))
+                case .unpin:
+                    _ = sidebarStore.send(.view(presentations.trailingAction.viewAction(tabID: item.id)))
+                }
             },
             onContextMenuClose: {
                 _ = sidebarStore.send(.view(presentations.close.viewAction))
@@ -541,6 +546,7 @@ private extension SidebarView {
                     sourceID: result.sourceID,
                     anchorID: result.anchorID,
                     placement: result.placement,
+                    actionSource: .dragAndDrop,
                 )))
             },
             targetWindowID: sidebarStore.currentWindowID,
@@ -661,6 +667,7 @@ private extension SidebarView {
     private func sendTopNavigationMoveRequest(
         sourceID: FileManagerTopNavigationItemID,
         direction: FileManagerSidebarTopNavigationMoveDirection,
+        actionSource: ContentTabActionSource,
     ) {
         let visibleItemIDs: [FileManagerTopNavigationItemID] = switch sourceID {
         case .location:
@@ -678,6 +685,7 @@ private extension SidebarView {
             sourceID: request.sourceID,
             anchorID: request.anchorID,
             placement: request.placement,
+            actionSource: actionSource,
         )))
     }
 }
@@ -688,6 +696,7 @@ extension View {
         onMove: @escaping (
             FileManagerTopNavigationItemID,
             FileManagerSidebarTopNavigationMoveDirection,
+            ContentTabActionSource,
         ) -> Void,
     ) -> some View {
         modifier(FileManagerSidebarTopNavigationMoveCommandsModifier(

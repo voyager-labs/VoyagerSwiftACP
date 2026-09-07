@@ -128,6 +128,7 @@ final class ControlFileManagerWindowFlowTests: XCTestCase {
         await store.send(.event(.windowClosed(firstID))) {
             $0.closingWindowIDs.insert(firstID)
             $0.invalidatingWindowIDs.insert(firstID)
+            $0.windows[id: firstID]?.window.isFocused = false
             $0.refreshContentTabMoveTargets()
         }
         await store.receive(\.windowInvalidationFinished) {
@@ -138,6 +139,50 @@ final class ControlFileManagerWindowFlowTests: XCTestCase {
             $0.lastUsedWindowIDs = [secondID]
             $0.refreshContentTabMoveTargets()
         }
+    }
+
+    /// FMW-001-close_file_manager_window: production close는 package teardown 뒤에 window state를 제거한다.
+    /// coordinator onDisappear와 WindowManager close event의 실제 조합 순서를 검증한다.
+    /// - 검증 내용: alias된 active Composer operation의 cancelled metric 1회와 teardown 이후 state 제거.
+    /// - 사전 조건: current content와 active tab snapshot이 같은 active query operation을 소유한다.
+    /// - 기대 결과: onDisappear 시 correlation이 먼저 소비되고 windowClosed finalization이 이후 state를 제거한다.
+    func testProductionCloseTerminalizesWindowChildrenBeforeStateRemovalWithoutDuplicateMetrics() async throws {
+        let windowID = UUID()
+        let operationID = UUID()
+        let metrics = LockIsolated<[ComposerProductMetric]>([])
+        var initialState = makeState(focusedID: windowID, windows: [(windowID, Spec.firstPath)])
+        var composer = ComposerFeature.State()
+        composer.isLoadingSearch = true
+        composer.activeSearchRequestID = operationID
+        composer.lastAcceptedSearchRequestID = operationID
+        composer.searchStartedAt = Date(timeIntervalSince1970: 1)
+        composer.queryRenderPhase = .searching
+        initialState.windows[id: windowID]?.window.content.composer = composer
+        let activeTabID = try XCTUnwrap(initialState.windows[id: windowID]?.window.contentTabs.activeTabID)
+        let activeContent = try XCTUnwrap(initialState.windows[id: windowID]?.window.content)
+        initialState.windows[id: windowID]?.window.tabContentStates[activeTabID] = activeContent
+
+        let store = makeStore(initialState: initialState) {
+            $0.composerMetricClient = ComposerMetricClient(recordProductMetric: { metric in
+                metrics.withValue { $0.append(metric) }
+            })
+        }
+        // store.exhaustivity = .off: production composition의 기존 window invalidation 파생 상태보다 close ordering을 검증한다.
+        store.exhaustivity = .off
+
+        await store.send(.windows(.element(id: windowID, action: .window(.onDisappear))))
+
+        XCTAssertNotNil(store.state.windows[id: windowID])
+        XCTAssertNil(store.state.windows[id: windowID]?.window.content.composer.activeSearchRequestID)
+        XCTAssertNil(store.state.windows[id: windowID]?.window.tabContentStates[activeTabID]?.composer
+            .activeSearchRequestID)
+        XCTAssertEqual(cancelledComposerQueryOperationIDs(metrics.value), [operationID])
+
+        await store.send(.event(.windowClosed(windowID)))
+        await store.receive(\.windowInvalidationFinished)
+
+        XCTAssertNil(store.state.windows[id: windowID])
+        XCTAssertEqual(cancelledComposerQueryOperationIDs(metrics.value), [operationID])
     }
 
     // MARK: - FMW-001-quit_voyager
@@ -166,10 +211,21 @@ final class ControlFileManagerWindowFlowTests: XCTestCase {
         await store.send(.window(.closeAllWindows)) {
             $0.closingWindowIDs = [firstID, secondID]
             $0.focusedWindowID = nil
+            $0.windows[id: firstID]?.window.isFocused = false
+            $0.windows[id: secondID]?.window.isFocused = false
             $0.refreshContentTabMoveTargets()
         }
 
         XCTAssertEqual(Array(store.state.windows.ids), [firstID, secondID])
         XCTAssertEqual(closeAllCallCount.value, 1, "fileManagerWindowClient.closeAll은 정확히 한 번 호출되어야 한다")
+    }
+
+    private func cancelledComposerQueryOperationIDs(_ metrics: [ComposerProductMetric]) -> Set<UUID> {
+        Set(metrics.compactMap { metric in
+            guard case let .queryResult(operationID, result, _) = metric,
+                  result == .cancelled
+            else { return nil }
+            return operationID
+        })
     }
 }

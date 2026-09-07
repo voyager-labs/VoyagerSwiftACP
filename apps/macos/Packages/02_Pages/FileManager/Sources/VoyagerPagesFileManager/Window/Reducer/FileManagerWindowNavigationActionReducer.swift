@@ -7,6 +7,24 @@ import VoyagerFeaturesEntryArrangements
 import VoyagerFeaturesEntryOperations
 import VoyagerShared
 
+extension FileManagerWindowState {
+    var pendingPinnedCollectionReturnTabID: ContentTabID? {
+        pendingPinnedCollectionReturnTabID(for: contentTabs.activeTabID)
+    }
+
+    func pendingPinnedCollectionReturnTabID(for tabID: ContentTabID?) -> ContentTabID? {
+        guard let tabID,
+              let tab = contentTabs.tabs[id: tabID],
+              tab.isPinned,
+              let record = contentTabs.pinnedRecords[tabID],
+              case let .collectionFile(durableURL) = record.anchor,
+              pendingCollectionOpenRequest?.url.standardizedFileURL == durableURL.standardizedFileURL,
+              tab.anchor != record.anchor
+        else { return nil }
+        return tabID
+    }
+}
+
 @Reducer
 struct FileManagerNavigationActionReducer {
     typealias State = FileManagerWindowState
@@ -26,6 +44,8 @@ struct FileManagerNavigationActionReducer {
     var metricsClient
     @Dependency(\.uuid)
     var uuid
+    @Dependency(\.fileManagerProductMetricsClient)
+    var productMetricsClient
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
@@ -41,6 +61,7 @@ struct FileManagerNavigationActionReducer {
         state: inout State,
     ) -> Effect<Action> {
         guard state.pendingContentTabClose == nil || !isUserNavigationRequest(action) else {
+            state.content.pendingProductBrowsingSource = nil
             return .none
         }
 
@@ -56,7 +77,7 @@ struct FileManagerNavigationActionReducer {
                 delegateAction,
                 state: &state,
                 computerName: fileManagerClient.displayName("/"),
-                metricsClient: metricsClient,
+                productMetricsClient: productMetricsClient,
             )
         }
     }
@@ -71,28 +92,32 @@ struct FileManagerNavigationActionReducer {
              .showComputer,
              .showTag,
              .showAiChat,
-             .showAiChatSessions:
-            .concatenate(
-                cancelPendingCollectionOpen(state: &state),
-                handleDirectNavigationAction(action, state: &state),
+             .showAiChatSessions,
+             .openCollectionFile:
+            let failedPinnedReturnTabID = state.pendingPinnedCollectionReturnTabID
+            let cancelEffect = cancelPendingCollectionOpen(
+                state: &state,
+                failedPinnedReturnTabID: failedPinnedReturnTabID,
+            )
+            guard let pending = directNavigationPending(action, state: state) else {
+                return cancelEffect
+            }
+            return .concatenate(
+                cancelEffect,
+                handleNavigationRequest(pending, state: &state),
             )
 
         case .goBack,
              .goForward,
              .goToHistoryIndex,
              .goToEnclosingDirectory:
-            .concatenate(
-                cancelPendingCollectionOpen(state: &state),
+            let failedPinnedReturnTabID = state.pendingPinnedCollectionReturnTabID
+            return .concatenate(
+                cancelPendingCollectionOpen(
+                    state: &state,
+                    failedPinnedReturnTabID: failedPinnedReturnTabID,
+                ),
                 handleHistoryNavigationAction(action, state: &state),
-            )
-
-        case let .openCollectionFile(url):
-            handleOpenCollectionFile(
-                url: url,
-                state: &state,
-                collectionFileClient: collectionFileClient,
-                metricsClient: metricsClient,
-                uuid: uuid,
             )
         }
     }
@@ -103,7 +128,8 @@ struct FileManagerNavigationActionReducer {
     ) -> Effect<Action> {
         switch action {
         case .collectionFileLoaded,
-             .navigateToCollection:
+             .navigateToCollection,
+             .navigateToCollectionWithoutSearch:
             handleCollectionNavigationAction(action, state: &state)
 
         case .showUnsavedNavigationAlert,
@@ -129,38 +155,6 @@ struct FileManagerNavigationActionReducer {
         }
     }
 
-    private func handleDirectNavigationAction(
-        _ action: ContentPageNavigationAction.View,
-        state: inout State,
-    ) -> Effect<Action> {
-        switch action {
-        case let .navigateToPath(path):
-            let computerName = fileManagerClient.displayName("/")
-            if path == computerName, state.content.navigation.currentPath == computerName {
-                return .none
-            }
-            return .send(.navigation(.internal(.performNavigateToPath(path))))
-
-        case .showRecents:
-            return .send(.navigation(.internal(.performShowRecents)))
-
-        case .showComputer:
-            return .send(.navigation(.internal(.performShowComputer)))
-
-        case let .showTag(tagName):
-            return .send(.navigation(.internal(.performShowTag(tagName))))
-
-        case let .showAiChat(sessionID):
-            return .send(.navigation(.internal(.performShowAiChat(sessionID))))
-
-        case let .showAiChatSessions(sessionID):
-            return .send(.navigation(.internal(.performShowAiChatSessions(sessionID))))
-
-        default:
-            return .none
-        }
-    }
-
     private func handleCollectionNavigationAction(
         _ action: ContentPageNavigationAction.Internal,
         state: inout State,
@@ -175,11 +169,15 @@ struct FileManagerNavigationActionReducer {
                     collectionAlertClient: collectionAlertClient,
                     registryClient: registryClient,
                     collectionStalenessClient: collectionStalenessClient,
+                    metricsClient: metricsClient,
                 ),
             )
 
         case let .navigateToCollection(navigation):
-            handleNavigateToCollection(navigation, state: &state)
+            handleNavigateToCollection(navigation, startsSearch: true, state: &state)
+
+        case let .navigateToCollectionWithoutSearch(navigation):
+            handleNavigateToCollection(navigation, startsSearch: false, state: &state)
 
         default:
             .none
@@ -208,10 +206,48 @@ struct FileManagerNavigationActionReducer {
         }
     }
 
+    /// 직접 탐색 view 요청을 unsaved 경계가 처리할 수 있는 pending으로 변환한다.
+    /// no-op 요청(현재 route와 동일한 대상, computerName 특례)은 nil로 유지해 기존 무시 동작을 보존한다.
+    private func directNavigationPending(
+        _ action: ContentPageNavigationAction.View,
+        state: State,
+    ) -> ContentPageNavigationPending? {
+        let pending: ContentPageNavigationPending
+        switch action {
+        case let .navigateToPath(path):
+            let computerName = fileManagerClient.displayName("/")
+            if path == computerName, state.content.navigation.currentPath == computerName {
+                return nil
+            }
+            pending = .navigateToPath(path)
+        case .showRecents:
+            pending = .showRecents
+        case .showComputer:
+            pending = .showComputer
+        case let .showTag(tagName):
+            pending = .showTag(tagName)
+        case let .showAiChat(sessionID):
+            pending = .showAiChat(sessionID)
+        case let .showAiChatSessions(sessionID):
+            pending = .showAiChatSessions(sessionID)
+        case let .openCollectionFile(url):
+            pending = .openCollectionFile(url)
+        default:
+            return nil
+        }
+        guard !pending.isSameDirectRoute(as: state.content.navigation.navigationState) else {
+            return nil
+        }
+        return pending
+    }
+
     private func handleNavigationRequest(
         _ pending: ContentPageNavigationPending,
         state: inout State,
     ) -> Effect<Action> {
+        FileManagerContentComposerCoordinator.synchronizeOpenedCollectionDraftFromComposer(
+            state: &state.content,
+        )
         if shouldPromptForUnsavedNavigation(state.content) {
             return .send(.navigation(.internal(.showUnsavedNavigationAlert(pending))))
         }
@@ -230,11 +266,22 @@ struct FileManagerNavigationActionReducer {
             }
         case let .unsavedNavigationAlertResponse(pending, choice):
             return handleUnsavedNavigationAlertResponse(pending: pending, choice: choice, state: &state)
-        case .performNavigation:
-            guard state.content.resetComposerOnNextDirectoryNavigation else {
-                return .none
+        case let .performNavigation(pending):
+            let resetComposerEffect: Effect<Action> = state.content.resetComposerOnNextDirectoryNavigation
+                ? .send(.content(.internal(.resetComposerAfterDirectoryNavigation)))
+                : .none
+            guard case let .openCollectionFile(url) = pending else {
+                return resetComposerEffect
             }
-            return .send(.content(.internal(.resetComposerAfterDirectoryNavigation)))
+            return .concatenate(
+                resetComposerEffect,
+                handleOpenCollectionFile(
+                    url: url,
+                    state: &state,
+                    collectionFileClient: collectionFileClient,
+                    uuid: uuid,
+                ),
+            )
         default:
             return .none
         }
@@ -247,9 +294,11 @@ struct FileManagerNavigationActionReducer {
     ) -> Effect<Action> {
         switch choice {
         case .cancel:
+            state.content.pendingProductBrowsingSource = nil
             return .none
         case .discard:
             state.content.resetComposerOnNextDirectoryNavigation = true
+            state.content.skipCollectionRestoreSearchOnNextDiscard = true
             return .concatenate(
                 .send(.content(.view(.discardCollectionChanges))),
                 .send(.navigation(.internal(.performNavigation(pending)))),
@@ -276,19 +325,18 @@ private func handleOpenCollectionFile(
     url: URL,
     state: inout FileManagerWindowState,
     collectionFileClient: CollectionFileClient,
-    metricsClient: MetricsClient,
     uuid: UUIDGenerator,
 ) -> Effect<FileManagerWindowAction> {
     if let pendingRequest = state.pendingCollectionOpenRequest {
         guard pendingRequest.url.standardizedFileURL != url.standardizedFileURL else {
             return .none
         }
-        state.pendingCollectionOpenRequest = nil
+        let failedPinnedReturnTabID = state.pendingPinnedCollectionReturnTabID
         return .concatenate(
-            .cancel(id: OpenCollectionFileCancelID(
-                windowID: state.content.entryViewLayout.entryOperations.windowID,
-            )),
-            restoreCollectionOpenHistoryEffect(pendingRequest),
+            cancelPendingCollectionOpen(
+                state: &state,
+                failedPinnedReturnTabID: failedPinnedReturnTabID,
+            ),
             .send(.navigation(.view(.openCollectionFile(url)))),
         )
     }
@@ -299,9 +347,6 @@ private func handleOpenCollectionFile(
         prePrepareBackHistory: state.content.navigation.backHistory,
         prePrepareForwardHistory: state.content.navigation.forwardHistory,
     )
-    if state.content.collection.collectionSession.document?.url.path != request.url.path {
-        metricsClient.logDAUNavigation(.collection)
-    }
     state.pendingCollectionOpenRequest = request
 
     let cancelExistingCollectionEffect: Effect<FileManagerWindowAction> = if state.content.isCollectionMode {
@@ -364,9 +409,10 @@ private func collectionFileLoadEffect(
         } catch is CancellationError {
             return
         } catch {
+            let category = collectionOpenErrorCategory(error)
             await send(.navigation(.internal(.collectionFileLoaded(
                 request: request,
-                result: .failure(ContentPageNavigationErrorFingerprint(error: error)),
+                result: .failure(ContentPageNavigationErrorFingerprint(error: error, category: category)),
             ))))
         }
     }
@@ -383,19 +429,13 @@ private func handleCollectionFileLoaded(
           state.pendingCollectionOpenRequest?.url == request.url,
           state.content.navigation.navigationState == request.sourceRoute
     else { return .none }
+    let pinnedReturnTabID = state.pendingPinnedCollectionReturnTabID
     state.pendingCollectionOpenRequest = nil
 
     switch result {
     case let .success(loadResult):
         let file = loadResult.file
         let resolved = file.resolveCollectionFilters(registryClient: environment.registryClient)
-        if file.isEmptyDefinition(resolvedFilters: resolved) {
-            return handleEmptyCollectionFile(
-                request: request,
-                state: &state,
-                collectionAlertClient: environment.collectionAlertClient,
-            )
-        }
         let isStale = prepareLoadedCollectionOpenStaleness(
             request: request,
             file: file,
@@ -403,8 +443,7 @@ private func handleCollectionFileLoaded(
             environment: environment,
         )
         return handleCollectionFileLoadedSuccess(
-            file,
-            compatibility: loadResult.compatibility,
+            loadResult,
             isStale: isStale,
             resolved: resolved,
             state: &state,
@@ -414,8 +453,9 @@ private func handleCollectionFileLoaded(
         return handleCollectionFileLoadedFailure(
             error,
             request: request,
-            state: &state,
+            tabID: pinnedReturnTabID,
             collectionAlertClient: environment.collectionAlertClient,
+            metricsClient: environment.metricsClient,
         )
     }
 }
@@ -430,9 +470,13 @@ private func prepareLoadedCollectionOpenStaleness(
     let hasPersistedInvalidation = environment.collectionStalenessClient.record(canonicalPath)?
         .lastInvalidatedAt != nil
     let hasScopeRootChangedSinceSnapshot = collectionScopeRootsChangedSinceSnapshot(file)
+    let reopenContext = state.content.collection.collectionSession.document?.url.standardizedFileURL
+        == request.url.standardizedFileURL
+        ? state.content.collection.collectionContext
+        : nil
     state.content.collection.prepareOpenTransition(
         at: request.url,
-        reopenContext: state.content.collection.collectionContext,
+        reopenContext: reopenContext,
         isAlreadyStale: hasPersistedInvalidation,
     )
     environment.collectionStalenessClient.registerCollection(
@@ -458,6 +502,7 @@ private func prepareLoadedCollectionOpenStaleness(
 
 private func handleNavigateToCollection(
     _ navigation: ContentPageCollectionNavigation,
+    startsSearch: Bool,
     state: inout FileManagerWindowState,
 ) -> Effect<FileManagerWindowAction> {
     guard let activeTabID = state.contentTabs.activeTabID else { return .none }
@@ -484,11 +529,11 @@ private func handleNavigateToCollection(
         conditions: navigation.context.conditions,
     )
 
-    let trimmedQuery = navigation.context.query.trimmingCharacters(in: .whitespacesAndNewlines)
-    let queryAction: FileManagerContentAction = trimmedQuery.isEmpty
-        ? .composer(.applyFilters)
-        : .composer(.submit)
-    return .concatenate(
+    var effects: [Effect<FileManagerWindowAction>] = [
+        .send(.tabContent(
+            tabID: activeTabID,
+            action: .entryViewLayout(.internal(.applyClearSelection)),
+        )),
         .send(.tabContent(tabID: activeTabID, action: .collection(.navigationStateApplied(payload)))),
         .send(.tabContent(tabID: activeTabID, action: .composer(.applyCollectionNavigationComposer(payload)))),
         .send(.tabContent(
@@ -502,24 +547,29 @@ private func handleNavigateToCollection(
             isCollectionMode: true,
         )))),
         .send(.tabContent(tabID: activeTabID, action: .entryViewLayout(.entryArrangements(.reapply)))),
-        .send(.tabContent(tabID: activeTabID, action: queryAction)),
-    )
+    ]
+    if startsSearch {
+        let trimmedQuery = navigation.context.query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let queryAction: FileManagerContentAction = trimmedQuery.isEmpty
+            ? .composer(.applyFilters)
+            : .composer(.submit)
+        effects.append(.send(.tabContent(tabID: activeTabID, action: queryAction)))
+    }
+    return .concatenate(effects)
 }
 
 private func handleCollectionFileLoadedSuccess(
-    _ file: VoyagerCollectionFile,
-    compatibility: CollectionFileCompatibilityMetadata,
+    _ loadResult: CollectionFileLoadResult,
     isStale: Bool,
     resolved: AppliedFilterResolver.ResolutionResult,
     state: inout FileManagerWindowState,
     environment: CollectionOpenEnvironment,
 ) -> Effect<FileManagerWindowAction> {
-    state.content.composer.isPresented = false
     let openPayload = state.content.collection.makeOpenRestorationPayload(
-        file: file,
+        file: loadResult.file,
         resolved: resolved,
         isStale: isStale,
-        compatibility: compatibility,
+        compatibility: loadResult.compatibility,
     )
 
     let dismissComposerEffect: Effect<FileManagerWindowAction> = .send(.content(.composer(.setPresented(false))))
@@ -529,6 +579,7 @@ private func handleCollectionFileLoadedSuccess(
         registryClient: environment.registryClient,
         state: &state,
     )
+    state.content.composer.isPresented = false
 
     if let effects = makeHydratedCollectionOpenEffects(
         payload: openPayload,
@@ -546,6 +597,10 @@ private func handleCollectionFileLoadedSuccess(
 
     if openPayload.queryTrigger == nil {
         effects.append(.send(.content(.entryViewLayout(.internal(.setCollectionContentLoading(false))))))
+        effects.append(collectionOpenMetricEffect(
+            metricsClient: environment.metricsClient,
+            resultStatus: .validEmpty,
+        ))
     }
 
     if effects.isEmpty {
@@ -558,6 +613,7 @@ private struct CollectionOpenEnvironment {
     let collectionAlertClient: CollectionAlertClient
     let registryClient: RegistryClient
     let collectionStalenessClient: CollectionStalenessClient
+    let metricsClient: MetricsClient
 }
 
 nonisolated func collectionScopeRootsChangedSinceSnapshot(
@@ -588,11 +644,21 @@ nonisolated private func collectionScopeRootModified(
 private func handleCollectionFileLoadedFailure(
     _ error: ContentPageNavigationErrorFingerprint,
     request: ContentPageCollectionOpenRequest,
-    state _: inout FileManagerWindowState,
+    tabID: ContentTabID?,
     collectionAlertClient: CollectionAlertClient,
+    metricsClient: MetricsClient,
 ) -> Effect<FileManagerWindowAction> {
+    let failureDelegateEffect: Effect<FileManagerWindowAction> = tabID.map {
+        .send(.delegate(.pinnedContentTabRuntimeNavigationFailed(tabID: $0)))
+    } ?? .none
+    let metricEffect = collectionOpenMetricEffect(
+        metricsClient: metricsClient,
+        resultStatus: .loadFailure,
+        errorCategory: error.category,
+    )
     if case .collection = request.sourceRoute {
         return .concatenate(
+            failureDelegateEffect,
             .send(.content(.entryViewLayout(.internal(.setCollectionContentLoading(false))))),
             restoreCollectionOpenHistoryEffect(request),
             .run { _ in
@@ -601,6 +667,7 @@ private func handleCollectionFileLoadedFailure(
                     error.message,
                 )
             },
+            metricEffect,
         )
     }
 
@@ -619,35 +686,38 @@ private func handleCollectionFileLoadedFailure(
     effects.append(.run { _ in
         await collectionAlertClient.showCollectionOpenErrorAlert("Unable to Open Collection", error.message)
     })
-    return .concatenate(effects)
+    effects.append(metricEffect)
+    return .concatenate([failureDelegateEffect] + effects)
 }
 
-private func handleEmptyCollectionFile(
-    request: ContentPageCollectionOpenRequest,
-    state _: inout FileManagerWindowState,
-    collectionAlertClient: CollectionAlertClient,
-) -> Effect<FileManagerWindowAction> {
-    var effects: [Effect<FileManagerWindowAction>] = [
-        .send(.content(.entryViewLayout(.internal(.setCollectionContentLoading(false))))),
-        restoreCollectionOpenHistoryEffect(request),
-    ]
-    if !request.sourceRoute.isCollection {
-        effects.append(.send(.content(.collection(.sessionResetRequested))))
-        effects.append(.send(.content(.internal(.exitCollectionMode))))
-        effects.append(.send(.content(.composer(.resetComposerAndSync(
-            context: nil,
-            url: nil,
-            compatibility: nil,
-            isCollectionMode: false,
-        )))))
+private func collectionOpenErrorCategory(_ error: Error) -> ContentPageNavigationErrorCategory {
+    if let compatibilityError = error as? CollectionFileCompatibilityError {
+        return switch compatibilityError {
+        case .unsupportedFutureSchemaVersion:
+            .unsupportedSchema
+        case .invalidDefinitionPayload:
+            .invalidDefinition
+        case .missingSchemaVersion,
+             .invalidSchemaVersionType,
+             .missingPackagePayload,
+             .unrecoverableDocumentCorruption,
+             .invalidPropertyListPayload:
+            .malformed
+        }
     }
-    effects.append(.run { _ in
-        await collectionAlertClient.showCollectionOpenErrorAlert(
-            "Empty Collection",
-            "This collection file has no query, scope, or filters.",
-        )
-    })
-    return .concatenate(effects)
+    if let cocoaError = error as? CocoaError {
+        return switch cocoaError.code {
+        case .fileReadNoPermission,
+             .fileReadNoSuchFile,
+             .fileReadInvalidFileName,
+             .fileReadCorruptFile,
+             .fileReadUnknown:
+            .access
+        default:
+            .unknown
+        }
+    }
+    return .unknown
 }
 
 private func restoreCollectionOpenHistoryEffect(
@@ -661,6 +731,7 @@ private func restoreCollectionOpenHistoryEffect(
 
 func cancelPendingCollectionOpen(
     state: inout FileManagerWindowState,
+    failedPinnedReturnTabID: ContentTabID? = nil,
 ) -> Effect<FileManagerWindowAction> {
     guard let request = state.pendingCollectionOpenRequest else { return .none }
     state.pendingCollectionOpenRequest = nil
@@ -672,13 +743,19 @@ func cancelPendingCollectionOpen(
     } else {
         .none
     }
-    return .concatenate(
+    var effects: [Effect<FileManagerWindowAction>] = [
         .cancel(id: OpenCollectionFileCancelID(
             windowID: state.content.entryViewLayout.entryOperations.windowID,
         )),
         clearLoadingEffect,
         restoreCollectionOpenHistoryEffect(request),
-    )
+    ]
+    if let failedPinnedReturnTabID {
+        effects.append(.send(.delegate(.pinnedContentTabRuntimeNavigationFailed(
+            tabID: failedPinnedReturnTabID,
+        ))))
+    }
+    return .concatenate(effects)
 }
 
 private func isUserNavigationRequest(_ action: ContentPageNavigationAction) -> Bool {

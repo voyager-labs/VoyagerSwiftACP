@@ -2,6 +2,7 @@
 import ComposableArchitecture
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
+import VoyagerFeaturesEntryOperations
 import VoyagerShared
 
 struct EntryListCoordinatorSortDescriptorChange: Equatable {
@@ -184,6 +185,13 @@ public final class EntryListCoordinator: NSObject {
     var lastRenamingItemId: EntryModel.ID?
     var contextMenuAnchor: CGPoint?
     var contextMenuCoordinator: EntryContextMenuCoordinator?
+    /// 외부 drop 획득 세션의 local 수명을 소유하는 controller. List마다 정확히 하나 보유한다.
+    /// cross-Grid/List 직렬화는 controller가 읽는 shared TCA `activeExternalDrop`이 담당한다.
+    lazy var externalDropSessionController: ExternalDropSessionController = .init(
+        store: store,
+        clientProvider: { [weak self] in self?.externalDropAcquisitionClient ?? .testValue },
+        clearDropState: { [weak self] in self?.clearExternalDropDropState() },
+    )
     var boundsDidChangeObserver: NSObjectProtocol?
     var lastRenderSnapshot: RenderSnapshot?
     var restoredScrollForCurrentPath = false
@@ -196,10 +204,14 @@ public final class EntryListCoordinator: NSObject {
     var workspaceClient
     @Dependency(\.entryThumbnailCacheClient)
     var entryThumbnailCacheClient
+    @Dependency(\.externalDropAcquisitionClient)
+    var externalDropAcquisitionClient
     @Dependency(\.finderFavoritesTagClient)
     var finderFavoritesTagClient
     @Dependency(\.entryOpenClient)
     var entryOpenClient
+    @Dependency(\.entryFileOpsClient)
+    var entryFileOpsClient
     @Dependency(\.notificationCenterClient)
     var notificationCenterClient
     init(store: StoreOf<EntryViewLayoutFeature>) {
@@ -363,6 +375,7 @@ public final class EntryListCoordinator: NSObject {
             restoredScrollForCurrentPath = false
         }
         let shouldRestoreSavedOffset = pathChanged || !restoredScrollForCurrentPath
+        let capturedScrollOrigin = pathChanged ? nil : scrollView.contentView.bounds.origin
         let capturedAnchor = pathChanged ? nil : captureScrollAnchor()
         materialize()
 
@@ -383,13 +396,18 @@ public final class EntryListCoordinator: NSObject {
                     preservesScrollAnchor
                 }
                 if !preservesScrollAnchor {
-                    restoreScrollAnchor(capturedAnchor)
+                    if let capturedAnchor {
+                        restoreScrollAnchor(capturedAnchor)
+                    } else if let capturedScrollOrigin {
+                        scrollView.contentView.scroll(to: capturedScrollOrigin)
+                    }
                 }
             }
         }
         if structureChanged {
             syncListRenamingFromStore()
         }
+        view?.updateGroupHeaderTitle()
         requestThumbnailsForVisibleRows()
     }
 

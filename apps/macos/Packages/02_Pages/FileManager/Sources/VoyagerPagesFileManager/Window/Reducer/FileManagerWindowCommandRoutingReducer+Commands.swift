@@ -80,10 +80,8 @@ extension FileManagerWindowCommandRoutingReducer {
     func handleHomeChatHistorySessionSelected(
         _ sessionID: AiChatSessionID,
         activeTabID: ContentTabID,
-        state: State,
     ) -> Effect<Action> {
         let sessionString = sessionID.rawValue.uuidString
-        let anchor = ContentTabPageAnchor.aiChat(sessionID: sessionString)
         let setup = AiChatSetupState(
             restoreSessionID: sessionID,
             sessionID: nil,
@@ -105,7 +103,6 @@ extension FileManagerWindowCommandRoutingReducer {
 
         return .concatenate(
             .send(.inspector(.closeChat)),
-            updateContentTabPageAnchorEffect(tabID: activeTabID, anchor: anchor, state: state),
             .send(.navigation(.view(.showAiChat(sessionString)))),
             .send(.tabContent(tabID: activeTabID, action: .aiChat(.setup(setup)))),
             providerLoadEffect,
@@ -115,14 +112,12 @@ extension FileManagerWindowCommandRoutingReducer {
     func handleHomePageAnchorSelected(
         _ anchor: ContentTabPageAnchor,
         activeTabID: ContentTabID,
-        state: State,
+        state: inout State,
     ) -> Effect<Action> {
         switch anchor {
         case let .directory(path):
-            return .concatenate(
-                updateContentTabPageAnchorEffect(tabID: activeTabID, anchor: anchor, state: state),
-                .send(.navigation(.view(.navigateToPath(path)))),
-            )
+            state.content.pendingProductBrowsingSource = .fileManagerContent
+            return .send(.navigation(.view(.navigateToPath(path))))
 
         case let .collectionFile(url):
             return .send(.navigation(.view(.openCollectionFile(url))))
@@ -155,11 +150,10 @@ extension FileManagerWindowCommandRoutingReducer {
 
             return .concatenate(
                 .send(.inspector(.closeChat)),
-                updateContentTabPageAnchorEffect(tabID: activeTabID, anchor: anchor, state: state),
-                .send(.internal(.aiChatTabTitleUpdated(sessionID: sessionUUID, title: "New Chat"))),
                 .send(.navigation(.view(.showAiChat(sessionID)))),
                 .send(.tabContent(tabID: activeTabID, action: .aiChat(.setup(setup)))),
                 providerLoadEffect,
+                .send(.internal(.aiChatTabTitleUpdated(sessionID: sessionUUID, title: "New Chat"))),
                 .send(.internal(.homeAiChatNewChatSeedRequested(sessionID: sessionUUID))),
             )
         }
@@ -192,6 +186,8 @@ extension FileManagerWindowCommandRoutingReducer {
              .saveCollection,
              .saveCollectionAs:
             true
+        case .contentTabAction:
+            true
         default:
             false
         }
@@ -207,48 +203,38 @@ extension FileManagerWindowCommandRoutingReducer {
         return .none
     }
 
-    private func handleDuplicateActiveContentTab(state: inout State) -> Effect<Action> {
-        guard let activeTabID = state.contentTabs.activeTabID else { return .none }
-        return handleDuplicateContentTabRequested(sourceID: activeTabID, state: &state)
-    }
-
     func routeContentTabCommand(
         _ command: Action.WindowCommand,
         state: inout State,
     ) -> Effect<Action>? {
-        switch command {
+        if let effect = routeContentTabProductCommand(command, state: &state) { return effect }
+        return switch command {
         case .openNewContentTab,
              .selectContentTab:
             handleContentTabCommand(command, state: state)
 
-        case .closeActiveContentTab:
-            state.contentTabs.activeTabID
-                .map { Effect<Action>.send(.closeContentTabRequested($0)) }
-                ?? Effect<Action>.none
-
-        case .closeSelectedContentTabs:
-            .send(.requestCloseSelectedContentTabs)
-
         case .toggleActiveContentTabPin:
             toggleActiveContentTabPin(state: state)
-
-        case .restoreLastClosedContentTab:
-            handleRestoreLastClosedContentTab(state: &state)
-
-        case let .duplicateContentTab(sourceID):
-            handleDuplicateContentTabRequested(sourceID: sourceID, state: &state)
-
-        case .duplicateActiveContentTab:
-            handleDuplicateActiveContentTab(state: &state)
-
-        case .duplicateSelectedContentTabs:
-            handleDuplicateSelectedContentTabsRequested(state: &state)
 
         case .selectMostRecentlyUsedContentTab:
             handleSelectMostRecentlyUsedContentTab(state: &state)
 
+        case .activateContentTabSwitcherSelection:
+            // focused window command는 소유 presentation의 focusedCandidateID를 해석해 canonical helper로 보낸다.
+            if let focusedID = state.contentTabSwitcherPresentation?.focusedCandidateID {
+                handleActivateContentTabSwitcherCandidate(focusedID, state: &state)
+            } else {
+                Effect<Action>.none
+            }
+
         case let .presentContentTabSwitcher(source):
             handlePresentContentTabSwitcher(source: source, state: &state)
+
+        case let .moveContentTabSwitcherFocus(direction):
+            handleMoveContentTabSwitcherFocus(direction: direction, state: &state)
+
+        case .dismissContentTabSwitcher:
+            handleDismissContentTabSwitcher(state: &state)
 
         default:
             nil
@@ -263,6 +249,7 @@ extension FileManagerWindowCommandRoutingReducer {
         case .newFolder,
              .openSelectedItem,
              .quickLookSelectedItem,
+             .getInfo,
              .cut,
              .copy,
              .paste,
@@ -353,9 +340,18 @@ extension FileManagerWindowCommandRoutingReducer {
         state: State,
     ) -> Effect<Action> {
         switch command {
-        case .openNewContentTab:
+        case let .openNewContentTab(source):
             guard state.contentTabs.tabs.count < ContentTabConstants.maxTabs else { return .none }
-            return .send(.contentTabs(.open(.homeDefault)))
+            let startPageSnapshot = state.defaultStartPage
+            if case .home = startPageSnapshot {
+                // home 선호는 IO가 없으므로 동기 fast path로 즉시 생성한다.
+                return .send(.contentTabActionRequested(.open(.homeDefault), source: source))
+            }
+            // 클라우드 placeholder stat이 메인 스레드를 막지 않도록 프로브를 effect로 미룬다.
+            return Effect.run { send in
+                let resolution = StartPageResolver.resolve(startPageSnapshot)
+                await send(.internal(.defaultStartPageResolved(resolution.effectiveStartPage, source: source)))
+            }
 
         case let .selectContentTab(position):
             guard state.pendingSelectedContentTabClose == nil,
@@ -457,19 +453,14 @@ extension FileManagerWindowCommandRoutingReducer {
         _ command: Action.WindowCommand,
         state: State,
     ) -> Effect<Action>? {
-        guard case let .folder(currentPath) = state.content.navigation.navigationState else { return nil }
+        guard case .folder = state.content.navigation.navigationState else { return nil }
 
         switch command {
         case .newFolder:
-            return .send(.content(.entryViewLayout(.entryOperations(
-                .edit(.createNewFolder(
-                    parentPath: currentPath,
-                    siblingNames: state.content.entryViewLayout.entries.map(\.name),
-                )),
-            ))))
+            return entryMenuCommandEffect("mutation.createNewFolder")
 
         case .paste:
-            return .send(.content(.entryViewLayout(.delegate(.executeCommand("clipboard.pasteItems")))))
+            return entryMenuCommandEffect("clipboard.pasteItems")
 
         default:
             return nil
@@ -482,13 +473,31 @@ extension FileManagerWindowCommandRoutingReducer {
             guard !state.content.isOrdinaryDirectoryLoading,
                   !state.content.entryViewLayout.selectedIds.isEmpty
             else { return .none }
-            return .send(.content(.entryViewLayout(.delegate(.executeCommand("navigation.openSelectedItem")))))
+            return entryMenuCommandEffect("navigation.openSelectedItem")
 
         case .quickLookSelectedItem:
             guard !state.content.isOrdinaryDirectoryLoading,
                   !state.content.entryViewLayout.selectedIds.isEmpty
             else { return .none }
-            return .send(.content(.entryViewLayout(.delegate(.executeCommand("navigation.quickLookSelectedItem")))))
+            return entryMenuCommandEffect("navigation.quickLookSelectedItem")
+
+        case .getInfo:
+            let selectableItemIds = state.content.entryViewLayout.hierarchyProjectionIsActive
+                ? state.content.entryViewLayout.visibleSelectableEntries(isNormalDirectoryPage: true).map(\.id)
+                : state.content.entryViewLayout.displayItems.map(\.id)
+            let validSelectedIds = state.content.entryViewLayout.selectedIds
+                .intersection(selectableItemIds)
+            if !validSelectedIds.isEmpty {
+                guard !validSelectedIds.contains(where: {
+                    state.content.entryViewLayout.entryOperations.itemStates[$0]?.isBusy == true
+                }) else { return .none }
+                return entryMenuCommandEffect("navigation.getInfoForSelectedItems")
+            }
+            guard case let .folder(path) = state.content.navigation.navigationState,
+                  !path.isEmpty,
+                  !state.content.entryViewLayout.entryOperations.itemStates[path, default: .init()].isBusy
+            else { return .none }
+            return entryMenuCommandEffect("navigation.getInfoForPath")
 
         case .selectAll:
             return .send(.content(.view(.selectAllEntries)))
@@ -501,16 +510,16 @@ extension FileManagerWindowCommandRoutingReducer {
     func handleEntryRequestEditing(_ command: Action.WindowCommand) -> Effect<Action>? {
         switch command {
         case .cut:
-            .send(.content(.entryViewLayout(.delegate(.executeCommand("clipboard.cutSelectedItems")))))
+            entryMenuCommandEffect("clipboard.cutSelectedItems")
 
         case .copy:
-            .send(.content(.entryViewLayout(.delegate(.executeCommand("clipboard.copySelectedItems")))))
+            entryMenuCommandEffect("clipboard.copySelectedItems")
 
         case .duplicate:
-            .send(.content(.entryViewLayout(.delegate(.executeCommand("clipboard.duplicateSelectedItems")))))
+            entryMenuCommandEffect("clipboard.duplicateSelectedItems")
 
         case .makeAlias:
-            .send(.content(.entryViewLayout(.delegate(.executeCommand("mutation.createAliasForSelectedItems")))))
+            entryMenuCommandEffect("mutation.createAliasForSelectedItems")
 
         default:
             nil
@@ -520,14 +529,18 @@ extension FileManagerWindowCommandRoutingReducer {
     func handleEntryRequestCopying(_ command: Action.WindowCommand) -> Effect<Action>? {
         switch command {
         case .copyAbsolutePaths:
-            .send(.content(.entryViewLayout(.delegate(.executeCommand("clipboard.copySelectedAbsolutePaths")))))
+            entryMenuCommandEffect("clipboard.copySelectedAbsolutePaths")
 
         case .copyURLs:
-            .send(.content(.entryViewLayout(.delegate(.executeCommand("clipboard.copySelectedURLs")))))
+            entryMenuCommandEffect("clipboard.copySelectedURLs")
 
         default:
             nil
         }
+    }
+
+    private func entryMenuCommandEffect(_ command: String) -> Effect<Action> {
+        .send(.content(.entryViewLayout(.delegate(.executeCommand(command, source: .menuCommand)))))
     }
 
     func handleEntryRequestViewOptions(_ command: Action.WindowCommand) -> Effect<Action>? {
@@ -604,14 +617,12 @@ extension FileManagerWindowCommandRoutingReducer {
 
         var effects: [Effect<Action>] = []
 
-        // ContentPane AI Chat forwarding: active tab이 .aiChat일 때 전송
         if let activeTabID = state.contentTabs.activeTabID,
            case .aiChat = state.contentTabs.tabs[id: activeTabID]?.anchor
         {
             effects.append(.send(.tabContent(tabID: activeTabID, action: .aiChat(.providerConnectionsUpdated(file)))))
         }
 
-        // Inspector AI Chat forwarding (기존 동작 유지)
         if state.inspector.inspectorVisible,
            state.inspector.inspectorPaneExists,
            state.inspector.activeMode == .chat
@@ -743,7 +754,6 @@ extension FileManagerWindowCommandRoutingReducer {
             return .none
         }
         guard let expectedTarget = state.validatedUndoRedoTarget(for: direction) else { return .none }
-
         let requestID = uuid()
         let windowID = state.windowID
         state.undoRedoPhase = .invoking(requestID: requestID, direction: direction)

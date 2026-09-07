@@ -40,7 +40,7 @@ export const ComposerConditionChip: FC<ComposerConditionChipProps> = ({
         onClick={() => onPropertyClick?.(condition.id)}
       >
         <SFSymbol name={condition.propertySymbol} size={10} weight={500} />
-        {condition.property}
+        <span className="collection-composer-condition-label">{condition.property}</span>
       </button>
       <button
         type="button"
@@ -49,18 +49,22 @@ export const ComposerConditionChip: FC<ComposerConditionChipProps> = ({
         disabled={inactive}
         onClick={() => onOperatorClick?.(condition.id)}
       >
-        {hasOperator ? condition.operator : "Operator"}
+        <span className="collection-composer-condition-label">
+          {hasOperator ? condition.operator : "Operator"}
+        </span>
       </button>
       {hasOperator && hasValue && (
         // 조건 모델에 arity 정보가 없으므로 값 전체를 단일 세그먼트로 렌더한다
         <button
           type="button"
-          className="collection-composer-condition-segment collection-composer-condition-text"
+          className="collection-composer-condition-segment collection-composer-condition-text collection-composer-condition-value"
           aria-expanded={valueExpanded}
           disabled={inactive}
           onClick={() => onValueClick?.(condition.id)}
         >
-          {displayValueForLiteral(condition.value, condition.editorKind)}
+          <span className="collection-composer-condition-label">
+            {displayValueForLiteral(condition.value, condition.editorKind)}
+          </span>
         </button>
       )}
       <button

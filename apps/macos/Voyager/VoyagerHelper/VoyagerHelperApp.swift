@@ -3,6 +3,7 @@ import Darwin
 import Foundation
 import Logging
 import SwiftDotenv
+import VoyagerSentryComposition
 import VoyagerShared
 
 @main

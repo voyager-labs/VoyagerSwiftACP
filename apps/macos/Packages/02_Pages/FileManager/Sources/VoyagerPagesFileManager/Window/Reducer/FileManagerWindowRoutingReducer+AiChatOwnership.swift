@@ -318,7 +318,8 @@ extension FileManagerInspectorFeature.State {
 
 func aiChatEventRequestID(_ event: AiChatEvent) -> AiChatRequestID? {
     switch event {
-    case let .started(context),
+    case let .requestPrepared(context),
+         let .started(context),
          let .delta(context, _),
          let .status(context, _),
          let .failed(context, _):
@@ -331,7 +332,8 @@ func aiChatEventRequestID(_ event: AiChatEvent) -> AiChatRequestID? {
 
 func aiChatEventRunID(_ event: AiChatEvent) -> AiChatRunID? {
     switch event {
-    case let .started(context),
+    case let .requestPrepared(context),
+         let .started(context),
          let .delta(context, _),
          let .status(context, _),
          let .failed(context, _):

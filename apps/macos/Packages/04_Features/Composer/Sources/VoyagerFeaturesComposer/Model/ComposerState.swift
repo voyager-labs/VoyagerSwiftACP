@@ -46,6 +46,17 @@ public struct ConditionDisplayState: Equatable {
     }
 }
 
+struct ComposerQueryRecoveryContext: Equatable {
+    enum Stage: Equatable {
+        case search(UUID)
+        case filters(UUID)
+    }
+
+    let rawText: String
+    let capturedInputRevision: UInt64
+    var stage: Stage
+}
+
 @ObservableState
 public struct ComposerState: Equatable {
     public var propertyPicker: ConditionPropertyPickerFeature.State = .init()
@@ -64,6 +75,8 @@ public struct ComposerState: Equatable {
     public var cancellationOwnerID: UUID?
 
     public var text: String = ""
+    var inputRevision: UInt64 = 0
+    var queryRecoveryContext: ComposerQueryRecoveryContext?
     public var scopes: [String] {
         get { scopeEditor.selection.legacyScopePaths }
         set { scopeEditor.selection = ComposerScopeSelection.fromLegacyScopes(newValue) }
@@ -101,15 +114,81 @@ public struct ComposerState: Equatable {
     public var activeFiltersRequestID: UUID?
     public var lastAcceptedSearchRequestID: UUID?
     public var lastAcceptedFiltersRequestID: UUID?
+    public var lastFailedFiltersRequestID: UUID?
 
     public var lastSearchResponse: VoyagerShared.SearchResponsePayload?
     public var lastFiltersResponse: VoyagerShared.SearchResponsePayload?
+    var lastFiltersResponseDefinitionFingerprint: String?
+    var activeFiltersRequestQuery: String?
     public var searchStartedAt: Date?
     public var filtersStartedAt: Date?
     var activeFiltersMetricSource: String?
     public var hasSubmittedInSession: Bool = false
 
     public init() {}
+
+    mutating func setTextFromUserIntent(_ text: String) {
+        inputRevision &+= 1
+        self.text = text
+    }
+
+    mutating func replaceTextAndDiscardQueryRecovery(_ text: String) {
+        inputRevision &+= 1
+        queryRecoveryContext = nil
+        self.text = text
+    }
+
+    mutating func clearTextForSubmit() {
+        text = ""
+    }
+
+    mutating func captureQueryRecovery(rawText: String, requestID: UUID) {
+        queryRecoveryContext = ComposerQueryRecoveryContext(
+            rawText: rawText,
+            capturedInputRevision: inputRevision,
+            stage: .search(requestID),
+        )
+    }
+
+    func queryRecoveryRawText(for stage: ComposerQueryRecoveryContext.Stage) -> String? {
+        guard let queryRecoveryContext,
+              queryRecoveryContext.stage == stage
+        else {
+            return nil
+        }
+        return queryRecoveryContext.rawText
+    }
+
+    /// 제출 뒤 사용자 입력으로 inputRevision이 바뀌지 않은 경우에만 recovery 원문을 돌려준다.
+    func uneditedQueryRecoveryRawText(for stage: ComposerQueryRecoveryContext.Stage) -> String? {
+        guard let queryRecoveryContext,
+              queryRecoveryContext.stage == stage,
+              queryRecoveryContext.capturedInputRevision == inputRevision
+        else {
+            return nil
+        }
+        return queryRecoveryContext.rawText
+    }
+
+    mutating func retargetQueryRecovery(from searchRequestID: UUID, to filtersRequestID: UUID) {
+        guard queryRecoveryContext?.stage == .search(searchRequestID) else { return }
+        queryRecoveryContext?.stage = .filters(filtersRequestID)
+    }
+
+    mutating func restoreQueryRecoveryIfEligible(for stage: ComposerQueryRecoveryContext.Stage) {
+        defer { queryRecoveryContext = nil }
+        guard let context = queryRecoveryContext,
+              context.stage == stage,
+              context.capturedInputRevision == inputRevision
+        else {
+            return
+        }
+        text = context.rawText
+    }
+
+    mutating func discardQueryRecovery() {
+        queryRecoveryContext = nil
+    }
 
     public var canUndo: Bool {
         !history.isEmpty
@@ -128,6 +207,11 @@ public struct ComposerState: Equatable {
             includeDirectories: includeDirectories,
             conditions: conditions,
         )
+    }
+
+    public mutating func commitCurrentScopeDraft() {
+        scopeEditor.committedSelection = scopeEditor.selection
+        scopeEditor.committedIncludeSubfolders = scopeEditor.includeSubfolders
     }
 
     public var isSemanticallyRootOnly: Bool {
@@ -231,11 +315,8 @@ public struct ComposerState: Equatable {
     ) {
         let trimmedQuery = payload.context.query.trimmingCharacters(in: .whitespacesAndNewlines)
         pendingSearchQuery = trimmedQuery.isEmpty ? nil : trimmedQuery
-        if payload.openedURL == nil {
-            text = payload.context.query
-        } else {
-            text = ""
-        }
+        let restoredText = payload.openedURL == nil ? payload.context.query : ""
+        replaceTextAndDiscardQueryRecovery(restoredText)
         let selection = ComposerScopeSelection.fromCanonicalScopes(
             bases: payload.context.scopes,
             exceptions: payload.context.excludedScopes,
@@ -256,7 +337,7 @@ public struct ComposerState: Equatable {
     ) {
         let trimmedQuery = payload.composerText.trimmingCharacters(in: .whitespacesAndNewlines)
         pendingSearchQuery = trimmedQuery.isEmpty ? nil : trimmedQuery
-        text = payload.composerText
+        replaceTextAndDiscardQueryRecovery(payload.composerText)
         let selection = ComposerScopeSelection.fromCanonicalScopes(
             bases: payload.scopes,
             exceptions: payload.excludedScopes,
@@ -276,8 +357,15 @@ public struct ComposerState: Equatable {
         registryClient: RegistryClient,
         uuid: () -> UUID = UUID.init,
     ) {
+        collectionContext = payload.context
+        openedCollectionURL = payload.navigation.flatMap { navigation in
+            if case let .file(url, _) = navigation.kind { return url }
+            return nil
+        }
+        openedCollectionCompatibility = payload.compatibility
+        isCollectionMode = true
         pendingSearchQuery = payload.context.query.isEmpty ? nil : payload.context.query
-        text = payload.context.query
+        replaceTextAndDiscardQueryRecovery(payload.context.query)
         let selection = ComposerScopeSelection.fromCanonicalScopes(
             bases: payload.context.scopes,
             exceptions: payload.context.excludedScopes,
@@ -285,11 +373,18 @@ public struct ComposerState: Equatable {
         )
         scopeEditor.selection = selection
         scopeEditor.includeSubfolders = payload.context.includeSubfolders
+        scopeEditor.committedSelection = selection
+        scopeEditor.committedIncludeSubfolders = payload.context.includeSubfolders
+        scopeEditor.isPresented = false
+        resetScopeEditorInteractionState(clearQuery: true)
+        scopeEditor.listState = .defaultCandidates
+        scopeEditor.candidateItems = []
         includeDirectories = payload.context.includeDirectories
         replaceConditions(payload.context.conditions, uuid: uuid)
         propertyPicker = ConditionPropertyPickerFeature.State()
         valuePicker = ValuePickerFeature.State()
         clearHistory()
+        resetCollectionOpenLifecycleState()
         let filters = buildFilters(from: self)
         applyAppliedFilters(
             .init(
@@ -304,6 +399,27 @@ public struct ComposerState: Equatable {
         )
         lastFiltersResponse = nil
         lastSearchResponse = nil
+    }
+
+    private mutating func resetCollectionOpenLifecycleState() {
+        lastScopeChangeFeedback = nil
+        isLoadingSearch = false
+        isLoadingFilters = false
+        isFilteringInFlight = false
+        queryRenderPhase = .idle
+        transientFeedback = nil
+        submittedSearchFilters = nil
+        activeSearchRequestID = nil
+        activeFiltersRequestID = nil
+        lastAcceptedSearchRequestID = nil
+        lastAcceptedFiltersRequestID = nil
+        lastFailedFiltersRequestID = nil
+        searchStartedAt = nil
+        filtersStartedAt = nil
+        activeFiltersMetricSource = nil
+        hasSubmittedInSession = false
+        lastFiltersResponseDefinitionFingerprint = nil
+        activeFiltersRequestQuery = nil
     }
 
     mutating func replaceConditions(_ conditions: [Condition], uuid: () -> UUID) {
@@ -322,6 +438,18 @@ public struct ComposerState: Equatable {
         lastFiltersResponse = payload.lastFiltersResponse
         lastSearchResponse = payload
             .lastSearchResponse ?? (isNavigationQueryEmpty ? nil : payload.lastFiltersResponse)
+        if let context = collectionContext {
+            lastFiltersResponseDefinitionFingerprint = CollectionSnapshotHydration.definitionFingerprint(
+                query: context.query,
+                scopes: context.scopes,
+                excludedScopes: context.excludedScopes,
+                includeSubfolders: context.includeSubfolders,
+                includeDirectories: context.includeDirectories,
+                conditions: context.conditions,
+            )
+        } else {
+            lastFiltersResponseDefinitionFingerprint = nil
+        }
     }
 }
 

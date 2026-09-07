@@ -4,6 +4,7 @@ import VoyagerEntitiesCollection
 import VoyagerFeaturesAccountAccess
 import VoyagerFeaturesExternalFileRouter
 import VoyagerFeaturesUpdateVersion
+import VoyagerPagesFileManager
 
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
@@ -58,6 +59,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             keyboardShortcutMonitor.start(
                 context: { [weak self] in
                     self?.contentTabShortcutContext() ?? .unavailable
+                },
+                onCommand: { [weak self] command in
+                    self?.routeContentTabShortcutCommand(command)
+                },
+                onTargetedCommand: { [weak self] windowID, command in
+                    self?.routeContentTabShortcutCommand(command, to: windowID)
                 },
                 onSelectContentTab: { [weak self] position in
                     self?.withAppRootStore {
@@ -203,14 +210,72 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         withAppRootStore({ store in
             store.withState { state in
                 let menuCommands = MenuCommandsState(state: state)
+                let focusedWindowID = state.windowManager.focusedWindowID
+                let presentation = focusedWindowID
+                    .flatMap { state.windowManager.windows[id: $0]?.window.contentTabSwitcherPresentation }
                 return .init(
                     hasFocusedWindow: menuCommands.hasFocusedWindow,
                     isComposerPresented: menuCommands.isComposerPresented,
+                    isContentTabSwitcherPresented: presentation != nil,
+                    focusedWindowID: focusedWindowID,
+                    contentTabSwitcherSource: presentation?.source,
                 )
             }
         }, onMissing: {
             .unavailable
         })
+    }
+
+    private func routeContentTabShortcutCommand(
+        _ command: AppKeyboardShortcutMonitor.ControlTabGestureCommand,
+        to windowID: WindowManagerState.WindowID? = nil,
+    ) {
+        withAppRootStore {
+            if let windowID {
+                $0.send(.windowManager(.file(Self.targetedFileCommand(for: command, windowID: windowID))))
+            } else if let menuCommand = Self.menuCommand(for: command) {
+                $0.send(.menuCommands(.view(.app(menuCommand))))
+            }
+        }
+    }
+
+    private static func targetedFileCommand(
+        for command: AppKeyboardShortcutMonitor.ControlTabGestureCommand,
+        windowID: WindowManagerState.WindowID,
+    ) -> WindowManagerAction.FileCommand {
+        switch command {
+        case .immediateMostRecentlyUsed:
+            .selectMostRecentlyUsedContentTab
+        case .presentSwitcher:
+            .presentContentTabSwitcherInWindow(windowID: windowID, source: .keyboardShortcut)
+        case .moveNext:
+            .moveNextContentTabSwitcherInWindow(windowID: windowID, source: .keyboardShortcut)
+        case .movePrevious:
+            .movePreviousContentTabSwitcherInWindow(windowID: windowID, source: .keyboardShortcut)
+        case .activateSwitcherSelection:
+            .activateContentTabSwitcherInWindow(windowID: windowID, source: .keyboardShortcut)
+        case .dismissSwitcher:
+            .dismissContentTabSwitcherInWindow(windowID: windowID, source: .keyboardShortcut)
+        }
+    }
+
+    static func menuCommand(
+        for command: AppKeyboardShortcutMonitor.ControlTabGestureCommand,
+    ) -> MenuCommandItem.AppCommand? {
+        switch command {
+        case .immediateMostRecentlyUsed:
+            .selectMostRecentlyUsedContentTab
+        case .presentSwitcher:
+            .presentContentTabSwitcher
+        case .moveNext:
+            .moveNextContentTabSwitcher
+        case .movePrevious:
+            .movePreviousContentTabSwitcher
+        case .activateSwitcherSelection:
+            nil
+        case .dismissSwitcher:
+            .dismissContentTabSwitcher
+        }
     }
 
     @discardableResult

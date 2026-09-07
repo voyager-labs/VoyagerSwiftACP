@@ -72,12 +72,20 @@ public enum FileManagerHostPreset: String, Sendable, Equatable, CaseIterable {
     case permissionDenied = "permission-denied"
     case permissionRetry = "permission-retry"
     case collectionDirectory = "collection-directory"
+    case materialTuning = "material-tuning"
+    case fixtureDocuments = "fixture-documents"
+    case fixtureMedia = "fixture-media"
+    case fixtureStress = "fixture-stress"
     case largeFolder1000 = "large-folder-1000"
     case concurrentLargeFolders = "concurrent-large-folders"
 
     public var scenario: FileManagerHostScenario {
         switch self {
         case .default,
+             .materialTuning,
+             .fixtureDocuments,
+             .fixtureMedia,
+             .fixtureStress,
              .contentTabSwitcherContent,
              .contentTabSwitcherFallback,
              .contentTabSwitcherEmpty,
@@ -121,6 +129,15 @@ public enum FileManagerHostPreset: String, Sendable, Equatable, CaseIterable {
             .error(message: "Unable to load recent tabs.")
         default:
             nil
+        }
+    }
+
+    var usesMaterialTuningFixture: Bool {
+        switch self {
+        case .materialTuning, .fixtureDocuments, .fixtureMedia, .fixtureStress:
+            true
+        default:
+            false
         }
     }
 

@@ -17,5 +17,5 @@ public struct FileManagerInspectorState: Equatable {
     var inspectorPaneExists: Bool = false
     var inspectorWidth: CGFloat = FileManagerInspectorLayoutMetrics.defaultWidth
     var activeMode: FileManagerInspectorMode = .chat
-    var aiChat: AiChatFeature.State = .init()
+    var aiChat: AiChatFeature.State = .init(productMetricSourceSurface: .aiChatInspector)
 }

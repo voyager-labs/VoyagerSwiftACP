@@ -65,6 +65,8 @@ func TestEntryListResolveDispatchCanonicalErrors(t *testing.T) {
 		{applicationentry.ErrApplicationSourceDeleted, schema.ErrorSourceDeleted},
 		{applicationentry.ErrEntryNotFound, schema.ErrorEntryNotFound},
 		{applicationentry.ErrApplicationAdapterFailure, schema.ErrorAdapterFailure},
+		{ambiguousPropertySelectorError{}, schema.ErrorInvalidRequest},
+		{unregisteredPropertyIDError{}, schema.ErrorInvalidRequest},
 		{errors.New("secret backend detail"), schema.ErrorInternal},
 	}
 	for _, test := range tests {
@@ -122,6 +124,20 @@ type pageSizeTooSmallError struct{}
 
 func (pageSizeTooSmallError) Error() string { return "page_size_too_small" }
 func (pageSizeTooSmallError) Unwrap() error { return applicationentry.ErrInvalidRequest }
+
+// ambiguousPropertySelectorError와 unregisteredPropertyIDError는 애플리케이션
+// 계층이 반환하는 감싸진 선택자 오류의 wire 형태를 재현한다.
+type ambiguousPropertySelectorError struct{}
+
+func (ambiguousPropertySelectorError) Error() string { return "ambiguous_property_selector" }
+func (ambiguousPropertySelectorError) Unwrap() error {
+	return applicationentry.ErrAmbiguousPropertySelector
+}
+
+type unregisteredPropertyIDError struct{}
+
+func (unregisteredPropertyIDError) Error() string { return "unregistered_property_selector" }
+func (unregisteredPropertyIDError) Unwrap() error { return applicationentry.ErrUnregisteredPropertyID }
 
 func TestEntryPageSizeTooSmallStableMessage(t *testing.T) {
 	service := &recordingEntryService{listErr: pageSizeTooSmallError{}}

@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 	"unicode/utf8"
 
@@ -27,6 +28,7 @@ const (
 	minimumCursorKeySize    = 32
 	maximumGeneration       = 128
 	maximumCursorLength     = 4096
+	maximumLocalPathBytes   = 4096
 	cursorPayloadSize       = 4 + sha256.Size
 	cursorTokenSize         = cursorPayloadSize + sha256.Size
 )
@@ -217,9 +219,13 @@ func openVerifiedRoot(path string) (*os.Root, error) {
 	return root, nil
 }
 
-func openDirectory(root *os.Root, relativePath string) (*os.File, error) {
+// openVerifiedDirectoryScope는 부모 경로 컴포넌트를 openat 방식으로 하나씩
+// 열며 각 단계에서 symlink 치환과 디렉터리 여부를 재검증해, 검증된 scope의
+// *os.Root를 반환한다. owned가 true면 호출자가 닫는다(root 자체는 닫지
+// 않는다). 단일 대상 조회와 디렉터리 열거가 같은 검증 사슬을 공유한다.
+func openVerifiedDirectoryScope(root *os.Root, relativePath string) (*os.Root, bool, error) {
 	if !source.ValidateRelativePath(relativePath) {
-		return nil, source.ErrInvalidRequest
+		return nil, false, source.ErrInvalidRequest
 	}
 	current := root
 	owned := false
@@ -233,36 +239,58 @@ func openDirectory(root *os.Root, relativePath string) (*os.File, error) {
 			before, err := current.Lstat(component)
 			if err != nil {
 				closeOwned()
-				return nil, localFilesystemError(err, source.ErrEntryNotFound)
+				return nil, false, localFilesystemError(err, source.ErrEntryNotFound)
 			}
 			if before.Mode()&os.ModeSymlink != 0 || !before.IsDir() {
 				closeOwned()
-				return nil, source.ErrPathEscape
+				return nil, false, source.ErrPathEscape
 			}
 			next, err := current.OpenRoot(component)
 			if err != nil {
 				closeOwned()
-				return nil, localFilesystemError(err, source.ErrEntryNotFound)
+				return nil, false, localFilesystemError(err, source.ErrEntryNotFound)
 			}
 			opened, openedErr := next.Lstat(".")
 			after, afterErr := current.Lstat(component)
 			if openedErr != nil {
 				_ = next.Close()
 				closeOwned()
-				return nil, source.ErrAdapterFailure
+				return nil, false, source.ErrAdapterFailure
 			}
 			if afterErr != nil {
 				_ = next.Close()
 				closeOwned()
-				return nil, localFilesystemError(afterErr, source.ErrEntryNotFound)
+				return nil, false, localFilesystemError(afterErr, source.ErrEntryNotFound)
 			}
 			if after.Mode()&os.ModeSymlink != 0 || !os.SameFile(before, opened) || !os.SameFile(after, opened) {
 				_ = next.Close()
 				closeOwned()
-				return nil, source.ErrPathEscape
+				return nil, false, source.ErrPathEscape
 			}
 			closeOwned()
 			current, owned = next, true
+		}
+	}
+	before, err := current.Lstat(".")
+	if err != nil {
+		closeOwned()
+		return nil, false, localFilesystemError(err, source.ErrEntryNotFound)
+	}
+	if before.Mode()&os.ModeSymlink != 0 || !before.IsDir() {
+		closeOwned()
+		return nil, false, source.ErrPathEscape
+	}
+	return current, owned, nil
+}
+
+func openDirectory(root *os.Root, relativePath string) (*os.File, error) {
+	current, owned, err := openVerifiedDirectoryScope(root, relativePath)
+	if err != nil {
+		return nil, err
+	}
+	closeOwned := func() {
+		if owned {
+			_ = current.Close()
 		}
 	}
 	before, err := current.Lstat(".")
@@ -305,7 +333,16 @@ func localFilesystemError(err, notExist error) error {
 }
 
 func (adapter *Adapter) makeItem(parent string, directoryEntry os.DirEntry) (source.SourceItem, error) {
-	name := directoryEntry.Name()
+	info, err := directoryEntry.Info()
+	if err != nil || info.Mode()&os.ModeSymlink != 0 {
+		return source.SourceItem{}, source.ErrAdapterFailure
+	}
+	return adapter.makeItemFromInfo(parent, directoryEntry.Name(), info)
+}
+
+// makeItemFromInfo는 FileInfo에서 SourceItem을 만든다. symlink는 이미 걸러진
+// 상태로 들어온다.
+func (adapter *Adapter) makeItemFromInfo(parent, name string, info os.FileInfo) (source.SourceItem, error) {
 	if !utf8.ValidString(name) {
 		return source.SourceItem{}, source.ErrAdapterFailure
 	}
@@ -314,10 +351,6 @@ func (adapter *Adapter) makeItem(parent string, directoryEntry os.DirEntry) (sou
 		relativePath = parent + "/" + name
 	}
 	if !source.ValidateRelativePath(relativePath) {
-		return source.SourceItem{}, source.ErrAdapterFailure
-	}
-	info, err := directoryEntry.Info()
-	if err != nil || info.Mode()&os.ModeSymlink != 0 {
 		return source.SourceItem{}, source.ErrAdapterFailure
 	}
 
@@ -451,7 +484,7 @@ func (adapter *ResourceAdapter) List(ctx context.Context, request source.Adapter
 		if locatorErr != nil {
 			return source.AdapterListResult{}, locatorErr
 		}
-		items[index], err = source.CanonicalizeSourceItemWithLocator(item, locatorRef, request.RequestedProperties, observedAt, revision, available, freshness, entry.PropertyProvenanceFilesystem)
+		items[index], err = source.CanonicalizeSourceItemWithLocator(item, locatorRef, request.RequestedProperties, request.PropertyDefinitions, request.SourceSelectors, request.ReadTransforms, observedAt, revision, available, freshness, entry.PropertyProvenanceFilesystem)
 		if err != nil {
 			return source.AdapterListResult{}, source.ErrAdapterFailure
 		}
@@ -500,7 +533,7 @@ func (adapter *ResourceAdapter) Resolve(ctx context.Context, request source.Adap
 	if err != nil {
 		return source.AdapterResolveResult{}, source.ErrAdapterFailure
 	}
-	canonical, err := source.CanonicalizeSourceItemWithLocator(item, locatorRef, request.RequestedProperties, observedAt, revision, available, freshness, entry.PropertyProvenanceFilesystem)
+	canonical, err := source.CanonicalizeSourceItemWithLocator(item, locatorRef, request.RequestedProperties, request.PropertyDefinitions, request.SourceSelectors, request.ReadTransforms, observedAt, revision, available, freshness, entry.PropertyProvenanceFilesystem)
 	if err != nil {
 		return source.AdapterResolveResult{}, source.ErrAdapterFailure
 	}
@@ -533,26 +566,124 @@ func (adapter *Adapter) resolveItem(ctx context.Context, relativePath string) (s
 		parent = ""
 	}
 	parent = strings.TrimSuffix(parent, "/")
-	directory, err := openDirectory(root, parent)
+	scope, owned, err := openVerifiedDirectoryScope(root, parent)
 	if err != nil {
 		return source.SourceItem{}, false, err
 	}
-	defer directory.Close()
-	entries, err := directory.ReadDir(maximumDirectoryEntries + 1)
-	if err != nil && !errors.Is(err, io.EOF) {
-		return source.SourceItem{}, false, source.ErrAdapterFailure
+	if owned {
+		defer scope.Close()
 	}
-	if len(entries) > maximumDirectoryEntries {
-		return source.SourceItem{}, false, source.ErrAdapterFailure
-	}
-	for _, candidate := range entries {
-		if candidate.Name() != name || candidate.Type()&os.ModeSymlink != 0 {
-			continue
+	// 단일 대상 해석은 부모를 열거하지 않는다. 목록 API의 디렉터리 예산
+	// (1,024)을 여기 전파하면 큰 폴더의 존재하는 파일을 ErrAdapterFailure로
+	// 거절한다. FileInfo는 walk가 검증한 scope에 대한 fstatat
+	// (AT_SYMLINK_NOFOLLOW)로 얻는다. 절대 경로 재조회는 검증 이후 부모가
+	// symlink·다른 디렉터리로 교체되면 다른 객체의 FileInfo를 반환하므로
+	// resource type과 identity 입력을 검증 사슬 밖 객체에서 만들 수 있다
+	// (TOCTOU). symlink는 목록 경로와 동일하게 부재로 취급한다.
+	info, statErr := scope.Lstat(name)
+	if statErr != nil {
+		// 부재와 이름 길이 초과(4,096 경계 경로)는 목록 경로와 동일하게
+		// 부재로 취급한다. 나머지 오류만 접근 실패로 실패 닫기한다.
+		if errors.Is(statErr, fs.ErrNotExist) || errors.Is(statErr, syscall.ENAMETOOLONG) {
+			return source.SourceItem{}, false, nil
 		}
-		item, makeErr := adapter.makeItem(parent, candidate)
-		return item, makeErr == nil, makeErr
+		return source.SourceItem{}, false, source.ErrAdapterFailure
 	}
-	return source.SourceItem{}, false, nil
+	if info.Mode()&os.ModeSymlink != 0 {
+		return source.SourceItem{}, false, nil
+	}
+	item, makeErr := adapter.makeItemFromInfo(parent, name, info)
+	return item, makeErr == nil, makeErr
+}
+
+// resolveAccessibleItem은 ResolveLocalPath 전용 대상 조회다. 검증된 부모
+// scope에서 최종 대상을 한 번 열고 동일 핸들의 Stat으로 resource
+// type·identity 입력과 접근 가능성을 함께 확정한다. identity와 접근 검사 사이의
+// 별도 재오픈 경계가 없으므로 두 검사가 서로 다른 객체를 볼 수 없다.
+//
+// leaf symlink는 Root.OpenFile이 따라가므로(플래그 O_NOFOLLOW는 Root의 symlink
+// 해석 뒤에서 무력화된다) 먼저 scope.Lstat으로 부재 취급한다. open이 실패하면
+// Lstat과 open 사이에 leaf가 symlink·부재로 교체된 경우다 — 재조회해 교체
+// 상태를 확인하고 목록 경로와 동일하게 부재로 취급한다.
+func (adapter *Adapter) resolveAccessibleItem(ctx context.Context, relativePath string) (source.SourceItem, bool, error) {
+	if !source.ValidateRelativePath(relativePath) || relativePath == "" {
+		return source.SourceItem{}, false, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return source.SourceItem{}, false, source.ErrAdapterFailure
+	}
+	root, err := openVerifiedRoot(adapter.root)
+	if err != nil {
+		return source.SourceItem{}, false, err
+	}
+	defer root.Close()
+	parent, name := filepath.Split(relativePath)
+	parent = filepath.ToSlash(filepath.Clean(parent))
+	if parent == "." {
+		parent = ""
+	}
+	parent = strings.TrimSuffix(parent, "/")
+	scope, owned, err := openVerifiedDirectoryScope(root, parent)
+	if err != nil {
+		return source.SourceItem{}, false, err
+	}
+	if owned {
+		defer scope.Close()
+	}
+	notFound := func() (source.SourceItem, bool, error) {
+		return source.SourceItem{}, false, nil
+	}
+	// 부재와 이름 길이 초과(4,096 경계 경로), symlink leaf는 목록 경로와
+	// 동일하게 부재로 취급한다.
+	if info, statErr := scope.Lstat(name); statErr != nil {
+		if errors.Is(statErr, fs.ErrNotExist) || errors.Is(statErr, syscall.ENAMETOOLONG) {
+			return notFound()
+		}
+		return source.SourceItem{}, false, source.ErrAdapterFailure
+	} else if info.Mode()&os.ModeSymlink != 0 {
+		return notFound()
+	}
+	target, openErr := scope.OpenFile(name, os.O_RDONLY|syscall.O_NONBLOCK|syscall.O_NOFOLLOW, 0)
+	if openErr != nil {
+		if errors.Is(openErr, fs.ErrNotExist) || errors.Is(openErr, syscall.ENAMETOOLONG) {
+			return notFound()
+		}
+		if errors.Is(openErr, fs.ErrPermission) {
+			return source.SourceItem{}, false, source.ErrPermissionDenied
+		}
+		// Lstat 이후 leaf가 symlink로 교체되어 Root가 거절했을 수 있다.
+		// 재조회해 교체 상태를 확인하고 부재로 취급한다.
+		if info, statErr := scope.Lstat(name); statErr == nil && info.Mode()&os.ModeSymlink != 0 {
+			return notFound()
+		}
+		return source.SourceItem{}, false, source.ErrAdapterFailure
+	}
+	defer target.Close()
+	opened, statErr := target.Stat()
+	if statErr != nil {
+		return source.SourceItem{}, false, source.ErrAdapterFailure
+	}
+	// open이 성공해도 leaf가 루트 내부 대상을 가리키는 symlink로 교체되어
+	// 있으면 Root의 symlink 해석이 링크 대상을 열었을 수 있다. open 이후
+	// 경로를 재조회해 열린 핸들이 이름의 현재 non-symlink 객체와 동일한지
+	// 확인한다(openDirectory의 before/opened/after SameFile 검증과 같은
+	// 경계). symlink·부재로의 교체는 목록 경로와 동일하게 부재로, 다른
+	// 객체로의 교체는 실패 닫기한다.
+	post, postErr := scope.Lstat(name)
+	if postErr != nil {
+		if errors.Is(postErr, fs.ErrNotExist) || errors.Is(postErr, syscall.ENAMETOOLONG) {
+			return notFound()
+		}
+		return source.SourceItem{}, false, source.ErrAdapterFailure
+	}
+	if post.Mode()&os.ModeSymlink != 0 {
+		return notFound()
+	}
+	if !os.SameFile(post, opened) {
+		return source.SourceItem{}, false, source.ErrAdapterFailure
+	}
+	item, makeErr := adapter.makeItemFromInfo(parent, name, opened)
+	return item, makeErr == nil, makeErr
 }
 
 func (adapter *Adapter) canonicalLocatorRef(item source.SourceItem) (entry.LocatorRef, error) {
@@ -562,6 +693,65 @@ func (adapter *Adapter) canonicalLocatorRef(item source.SourceItem) (entry.Locat
 		return entry.LocatorRef{}, err
 	}
 	return locator.LocatorRef()
+}
+
+// ResolveLocalPath는 소스 루트 기준 clean 절대 UTF-8 경로 하나를 canonical
+// EntryRef로 해석한다. 원시 경로는 identity 재구성 입력으로만 쓰고 결과에는
+// locator 유도 값만 남으며 rename/move 연속성은 보장하지 않는다.
+func (adapter *Adapter) ResolveLocalPath(ctx context.Context, localPath string) (entry.EntryRef, error) {
+	if err := ctx.Err(); err != nil {
+		return entry.EntryRef{}, source.ErrAdapterFailure
+	}
+	if !utf8.ValidString(localPath) || len(localPath) < 1 || len(localPath) > maximumLocalPathBytes ||
+		strings.ContainsRune(localPath, '\x00') || !filepath.IsAbs(localPath) || filepath.Clean(localPath) != localPath {
+		return entry.EntryRef{}, source.ErrInvalidRequest
+	}
+	relativePath, err := filepath.Rel(adapter.root, localPath)
+	if err != nil {
+		return entry.EntryRef{}, source.ErrPathEscape
+	}
+	relativePath = filepath.ToSlash(relativePath)
+	if relativePath == "." {
+		// 소스 루트 자체는 assignment 대상 entry가 아니다.
+		return entry.EntryRef{}, source.ErrInvalidRequest
+	}
+	if !source.ValidateRelativePath(relativePath) {
+		return entry.EntryRef{}, source.ErrPathEscape
+	}
+	item, found, err := adapter.resolveAccessibleItem(ctx, relativePath)
+	if err != nil {
+		return entry.EntryRef{}, err
+	}
+	if !found {
+		return entry.EntryRef{}, classifyMissingLocalPath(localPath)
+	}
+	// 접근 가능성은 위 열기와 동일 핸들 Stat으로 확정됐다. 별도 재오픈은
+	// identity와 접근 검사가 다른 객체를 볼 수 있는 TOCTOU 경계가 되므로
+	// 수행하지 않는다.
+	locatorRef, err := adapter.canonicalLocatorRef(item)
+	if err != nil {
+		return entry.EntryRef{}, source.ErrAdapterFailure
+	}
+	entryID := entry.DeriveEntryID(adapter.identity.SourceID, item.Snapshot.ResourceType, item.Identity.EntryKey)
+	ref, err := entry.NewEntryRef(entryID, adapter.identity.SourceID, item.Identity.EntryKey, item.Snapshot.ResourceType, locatorRef, item.Identity.IdentityStrength)
+	if err != nil {
+		return entry.EntryRef{}, source.ErrAdapterFailure
+	}
+	return ref, nil
+}
+
+// classifyMissingLocalPath는 walk가 대상을 찾지 못한 원인을 존재·권한·어댑터가
+// 다루지 않는 대상(symlink 등)으로 분류한다.
+func classifyMissingLocalPath(localPath string) error {
+	_, statErr := os.Lstat(localPath)
+	switch {
+	case statErr == nil:
+		return source.ErrPathEscape
+	case errors.Is(statErr, fs.ErrPermission):
+		return source.ErrPermissionDenied
+	default:
+		return source.ErrEntryNotFound
+	}
 }
 
 func (adapter *Adapter) resolveObjectKey(ctx context.Context, objectKey string) (source.SourceItem, bool, error) {

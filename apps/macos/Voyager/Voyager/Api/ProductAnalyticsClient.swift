@@ -34,14 +34,20 @@ public struct ProductAnalyticsMetricRequest: Equatable, Sendable {
     public let metricKey: String
     public let properties: [String: ProductAnalyticsPropertyValue]
     public let context: ProductAnalyticsEventContext
+    public let eventVersion: ProductAnalyticsEventVersion
+    public let operationID: UUID
 
     nonisolated public init(
         metricKey: String,
         properties: [String: ProductAnalyticsPropertyValue],
         context: ProductAnalyticsEventContext,
+        eventVersion: ProductAnalyticsEventVersion = .init(rawValue: "1"),
+        operationID: UUID = UUID(),
     ) {
         self.metricKey = metricKey
         self.properties = properties
         self.context = context
+        self.eventVersion = eventVersion
+        self.operationID = operationID
     }
 }

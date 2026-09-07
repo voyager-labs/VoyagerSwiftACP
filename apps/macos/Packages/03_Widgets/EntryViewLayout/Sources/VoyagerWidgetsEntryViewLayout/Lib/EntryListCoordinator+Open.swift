@@ -15,7 +15,7 @@ extension EntryListCoordinator {
             action: { [weak self] in
                 guard let self else { return }
                 saveScrollPosition()
-                store.send(.view(.openSelectedItem))
+                store.send(.view(.openSelectedItem(source: .fileManagerContent)))
             },
         )
     }

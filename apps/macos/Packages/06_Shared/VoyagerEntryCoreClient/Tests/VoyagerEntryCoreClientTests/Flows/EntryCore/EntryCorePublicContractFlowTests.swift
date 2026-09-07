@@ -3,7 +3,14 @@ import XCTest
 
 final class EntryCorePublicContractFlowTests: XCTestCase {
     func testMethodsMatchCanonicalContract() {
-        XCTAssertEqual(EntryCoreMethod.allCases.map(\.rawValue), ["ping", "health", "version"])
+        XCTAssertEqual(EntryCoreMethod.allCases.map(\.rawValue), [
+            "ping", "health", "version",
+            "property.definition.list", "property.definition.create", "property.definition.update",
+            "property.definition.disable",
+            "property.option.create", "property.option.update", "property.option.reorder", "property.option.disable",
+            "property.assignment.list", "property.change.prepare", "property.change.execute",
+            "property.condition.query",
+        ])
     }
 
     func testCanonicalResultsMatchContract() throws {
@@ -30,6 +37,12 @@ final class EntryCorePublicContractFlowTests: XCTestCase {
                 "request_too_large",
                 "invalid_request",
                 "unknown_method",
+                "invalid_path", "mount_not_found", "source_not_found", "invalid_selector", "context_mismatch",
+                "scope_too_large", "invalid_page_token", "permission_denied", "source_unavailable",
+                "source_runtime_unavailable",
+                "source_deleted",
+                "entry_not_found", "unsupported", "conflict", "adapter_failure", "property_not_found",
+                "response_too_large",
                 "internal_error",
             ],
         )
@@ -45,6 +58,7 @@ final class EntryCorePublicContractFlowTests: XCTestCase {
             .responseTooLarge,
             .malformedResponse,
             .protocolMismatch,
+            .localValidation,
             .requestIDMismatch,
             .server(.internalError),
         ]

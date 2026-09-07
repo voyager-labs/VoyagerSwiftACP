@@ -40,6 +40,8 @@ struct FileManagerWindowCommandRoutingReducer {
     var fileManagerLocationsClient
     @Dependency(\.fileManagerFavoritesClient)
     var fileManagerFavoritesClient
+    @Dependency(\.fileManagerProductMetricsClient)
+    var productMetricsClient
     @Dependency(\.entryLoadingClient)
     var entryLoadingClient
     @Dependency(\.userDefaultsClient)
@@ -54,6 +56,9 @@ struct FileManagerWindowCommandRoutingReducer {
     var body: some Reducer<State, Action> {
         Reduce { state, action in
             switch action {
+            case let .view(.quickLookKeyCommand(command)):
+                return .send(.content(.view(.handleKeyCommand(command))))
+
             case .onAppear:
                 state.syncHomeFavoriteItems()
                 guard state.fixedLocationsLoadPhase == .idle else { return .none }
@@ -164,6 +169,9 @@ struct FileManagerWindowCommandRoutingReducer {
                 state.contentTabSwitcherPresentation = nil
                 return .none
 
+            case let .view(.activateContentTabSwitcherCandidate(id)):
+                return handleActivateContentTabSwitcherCandidate(id, state: &state)
+
             case let .request(command):
                 return handleRequestedCommand(command, state: &state)
 
@@ -182,47 +190,53 @@ struct FileManagerWindowCommandRoutingReducer {
                 guard tabID == state.contentTabs.activeTabID,
                       state.contentTabs.tabs[id: tabID]?.anchor == .homeDefault
                 else { return .none }
-                return handleHomePageAnchorSelected(anchor, activeTabID: tabID, state: state)
+                return handleHomePageAnchorSelected(anchor, activeTabID: tabID, state: &state)
 
             case let .tabContent(tabID, .delegate(.homeChatHistorySessionSelected(sessionID))):
                 guard tabID == state.contentTabs.activeTabID,
                       state.contentTabs.tabs[id: tabID]?.anchor == .homeDefault
                 else { return .none }
-                return handleHomeChatHistorySessionSelected(sessionID, activeTabID: tabID, state: state)
+                return handleHomeChatHistorySessionSelected(sessionID, activeTabID: tabID)
 
             case let .sidebar(.delegate(.selectFixedLocation(id))):
-                guard let activeTabID = state.contentTabs.activeTabID,
+                guard state.contentTabs.activeTabID != nil,
                       let location = state.sidebar.fixedLocationItems.first(where: { $0.id == id })
                 else { return .none }
-                let anchor = ContentTabPageAnchor.directory(path: location.path)
-                return .concatenate(
-                    updateContentTabPageAnchorEffect(
-                        tabID: activeTabID,
-                        anchor: anchor,
-                        state: state,
-                    ),
-                    .send(.navigation(.view(.navigateToPath(location.path)))),
-                )
+                return .send(.navigation(.view(.navigateToPath(location.path))))
 
             case let .sidebar(.delegate(.entryDropRequested(request))):
                 if case let .fixedLocation(id) = request.target {
                     guard let location = state.sidebar.fixedLocationItems.first(where: { $0.id == id })
                     else { return .none }
                     if location.kind == .trash {
-                        return .send(.internal(.sidebarEntryDrop(.routing(.handleDropToTrash(
-                            providers: request.providers,
-                        )))))
+                        let metadata = EntryCommandMetadata(
+                            id: productMetricsClient.makeOperationID(),
+                            interaction: .moveEntriesToTrash,
+                            source: .dragAndDrop,
+                        )
+                        return .send(.internal(.sidebarEntryDrop(.acceptedCommand(
+                            metadata: metadata,
+                            action: .routing(.handleDropToTrash(providers: request.providers)),
+                        ))))
                     }
                 }
                 guard let destinationPath = sidebarEntryDropDestinationPath(
                     for: request.target,
                     state: state,
                 ) else { return .none }
-                return .send(.internal(.sidebarEntryDrop(.routing(.handleDrop(
-                    providers: request.providers,
-                    destinationPath: destinationPath,
-                    isOptionDrag: request.isOptionDrag,
-                )))))
+                let metadata = EntryCommandMetadata(
+                    id: productMetricsClient.makeOperationID(),
+                    interaction: request.isOptionDrag ? .copyEntries : .moveEntries,
+                    source: .dragAndDrop,
+                )
+                return .send(.internal(.sidebarEntryDrop(.acceptedCommand(
+                    metadata: metadata,
+                    action: .routing(.handleDrop(
+                        providers: request.providers,
+                        destinationPath: destinationPath,
+                        isOptionDrag: request.isOptionDrag,
+                    )),
+                ))))
 
             case let .sidebar(.view(.setFixedLocationVisibility(id, isVisible))):
                 state.sidebar.setFixedLocationVisibility(id: id, isVisible: isVisible)
@@ -349,6 +363,15 @@ struct FileManagerWindowCommandRoutingReducer {
             case let .internal(.applyInspectorNewChatSeed(application)):
                 return applyInspectorNewChatSeed(application, state: &state)
 
+            case let .internal(.defaultStartPageResolved(startPage, source)):
+                let anchor: ContentTabPageAnchor = switch startPage {
+                case .home:
+                    .homeDefault
+                case let .directory(path):
+                    .directory(path: path)
+                }
+                return .send(.contentTabActionRequested(.open(anchor), source: source))
+
             case .inspector(.aiChat(.providerConnectionsUpdated)):
                 if state.pendingAiChatInspectorOpen?.destination == .newChat {
                     if case let .known(providers) = state.inspector.aiChat.providerConnectionSnapshot,
@@ -409,7 +432,7 @@ private func routeOpenInNewTab(
 ) -> Effect<FileManagerWindowAction> {
     guard tabID == activeTabID, !paths.isEmpty else { return .none }
     let openEffects = paths.map { path -> Effect<FileManagerWindowAction> in
-        .send(.contentTabs(.open(.directory(path: path))))
+        .send(.contentTabActionRequested(.open(.directory(path: path)), source: .contextMenu))
     }
     return .concatenate(openEffects)
 }

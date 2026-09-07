@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Foundation
 import VoyagerEntitiesAi
+import VoyagerEntitiesAppPreferences
 import VoyagerEntitiesCollection
 import VoyagerEntitiesEntry
 import VoyagerFeaturesAiChat
@@ -35,6 +36,30 @@ struct ContentTabRowInteractionSurface: Equatable {
         self.validSelectedTabIDs = validSelectedTabIDs
         self.isCloseEnabled = isCloseEnabled
         self.isPinMutationEnabled = isPinMutationEnabled
+    }
+}
+
+enum FileManagerObservedEntryPathResult: Equatable {
+    case pending
+    case succeeded
+    case failed
+    case cancelled
+}
+
+struct FileManagerPendingEntryCommand: Equatable {
+    let metadata: EntryCommandMetadata
+    var pathResults: [String: FileManagerObservedEntryPathResult] = [:]
+
+    var aggregate: EntryActionAggregate {
+        let succeeded = pathResults.values.count { $0 == .succeeded }
+        let failed = pathResults.values.count { $0 == .failed }
+        let cancelled = pathResults.values.count { $0 == .cancelled }
+        return .init(
+            attempted: pathResults.count,
+            succeeded: succeeded,
+            failed: failed,
+            cancelled: cancelled,
+        )
     }
 }
 
@@ -109,6 +134,34 @@ public enum FileManagerTopNavigationIntent: Equatable, Sendable {
     case update(ContentTabID)
 }
 
+extension FileManagerTopNavigationIntent {
+    var isContentTabMoveMetricEligible: Bool {
+        switch self {
+        case .move, .movePinnedGroup:
+            true
+        case .pin, .unpin, .close, .update:
+            false
+        }
+    }
+}
+
+/// direct pin/unpin 터미널을 탭별로 상관하기 위한 메트릭 키.
+public struct ProductContentTabPinMutationMetric: Equatable, Sendable {
+    public let operationID: UUID
+    public let identity: ContentTabInteractionIdentity
+    public let source: ContentTabActionSource
+
+    public init(
+        operationID: UUID,
+        identity: ContentTabInteractionIdentity,
+        source: ContentTabActionSource,
+    ) {
+        self.operationID = operationID
+        self.identity = identity
+        self.source = source
+    }
+}
+
 public struct FileManagerPendingTopNavigationIntent: Equatable, Sendable {
     public let token: FileManagerTopNavigationOperationToken
     public let intent: FileManagerTopNavigationIntent
@@ -164,6 +217,7 @@ public extension FileManagerTopNavigationArrangementPresentation {
 
 @ObservableState
 public struct FileManagerWindowState: Equatable {
+    public var defaultStartPage: StartPage
     public var content: FileManagerContentFeature.State
     public var tabContentStates: [ContentTabID: FileManagerContentFeature.State]
     public var tabInspectorStates: [ContentTabID: FileManagerInspectorFeature.State]
@@ -189,15 +243,28 @@ public struct FileManagerWindowState: Equatable {
     public var pendingContentTabClose: PendingContentTabClose?
     public var pendingSelectedContentTabClose: PendingSelectedContentTabClose?
     public var pendingSelectedContentTabPinMutation: PendingSelectedContentTabPinMutation?
+    var productContentTabMoveMetricContexts: [
+        FileManagerTopNavigationOperationToken: ProductContentTabActionMetricContext
+    ] = [:]
+    var productContentTabPinMutationMetrics: [ContentTabID: ProductContentTabPinMutationMetric] = [:]
+    var productContentTabCloseMetric: ProductContentTabCloseMetric?
     public var deferredPinnedContentTabs: ContentTabState?
     public var deferredPinnedContentTabsMode: PinnedContentTabsApplicationMode?
     var pendingRuntimePreservationRecords: [ContentTabID: ContentTabPinnedRecord] = [:]
     public var pendingContentTabTeardown: PendingContentTabTeardown?
     public var isClosing: Bool
+    /// 윈도우가 현재 key(포커스) 상태인지 여부.
+    /// 앱 레벨 `WindowManagerFeature`가 windowBecameKey/ResignedKey 이벤트로 설정한다.
+    /// 프로세스 전역 Quick Look 패널을 동기화할 수 있는 소유자(포커스된 윈도우의 활성 탭)를 판별하는 데 사용한다.
+    public var isFocused: Bool
     public var pendingDirectoryReloadTabIDs: Set<ContentTabID>
     public var undoManagerAvailability: UndoManagerAvailability
     public var undoRedoPhase: FileManagerUndoRedoPhase
     public var sidebarEntryDropOperations: EntryOperationsState
+    var recordedContentEntryCommandIDs: Set<UUID> = []
+    var pendingContentEntryCommands: [UUID: FileManagerPendingEntryCommand] = [:]
+    var recordedSidebarEntryCommandIDs: Set<UUID> = []
+    var pendingSidebarEntryCommands: [UUID: FileManagerPendingEntryCommand] = [:]
     public var pendingCollectionOpenRequest: ContentPageCollectionOpenRequest?
     public var pendingContentTabMove: FileManagerWindowContentTabMovePending?
     public var contentTabMoveParticipantRequestID: UUID?
@@ -210,6 +277,7 @@ public struct FileManagerWindowState: Equatable {
     var homeFavoriteItems: [FileManagerHomeFavoriteItem] = []
 
     public init() {
+        defaultStartPage = .home
         content = .init()
         sidebar = .init()
         inspector = .init()
@@ -232,6 +300,7 @@ public struct FileManagerWindowState: Equatable {
         deferredPinnedContentTabsMode = nil
         pendingContentTabTeardown = nil
         isClosing = false
+        isFocused = false
         pendingDirectoryReloadTabIDs = []
         undoManagerAvailability = .init()
         undoRedoPhase = .idle
@@ -270,7 +339,7 @@ public struct FileManagerWindowState: Equatable {
                 inheritingWindowContextFrom: state.content,
             )
         }
-        state.content.pendingSelectEntryID = selectEntryID
+        state.content.setPendingEntrySelection(entryID: selectEntryID, destinationPath: nil)
 
         state.syncActiveTabContentState()
         state.restoreInspectorStateForActiveTab()
@@ -307,7 +376,7 @@ public struct FileManagerWindowState: Equatable {
             )
         }
 
-        state.content.pendingSelectEntryID = selectEntryID
+        state.content.setPendingEntrySelection(entryID: selectEntryID, destinationPath: nil)
 
         state.syncActiveTabContentState()
         state.restoreInspectorStateForActiveTab()
@@ -318,6 +387,7 @@ public struct FileManagerWindowState: Equatable {
     public static func makeExternalInitial(
         reservations: [ExternalContentTabReservation],
         windowID: UUID? = nil,
+        activeTabID: ContentTabID? = nil,
     ) -> Self? {
         guard canReserveExternalContentTabs(
             reservations,
@@ -333,8 +403,10 @@ public struct FileManagerWindowState: Equatable {
             for: reservations,
             inheritingWindowContextFrom: windowContext,
         )
-        guard let activeReservation = reservations.last,
-              let activeContent = snapshots.content[activeReservation.id]
+        guard let activeReservation = activeTabID
+            .flatMap({ activeTabID in reservations.first(where: { $0.id == activeTabID }) })
+            ?? reservations.last,
+            let activeContent = snapshots.content[activeReservation.id]
         else { return nil }
 
         var tabs = ContentTabState().tabs
@@ -344,7 +416,9 @@ public struct FileManagerWindowState: Equatable {
                 anchor: reservation.anchor,
             ))
         }
-        let previousActiveTabID = reservations.dropLast().last?.id
+        let recentTabIDs = [activeReservation.id]
+            + reservations.reversed().map(\.id).filter { $0 != activeReservation.id }
+        let previousActiveTabID = recentTabIDs.dropFirst().first
         var state = Self(
             externalContent: activeContent,
             externalContentStates: snapshots.content,
@@ -353,7 +427,7 @@ public struct FileManagerWindowState: Equatable {
                 tabs: tabs,
                 activeTabID: activeReservation.id,
                 previousActiveTabID: previousActiveTabID,
-                recentlyUsedTabIDs: reservations.reversed().map(\.id),
+                recentlyUsedTabIDs: recentTabIDs,
             ),
             externalInspector: snapshots.inspector[activeReservation.id] ?? .init(),
             windowID: windowID,
@@ -370,6 +444,7 @@ public struct FileManagerWindowState: Equatable {
         externalInspector: FileManagerInspectorFeature.State,
         windowID initialWindowID: UUID?,
     ) {
+        defaultStartPage = .home
         content = externalContent
         tabContentStates = externalContentStates
         tabInspectorStates = externalInspectorStates
@@ -392,6 +467,7 @@ public struct FileManagerWindowState: Equatable {
         deferredPinnedContentTabsMode = nil
         pendingContentTabTeardown = nil
         isClosing = false
+        isFocused = false
         pendingDirectoryReloadTabIDs = []
         undoManagerAvailability = .init()
         undoRedoPhase = .idle
@@ -431,6 +507,7 @@ public struct PendingSelectedContentTabPinMutation: Equatable {
     public let operationID: UUID
     public let target: SelectedContentTabPinMutationTargetState
     public let orderedTargetIDs: [ContentTabID]
+    public let source: ContentTabActionSource
     public let origin: SelectedContentTabPinMutationOrigin
     public let dragOperationID: UUID?
     public let sourceWindowID: UUID?
@@ -460,6 +537,7 @@ public struct PendingSelectedContentTabPinMutation: Equatable {
         operationID: UUID,
         target: SelectedContentTabPinMutationTargetState,
         orderedTargetIDs: [ContentTabID],
+        source: ContentTabActionSource,
         origin: SelectedContentTabPinMutationOrigin = .menu,
         dragOperationID: UUID? = nil,
         sourceWindowID: UUID? = nil,
@@ -479,6 +557,7 @@ public struct PendingSelectedContentTabPinMutation: Equatable {
         self.operationID = operationID
         self.target = target
         self.orderedTargetIDs = orderedTargetIDs
+        self.source = source
         self.origin = origin
         self.dragOperationID = dragOperationID
         self.sourceWindowID = sourceWindowID
@@ -499,11 +578,13 @@ public struct PendingSelectedContentTabPinMutation: Equatable {
 
 public struct PendingSelectedContentTabClose: Equatable, Sendable {
     public let operationID: UUID
+    public let actionSource: ContentTabActionSource
     public let orderedTargetIDs: [ContentTabID]
     public var cursor: Int
     public var currentTabID: ContentTabID?
     public let originalActiveTabID: ContentTabID?
     public let preferredFallbackIDs: [ContentTabID]
+    public var aggregateResult: ContentTabActionResult?
 
     public init(
         operationID: UUID,
@@ -512,13 +593,16 @@ public struct PendingSelectedContentTabClose: Equatable, Sendable {
         currentTabID: ContentTabID?,
         originalActiveTabID: ContentTabID?,
         preferredFallbackIDs: [ContentTabID],
+        actionSource: ContentTabActionSource = .contentTabBar,
     ) {
         self.operationID = operationID
+        self.actionSource = actionSource
         self.orderedTargetIDs = orderedTargetIDs
         self.cursor = cursor
         self.currentTabID = currentTabID
         self.originalActiveTabID = originalActiveTabID
         self.preferredFallbackIDs = preferredFallbackIDs
+        aggregateResult = nil
     }
 
     public init(
@@ -534,6 +618,7 @@ public struct PendingSelectedContentTabClose: Equatable, Sendable {
             currentTabID: nil,
             originalActiveTabID: originalActiveTabID,
             preferredFallbackIDs: preferredFallbackIDs,
+            actionSource: .contentTabBar,
         )
     }
 
@@ -551,6 +636,7 @@ public struct PendingSelectedContentTabClose: Equatable, Sendable {
             currentTabID: nil,
             originalActiveTabID: originalActiveTabID,
             preferredFallbackIDs: preferredFallbackIDs,
+            actionSource: .contentTabBar,
         )
     }
 
@@ -568,6 +654,7 @@ public struct PendingSelectedContentTabClose: Equatable, Sendable {
             currentTabID: currentTabID,
             originalActiveTabID: originalActiveTabID,
             preferredFallbackIDs: preferredFallbackIDs,
+            actionSource: .contentTabBar,
         )
     }
 }
@@ -581,6 +668,8 @@ public struct PendingContentTabClose: Equatable {
     public let previousActiveInspector: FileManagerInspectorFeature.State?
     public let targetInspector: FileManagerInspectorFeature.State?
     public let batchOperationID: UUID?
+    public let actionSource: ContentTabActionSource
+    public let metricOperationID: UUID?
     public var didReceiveWriteBackNavigationState: Bool
     public var didReceiveWriteBackComposerSync: Bool
     public var requiresWriteBackFailureTerminal: Bool
@@ -598,6 +687,8 @@ public struct PendingContentTabClose: Equatable {
         previousActiveInspector: FileManagerInspectorFeature.State? = nil,
         targetInspector: FileManagerInspectorFeature.State? = nil,
         batchOperationID: UUID? = nil,
+        actionSource: ContentTabActionSource = .contentTabBar,
+        metricOperationID: UUID? = nil,
         didReceiveWriteBackNavigationState: Bool = false,
         didReceiveWriteBackComposerSync: Bool = false,
         requiresWriteBackFailureTerminal: Bool = true,
@@ -614,6 +705,8 @@ public struct PendingContentTabClose: Equatable {
         self.previousActiveInspector = previousActiveInspector
         self.targetInspector = targetInspector
         self.batchOperationID = batchOperationID
+        self.actionSource = actionSource
+        self.metricOperationID = metricOperationID
         self.didReceiveWriteBackNavigationState = didReceiveWriteBackNavigationState
         self.didReceiveWriteBackComposerSync = didReceiveWriteBackComposerSync
         self.requiresWriteBackFailureTerminal = requiresWriteBackFailureTerminal

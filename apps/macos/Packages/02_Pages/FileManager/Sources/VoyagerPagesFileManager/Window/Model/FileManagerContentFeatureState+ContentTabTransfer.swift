@@ -11,12 +11,17 @@ extension FileManagerContentFeature.State {
             && collection == baseline.collection
             && aiChat.isPassiveContentTabProjection(matching: baseline.aiChat)
             && pendingSelectEntryID == baseline.pendingSelectEntryID
+            && pendingSelectEntryDestinationPath == baseline.pendingSelectEntryDestinationPath
+            && pendingSelectEntryLoadGeneration == baseline.pendingSelectEntryLoadGeneration
+            && pendingIdentityTransition == baseline.pendingIdentityTransition
+            && pendingExternalRefresh == baseline.pendingExternalRefresh
             && homeFavoriteItems == baseline.homeFavoriteItems
             && homeLocationItems == baseline.homeLocationItems
             && homeDirectoryItemCounts == baseline.homeDirectoryItemCounts
             && homeChatHistoryItems == baseline.homeChatHistoryItems
             && homeChatHistoryLoadFailed == baseline.homeChatHistoryLoadFailed
             && resetComposerOnNextDirectoryNavigation == baseline.resetComposerOnNextDirectoryNavigation
+            && skipCollectionRestoreSearchOnNextDiscard == baseline.skipCollectionRestoreSearchOnNextDiscard
             && suppressAutomaticRefreshFeedback == baseline.suppressAutomaticRefreshFeedback
     }
 

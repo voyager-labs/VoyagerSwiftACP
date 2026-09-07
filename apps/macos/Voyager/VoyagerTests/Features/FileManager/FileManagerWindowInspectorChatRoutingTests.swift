@@ -1712,6 +1712,7 @@ final class FileManagerWindowInspectorChatRoutingTests: XCTestCase {
             preparedRequest: AiChatPreparedRequest(
                 prompt: "Live prompt",
                 messages: [],
+                persistenceTranscriptHistory: nil,
                 assistantReplacementIndex: nil,
                 historyTruncation: .init(
                     includedMessageCount: 0,
@@ -2451,6 +2452,7 @@ private extension FileManagerWindowInspectorChatRoutingTests {
             $0.aiProviderModelListClient = AiProviderModelListClient(loadModels: { provider, _ in
                 aiProviderModels.filter { $0.provider == provider }
             })
+            $0.entryQuickLookClient = .init(quickLook: { _, _ in }, syncQuickLookSelection: { _, _ in })
         }
         // store.exhaustivity = .off: FileManager부터 AiChat까지의 통합 action 중 목적지 계약만 선별 검증한다.
         store.exhaustivity = .off

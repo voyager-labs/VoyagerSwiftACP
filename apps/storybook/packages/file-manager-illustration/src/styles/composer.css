@@ -4,13 +4,22 @@
   border: 1px solid var(--fm-composer-border);
   border-radius: var(--fm-composer-radius);
   background: var(--fm-composer-background);
+  backdrop-filter: var(--fm-backdrop-blur);
   box-shadow: var(--fm-composer-shadow);
   color: var(--fm-text-primary);
   font-family: var(--fm-font-ui);
+  -webkit-backdrop-filter: var(--fm-backdrop-blur);
 }
 
 [data-file-manager-illustration] .collection-composer-compact-story-frame {
   width: min(386px, 100%);
+}
+
+[data-file-manager-illustration] .collection-composer-story-frame {
+  min-height: 100dvh;
+  background: var(--fm-content);
+  box-sizing: border-box;
+  padding: 5px 7px;
 }
 
 [data-file-manager-illustration] .collection-composer-input-row {
@@ -26,8 +35,7 @@
   box-sizing: border-box;
 }
 
-[data-file-manager-illustration] .collection-composer-symbol-button,
-[data-file-manager-illustration] .collection-composer-text-button {
+[data-file-manager-illustration] .collection-composer-symbol-button {
   display: inline-flex;
   border: 0;
   align-items: center;
@@ -36,7 +44,7 @@
 }
 
 [data-file-manager-illustration] .collection-composer-symbol-button {
-  width: 21px;
+  width: 25px;
   height: 21px;
   border-radius: 4px;
   background: transparent;
@@ -47,15 +55,14 @@
   background: var(--fm-composer-control-hover);
 }
 
-[data-file-manager-illustration] .collection-composer-symbol-button:disabled,
-[data-file-manager-illustration] .collection-composer-text-button:disabled {
+[data-file-manager-illustration] .collection-composer-symbol-button:disabled {
   color: var(--fm-text-tertiary);
 }
 
 [data-file-manager-illustration] .collection-composer-symbol-button.accent {
   position: relative;
-  width: 20px;
-  height: 20px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
   background: var(--fm-composer-accent);
   color: var(--fm-composer-accent-label);
@@ -91,10 +98,10 @@
   flex: 1;
   min-width: 0;
   min-height: 30px;
-  border: 1px solid var(--fm-composer-input-border);
+  border: 0;
   border-radius: 8px;
   align-items: center;
-  background: var(--fm-composer-input-background);
+  background: transparent;
   box-sizing: border-box;
   padding-right: 8px;
 }
@@ -117,19 +124,36 @@
   color: var(--fm-text-secondary);
 }
 
-[data-file-manager-illustration] .collection-composer-text-button {
-  height: 22px;
-  gap: 4px;
-  border-radius: 8px;
-  background: var(--fm-composer-control-background);
-  padding: 4px 7px;
-  font-size: 10px;
-  font-weight: 500;
-  line-height: var(--fm-line-tight);
+[data-file-manager-illustration] .collection-composer-overflow {
+  position: relative;
 }
 
-[data-file-manager-illustration] .collection-composer-text-button:hover:not(:disabled) {
+[data-file-manager-illustration] .collection-composer-overflow > summary {
+  display: inline-flex;
+  width: 25px;
+  height: 21px;
+  border-radius: 4px;
+  align-items: center;
+  justify-content: center;
+  cursor: default;
+  list-style: none;
+}
+
+[data-file-manager-illustration] .collection-composer-overflow > summary::-webkit-details-marker {
+  display: none;
+}
+
+[data-file-manager-illustration] .collection-composer-overflow > summary:hover,
+[data-file-manager-illustration] .collection-composer-overflow[open] > summary {
   background: var(--fm-composer-control-hover);
+}
+
+[data-file-manager-illustration] .collection-composer-overflow-menu {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 148px;
 }
 
 [data-file-manager-illustration] .collection-composer-separator {
@@ -180,7 +204,7 @@
   align-items: center;
   gap: 6px;
   border: 1px solid var(--fm-composer-chip-item-border);
-  background: color-mix(in srgb, var(--fm-separator) 90%, transparent);
+  background: var(--fm-composer-chip-item-background);
   box-sizing: border-box;
   padding: 0 5px 0 4px;
   font-size: var(--fm-font-size-caption-2);
@@ -275,11 +299,42 @@
 [data-file-manager-illustration] .collection-composer-condition-property,
 [data-file-manager-illustration] .collection-composer-condition-segment {
   display: inline-flex;
-  min-height: 22px;
+  height: 22px;
+  min-width: 0;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
+  gap: 4px;
   border-radius: 4px;
-  padding: 2px 4px;
+  padding: 0 4px;
+  box-sizing: border-box;
+}
+
+[data-file-manager-illustration] .collection-composer-condition-property > .sf-symbol {
+  flex: 0 0 auto;
+  transform: translateY(-1px);
+}
+
+[data-file-manager-illustration] .collection-composer-condition-property {
+  gap: 3px;
+}
+
+/* 네이티브 규약: 칩 폭이 부족하면 property·연산자는 온전히 유지하고 값 세그먼트만 줄인다 */
+[data-file-manager-illustration] .collection-composer-condition-property,
+[data-file-manager-illustration]
+  .collection-composer-condition-segment:not(.collection-composer-condition-value) {
+  flex-shrink: 0;
+}
+
+[data-file-manager-illustration] .collection-composer-condition-value {
+  min-width: 0;
+}
+
+[data-file-manager-illustration] .collection-composer-condition-label {
+  min-width: 0;
+  overflow: hidden;
+  line-height: var(--fm-line-tight);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 [data-file-manager-illustration] button.collection-composer-condition-property,
@@ -319,16 +374,33 @@
   top: -6px;
   right: -6px;
   display: inline-flex;
-  width: 14px;
-  height: 14px;
+  width: 18px;
+  height: 18px;
   border: 0;
+  border-radius: 50%;
   align-items: center;
   justify-content: center;
   background: transparent;
   color: var(--fm-text-secondary);
   opacity: 0;
-  padding: 0;
+  padding: 2px;
   pointer-events: none;
+}
+
+[data-file-manager-illustration] .collection-composer-condition-remove::before {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  content: "";
+}
+
+[data-file-manager-illustration] .collection-composer-condition-remove:hover::before {
+  background: var(--fm-composer-control-hover);
+}
+
+[data-file-manager-illustration] .collection-composer-condition-remove > .sf-symbol {
+  position: relative;
 }
 
 [data-file-manager-illustration]
@@ -421,7 +493,10 @@
   padding: 8px;
 }
 
-[data-file-manager-illustration] .collection-composer-specimen.picker > dialog {
+[data-file-manager-illustration] .collection-composer-specimen.picker > dialog,
+[data-file-manager-illustration]
+  .collection-composer-specimen.picker
+  > .collection-composer-operator-picker {
   position: relative;
   top: auto;
   left: auto;

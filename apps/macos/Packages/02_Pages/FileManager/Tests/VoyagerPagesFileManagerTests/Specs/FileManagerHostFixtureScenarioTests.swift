@@ -1,12 +1,14 @@
+import Dependencies
 import Foundation
 import VoyagerEntitiesEntry
+import VoyagerFeaturesEntryOperations
 @testable import VoyagerPagesFileManager
 import XCTest
 
 @MainActor
 extension FileManagerHostFixturePhaseNotificationTests {
     func testPresetAxesAndStateDataAreDeterministic() {
-        XCTAssertEqual(FileManagerHostPreset.allCases.count, 15)
+        XCTAssertEqual(FileManagerHostPreset.allCases.count, 19)
         XCTAssertEqual(FileManagerHostPreset.delayedRootNavigation.scenario.delayedNavigation, .rootNavigation)
         XCTAssertEqual(FileManagerHostPreset.delayedTabSwitch.scenario.delayedNavigation, .tabSwitch)
         XCTAssertEqual(FileManagerHostPreset.permissionDenied.scenario.permission, .denied)
@@ -25,6 +27,84 @@ extension FileManagerHostFixturePhaseNotificationTests {
 
         let largeState = FileManagerHostFixture.makeState(preset: .largeFolder1000, windowID: UUID())
         XCTAssertEqual(largeState.content.entryViewLayout.entries.map(\.name), ["Large Folder"])
+
+        let materialState = FileManagerHostFixture.makeState(preset: .materialTuning, windowID: UUID())
+        XCTAssertEqual(materialState.content.entryViewLayout.listVisibleColumns.count, 8)
+        XCTAssertEqual(
+            materialState.content.entryViewLayout.entryArrangements.groupedItems.map(\.groupName),
+            ["Folders", "Documents", "Spreadsheets", "Images", "Media", "Archives"],
+        )
+
+        let documentState = FileManagerHostFixture.makeState(preset: .fixtureDocuments, windowID: UUID())
+        XCTAssertEqual(
+            documentState.content.entryViewLayout.entryArrangements.groupedItems.map(\.groupName),
+            ["Documents", "Spreadsheets"],
+        )
+
+        let mediaState = FileManagerHostFixture.makeState(preset: .fixtureMedia, windowID: UUID())
+        XCTAssertEqual(
+            mediaState.content.entryViewLayout.entryArrangements.groupedItems.map(\.groupName),
+            ["Images", "Media"],
+        )
+
+        let stressState = FileManagerHostFixture.makeState(preset: .fixtureStress, windowID: UUID())
+        XCTAssertEqual(stressState.content.entryViewLayout.entries.count, 6)
+        XCTAssertEqual(
+            stressState.content.entryViewLayout.entryArrangements.groupedItems.map(\.groupName),
+            ["Long Names", "Edge Cases"],
+        )
+    }
+
+    /// VOY-598: material-tuning Design Assets fixture avoids a self-child.
+    /// Material tuning에서 폴더를 펼쳐도 fixture projection이 자기 자신을 하위 Entry로 반환하지 않는지 검증한다.
+    /// - 검증 내용: Design Assets loader가 deterministic child 목록만 반환하고 folder path를 재귀적으로 반환하지 않는다.
+    /// - 사전 조건: `materialTuning` EntryLoadingClient와 Design Assets folder path가 준비되어 있다.
+    /// - 기대 결과: 로드된 child path가 기대 목록과 같고 folder 자체는 child에 포함되지 않는다.
+    func testMaterialTuningDesignAssetsFixtureDoesNotReturnItself() async throws {
+        let folderPath = "/Fixture/FileManager/Design Assets"
+        let client = FileManagerHostFixture.makeEntryLoadingClient(
+            preset: .materialTuning,
+            windowID: UUID(),
+        )
+        let events = try await Self.collect(client.loadItems(
+            URL(fileURLWithPath: folderPath),
+            false,
+            .none,
+        ))
+        let children = events.flatMap { event -> [EntryModel] in
+            guard case let .coreBatch(items, _) = event else { return [] }
+            return items
+        }
+
+        XCTAssertEqual(children.map(\.name), ["Design Asset Preview.png"])
+        XCTAssertFalse(children.contains { $0.fullPath == folderPath })
+        XCTAssertTrue(children.allSatisfy { $0.fullPath.hasPrefix(folderPath + "/") })
+    }
+
+    func testHostDependenciesConfigureLegacyUndoManagerClient() async {
+        let windowID = UUID()
+        let scope = UndoManagerScope(windowID: windowID, contentTabID: "active-tab")
+        let registry = FileOperationUndoManagerRegistry()
+        _ = registry.activate(scope)
+        var dependencies = DependencyValues()
+        FileManagerHostFixtureDependencies.apply(
+            to: &dependencies,
+            context: .init(
+                scenario: .init(),
+                preset: FileManagerHostPreset.materialTuning.rawValue,
+                windowID: windowID,
+                fileOperationUndoManagerRegistry: registry,
+                workspaceClient: .previewValue,
+                resolveUndoManagerScope: { requestedWindowID in
+                    requestedWindowID == windowID ? scope : nil
+                },
+            ),
+        )
+
+        let availability = await dependencies.undoManagerClient.availability(windowID)
+
+        XCTAssertFalse(availability.canUndo)
+        XCTAssertFalse(availability.canRedo)
     }
 
     func testPhaseNotificationDecodesOptionalQAFieldsAndLegacyInitializer() {
@@ -97,6 +177,30 @@ extension FileManagerHostFixturePhaseNotificationTests {
             XCTAssertEqual(events.rowNames, expectedNames)
             XCTAssertEqual(events.coreFinishedBatchCounts, [1])
         }
+    }
+
+    /// VOY-598: permission fixture Sibling folder does not return itself.
+    /// Permission preset에서 Sibling 폴더를 펼쳐도 fixture projection이 자기 자신을 하위 Entry로 만들지 않는지 검증한다.
+    /// - 검증 내용: Sibling loader가 root permission entries 대신 빈 deterministic child 목록을 반환한다.
+    /// - 사전 조건: `permissionDenied` EntryLoadingClient와 Sibling folder path가 준비되어 있다.
+    /// - 기대 결과: Sibling 하위 로딩 결과가 비어 있고 self-edge가 생성되지 않는다.
+    func testPermissionFixtureSiblingFolderDoesNotReturnItself() async throws {
+        let folderPath = "/Fixture/FileManager/Sibling"
+        let client = FileManagerHostFixture.makeEntryLoadingClient(
+            preset: .permissionDenied,
+            windowID: UUID(),
+        )
+        let events = try await Self.collect(client.loadItems(
+            URL(fileURLWithPath: folderPath),
+            false,
+            .none,
+        ))
+        let children = events.flatMap { event -> [EntryModel] in
+            guard case let .coreBatch(items, _) = event else { return [] }
+            return items
+        }
+
+        XCTAssertTrue(children.isEmpty)
     }
 
     func testPermissionDeniedFixtureEmitsCocoaPermissionErrorAndRetrySucceeds() async throws {

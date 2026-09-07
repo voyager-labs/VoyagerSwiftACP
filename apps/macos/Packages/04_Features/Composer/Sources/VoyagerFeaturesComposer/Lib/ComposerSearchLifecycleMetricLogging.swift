@@ -2,60 +2,6 @@ import ComposableArchitecture
 import Foundation
 import VoyagerShared
 
-func logSearchDurationIfNeeded(
-    _ startedAt: Date?,
-    composerMetricClient: ComposerMetricClient,
-) {
-    guard let startedAt else { return }
-    let duration = round((Date().timeIntervalSince(startedAt)) * 1000)
-    composerMetricClient.logMetric(
-        ComposerCollectionFilterMetrics.queryDuration,
-        value: duration,
-    )
-}
-
-func logFiltersDurationIfNeeded(
-    _ startedAt: Date?,
-    composerMetricClient: ComposerMetricClient,
-) {
-    guard let startedAt else { return }
-    let duration = round((Date().timeIntervalSince(startedAt)) * 1000)
-    composerMetricClient.logMetric(
-        ComposerCollectionFilterMetrics.applyDuration,
-        value: duration,
-    )
-}
-
-func logCollectionFilterQueryResult(
-    response: SearchResponsePayload,
-    queryConversion: SearchQueryConversionMetadataPayload?,
-    filters: SearchFiltersPayload,
-    openedCollectionURL: URL?,
-    composerMetricClient: ComposerMetricClient,
-) {
-    composerMetricClient.logMetric(
-        ComposerCollectionFilterMetrics.queryResult,
-        value: 1,
-        tags: ComposerCollectionFilterMetrics.queryResultTags(
-            queryConversion: queryConversion,
-            openedCollectionURL: openedCollectionURL,
-            filters: filters,
-            itemCount: response.itemCount,
-        ),
-    )
-}
-
-func feedbackFilters(from appliedFilters: VoyagerShared.AppliedFiltersPayload) -> VoyagerShared
-    .SearchFiltersPayload
-{
-    VoyagerShared.SearchFiltersPayload(
-        scopes: appliedFilters.scopes ?? [],
-        excludedScopes: appliedFilters.excludedScopes,
-        includeSubfolders: appliedFilters.includeSubfolders ?? true,
-        conditions: appliedFilters.conditions ?? [],
-    )
-}
-
 func feedbackBaseline(from state: ComposerFeature.State) -> VoyagerShared.SearchFiltersPayload {
     if let submittedSearchFilters = state.submittedSearchFilters {
         return submittedSearchFilters

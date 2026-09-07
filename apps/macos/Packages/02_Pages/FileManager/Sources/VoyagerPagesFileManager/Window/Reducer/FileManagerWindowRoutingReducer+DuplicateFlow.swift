@@ -48,11 +48,11 @@ extension FileManagerWindowRoutingReducer {
         sourceID: FileManagerTopNavigationItemID,
         anchorID: FileManagerTopNavigationItemID,
         placement: FileManagerTopNavigationReorderPlacement,
+        actionSource: ContentTabActionSource,
         state: inout State,
     ) -> Effect<Action> {
         guard state.pendingSelectedContentTabClose == nil,
-              state.pendingSelectedContentTabPinMutation == nil
-        else { return .none }
+              state.pendingSelectedContentTabPinMutation == nil else { return .none }
         if case let .contentTab(sourceTabID) = sourceID,
            state.contentTabs.tabs[id: sourceTabID]?.isPinned == false
         {
@@ -96,10 +96,11 @@ extension FileManagerWindowRoutingReducer {
                 placement: placement,
             )))
         }
-        let destination: FileManagerTopNavigationMoveDestination = placement == .before
-            ? .before(anchorID)
-            : .after(anchorID)
-        return .send(.topNavigationMoveRequested(source: sourceID, destination: destination))
+        return .send(.topNavigationMoveRequested(
+            source: sourceID,
+            destination: placement == .before ? .before(anchorID) : .after(anchorID),
+            actionSource: actionSource,
+        ))
     }
 
     func contentTabsSetCurrent(targetID: ContentTabID, state: inout State) -> Effect<Action> {
@@ -156,9 +157,7 @@ extension FileManagerWindowRoutingReducer {
         if keepPendingContentTabCloseFocusedAfterOpen(state: &state) {
             return .none
         }
-        let openedTabID = state.activeTabContentStateMissing
-            ? state.contentTabs.activeTabID
-            : nil
+        let openedTabID = state.activeTabContentStateMissing ? state.contentTabs.activeTabID : nil
         let shouldResyncContentNavigation = state.contentTabs.previousActiveTabID != nil
             || state.activeTabContentStateMissing
         let handoffCleanupEffect: Effect<Action>
@@ -237,11 +236,7 @@ extension FileManagerWindowRoutingReducer {
             state.restoreContentStateForActiveTab()
             removeBackgroundAiChatOwnersPromotedToActiveContent(state: &state)
             state.restoreInspectorStateForActiveTab()
-            if let restoredRoute = state.recentlyClosedNavigationRoute {
-                state.content.navigation.navigationState = restoredRoute
-                state.syncActiveTabContentState()
-                state.recentlyClosedNavigationRoute = nil
-            }
+            restoreRecentlyClosedNavigationRoute(state: &state)
         }
         syncDashboardProjections(state: &state)
         syncSidebarSelectionForActiveContentTab(state: &state)
@@ -256,6 +251,13 @@ extension FileManagerWindowRoutingReducer {
             closeInspectorForActiveAiChatEffect(state: state),
             restoredTabID.map { activateUndoManagerScopeEffect(tabID: $0, state: state) } ?? .none,
         )
+    }
+
+    private func restoreRecentlyClosedNavigationRoute(state: inout State) {
+        guard let restoredRoute = state.recentlyClosedNavigationRoute else { return }
+        state.content.navigation.navigationState = restoredRoute
+        state.syncActiveTabContentState()
+        state.recentlyClosedNavigationRoute = nil
     }
 
     func duplicateSelectedContentTabsReduced(

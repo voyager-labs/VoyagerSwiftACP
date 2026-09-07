@@ -75,7 +75,8 @@ final class CBW003ProviderExecutionResolutionTests: XCTestCase {
             .apiKey(APIKeyCredentialFile(secret: FixtureCredentials.openAIApiKey)),
         ))
 
-        XCTAssertEqual(events, [
+        XCTAssertEqual(events, try [
+            providerExecutionPreparedEvent(for: request),
             .started(context: request.context),
             .final(response: AiChatResponse(
                 context: request.context,
@@ -112,7 +113,8 @@ final class CBW003ProviderExecutionResolutionTests: XCTestCase {
             .apiKey(APIKeyCredentialFile(secret: FixtureCredentials.openAIApiKey)),
         ))
 
-        XCTAssertEqual(events, [
+        XCTAssertEqual(events, try [
+            providerExecutionPreparedEvent(for: request),
             .started(context: request.context),
             .delta(context: request.context, text: "Hel"),
             .delta(context: request.context, text: "lo"),
@@ -145,7 +147,8 @@ final class CBW003ProviderExecutionResolutionTests: XCTestCase {
             .apiKey(APIKeyCredentialFile(secret: FixtureCredentials.openAIApiKey)),
         ))
 
-        XCTAssertEqual(events, [
+        XCTAssertEqual(events, try [
+            providerExecutionPreparedEvent(for: request),
             .started(context: request.context),
             .failed(context: request.context, reason: .modelUnavailable),
         ])

@@ -2,6 +2,7 @@
 import ComposableArchitecture
 import VoyagerEntitiesEntry
 import VoyagerEntitiesTag
+import VoyagerFeaturesEntryOperations
 import VoyagerShared
 
 @MainActor
@@ -34,11 +35,20 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
     var indexPathByEntryId: [EntryModel.ID: IndexPath] = [:]
     var isUpdatingSelectionFromStore = false
     var isLassoSelecting = false
+    /// 사용자 제스처가 명시적으로 만든 empty selection의 1회성 provenance.
+    var pendingExplicitEmptySelection = false
     var lastRenamingItemId: EntryModel.ID?
     var hasRestoredScrollPosition = false
     var hasCompletedFirstPhysicalLayout = false
     var dropTargetEntryId: EntryModel.ID?
     var validatedDropDestinationPath: String?
+    /// 외부 drop 획득 세션의 local 수명을 소유하는 controller. Grid마다 정확히 하나 보유한다.
+    /// cross-Grid/List 직렬화는 controller가 읽는 shared TCA `activeExternalDrop`이 담당한다.
+    lazy var externalDropSessionController: ExternalDropSessionController = .init(
+        store: store,
+        clientProvider: { [weak self] in self?.externalDropAcquisitionClient ?? .testValue },
+        clearDropState: { [weak self] in self?.clearExternalDropDropState() },
+    )
     var contextMenuAnchor: CGPoint?
     var lastLassoSelectedIds: Set<EntryModel.ID> = []
     var contextMenuCoordinator: EntryContextMenuCoordinator?
@@ -52,10 +62,14 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
     var workspaceClient
     @Dependency(\.entryThumbnailCacheClient)
     var entryThumbnailCacheClient
+    @Dependency(\.externalDropAcquisitionClient)
+    var externalDropAcquisitionClient
     @Dependency(\.finderFavoritesTagClient)
     var finderFavoritesTagClient
     @Dependency(\.entryOpenClient)
     var entryOpenClient
+    @Dependency(\.entryFileOpsClient)
+    var entryFileOpsClient
     @Dependency(\.notificationCenterClient)
     var notificationCenterClient
     let horizontalPadding: CGFloat = 12
@@ -77,6 +91,12 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
         collectionView.onLassoSelectionIndexPathsChanged = { [weak self] indexPaths, isFinal in
             self?.handleLassoSelection(indexPaths: indexPaths, isFinal: isFinal)
         }
+        collectionView.onBlankSpaceSelectionClear = { [weak self] in
+            self?.noteExplicitEmptySelectionGesture()
+        }
+        collectionView.onCommandItemClick = { [weak self] in
+            self?.noteExplicitEmptySelectionGesture()
+        }
         view.onLayout = { [weak self] width in
             guard let self else { return }
             updateLayout(for: width)
@@ -90,7 +110,8 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
         }
         didBind = true
         observeStore()
-        rebuildSectionsAndReload()
+        // 초기 bind에서는 selection scroll과 saved offset 복원의 기존 순서를 그대로 둔다.
+        _ = rebuildSectionsAndReload()
         updateDropTargetBorder(isTargeted: state.isDropTargeted)
     }
 
@@ -106,6 +127,12 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
         }
         collectionView.onLassoSelectionIndexPathsChanged = { [weak self] indexPaths, isFinal in
             self?.handleLassoSelection(indexPaths: indexPaths, isFinal: isFinal)
+        }
+        collectionView.onBlankSpaceSelectionClear = { [weak self] in
+            self?.noteExplicitEmptySelectionGesture()
+        }
+        collectionView.onCommandItemClick = { [weak self] in
+            self?.noteExplicitEmptySelectionGesture()
         }
         view.onLayout = { [weak self] width in
             guard let self else { return }
@@ -130,8 +157,10 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
         collectionView.addGestureRecognizer(doubleClick)
     }
 
-    func rebuildSectionsAndReload() {
-        updateSectionsFromState()
+    /// render 경로는 emission snapshot presentation을, bind 경로는 현재 state presentation을 소비한다.
+    /// selection scroll이 성공하면 saved offset 복원보다 우선하므로 복원을 건너뛴다.
+    func rebuildSectionsAndReload(presentation: EntryViewLayoutPresentation? = nil) -> Bool {
+        updateSections(presentation: presentation ?? state.presentation)
         let hadDropTarget = dropTargetEntryId != nil || validatedDropDestinationPath != nil || state.isDropTargeted
         clearDropTargetState()
         if hadDropTarget {
@@ -142,18 +171,25 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
         }
         collectionView.reloadData()
         syncSelectionFromStore()
-        scrollToSelectionIfNeeded()
-        restoreScrollPositionIfNeeded()
+        let scrolledToSelection = scrollToSelectionIfNeeded()
+        if scrolledToSelection {
+            // List 계약과 동일하게 selection scroll 성공 시 복원 기회를 소비한다.
+            // 소비하지 않으면 이후 선택 의도 없는 entry 수 변화에서 stale saved offset으로 점프한다.
+            hasRestoredScrollPosition = true
+        } else {
+            restoreScrollPositionIfNeeded()
+        }
         if let width = view?.bounds.width { updateGridColumnCountIfNeeded(for: width) }
         DispatchQueue.main.async { [weak self] in
             self?.syncSelectionFromStore()
             self?.syncRenamingFromStore()
             self?.requestThumbnailsForVisibleArea()
         }
+        return scrolledToSelection
     }
 
-    func updateSectionsFromState() {
-        sections = makeSections(state: state)
+    func updateSections(presentation: EntryViewLayoutPresentation) {
+        sections = makeSections(presentation: presentation)
         indexPathByEntryId = [:]
         for (sectionIndex, section) in sections.enumerated() {
             for (itemIndex, entry) in section.items.enumerated() {
@@ -162,8 +198,8 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
         }
     }
 
-    func makeSections(state: EntryViewLayoutState) -> [Section] {
-        state.presentation.sections.map { section in
+    func makeSections(presentation: EntryViewLayoutPresentation) -> [Section] {
+        presentation.sections.map { section in
             Section(
                 title: section.title,
                 colorCode: section.colorCode,
@@ -172,6 +208,10 @@ public final class EntryGridCoordinator: NSObject, @unchecked Sendable {
                 isCollapsed: section.isCollapsed,
             )
         }
+    }
+
+    func makeSections(state: EntryViewLayoutState) -> [Section] {
+        makeSections(presentation: state.presentation)
     }
 
     func updateLayout(for width: CGFloat) {
@@ -256,15 +296,18 @@ extension EntryGridCoordinator {
         hasRestoredScrollPosition = true
     }
 
-    func scrollToSelectionIfNeeded() {
-        guard state.shouldScrollToSelection else { return }
+    /// selection scroll을 시도하고 실제 스크롤 성공 여부를 반환한다.
+    /// flag가 없거나 대상이 매핑되지 않으면 false를 반환하며, 매핑 실패 시에도 reset은 유지한다.
+    func scrollToSelectionIfNeeded() -> Bool {
+        guard state.shouldScrollToSelection else { return false }
         let targetId = state.lastSelectedId ?? state.selectedIds.first
         guard let targetId, let indexPath = indexPathByEntryId[targetId] else {
             store.send(.view(.resetScrollFlag))
-            return
+            return false
         }
         collectionView.scrollToItems(at: [indexPath], scrollPosition: .centeredVertically)
         store.send(.view(.resetScrollFlag))
+        return true
     }
 
     /// 타자 검색으로 설정된 pending target을 centered 스크롤하고 reset한다.
@@ -464,12 +507,35 @@ extension EntryGridCoordinator {
         lastLassoSelectedIds = []
         let selectedEntries = indexPaths.compactMap { entry(at: $0) }
         preloadOpenWithApplications(selectedEntries: selectedEntries)
+        // lasso 시작 시 소비되지 않은 blank-clear provenance도 종료 시 폐기한다.
+        consumeExplicitEmptySelectionGesture()
+        if ids.isEmpty {
+            // 빈 lasso 종료는 native empty callback과 구분되는 명시적 user clear다.
+            guard !state.selectedIds.isEmpty
+                || state.lastSelectedId != nil
+                || state.rangeAnchorId != nil
+            else { return }
+            store.send(.view(.clearSelection))
+            return
+        }
         store.send(.view(.updateSelection(
             ids: ids,
             lastSelectedId: lastSelectedId,
             rangeAnchorId: lastSelectedId,
             shouldScrollToSelection: false,
         )))
+    }
+
+    /// 명시적 empty selection 제스처가 다음 native callback에서 한 번만 clear로 해석되도록 표시한다.
+    func noteExplicitEmptySelectionGesture() {
+        pendingExplicitEmptySelection = true
+    }
+
+    /// 명시적 empty selection provenance를 소비한다. non-empty callback도 stale flag를 폐기한다.
+    @discardableResult
+    func consumeExplicitEmptySelectionGesture() -> Bool {
+        defer { pendingExplicitEmptySelection = false }
+        return pendingExplicitEmptySelection
     }
 
     func applySelection(_ indexPaths: Set<IndexPath>) {

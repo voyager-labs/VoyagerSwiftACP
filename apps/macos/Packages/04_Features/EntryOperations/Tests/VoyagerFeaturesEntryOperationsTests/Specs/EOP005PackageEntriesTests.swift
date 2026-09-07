@@ -51,6 +51,14 @@ final class EOP005PackageEntriesTests: XCTestCase {
             state.itemStates[sandbox.root.path]?.isBusy = false
         }
 
+        // 수용된 압축 명령은 성공 aggregate terminal을 한 건 수신한다.
+        await store.receive { action in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return false }
+            return record.operationKind == .compress
+                && record.succeededCount == 1
+                && record.failedCount == 0
+        }
+
         XCTAssertTrue(FileManager.default.fileExists(atPath: expectedArchiveURL.path))
         XCTAssertEqual(try archiveEntryNames(at: expectedArchiveURL), [sourceURL.lastPathComponent])
         XCTAssertEqual(recorder.copiedPaths.count, 1)
@@ -114,6 +122,76 @@ final class EOP005PackageEntriesTests: XCTestCase {
         XCTAssertEqual(paths, [rawPrefixPeer.fullPath, parent.fullPath])
     }
 
+    /// EOP-005-compress_entries: 압축 실패도 실패 aggregate terminal로 마무리된다.
+    /// - 검증 내용: terminal record의 failedCount는 1이고 succeededCount는 0이다.
+    /// - 사전 조건: compressItems 실패 mock
+    /// - 기대 결과: entryActionCompleted(.compress, targets: [], failed: 1, succeeded: 0) 1건
+    func testCompressEntriesFailureEmitsFailureTerminal() async {
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryFileOpsClient.compressItems = { _ in
+                throw FileOpError.system(message: "zip denied")
+            }
+        }
+        // store.exhaustivity = .off: 실패 terminal 계약에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.archive(.compressItems(paths: ["/tmp/a.txt"])))
+        await store.receive { action in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return false }
+            return record.operationKind == .compress
+                && record.targets.isEmpty
+                && record.failedCount == 1
+                && record.succeededCount == 0
+        }
+        await store.finish()
+    }
+
+    /// EOP-005-extract_compressed_files: 압축 해제 성공은 성공 aggregate terminal로 마무리된다.
+    /// - 검증 내용: terminal record의 succeededCount는 1이고 failedCount는 0이다.
+    /// - 사전 조건: extractCompressedFile 성공 mock
+    /// - 기대 결과: entryActionCompleted(.extract, targets: [], failed: 0, succeeded: 1) 1건
+    func testExtractCompressedFileSuccessEmitsTerminal() async {
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryFileOpsClient.extractCompressedFile = { _ in }
+        }
+        // store.exhaustivity = .off: terminal 계약에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.archive(.extractCompressedFile(path: "/tmp/archive.zip")))
+        await store.receive { action in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return false }
+            return record.operationKind == .extract
+                && record.targets.isEmpty
+                && record.failedCount == 0
+                && record.succeededCount == 1
+        }
+        await store.finish()
+    }
+
+    /// EOP-005-extract_compressed_files: 압축 해제 실패도 실패 aggregate terminal로 마무리된다.
+    /// - 검증 내용: terminal record의 failedCount는 1이고 succeededCount는 0이다.
+    /// - 사전 조건: extractCompressedFile 실패 mock
+    /// - 기대 결과: entryActionCompleted(.extract, targets: [], failed: 1, succeeded: 0) 1건
+    func testExtractCompressedFileFailureEmitsFailureTerminal() async {
+        let store = EntryOperationsTestSupport.makeStore {
+            $0.entryFileOpsClient.extractCompressedFile = { _ in
+                throw FileOpError.system(message: "unzip denied")
+            }
+        }
+        // store.exhaustivity = .off: 실패 terminal 계약에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.archive(.extractCompressedFile(path: "/tmp/archive.zip")))
+        await store.receive { action in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return false }
+            return record.operationKind == .extract
+                && record.targets.isEmpty
+                && record.failedCount == 1
+                && record.succeededCount == 0
+        }
+        await store.finish()
+    }
+
     /// EOP-005-extract_compressed_files: 압축 파일 해제
     /// - 검증 내용: 압축 해제 action이 archive 추출 의존성을 호출하고 작업 상태를 완료하는지 확인합니다.
     /// - 사전 조건: `fixtures/fixtures/archives/COMPRESS-264.zip`를 FixtureSandbox로 복사
@@ -152,6 +230,14 @@ final class EOP005PackageEntriesTests: XCTestCase {
             return false
         } assert: { state in
             state.itemStates[sandbox.root.path]?.isBusy = false
+        }
+
+        // 수용된 압축 해제 명령은 성공 aggregate terminal을 한 건 수신한다.
+        await store.receive { action in
+            guard case let .lifecycle(.entryActionCompleted(record)) = action else { return false }
+            return record.operationKind == .extract
+                && record.succeededCount == 1
+                && record.failedCount == 0
         }
 
         XCTAssertTrue(FileManager.default.fileExists(atPath: extractedURL.path))

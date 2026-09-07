@@ -42,6 +42,27 @@ private struct BatchPendingCloseFixture {
     let state: FileManagerFeature.State
 }
 
+private struct ConfiguredDirectoryHandoffFixture {
+    let preferences: VoyagerPagesFileManager.AppPreferencesState
+    let state: FileManagerFeature.State
+    let previousID: ContentTabID
+    let sourcePath: String
+    let directoryPath: String
+}
+
+private struct ConfiguredDirectoryHandoffRecorders {
+    let cancellationCount = LockIsolated(0)
+    let loadPaths = LockIsolated<[String]>([])
+}
+
+private struct TopNavigationTeardownMetricFixture {
+    let state: FileManagerFeature.State
+    let tabIDs: [ContentTabID]
+    let operationIDs: [UUID]
+    let tokens: [FileManagerTopNavigationOperationToken]
+    let initialOrder: FileManagerTopNavigationOrder
+}
+
 @MainActor
 private func makeBatchDirectorySourceContent() -> FileManagerContentFeature.State {
     var content = FileManagerContentFeature.State.initialContent(
@@ -382,6 +403,18 @@ private struct SelectedCloseTerminalCase {
     let expectedOutcome: SelectedContentTabCloseOutcome
 }
 
+private struct SelectedCloseMetricPrecedenceCase {
+    let current: ContentTabActionResult
+    let outcome: SelectedContentTabCloseOutcome
+    let expected: ContentTabActionResult
+}
+
+private struct SelectedCloseTeardownCase {
+    let aggregateResult: ContentTabActionResult?
+    let cursor: Int
+    let expectedResult: ContentTabActionResult
+}
+
 private struct SelectedGroupReorderCase {
     let anchorID: ContentTabID
     let placement: FileManagerTopNavigationReorderPlacement
@@ -398,6 +431,18 @@ private struct SelectedClosePersistenceError: Error {}
 
 @MainActor
 final class CTM001HandleContentTabTests: XCTestCase {
+    private struct BlockedSourceAwareCloseFixture {
+        let state: FileManagerFeature.State
+        let pinnedID: ContentTabID
+        let otherID: ContentTabID
+    }
+
+    private struct DirtyMetricCloseFixture {
+        let state: FileManagerFeature.State
+        let dirtyID: ContentTabID
+        let otherID: ContentTabID
+    }
+
     private func verifyStaleAndCompetingSelectedCloseActions(
         fixture: SelectedContentTabCloseFixture,
         operationID: UUID,
@@ -522,6 +567,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
         } assert: {
             $0.pendingSelectedContentTabClose?.cursor = 1
             $0.pendingSelectedContentTabClose?.currentTabID = nil
+            $0.pendingSelectedContentTabClose?.aggregateResult = .success
         }
         await store.receive(\.processNextSelectedContentTabClose, operationID) {
             $0.pendingSelectedContentTabClose = nil
@@ -706,8 +752,9 @@ final class CTM001HandleContentTabTests: XCTestCase {
                 sourceID: .contentTab(fixture.tabA),
                 anchorID: .contentTab(fixture.tabD),
                 placement: .after,
+                actionSource: .contentTabBar,
             ))),
-            .request(.openNewContentTab),
+            .request(.openNewContentTab(source: .contentTabBar)),
             .request(.restoreLastClosedContentTab),
             .sidebar(.delegate(.pinContentTab(fixture.tabA))),
             .sidebar(.delegate(.unpinContentTab(fixture.tabD))),
@@ -1039,7 +1086,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
             return receivedPath == path
         }
         await store.receive { action in
-            guard case let .navigation(.internal(.performNavigateToPath(receivedPath))) = action else { return false }
+            guard case let .navigation(.internal(.performNavigation(.navigateToPath(receivedPath)))) = action
+            else { return false }
             return receivedPath == path
         }
         await store.receive { action in
@@ -1047,6 +1095,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
             else { return false }
             return receivedPath == path
         }
+        await store.receive(\.contentTabs)
         await store.receive { action in
             guard case let .tabContent(_, .internal(.applyNavigationState(.folder(receivedPath)))) = action
             else { return false }
@@ -1112,6 +1161,74 @@ final class CTM001HandleContentTabTests: XCTestCase {
             iconName: tab.iconName,
             pinnedAt: Date(timeIntervalSince1970: pinnedAt),
         )
+    }
+
+    private func makeTopNavigationTeardownMetricFixture() -> TopNavigationTeardownMetricFixture {
+        let tabs = ["teardown-a", "teardown-b", "teardown-c", "teardown-d"].map {
+            makeReorderDirectoryTab($0, isPinned: true)
+        }
+        let operationIDs = [
+            UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 21)),
+            UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 22)),
+        ]
+        let tokens = [23, 24].map { byte in
+            FileManagerTopNavigationOperationToken(value: UUID(uuid: (
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, UInt8(byte),
+            )))
+        }
+        let initialOrder = FileManagerTopNavigationOrder(items: tabs.map { .contentTab($0.id) })
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: IdentifiedArrayOf(uniqueElements: tabs),
+            activeTabID: tabs[0].id,
+            pinnedRecords: Dictionary(uniqueKeysWithValues: tabs.enumerated().map { index, tab in
+                (tab.id, makePinnedRecord(tab, pinnedAt: TimeInterval(index + 1)))
+            }),
+        )
+        state.lastConfirmedTopNavigationOrder = initialOrder
+        state.optimisticTopNavigationOrder = initialOrder
+        state.sidebar.contentTabDragSnapshot = ContentTabDragSnapshot(
+            operationID: operationIDs[1],
+            sourceWindowID: UUID(),
+            initiatingTabID: tabs[2].id,
+            orderedTabIDs: [tabs[2].id, tabs[3].id],
+            lifecycle: .inFlight,
+        )
+        return .init(
+            state: state,
+            tabIDs: tabs.map(\.id),
+            operationIDs: operationIDs,
+            tokens: tokens,
+            initialOrder: initialOrder,
+        )
+    }
+
+    private func exerciseTopNavigationTeardown(
+        _ store: TestStoreOf<FileManagerFeature>,
+        fixture: TopNavigationTeardownMetricFixture,
+    ) async {
+        await store.send(.topNavigationMoveRequested(
+            source: .contentTab(fixture.tabIDs[0]),
+            destination: .after(.contentTab(fixture.tabIDs[1])),
+            actionSource: .keyboardShortcut,
+        ))
+        await store.skipReceivedActions(strict: false)
+        await store.send(.topNavigationMoveRequested(
+            source: .contentTab(fixture.tabIDs[2]),
+            destination: .before(.contentTab(fixture.tabIDs[1])),
+            actionSource: .dragAndDrop,
+        ))
+        await store.skipReceivedActions(strict: false)
+        await store.send(.onDisappear)
+        await store.send(.onDisappear)
+        await store.send(.internal(.topNavigationIntentCompleted(
+            token: fixture.tokens[0],
+            terminal: .failed(.save),
+        )))
+        await store.send(.internal(.topNavigationIntentCompleted(
+            token: fixture.tokens[1],
+            terminal: .committed(.init(order: fixture.initialOrder, revision: 1)),
+        )))
     }
 
     // MARK: - CTM-001-open_new_content_tab
@@ -1556,7 +1673,9 @@ final class CTM001HandleContentTabTests: XCTestCase {
 
         await store.send(.sidebar(.delegate(.duplicateSelectedContentTabs)))
         await store.receive { action in
-            guard case .request(.duplicateSelectedContentTabs) = action else { return false }
+            guard case .request(.contentTabAction(.duplicateSelected, source: .contextMenu)) = action else {
+                return false
+            }
             return true
         }
 
@@ -1581,7 +1700,12 @@ final class CTM001HandleContentTabTests: XCTestCase {
         }
 
         await store.send(.view(.handleKeyCommand(command)))
-        await store.receive(\.entryViewLayout.delegate.executeCommand, "clipboard.duplicateSelectedItems")
+        await store.receive { action in
+            guard case let .entryViewLayout(.delegate(.executeCommand(command, source))) = action else {
+                return false
+            }
+            return command == "clipboard.duplicateSelectedItems" && source == .keyboardShortcut
+        }
         await store.finish()
     }
 
@@ -3130,7 +3254,9 @@ final class CTM001HandleContentTabTests: XCTestCase {
 
         await bridgeStore.send(.sidebar(.delegate(.closeSelectedContentTabs)))
         await bridgeStore.receive { action in
-            guard case .request(.closeSelectedContentTabs) = action else { return false }
+            guard case .request(.contentTabAction(.closeSelected, source: .contextMenu)) = action else {
+                return false
+            }
             return true
         }
         XCTAssertEqual(bridgeStore.state, bridgeState)
@@ -5259,6 +5385,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
                 sourceID: .contentTab(tabD),
                 anchorID: .contentTab(testCase.anchorID),
                 placement: testCase.placement,
+                actionSource: .dragAndDrop,
             ))))
             await store.skipReceivedActions(strict: false)
 
@@ -5306,6 +5433,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
             sourceID: .contentTab(tabD),
             anchorID: .contentTab(tabE),
             placement: .after,
+            actionSource: .contentTabBar,
         ))))
         await store.skipReceivedActions(strict: false)
 
@@ -5364,6 +5492,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
                 sourceID: .contentTab(initiatingID),
                 anchorID: .contentTab(testCase.anchorID),
                 placement: testCase.placement,
+                actionSource: .dragAndDrop,
             ))))
 
             XCTAssertEqual(store.state, testCase.state)
@@ -5400,6 +5529,1477 @@ final class CTM001HandleContentTabTests: XCTestCase {
             singleState.tabs.filter { !$0.isPinned }.map(\.id),
             [ContentTabID(rawValue: "A"), ContentTabID(rawValue: "B"), ContentTabID(rawValue: "C"), tabE, tabD],
         )
+    }
+
+    // MARK: - CTM-001-content_tab_action_metrics
+
+    /// CTM-001-content_tab_action_metrics: 수용된 새 Content Tab open은 typed success 메트릭 한 건을 기록한다.
+    /// 탭 생성이 상태로 증명될 때만 open terminal이 발화하는지 검증한다.
+    /// - 검증 내용: tabs.count +1과 `.success/.open/.contentTabBar` 메트릭 1건, 주입된 operationID 상관
+    /// - 사전 조건: 기본 Home tab window state와 recorder 주입 metrics client
+    /// - 기대 결과: 레코더에 open success 메트릭 1건만 기록됨
+    func testOpenNewContentTabAcceptanceEmitsSingleOpenMetric() async {
+        let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1))
+        let recorder = FileManagerProductMetricRecorder(makeOperationID: { operationID })
+        let store = TestStore(initialState: FileManagerFeature.State()) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 443))
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: open handoff 부수 효과보다 메트릭 계약에 집중함
+        store.exhaustivity = .off
+
+        let initialCount = store.state.contentTabs.tabs.count
+        await store.send(.contentTabs(.open(.homeDefault)))
+
+        XCTAssertEqual(store.state.contentTabs.tabs.count, initialCount + 1)
+        XCTAssertEqual(recorder.metrics(), [
+            .contentTabAction(
+                result: .success,
+                identity: .openNewContentTab,
+                source: .contentTabBar,
+                operationID: operationID,
+            ),
+        ])
+    }
+
+    /// CTM-001-content_tab_action_metrics: menu command source는 default start-page resolution 뒤에도 유지된다.
+    /// - 검증 내용: directory 시작 페이지 open success 메트릭의 source와 operation ID
+    /// - 사전 조건: 유효한 default directory와 menuCommand source request
+    /// - 기대 결과: 새 Directory tab과 `.success/.open/.menuCommand` 메트릭 한 건
+    func testOpenNewContentTabMenuSourceSurvivesDefaultStartPageResolution() async throws {
+        let directory = try FileManagerFixtureSandbox.readOnlyDirectory(from: "fixtures/fixtures/documents")
+        let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 25))
+        var preferences = VoyagerPagesFileManager.AppPreferencesState()
+        preferences.defaultStartPage = .directory(directory.path)
+        let recorder = FileManagerProductMetricRecorder(makeOperationID: { operationID })
+        let store = TestStore(initialState: FileManagerFeature.State()) { FileManagerFeature() } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 443))
+            $0.startPageAvailabilityClient.probeDirectory = { _ in .availableDirectory }
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: start-page effect 내부 action보다 accepted source terminal에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.applyAppPreferences(preferences))
+        await store.skipReceivedActions(strict: false)
+        await store.send(.request(.openNewContentTab(source: .menuCommand)))
+        await receiveResolvedOpenContentTabAction(
+            store,
+            anchor: .directory(path: directory.path),
+            source: .menuCommand,
+        )
+
+        XCTAssertEqual(store.state.contentTabs.tabs.last?.anchor, .directory(path: directory.path))
+        XCTAssertEqual(recorder.metrics(), [
+            .contentTabAction(
+                result: .success,
+                identity: .openNewContentTab,
+                source: .menuCommand,
+                operationID: operationID,
+            ),
+        ])
+    }
+
+    /// CTM-001-content_tab_action_metrics: maxTabs 도달 open은 탭을 만들지 않고 메트릭도 없다.
+    /// - 검증 내용: tabs.count 유지, 레코더 빈 배열
+    /// - 사전 조건: maxTabs(20)개 Directory tab
+    /// - 기대 결과: 메트릭 0건
+    func testOpenNewContentTabAtMaxTabsEmitsNoMetric() async {
+        let recorder = FileManagerProductMetricRecorder()
+        var contentTabs = ContentTabState(tabs: [], activeTabID: nil, recentlyClosed: nil)
+        for index in 0 ..< ContentTabConstants.maxTabs {
+            contentTabs.tabs.append(ContentTabItem(
+                id: ContentTabID(rawValue: "max-tab-\(index)"),
+                page: .directory,
+                anchor: .directory(path: "/max/\(index)"),
+                isPinned: false,
+                title: nil,
+                iconName: nil,
+            ))
+        }
+        contentTabs.activeTabID = contentTabs.tabs.first?.id
+        var state = FileManagerFeature.State()
+        state.contentTabs = contentTabs
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 443))
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: maxTabs 거부 no-op 경로만 검증함
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.open(.homeDefault)))
+
+        XCTAssertEqual(store.state.contentTabs.tabs.count, ContentTabConstants.maxTabs)
+        XCTAssertTrue(recorder.metrics().isEmpty)
+    }
+
+    /// CTM-001-content_tab_action_metrics: Sidebar trailing control close는 contentTabBar source를 기록한다.
+    /// trailing control 수락부터 실제 제거 terminal까지 source가 유지되는지 검증한다.
+    /// - 검증 내용: 닫힌 active tab 부재와 `.success/.close/.contentTabBar` 메트릭 1건
+    /// - 사전 조건: unpinned Home(active)+Directory 두 탭
+    /// - 기대 결과: 레코더에 close success 메트릭 1건만 기록됨
+    func testCloseContentTabRemovalEmitsSingleCloseMetric() async {
+        let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2))
+        let homeID = ContentTabID(rawValue: "metric-close-home")
+        let directoryID = ContentTabID(rawValue: "metric-close-directory")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: homeID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: nil,
+                    iconName: nil,
+                ),
+                ContentTabItem(
+                    id: directoryID,
+                    page: .directory,
+                    anchor: .directory(path: "/metric-close"),
+                    isPinned: false,
+                    title: nil,
+                    iconName: nil,
+                ),
+            ],
+            activeTabID: homeID,
+            recentlyClosed: nil,
+        )
+        let recorder = FileManagerProductMetricRecorder(makeOperationID: { operationID })
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 443))
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: close handoff/cleanup 효과보다 메트릭 계약에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.sidebar(.delegate(.closeContentTabFromTrailingControl(homeID))))
+        await store.skipReceivedActions()
+
+        XCTAssertNil(store.state.contentTabs.tabs[id: homeID])
+        XCTAssertEqual(recorder.metrics(), [
+            .contentTabAction(
+                result: .success,
+                identity: .closeContentTab,
+                source: .contentTabBar,
+                operationID: operationID,
+            ),
+        ])
+    }
+
+    /// CTM-001-content_tab_action_metrics: 존재하지 않는 탭 close는 메트릭을 만들지 않는다.
+    /// - 검증 내용: missing ID close 후 레코더 빈 배열
+    /// - 사전 조건: unpinned 두 탭 window state
+    /// - 기대 결과: 메트릭 0건
+    func testCloseMissingContentTabEmitsNoMetric() async {
+        let homeID = ContentTabID(rawValue: "metric-close-missing-home")
+        let directoryID = ContentTabID(rawValue: "metric-close-missing-directory")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: homeID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: nil,
+                    iconName: nil,
+                ),
+                ContentTabItem(
+                    id: directoryID,
+                    page: .directory,
+                    anchor: .directory(path: "/metric-close-missing"),
+                    isPinned: false,
+                    title: nil,
+                    iconName: nil,
+                ),
+            ],
+            activeTabID: homeID,
+            recentlyClosed: nil,
+        )
+        let recorder = FileManagerProductMetricRecorder()
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 443))
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: missing ID no-op 경로만 검증함
+        store.exhaustivity = .off
+
+        await store.send(.closeContentTabRequestedWithSource(
+            ContentTabID(rawValue: "missing-tab"),
+            .contextMenu,
+        ))
+
+        XCTAssertNil(store.state.productContentTabCloseMetric)
+        XCTAssertTrue(recorder.metrics().isEmpty)
+    }
+
+    /// CTM-001-content_tab_action_metrics: snapshot 소비에 성공한 restore는 success 메트릭 한 건을 기록한다.
+    /// - 검증 내용: tabs.count +1, recentlyClosed 비움, `.success/.restore` 메트릭 1건
+    /// - 사전 조건: Home tab과 Directory recentlyClosed snapshot
+    /// - 기대 결과: 레코더에 restore success 메트릭 1건만 기록됨
+    func testRestoreLastClosedTabAcceptanceEmitsSingleRestoreMetric() async {
+        let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 3))
+        let homeID = ContentTabID(rawValue: "metric-restore-home")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: homeID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: nil,
+                    iconName: nil,
+                ),
+            ],
+            activeTabID: homeID,
+            recentlyClosed: ClosedContentTabSnapshot(
+                page: .directory,
+                anchor: .directory(path: "/metric-restored"),
+                wasPinned: false,
+                closedAt: Date(timeIntervalSince1970: 443),
+            ),
+        )
+        let recorder = FileManagerProductMetricRecorder(makeOperationID: { operationID })
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 443))
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: restore handoff 효과보다 메트릭 계약에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.restore))
+
+        XCTAssertEqual(store.state.contentTabs.tabs.count, 2)
+        XCTAssertNil(store.state.contentTabs.recentlyClosed)
+        XCTAssertEqual(recorder.metrics(), [
+            .contentTabAction(
+                result: .success,
+                identity: .restoreLastClosedTab,
+                source: .contentTabBar,
+                operationID: operationID,
+            ),
+        ])
+    }
+
+    /// CTM-001-content_tab_action_metrics: 복원 후보가 없으면 restore는 메트릭을 만들지 않는다.
+    /// - 검증 내용: recentlyClosed nil 상태에서 restore 후 레코더 빈 배열
+    /// - 사전 조건: Home tab 하나, recentlyClosed nil
+    /// - 기대 결과: 메트릭 0건
+    func testRestoreWithoutCandidateEmitsNoMetric() async {
+        let homeID = ContentTabID(rawValue: "metric-restore-empty-home")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: homeID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: nil,
+                    iconName: nil,
+                ),
+            ],
+            activeTabID: homeID,
+            recentlyClosed: nil,
+        )
+        let recorder = FileManagerProductMetricRecorder()
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 443))
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: empty restore no-op 경로만 검증함
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.restore))
+
+        XCTAssertTrue(recorder.metrics().isEmpty)
+    }
+
+    /// CTM-001-content_tab_action_metrics: 순서가 실제로 바뀐 reorder는 success 메트릭 한 건을 기록한다.
+    /// - 검증 내용: tabs 순서 [A,B]→[B,A] 전환과 `.success/.reorder` 메트릭 1건
+    /// - 사전 조건: unpinned Directory 2개
+    /// - 기대 결과: 레코더에 reorder success 메트릭 1건만 기록됨
+    func testReorderAppliedEmitsSingleReorderMetric() async {
+        let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 4))
+        let firstID = ContentTabID(rawValue: "metric-reorder-first")
+        let secondID = ContentTabID(rawValue: "metric-reorder-second")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: firstID,
+                    page: .directory,
+                    anchor: .directory(path: "/metric-reorder/first"),
+                    isPinned: false,
+                    title: nil,
+                    iconName: nil,
+                ),
+                ContentTabItem(
+                    id: secondID,
+                    page: .directory,
+                    anchor: .directory(path: "/metric-reorder/second"),
+                    isPinned: false,
+                    title: nil,
+                    iconName: nil,
+                ),
+            ],
+            activeTabID: firstID,
+            recentlyClosed: nil,
+        )
+        let recorder = FileManagerProductMetricRecorder(makeOperationID: { operationID })
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 443))
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: reorder projection sync보다 메트릭 계약에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.reorder(sourceID: secondID, targetID: firstID, placement: .before)))
+
+        XCTAssertEqual(store.state.contentTabs.tabs.map(\.id), [secondID, firstID])
+        XCTAssertEqual(recorder.metrics(), [
+            .contentTabAction(
+                result: .success,
+                identity: .reorderContentTab,
+                source: .contentTabBar,
+                operationID: operationID,
+            ),
+        ])
+    }
+
+    /// CTM-001-content_tab_action_metrics: 순서 변화가 없는 reorder는 메트릭을 만들지 않는다.
+    /// - 검증 내용: [A,B]에서 A→B before 이동 후 동일 순서 유지, 레코더 빈 배열
+    /// - 사전 조건: unpinned Directory 2개
+    /// - 기대 결과: 메트릭 0건
+    func testUnchangedReorderEmitsNoMetric() async {
+        let firstID = ContentTabID(rawValue: "metric-reorder-same-first")
+        let secondID = ContentTabID(rawValue: "metric-reorder-same-second")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: firstID,
+                    page: .directory,
+                    anchor: .directory(path: "/metric-reorder-same/first"),
+                    isPinned: false,
+                    title: nil,
+                    iconName: nil,
+                ),
+                ContentTabItem(
+                    id: secondID,
+                    page: .directory,
+                    anchor: .directory(path: "/metric-reorder-same/second"),
+                    isPinned: false,
+                    title: nil,
+                    iconName: nil,
+                ),
+            ],
+            activeTabID: firstID,
+            recentlyClosed: nil,
+        )
+        let recorder = FileManagerProductMetricRecorder()
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 443))
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: unchanged reorder no-op 경로만 검증함
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.reorder(sourceID: firstID, targetID: secondID, placement: .before)))
+
+        XCTAssertEqual(store.state.contentTabs.tabs.map(\.id), [firstID, secondID])
+        XCTAssertTrue(recorder.metrics().isEmpty)
+    }
+
+    /// CTM-001-content_tab_action_metrics: 유효한 duplicate는 success 메트릭 한 건을 기록한다.
+    /// - 검증 내용: duplicate row 생성과 `.success/.duplicate` 메트릭 1건
+    /// - 사전 조건: unpinned Directory source tab과 fresh duplicate ID
+    /// - 기대 결과: 레코더에 duplicate success 메트릭 1건만 기록됨
+    func testDuplicateAppliedEmitsSingleDuplicateMetric() async {
+        let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 6))
+        let sourceID = ContentTabID(rawValue: "metric-dup-source")
+        let freshID = ContentTabID(rawValue: "metric-dup-fresh")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: sourceID,
+                    page: .directory,
+                    anchor: .directory(path: "/metric-dup"),
+                    isPinned: false,
+                    title: nil,
+                    iconName: nil,
+                ),
+            ],
+            activeTabID: sourceID,
+            recentlyClosed: nil,
+        )
+        let recorder = FileManagerProductMetricRecorder(makeOperationID: { operationID })
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 443))
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: duplicate owner handoff 효과보다 메트릭 계약에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.duplicate(sourceID: sourceID, duplicateID: freshID)))
+        await store.skipReceivedActions()
+
+        XCTAssertNotNil(store.state.contentTabs.tabs[id: freshID])
+        XCTAssertEqual(recorder.metrics(), [
+            .contentTabAction(
+                result: .success,
+                identity: .duplicateContentTab,
+                source: .contentTabBar,
+                operationID: operationID,
+            ),
+        ])
+    }
+
+    /// CTM-001-content_tab_action_metrics: Sidebar context menu duplicate는 수용된 contextMenu source를 보존한다.
+    /// Window request와 synchronous duplicate terminal 사이에서 source가 기본값으로 치환되지 않는지 검증한다.
+    /// - 검증 내용: duplicate row 생성과 `.success/.duplicate/.contextMenu` 메트릭 1건
+    /// - 사전 조건: unpinned Directory source tab과 Sidebar single duplicate delegate
+    /// - 기대 결과: 레코더에 contextMenu source의 duplicate success 메트릭 1건만 기록됨
+    func testSidebarContextMenuDuplicatePreservesAcceptedMetricSource() async {
+        let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 6))
+        let sourceID = ContentTabID(rawValue: "metric-context-duplicate-source")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [ContentTabItem(
+                id: sourceID,
+                page: .home,
+                anchor: .homeDefault,
+                isPinned: false,
+                title: nil,
+                iconName: nil,
+            )],
+            activeTabID: sourceID,
+            recentlyClosed: nil,
+        )
+        let recorder = FileManagerProductMetricRecorder(makeOperationID: { operationID })
+        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
+            $0.uuid = .constant(UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 7)))
+            $0.date = .constant(Date(timeIntervalSince1970: 443))
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: duplicate owner handoff보다 terminal source 계약에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.sidebar(.delegate(.duplicateContentTab(sourceID))))
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(recorder.metrics(), [
+            .contentTabAction(
+                result: .success,
+                identity: .duplicateContentTab,
+                source: .contextMenu,
+                operationID: operationID,
+            ),
+        ])
+    }
+
+    /// CTM-001-content_tab_action_metrics: Sidebar context menu close는 수용된 contextMenu source를 보존한다.
+    /// close request와 실제 제거 terminal 사이에서 source와 operation ID가 유지되는지 검증한다.
+    /// - 검증 내용: target tab 제거와 `.success/.close/.contextMenu` 메트릭 1건
+    /// - 사전 조건: unpinned Home active와 Directory sibling, Sidebar single close delegate
+    /// - 기대 결과: 레코더에 contextMenu source의 close success 메트릭 1건만 기록됨
+    func testSidebarContextMenuClosePreservesAcceptedMetricSource() async {
+        let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 8))
+        let homeID = ContentTabID(rawValue: "metric-context-close-home")
+        let directoryID = ContentTabID(rawValue: "metric-context-close-directory")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: homeID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: nil,
+                    iconName: nil,
+                ),
+                ContentTabItem(
+                    id: directoryID,
+                    page: .directory,
+                    anchor: .directory(path: "/metric-context-close"),
+                    isPinned: false,
+                    title: nil,
+                    iconName: nil,
+                ),
+            ],
+            activeTabID: homeID,
+            recentlyClosed: nil,
+        )
+        let recorder = FileManagerProductMetricRecorder(makeOperationID: { operationID })
+        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 443))
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: close cleanup effect보다 terminal source 계약에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.sidebar(.delegate(.closeContentTab(homeID))))
+        await store.skipReceivedActions()
+
+        XCTAssertNil(store.state.contentTabs.tabs[id: homeID])
+        XCTAssertEqual(recorder.metrics(), [
+            .contentTabAction(
+                result: .success,
+                identity: .closeContentTab,
+                source: .contextMenu,
+                operationID: operationID,
+            ),
+        ])
+    }
+
+    /// CTM-001-content_tab_action_metrics: selected pin mutation 중 source-aware pinned close는 whole-state no-op이다.
+    /// Canonical close guard가 metric과 top-navigation mutation보다 먼저 적용되는지 검증한다.
+    /// - 검증 내용: metric context, pending intent, optimistic order, dormant slot, pinned persistence state 불변
+    /// - 사전 조건: pinned tab과 pendingSelectedContentTabPinMutation
+    /// - 기대 결과: source-aware close가 어떤 acceptance state도 만들지 않음
+    func testSourceAwarePinnedCloseRejectedBySelectedPinDoesNotMutateAcceptanceState() async {
+        let fixture = makeBlockedSourceAwareCloseFixture()
+        var state = fixture.state
+        state.pendingSelectedContentTabPinMutation = PendingSelectedContentTabPinMutation(
+            operationID: UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 3)),
+            target: .unpinned,
+            orderedTargetIDs: [fixture.pinnedID],
+            source: .contextMenu,
+            origin: .menu,
+        )
+        let pendingIntents = state.pendingTopNavigationIntents
+        let optimisticOrder = state.optimisticTopNavigationOrder
+        let dormantSlots = state.dormantContentTabSlots
+        let pendingPinnedRecordIDs = state.contentTabs.pendingPinnedRecordIDs
+        let recorder = FileManagerProductMetricRecorder()
+        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: rejected request의 acceptance-owned state 불변만 검증함
+        store.exhaustivity = .off
+
+        await store.send(.closeContentTabRequestedWithSource(fixture.pinnedID, .contextMenu))
+
+        XCTAssertNil(store.state.productContentTabCloseMetric)
+        XCTAssertEqual(store.state.pendingTopNavigationIntents, pendingIntents)
+        XCTAssertEqual(store.state.optimisticTopNavigationOrder, optimisticOrder)
+        XCTAssertEqual(store.state.dormantContentTabSlots, dormantSlots)
+        XCTAssertEqual(store.state.contentTabs.pendingPinnedRecordIDs, pendingPinnedRecordIDs)
+        XCTAssertTrue(recorder.metrics().isEmpty)
+    }
+
+    /// CTM-001-content_tab_action_metrics: competing close가 거절한 source는 다음 accepted close를 오염시키지 않는다.
+    /// Rejected pinned close가 intent/source를 남기지 않고 blocker 해제 후 다른 close가 자신의 source로 완료되는지 검증한다.
+    /// - 검증 내용: 첫 요청 metric/intent/order 무변경, 다음 close `.menuCommand` terminal 1건
+    /// - 사전 조건: Home active tab의 pending close와 별도 pinned tab context-menu close 요청
+    /// - 기대 결과: pending close cancel 후 Home close만 최초 operation ID와 menuCommand source로 기록됨
+    func testCompetingCloseRejectionDoesNotLeakIntoNextAcceptedClose() async {
+        let fixture = makeBlockedSourceAwareCloseFixture()
+        var state = fixture.state
+        state.pendingContentTabClose = PendingContentTabClose(tabID: fixture.otherID)
+        let initialPendingIntents = state.pendingTopNavigationIntents
+        let initialOptimisticOrder = state.optimisticTopNavigationOrder
+        let acceptedOperationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 4))
+        let recorder = FileManagerProductMetricRecorder(makeOperationID: { acceptedOperationID })
+        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 443))
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: competing rejection과 다음 terminal의 상관 격리에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.closeContentTabRequestedWithSource(fixture.pinnedID, .contextMenu))
+
+        XCTAssertNil(store.state.productContentTabCloseMetric)
+        XCTAssertEqual(store.state.pendingTopNavigationIntents, initialPendingIntents)
+        XCTAssertEqual(store.state.optimisticTopNavigationOrder, initialOptimisticOrder)
+
+        await store.send(.contentTabCloseAlertResponse(.cancel))
+        await store.send(.closeContentTabRequestedWithSource(fixture.otherID, .menuCommand))
+        await store.skipReceivedActions(strict: false)
+
+        XCTAssertNil(store.state.contentTabs.tabs[id: fixture.otherID])
+        XCTAssertEqual(recorder.metrics(), [
+            .contentTabAction(
+                result: .success,
+                identity: .closeContentTab,
+                source: .menuCommand,
+                operationID: acceptedOperationID,
+            ),
+        ])
+    }
+
+    /// CTM-001-content_tab_action_metrics: dirty close discard는 alert 이후에도 accepted source를 보존한다.
+    /// Pending close가 context와 operation ID를 소유하고 실제 제거 terminal에서 정확히 한 번 소비하는지 검증한다.
+    /// - 검증 내용: pending source/operation ID와 `.success/.close/.contextMenu` 메트릭 1건
+    /// - 사전 조건: dirty Collection active tab, Home sibling, discard alert response
+    /// - 기대 결과: Collection tab 제거와 contextMenu source terminal 후 pending metric context 해제
+    func testDirtyCloseDiscardPreservesAcceptedMetricContextThroughTerminal() async {
+        let fixture = makeDirtyMetricCloseState()
+        let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 9))
+        let recorder = FileManagerProductMetricRecorder(makeOperationID: { operationID })
+        let store = TestStore(initialState: fixture.state) { FileManagerFeature() } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 443))
+            $0.collectionAlertClient = .init(
+                showUnsavedNavigationAlert: { .discard },
+                showCollectionOpenErrorAlert: { _, _ in },
+            )
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: dirty close 내부 cleanup보다 source context 수명에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.sidebar(.delegate(.closeContentTab(fixture.dirtyID))))
+        await store.skipReceivedActions()
+
+        XCTAssertNil(store.state.contentTabs.tabs[id: fixture.dirtyID])
+        XCTAssertNil(store.state.pendingContentTabClose)
+        XCTAssertNil(store.state.productContentTabCloseMetric)
+        XCTAssertEqual(recorder.metrics(), [
+            .contentTabAction(
+                result: .success,
+                identity: .closeContentTab,
+                source: .contextMenu,
+                operationID: operationID,
+            ),
+        ])
+    }
+
+    /// CTM-001-content_tab_action_metrics: dirty close cancel은 cancelled terminal 메트릭 한 건을 기록한다.
+    /// 취소된 contextMenu 요청이 원래 operation ID/source를 보존하고 다음 close와 분리되는지 검증한다.
+    /// - 검증 내용: cancel 후 cancelled metric 1건/context nil, 다음 direct close의 contentTabBar terminal 1건
+    /// - 사전 조건: dirty Collection active tab, Home sibling, cancel alert response
+    /// - 기대 결과: dirty tab 유지, sibling 제거, 다음 operation만 contentTabBar source로 기록됨
+    func testDirtyCloseCancelClearsContextBeforeNextDirectClose() async {
+        let fixture = makeDirtyMetricCloseState()
+        let cancelledID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0))
+        let nextID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 1))
+        let operationIDs = LockIsolated([cancelledID, nextID])
+        let recorder = FileManagerProductMetricRecorder(makeOperationID: {
+            operationIDs.withValue { $0.removeFirst() }
+        })
+        let store = TestStore(initialState: fixture.state) { FileManagerFeature() } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 443))
+            $0.collectionAlertClient = .init(
+                showUnsavedNavigationAlert: { .cancel },
+                showCollectionOpenErrorAlert: { _, _ in },
+            )
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: cancel cleanup과 다음 terminal 상관 분리에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.sidebar(.delegate(.closeContentTab(fixture.dirtyID))))
+        await store.skipReceivedActions()
+
+        XCTAssertNotNil(store.state.contentTabs.tabs[id: fixture.dirtyID])
+        XCTAssertNil(store.state.pendingContentTabClose)
+        XCTAssertNil(store.state.productContentTabCloseMetric)
+        XCTAssertEqual(recorder.metrics(), [
+            .contentTabAction(
+                result: .cancelled,
+                identity: .closeContentTab,
+                source: .contextMenu,
+                operationID: cancelledID,
+            ),
+        ])
+
+        await store.send(.contentTabs(.close(fixture.otherID)))
+
+        XCTAssertEqual(recorder.metrics(), [
+            .contentTabAction(
+                result: .cancelled,
+                identity: .closeContentTab,
+                source: .contextMenu,
+                operationID: cancelledID,
+            ),
+            .contentTabAction(
+                result: .success,
+                identity: .closeContentTab,
+                source: .contentTabBar,
+                operationID: nextID,
+            ),
+        ])
+    }
+
+    /// CTM-001-content_tab_action_metrics: pending 단일 close 중 window teardown은 cancelled terminal을 기록한다.
+    /// 창 종료 cleanup이 accepted close correlation을 제거하기 전에 원래 context를 소비하는지 검증한다.
+    /// - 검증 내용: onDisappear의 cancelled metric 1건, pending/correlation 제거, 반복 teardown 무중복
+    /// - 사전 조건: contextMenu source와 operation ID를 보유한 dirty Content Tab close pending 상태
+    /// - 기대 결과: 원 operation ID/source의 cancelled terminal 한 건과 완전히 정리된 close 상태
+    func testWindowDisappearRecordsSingleCancelledMetricForPendingContentTabClose() async {
+        let fixture = makeDirtyMetricCloseState()
+        let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 2))
+        var state = fixture.state
+        state.pendingContentTabClose = PendingContentTabClose(
+            tabID: fixture.dirtyID,
+            actionSource: .contextMenu,
+            metricOperationID: operationID,
+        )
+        state.productContentTabCloseMetric = ProductContentTabCloseMetric(
+            tabID: fixture.dirtyID,
+            context: ProductContentTabActionMetricContext(
+                operationID: operationID,
+                source: .contextMenu,
+            ),
+        )
+        let recorder = FileManagerProductMetricRecorder()
+        let store = TestStore(initialState: state) { FileManagerWindowRoutingReducer() } withDependencies: {
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: window teardown의 metric terminal과 close state cleanup에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.onDisappear)
+        await store.send(.onDisappear)
+
+        XCTAssertNil(store.state.pendingContentTabClose)
+        XCTAssertNil(store.state.productContentTabCloseMetric)
+        XCTAssertEqual(recorder.metrics(), [
+            .contentTabAction(
+                result: .cancelled,
+                identity: .closeContentTab,
+                source: .contextMenu,
+                operationID: operationID,
+            ),
+        ])
+    }
+
+    /// CTM-001-content_tab_action_metrics: selected close batch teardown은 남은 항목을 cancelled로 한 번 집계한다.
+    /// 이미 처리된 성공/실패 결과의 우선순위를 유지하면서 원래 batch correlation을 소비하는지 검증한다.
+    /// - 검증 내용: 미처리 batch는 cancelled, success+remaining은 success, failure+remaining은 failure로 기록하고 반복 teardown/late
+    /// action은 무시함
+    /// - 사전 조건: contextMenu source의 accepted selected close batch와 남은 항목
+    /// - 기대 결과: 각 batch operation ID/source의 aggregate terminal 정확히 한 건과 pending state 정리
+    func testWindowDisappearRecordsSelectedCloseAggregateForRemainingItems() async {
+        let fixture = makeSelectedContentTabCloseFixture()
+        let cases = [
+            SelectedCloseTeardownCase(aggregateResult: nil, cursor: 0, expectedResult: .cancelled),
+            SelectedCloseTeardownCase(aggregateResult: .success, cursor: 1, expectedResult: .success),
+            SelectedCloseTeardownCase(aggregateResult: .failure, cursor: 1, expectedResult: .failure),
+        ]
+
+        for (index, testCase) in cases.enumerated() {
+            let operationID = UUID(uuid: (
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, UInt8(index + 1),
+            ))
+            var state = fixture.state
+            let currentTabID = testCase.cursor == 0 ? fixture.tabA : fixture.tabB
+            state.pendingSelectedContentTabClose = PendingSelectedContentTabClose(
+                operationID: operationID,
+                orderedTargetIDs: [fixture.tabA, fixture.tabB],
+                cursor: testCase.cursor,
+                currentTabID: currentTabID,
+                originalActiveTabID: fixture.tabC,
+                preferredFallbackIDs: [fixture.tabD],
+                actionSource: .contextMenu,
+            )
+            state.pendingSelectedContentTabClose?.aggregateResult = testCase.aggregateResult
+            state.pendingContentTabClose = PendingContentTabClose(
+                tabID: currentTabID,
+                batchOperationID: operationID,
+            )
+            let recorder = FileManagerProductMetricRecorder()
+            let store = TestStore(initialState: state) { FileManagerWindowRoutingReducer() } withDependencies: {
+                $0.fileManagerProductMetricsClient = recorder.client
+            }
+            // store.exhaustivity = .off: teardown cancellation effect보다 aggregate terminal exactly-once 계약에 집중함
+            store.exhaustivity = .off
+
+            await store.send(.onDisappear)
+            await store.send(.onDisappear)
+            await store.send(.selectedContentTabCloseItemCompleted(
+                operationID: operationID,
+                tabID: currentTabID,
+                outcome: .removed,
+            ))
+
+            XCTAssertNil(store.state.pendingSelectedContentTabClose)
+            XCTAssertEqual(recorder.metrics(), [
+                .contentTabAction(
+                    result: testCase.expectedResult,
+                    identity: .closeSelectedContentTabs,
+                    source: .contextMenu,
+                    operationID: operationID,
+                ),
+            ])
+        }
+    }
+
+    /// CTM-001-content_tab_action_metrics: save를 시작할 수 없으면 failure terminal 메트릭 한 건을 기록한다.
+    /// Save gate가 거절한 단일 close가 accepted correlation을 소비하는지 검증한다.
+    /// - 검증 내용: `.save` 거절 후 failure/close/source/operation ID metric 1건과 correlation nil
+    /// - 사전 조건: dirty Collection close pending 상태와 이미 saving 중인 content
+    /// - 기대 결과: 탭은 유지되고 failure metric이 정확히 한 번 기록됨
+    func testDirtyCloseSaveCannotStartEmitsSingleFailureMetric() async {
+        let fixture = makeDirtyMetricCloseState()
+        let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 5))
+        var state = fixture.state
+        state.content.collection.isSaving = true
+        state.pendingContentTabClose = PendingContentTabClose(
+            tabID: fixture.dirtyID,
+            actionSource: .contextMenu,
+            metricOperationID: operationID,
+        )
+        state.productContentTabCloseMetric = ProductContentTabCloseMetric(
+            tabID: fixture.dirtyID,
+            context: ProductContentTabActionMetricContext(
+                operationID: operationID,
+                source: .contextMenu,
+            ),
+        )
+        let recorder = FileManagerProductMetricRecorder()
+        let store = TestStore(initialState: state) { FileManagerWindowRoutingReducer() } withDependencies: {
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: save gate와 terminal metric correlation만 검증함
+        store.exhaustivity = .off
+
+        await store.send(.contentTabCloseAlertResponse(.save))
+
+        XCTAssertNil(store.state.pendingContentTabClose)
+        XCTAssertNil(store.state.productContentTabCloseMetric)
+        XCTAssertEqual(recorder.metrics(), [
+            .contentTabAction(
+                result: .failure,
+                identity: .closeContentTab,
+                source: .contextMenu,
+                operationID: operationID,
+            ),
+        ])
+    }
+
+    /// CTM-001-content_tab_action_metrics: save failure terminal은 failure 메트릭 한 건만 기록한다.
+    /// Save 완료 실패와 feedback이 함께 도착한 뒤 correlation 소비 순서를 검증한다.
+    /// - 검증 내용: save failure terminal의 failure metric, pending/correlation 제거, late feedback 무시
+    /// - 사전 조건: active dirty Collection close pending 상태
+    /// - 기대 결과: 원래 contextMenu operation ID의 failure metric 1건
+    func testDirtyCloseSaveFailureEmitsSingleFailureMetricAndRejectsLateFeedback() {
+        let fixture = makeDirtyMetricCloseState()
+        let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 6))
+        var state = fixture.state
+        state.pendingContentTabClose = PendingContentTabClose(
+            tabID: fixture.dirtyID,
+            actionSource: .contextMenu,
+            metricOperationID: operationID,
+        )
+        state.productContentTabCloseMetric = ProductContentTabCloseMetric(
+            tabID: fixture.dirtyID,
+            context: ProductContentTabActionMetricContext(
+                operationID: operationID,
+                source: .contextMenu,
+            ),
+        )
+        let recorder = FileManagerProductMetricRecorder()
+        let reducer = FileManagerWindowRoutingReducer()
+        withDependencies {
+            $0.fileManagerProductMetricsClient = recorder.client
+        } operation: {
+            _ = reducer.finishPendingContentTabCloseWithoutClosing(outcome: .failed, state: &state)
+            XCTAssertNil(state.pendingContentTabClose)
+            XCTAssertNil(state.productContentTabCloseMetric)
+            XCTAssertEqual(recorder.metrics(), [
+                .contentTabAction(
+                    result: .failure,
+                    identity: .closeContentTab,
+                    source: .contextMenu,
+                    operationID: operationID,
+                ),
+            ])
+            _ = reducer.finishPendingContentTabCloseWithoutClosing(outcome: .failed, state: &state)
+            XCTAssertEqual(recorder.metrics().count, 1)
+        }
+    }
+
+    /// CTM-001-content_tab_action_metrics: pinned close terminal은 save/storeUnavailable/cancelled를 정규 결과로 매핑한다.
+    /// 일치 terminal만 correlation을 소비하고 stale 및 duplicate terminal은 보존하는지 검증한다.
+    /// - 검증 내용: failure, unavailable, cancelled 각각의 identity/source/operation ID와 exactly-once 소비
+    /// - 사전 조건: close intent와 탭별 product close correlation
+    /// - 기대 결과: 일치 terminal 3건 기록, stale terminal correlation 유지, duplicate terminal no-op
+    func testPinnedCloseTerminalMetricsConsumeMatchingCorrelationExactlyOnce() {
+        let tabID = ContentTabID(rawValue: "metric-pinned-close")
+        let staleTabID = ContentTabID(rawValue: "metric-pinned-close-stale")
+        let terminals: [(FileManagerTopNavigationIntentFailure, ContentTabActionResult)] = [
+            (.save, .failure),
+            (.storeUnavailable(.corrupt), .unavailable),
+            (.cancelled, .cancelled),
+        ]
+        let recorder = FileManagerProductMetricRecorder()
+        let feature = FileManagerFeature()
+        var state = FileManagerFeature.State()
+
+        withDependencies {
+            $0.fileManagerProductMetricsClient = recorder.client
+        } operation: {
+            for (index, (failure, result)) in terminals.enumerated() {
+                let operationID = UUID(uuid: (
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, UInt8(index + 7),
+                ))
+                state.productContentTabCloseMetric = ProductContentTabCloseMetric(
+                    tabID: tabID,
+                    context: ProductContentTabActionMetricContext(
+                        operationID: operationID,
+                        source: .menuCommand,
+                    ),
+                )
+                feature.clearProductContentTabCloseMetricIfFailed(
+                    intent: .close(tabID),
+                    terminal: .failed(failure),
+                    state: &state,
+                )
+                XCTAssertNil(state.productContentTabCloseMetric)
+                XCTAssertEqual(recorder.metrics().last, .contentTabAction(
+                    result: result,
+                    identity: .closeContentTab,
+                    source: .menuCommand,
+                    operationID: operationID,
+                ))
+                feature.clearProductContentTabCloseMetricIfFailed(
+                    intent: .close(tabID),
+                    terminal: .failed(failure),
+                    state: &state,
+                )
+            }
+
+            let staleOperationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 10))
+            state.productContentTabCloseMetric = ProductContentTabCloseMetric(
+                tabID: tabID,
+                context: ProductContentTabActionMetricContext(
+                    operationID: staleOperationID,
+                    source: .toolbar,
+                ),
+            )
+            feature.clearProductContentTabCloseMetricIfFailed(
+                intent: .close(staleTabID),
+                terminal: .failed(.save),
+                state: &state,
+            )
+            XCTAssertNotNil(state.productContentTabCloseMetric)
+            XCTAssertEqual(recorder.metrics().count, terminals.count)
+        }
+    }
+
+    /// CTM-001-content_tab_action_metrics: dirty close save 선택은 pending context를 terminal 전까지 보존한다.
+    /// Alert response와 save action 경계를 지나도 accepted source와 operation ID가 유지되는지 검증한다.
+    /// - 검증 내용: pending actionSource/metricOperationID와 save action routing
+    /// - 사전 조건: dirty Collection active tab과 contextMenu close, save alert response
+    /// - 기대 결과: save 시작 뒤에도 pending context가 contextMenu/accepted operation ID로 유지됨
+    func testDirtyCloseSavePreservesAcceptedMetricContextAcrossSaveBoundary() async {
+        let fixture = makeDirtyMetricCloseState()
+        let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 2))
+        let recorder = FileManagerProductMetricRecorder(makeOperationID: { operationID })
+        let store = TestStore(initialState: fixture.state) {
+            FileManagerWindowRoutingReducer()
+        } withDependencies: {
+            $0.collectionAlertClient = .init(
+                showUnsavedNavigationAlert: { .save },
+                showCollectionOpenErrorAlert: { _, _ in },
+            )
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: pending context 필드만 검증하고 save staging 세부 상태는 소유 테스트에 맡김
+        store.exhaustivity = .off
+
+        await store.send(.closeContentTabRequestedWithSource(fixture.dirtyID, .contextMenu))
+        XCTAssertEqual(store.state.pendingContentTabClose?.actionSource, .contextMenu)
+        XCTAssertEqual(store.state.pendingContentTabClose?.metricOperationID, operationID)
+        await store.receive(\.contentTabCloseAlertResponse, .save)
+        await store.receive {
+            guard case .content(.composer(.view(.saveCollection))) = $0 else { return false }
+            return true
+        }
+
+        XCTAssertEqual(store.state.pendingContentTabClose?.actionSource, .contextMenu)
+        XCTAssertEqual(store.state.pendingContentTabClose?.metricOperationID, operationID)
+        XCTAssertTrue(recorder.metrics().isEmpty)
+    }
+
+    /// CTM-001-content_tab_action_metrics: 이미 존재하는 duplicate ID 요청은 메트릭을 만들지 않는다.
+    /// - 검증 내용: preexisting identity로 인한 row 미생성, 레코더 빈 배열
+    /// - 사전 조건: Directory source tab과 기존 tab ID를 재사용한 duplicate 요청
+    /// - 기대 결과: 메트릭 0건
+    func testDuplicatePreexistingIdentityEmitsNoMetric() async {
+        let sourceID = ContentTabID(rawValue: "metric-dup-existing-source")
+        let existingID = ContentTabID(rawValue: "metric-dup-existing-target")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: sourceID,
+                    page: .directory,
+                    anchor: .directory(path: "/metric-dup-existing/source"),
+                    isPinned: false,
+                    title: nil,
+                    iconName: nil,
+                ),
+                ContentTabItem(
+                    id: existingID,
+                    page: .directory,
+                    anchor: .directory(path: "/metric-dup-existing/target"),
+                    isPinned: false,
+                    title: nil,
+                    iconName: nil,
+                ),
+            ],
+            activeTabID: sourceID,
+            recentlyClosed: nil,
+        )
+        let recorder = FileManagerProductMetricRecorder()
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 443))
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: invalid duplicate no-op 경로만 검증함
+        store.exhaustivity = .off
+
+        await store.send(.contentTabs(.duplicate(sourceID: sourceID, duplicateID: existingID)))
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(store.state.contentTabs.tabs.count, 2)
+        XCTAssertTrue(recorder.metrics().isEmpty)
+    }
+
+    /// CTM-001-content_tab_action_metrics: 동시 reorder terminal은 token별 source와 operation ID를 보존함
+    /// persistence 완료 순서가 요청 순서와 달라도 각 제품 메트릭 상관이 섞이지 않는지 검증한다.
+    /// - 검증 내용: drag/keyboard 두 context의 역순 완료와 token별 중복 terminal no-op
+    /// - 사전 조건: pinned tab 3개, 고유 token·operation ID 두 개, 서로 다른 action source
+    /// - 기대 결과: terminal 순서대로 keyboard와 drag 메트릭 두 건만 기록되고 상관 map이 비워짐
+    func testTopNavigationMoveTerminalsPreserveTokenCorrelatedSourcesInReverseOrder() async {
+        let operationIDA = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 7))
+        let operationIDB = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 8))
+        let tokenA = FileManagerTopNavigationOperationToken(value: UUID(uuid: (
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 9,
+        )))
+        let tokenB = FileManagerTopNavigationOperationToken(value: UUID(uuid: (
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 10,
+        )))
+        let tabA = ContentTabID(rawValue: "metric-move-a")
+        let tabB = ContentTabID(rawValue: "metric-move-b")
+        let tabC = ContentTabID(rawValue: "metric-move-c")
+        var state = FileManagerFeature.State()
+        state.lastConfirmedTopNavigationOrder = .init(items: [
+            .contentTab(tabA), .contentTab(tabB), .contentTab(tabC),
+        ])
+        state.optimisticTopNavigationOrder = state.lastConfirmedTopNavigationOrder
+        let operationIDs = LockIsolated([operationIDA, operationIDB])
+        let tokens = LockIsolated([tokenA, tokenB])
+        let recorder = FileManagerProductMetricRecorder(
+            makeOperationID: { operationIDs.withValue { $0.removeFirst() } },
+        )
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.contentTabPinnedRecordClient.reserveTopNavigationOperationToken = {
+                tokens.withValue { $0.removeFirst() }
+            }
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: delegate persistence routing보다 token별 terminal 메트릭 계약에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.topNavigationMoveRequested(
+            source: .contentTab(tabA),
+            destination: .after(.contentTab(tabB)),
+            actionSource: .dragAndDrop,
+        ))
+        await store.skipReceivedActions()
+        await store.send(.topNavigationMoveRequested(
+            source: .contentTab(tabC),
+            destination: .before(.contentTab(tabB)),
+            actionSource: .keyboardShortcut,
+        ))
+        await store.skipReceivedActions()
+
+        let committedOrder = store.state.optimisticTopNavigationOrder
+        await store.send(.internal(.topNavigationIntentCompleted(
+            token: tokenB,
+            terminal: .committed(.init(order: committedOrder, revision: 2)),
+        )))
+        await store.send(.internal(.topNavigationIntentCompleted(
+            token: tokenB,
+            terminal: .committed(.init(order: committedOrder, revision: 3)),
+        )))
+        await store.send(.internal(.topNavigationIntentCompleted(
+            token: tokenA,
+            terminal: .committed(.init(order: committedOrder, revision: 1)),
+        )))
+        await store.send(.internal(.topNavigationIntentCompleted(
+            token: tokenA,
+            terminal: .committed(.init(order: committedOrder, revision: 4)),
+        )))
+
+        XCTAssertTrue(store.state.productContentTabMoveMetricContexts.isEmpty)
+        XCTAssertEqual(recorder.metrics(), [
+            .contentTabAction(
+                result: .success,
+                identity: .reorderContentTab,
+                source: .keyboardShortcut,
+                operationID: operationIDB,
+            ),
+            .contentTabAction(
+                result: .success,
+                identity: .reorderContentTab,
+                source: .dragAndDrop,
+                operationID: operationIDA,
+            ),
+        ])
+    }
+
+    /// CTM-001-content_tab_action_metrics: window teardown은 수용된 singleton/group reorder를 취소로 종료한다.
+    /// 실제 move acceptance가 만든 intent와 correlation을 teardown이 원래 source/operation ID로 한 번만 소비하는지 검증한다.
+    /// - 검증 내용: singleton/group cancelled terminal 각 1건, pending/context 정리, 반복 teardown과 late terminal 무이벤트
+    /// - 사전 조건: pinned Content Tab 4개와 in-flight selected-group drag snapshot
+    /// - 기대 결과: reorderContentTab/reorderSelectedContentTabs 취소 메트릭만 기록되고 correlation은 비워짐
+    func testWindowDisappearCancelsAcceptedTopNavigationReordersExactlyOnce() async {
+        let fixture = makeTopNavigationTeardownMetricFixture()
+        let fixtureOperationIDs = fixture.operationIDs
+        let fixtureTokens = fixture.tokens
+        let operationIDs = LockIsolated(fixtureOperationIDs)
+        let tokens = LockIsolated(fixtureTokens)
+        let recorder = FileManagerProductMetricRecorder(
+            makeOperationID: { operationIDs.withValue { $0.removeFirst() } },
+        )
+        let store = TestStore(initialState: fixture.state) { FileManagerFeature() } withDependencies: {
+            $0.contentTabPinnedRecordClient.reserveTopNavigationOperationToken = {
+                tokens.withValue { $0.removeFirst() }
+            }
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: persistence delegate보다 teardown terminal과 exactly-once correlation에 집중함
+        store.exhaustivity = .off
+
+        await exerciseTopNavigationTeardown(store, fixture: fixture)
+
+        XCTAssertTrue(store.state.pendingTopNavigationIntents.isEmpty)
+        XCTAssertTrue(store.state.productContentTabMoveMetricContexts.isEmpty)
+        XCTAssertEqual(recorder.metrics(), [
+            .contentTabAction(
+                result: .cancelled,
+                identity: .reorderContentTab,
+                source: .keyboardShortcut,
+                operationID: fixture.operationIDs[0],
+            ),
+            .contentTabAction(
+                result: .cancelled,
+                identity: .reorderSelectedContentTabs,
+                source: .dragAndDrop,
+                operationID: fixture.operationIDs[1],
+            ),
+        ])
+    }
+
+    /// CTM-001-content_tab_action_metrics: 순서 변화가 없는 move 요청은 intent와 메트릭을 만들지 않는다.
+    /// - 검증 내용: pending intents 빈 배열 유지, 레코더 빈 배열
+    /// - 사전 조건: optimistic order [first, second]에서 first→before(second) 이동
+    /// - 기대 결과: 메트릭 0건
+    func testUnchangedTopNavigationMoveEmitsNoMetric() async {
+        let firstID = ContentTabID(rawValue: "metric-move-same-first")
+        let secondID = ContentTabID(rawValue: "metric-move-same-second")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: firstID,
+                    page: .directory,
+                    anchor: .directory(path: "/metric-move-same/first"),
+                    isPinned: true,
+                    title: nil,
+                    iconName: nil,
+                ),
+                ContentTabItem(
+                    id: secondID,
+                    page: .directory,
+                    anchor: .directory(path: "/metric-move-same/second"),
+                    isPinned: true,
+                    title: nil,
+                    iconName: nil,
+                ),
+            ],
+            activeTabID: firstID,
+            recentlyClosed: nil,
+        )
+        state.optimisticTopNavigationOrder = .init(items: [.contentTab(firstID), .contentTab(secondID)])
+        let recorder = FileManagerProductMetricRecorder()
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 443))
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: unchanged move no-op 경로만 검증함
+        store.exhaustivity = .off
+
+        await store.send(.topNavigationMoveRequested(
+            source: .contentTab(firstID),
+            destination: .before(.contentTab(secondID)),
+        ))
+
+        XCTAssertTrue(store.state.pendingTopNavigationIntents.isEmpty)
+        XCTAssertTrue(recorder.metrics().isEmpty)
+    }
+
+    /// CTM-001-content_tab_action_metrics: save 실패 terminal은 failure move 메트릭 한 건으로 매핑된다.
+    /// - 검증 내용: `.failed(.save)` terminal의 `.failure/.reorderContentTab` 메트릭 1건
+    /// - 사전 조건: 수용된 move intent 하나
+    /// - 기대 결과: 레코더에 move failure 메트릭 1건만 기록됨
+    func testTopNavigationMoveSaveFailureEmitsSingleFailureMetric() async throws {
+        let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 8))
+        let firstID = ContentTabID(rawValue: "metric-move-fail-first")
+        let secondID = ContentTabID(rawValue: "metric-move-fail-second")
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: firstID,
+                    page: .directory,
+                    anchor: .directory(path: "/metric-move-fail/first"),
+                    isPinned: true,
+                    title: nil,
+                    iconName: nil,
+                ),
+                ContentTabItem(
+                    id: secondID,
+                    page: .directory,
+                    anchor: .directory(path: "/metric-move-fail/second"),
+                    isPinned: true,
+                    title: nil,
+                    iconName: nil,
+                ),
+            ],
+            activeTabID: firstID,
+            recentlyClosed: nil,
+        )
+        state.optimisticTopNavigationOrder = .init(items: [.contentTab(firstID), .contentTab(secondID)])
+        let recorder = FileManagerProductMetricRecorder(makeOperationID: { operationID })
+        let store = TestStore(initialState: state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 443))
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: failure presentation보다 terminal 매핑 계약에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.topNavigationMoveRequested(
+            source: .contentTab(firstID),
+            destination: .after(.contentTab(secondID)),
+        ))
+
+        let token = try XCTUnwrap(store.state.pendingTopNavigationIntents.first?.token)
+        await store.skipReceivedActions()
+        await store.send(.internal(.topNavigationIntentCompleted(
+            token: token,
+            terminal: .failed(.save),
+        )))
+
+        XCTAssertEqual(recorder.metrics(), [
+            .contentTabAction(
+                result: .failure,
+                identity: .reorderContentTab,
+                source: .contentTabBar,
+                operationID: operationID,
+            ),
+        ])
+    }
+
+    /// CTM-001-content_tab_action_metrics: 배치 selected close는 항목별 close 대신 집계 terminal 한 건을 기록한다.
+    /// coordinator 수명 동안 finalize가 N번 실행되어도 batch operation ID로 이벤트 한 건만 기록하는지 검증한다.
+    /// - 검증 내용: 두 탭 제거 완료 후 `.success/.closeSelectedContentTabs` 한 건
+    /// - 사전 조건: pinned-first interleaved 선택 상태에서 2개 대상 batch close
+    /// - 기대 결과: 항목별 close 메트릭 없이 집계 메트릭 1건
+    func testBatchSelectedCloseEmitsSingleAggregateMetric() async throws {
+        let activeID = ContentTabID(rawValue: "suppress-close-active")
+        let pinnedID = ContentTabID(rawValue: "suppress-close-pinned")
+        let visualRightID = ContentTabID(rawValue: "suppress-close-visual-right")
+        let targetID = ContentTabID(rawValue: "suppress-close-target")
+        let operationID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000453"))
+        let initialState = makePinnedFirstInterleavedSelectedCloseState(
+            activeID: activeID,
+            pinnedID: pinnedID,
+            visualRightID: visualRightID,
+            targetID: targetID,
+        )
+        let recorder = FileManagerProductMetricRecorder()
+        let store = TestStore(initialState: initialState) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.uuid = .constant(operationID)
+            $0.date = .constant(Date(timeIntervalSince1970: 453))
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: batch lifecycle action보다 close 메트릭 억제 계약에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.sidebar(.delegate(.closeSelectedContentTabs)))
+        await store.receive {
+            guard case .request(.contentTabAction(.closeSelected, source: .contextMenu)) = $0 else {
+                return false
+            }
+            return true
+        }
+        await store.receive(\.requestCloseSelectedTabs, .contextMenu)
+        await store.receive(\.processNextSelectedContentTabClose, operationID)
+        await receiveRemovedSelectedCloseLifecycle(
+            store,
+            operationID: operationID,
+            tabID: targetID,
+        )
+        await store.receive(\.processNextSelectedContentTabClose, operationID)
+        await receiveRemovedSelectedCloseLifecycle(
+            store,
+            operationID: operationID,
+            tabID: activeID,
+        )
+        await store.receive(\.processNextSelectedContentTabClose, operationID)
+
+        XCTAssertNil(store.state.pendingSelectedContentTabClose)
+        XCTAssertNil(store.state.contentTabs.tabs[id: targetID])
+        XCTAssertNil(store.state.contentTabs.tabs[id: activeID])
+        XCTAssertEqual(recorder.metrics(), [
+            .contentTabAction(
+                result: .success,
+                identity: .closeSelectedContentTabs,
+                source: .contextMenu,
+                operationID: operationID,
+            ),
+        ])
+    }
+
+    /// CTM-001-content_tab_action_metrics: selected close 집계 결과는 failure > success > cancelled 순서다.
+    /// 실제 item outcome 조합이 유한 result_status 하나로 결정되는지 검증한다.
+    /// - 검증 내용: mixed success/cancel, all cancel, success/failure 조합의 terminal
+    /// - 사전 조건: 마지막 item만 남은 상관된 pending batch
+    /// - 기대 결과: 각각 success, cancelled, failure 한 건
+    func testBatchSelectedCloseUsesDeterministicFiniteResultPrecedence() async {
+        let fixture = makeSelectedContentTabCloseFixture()
+        let cases = [
+            SelectedCloseMetricPrecedenceCase(current: .success, outcome: .cancelled, expected: .success),
+            SelectedCloseMetricPrecedenceCase(current: .cancelled, outcome: .cancelled, expected: .cancelled),
+            SelectedCloseMetricPrecedenceCase(current: .success, outcome: .failed, expected: .failure),
+        ]
+
+        for (index, testCase) in cases.enumerated() {
+            let operationID = UUID(uuid: (
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, UInt8(index + 1),
+            ))
+            var state = fixture.state
+            state.pendingSelectedContentTabClose = PendingSelectedContentTabClose(
+                operationID: operationID,
+                orderedTargetIDs: [fixture.tabA, fixture.tabB],
+                cursor: 1,
+                currentTabID: fixture.tabB,
+                originalActiveTabID: fixture.tabC,
+                preferredFallbackIDs: [fixture.tabD],
+            )
+            state.pendingSelectedContentTabClose?.aggregateResult = testCase.current
+            state.pendingContentTabClose = PendingContentTabClose(
+                tabID: fixture.tabB,
+                batchOperationID: operationID,
+            )
+            let recorder = FileManagerProductMetricRecorder()
+            let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
+                $0.fileManagerProductMetricsClient = recorder.client
+            }
+            // store.exhaustivity = .off: batch state 정산보다 aggregate result precedence에 집중함
+            store.exhaustivity = .off
+
+            await store.send(.selectedContentTabCloseItemCompleted(
+                operationID: operationID,
+                tabID: fixture.tabB,
+                outcome: testCase.outcome,
+            ))
+            await store.receive(\.processNextSelectedContentTabClose, operationID)
+
+            XCTAssertEqual(recorder.metrics(), [
+                .contentTabAction(
+                    result: testCase.expected,
+                    identity: .closeSelectedContentTabs,
+                    source: .contentTabBar,
+                    operationID: operationID,
+                ),
+            ])
+        }
+    }
+
+    /// CTM-001-content_tab_action_metrics: stale, duplicate, 시작 거부 selected close는 terminal을 만들지 않는다.
+    /// 수용된 batch의 true terminal만 기록되는지 검증한다.
+    /// - 검증 내용: wrong operation, duplicate completion, selected count 1 request 뒤 metric count 유지
+    /// - 사전 조건: 마지막 item pending batch와 단일 선택 state
+    /// - 기대 결과: 최초 정상 terminal 한 건 외 추가 메트릭 없음
+    func testBatchSelectedCloseRejectsStaleDuplicateAndUnacceptedMetrics() async {
+        let fixture = makeSelectedContentTabCloseFixture()
+        let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 4))
+        let staleOperationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 5))
+        var state = fixture.state
+        state.pendingSelectedContentTabClose = PendingSelectedContentTabClose(
+            operationID: operationID,
+            orderedTargetIDs: [fixture.tabA],
+            currentTabID: fixture.tabA,
+            originalActiveTabID: fixture.tabC,
+            preferredFallbackIDs: [fixture.tabD],
+        )
+        state.pendingContentTabClose = PendingContentTabClose(
+            tabID: fixture.tabA,
+            batchOperationID: operationID,
+        )
+        let recorder = FileManagerProductMetricRecorder()
+        let store = TestStore(initialState: state) { FileManagerFeature() } withDependencies: {
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        // store.exhaustivity = .off: 최초 terminal 이후 stale/duplicate metric no-op에 집중함
+        store.exhaustivity = .off
+
+        await store.send(.selectedContentTabCloseItemCompleted(
+            operationID: staleOperationID,
+            tabID: fixture.tabA,
+            outcome: .failed,
+        ))
+        XCTAssertTrue(recorder.metrics().isEmpty)
+        await store.send(.selectedContentTabCloseItemCompleted(
+            operationID: operationID,
+            tabID: fixture.tabA,
+            outcome: .removed,
+        ))
+        await store.receive(\.processNextSelectedContentTabClose, operationID)
+        XCTAssertEqual(recorder.metrics().count, 1)
+
+        await store.send(.selectedContentTabCloseItemCompleted(
+            operationID: operationID,
+            tabID: fixture.tabA,
+            outcome: .removed,
+        ))
+        await store.send(.processNextSelectedContentTabClose(operationID: operationID))
+        var rejectedState = fixture.state
+        rejectedState.contentTabs.selectedTabIDs = [fixture.tabA]
+        let rejectedStore = TestStore(initialState: rejectedState) { FileManagerFeature() } withDependencies: {
+            $0.fileManagerProductMetricsClient = recorder.client
+        }
+        await rejectedStore.send(.requestCloseSelectedContentTabs)
+
+        XCTAssertEqual(recorder.metrics().count, 1)
     }
 
     // MARK: - CTM-001-handle_content_tab_invariants
@@ -5510,8 +7110,42 @@ final class CTM001HandleContentTabTests: XCTestCase {
 
     // MARK: - CTM-001-open_new_content_tab_routing
 
+    private func receiveOpenContentTabAction(
+        _ store: TestStoreOf<FileManagerFeature>,
+        anchor: ContentTabPageAnchor,
+        source: ContentTabActionSource,
+    ) async {
+        await store.receive { action in
+            guard case let .contentTabActionRequested(.open(receivedAnchor), source: receivedSource) = action
+            else { return false }
+            return receivedAnchor == anchor && receivedSource == source
+        }
+    }
+
+    private func receiveResolvedOpenContentTabAction(
+        _ store: TestStoreOf<FileManagerFeature>,
+        anchor: ContentTabPageAnchor,
+        source: ContentTabActionSource,
+    ) async {
+        await store.receive { action in
+            guard case let .internal(.defaultStartPageResolved(startPage, source: receivedSource)) = action
+            else { return false }
+            let expectedStartPage: StartPage
+            switch anchor {
+            case .homeDefault:
+                expectedStartPage = .home
+            case let .directory(path):
+                expectedStartPage = .directory(path)
+            case .collectionFile, .virtualCollection, .aiChat:
+                return false
+            }
+            return startPage == expectedStartPage && receivedSource == source
+        }
+        await receiveOpenContentTabAction(store, anchor: anchor, source: source)
+    }
+
     /// CTM-001-open_new_content_tab_routing: WindowCommand.openNewContentTab이 explicit selection을 보존하고 Home tab을 활성화함
-    /// - 검증 내용: `.request(.openNewContentTab)`은 `.open(.homeDefault)`만 방출하고 selection collapse를 방출하지 않음
+    /// - 검증 내용: source-aware `.open(.homeDefault)` acceptance만 방출하고 selection collapse를 방출하지 않음
     /// - 사전 조건: 선택 및 anchor가 설정된 기본 Home tab 하나가 있는 FileManagerFeature.State
     /// - 기대 결과: 기존 selection/anchor를 유지하면서 새 Home tab이 list 끝에 추가되어 active가 됨
     func testOpenNewContentTab_commandRouting_createsHomeTabAppendedActive() async throws {
@@ -5531,8 +7165,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
         let beforeCount = store.state.contentTabs.tabs.count
         let beforeActiveID = store.state.contentTabs.activeTabID
 
-        await store.send(.request(.openNewContentTab))
-        await store.receive(\.contentTabs.open, .homeDefault)
+        await store.send(.request(.openNewContentTab(source: .contentTabBar)))
+        await receiveOpenContentTabAction(store, anchor: .homeDefault, source: .contentTabBar)
         await store.skipReceivedActions(strict: false)
 
         let afterCount = store.state.contentTabs.tabs.count
@@ -5544,6 +7178,48 @@ final class CTM001HandleContentTabTests: XCTestCase {
         XCTAssertEqual(store.state.contentTabs.selectedTabIDs, [selectedID])
         XCTAssertEqual(store.state.contentTabs.selectionAnchorID, selectedID)
         XCTAssertNotEqual(store.state.contentTabs.activeTabID, beforeActiveID, "active tab ID must change to new tab")
+    }
+
+    /// CTM-001-open_new_content_tab_start_page: Cmd+T는 request-time default start page snapshot으로 새 tab을 생성함
+    /// - 검증 내용: preference directory가 유효하면 command가 Directory initial tab을 직접 생성함
+    /// - 사전 조건: 실제 fixture directory를 가리키는 defaultStartPage와 선택된 기존 Home tab
+    /// - 기대 결과: 기존 selection은 유지되고 새 Directory tab의 content session은 기존 session과 독립됨
+    func testOpenNewContentTab_commandRouting_usesRequestTimeDirectorySnapshot() async throws {
+        let directory = try FileManagerFixtureSandbox.readOnlyDirectory(from: "fixtures/fixtures/documents")
+        var preferences = VoyagerPagesFileManager.AppPreferencesState()
+        preferences.defaultStartPage = .directory(directory.path)
+        var initialState = FileManagerFeature.State()
+        let originalID = try XCTUnwrap(initialState.contentTabs.activeTabID)
+        initialState.contentTabs.selectedTabIDs = [originalID]
+        initialState.contentTabs.selectionAnchorID = originalID
+        initialState.content.navigation.backHistory = [ContentPageNavigationHistorySnapshot(navigationState: .recents)]
+        initialState.content.entryViewLayout.entryOperations.isLoading = true
+        let store = TestStore(initialState: initialState) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.startPageAvailabilityClient.probeDirectory = { _ in .availableDirectory }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.applyAppPreferences(preferences))
+        await store.skipReceivedActions(strict: false)
+        let originalContent = store.state.content
+        await store.send(.request(.openNewContentTab(source: .contentTabBar)))
+        await receiveResolvedOpenContentTabAction(
+            store,
+            anchor: .directory(path: directory.path),
+            source: .contentTabBar,
+        )
+
+        let newTab = try XCTUnwrap(store.state.contentTabs.tabs.last)
+        XCTAssertEqual(newTab.anchor, .directory(path: directory.path))
+        XCTAssertEqual(newTab.page, .directory)
+        XCTAssertEqual(store.state.contentTabs.selectedTabIDs, [originalID])
+        let savedOriginalContent = try XCTUnwrap(store.state.tabContentStates[originalID])
+        XCTAssertEqual(savedOriginalContent.navigation, originalContent.navigation)
+        XCTAssertNotEqual(store.state.tabContentStates[originalID], store.state.tabContentStates[newTab.id])
+        XCTAssertEqual(store.state.content.navigation.currentPath, directory.path)
     }
 
     /// CTM-001-open_new_content_tab_routing: 기존 active Directory/Collection anchor가 새 tab에 복제되지 않음
@@ -5564,8 +7240,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
         // anchor 복제 방지 검증에 집중한다.
         store.exhaustivity = .off
 
-        await store.send(.request(.openNewContentTab))
-        await store.receive(\.contentTabs.open, .homeDefault)
+        await store.send(.request(.openNewContentTab(source: .contentTabBar)))
+        await receiveOpenContentTabAction(store, anchor: .homeDefault, source: .contentTabBar)
 
         let lastTab = try XCTUnwrap(store.state.contentTabs.tabs.last)
         XCTAssertEqual(lastTab.anchor, .homeDefault, "new tab must NOT clone existing Directory anchor")
@@ -5589,8 +7265,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
 
         let previousActiveID = try XCTUnwrap(store.state.contentTabs.activeTabID)
 
-        await store.send(.request(.openNewContentTab))
-        await store.receive(\.contentTabs.open, .homeDefault)
+        await store.send(.request(.openNewContentTab(source: .contentTabBar)))
+        await receiveOpenContentTabAction(store, anchor: .homeDefault, source: .contentTabBar)
 
         let newActiveID = try XCTUnwrap(store.state.contentTabs.activeTabID)
         XCTAssertNotNil(
@@ -5598,6 +7274,143 @@ final class CTM001HandleContentTabTests: XCTestCase {
             "previous active tab must still exist in tabs",
         )
         XCTAssertNotEqual(newActiveID, previousActiveID, "active tab ID must change")
+    }
+
+    // MARK: - CTM-001-open_new_content_tab_handoff
+
+    private func makeConfiguredDirectoryHandoffState(
+        directoryPath: String,
+        sourcePath: String,
+    ) throws -> ConfiguredDirectoryHandoffFixture {
+        var preferences = VoyagerPagesFileManager.AppPreferencesState()
+        preferences.defaultStartPage = .directory(directoryPath)
+        var state = FileManagerWindowState.makeInitial(path: sourcePath)
+        let previousID = try XCTUnwrap(state.contentTabs.activeTabID)
+        state.content.navigation.backHistory = [ContentPageNavigationHistorySnapshot(navigationState: .recents)]
+        return .init(
+            preferences: preferences,
+            state: state,
+            previousID: previousID,
+            sourcePath: sourcePath,
+            directoryPath: directoryPath,
+        )
+    }
+
+    private func receiveConfiguredDirectoryHandoffActions(
+        _ store: TestStoreOf<FileManagerFeature>,
+        previousID: ContentTabID,
+        directoryPath: String,
+    ) async {
+        await store.receive { action in
+            guard case let .tabContent(tabID, .entryViewLayout(.entryOperations(.loading(.cancelAllFolderItems)))) =
+                action
+            else { return false }
+            return tabID == previousID
+        }
+        await store.receive { action in
+            guard case let .tabContent(tabID, .entryViewLayout(.internal(.cancelCollectionMaterialization))) = action
+            else { return false }
+            return tabID == previousID
+        }
+        await store.receive { action in
+            guard case let .tabContent(tabID, .internal(.applyNavigationState(.folder(receivedPath)))) = action
+            else { return false }
+            return tabID != previousID && receivedPath == directoryPath
+        }
+    }
+
+    private func startConfiguredDirectoryOutgoingLoad(
+        _ store: TestStoreOf<FileManagerFeature>,
+        sourcePath: String,
+        started: XCTestExpectation,
+    ) async {
+        await store.sendTabContent(.entryViewLayout(.entryOperations(.loading(
+            .loadItems(path: sourcePath, showHidden: false),
+        ))))
+        await fulfillment(of: [started], timeout: 1)
+    }
+
+    private func verifyConfiguredDirectoryHandoffResult(
+        _ state: FileManagerFeature.State,
+        fixture: ConfiguredDirectoryHandoffFixture,
+        recorders: ConfiguredDirectoryHandoffRecorders,
+    ) throws {
+        let newTabID = try XCTUnwrap(state.contentTabs.activeTabID)
+        XCTAssertNotEqual(newTabID, fixture.previousID)
+        XCTAssertEqual(state.contentTabs.tabs[id: newTabID]?.anchor, .directory(path: fixture.directoryPath))
+        XCTAssertEqual(state.content.navigation.backHistory.count, 0)
+        XCTAssertFalse(state.content.entryViewLayout.entryOperations.isLoading)
+        XCTAssertEqual(state.content.navigation.currentPath, fixture.directoryPath)
+        let savedPreviousContent = try XCTUnwrap(state.tabContentStates[fixture.previousID])
+        XCTAssertEqual(savedPreviousContent.navigation.backHistory.map(\.navigationState), [.recents])
+        XCTAssertEqual(recorders.cancellationCount.value, 1)
+        XCTAssertEqual(recorders.loadPaths.value, [fixture.sourcePath, fixture.directoryPath])
+    }
+
+    /// CTM-001-open_new_content_tab_handoff: Directory 시작 페이지 새 탭은 정상 handoff cleanup과 navigation resync를 수행함
+    /// 구성된 시작 페이지(.directory)로 연 새 탭이 이전 탭의 in-flight 작업을 취소하고 destination 폴더 로드를
+    /// 시작하는지 검증한다. anchor가 directory라는 이유로 handoff 전체를 생략하지 않는다.
+    /// - 검증 내용: 이전 탭 소유 cancelAllFolderItems/cancelCollectionMaterialization 수신, 새 탭 소유
+    ///   applyNavigationState(.folder) 수신, 새 content는 source session 복제가 아닌 anchor seed 상태
+    /// - 사전 조건: defaultStartPage = fixture directory, 이전 Home tab에 backHistory와 isLoading=true in-flight 표식
+    /// - 기대 결과: handoff cleanup/resync가 한 번 실행되고 source owner state는 이전 탭 소유로 저장됨
+    func testOpenNewContentTab_configuredDirectoryStartPage_performsHandoffCleanupAndResync() async throws {
+        let directory = try FileManagerFixtureSandbox.readOnlyDirectory(from: "fixtures/fixtures/documents")
+        let sourcePath = "/seed"
+        let outgoingLoadStarted = expectation(description: "outgoing load started"),
+            outgoingLoadCancelled = expectation(description: "outgoing load cancelled")
+        let outgoingLoadGate = AsyncStream<Void>.makeStream()
+        let recorders = ConfiguredDirectoryHandoffRecorders()
+        let fixture = try makeConfiguredDirectoryHandoffState(directoryPath: directory.path, sourcePath: sourcePath)
+        let store = TestStore(initialState: fixture.state) {
+            FileManagerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
+            $0.startPageAvailabilityClient.probeDirectory = { _ in .availableDirectory }
+            $0.entryLoadingClient.loadItems = { url, _ in
+                recorders.loadPaths.withValue { $0.append(url.path) }
+                guard url.path == sourcePath else { return [] }
+                outgoingLoadStarted.fulfill()
+                return await withTaskCancellationHandler {
+                    for await _ in outgoingLoadGate.stream {}
+                    return []
+                } onCancel: {
+                    recorders.cancellationCount.withValue { $0 += 1 }
+                    outgoingLoadGate.continuation.finish()
+                    outgoingLoadCancelled.fulfill()
+                }
+            }
+            $0.fileChangeGatewayClient.observeEvents = {
+                AsyncStream { $0.finish() }
+            }
+        }
+        // 비포괄적: open flow의 부수 child action을 제외하고 handoff cancellation/resync 시그니처 검증에 집중한다.
+        store.exhaustivity = .off
+
+        await store.send(.applyAppPreferences(fixture.preferences))
+        await store.skipReceivedActions(strict: false)
+        await startConfiguredDirectoryOutgoingLoad(store, sourcePath: sourcePath, started: outgoingLoadStarted)
+
+        await store.send(.request(.openNewContentTab(source: .contentTabBar)))
+        await receiveResolvedOpenContentTabAction(
+            store,
+            anchor: .directory(path: directory.path),
+            source: .contentTabBar,
+        )
+        await receiveConfiguredDirectoryHandoffActions(
+            store,
+            previousID: fixture.previousID,
+            directoryPath: directory.path,
+        )
+        await fulfillment(of: [outgoingLoadCancelled], timeout: 1)
+
+        await store.skipReceivedActions(strict: false)
+        await store.finish()
+        try verifyConfiguredDirectoryHandoffResult(
+            store.state,
+            fixture: fixture,
+            recorders: recorders,
+        )
     }
 
     // MARK: - CTM-001-open_new_content_tab_invariants
@@ -5619,8 +7432,8 @@ final class CTM001HandleContentTabTests: XCTestCase {
 
         let beforeCount = ContentTabProjection.sidebarItems(from: store.state.contentTabs).count
 
-        await store.send(.request(.openNewContentTab))
-        await store.receive(\.contentTabs.open, .homeDefault)
+        await store.send(.request(.openNewContentTab(source: .contentTabBar)))
+        await receiveOpenContentTabAction(store, anchor: .homeDefault, source: .contentTabBar)
 
         let sidebarItems = ContentTabProjection.sidebarItems(from: store.state.contentTabs)
         XCTAssertEqual(sidebarItems.count, beforeCount + 1, "projection must reflect new tab count")
@@ -5666,7 +7479,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
         // 비포괄적: maxTabs guard의 whole-state no-op과 unrelated loading 상태 불변 검증에 집중한다.
         store.exhaustivity = .off
 
-        await store.send(.request(.openNewContentTab))
+        await store.send(.request(.openNewContentTab(source: .contentTabBar)))
 
         XCTAssertEqual(store.state.contentTabs, originalContentTabs)
         XCTAssertTrue(store.state.content.entryViewLayout.entryOperations.isLoading)
@@ -5688,11 +7501,11 @@ final class CTM001HandleContentTabTests: XCTestCase {
         // 비포괄적: FileManagerFeature.onAppear가 여러 child action 방출하므로 ID uniqueness 검증에 집중한다.
         store.exhaustivity = .off
 
-        await store.send(.request(.openNewContentTab))
-        await store.receive(\.contentTabs.open, .homeDefault)
+        await store.send(.request(.openNewContentTab(source: .contentTabBar)))
+        await receiveOpenContentTabAction(store, anchor: .homeDefault, source: .contentTabBar)
 
-        await store.send(.request(.openNewContentTab))
-        await store.receive(\.contentTabs.open, .homeDefault)
+        await store.send(.request(.openNewContentTab(source: .contentTabBar)))
+        await receiveOpenContentTabAction(store, anchor: .homeDefault, source: .contentTabBar)
 
         let allIDs = store.state.contentTabs.tabs.map(\.id)
         let uniqueIDs = Set(allIDs)
@@ -5721,7 +7534,6 @@ final class CTM001HandleContentTabTests: XCTestCase {
         let beforeActiveID = store.state.contentTabs.activeTabID
 
         await store.sendTabContent(.view(.homeSelectionTapped(.fixedDirectory(.desktop))))
-        await store.receive(\.contentTabs)
         await receiveDirectoryNavigation(store, path: desktopPath)
 
         XCTAssertEqual(store.state.content.navigation.currentPath, desktopPath)
@@ -5752,7 +7564,6 @@ final class CTM001HandleContentTabTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.sendTabContent(.view(.homeSelectionTapped(.fixedDirectory(.documents))))
-        await store.receive(\.contentTabs)
         await receiveDirectoryNavigation(store, path: documentsPath)
 
         XCTAssertEqual(store.state.content.navigation.currentPath, documentsPath)
@@ -5782,7 +7593,6 @@ final class CTM001HandleContentTabTests: XCTestCase {
         store.exhaustivity = .off
 
         await store.sendTabContent(.view(.homeSelectionTapped(.openDirectory)))
-        await store.receive(\.contentTabs)
         await receiveDirectoryNavigation(store, path: "/tmp/test")
 
         XCTAssertEqual(store.state.content.navigation.currentPath, "/tmp/test")
@@ -6248,24 +8058,12 @@ final class CTM001HandleContentTabTests: XCTestCase {
 
         await store.sendTabContent(.view(.homeSelectionTapped(.startAiChat)))
         // Home AI Chat 전환은 same-tab handoff에서도 Inspector Chat을 먼저 닫고,
-        // active tab anchor와 navigation route를 고정한 뒤 provider load만 tab-scoped async로 처리한다.
+        // navigation 승인 후 tab anchor를 동기화한 뒤 provider load를 tab-scoped async로 처리한다.
         await store.receive { action in
             guard case .inspector(.closeChat) = action else { return false }
             return true
         } assert: { state in
             state.inspector.inspectorVisible = false
-        }
-        await store.receive { action in
-            guard case let .contentTabs(.updateActivePageAnchor(_, .aiChat(receivedSessionID))) = action else {
-                return false
-            }
-            return receivedSessionID == sessionID
-        }
-        await store.receive { action in
-            guard case let .internal(.aiChatTabTitleUpdated(receivedSessionID, title)) = action else {
-                return false
-            }
-            return receivedSessionID.rawValue.uuidString == sessionID && title == "New Chat"
         }
         await store.receive { action in
             guard case let .navigation(.view(.showAiChat(receivedSessionID))) = action else { return false }
@@ -6276,7 +8074,7 @@ final class CTM001HandleContentTabTests: XCTestCase {
             return true
         }
         await store.receive { action in
-            guard case let .navigation(.internal(.performShowAiChat(receivedSessionID))) = action else {
+            guard case let .navigation(.internal(.performNavigation(.showAiChat(receivedSessionID)))) = action else {
                 return false
             }
             return receivedSessionID == sessionID
@@ -6287,6 +8085,12 @@ final class CTM001HandleContentTabTests: XCTestCase {
             return receivedSessionID == sessionID
         }
         await store.receive { action in
+            guard case let .contentTabs(.updateActivePageAnchor(_, .aiChat(receivedSessionID))) = action else {
+                return false
+            }
+            return receivedSessionID == sessionID
+        }
+        await store.receive { action in
             guard case let .tabContent(_, .internal(.applyNavigationState(.aiChat(receivedSessionID)))) = action
             else { return false }
             return receivedSessionID == sessionID
@@ -6294,6 +8098,12 @@ final class CTM001HandleContentTabTests: XCTestCase {
         await store.receive { action in
             guard case .tabContent(_, .aiChat(.providerConnectionsUpdated)) = action else { return false }
             return true
+        }
+        await store.receive { action in
+            guard case let .internal(.aiChatTabTitleUpdated(receivedSessionID, title)) = action else {
+                return false
+            }
+            return receivedSessionID.rawValue.uuidString == sessionID && title == "New Chat"
         }
 
         let expectedSessionUUID = AiChatSessionID(rawValue: UUID(uuidString: sessionID) ?? UUID())
@@ -7411,7 +9221,10 @@ private enum ExternalTabReservationTestFixture {
             tabID: tabID,
             action: .entryViewLayout(.entryOperations(.lifecycle(.operationFinished(
                 operationPath,
-                .rename,
+                // Rename completion defers its reload until entryActionCompleted so selection
+                // identity can be recorded first. This fixture needs the completion-owned
+                // reload path to exercise cancellation ownership across content tabs.
+                .pasteFileCopy,
                 .success(()),
             )))),
         )
@@ -7644,7 +9457,7 @@ extension CTM001HandleContentTabTests {
         let initialCount = store.state.contentTabs.tabs.count
 
         await store.send(.tabContent(tabID: tabID, action: .delegate(.openInNewTab(["/folder"]))))
-        await store.receive(\.contentTabs)
+        await receiveOpenContentTabAction(store, anchor: .directory(path: "/folder"), source: .contextMenu)
 
         XCTAssertEqual(store.state.contentTabs.tabs.count, initialCount + 1)
         let lastTab = try XCTUnwrap(store.state.contentTabs.tabs.last)
@@ -7672,8 +9485,8 @@ extension CTM001HandleContentTabTests {
         let initialCount = store.state.contentTabs.tabs.count
 
         await store.send(.tabContent(tabID: tabID, action: .delegate(.openInNewTab(["/a", "/b"]))))
-        await store.receive(\.contentTabs)
-        await store.receive(\.contentTabs)
+        await receiveOpenContentTabAction(store, anchor: .directory(path: "/a"), source: .contextMenu)
+        await receiveOpenContentTabAction(store, anchor: .directory(path: "/b"), source: .contextMenu)
 
         let tabs = store.state.contentTabs.tabs
         XCTAssertEqual(tabs.count, initialCount + 2)
@@ -7716,19 +9529,19 @@ extension CTM001HandleContentTabTests {
         XCTAssertEqual(store.state.contentTabs.activeTabID, activeID)
     }
 
-    /// CTM-001-open_in_new_tab_routing: max tab 한계에 도달하면 추가 open이 무시된다
-    /// ContentTabFeature.open의 max-tab guard가 각 .open 호출에서 강제되므로 경계에서 no-op이어야 한다.
-    /// - 검증 내용: maxTabs만큼 채운 상태에서 New Tab delegate가 새 tab을 만들지 않는다.
-    /// - 사전 조건: tabs가 ContentTabConstants.maxTabs로 가득 찬 상태.
-    /// - 기대 결과: tabs.count가 maxTabs를 넘지 않고 activeTabID가 유지된다.
+    /// CTM-001-open_in_new_tab_routing: 남은 한 슬롯만 수용하고 초과 open은 무시된다
+    /// ContentTabFeature.open의 max-tab guard가 product action boundary를 통과한 각 요청에 적용되는지 검증한다.
+    /// - 검증 내용: 두 경로 delegate 후 첫 경로만 생성되고 context-menu open success metric이 한 건 기록된다.
+    /// - 사전 조건: tabs가 maxTabs-1개인 active window state와 두 폴더 경로.
+    /// - 기대 결과: tabs.count가 maxTabs이고 마지막 anchor가 첫 경로이며 메트릭은 한 건이다.
     @MainActor
-    func testOpenInNewTabRouting_maxTabLimitRespected() async throws {
+    func testOpenInNewTabRouting_oneRemainingSlotLimitsOpenAndMetric() async throws {
         var tabs = IdentifiedArrayOf<ContentTabItem>()
-        for _ in 0 ..< ContentTabConstants.maxTabs {
+        for index in 0 ..< ContentTabConstants.maxTabs - 1 {
             tabs.append(ContentTabItem(
                 id: ContentTabID(),
                 page: .home,
-                anchor: .homeDefault,
+                anchor: .directory(path: "/existing/\(index)"),
                 isPinned: false,
                 title: nil,
                 iconName: nil,
@@ -7738,19 +9551,109 @@ extension CTM001HandleContentTabTests {
         var state = FileManagerFeature.State()
         state.contentTabs.tabs = tabs
         state.contentTabs.activeTabID = activeID
+        let operationID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1))
+        let recorder = FileManagerProductMetricRecorder(makeOperationID: { operationID })
         let store = TestStore(initialState: state) {
             FileManagerFeature()
         } withDependencies: {
             $0.date = .constant(Date(timeIntervalSince1970: 1_700_000_000))
+            $0.fileManagerProductMetricsClient = recorder.client
         }
-        // store.exhaustivity = .off: bootstrap child action을 무시하고 max-limit no-op 검증에 집중한다.
+        // store.exhaustivity = .off: bootstrap child action을 무시하고 one-slot admission과 metric만 검증한다.
         store.exhaustivity = .off
 
         let tabID = try XCTUnwrap(store.state.contentTabs.activeTabID)
-        await store.send(.tabContent(tabID: tabID, action: .delegate(.openInNewTab(["/folder"]))))
+        await store.send(.tabContent(tabID: tabID, action: .delegate(.openInNewTab(["/first", "/second"]))))
+        await receiveOpenContentTabAction(store, anchor: .directory(path: "/first"), source: .contextMenu)
+        await receiveOpenContentTabAction(store, anchor: .directory(path: "/second"), source: .contextMenu)
 
         XCTAssertEqual(store.state.contentTabs.tabs.count, ContentTabConstants.maxTabs)
-        XCTAssertEqual(store.state.contentTabs.activeTabID, activeID)
+        XCTAssertEqual(store.state.contentTabs.tabs.last?.anchor, .directory(path: "/first"))
+        XCTAssertEqual(recorder.metrics(), [
+            .contentTabAction(
+                result: .success,
+                identity: .openNewContentTab,
+                source: .contextMenu,
+                operationID: operationID,
+            ),
+        ])
+    }
+
+    private func makeDirtyMetricCloseState() -> DirtyMetricCloseFixture {
+        let dirtyID = ContentTabID(rawValue: "metric-dirty-close")
+        let otherID = ContentTabID(rawValue: "metric-dirty-close-other")
+        var dirtyContent = FileManagerContentFeature.State()
+        dirtyContent.entryViewLayout.isCollectionMode = true
+        dirtyContent.collection.collectionContext = CollectionContext(
+            query: "current",
+            scopes: ["/tmp"],
+            conditions: [],
+        )
+        dirtyContent.collection.collectionSession.metadata.baseline = .init(
+            context: CollectionContext(query: "baseline", scopes: ["/tmp"], conditions: []),
+        )
+        let otherContent = FileManagerContentFeature.State()
+        var state = FileManagerFeature.State()
+        state.contentTabs = ContentTabState(
+            tabs: [
+                ContentTabItem(
+                    id: dirtyID,
+                    page: .collection,
+                    anchor: .collectionFile(url: URL(fileURLWithPath: "/tmp/metric.voycoll")),
+                    isPinned: false,
+                    title: "Collection",
+                    iconName: "rectangle.stack",
+                ),
+                ContentTabItem(
+                    id: otherID,
+                    page: .home,
+                    anchor: .homeDefault,
+                    isPinned: false,
+                    title: "Home",
+                    iconName: "house",
+                ),
+            ],
+            activeTabID: dirtyID,
+            recentlyClosed: nil,
+        )
+        state.content = dirtyContent
+        state.tabContentStates = [dirtyID: dirtyContent, otherID: otherContent]
+        state.syncContentTabSidebarItems()
+        return DirtyMetricCloseFixture(state: state, dirtyID: dirtyID, otherID: otherID)
+    }
+
+    private func makeBlockedSourceAwareCloseFixture() -> BlockedSourceAwareCloseFixture {
+        let pinnedID = ContentTabID(rawValue: "blocked-source-pinned")
+        let otherID = ContentTabID(rawValue: "blocked-source-other")
+        let record = ContentTabPinnedRecord(
+            id: pinnedID.rawValue,
+            page: .directory,
+            anchor: .directory(path: "/blocked-source"),
+            title: "Pinned",
+            iconName: "folder",
+            pinnedAt: Date(timeIntervalSince1970: 443),
+        )
+        var state = ContentTabTestStateBuilder.pinnedDirectoryWindowState(
+            tabID: pinnedID,
+            path: "/blocked-source",
+            record: record,
+        )
+        state.tabContentStates[pinnedID] = state.content
+        state.contentTabs.tabs.append(ContentTabItem(
+            id: otherID,
+            page: .home,
+            anchor: .homeDefault,
+            isPinned: false,
+            title: "Home",
+            iconName: "house",
+        ))
+        state.contentTabs.activeTabID = otherID
+        state.content = .init()
+        state.tabContentStates[otherID] = state.content
+        state.lastConfirmedTopNavigationOrder = .init(items: [.contentTab(pinnedID)])
+        state.optimisticTopNavigationOrder = state.lastConfirmedTopNavigationOrder
+        state.syncContentTabSidebarItems()
+        return BlockedSourceAwareCloseFixture(state: state, pinnedID: pinnedID, otherID: otherID)
     }
 }
 

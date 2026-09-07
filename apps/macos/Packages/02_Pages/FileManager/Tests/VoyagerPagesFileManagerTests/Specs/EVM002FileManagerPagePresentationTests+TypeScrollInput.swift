@@ -26,7 +26,7 @@ extension EVM002FileManagerPagePresentationTests {
 
         await store.send(.view(.handleTextInput("가")))
         await store.receive {
-            guard case let .entryViewLayout(.view(.setTypeScrollTarget(id))) = $0 else { return false }
+            guard case let .entryViewLayout(.internal(.selectTypeScrollTarget(id))) = $0 else { return false }
             return id == first.id
         }
     }
@@ -45,7 +45,7 @@ extension EVM002FileManagerPagePresentationTests {
 
         await store.send(.view(.handleTextInput("A")))
         await store.receive {
-            guard case let .entryViewLayout(.view(.setTypeScrollTarget(id))) = $0 else { return false }
+            guard case let .entryViewLayout(.internal(.selectTypeScrollTarget(id))) = $0 else { return false }
             return id == alpha.id
         }
     }
@@ -61,7 +61,7 @@ extension EVM002FileManagerPagePresentationTests {
 
         await store.send(.view(.handleTextInput("é")))
         await store.receive {
-            guard case let .entryViewLayout(.view(.setTypeScrollTarget(id))) = $0 else { return false }
+            guard case let .entryViewLayout(.internal(.selectTypeScrollTarget(id))) = $0 else { return false }
             return id == ete.id
         }
     }
@@ -94,16 +94,18 @@ extension EVM002FileManagerPagePresentationTests {
         await store.send(.view(.handleTextInput("z")))
     }
 
-    /// EVM-002-type_scroll_input: collection replacement loading 중 기존 pending target이 있어도
-    /// 이후 유효한 unmatched 입력이 최신 의도가 되므로 stale target을 reset한다.
-    /// - 사전 조건: collection replacement loading으로 List/Grid가 unmount됐고 Alpha target이 pending이다.
-    /// - 기대 결과: 입력 "z"가 resetTypeScrollTarget을 발행해 pending target을 nil로 만든다.
-    func testHandleTextInputUnmatchedResetsPendingTargetDuringCollectionReplacementLoading() async {
+    /// EVM-002-type_scroll_input: 매칭되는 엔트리가 없으면 완전한 no-op이다.
+    /// selection, scroll intent, pending target을 포함한 상태를 전부 보존하고 액션도 발행하지 않는다.
+    /// - 사전 조건: collection replacement loading 중이고 Alpha가 유일 선택 + pending target이다.
+    /// - 기대 결과: 입력 "z"가 어떤 액션도 발행하지 않고 모든 상태가 불변이다.
+    func testHandleTextInputNoMatchIsFullNoOpPreservingSelectionAndPendingTarget() async {
         let alpha = EntryModel.temporaryFolder(id: "/root/alpha", name: "Alpha")
         var state = FileManagerContentState()
         state.navigation.seedInitialFolderPath("/root")
         state.entryViewLayout.entries = [alpha]
         state.entryViewLayout.selectedIds = [alpha.id]
+        state.entryViewLayout.lastSelectedId = alpha.id
+        state.entryViewLayout.rangeAnchorId = alpha.id
         state.entryViewLayout.pendingTypeScrollTargetId = alpha.id
         state.entryViewLayout.isCollectionMode = true
         state.entryViewLayout.isCollectionContentLoading = true
@@ -123,16 +125,184 @@ extension EVM002FileManagerPagePresentationTests {
         XCTAssertTrue(ContentPagePresentationPolicy.collectionReplacementLoading.allowsKeyboardCommandDispatch)
 
         await store.send(.view(.handleTextInput("z")))
-        await store.receive {
-            guard case .entryViewLayout(.view(.resetTypeScrollTarget)) = $0 else { return false }
-            return true
+
+        XCTAssertEqual(store.state.entryViewLayout.selectedIds, [alpha.id])
+        XCTAssertEqual(store.state.entryViewLayout.lastSelectedId, alpha.id)
+        XCTAssertEqual(store.state.entryViewLayout.rangeAnchorId, alpha.id)
+        XCTAssertFalse(store.state.entryViewLayout.shouldScrollToSelection)
+        XCTAssertEqual(store.state.entryViewLayout.pendingTypeScrollTargetId, alpha.id)
+    }
+
+    /// EVM-002-type_scroll_input: 같은 정규화 문자를 반복 입력하면 다음 match로 이동하고 마지막 뒤 첫 match로 wrap한다.
+    /// composed store로 실제 selection 상태 진행을 검증한다 (EVM-002 Type-to-Navigate Scenario B).
+    /// - 사전 조건: /root 폴더 페이지, visible 순서 [Alpha, Archive, Asset], selection 없음.
+    /// - 기대 결과: A 입력마다 Alpha → Archive → Asset → Alpha로 단일 선택이 순환하고 각 변경마다 selectionChanged가
+    ///   정확히 한 번 발행된다.
+    func testHandleTextInputRepeatedSameCharacterCyclesSelectionAndWraps() async {
+        let alpha = EntryModel.temporaryFolder(id: "/root/alpha", name: "Alpha")
+        let archive = EntryModel.temporaryFolder(id: "/root/archive", name: "Archive")
+        let asset = EntryModel.temporaryFolder(id: "/root/asset", name: "Asset")
+        let store = makeTypeNavigationStore(entries: [alpha, archive, asset])
+
+        for expected in [alpha, archive, asset, alpha] {
+            await store.send(.view(.handleTextInput("A")))
+            await store.receive {
+                guard case let .entryViewLayout(.internal(.selectTypeScrollTarget(id))) = $0 else { return false }
+                return id == expected.id
+            } assert: {
+                $0.entryViewLayout.pendingTypeScrollTargetId = expected.id
+                $0.entryViewLayout.selectedIds = [expected.id]
+                $0.entryViewLayout.lastSelectedId = expected.id
+                $0.entryViewLayout.rangeAnchorId = expected.id
+            }
+            await store.receive(\.entryViewLayout.delegate.selectionChanged)
+            XCTAssertEqual(store.state.entryViewLayout.selectedIds, [expected.id])
+            XCTAssertEqual(store.state.entryViewLayout.lastSelectedId, expected.id)
+            XCTAssertEqual(store.state.entryViewLayout.rangeAnchorId, expected.id)
+            XCTAssertEqual(store.state.entryViewLayout.pendingTypeScrollTargetId, expected.id)
+            XCTAssertFalse(store.state.entryViewLayout.shouldScrollToSelection)
         }
+    }
+
+    /// EVM-002-type_scroll_input: 다른 문자를 입력하면 이전 sequence와 무관하게 새 문자의 첫 match부터 시작한다.
+    /// - 사전 조건: 반복 입력으로 Archive가 선택된 뒤 "b"를 입력한다.
+    /// - 기대 결과: 첫 b match인 Beta가 선택된다.
+    func testHandleTextInputChangedCharacterStartsFirstMatchOfNewInput() async {
+        let alpha = EntryModel.temporaryFolder(id: "/root/alpha", name: "Alpha")
+        let archive = EntryModel.temporaryFolder(id: "/root/archive", name: "Archive")
+        let beta = EntryModel.temporaryFolder(id: "/root/beta", name: "Beta")
+        let store = makeTypeNavigationStore(entries: [alpha, archive, beta])
+
+        await store.send(.view(.handleTextInput("A")))
+        await store.receive {
+            guard case let .entryViewLayout(.internal(.selectTypeScrollTarget(id))) = $0 else { return false }
+            return id == alpha.id
+        } assert: {
+            $0.entryViewLayout.pendingTypeScrollTargetId = alpha.id
+            $0.entryViewLayout.selectedIds = [alpha.id]
+            $0.entryViewLayout.lastSelectedId = alpha.id
+            $0.entryViewLayout.rangeAnchorId = alpha.id
+        }
+        await store.receive(\.entryViewLayout.delegate.selectionChanged)
+
+        await store.send(.view(.handleTextInput("A")))
+        await store.receive {
+            guard case let .entryViewLayout(.internal(.selectTypeScrollTarget(id))) = $0 else { return false }
+            return id == archive.id
+        } assert: {
+            $0.entryViewLayout.pendingTypeScrollTargetId = archive.id
+            $0.entryViewLayout.selectedIds = [archive.id]
+            $0.entryViewLayout.lastSelectedId = archive.id
+            $0.entryViewLayout.rangeAnchorId = archive.id
+        }
+        await store.receive(\.entryViewLayout.delegate.selectionChanged)
+
+        await store.send(.view(.handleTextInput("b")))
+        await store.receive {
+            guard case let .entryViewLayout(.internal(.selectTypeScrollTarget(id))) = $0 else { return false }
+            return id == beta.id
+        } assert: {
+            $0.entryViewLayout.pendingTypeScrollTargetId = beta.id
+            $0.entryViewLayout.selectedIds = [beta.id]
+            $0.entryViewLayout.lastSelectedId = beta.id
+            $0.entryViewLayout.rangeAnchorId = beta.id
+        }
+        await store.receive(\.entryViewLayout.delegate.selectionChanged)
+
+        XCTAssertEqual(store.state.entryViewLayout.selectedIds, [beta.id])
+    }
+
+    /// EVM-002-type_scroll_input: mouse/arrow로 선택한 matching 단일 selection은 반복 순환 anchor가 된다.
+    /// - 사전 조건: Archive가 사전 선택돼 있다.
+    /// - 기대 결과: "A" 입력은 Archive 다음 match인 Asset을 선택한다.
+    func testHandleTextInputMatchingSelectionAnchorsNextMatch() async {
+        let alpha = EntryModel.temporaryFolder(id: "/root/alpha", name: "Alpha")
+        let archive = EntryModel.temporaryFolder(id: "/root/archive", name: "Archive")
+        let asset = EntryModel.temporaryFolder(id: "/root/asset", name: "Asset")
+        var state = FileManagerContentState()
+        state.navigation.seedInitialFolderPath("/root")
+        state.entryViewLayout.entries = [alpha, archive, asset]
+        state.entryViewLayout.selectedIds = [archive.id]
+        state.entryViewLayout.lastSelectedId = archive.id
+        state.entryViewLayout.rangeAnchorId = archive.id
+        let store = makeTypeNavigationStore(state: state)
+
+        await store.send(.view(.handleTextInput("A")))
+        await store.receive {
+            guard case let .entryViewLayout(.internal(.selectTypeScrollTarget(id))) = $0 else { return false }
+            return id == asset.id
+        } assert: {
+            $0.entryViewLayout.pendingTypeScrollTargetId = asset.id
+            $0.entryViewLayout.selectedIds = [asset.id]
+            $0.entryViewLayout.lastSelectedId = asset.id
+            $0.entryViewLayout.rangeAnchorId = asset.id
+        }
+        await store.receive(\.entryViewLayout.delegate.selectionChanged)
+
+        XCTAssertEqual(store.state.entryViewLayout.selectedIds, [asset.id])
+    }
+
+    /// EVM-002-type_scroll_input: 다중 selection에서 유효한 입력은 첫 match 하나로 축소된다.
+    /// - 사전 조건: Alpha와 Beta가 선택돼 있다.
+    /// - 기대 결과: "A" 입력은 Alpha 단일 선택으로 교체된다.
+    func testHandleTextInputMultiSelectionFallsBackToFirstMatch() async {
+        let alpha = EntryModel.temporaryFolder(id: "/root/alpha", name: "Alpha")
+        let beta = EntryModel.temporaryFolder(id: "/root/beta", name: "Beta")
+        var state = FileManagerContentState()
+        state.navigation.seedInitialFolderPath("/root")
+        state.entryViewLayout.entries = [alpha, beta]
+        state.entryViewLayout.selectedIds = [alpha.id, beta.id]
+        state.entryViewLayout.lastSelectedId = beta.id
+        let store = makeTypeNavigationStore(state: state)
+
+        await store.send(.view(.handleTextInput("A")))
+        await store.receive {
+            guard case let .entryViewLayout(.internal(.selectTypeScrollTarget(id))) = $0 else { return false }
+            return id == alpha.id
+        } assert: {
+            $0.entryViewLayout.pendingTypeScrollTargetId = alpha.id
+            $0.entryViewLayout.selectedIds = [alpha.id]
+            $0.entryViewLayout.lastSelectedId = alpha.id
+            $0.entryViewLayout.rangeAnchorId = alpha.id
+        }
+        await store.receive(\.entryViewLayout.delegate.selectionChanged)
+
         XCTAssertEqual(store.state.entryViewLayout.selectedIds, [alpha.id])
     }
 
-    /// EVM-002-type_scroll_input: 기존 pending target 뒤의 matched 입력은 최신 matching target으로 교체한다.
-    /// - 사전 조건: Alpha target이 pending이고 visible entries에 Beta가 있다.
-    /// - 기대 결과: 입력 "b"가 setTypeScrollTarget(Beta)를 발행하고 selection은 유지된다.
+    /// EVM-002-type_scroll_input: 유일한 match를 반복 입력하면 같은 selection을 유지하고 중복 selectionChanged가 없다.
+    /// - 사전 조건: Alpha가 유일한 a-match다.
+    /// - 기대 결과: 두 번째 입력은 pending reveal만 다시 arm하고 delegate는 발행되지 않는다.
+    func testHandleTextInputSoleMatchRepeatEmitsNoDuplicateSelectionChanged() async {
+        let alpha = EntryModel.temporaryFolder(id: "/root/alpha", name: "Alpha")
+        let beta = EntryModel.temporaryFolder(id: "/root/beta", name: "Beta")
+        let store = makeTypeNavigationStore(entries: [beta, alpha])
+
+        await store.send(.view(.handleTextInput("A")))
+        await store.receive {
+            guard case let .entryViewLayout(.internal(.selectTypeScrollTarget(id))) = $0 else { return false }
+            return id == alpha.id
+        } assert: {
+            $0.entryViewLayout.pendingTypeScrollTargetId = alpha.id
+            $0.entryViewLayout.selectedIds = [alpha.id]
+            $0.entryViewLayout.lastSelectedId = alpha.id
+            $0.entryViewLayout.rangeAnchorId = alpha.id
+        }
+        await store.receive(\.entryViewLayout.delegate.selectionChanged)
+
+        await store.send(.view(.handleTextInput("A")))
+        await store.receive {
+            guard case let .entryViewLayout(.internal(.selectTypeScrollTarget(id))) = $0 else { return false }
+            return id == alpha.id
+        }
+
+        XCTAssertEqual(store.state.entryViewLayout.selectedIds, [alpha.id])
+        XCTAssertEqual(store.state.entryViewLayout.pendingTypeScrollTargetId, alpha.id)
+    }
+
+    /// EVM-002-type_scroll_input: matched 입력은 기존 pending target을 최신 match로 교체한다.
+    /// - 사전 조건: Alpha가 선택·pending이고 visible에 Beta가 있다.
+    /// - 기대 결과: "b" 입력이 Beta 선택·pending으로 교체한다.
     func testHandleTextInputMatchedReplacesExistingPendingTarget() async {
         let alpha = EntryModel.temporaryFolder(id: "/root/alpha", name: "Alpha")
         let beta = EntryModel.temporaryFolder(id: "/root/beta", name: "Beta")
@@ -140,17 +310,58 @@ extension EVM002FileManagerPagePresentationTests {
         state.navigation.seedInitialFolderPath("/root")
         state.entryViewLayout.entries = [alpha, beta]
         state.entryViewLayout.selectedIds = [alpha.id]
+        state.entryViewLayout.lastSelectedId = alpha.id
+        state.entryViewLayout.rangeAnchorId = alpha.id
         state.entryViewLayout.pendingTypeScrollTargetId = alpha.id
-        let store = TestStore(initialState: state) {
-            FileManagerContentKeyCommandReducer()
-        }
+        let store = makeTypeNavigationStore(state: state)
 
         await store.send(.view(.handleTextInput("b")))
         await store.receive {
-            guard case let .entryViewLayout(.view(.setTypeScrollTarget(id))) = $0 else { return false }
+            guard case let .entryViewLayout(.internal(.selectTypeScrollTarget(id))) = $0 else { return false }
             return id == beta.id
+        } assert: {
+            $0.entryViewLayout.pendingTypeScrollTargetId = beta.id
+            $0.entryViewLayout.selectedIds = [beta.id]
+            $0.entryViewLayout.lastSelectedId = beta.id
+            $0.entryViewLayout.rangeAnchorId = beta.id
         }
-        XCTAssertEqual(store.state.entryViewLayout.selectedIds, [alpha.id])
+        await store.receive(\.entryViewLayout.delegate.selectionChanged)
+
+        XCTAssertEqual(store.state.entryViewLayout.selectedIds, [beta.id])
+        XCTAssertEqual(store.state.entryViewLayout.pendingTypeScrollTargetId, beta.id)
+    }
+
+    /// EVM-002-type_scroll_input: grouped projection이 같은 logical id를 중복 노출해도 first visible occurrence
+    /// 기준 distinct 순서로 한 번씩만 순환한다.
+    /// - 사전 조건: 그룹 A와 B가 같은 Alpha id를 중복 투영하고 display 순서는 [Alpha, Alpha, Archive]다.
+    /// - 기대 결과: A 입력 반복이 Alpha → Archive → Alpha로 순환한다.
+    func testHandleTextInputDuplicateIDGroupedProjectionCyclesDistinctIDs() async {
+        let alpha = EntryModel.temporaryFolder(id: "/root/alpha", name: "Alpha")
+        let archive = EntryModel.temporaryFolder(id: "/root/archive", name: "Archive")
+        var state = FileManagerContentState()
+        state.navigation.seedInitialFolderPath("/root")
+        state.entryViewLayout.entries = [alpha, alpha, archive]
+        state.entryViewLayout.entryArrangements.groupKey = .name
+        state.entryViewLayout.entryArrangements.groupedItems = [
+            GroupedItems(groupName: "A", items: [alpha]),
+            GroupedItems(groupName: "B", items: [alpha, archive]),
+        ]
+        let store = makeTypeNavigationStore(state: state)
+
+        for expected in [alpha, archive, alpha] {
+            await store.send(.view(.handleTextInput("A")))
+            await store.receive {
+                guard case let .entryViewLayout(.internal(.selectTypeScrollTarget(id))) = $0 else { return false }
+                return id == expected.id
+            } assert: {
+                $0.entryViewLayout.pendingTypeScrollTargetId = expected.id
+                $0.entryViewLayout.selectedIds = [expected.id]
+                $0.entryViewLayout.lastSelectedId = expected.id
+                $0.entryViewLayout.rangeAnchorId = expected.id
+            }
+            await store.receive(\.entryViewLayout.delegate.selectionChanged)
+            XCTAssertEqual(store.state.entryViewLayout.selectedIds, [expected.id])
+        }
     }
 
     /// EVM-002-type_scroll_input: invalid/non-printable 입력은 기존 pending target을 보존한다.
@@ -187,7 +398,10 @@ extension EVM002FileManagerPagePresentationTests {
             charactersIgnoringModifiers: "c",
         ))))
         await store.receive {
-            guard case .entryViewLayout(.delegate(.executeCommand("clipboard.copySelectedItems"))) = $0 else {
+            guard case .entryViewLayout(.delegate(.executeCommand(
+                "clipboard.copySelectedItems",
+                source: .keyboardShortcut,
+            ))) = $0 else {
                 return false
             }
             return true
@@ -335,7 +549,7 @@ extension EVM002FileManagerPagePresentationTests {
 
         await store.send(.view(.handleTextInput("A")))
         await store.receive {
-            guard case let .entryViewLayout(.view(.setTypeScrollTarget(id))) = $0 else { return false }
+            guard case let .entryViewLayout(.internal(.selectTypeScrollTarget(id))) = $0 else { return false }
             return id == aaron.id
         }
     }
@@ -358,7 +572,7 @@ extension EVM002FileManagerPagePresentationTests {
 
         await store.send(.view(.handleTextInput("A")))
         await store.receive {
-            guard case let .entryViewLayout(.view(.setTypeScrollTarget(id))) = $0 else { return false }
+            guard case let .entryViewLayout(.internal(.selectTypeScrollTarget(id))) = $0 else { return false }
             return id == aaron.id
         }
     }
@@ -392,7 +606,7 @@ extension EVM002FileManagerPagePresentationTests {
 
         await store.send(.view(.handleTextInput("A")))
         await store.receive {
-            guard case let .entryViewLayout(.view(.setTypeScrollTarget(id))) = $0 else { return false }
+            guard case let .entryViewLayout(.internal(.selectTypeScrollTarget(id))) = $0 else { return false }
             return id == alphaChild.id
         }
     }
@@ -415,7 +629,7 @@ extension EVM002FileManagerPagePresentationTests {
 
         await store.send(.view(.handleTextInput("A")))
         await store.receive {
-            guard case let .entryViewLayout(.view(.setTypeScrollTarget(id))) = $0 else { return false }
+            guard case let .entryViewLayout(.internal(.selectTypeScrollTarget(id))) = $0 else { return false }
             return id == anna.id
         }
     }
@@ -430,6 +644,33 @@ extension EVM002FileManagerPagePresentationTests {
         state.entryViewLayout.entries = entries
         return TestStore(initialState: state) {
             FileManagerContentKeyCommandReducer()
+        }
+    }
+
+    /// type navigation composed store: KeyCommandReducer 뒤에 EntryViewLayoutFeature를 붙여
+    /// handleTextInput → matcher → selectTypeScrollTarget → reducer tuple/delegate까지의 실제 상태 진행을 검증한다.
+    @MainActor
+    private func makeTypeNavigationStore(
+        entries: [EntryModel],
+    ) -> TestStore<FileManagerContentState, FileManagerContentAction> {
+        var state = FileManagerContentState()
+        state.navigation.seedInitialFolderPath("/root")
+        state.entryViewLayout.entries = entries
+        return makeTypeNavigationStore(state: state)
+    }
+
+    /// 사전 구성된 state로 type navigation composed store를 만든다.
+    @MainActor
+    private func makeTypeNavigationStore(
+        state: FileManagerContentState,
+    ) -> TestStore<FileManagerContentState, FileManagerContentAction> {
+        TestStore(initialState: state) {
+            CombineReducers {
+                FileManagerContentKeyCommandReducer()
+                Scope(state: \.entryViewLayout, action: \.entryViewLayout) {
+                    EntryViewLayoutFeature()
+                }
+            }
         }
     }
 
@@ -585,7 +826,7 @@ extension EVM002FileManagerPagePresentationTests {
                 switch action {
                 case .view(.selectAllEntries):
                     state.entryViewLayout.selectedIds = Set(entries.map(\.id))
-                case let .entryViewLayout(.delegate(.executeCommand(command))):
+                case let .entryViewLayout(.delegate(.executeCommand(command, _))):
                     routedCommands.withValue { $0.append(command) }
                 case .entryViewLayout(.delegate(.startRename)):
                     routedCommands.withValue { $0.append("rename") }

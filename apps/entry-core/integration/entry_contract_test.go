@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -17,6 +16,7 @@ import (
 	entryruntime "github.com/voyager-labs/voyager-app/apps/entry-core/internal/runtime"
 	"github.com/voyager-labs/voyager-app/apps/entry-core/internal/source/fakeexternal"
 	"github.com/voyager-labs/voyager-app/apps/entry-core/internal/source/localfs"
+	"github.com/voyager-labs/voyager-app/apps/entry-core/internal/testfixture"
 	"github.com/voyager-labs/voyager-app/apps/entry-core/protocol/schema"
 )
 
@@ -65,10 +65,8 @@ func TestEntryContractUnifiedListResolve(t *testing.T) {
 func newUnifiedComposition(t *testing.T) unifiedComposition {
 	t.Helper()
 	localRoot := t.TempDir()
-	for _, name := range []string{"alpha.txt", "beta.txt"} {
-		if err := os.WriteFile(filepath.Join(localRoot, name), []byte(name), 0o600); err != nil {
-			t.Fatal(err)
-		}
+	for _, relativePath := range []string{"texts/plain/11.txt", "texts/plain/100.txt"} {
+		testfixture.CopyFile(t, filepath.Join(localRoot, filepath.Base(relativePath)), relativePath)
 	}
 	localAdapter, err := localfs.New(localfs.Config{Root: localRoot, Generation: "integration-local", CursorKey: bytes.Repeat([]byte{0x31}, 32)})
 	if err != nil {
@@ -215,7 +213,11 @@ func assertMixedPage(t *testing.T, composition unifiedComposition, page listPage
 			t.Fatalf("entry state/type/capabilities: %#v", entry)
 		}
 		if expectation.wantProperties {
-			if len(entry.EntrySnapshot.Properties) != 1 || entry.EntrySnapshot.Properties[0].PropertyID != "title" {
+			titleID, idErr := domainentry.RegistryPropertyID("title")
+			if idErr != nil {
+				t.Fatal(idErr)
+			}
+			if len(entry.EntrySnapshot.Properties) != 1 || entry.EntrySnapshot.Properties[0].PropertyID != titleID.String() {
 				t.Fatalf("external properties=%#v", entry.EntrySnapshot.Properties)
 			}
 		} else if len(entry.EntrySnapshot.Properties) != 0 {

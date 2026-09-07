@@ -138,7 +138,11 @@ Periodic unused code detection. CLI tool, not an MCP.
 
 Load `references/periphery.md` for scan commands and configuration.
 
-### 6. Parallelize independent calls
+### 6. Entry Core Atlas migrations
+
+After changing an Entry Core GORM model or migration, run `mise run entry-core-migration-validate` and a non-writing `mise exec -- atlas migrate diff --env gorm --format '{{ sql . "  " }}'` from `apps/entry-core`. If Atlas reports a checksum mismatch, run `mise exec -- atlas migrate hash --dir-format golang-migrate --dir file://internal/persistence/sqlite/migrations` before retrying; if it persists, stop and report the Atlas/dir-format incompatibility rather than hand-editing `atlas.sum`.
+
+### 7. Parallelize independent calls
 
 If you need unrelated CodeGraph questions, include their symbols and flow endpoints in one `codegraph_explore` query. Run independent `sg` searches in parallel when their patterns do not depend on each other.
 

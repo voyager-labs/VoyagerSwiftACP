@@ -10,6 +10,12 @@ import VoyagerFeaturesEntryOperations
 import VoyagerFeaturesEntryThumbnail
 import VoyagerShared
 
+struct EntryIdentityReplacementState: Equatable {
+    let plan: EntryIdentityReplacementPlan
+    var projectedPairIndexes: Set<Int> = []
+    var sourceFolderIDs: Set<EntryModel.ID> = []
+}
+
 @ObservableState
 public struct EntryViewLayoutState: Equatable {
     public enum Mode: String, Equatable, Codable, Sendable {
@@ -30,6 +36,14 @@ public struct EntryViewLayoutState: Equatable {
     public var entryThumbnail: EntryThumbnailFeature.State = .init()
     public var entryArrangements: EntryArrangementsFeature.State = .init()
     public var hierarchy: EntryListHierarchyState = .init()
+    /// The widget-owned visual half of a filesystem identity replacement. The page owns
+    /// operation correlation; this state owns retained rows, selection migration, and cleanup.
+    var identityReplacement: EntryIdentityReplacementState?
+
+    public var isIdentityReplacementActive: Bool {
+        identityReplacement != nil
+    }
+
     public var outlineProjectionRevision: Int = 0
     public var trashDirectoryPath: String?
 

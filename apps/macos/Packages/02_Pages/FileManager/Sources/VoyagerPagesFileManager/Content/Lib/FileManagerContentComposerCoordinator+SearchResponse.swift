@@ -14,7 +14,7 @@ extension FileManagerContentComposerCoordinator {
     ) -> Effect<FileManagerContentAction>? {
         switch action {
         case let .internal(.searchResponse(requestID, .success(response))):
-            handleSearchResponseSuccess(
+            return handleSearchResponseSuccess(
                 requestID: requestID,
                 response: response,
                 state: &state,
@@ -22,14 +22,22 @@ extension FileManagerContentComposerCoordinator {
             )
 
         case let .internal(.filtersResponse(requestID, .success(response))):
-            handleFiltersResponseSuccess(
+            if let error = response.error {
+                return handleFiltersResponseFailure(
+                    requestID: requestID,
+                    error: SearchResponsePayloadError(payload: error),
+                    state: &state,
+                    dependencies: dependencies,
+                )
+            }
+            return handleFiltersResponseSuccess(
                 requestID: requestID,
                 response: response,
                 state: &state,
             )
 
         case let .internal(.searchResponse(requestID, .failure(error))):
-            handleSearchResponseFailure(
+            return handleSearchResponseFailure(
                 requestID: requestID,
                 error: error,
                 state: &state,
@@ -37,7 +45,7 @@ extension FileManagerContentComposerCoordinator {
             )
 
         case let .internal(.filtersResponse(requestID, .failure(error))):
-            handleFiltersResponseFailure(
+            return handleFiltersResponseFailure(
                 requestID: requestID,
                 error: error,
                 state: &state,
@@ -45,7 +53,7 @@ extension FileManagerContentComposerCoordinator {
             )
 
         default:
-            nil
+            return nil
         }
     }
 
@@ -59,8 +67,19 @@ extension FileManagerContentComposerCoordinator {
             return .none
         }
         guard let error = response.error else {
+            guard state.isCollectionMode,
+                  let baseline = state.composer.submittedSearchFilters,
+                  ComposerQueryFeedbackPolicy.shouldSkipApplyFilters(response: response, baseline: baseline),
+                  let nextContext = state.composer.collectionContext,
+                  nextContext != state.collection.collectionContext
+            else {
+                return .none
+            }
+            // Query search returns a filter preview, so no-op success must update only the canonical draft.
+            state.collection.collectionContext = nextContext
             return .none
         }
+
         let searchEffect = handleSearchFailure(
             error: SearchResponsePayloadError(payload: error),
             title: "Unable to Run Collection Search",
@@ -102,9 +121,10 @@ extension FileManagerContentComposerCoordinator {
         state: inout FileManagerContentState,
         dependencies: Dependencies,
     ) -> Effect<FileManagerContentAction>? {
-        guard state.composer.lastAcceptedFiltersRequestID == requestID else {
+        guard state.composer.lastFailedFiltersRequestID == requestID else {
             return .none
         }
+        state.composer.lastFailedFiltersRequestID = nil
         let title = state.composer.pendingSearchQuery == nil
             ? "Unable to Apply Collection Filters"
             : "Unable to Run Collection Search"
@@ -202,6 +222,19 @@ extension FileManagerContentComposerCoordinator {
         )
     }
 
+    private static func synchronizeOpenedCollectionDraftAfterFailure(
+        state: inout FileManagerContentState,
+    ) {
+        guard state.isCollectionMode,
+              state.collection.collectionSession.document?.url != nil,
+              let composerContext = state.composer.collectionContext
+        else {
+            return
+        }
+        let query = state.composer.pendingSearchQuery ?? composerContext.query
+        state.collection.collectionContext = state.composer.collectionContext(query: query)
+    }
+
     private static func handleSearchFailure(
         error: Error,
         title: String,
@@ -209,6 +242,7 @@ extension FileManagerContentComposerCoordinator {
         dependencies: Dependencies,
     ) -> Effect<FileManagerContentAction> {
         guard state.collection.collectionSession.phase.isOpening else {
+            synchronizeOpenedCollectionDraftAfterFailure(state: &state)
             return .send(.composer(.clearPendingSearchQuery))
         }
         let collectionAlertClient = dependencies.collectionAlertClient

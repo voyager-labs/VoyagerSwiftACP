@@ -5,6 +5,7 @@ import VoyagerFeaturesEntryArrangements
 import VoyagerShared
 
 public struct AppPreferencesState: Equatable, Sendable {
+    public var defaultStartPage: StartPage = .home
     public var showHiddenFiles: Bool = false
     public var viewLayoutMode: ViewLayoutMode = .list
     public var sortKey: SortKey = .name

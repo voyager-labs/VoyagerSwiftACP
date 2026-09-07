@@ -171,10 +171,10 @@ func makeRequestLock(
         runID: request.context.runID,
         context: request.context,
         request: request,
-        persistenceTranscriptHistory: persistenceTranscriptHistory,
         selectedModelHandle: selectedHandle,
         selectedModelRow: selectedRow,
         assistantReplacementIndex: assistantReplacementIndex,
+        persistenceTranscriptHistory: persistenceTranscriptHistory,
         customTitle: customTitle,
         historyTruncation: AiChatHistoryTruncationMetadata(
             includedMessageCount: request.messages.count,
