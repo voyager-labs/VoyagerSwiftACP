@@ -1,67 +1,53 @@
 # ast-grep Lint Rules
 
-Structural lint rules for the Voyager codebase, organized by FSD segment.
+Use the version pinned in `mise.toml`. Rule severity is owned by each YAML file;
+never describe all rules as warnings or swallow a scan failure with `|| true`.
 
-## Directory Structure
+## Execution owner
 
-```
-.ast-grep/
-  rules/
-    <segment>/    ← Rules scoped to a specific FSD segment (model, reducer, ui, …)
-    common/       ← Rules that apply across all segments
-  utils/          ← (reserved) shared utilities
-  rule-tests/     ← (reserved) rule test snapshots
-sgconfig.yml      ← ruleDirs: .ast-grep/rules (recursive)
-```
+`python3 -m scripts.run_swift_checks --staged` is the read-only hook entrypoint.
+It exports the Git index, reads code and rule/config files from that snapshot,
+passes paths as argv (NUL-delimited Git discovery), and retains every failure.
+`--base-ref <ref>` reads HEAD content; `--working-tree` inspects local edits;
+`--all` selects tracked sources. These scopes must not be represented as equal.
+Changes to a rule/config expand the affected engine to all tracked Swift sources.
+No source change means notApplicable, not evidence that a tool was run.
 
-Rules are grouped by FSD segment. Each segment directory contains rules that
-apply **only** to that layer. Cross-cutting rules that apply everywhere go in
-`common/`.
+`--checks ast`, `--checks format`, and `--checks lint` select explicit stages.
+A partial-stage receipt does not prove compilation, native tests, or unselected
+stages. Missing tools/inputs/timeouts are blocked and return non-zero.
 
-## Segment Scope
+## Rule scopes
 
-| Segment    | Scan target                           | Description                                   |
-| ---------- | ------------------------------------- | --------------------------------------------- |
-| `common/`  | `apps/macos/**/*.swift` (excl. Tests) | Rules applicable to all layers                |
-| `model/`   | `apps/macos/**/*.swift` (excl. Tests) | Model layer conventions (State, Action, etc.) |
-| `reducer/` | `apps/macos/**/*.swift` (excl. Tests) | Reducer layer conventions (@Reducer, etc.)    |
-| `ui/`      | `**/Ui/*.swift` (excl. Tests)         | Ui layer constraints (no direct observation)  |
+- `model/`, `reducer/`, `common/`: production Swift files, including Ui sources.
+- `ui/`: production Swift files inside a `Ui/` path component.
+- Test files: SwiftFormat and the test SwiftLint config; production AST policies
+  do not apply to fixture definitions. Rule fixture code is tested separately.
+- Unknown rule directories fail closed until the runner has an explicit scope.
 
-New FSD segments (e.g. `api/`, `lib/`) can be added by creating a directory
-under `rules/` and updating the lefthook scan block accordingly.
+## Severity and proof limits
 
-## Execution
+Macro misuse and forbidden external access are errors. Inline State/Action,
+missing model aliases and case-path annotations are architectural review signals:
+small local reducers and opaque struct Actions are legitimate. Do not weaken an
+error solely to pass an unrelated edit. Promote a policy to an error only after
+its applicability is explicit and its valid/invalid corpus passes.
 
-- **Automatic**: lefthook pre-commit hook runs rules per segment
-    - `common/`, `model/`, `reducer/` → all non-test sources
-    - `ui/` → `*/Ui/*.swift` only (avoids false positives in Api/Infrastructure)
-- **Manual**: `mise exec -- ast-grep scan --rule .ast-grep/rules/<segment>/<rule>.yaml`
-- All rules use `severity: warning` + `|| true` — push is never blocked
+The Coordinator allowance for native observation is syntactic. It does not prove
+that a callback is geometry-only or that cleanup is correct. Reducer-owned domain
+observation stays behind clients; native bounds/frame observation can remain in
+the adapter with mount/unmount and late-callback tests. Do not wrap scroll events
+in new dependency clients solely to appease this lint rule.
 
-## Adding a New Rule
+## Adding/changing rules
 
-1. Determine which FSD segment the rule belongs to.
-    - If it applies to a single layer → use that segment's directory.
-    - If it applies everywhere → use `common/`.
-2. Create a YAML file in the chosen directory.
-3. Include: `id`, `language: swift`, `severity: warning`, `message` (Korean), `note` (English).
-4. Rules in `common/`, `model/`, and `reducer/` are picked up automatically by the
-   non-test scan loop. Rules in `ui/` are picked up by the Ui-only scan loop.
-   No lefthook changes needed for existing segments.
+1. Define applicability, severity, rationale and allowed cases.
+2. Add valid, invalid and bypass/descendant cases in `.ast-grep/rule-tests/`.
+3. Run `mise exec -- ast-grep test --skip-snapshot-tests` (match/no-match corpus).
+4. Run `python3 -m scripts.run_swift_checks --all --checks ast` and inspect impact.
+5. Keep all source and fixture failures visible. Regex/AST matching is not a
+   type checker or a complete single-writer/cancellation proof.
 
-## Current Rules
-
-### model/
-
-- `action-missing-casepathable` — Action enum missing @CasePathable annotation
-- `observable-state-on-typealias` — @ObservableState applied to non-concrete type
-
-### reducer/
-
-- `reducer-missing-typealias` — @Reducer struct missing State/Action typealias
-- `nested-state-in-reducer` — State/Action defined inline inside @Reducer
-
-### ui/
-
-- `ui-direct-observation` — Direct NotificationCenter usage in Ui files
-- `ui-direct-userdefaults` — Direct UserDefaults.standard usage in Ui files
+`sgconfig.yml` contains only directories that actually exist. The PR workflow
+runs the same pinned ast-grep release through npm as a Linux installation adapter;
+it does not install a second repository dependency or change the version policy.

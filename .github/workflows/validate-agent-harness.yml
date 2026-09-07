@@ -16,7 +16,14 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
-
+      - name: Validator regression tests
+        run: python3 -m unittest discover -s scripts/tests
+      - name: AST rule regression fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          AST_GREP_VERSION="$(python3 -c 'import tomllib; print(tomllib.load(open("mise.toml", "rb"))["tools"]["github:ast-grep/ast-grep"]["version"])')"
+          npm exec --yes --package="@ast-grep/cli@${AST_GREP_VERSION}" -- ast-grep test --skip-snapshot-tests
       - name: Validate changed harness contracts
         shell: bash
         env:

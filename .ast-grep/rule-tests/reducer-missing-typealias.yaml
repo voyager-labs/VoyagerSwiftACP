@@ -1,0 +1,22 @@
+id: reducer-missing-typealias
+valid:
+  - |
+    @Reducer
+    struct Good {
+      typealias State = S
+      typealias Action = A
+    }
+  - struct Ordinary { let value: Int }
+invalid:
+  - |
+    @Reducer
+    struct Missing {}
+  - |
+    @Reducer
+    struct MissingAction { typealias State = S }
+  - |
+    @Reducer
+    struct MissingState { typealias Action = A }
+  - |
+    @Reducer
+    struct Parent { struct Child { typealias State = S; typealias Action = A } }

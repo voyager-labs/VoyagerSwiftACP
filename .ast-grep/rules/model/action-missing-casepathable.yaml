@@ -1,19 +1,21 @@
 id: action-missing-casepathable
 language: swift
-severity: error
-message: "Action enum에 @CasePathable 속성이 누락되었습니다."
-note: >
-  Every Action enum must be annotated with @CasePathable and conform to CasePathable.
-  TCA's Scope, IfLet, and Switch all rely on CasePathable for key-path-based decomposition.
-  Correct:
-    @CasePathable
-    public enum MyAction: CasePathable, Sendable { ... }
+severity: warning
+message: Action enum의 case-path 사용 여부를 확인하세요. opaque struct Action에는 이 규칙을 적용하지 않습니다.
+note: Enum-only policy hint. Case-path annotations are required only for the decomposition
+  APIs that use them; compiler/tests own that proof.
 rule:
   kind: class_declaration
-  has:
-    field: name
-    regex: "Action$"
-  not:
-    has:
-      stopBy: end
-      pattern: "@CasePathable"
+  all:
+  - has:
+      field: declaration_kind
+      regex: ^enum$
+  - has:
+      field: name
+      regex: Action$
+  - not:
+      has:
+        kind: modifiers
+        has:
+          pattern: '@CasePathable'
+          stopBy: end

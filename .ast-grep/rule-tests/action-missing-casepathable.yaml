@@ -1,0 +1,12 @@
+id: action-missing-casepathable
+valid:
+  - |
+    @CasePathable
+    public enum ExampleAction { case tapped }
+  - |
+    public struct EntryPropertiesAction { enum Kind { case execute }; let kind: Kind }
+  - enum Ordinary { case value }
+invalid:
+  - public enum ExampleAction { case tapped }
+  - |
+    public enum ParentAction { @CasePathable enum ChildAction { case tapped }; case child(ChildAction) }
