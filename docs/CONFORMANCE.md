@@ -13,23 +13,23 @@ termination are out of scope (VOY-887 / VOY-888).
 
 JSON-RPC 2.0 envelope, strict:
 
-| Contract | Behavior |
-|---|---|
-| `jsonrpc` | required, exactly `"2.0"` |
-| Request | `method` + `id` present; `params` omitted, object, or array |
-| Notification | `method` present, `id` key absent entirely |
-| Response | `id` present, exactly one of `result` / `error` |
-| `result: null` | valid success result, distinct from a missing key |
-| Request ID | string, signed 64-bit integer, or null |
-| Invalid ID | bool / object / array / fraction rejected |
-| Outgoing ID | monotonically increasing integers; never reused; exhaustion is a typed error (`requestIDExhausted`), no wrap |
-| Unknown fields | ignored on decode |
-| Error payload | `code` + `message` required, `data` optional, preserved |
-| Batch arrays | rejected (frames must be a JSON object) |
-| `protocolVersion` | integer `0...65535`; strings, null, booleans rejected |
-| Client capabilities | omitted fields default to "not supported"; wrong-typed booleans rejected |
-| `AnyCodable` | unsupported Swift values throw `EncodingError` instead of silently encoding `null` |
-| `params: null` | rejected (neither omitted nor structured) — upstream-compat change vs. earlier leniency |
+| Contract            | Behavior                                                                                                     |
+| ------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `jsonrpc`           | required, exactly `"2.0"`                                                                                    |
+| Request             | `method` + `id` present; `params` omitted, object, or array                                                  |
+| Notification        | `method` present, `id` key absent entirely                                                                   |
+| Response            | `id` present, exactly one of `result` / `error`                                                              |
+| `result: null`      | valid success result, distinct from a missing key                                                            |
+| Request ID          | string, signed 64-bit integer, or null                                                                       |
+| Invalid ID          | bool / object / array / fraction rejected                                                                    |
+| Outgoing ID         | monotonically increasing integers; never reused; exhaustion is a typed error (`requestIDExhausted`), no wrap |
+| Unknown fields      | ignored on decode                                                                                            |
+| Error payload       | `code` + `message` required, `data` optional, preserved                                                      |
+| Batch arrays        | rejected (frames must be a JSON object)                                                                      |
+| `protocolVersion`   | integer `0...65535`; strings, null, booleans rejected                                                        |
+| Client capabilities | omitted fields default to "not supported"; wrong-typed booleans rejected                                     |
+| `AnyCodable`        | unsupported Swift values throw `EncodingError` instead of silently encoding `null`                           |
+| `params: null`      | rejected (neither omitted nor structured) — upstream-compat change vs. earlier leniency                      |
 
 Upstream-compatible behavior changes (intentional, documented):
 
@@ -41,6 +41,8 @@ Upstream-compatible behavior changes (intentional, documented):
 ## 2. Framing (owner: `ACPFramingTests`, `ACPBoundedTransportTests`)
 
 - One frame = one UTF-8, LF-delimited JSON object on stdout/stdin.
+- Clients send undelimited JSON to `Transport.send`; stdio transports append
+  exactly one LF. A strict subprocess peer rejects duplicate delimiters.
 - CR immediately before LF is stripped (CRLF tolerance); escaped `\n` in strings is data.
 - Empty/whitespace-only frames, non-JSON frames, non-object frames, invalid UTF-8,
   and an incomplete frame at EOF are typed errors (`JSONLineFramer.FramingFailure`).
@@ -80,16 +82,21 @@ Upstream-compatible behavior changes (intentional, documented):
 - Delegates install synchronously with the connection (`setDelegate`), so callbacks
   that arrive before or during initialization are never missed.
 
-## 5. Sessions (owner: `ACPSessionLifecycleTests`)
+## 5. Sessions (owner: `ACPSessionLifecycleTests`, `ACPSessionLoadingTests`)
 
 - Session IDs are agent-generated and opaque.
-- `session/new`, `session/load`, `session/resume`, `session/fork` success registers
-  the session; a duplicate agent-issued session ID is a protocol failure that fails
-  the connection.
+- `session/new` success registers the session; reusing an already tracked ID in
+  a new-session response is a protocol failure. Successful load/resume/fork may
+  re-announce an existing ID; adoption preserves its current snapshot.
 - One active prompt per session: second prompt → `sessionBusy`; closed session →
   `sessionClosed`; unknown session → `unknownSession` without a wire write.
-- Known-variant `session/update` for an untracked session is a protocol failure;
-  unknown variants pass through raw without state changes.
+- Every `session/update` must target a tracked session or a pending load. Unknown variants for
+  tracked sessions pass through raw without state changes; malformed known
+  variants are protocol failures.
+- Pending `session/load` requests authorize history updates for their requested
+  session IDs before the response. Updates use the existing bounded notification
+  queue in wire order. Response, failure, timeout, cancellation, or shutdown removes
+  this temporary authorization; only successful load registers the session.
 - `session/cancel` is an idempotent notification (no id on the wire). A prompt turn
   ends only with its terminal response (`stopReason: "cancelled"`), which returns
   the session to `idle`; updates preceding the terminal response are still delivered.
@@ -112,7 +119,9 @@ Upstream-compatible behavior changes (intentional, documented):
   was confirmed. An uncooperative child is reaped via SIGKILL escalation.
 - Blocking pipe I/O never runs on a cooperative executor (serial write queue,
   event-driven readability handlers).
-- `shutdown()` is idempotent and returns the same immutable `TransportTermination`.
+- `shutdown()` is idempotent. Returned `TransportTermination` values are immutable;
+  the stored evidence preserves the first cause while incorporating subsequently
+  confirmed exit status, signal and cleanup completion.
 - `deinit` fails continuations synchronously, cancels owned tasks, and schedules
   transport cleanup; callers needing exit evidence must `await shutdown()`.
 - The default launch path never touches `ProcessRegistry.shared` disk state.
@@ -153,6 +162,8 @@ Upstream-compatible behavior changes (intentional, documented):
 
 ## 10. Verification commands
 
+From the app repository root:
+
 ```bash
 xcrun swift build --package-path apps/macos/Packages/VoyagerSwiftACP \
   -Xswiftc -strict-concurrency=complete -Xswiftc -warnings-as-errors
@@ -163,6 +174,26 @@ xcrun swift test --package-path apps/macos/Packages/VoyagerSwiftACP \
 
 Consumer evidence ("app consumer 검증 완료") additionally requires the real Xcode
 run of `VoyagerTests/VoyagerSwiftACPConsumerTests` and `mise run macos-build`.
+
+```bash
+mise run macos-test -- -only-testing:VoyagerTests/VoyagerSwiftACPConsumerTests
+mise run macos-build
+```
+
+In an independent fork checkout, run `xcrun swift test` with the same strict flags
+but without the app-relative `--package-path`. The app's mise tasks do not exist
+in that checkout. The consumer suite is app-hosted XCTest using a fake transport
+with the real public Client; it proves import/link and API consumption, not UI
+E2E, real-provider execution or subprocess transport. Subprocess evidence comes
+from the package's separate synthetic-agent suite.
+
+### Outbound framing regression
+
+App revision `8bda0277f` appended LF in both Client and `ACPProcessManager.write`.
+The client now sends undelimited JSON and leaves the delimiter to the transport.
+`ACPTransportLifecycleTests.testClientWritesExactlyOneLinePerRequest` exercises
+initialize/new/prompt against a subprocess that exits on an empty line. This
+regression fails on the duplicate-delimiter implementation.
 
 ## 11. Bridge handoff
 

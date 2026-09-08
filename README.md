@@ -26,6 +26,10 @@ Built for [Aizen](https://aizen.win) — a native macOS app for managing git wor
 
 ## Installation
 
+The APIs below describe the VOY-886 candidate. They become available from the
+remote `production` branch only after fork review and promotion. The app currently
+builds its local subtree at `apps/macos/Packages/VoyagerSwiftACP/`.
+
 Add to your `Package.swift`:
 
 ```swift
@@ -50,11 +54,11 @@ Then add the dependency to your target:
 
 ## Packages
 
-| Package | Description |
-|---------|-------------|
-| `ACPModel` | Platform-independent protocol types (shared by client and agent) |
-| `ACP` | Core client and agent runtime for ACP communication |
-| `ACPHTTP` | WebSocket transport for network-based communication |
+| Package       | Description                                                                                               |
+| ------------- | --------------------------------------------------------------------------------------------------------- |
+| `ACPModel`    | Platform-independent protocol types (shared by client and agent)                                          |
+| `ACP`         | Core client and agent runtime for ACP communication                                                       |
+| `ACPHTTP`     | WebSocket transport for network-based communication                                                       |
 | `ACPRegistry` | Agent discovery and installation from the [ACP Registry](https://github.com/agentclientprotocol/registry) |
 
 ## Quick Start
@@ -65,15 +69,22 @@ import ACP
 let client = Client()
 
 // Launch an ACP-compatible agent
-try await client.launch(agentPath: "/path/to/claude-code")
+try await client.launch(agentPath: "/path/to/acp-agent-or-bridge")
 
-// Initialize with capabilities
+// Advertise only callbacks implemented by this caller.
 let initResponse = try await client.initialize(
-    capabilities: ClientCapabilities(
-        fs: FileSystemCapabilities(readTextFile: true, writeTextFile: true),
-        terminal: true
-    )
+    capabilities: ClientCapabilities()
 )
+
+// Start one notification consumer before session operations or prompts.
+let notifications = await client.notifications
+let updates = Task {
+    for await notification in notifications {
+        // Decode and project updates in your adapter; avoid logging raw params.
+        _ = notification.method
+    }
+}
+defer { updates.cancel() }
 
 // Create a session
 let session = try await client.newSession(workingDirectory: "/path/to/project")
@@ -84,9 +95,18 @@ let response = try await client.sendPrompt(
     content: [.text(TextContent(text: "Explain this codebase"))]
 )
 
-// Cleanup
-await client.terminate()
+// Protocol cancellation and process cleanup are separate evidence.
+let termination = await client.shutdown()
+if !termination.cleanupComplete {
+    // The transport did not confirm complete direct-child cleanup.
+}
 ```
+
+The executable must actually implement ACP stdio. An ordinary provider CLI is
+not automatically an ACP agent. Install callback delegates before initialization
+when advertising filesystem or terminal capabilities. The notification stream
+supports one consumer; adapters own any fan-out. A stopped consumer can exhaust
+the bounded queue and cause a typed overflow failure.
 
 ## Client Lifecycle
 
@@ -179,9 +199,13 @@ default:
 
 ### 7. Handle Streaming Updates
 
+Install this consumer before sending prompts, not after waiting for a prompt
+response. Keep the task handle and cancel it when the connection is retired.
+
 ```swift
-Task {
-    for await notification in client.notifications {
+let notifications = await client.notifications
+let updates = Task {
+    for await notification in notifications {
         guard notification.method == "session/update",
               let params = notification.params,
               let data = try? JSONEncoder().encode(params),
@@ -239,8 +263,16 @@ let loaded = try await client.loadSession(
 ### 9. Cleanup
 
 ```swift
-await client.terminate()
+let termination = await client.shutdown()
+updates.cancel()
+print("Direct-child cleanup confirmed: \(termination.cleanupComplete)")
 ```
+
+`terminate()` remains a compatibility wrapper that discards the shutdown result.
+`cancelSession` sends a notification; cancellation acknowledgement is the original
+prompt's cancelled stop reason. It does not by itself prove that a child exited.
+Ordinary requests default to 30 seconds, prompts have no default deadline, and
+an unanswered cancelled prompt triggers connection shutdown after a 2-second grace.
 
 ## Implementing the Delegate
 
@@ -322,18 +354,18 @@ let content = try await fileDelegate.handleFileReadRequest("/path/to/file", sess
 
 The agent sends real-time updates via notifications:
 
-| Update Type | Description |
-|-------------|-------------|
-| `agentMessageChunk` | Streaming text from the agent |
-| `agentThoughtChunk` | Agent's internal reasoning (if exposed) |
-| `toolCall` | Tool invocation with status and content |
-| `toolCallUpdate` | Updates to an existing tool call |
-| `plan` | Task plan with entries and progress |
-| `currentModeUpdate` | Mode changed (code, chat, plan, etc.) |
-| `availableCommandsUpdate` | Available slash commands updated |
-| `configOptionUpdate` | Configuration options changed |
-| `sessionInfoUpdate` | Session title / metadata changed |
-| `usageUpdate` | Context window / cumulative cost changed |
+| Update Type               | Description                              |
+| ------------------------- | ---------------------------------------- |
+| `agentMessageChunk`       | Streaming text from the agent            |
+| `agentThoughtChunk`       | Agent's internal reasoning (if exposed)  |
+| `toolCall`                | Tool invocation with status and content  |
+| `toolCallUpdate`          | Updates to an existing tool call         |
+| `plan`                    | Task plan with entries and progress      |
+| `currentModeUpdate`       | Mode changed (code, chat, plan, etc.)    |
+| `availableCommandsUpdate` | Available slash commands updated         |
+| `configOptionUpdate`      | Configuration options changed            |
+| `sessionInfoUpdate`       | Session title / metadata changed         |
+| `usageUpdate`             | Context window / cumulative cost changed |
 
 ## Tool Calls
 
@@ -482,9 +514,11 @@ final class MyAgentDelegate: AgentDelegate, Sendable {
 }
 
 // Start the agent
-await agent.setDelegate(MyAgentDelegate(agent: agent))
+let delegate = MyAgentDelegate(agent: agent)
+await agent.setDelegate(delegate)
 await transport.start()
 await agent.start()
+withExtendedLifetime(delegate) {} // Agent holds its delegate weakly.
 ```
 
 ## WebSocket Transport
@@ -545,11 +579,11 @@ try await client.launch(
 
 The registry supports three distribution methods:
 
-| Type | Description |
-|------|-------------|
+| Type     | Description                                                                                     |
+| -------- | ----------------------------------------------------------------------------------------------- |
 | `binary` | Platform-specific executables (`.zip`, `.tar.gz`, `.tgz`, `.tar.bz2`, `.tbz2`, or raw binaries) |
-| `npx` | npm packages via `npx` |
-| `uvx` | Python packages via `uvx` |
+| `npx`    | npm packages via `npx`                                                                          |
+| `uvx`    | Python packages via `uvx`                                                                       |
 
 ```swift
 // Check available distribution for current platform
