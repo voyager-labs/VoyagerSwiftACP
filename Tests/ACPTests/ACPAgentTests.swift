@@ -79,6 +79,16 @@ final class ACPAgentTests: XCTestCase {
         await start.value
     }
 
+    /// Completes the initialize handshake so session-scoped requests route.
+    private func pushInitialize(_ transport: ScriptedTransport, id: Int = 1) async throws {
+        try await transport.pushJSON(
+            #"{"jsonrpc":"2.0","id":\#(id),"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{}}}"#,
+        )
+        let responseData = try await transport.nextSentFrame()
+        let response = try JSONDecoder().decode(JSONRPCResponse.self, from: responseData)
+        XCTAssertNil(response.error)
+    }
+
     func testCloseSessionInvokesCancelBeforeClose() async throws {
         let transport = ScriptedTransport()
         let agent = Agent(transport: transport)
@@ -91,6 +101,8 @@ final class ACPAgentTests: XCTestCase {
         defer {
             startTask.cancel()
         }
+
+        try await pushInitialize(transport)
 
         let request = JSONRPCRequest(
             id: .number(1),
@@ -107,6 +119,7 @@ final class ACPAgentTests: XCTestCase {
         XCTAssertEqual(response.id, .number(1))
         XCTAssertNil(response.error)
         XCTAssertEqual(events, [
+            "initialize:1",
             "cancel:session-123",
             "close:session-123",
         ])
@@ -127,6 +140,8 @@ final class ACPAgentTests: XCTestCase {
         defer {
             startTask.cancel()
         }
+
+        try await pushInitialize(transport)
 
         let request = JSONRPCRequest(
             id: .number(2),
@@ -150,6 +165,7 @@ final class ACPAgentTests: XCTestCase {
         XCTAssertEqual(response.id, .number(2))
         XCTAssertNil(response.error)
         XCTAssertEqual(events, [
+            "initialize:1",
             "resume:session-123:/tmp/project:/tmp/shared",
         ])
         XCTAssertEqual(resumeResponse.modes?.currentModeId, "chat")
@@ -171,6 +187,8 @@ final class ACPAgentTests: XCTestCase {
             startTask.cancel()
         }
 
+        try await pushInitialize(transport)
+
         let request = JSONRPCRequest(
             id: .number(3),
             method: "session/delete",
@@ -186,6 +204,7 @@ final class ACPAgentTests: XCTestCase {
         XCTAssertEqual(response.id, .number(3))
         XCTAssertNil(response.error)
         XCTAssertEqual(events, [
+            "initialize:1",
             "delete:session-123",
         ])
 
@@ -285,7 +304,10 @@ final class ACPAgentTests: XCTestCase {
             startTask.cancel()
         }
 
-        // NewSessionRequest requires `cwd`; this params object omits it.
+        // NewSessionRequest requires `cwd`; this params object omits it. The
+        // initialize handshake runs first so the failure is the params, not
+        // the initialization gate.
+        try await pushInitialize(transport)
         try await transport.pushJSON(#"{"jsonrpc":"2.0","id":12,"method":"session/new","params":{}}"#)
 
         let responseData = try await transport.nextSentFrame()
@@ -293,6 +315,128 @@ final class ACPAgentTests: XCTestCase {
 
         XCTAssertEqual(response.id, .number(12))
         XCTAssertEqual(response.error?.code, -32602)
+
+        await transport.finish()
+        _ = await startTask.result
+    }
+
+    /// Session work before a successful initialize handshake is refused
+    /// locally with -32002 and never reaches the delegate.
+    func testSessionNewBeforeInitializeAnswers32002() async throws {
+        let transport = ScriptedTransport()
+        let agent = Agent(transport: transport)
+        let delegate = RecordingAgentDelegate()
+        await agent.setDelegate(delegate)
+
+        let startTask = Task {
+            await agent.start()
+        }
+        defer {
+            startTask.cancel()
+        }
+
+        try await transport.pushJSON(
+            #"{"jsonrpc":"2.0","id":20,"method":"session/new","params":{"cwd":"/tmp"}}"#,
+        )
+
+        let responseData = try await transport.nextSentFrame()
+        let response = try JSONDecoder().decode(JSONRPCResponse.self, from: responseData)
+        let events = await delegate.recordedEvents()
+
+        XCTAssertEqual(response.id, .number(20))
+        XCTAssertEqual(response.error?.code, -32002)
+        XCTAssertTrue(events.isEmpty, "the delegate must not run before initialize")
+
+        await transport.finish()
+        _ = await startTask.result
+    }
+
+    /// A second initialize after the handshake completed is refused instead of
+    /// renegotiating capabilities concurrently.
+    func testDuplicateInitializeAfterHandshakeAnswers32600() async throws {
+        let transport = ScriptedTransport()
+        let agent = Agent(transport: transport)
+        let delegate = RecordingAgentDelegate()
+        await agent.setDelegate(delegate)
+
+        let startTask = Task {
+            await agent.start()
+        }
+        defer {
+            startTask.cancel()
+        }
+
+        try await pushInitialize(transport, id: 30)
+        try await transport.pushJSON(
+            #"{"jsonrpc":"2.0","id":31,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{}}}"#,
+        )
+
+        let responseData = try await transport.nextSentFrame()
+        let response = try JSONDecoder().decode(JSONRPCResponse.self, from: responseData)
+
+        XCTAssertEqual(response.id, .number(31))
+        XCTAssertEqual(response.error?.code, -32600)
+
+        await transport.finish()
+        _ = await startTask.result
+    }
+
+    /// A peer reusing an in-flight request id gets an explicit -32600 for the
+    /// duplicate instead of having both handlers race for one response.
+    func testDuplicateInflightRequestIDIsRefused() async throws {
+        let transport = ScriptedTransport()
+        let agent = Agent(transport: transport)
+        let delegate = RecordingAgentDelegate()
+        await agent.setDelegate(delegate)
+
+        let startTask = Task {
+            await agent.start()
+        }
+        defer {
+            startTask.cancel()
+        }
+
+        try await pushInitialize(transport, id: 40)
+
+        // Park the first request inside the delegate so the id is guaranteed
+        // to still be in flight when the duplicate arrives.
+        await delegate.suspendNextPromptTurn()
+
+        let prompt = JSONRPCRequest(
+            id: .number(41),
+            method: "session/prompt",
+            params: AnyCodable(["sessionId": "session-1", "prompt": [[
+                "type": "text",
+                "text": "hi",
+            ]]] as [String: any Sendable]),
+        )
+        try await transport.pushFrame(JSONEncoder().encode(prompt))
+        await delegate.waitUntilPromptStarted()
+
+        let duplicate = JSONRPCRequest(
+            id: .number(41),
+            method: "session/prompt",
+            params: AnyCodable(["sessionId": "session-1", "prompt": [[
+                "type": "text",
+                "text": "hi",
+            ]]] as [String: any Sendable]),
+        )
+        try await transport.pushFrame(JSONEncoder().encode(duplicate))
+
+        let refusalData = try await transport.nextSentFrame()
+        let refusal = try JSONDecoder().decode(JSONRPCResponse.self, from: refusalData)
+        XCTAssertEqual(refusal.id, .number(41))
+        XCTAssertEqual(refusal.error?.code, -32600)
+
+        // Releasing the original turn answers it normally.
+        await delegate.releasePromptTurn(with: SessionPromptResponse(stopReason: .cancelled))
+        let resultData = try await transport.nextSentFrame()
+        let resultResponse = try JSONDecoder().decode(JSONRPCResponse.self, from: resultData)
+        XCTAssertEqual(resultResponse.id, .number(41))
+        XCTAssertNil(resultResponse.error)
+        let resultPayload = try JSONEncoder().encode(XCTUnwrap(resultResponse.result))
+        let promptResponse = try JSONDecoder().decode(SessionPromptResponse.self, from: resultPayload)
+        XCTAssertEqual(promptResponse.stopReason, .cancelled)
 
         await transport.finish()
         _ = await startTask.result
@@ -365,7 +509,9 @@ final class ACPAgentTests: XCTestCase {
             startTask.cancel()
         }
 
-        // Suspend the prompt inside the delegate.
+        // Suspend the prompt inside the delegate. The initialize handshake
+        // runs first: session/prompt is refused before it without one.
+        try await pushInitialize(transport)
         await delegate.suspendNextPromptTurn()
 
         let prompt = JSONRPCRequest(
@@ -415,6 +561,9 @@ final class ACPAgentTests: XCTestCase {
         defer {
             startTask.cancel()
         }
+
+        // The handshake authorizes session, nes, and mcp extension work.
+        try await pushInitialize(transport)
 
         let forkRequest = JSONRPCRequest(
             id: .number(6),
@@ -508,6 +657,8 @@ final class ACPAgentTests: XCTestCase {
         defer {
             startTask.cancel()
         }
+
+        try await pushInitialize(transport)
 
         let reject = JSONRPCNotification(
             method: "nes/reject",

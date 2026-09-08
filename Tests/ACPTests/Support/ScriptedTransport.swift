@@ -40,11 +40,9 @@ final class ScriptedTransport: Transport, @unchecked Sendable {
     }
 
     func send(_ data: Data) async throws {
-        // Model stdio framing at the transport boundary, just like ProcessManager.
-        var frame = data
-        frame.append(0x0A)
-        let waiter = try recordOutbound(frame)
-        waiter?.resume(returning: frame)
+        // Capture the client/transport boundary before any wire framing.
+        let waiter = try recordOutbound(data)
+        waiter?.resume(returning: data)
     }
 
     /// Sync locking helper; returns a waiter to resume, if any.

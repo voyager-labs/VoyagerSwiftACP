@@ -37,10 +37,11 @@ final class ACPSessionLifecycleTests: XCTestCase {
         _ transport: ScriptedTransport,
         initResult: String = #"{"protocolVersion":1,"agentCapabilities":{"sessionCapabilities":{"close":{}}}}"#,
         configuration: ClientConfiguration = .default,
+        capabilities: ClientCapabilities? = nil,
     ) async throws -> Client {
         let client = Client(transport: transport, configuration: configuration)
         try await client.start()
-        let initTask = spawnInitializeTask(client, capabilities: Self.capabilities)
+        let initTask = spawnInitializeTask(client, capabilities: capabilities ?? Self.capabilities)
         _ = try await respondToNextRequest(transport, result: initResult)
         _ = try await initTask.value
         return client
@@ -212,6 +213,10 @@ final class ACPSessionLifecycleTests: XCTestCase {
             try await client.sendRequest(method: "test/barrier", params: [String: String](), timeout: 0.1)
         }
         _ = await barrier.result
+        // Pending RPC failure precedes transport cleanup; stream EOF marks completion.
+        var notifications = await client.notifications.makeAsyncIterator()
+        let notification = await notifications.next()
+        XCTAssertNil(notification)
         let state = await client.state
         XCTAssertEqual(state, .failed)
         _ = await client.shutdown()
@@ -471,6 +476,139 @@ final class ACPSessionLifecycleTests: XCTestCase {
             guard case .sessionClosed = error else {
                 return XCTFail("expected sessionClosed, got \(error)")
             }
+        }
+
+        await transport.finish()
+        _ = await client.shutdown()
+    }
+
+    /// Typed session APIs refuse to reach the wire before the initialize
+    /// handshake reaches `.ready`.
+    func testSessionApiBeforeReadyIsLocalRefusal() async throws {
+        let transport = ScriptedTransport()
+        let client = Client(transport: transport)
+        try await client.start()
+
+        do {
+            _ = try await client.setMode(sessionId: SessionId("s1"), modeId: "code")
+            XCTFail("expected notInitialized")
+        } catch let error as ClientError {
+            guard case .notInitialized = error else {
+                return XCTFail("expected notInitialized, got \(error)")
+            }
+        }
+        XCTAssertTrue(transport.allSentFrames().isEmpty, "the refusal must not write to the wire")
+
+        await transport.finish()
+        _ = await client.shutdown()
+    }
+
+    /// An agent error on `session/close` must surface as a thrown agent error,
+    /// never as an empty-success conversion of the session state.
+    func testCloseSessionErrorSurfacesAsAgentError() async throws {
+        let transport = ScriptedTransport()
+        let client = try await makeReadyClient(transport)
+        let sessionId = try await createSession(client, transport)
+
+        let closeTask = Task { try await client.closeSession(sessionId: sessionId) }
+        let frame = try await transport.nextSentFrame()
+        let request = try JSONDecoder().decode(JSONRPCRequest.self, from: frame)
+        try await transport.pushJSON(
+            #"{"jsonrpc":"2.0","id":\#(requestID(request.id)),"error":{"code":-32050,"message":"close failed"}}"#,
+        )
+
+        do {
+            _ = try await closeTask.value
+            XCTFail("expected agentError")
+        } catch let error as ClientError {
+            guard case .agentError = error else {
+                return XCTFail("expected agentError, got \(error)")
+            }
+        }
+
+        await transport.finish()
+        _ = await client.shutdown()
+    }
+
+    /// A nonempty authenticate result that fails to decode is a protocol
+    /// failure; it must never be reported as an authenticated success.
+    func testMalformedAuthenticateResultThrows() async throws {
+        let transport = ScriptedTransport()
+        let client = try await makeReadyClient(transport)
+
+        let authTask = Task { try await client.authenticate(authMethodId: "codex") }
+        let frame = try await transport.nextSentFrame()
+        let request = try JSONDecoder().decode(JSONRPCRequest.self, from: frame)
+        try await transport.pushJSON(
+            #"{"jsonrpc":"2.0","id":\#(requestID(request.id)),"result":{"unexpected":true}}"#,
+        )
+
+        do {
+            _ = try await authTask.value
+            XCTFail("expected invalidResponse for a malformed auth result")
+        } catch let error as ClientError {
+            guard case .invalidResponse = error else {
+                return XCTFail("expected invalidResponse, got \(error)")
+            }
+        }
+
+        await transport.finish()
+        _ = await client.shutdown()
+    }
+
+    /// A nonempty `session/load` result matching no load schema is a protocol
+    /// failure: the session must not be registered as if the load succeeded.
+    func testMalformedLoadResultThrowsInsteadOfRegisteringSession() async throws {
+        let transport = ScriptedTransport()
+        let client = try await makeReadyClient(transport)
+
+        let loadTask = Task {
+            try await client.loadSession(sessionId: SessionId("remote-1"), cwd: "/tmp")
+        }
+        let frame = try await transport.nextSentFrame()
+        let request = try JSONDecoder().decode(JSONRPCRequest.self, from: frame)
+        try await transport.pushJSON(
+            #"{"jsonrpc":"2.0","id":\#(requestID(request.id)),"result":{"sessionId":42}}"#,
+        )
+
+        do {
+            _ = try await loadTask.value
+            XCTFail("expected invalidResponse for a malformed load result")
+        } catch let error as ClientError {
+            guard case .invalidResponse = error else {
+                return XCTFail("expected invalidResponse, got \(error)")
+            }
+        }
+
+        let snapshot = await client.sessionSnapshot(for: SessionId("remote-1"))
+        XCTAssertNil(snapshot, "Malformed load must not register a session")
+
+        await transport.finish()
+        _ = await client.shutdown()
+    }
+
+    /// Inbound `fs`/`terminal` requests beyond the capabilities this client
+    /// advertised are refused before reaching the delegate.
+    func testUnnegotiatedPrivilegedRequestsAreRefused() async throws {
+        let transport = ScriptedTransport()
+        let capabilities = ClientCapabilities(
+            fs: FileSystemCapabilities(readTextFile: true, writeTextFile: false),
+            terminal: false,
+        )
+        let client = try await makeReadyClient(transport, capabilities: capabilities)
+
+        try await transport.pushJSON(
+            #"{"jsonrpc":"2.0","id":900,"method":"fs/write_text_file","params":{"path":"/tmp/x","content":"x"}}"#,
+        )
+        try await transport.pushJSON(
+            #"{"jsonrpc":"2.0","id":901,"method":"terminal/create","params":{"command":"ls","sessionId":"s"}}"#,
+        )
+
+        for expectedID in [900, 901] {
+            let responseData = try await transport.nextSentFrame()
+            let response = try JSONDecoder().decode(JSONRPCResponse.self, from: responseData)
+            XCTAssertEqual(response.id, .number(expectedID))
+            XCTAssertEqual(response.error?.code, -32601, "unnegotiated privileged request must be refused")
         }
 
         await transport.finish()

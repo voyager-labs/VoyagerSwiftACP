@@ -35,7 +35,10 @@ public extension Client {
             let data = try encoder.encode(result)
             return try decoder.decode(AuthenticateResponse.self, from: data)
         } catch {
-            return AuthenticateResponse(success: true, error: nil)
+            // Only nil/null/empty results are compatibility successes; a
+            // nonempty result that fails to decode is a protocol failure and
+            // must never be reported as an authenticated success.
+            throw ClientError.invalidResponse
         }
     }
 
@@ -43,6 +46,7 @@ public extension Client {
         sessionId: SessionId,
         modeId: String,
     ) async throws -> SetModeResponse {
+        try ensureReadyForSessionOperation()
         let request = SetModeRequest(
             sessionId: sessionId,
             modeId: modeId,
@@ -78,6 +82,7 @@ public extension Client {
         sessionId: SessionId,
         modelId: String,
     ) async throws -> SetModelResponse {
+        try ensureReadyForSessionOperation()
         let request = SetModelRequest(
             sessionId: sessionId,
             modelId: modelId,
@@ -138,6 +143,7 @@ public extension Client {
         configId: SessionConfigId,
         value: SessionConfigOptionValue,
     ) async throws -> SetSessionConfigOptionResponse {
+        try ensureReadyForSessionOperation()
         let request = SetSessionConfigOptionRequest(
             sessionId: sessionId,
             configId: configId,
@@ -163,6 +169,7 @@ public extension Client {
         cursor: String? = nil,
         timeout: TimeInterval? = nil,
     ) async throws -> ListSessionsResponse {
+        try ensureReadyForSessionOperation()
         let request = ListSessionsRequest(cwd: cwd, cursor: cursor)
         let response = try await sendRequest(method: "session/list", params: request, timeout: timeout)
 
@@ -179,6 +186,7 @@ public extension Client {
     }
 
     func deleteSession(sessionId: SessionId) async throws -> DeleteSessionResponse {
+        try ensureReadyForSessionOperation()
         let request = DeleteSessionRequest(sessionId: sessionId)
         let response = try await sendRequest(method: "session/delete", params: request)
 
@@ -267,6 +275,7 @@ public extension Client {
         workspaceFolders: [WorkspaceFolder]? = nil,
         repository: NesRepository? = nil,
     ) async throws -> StartNesResponse {
+        try ensureReadyForSessionOperation()
         let request = StartNesRequest(
             workspaceUri: workspaceUri,
             workspaceFolders: workspaceFolders,
@@ -295,6 +304,7 @@ public extension Client {
         triggerKind: NesTriggerKind,
         context: NesSuggestContext? = nil,
     ) async throws -> SuggestNesResponse {
+        try ensureReadyForSessionOperation()
         let request = SuggestNesRequest(
             sessionId: sessionId,
             uri: uri,
@@ -319,6 +329,7 @@ public extension Client {
     }
 
     func acceptNesSuggestion(sessionId: SessionId, id: String) async throws {
+        try ensureReadyForSessionOperation()
         try await writeNotification(
             method: "nes/accept",
             params: AcceptNesNotification(sessionId: sessionId, id: id),
@@ -326,6 +337,7 @@ public extension Client {
     }
 
     func rejectNesSuggestion(sessionId: SessionId, id: String, reason: NesRejectReason? = nil) async throws {
+        try ensureReadyForSessionOperation()
         try await writeNotification(
             method: "nes/reject",
             params: RejectNesNotification(sessionId: sessionId, id: id, reason: reason),
@@ -333,6 +345,7 @@ public extension Client {
     }
 
     func closeNes(sessionId: SessionId) async throws -> CloseNesResponse {
+        try ensureReadyForSessionOperation()
         let request = CloseNesRequest(sessionId: sessionId)
         let response = try await sendRequest(method: "nes/close", params: request)
 
@@ -352,6 +365,7 @@ public extension Client {
         method: String,
         params: AnyCodable? = nil,
     ) async throws -> MessageMcpResponse {
+        try ensureReadyForSessionOperation()
         let request = MessageMcpRequest(connectionId: connectionId, method: method, params: params)
         let response = try await sendRequest(method: "mcp/message", params: request)
 
@@ -371,6 +385,7 @@ public extension Client {
         method: String,
         params: AnyCodable? = nil,
     ) async throws {
+        try ensureReadyForSessionOperation()
         try await writeNotification(
             method: "mcp/message",
             params: MessageMcpNotification(connectionId: connectionId, method: method, params: params),
@@ -384,6 +399,7 @@ public extension Client {
         version: Int64,
         text: String,
     ) async throws {
+        try ensureReadyForSessionOperation()
         try await writeNotification(
             method: "document/didOpen",
             params: DidOpenDocumentNotification(
@@ -402,6 +418,7 @@ public extension Client {
         version: Int64,
         contentChanges: [TextDocumentContentChangeEvent],
     ) async throws {
+        try ensureReadyForSessionOperation()
         try await writeNotification(
             method: "document/didChange",
             params: DidChangeDocumentNotification(
@@ -414,6 +431,7 @@ public extension Client {
     }
 
     func didCloseDocument(sessionId: SessionId, uri: String) async throws {
+        try ensureReadyForSessionOperation()
         try await writeNotification(
             method: "document/didClose",
             params: DidCloseDocumentNotification(sessionId: sessionId, uri: uri),
@@ -421,6 +439,7 @@ public extension Client {
     }
 
     func didSaveDocument(sessionId: SessionId, uri: String) async throws {
+        try ensureReadyForSessionOperation()
         try await writeNotification(
             method: "document/didSave",
             params: DidSaveDocumentNotification(sessionId: sessionId, uri: uri),
@@ -434,6 +453,7 @@ public extension Client {
         position: TextPosition,
         visibleRange: ACPModel.TextRange,
     ) async throws {
+        try ensureReadyForSessionOperation()
         try await writeNotification(
             method: "document/didFocus",
             params: DidFocusDocumentNotification(
@@ -452,5 +472,46 @@ public extension Client {
             method: "$/cancel_request",
             params: CancelRequestNotification(requestId: requestId),
         )
+    }
+}
+
+// MARK: - Inbound Request Errors
+
+public extension Client {
+    struct InboundRouteError: Error {
+        let code: Int
+        let message: String
+        let data: AnyCodable?
+    }
+
+    static func inboundRouteError(from error: Error) -> InboundRouteError {
+        if let jsonError = error as? JSONRPCError {
+            return InboundRouteError(code: jsonError.code, message: jsonError.message, data: jsonError.data)
+        }
+        if let clientError = error as? ClientError {
+            switch clientError {
+            case .unknownMethod:
+                return InboundRouteError(code: -32601, message: "Method not found", data: nil)
+            case .invalidParams:
+                return InboundRouteError(code: -32602, message: "Invalid params", data: nil)
+            case .invalidResponse:
+                return InboundRouteError(code: -32601, message: "Method not found", data: nil)
+            case .unsupportedCapability, .delegateNotSet:
+                // A privileged request beyond the negotiated capabilities is
+                // answered as unsupported, mirroring method-not-supported.
+                return InboundRouteError(
+                    code: -32601,
+                    message: "Method not supported by negotiated capabilities",
+                    data: nil,
+                )
+            default:
+                break
+            }
+        }
+        if error is DecodingError {
+            return InboundRouteError(code: -32602, message: "Invalid params", data: nil)
+        }
+        // Fixed, payload-free internal error message.
+        return InboundRouteError(code: -32603, message: "Internal error", data: nil)
     }
 }

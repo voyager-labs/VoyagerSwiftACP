@@ -63,10 +63,11 @@ final class ACPRequestCorrelationTests: XCTestCase {
         let transport = ScriptedTransport()
         let client = try await makeReadyClient(transport)
 
-        let taskA = Task { try await client.newSession(workingDirectory: "/a", timeout: 5) }
-        let taskB = Task { try await client.newSession(workingDirectory: "/b", timeout: 5) }
-        let taskC = Task { try await client.newSession(workingDirectory: "/c", timeout: 5) }
+        let taskA = Task { try await client.sendRequest(method: "fixture/echo", params: ["cwd": "/a"], timeout: 5) }
+        let taskB = Task { try await client.sendRequest(method: "fixture/echo", params: ["cwd": "/b"], timeout: 5) }
+        let taskC = Task { try await client.sendRequest(method: "fixture/echo", params: ["cwd": "/c"], timeout: 5) }
 
+        // Exercise concurrent request correlation independently of serialized session opening.
         // Collect the three request frames and identify each by its cwd.
         var idByCwd: [String: Int] = [:]
         for _ in 0 ..< 3 {
@@ -93,9 +94,9 @@ final class ACPRequestCorrelationTests: XCTestCase {
         let sessionA = try await taskA.value
         let sessionB = try await taskB.value
         let sessionC = try await taskC.value
-        XCTAssertEqual(sessionA.sessionId.value, "s-a")
-        XCTAssertEqual(sessionB.sessionId.value, "s-b")
-        XCTAssertEqual(sessionC.sessionId.value, "s-c")
+        XCTAssertEqual((sessionA.result?.value as? [String: String])?["sessionId"], "s-a")
+        XCTAssertEqual((sessionB.result?.value as? [String: String])?["sessionId"], "s-b")
+        XCTAssertEqual((sessionC.result?.value as? [String: String])?["sessionId"], "s-c")
 
         await transport.finish()
         _ = await client.shutdown()
@@ -168,9 +169,9 @@ final class ACPRequestCorrelationTests: XCTestCase {
         let transport = ScriptedTransport()
         let client = try await makeReadyClient(transport)
 
-        let taskA = Task { try await client.newSession(workingDirectory: "/a", timeout: 5) }
-        let taskB = Task { try await client.newSession(workingDirectory: "/b", timeout: 5) }
-        let taskC = Task { try await client.newSession(workingDirectory: "/c", timeout: 5) }
+        let taskA = Task { try await client.sendRequest(method: "fixture/echo", params: ["cwd": "/a"], timeout: 5) }
+        let taskB = Task { try await client.sendRequest(method: "fixture/echo", params: ["cwd": "/b"], timeout: 5) }
+        let taskC = Task { try await client.sendRequest(method: "fixture/echo", params: ["cwd": "/c"], timeout: 5) }
         _ = try await transport.nextSentFrame()
         _ = try await transport.nextSentFrame()
         _ = try await transport.nextSentFrame()

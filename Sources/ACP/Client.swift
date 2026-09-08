@@ -97,6 +97,13 @@ public actor Client {
         notificationHandler = handler
     }
 
+    deinit {
+        // A released client must not leave the ingress task holding the
+        // transport (and a silent child) alive forever: cancellation ends the
+        // `for await`, and the task's defer closes the transport.
+        ingressTask?.cancel()
+    }
+
     private let notificationQueue: BoundedStream<JSONRPCNotification>
     private let notificationStream: AsyncStream<JSONRPCNotification>
 
@@ -305,6 +312,9 @@ public actor Client {
 
         connectionState = .initializing
         initializationInFlight = true
+        // The inbound router gates privileged agent requests against exactly
+        // what this client advertised here.
+        requestRouter.setClientCapabilities(capabilities)
 
         let info = clientInfo ?? ClientInfo(
             name: "ACP",
@@ -470,10 +480,18 @@ public extension Client {
             state: .cancelling,
             lastStopReason: session.lastStopReason,
         )
-        try await writeNotification(
-            method: "session/cancel",
-            params: CancelSessionRequest(sessionId: sessionId),
-        )
+        do {
+            try await writeNotification(
+                method: "session/cancel",
+                params: CancelSessionRequest(sessionId: sessionId),
+            )
+        } catch {
+            // The cancel never reached the wire: restore the prompting state
+            // so the session stays usable and cancellable instead of being
+            // parked in `.cancelling` with no watcher.
+            sessions[sessionId] = session
+            throw error
+        }
         await resolvePendingPermissions(sessionId: sessionId)
         startCancellationWatcher(sessionId, nanoseconds: graceNanoseconds)
     }
@@ -555,13 +573,10 @@ public extension Client {
             return decoded
         }
 
-        try registerSessionOnLoad(effectiveSessionId)
-        return LoadSessionResponse(
-            sessionId: effectiveSessionId,
-            modes: nil,
-            models: nil,
-            configOptions: nil,
-        )
+        // A nonempty result that matches no load schema is a protocol failure:
+        // registering the session here would let later prompts target a remote
+        // session this client never validated.
+        throw ClientError.invalidResponse
     }
 
     private func beginSessionOpening(sessionId: SessionId?) throws {
@@ -573,6 +588,12 @@ public extension Client {
 
     private func registerOpeningLoad(_ response: JSONRPCResponse, fallback: SessionId) async throws {
         if let error = response.error, !isSessionAlreadyActive(error) { return }
+        if response.error == nil, let result = response.result {
+            let data = try encoder.encode(result)
+            guard (try? decoder.decode(LoadSessionResponsePayload.self, from: data)) != nil
+                || (try? decoder.decode(LoadSessionResponse.self, from: data)) != nil
+            else { throw ClientError.invalidResponse }
+        }
         let effectiveID = extractSessionId(from: response.result) ?? fallback
         try registerSessionOnLoad(effectiveID)
         try await finishSessionOpening(sessionId: effectiveID)
@@ -929,6 +950,12 @@ extension Client {
         guard ingressTask == nil else { return }
         let transport = transport
         ingressTask = Task { [weak self] in
+            // The task is the transport's last owner: whenever it ends —
+            // stream end, cancellation, or a deallocated client — the
+            // transport is closed so a silent child cannot outlive the caller.
+            defer {
+                Task { await transport.close() }
+            }
             for await frame in transport.messages {
                 guard let self else { break }
                 await ingest(frame)
@@ -1052,7 +1079,26 @@ extension Client {
         let updateData = try JSONSerialization.data(withJSONObject: updateObject)
         _ = try decoder.decode(SessionUpdate.self, from: updateData)
     }
+
     private func dispatchInbound(_ request: JSONRPCRequest) {
+        // A peer reusing an in-flight request id would collide its second
+        // result with the first; refuse the duplicate instead of overwriting
+        // the running context.
+        guard inboundRequests[request.id] == nil else {
+            Task { [weak self] in
+                await self?.refuseDuplicateInbound(request.id)
+            }
+            return
+        }
+        // Each accepted request spawns a suspended task; without a budget a
+        // chatty peer could grow this table (and the task set) without bound.
+        guard inboundRequests.count < Self.maxInflightInboundRequests else {
+            Task { [weak self] in
+                await self?.refuseOverloadedInbound(request.id)
+            }
+            return
+        }
+
         var context = InboundRequestContext(
             sessionId: Self.extractSessionID(from: request.params),
             method: request.method,
@@ -1065,6 +1111,21 @@ extension Client {
         inboundRequests[request.id] = context
     }
 
+    /// Ceiling for concurrently suspended inbound agent requests.
+    static let maxInflightInboundRequests = 32
+
+    private func refuseDuplicateInbound(_ id: RequestId) async {
+        let rpcError = JSONRPCError(code: -32600, message: "Request id already in flight", data: nil)
+        let response = JSONRPCResponse(id: id, result: nil, error: rpcError)
+        try? await writeFrame(response)
+    }
+
+    private func refuseOverloadedInbound(_ id: RequestId) async {
+        let rpcError = JSONRPCError(code: -32000, message: "Inbound request limit reached", data: nil)
+        let response = JSONRPCResponse(id: id, result: nil, error: rpcError)
+        try? await writeFrame(response)
+    }
+
     private func runInboundRequest(_ request: JSONRPCRequest) async {
         let outcome: Result<AnyCodable, InboundRouteError>
         do {
@@ -1074,35 +1135,6 @@ extension Client {
             outcome = .failure(Self.inboundRouteError(from: error))
         }
         await settleInbound(request.id, outcome)
-    }
-
-    struct InboundRouteError: Error {
-        let code: Int
-        let message: String
-        let data: AnyCodable?
-    }
-
-    private static func inboundRouteError(from error: Error) -> InboundRouteError {
-        if let jsonError = error as? JSONRPCError {
-            return InboundRouteError(code: jsonError.code, message: jsonError.message, data: jsonError.data)
-        }
-        if let clientError = error as? ClientError {
-            switch clientError {
-            case .unknownMethod:
-                return InboundRouteError(code: -32601, message: "Method not found", data: nil)
-            case .invalidParams:
-                return InboundRouteError(code: -32602, message: "Invalid params", data: nil)
-            case .invalidResponse:
-                return InboundRouteError(code: -32601, message: "Method not found", data: nil)
-            default:
-                break
-            }
-        }
-        if error is DecodingError {
-            return InboundRouteError(code: -32602, message: "Invalid params", data: nil)
-        }
-        // Fixed, payload-free internal error message.
-        return InboundRouteError(code: -32603, message: "Internal error", data: nil)
     }
 
     private func settleInbound(_ id: RequestId, _ outcome: Result<AnyCodable, InboundRouteError>) async {
@@ -1335,7 +1367,9 @@ extension Client {
         }
     }
 
-    private func ensureReadyForSessionOperation() throws {
+    /// Typed session APIs share this guard: only the negotiated `.ready` state
+    /// may put a session operation on the wire.
+    func ensureReadyForSessionOperation() throws {
         switch connectionState {
         case .ready:
             return
@@ -1372,96 +1406,6 @@ extension Client {
                 continue
             }
         }
-    }
-
-    // MARK: - Response Decoding Helpers
-
-    private struct LoadSessionResponsePayload: Decodable {
-        let sessionId: SessionId?
-        let modes: ModesInfo?
-        let models: ModelsInfo?
-        let configOptions: [SessionConfigOption]?
-    }
-
-    private func extractSessionId(from result: AnyCodable?) -> SessionId? {
-        guard let value = result?.value else { return nil }
-
-        if let dict = value as? [String: Any] {
-            if let id = dict["sessionId"] as? String ?? dict["session_id"] as? String {
-                return SessionId(id)
-            }
-        }
-
-        if let dict = value as? [String: AnyCodable] {
-            if let id = dict["sessionId"]?.value as? String ?? dict["session_id"]?.value as? String {
-                return SessionId(id)
-            }
-        }
-
-        return nil
-    }
-
-    private func decodeResult<T: Decodable>(_ type: T.Type, from response: JSONRPCResponse) throws -> T {
-        if let error = response.error {
-            throw ClientError.agentError(error)
-        }
-        guard let result = response.result, !(result.value is NSNull) else {
-            throw ClientError.invalidResponse
-        }
-        let data = try encoder.encode(result)
-        return try decoder.decode(type, from: data)
-    }
-
-    func decodeEmptyTolerantResponse<T: Decodable>(
-        _ type: T.Type,
-        from response: JSONRPCResponse,
-        emptyValue: @autoclosure () -> T,
-    ) throws -> T {
-        if response.result == nil || (response.result?.value is NSNull) {
-            return emptyValue()
-        }
-
-        if let dict = response.result?.value as? [String: Any], dict.isEmpty {
-            return emptyValue()
-        }
-
-        guard let result = response.result else {
-            throw ClientError.invalidResponse
-        }
-
-        let data = try encoder.encode(result)
-        return try decoder.decode(type, from: data)
-    }
-
-    private func isSessionAlreadyActive(_ error: JSONRPCError) -> Bool {
-        let message = error.message.lowercased()
-        if message.contains("already active") || message.contains("already started") || message
-            .contains("already exists")
-        {
-            return true
-        }
-
-        if let dataString = error.data?.value as? String {
-            let lower = dataString.lowercased()
-            if lower.contains("already active") || lower.contains("already started") || lower
-                .contains("already exists")
-            {
-                return true
-            }
-        }
-
-        if let data = error.data?.value as? [String: Any],
-           let details = data["details"] as? String
-        {
-            let lower = details.lowercased()
-            if lower.contains("already active") || lower.contains("already started") || lower
-                .contains("already exists")
-            {
-                return true
-            }
-        }
-
-        return false
     }
 
     // MARK: - Wire Writes

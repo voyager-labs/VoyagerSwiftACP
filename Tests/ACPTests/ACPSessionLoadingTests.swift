@@ -33,7 +33,10 @@ final class ACPSessionLoadingTests: XCTestCase {
         _ = await request.result
         let snapshot = await client.sessionSnapshot(for: SessionId("missing"))
         XCTAssertNil(snapshot)
-        let pending = Task { try await client.newSession(workingDirectory: "/tmp", timeout: 1) }
+        // Keep an RPC pending without authorizing a new session's early updates.
+        let pending = Task {
+            try await client.sendRequest(method: "fixture/ping", params: [String: String](), timeout: 1)
+        }
         _ = try await transport.nextSentFrame()
         try await transport.pushJSON(TestFrames.notification(
             method: "session/update",
@@ -83,7 +86,10 @@ final class ACPSessionLoadingTests: XCTestCase {
         _ = try await transport.nextSentFrame()
         load.cancel()
         _ = await load.result
-        let pending = Task { try await client.newSession(workingDirectory: "/tmp", timeout: 1) }
+        // Keep an RPC pending without authorizing a new session's early updates.
+        let pending = Task {
+            try await client.sendRequest(method: "fixture/ping", params: [String: String](), timeout: 1)
+        }
         _ = try await transport.nextSentFrame()
         try await transport.pushJSON(TestFrames.notification(
             method: "session/update",
@@ -110,7 +116,10 @@ final class ACPSessionLoadingTests: XCTestCase {
               let clientError = error as? ClientError,
               case .requestTimeout = clientError
         else { return XCTFail("Expected load deadline") }
-        let pending = Task { try await client.newSession(workingDirectory: "/tmp", timeout: 1) }
+        // Keep an RPC pending without authorizing a new session's early updates.
+        let pending = Task {
+            try await client.sendRequest(method: "fixture/ping", params: [String: String](), timeout: 1)
+        }
         _ = try await transport.nextSentFrame()
         try await transport.pushJSON(TestFrames.response(id: 2, result: "{}"))
         try await transport.pushJSON(TestFrames.notification(

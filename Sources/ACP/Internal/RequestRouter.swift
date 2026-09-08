@@ -13,6 +13,10 @@ final class ACPRequestRouter: @unchecked Sendable {
 
     private let lock = NSLock()
     private weak var _delegate: ClientDelegate?
+    /// The capabilities this client advertised during initialize. Privileged
+    /// inbound methods are refused when they exceed it, so an agent cannot
+    /// exercise file or terminal access the caller never negotiated.
+    private var _clientCapabilities: ClientCapabilities?
 
     // MARK: - Delegate Management
 
@@ -28,9 +32,16 @@ final class ACPRequestRouter: @unchecked Sendable {
         lock.unlock()
     }
 
+    func setClientCapabilities(_ capabilities: ClientCapabilities) {
+        lock.lock()
+        _clientCapabilities = capabilities
+        lock.unlock()
+    }
+
     // MARK: - Request Routing
 
     func routeRequest(_ request: JSONRPCRequest) async throws -> AnyCodable {
+        try requireNegotiatedCapability(for: request.method)
         switch request.method {
         case "fs/read_text_file":
             return try await handleFileRead(request)
@@ -59,6 +70,27 @@ final class ACPRequestRouter: @unchecked Sendable {
         default:
             // Unknown method: the connection stays open; the caller answers -32601.
             throw ClientError.unknownMethod(request.method)
+        }
+    }
+
+    /// Privileged inbound methods must stay inside what this client advertised
+    /// during initialize; anything beyond is refused before reaching the
+    /// delegate.
+    private func requireNegotiatedCapability(for method: String) throws {
+        let capabilities = _clientCapabilities
+        let negotiated: Bool
+        switch method {
+        case "fs/read_text_file":
+            negotiated = capabilities?.fs.readTextFile == true
+        case "fs/write_text_file":
+            negotiated = capabilities?.fs.writeTextFile == true
+        case let method where method.hasPrefix("terminal/"):
+            negotiated = capabilities?.terminal == true
+        default:
+            return
+        }
+        if !negotiated {
+            throw ClientError.unsupportedCapability(method)
         }
     }
 
