@@ -17,6 +17,7 @@ public actor WebSocketTransport: Transport {
     private let messageStream: AsyncStream<Data>
 
     private var connected = false
+    private var terminationEvidence: TransportTermination?
 
     // MARK: - Transport Protocol
 
@@ -26,6 +27,10 @@ public actor WebSocketTransport: Transport {
 
     public var isConnected: Bool {
         connected
+    }
+
+    public var termination: TransportTermination? {
+        terminationEvidence
     }
 
     // MARK: - Initialization
@@ -71,6 +76,9 @@ public actor WebSocketTransport: Transport {
         connected = false
         webSocket?.cancel(with: .normalClosure, reason: nil)
         webSocket = nil
+        if terminationEvidence == nil {
+            terminationEvidence = TransportTermination(reason: .explicitClose, cleanupComplete: false)
+        }
         messageContinuation?.finish()
     }
 
@@ -101,6 +109,12 @@ public actor WebSocketTransport: Transport {
                 if connected {
                     logger.error("WebSocket receive error: \(error.localizedDescription)")
                     connected = false
+                    // Preserve the abnormal receive failure so clients recover
+                    // on evidence instead of a generic connection closure.
+                    terminationEvidence = TransportTermination(
+                        reason: .failure(.read("websocket receive failed")),
+                        cleanupComplete: false,
+                    )
                     messageContinuation?.finish()
                 }
             }

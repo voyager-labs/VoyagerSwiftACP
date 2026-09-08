@@ -1,10 +1,3 @@
-//
-//  AgentInstaller.swift
-//  ACPRegistry
-//
-//  Utility for downloading and installing agents from the registry
-//
-
 import Foundation
 
 // MARK: - Agent Installer
@@ -17,7 +10,7 @@ public actor AgentInstaller {
 
     public init(
         session: URLSession = .shared,
-        installDirectory: URL? = nil
+        installDirectory: URL? = nil,
     ) {
         self.session = session
         self.installDirectory = installDirectory ?? Self.defaultInstallDirectory
@@ -37,43 +30,47 @@ public actor AgentInstaller {
         }
 
         switch method {
-        case .binary(let target):
+        case let .binary(target):
             return try await installBinary(agent: agent, target: target)
-        case .npx(let pkg):
+        case let .npx(pkg):
             return InstalledAgent(
                 id: agent.id,
                 name: agent.name,
                 version: agent.version,
                 executablePath: "npx",
                 arguments: [pkg.package] + (pkg.args ?? []),
-                environment: pkg.env ?? [:]
+                environment: pkg.env ?? [:],
             )
-        case .uvx(let pkg):
+        case let .uvx(pkg):
             return InstalledAgent(
                 id: agent.id,
                 name: agent.name,
                 version: agent.version,
                 executablePath: "uvx",
                 arguments: [pkg.package] + (pkg.args ?? []),
-                environment: pkg.env ?? [:]
+                environment: pkg.env ?? [:],
             )
         }
     }
 
     /// Checks if an agent is already installed
     public func isInstalled(_ agent: RegistryAgent) -> Bool {
-        let agentDir = installDirectory.appendingPathComponent(agent.id)
+        guard let agentDir = try? containedAgentDirectory(agent.id) else {
+            return false
+        }
         return FileManager.default.fileExists(atPath: agentDir.path)
     }
 
     /// Returns the installed agent info if available
     public func installedAgent(_ agentId: String) -> InstalledAgent? {
-        let metadataFile = installDirectory
-            .appendingPathComponent(agentId)
-            .appendingPathComponent("metadata.json")
+        guard let agentDir = try? containedAgentDirectory(agentId) else {
+            return nil
+        }
+        let metadataFile = agentDir.appendingPathComponent("metadata.json")
 
         guard let data = try? Data(contentsOf: metadataFile),
-              let installed = try? JSONDecoder().decode(InstalledAgent.self, from: data) else {
+              let installed = try? JSONDecoder().decode(InstalledAgent.self, from: data)
+        else {
             return nil
         }
 
@@ -84,7 +81,7 @@ public actor AgentInstaller {
     public func installedAgents() -> [InstalledAgent] {
         guard let contents = try? FileManager.default.contentsOfDirectory(
             at: installDirectory,
-            includingPropertiesForKeys: nil
+            includingPropertiesForKeys: nil,
         ) else {
             return []
         }
@@ -92,7 +89,8 @@ public actor AgentInstaller {
         return contents.compactMap { dir in
             let metadataFile = dir.appendingPathComponent("metadata.json")
             guard let data = try? Data(contentsOf: metadataFile),
-                  let installed = try? JSONDecoder().decode(InstalledAgent.self, from: data) else {
+                  let installed = try? JSONDecoder().decode(InstalledAgent.self, from: data)
+            else {
                 return nil
             }
             return installed
@@ -101,8 +99,31 @@ public actor AgentInstaller {
 
     /// Uninstalls an agent
     public func uninstall(_ agentId: String) throws {
-        let agentDir = installDirectory.appendingPathComponent(agentId)
+        let agentDir = try containedAgentDirectory(agentId)
         try FileManager.default.removeItem(at: agentDir)
+    }
+
+    // MARK: - Path Containment
+
+    /// Registry values and public-API arguments are peer-supplied, so every file
+    /// operation resolves through a containment check before touching disk.
+    private func containedAgentDirectory(_ agentId: String) throws -> URL {
+        try containedPath(agentId, inside: installDirectory)
+    }
+
+    private func containedPath(_ component: String, inside root: URL) throws -> URL {
+        let rootPath = root.standardizedFileURL.path
+        let resolvedPath = root
+            .appendingPathComponent(component)
+            .standardizedFileURL.path
+
+        guard !component.isEmpty,
+              resolvedPath != rootPath,
+              resolvedPath.hasPrefix(rootPath + "/")
+        else {
+            throw RegistryError.invalidIdentifier(component)
+        }
+        return root.appendingPathComponent(component)
     }
 
     // MARK: - Private Methods
@@ -120,19 +141,38 @@ public actor AgentInstaller {
         }
 
         // Create agent directory
-        let agentDir = installDirectory.appendingPathComponent(agent.id)
+        let agentDir = try containedAgentDirectory(agent.id)
         try FileManager.default.createDirectory(at: agentDir, withIntermediateDirectories: true)
 
-        // Download archive
-        let (tempURL, _) = try await session.download(from: archiveURL)
-
         // Determine executable path
-        let executablePath = agentDir.appendingPathComponent(target.cmd).path
+        let executablePath = try containedPath(target.cmd, inside: agentDir).path
+
+        // Download archive
+        let (tempURL, response) = try await session.download(from: archiveURL)
+
+        // A completed download is not a successful download: only a 2xx HTTP
+        // response may be promoted to an executable payload.
+        guard let httpResponse = response as? HTTPURLResponse else {
+            try? FileManager.default.removeItem(at: tempURL)
+            try? FileManager.default.removeItem(at: agentDir)
+            throw RegistryError.invalidResponse
+        }
+        guard (200 ..< 300).contains(httpResponse.statusCode) else {
+            try? FileManager.default.removeItem(at: tempURL)
+            try? FileManager.default.removeItem(at: agentDir)
+            throw RegistryError.httpError(statusCode: httpResponse.statusCode)
+        }
 
         do {
             // Extract archive or install raw binary directly.
-            try await installBinaryPayload(from: tempURL, to: agentDir, executablePath: executablePath, archiveURL: archiveURL)
+            try await installBinaryPayload(
+                from: tempURL,
+                to: agentDir,
+                executablePath: executablePath,
+                archiveURL: archiveURL,
+            )
         } catch {
+            try? FileManager.default.removeItem(at: tempURL)
             try? FileManager.default.removeItem(at: agentDir)
             throw error
         }
@@ -143,7 +183,7 @@ public actor AgentInstaller {
         // Make executable and remove quarantine
         try FileManager.default.setAttributes(
             [.posixPermissions: 0o755],
-            ofItemAtPath: executablePath
+            ofItemAtPath: executablePath,
         )
         removeQuarantineAttribute(from: executablePath)
 
@@ -153,7 +193,7 @@ public actor AgentInstaller {
             version: agent.version,
             executablePath: executablePath,
             arguments: target.args ?? [],
-            environment: target.env ?? [:]
+            environment: target.env ?? [:],
         )
 
         // Save metadata
@@ -164,7 +204,12 @@ public actor AgentInstaller {
         return installed
     }
 
-    private func installBinaryPayload(from source: URL, to destination: URL, executablePath: String, archiveURL: URL) async throws {
+    private func installBinaryPayload(
+        from source: URL,
+        to destination: URL,
+        executablePath: String,
+        archiveURL: URL,
+    ) async throws {
         switch Self.binaryArchiveKind(for: archiveURL) {
         case .rawBinary:
             let executableURL = URL(fileURLWithPath: executablePath)
@@ -200,7 +245,7 @@ public actor AgentInstaller {
             throw RegistryError.extractionFailed(NSError(
                 domain: "ACPRegistry",
                 code: 1,
-                userInfo: [NSLocalizedDescriptionKey: "Raw binaries should not be extracted"]
+                userInfo: [NSLocalizedDescriptionKey: "Raw binaries should not be extracted"],
             ))
         }
 
@@ -213,7 +258,7 @@ public actor AgentInstaller {
             throw RegistryError.extractionFailed(NSError(
                 domain: "ACPRegistry",
                 code: Int(process.terminationStatus),
-                userInfo: [NSLocalizedDescriptionKey: errorMessage]
+                userInfo: [NSLocalizedDescriptionKey: errorMessage],
             ))
         }
     }
@@ -266,7 +311,7 @@ public struct InstalledAgent: Codable, Sendable {
         version: String,
         executablePath: String,
         arguments: [String] = [],
-        environment: [String: String] = [:]
+        environment: [String: String] = [:],
     ) {
         self.id = id
         self.name = name

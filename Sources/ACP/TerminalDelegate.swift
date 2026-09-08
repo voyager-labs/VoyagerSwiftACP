@@ -1,13 +1,6 @@
-//
-//  TerminalDelegate.swift
-//  ACP
-//
-//  Default terminal delegate implementation
-//
-
 #if os(macOS)
-import Foundation
 import ACPModel
+import Foundation
 
 /// Tracks state of a single terminal
 private struct TerminalState: @unchecked Sendable {
@@ -21,14 +14,13 @@ private struct TerminalState: @unchecked Sendable {
 }
 
 /// Cached output for released terminals
-private struct ReleasedTerminalOutput: Sendable {
+private struct ReleasedTerminalOutput {
     let output: String
     let exitCode: Int?
 }
 
 /// Actor responsible for handling terminal operations for agent sessions
 public actor TerminalDelegate {
-
     // MARK: - Errors
 
     public enum TerminalError: LocalizedError, Sendable {
@@ -39,14 +31,14 @@ public actor TerminalDelegate {
 
         public var errorDescription: String? {
             switch self {
-            case .terminalNotFound(let id):
-                return "Terminal with ID '\(id)' not found"
-            case .terminalReleased(let id):
-                return "Terminal with ID '\(id)' has been released"
-            case .executableNotFound(let path):
-                return "Executable not found: '\(path)'"
-            case .commandParsingFailed(let command):
-                return "Failed to parse command string: '\(command)'"
+            case let .terminalNotFound(id):
+                "Terminal with ID '\(id)' not found"
+            case let .terminalReleased(id):
+                "Terminal with ID '\(id)' has been released"
+            case let .executableNotFound(path):
+                "Executable not found: '\(path)'"
+            case let .commandParsingFailed(command):
+                "Failed to parse command string: '\(command)'"
             }
         }
     }
@@ -57,7 +49,11 @@ public actor TerminalDelegate {
     private var releasedOutputs: [String: ReleasedTerminalOutput] = [:]
     private var releasedOutputOrder: [String] = []
     private let defaultOutputByteLimit = 1_000_000
+    /// Peer-supplied limits are clamped so a terminal cannot grow without bound.
+    private let maxOutputByteLimit = 64_000_000
     private let maxReleasedOutputEntries = 50
+    private static let termGraceSeconds: TimeInterval = 2.0
+    private static let killGraceSeconds: TimeInterval = 1.0
 
     // MARK: - Private Cleanup
 
@@ -107,11 +103,11 @@ public actor TerminalDelegate {
     /// Create a new terminal process
     public func handleTerminalCreate(
         command: String,
-        sessionId: String,
+        sessionId _: String,
         args: [String]?,
         cwd: String?,
         env: [EnvVariable]?,
-        outputByteLimit: Int?
+        outputByteLimit: Int?,
     ) async throws -> CreateTerminalResponse {
         var executablePath: String
         var finalArgs: [String]
@@ -121,7 +117,7 @@ public actor TerminalDelegate {
 
         if needsShell {
             executablePath = "/bin/sh"
-            if let args = args, !args.isEmpty {
+            if let args, !args.isEmpty {
                 finalArgs = ["-c", ([command] + args).joined(separator: " ")]
             } else {
                 finalArgs = ["-c", command]
@@ -144,7 +140,7 @@ public actor TerminalDelegate {
         process.executableURL = URL(fileURLWithPath: executablePath)
         process.arguments = finalArgs
 
-        if let cwd = cwd {
+        if let cwd {
             process.currentDirectoryURL = URL(fileURLWithPath: cwd)
         }
 
@@ -164,7 +160,14 @@ public actor TerminalDelegate {
         let terminalIdValue = UUID().uuidString
         let terminalId = TerminalId(terminalIdValue)
 
-        let state = TerminalState(process: process, outputByteLimit: outputByteLimit ?? defaultOutputByteLimit)
+        let state = TerminalState(
+            process: process,
+            outputByteLimit: Self.validatedOutputByteLimit(
+                outputByteLimit,
+                defaultLimit: defaultOutputByteLimit,
+                maxLimit: maxOutputByteLimit,
+            ),
+        )
         terminals[terminalIdValue] = state
 
         outputPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
@@ -216,8 +219,13 @@ public actor TerminalDelegate {
     }
 
     /// Get output from a terminal process
-    public func handleTerminalOutput(terminalId: TerminalId, sessionId: String) async throws -> TerminalOutputResponse {
-        guard var state = terminals[terminalId.value] else {
+    public func handleTerminalOutput(terminalId: TerminalId,
+                                     sessionId _: String) async throws -> TerminalOutputResponse
+    {
+        // The readability handlers are the only readers of the output pipes, so
+        // this returns the actor-owned buffer snapshot instead of re-reading a
+        // live pipe (a blocking read here would stall the whole actor).
+        guard let state = terminals[terminalId.value] else {
             throw TerminalError.terminalNotFound(terminalId.value)
         }
 
@@ -225,17 +233,13 @@ public actor TerminalDelegate {
             throw TerminalError.terminalReleased(terminalId.value)
         }
 
-        drainAvailableOutput(terminalId: terminalId.value, process: state.process)
-        state = terminals[terminalId.value] ?? state
-
-        let exitStatus: TerminalExitStatus?
-        if state.process.isRunning {
-            exitStatus = nil
+        let exitStatus: TerminalExitStatus? = if state.process.isRunning {
+            nil
         } else {
-            exitStatus = TerminalExitStatus(
+            TerminalExitStatus(
                 exitCode: Int(state.process.terminationStatus),
                 signal: nil,
-                _meta: nil
+                _meta: nil,
             )
         }
 
@@ -243,12 +247,14 @@ public actor TerminalDelegate {
             output: state.outputBuffer,
             exitStatus: exitStatus,
             truncated: state.wasTruncated,
-            _meta: nil
+            _meta: nil,
         )
     }
 
     /// Wait for a terminal process to exit
-    public func handleTerminalWaitForExit(terminalId: TerminalId, sessionId: String) async throws -> WaitForExitResponse {
+    public func handleTerminalWaitForExit(terminalId: TerminalId,
+                                          sessionId _: String) async throws -> WaitForExitResponse
+    {
         guard let state = terminals[terminalId.value] else {
             throw TerminalError.terminalNotFound(terminalId.value)
         }
@@ -261,7 +267,7 @@ public actor TerminalDelegate {
             return WaitForExitResponse(
                 exitCode: Int(state.process.terminationStatus),
                 signal: nil,
-                _meta: nil
+                _meta: nil,
             )
         }
 
@@ -278,12 +284,12 @@ public actor TerminalDelegate {
         return WaitForExitResponse(
             exitCode: result.exitCode,
             signal: result.signal,
-            _meta: nil
+            _meta: nil,
         )
     }
 
     /// Kill a terminal process
-    public func handleTerminalKill(terminalId: TerminalId, sessionId: String) async throws -> KillTerminalResponse {
+    public func handleTerminalKill(terminalId: TerminalId, sessionId _: String) async throws -> KillTerminalResponse {
         guard var state = terminals[terminalId.value] else {
             throw TerminalError.terminalNotFound(terminalId.value)
         }
@@ -292,12 +298,9 @@ public actor TerminalDelegate {
             throw TerminalError.terminalReleased(terminalId.value)
         }
 
-        if state.process.isRunning {
-            state.process.terminate()
-            state.process.waitUntilExit()
-        }
+        _ = await boundedTeardown(state.process)
 
-        let exitCode = Int(state.process.terminationStatus)
+        let exitCode = terminalExitCode(state.process)
         for waiter in state.exitWaiters {
             waiter.resume(returning: (exitCode, nil))
         }
@@ -308,20 +311,21 @@ public actor TerminalDelegate {
     }
 
     /// Release a terminal process
-    public func handleTerminalRelease(terminalId: TerminalId, sessionId: String) async throws -> ReleaseTerminalResponse {
+    public func handleTerminalRelease(terminalId: TerminalId,
+                                      sessionId _: String) async throws -> ReleaseTerminalResponse
+    {
         guard var state = terminals[terminalId.value] else {
             throw TerminalError.terminalNotFound(terminalId.value)
         }
 
-        if state.process.isRunning {
-            state.process.terminate()
-            state.process.waitUntilExit()
-        }
+        let didExit = await boundedTeardown(state.process)
 
-        cleanupProcessPipes(state.process, terminalId: terminalId.value)
+        // Only drain remaining pipe bytes once the process has exited; draining
+        // a live pipe would block this actor on a peer that stays silent.
+        cleanupProcessPipes(state.process, terminalId: didExit ? terminalId.value : nil)
         state = terminals[terminalId.value] ?? state
 
-        let exitCode = Int(state.process.terminationStatus)
+        let exitCode = terminalExitCode(state.process)
         for waiter in state.exitWaiters {
             waiter.resume(returning: (exitCode, nil))
         }
@@ -329,7 +333,7 @@ public actor TerminalDelegate {
         cacheReleasedOutput(
             terminalId: terminalId.value,
             output: state.outputBuffer,
-            exitCode: exitCode
+            exitCode: exitCode,
         )
 
         state.isReleased = true
@@ -341,13 +345,10 @@ public actor TerminalDelegate {
 
     /// Clean up all terminals
     public func cleanup() async {
-        for (_, state) in terminals {
-            if state.process.isRunning {
-                state.process.terminate()
-                state.process.waitUntilExit()
-            }
-            cleanupProcessPipes(state.process)
-            let exitCode = Int(state.process.terminationStatus)
+        for (terminalId, state) in terminals {
+            let didExit = await boundedTeardown(state.process)
+            cleanupProcessPipes(state.process, terminalId: didExit ? terminalId : nil)
+            let exitCode = terminalExitCode(state.process)
             for waiter in state.exitWaiters {
                 waiter.resume(returning: (exitCode, nil))
             }
@@ -362,7 +363,6 @@ public actor TerminalDelegate {
     /// Get terminal output for display
     public func getOutput(terminalId: TerminalId) -> String? {
         if let state = terminals[terminalId.value] {
-            drainAvailableOutput(terminalId: terminalId.value, process: state.process)
             return terminals[terminalId.value]?.outputBuffer ?? state.outputBuffer
         }
         return releasedOutputs[terminalId.value]?.output
@@ -370,34 +370,45 @@ public actor TerminalDelegate {
 
     /// Check if terminal is still running
     public func isRunning(terminalId: TerminalId) -> Bool {
-        return terminals[terminalId.value]?.process.isRunning ?? false
+        terminals[terminalId.value]?.process.isRunning ?? false
     }
 
-    private func drainAvailableOutput(terminalId: String, process: Process) {
-        guard process.isRunning else { return }
+    /// Peer-supplied limits are untrusted: negatives fall back to the default
+    /// and oversized requests clamp to the package maximum.
+    private static func validatedOutputByteLimit(_ requested: Int?, defaultLimit: Int, maxLimit: Int) -> Int {
+        guard let requested else { return defaultLimit }
+        guard requested >= 0 else { return defaultLimit }
+        return min(requested, maxLimit)
+    }
 
-        if let outputPipe = process.standardOutput as? Pipe {
-            let handle = outputPipe.fileHandleForReading
-            do {
-                if let data = try handle.read(upToCount: 65536), !data.isEmpty,
-                   let output = String(data: data, encoding: .utf8) {
-                    appendOutput(terminalId: terminalId, output: output)
-                }
-            } catch {
-                // File handle closed
-            }
+    /// TERM → bounded wait → KILL → bounded wait, mirroring
+    /// `ACPProcessManager.shutdown()`. A process that ignores SIGTERM can never
+    /// block this actor indefinitely.
+    private func boundedTeardown(_ process: Process) async -> Bool {
+        guard process.isRunning else { return true }
+
+        process.terminate()
+        if await waitForExit(process, timeout: Self.termGraceSeconds) {
+            return true
         }
-        if let errorPipe = process.standardError as? Pipe {
-            let handle = errorPipe.fileHandleForReading
-            do {
-                if let data = try handle.read(upToCount: 65536), !data.isEmpty,
-                   let output = String(data: data, encoding: .utf8) {
-                    appendOutput(terminalId: terminalId, output: output)
-                }
-            } catch {
-                // File handle closed
-            }
+        if process.processIdentifier > 0 {
+            kill(process.processIdentifier, SIGKILL)
         }
+        return await waitForExit(process, timeout: Self.killGraceSeconds)
+    }
+
+    private func waitForExit(_ process: Process, timeout: TimeInterval) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while process.isRunning, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+        return !process.isRunning
+    }
+
+    /// `terminationStatus` is undefined while the process runs; report a forced
+    /// SIGKILL instead of reading stale state.
+    private func terminalExitCode(_ process: Process) -> Int {
+        process.isRunning ? Int(SIGKILL) : Int(process.terminationStatus)
     }
 
     // MARK: - Private Helpers
@@ -407,16 +418,27 @@ public actor TerminalDelegate {
 
         state.outputBuffer += output
 
-        if let limit = state.outputByteLimit, state.outputBuffer.count > limit {
-            let startIndex = state.outputBuffer.index(
-                state.outputBuffer.startIndex,
-                offsetBy: state.outputBuffer.count - limit
-            )
-            state.outputBuffer = String(state.outputBuffer[startIndex...])
-            state.wasTruncated = true
+        if let limit = state.outputByteLimit {
+            let byteCount = state.outputBuffer.utf8.count
+            if byteCount > limit {
+                state.outputBuffer = Self.truncatedKeepingTail(state.outputBuffer, byteCount: byteCount, limit: limit)
+                state.wasTruncated = true
+            }
         }
 
         terminals[terminalId] = state
+    }
+
+    /// Drops whole leading characters until the buffer fits the byte limit, so
+    /// truncation never splits a multi-byte UTF-8 sequence.
+    private static func truncatedKeepingTail(_ buffer: String, byteCount: Int, limit: Int) -> String {
+        var droppedBytes = 0
+        var index = buffer.startIndex
+        while droppedBytes < byteCount - limit, index < buffer.endIndex {
+            droppedBytes += buffer[index].utf8.count
+            index = buffer.index(after: index)
+        }
+        return String(buffer[index...])
     }
 
     private func cacheReleasedOutput(terminalId: String, output: String, exitCode: Int) {
@@ -425,7 +447,8 @@ public actor TerminalDelegate {
         releasedOutputOrder.append(terminalId)
 
         while releasedOutputOrder.count > maxReleasedOutputEntries,
-              let oldest = releasedOutputOrder.first {
+              let oldest = releasedOutputOrder.first
+        {
             releasedOutputOrder.removeFirst()
             releasedOutputs.removeValue(forKey: oldest)
         }
@@ -475,7 +498,7 @@ public actor TerminalDelegate {
                 continue
             }
 
-            if char == " " && !inQuotes {
+            if char == " ", !inQuotes {
                 if !currentArg.isEmpty {
                     if executable == nil {
                         executable = currentArg
@@ -544,8 +567,9 @@ public actor TerminalDelegate {
             try process.run()
             process.waitUntilExit()
             if let data = try? pipe.fileHandleForReading.read(upToCount: 4096),
-               let path = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) {
-                if !path.isEmpty && FileManager.default.fileExists(atPath: path) {
+               let path = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            {
+                if !path.isEmpty, FileManager.default.fileExists(atPath: path) {
                     return path
                 }
             }

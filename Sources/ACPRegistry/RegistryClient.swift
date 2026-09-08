@@ -1,10 +1,3 @@
-//
-//  RegistryClient.swift
-//  ACPRegistry
-//
-//  Client for fetching and caching the ACP agent registry
-//
-
 import Foundation
 
 // MARK: - Registry Client
@@ -27,7 +20,7 @@ public actor RegistryClient {
         registryURL: URL = RegistryClient.defaultURL,
         session: URLSession = .shared,
         cacheDirectory: URL? = nil,
-        cacheDuration: TimeInterval = 3600 // 1 hour default
+        cacheDuration: TimeInterval = 3600, // 1 hour default
     ) {
         self.registryURL = registryURL
         self.session = session
@@ -162,23 +155,26 @@ public enum RegistryError: Error, LocalizedError {
     case unsupportedPlatform
     case downloadFailed(Error)
     case extractionFailed(Error)
+    case invalidIdentifier(String)
 
     public var errorDescription: String? {
         switch self {
         case .invalidResponse:
-            return "Invalid response from registry"
-        case .httpError(let statusCode):
-            return "HTTP error: \(statusCode)"
-        case .decodingError(let error):
-            return "Failed to decode registry: \(error.localizedDescription)"
-        case .agentNotFound(let id):
-            return "Agent not found: \(id)"
+            "Invalid response from registry"
+        case let .httpError(statusCode):
+            "HTTP error: \(statusCode)"
+        case let .decodingError(error):
+            "Failed to decode registry: \(error.localizedDescription)"
+        case let .agentNotFound(id):
+            "Agent not found: \(id)"
         case .unsupportedPlatform:
-            return "No distribution available for this platform"
-        case .downloadFailed(let error):
-            return "Download failed: \(error.localizedDescription)"
-        case .extractionFailed(let error):
-            return "Extraction failed: \(error.localizedDescription)"
+            "No distribution available for this platform"
+        case let .downloadFailed(error):
+            "Download failed: \(error.localizedDescription)"
+        case let .extractionFailed(error):
+            "Extraction failed: \(error.localizedDescription)"
+        case let .invalidIdentifier(identifier):
+            "Agent identifier escapes the install directory: '\(identifier)'"
         }
     }
 }

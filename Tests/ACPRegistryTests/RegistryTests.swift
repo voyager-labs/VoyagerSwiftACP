@@ -335,4 +335,117 @@ final class RegistryTests: XCTestCase {
 
         XCTAssertEqual(registry.agents.first?.id, "fixture-agent")
     }
+
+    // MARK: - Agent Installer Tests (offline)
+
+    private func makeOfflineInstaller() -> (installer: AgentInstaller, installDirectory: URL) {
+        let installDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("voy-886-install-\(UUID().uuidString)", isDirectory: true)
+        addTeardownBlock {
+            if FileManager.default.fileExists(atPath: installDirectory.path) {
+                try? FileManager.default.removeItem(at: installDirectory)
+            }
+            RegistryURLProtocol.reset()
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RegistryURLProtocol.self]
+        let installer = AgentInstaller(
+            session: URLSession(configuration: configuration),
+            installDirectory: installDirectory,
+        )
+        return (installer, installDirectory)
+    }
+
+    private func makeBinaryInstallAgent(archive: String, cmd: String = "agent") -> RegistryAgent {
+        RegistryAgent(
+            id: "binary-agent",
+            name: "Binary Agent",
+            version: "1.0.0",
+            description: "offline binary fixture",
+            distribution: Distribution(
+                binary: [Platform.current.identifier: BinaryTarget(archive: archive, cmd: cmd)],
+            ),
+        )
+    }
+
+    /// A peer-supplied agent id that escapes the install root must be rejected
+    /// before any file operation, not resolved into a deletable path outside it.
+    func testUninstallRejectsPathTraversal() async throws {
+        let context = makeOfflineInstaller()
+        let victimDirectory = context.installDirectory.deletingLastPathComponent()
+            .appendingPathComponent("voy-886-victim-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: victimDirectory, withIntermediateDirectories: true)
+        addTeardownBlock {
+            if FileManager.default.fileExists(atPath: victimDirectory.path) {
+                try? FileManager.default.removeItem(at: victimDirectory)
+            }
+        }
+
+        do {
+            try await context.installer.uninstall("../\(victimDirectory.lastPathComponent)")
+            XCTFail("Expected invalidIdentifier for a traversal agent id")
+        } catch let error as RegistryError {
+            guard case .invalidIdentifier = error else {
+                return XCTFail("Unexpected RegistryError: \(error)")
+            }
+        }
+
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: victimDirectory.path),
+            "the directory targeted through ../ must remain untouched",
+        )
+    }
+
+    /// A completed download is not a successful install: non-2xx responses must
+    /// fail before their body can be promoted to an executable.
+    func testInstallBinaryRejectsHTTPErrorStatus() async throws {
+        RegistryURLProtocol.handler = { request in
+            let response = try XCTUnwrap(HTTPURLResponse(
+                url: XCTUnwrap(request.url),
+                statusCode: 404,
+                httpVersion: nil,
+                headerFields: ["Content-Type": "text/html"],
+            ))
+            return (response, Data("<html>not found</html>".utf8))
+        }
+        let context = makeOfflineInstaller()
+        let agent = makeBinaryInstallAgent(archive: "https://registry.fixture/agent.zip")
+
+        do {
+            _ = try await context.installer.install(agent)
+            XCTFail("Expected httpError for a 404 download")
+        } catch let error as RegistryError {
+            guard case let .httpError(statusCode) = error else {
+                return XCTFail("Unexpected RegistryError: \(error)")
+            }
+            XCTAssertEqual(statusCode, 404)
+        }
+
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: context.installDirectory.appendingPathComponent(agent.id).path,
+            ),
+            "a failed install must not leave a staging directory behind",
+        )
+    }
+
+    /// Lookup helpers treat escaping ids as absent instead of resolving them
+    /// outside the install root.
+    func testInstalledAgentLookupRejectsPathTraversal() async {
+        let context = makeOfflineInstaller()
+
+        let installed = await context.installer.installedAgent("../../outside")
+        XCTAssertNil(installed)
+
+        let traversalAgent = makeBinaryInstallAgent(archive: "https://registry.fixture/agent.zip")
+        let agentWithTraversalId = RegistryAgent(
+            id: "../../outside",
+            name: traversalAgent.name,
+            version: traversalAgent.version,
+            description: traversalAgent.description,
+            distribution: traversalAgent.distribution,
+        )
+        let isInstalled = await context.installer.isInstalled(agentWithTraversalId)
+        XCTAssertFalse(isInstalled)
+    }
 }
