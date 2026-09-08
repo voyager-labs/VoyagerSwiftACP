@@ -515,4 +515,33 @@ final class RegistryTests: XCTestCase {
         let rawWithURL = try XCTUnwrap(URL(string: "https://cdn.example.com/agent?token=abc"))
         XCTAssertEqual(AgentInstaller.binaryArchiveKind(for: rawWithURL), .rawBinary)
     }
+
+    /// Launcher-based distributions resolve through /usr/bin/env so the bare
+    /// launcher name is never treated as a relative file path.
+    func testLauncherInstallsResolveThroughEnv() async throws {
+        let context = makeOfflineInstaller()
+
+        let npxAgent = RegistryAgent(
+            id: "npx-agent",
+            name: "Npx Agent",
+            version: "1.0.0",
+            description: "fixture",
+            distribution: Distribution(npx: PackageDistribution(package: "some-agent")),
+        )
+        let npxInstalled = try await context.installer.install(npxAgent)
+        XCTAssertEqual(npxInstalled.executablePath, "/usr/bin/env")
+        XCTAssertEqual(npxInstalled.arguments.first, "npx")
+        XCTAssertEqual(npxInstalled.arguments.dropFirst().first, "some-agent")
+
+        let uvxAgent = RegistryAgent(
+            id: "uvx-agent",
+            name: "Uvx Agent",
+            version: "1.0.0",
+            description: "fixture",
+            distribution: Distribution(uvx: PackageDistribution(package: "py-agent")),
+        )
+        let uvxInstalled = try await context.installer.install(uvxAgent)
+        XCTAssertEqual(uvxInstalled.executablePath, "/usr/bin/env")
+        XCTAssertEqual(uvxInstalled.arguments.first, "uvx")
+    }
 }

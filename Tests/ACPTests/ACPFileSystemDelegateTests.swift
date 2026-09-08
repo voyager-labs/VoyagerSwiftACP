@@ -74,4 +74,22 @@ final class ACPFileSystemDelegateTests: XCTestCase {
         XCTAssertEqual(response.content, "")
         XCTAssertEqual(response.totalLines, 3)
     }
+
+    /// An endless character device must terminate within the read cap instead
+    /// of blocking the actor forever.
+    func testUnboundedDeviceReadIsBounded() async throws {
+        let delegate = FileSystemDelegate()
+        let startedAt = Date()
+        let response = try await delegate.handleFileReadRequest(
+            "/dev/zero",
+            sessionId: "s1",
+            line: 1,
+            limit: 8,
+        )
+        let elapsed = Date().timeIntervalSince(startedAt)
+
+        XCTAssertLessThan(elapsed, 10.0, "the read must stop at the byte cap")
+        XCTAssertLessThanOrEqual(response.content.utf8.count, 4_100_000, "the response must respect the byte budget")
+        XCTAssertEqual(response.totalLines, 1, "NUL bytes contain no newline, so one giant line")
+    }
 }

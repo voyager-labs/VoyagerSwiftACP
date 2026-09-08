@@ -37,10 +37,11 @@ final class ACPSessionLifecycleTests: XCTestCase {
         _ transport: ScriptedTransport,
         initResult: String = #"{"protocolVersion":1,"agentCapabilities":{"sessionCapabilities":{"close":{}}}}"#,
         configuration: ClientConfiguration = .default,
+        capabilities: ClientCapabilities? = nil,
     ) async throws -> Client {
         let client = Client(transport: transport, configuration: configuration)
         try await client.start()
-        let initTask = spawnInitializeTask(client, capabilities: Self.capabilities)
+        let initTask = spawnInitializeTask(client, capabilities: capabilities ?? Self.capabilities)
         _ = try await respondToNextRequest(transport, result: initResult)
         _ = try await initTask.value
         return client
@@ -544,6 +545,62 @@ final class ACPSessionLifecycleTests: XCTestCase {
             guard case .invalidResponse = error else {
                 return XCTFail("expected invalidResponse, got \(error)")
             }
+        }
+
+        await transport.finish()
+        _ = await client.shutdown()
+    }
+
+    /// A nonempty `session/load` result matching no load schema is a protocol
+    /// failure: the session must not be registered as if the load succeeded.
+    func testMalformedLoadResultThrowsInsteadOfRegisteringSession() async throws {
+        let transport = ScriptedTransport()
+        let client = try await makeReadyClient(transport)
+
+        let loadTask = Task {
+            try await client.loadSession(sessionId: SessionId("remote-1"), cwd: "/tmp")
+        }
+        let frame = try await transport.nextSentFrame()
+        let request = try JSONDecoder().decode(JSONRPCRequest.self, from: frame)
+        try await transport.pushJSON(
+            #"{"jsonrpc":"2.0","id":\#(requestID(request.id)),"result":{"sessionId":42}}"#,
+        )
+
+        do {
+            _ = try await loadTask.value
+            XCTFail("expected invalidResponse for a malformed load result")
+        } catch let error as ClientError {
+            guard case .invalidResponse = error else {
+                return XCTFail("expected invalidResponse, got \(error)")
+            }
+        }
+
+        await transport.finish()
+        _ = await client.shutdown()
+    }
+
+    /// Inbound `fs`/`terminal` requests beyond the capabilities this client
+    /// advertised are refused before reaching the delegate.
+    func testUnnegotiatedPrivilegedRequestsAreRefused() async throws {
+        let transport = ScriptedTransport()
+        let capabilities = ClientCapabilities(
+            fs: FileSystemCapabilities(readTextFile: true, writeTextFile: false),
+            terminal: false,
+        )
+        let client = try await makeReadyClient(transport, capabilities: capabilities)
+
+        try await transport.pushJSON(
+            #"{"jsonrpc":"2.0","id":900,"method":"fs/write_text_file","params":{"path":"/tmp/x","content":"x"}}"#,
+        )
+        try await transport.pushJSON(
+            #"{"jsonrpc":"2.0","id":901,"method":"terminal/create","params":{"command":"ls","sessionId":"s"}}"#,
+        )
+
+        for expectedID in [900, 901] {
+            let responseData = try await transport.nextSentFrame()
+            let response = try JSONDecoder().decode(JSONRPCResponse.self, from: responseData)
+            XCTAssertEqual(response.id, .number(expectedID))
+            XCTAssertEqual(response.error?.code, -32601, "unnegotiated privileged request must be refused")
         }
 
         await transport.finish()

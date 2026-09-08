@@ -296,6 +296,9 @@ public actor Client {
 
         connectionState = .initializing
         initializationInFlight = true
+        // The inbound router gates privileged agent requests against exactly
+        // what this client advertised here.
+        requestRouter.setClientCapabilities(capabilities)
 
         let info = clientInfo ?? ClientInfo(
             name: "ACP",
@@ -508,7 +511,7 @@ public extension Client {
         )
 
         let response = try await sendRequest(method: "session/load", params: request, sink: { response in
-            await self.adoptSession(from: response, fallback: sessionId)
+            await self.adoptValidatedLoadSession(from: response)
         })
 
         if let error = response.error {
@@ -550,13 +553,10 @@ public extension Client {
             return decoded
         }
 
-        try registerSessionOnLoad(effectiveSessionId)
-        return LoadSessionResponse(
-            sessionId: effectiveSessionId,
-            modes: nil,
-            models: nil,
-            configOptions: nil,
-        )
+        // A nonempty result that matches no load schema is a protocol failure:
+        // registering the session here would let later prompts target a remote
+        // session this client never validated.
+        throw ClientError.invalidResponse
     }
 
     func resumeSession(
@@ -612,6 +612,14 @@ public extension Client {
     private func adoptSession(from response: JSONRPCResponse, fallback: SessionId) async {
         guard response.error == nil else { return }
         let echoed = extractSessionId(from: response.result) ?? fallback
+        try? registerSessionOnLoad(echoed)
+    }
+
+    /// Load-specific adoption sink: registers the session only when the agent
+    /// echoed a well-formed session id, so a malformed load result never seeds
+    /// the session table before the response path can fail loudly.
+    private func adoptValidatedLoadSession(from response: JSONRPCResponse) async {
+        guard response.error == nil, let echoed = extractSessionId(from: response.result) else { return }
         try? registerSessionOnLoad(echoed)
     }
 
@@ -994,6 +1002,14 @@ extension Client {
             }
             return
         }
+        // Each accepted request spawns a suspended task; without a budget a
+        // chatty peer could grow this table (and the task set) without bound.
+        guard inboundRequests.count < Self.maxInflightInboundRequests else {
+            Task { [weak self] in
+                await self?.refuseOverloadedInbound(request.id)
+            }
+            return
+        }
 
         var context = InboundRequestContext(
             sessionId: Self.extractSessionID(from: request.params),
@@ -1007,8 +1023,17 @@ extension Client {
         inboundRequests[request.id] = context
     }
 
+    /// Ceiling for concurrently suspended inbound agent requests.
+    static let maxInflightInboundRequests = 32
+
     private func refuseDuplicateInbound(_ id: RequestId) async {
         let rpcError = JSONRPCError(code: -32600, message: "Request id already in flight", data: nil)
+        let response = JSONRPCResponse(id: id, result: nil, error: rpcError)
+        try? await writeFrame(response)
+    }
+
+    private func refuseOverloadedInbound(_ id: RequestId) async {
+        let rpcError = JSONRPCError(code: -32000, message: "Inbound request limit reached", data: nil)
         let response = JSONRPCResponse(id: id, result: nil, error: rpcError)
         try? await writeFrame(response)
     }
@@ -1022,35 +1047,6 @@ extension Client {
             outcome = .failure(Self.inboundRouteError(from: error))
         }
         await settleInbound(request.id, outcome)
-    }
-
-    struct InboundRouteError: Error {
-        let code: Int
-        let message: String
-        let data: AnyCodable?
-    }
-
-    private static func inboundRouteError(from error: Error) -> InboundRouteError {
-        if let jsonError = error as? JSONRPCError {
-            return InboundRouteError(code: jsonError.code, message: jsonError.message, data: jsonError.data)
-        }
-        if let clientError = error as? ClientError {
-            switch clientError {
-            case .unknownMethod:
-                return InboundRouteError(code: -32601, message: "Method not found", data: nil)
-            case .invalidParams:
-                return InboundRouteError(code: -32602, message: "Invalid params", data: nil)
-            case .invalidResponse:
-                return InboundRouteError(code: -32601, message: "Method not found", data: nil)
-            default:
-                break
-            }
-        }
-        if error is DecodingError {
-            return InboundRouteError(code: -32602, message: "Invalid params", data: nil)
-        }
-        // Fixed, payload-free internal error message.
-        return InboundRouteError(code: -32603, message: "Internal error", data: nil)
     }
 
     private func settleInbound(_ id: RequestId, _ outcome: Result<AnyCodable, InboundRouteError>) async {

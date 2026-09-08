@@ -114,51 +114,84 @@ public actor TerminalDelegate {
     private let maxReleasedOutputEntries = 50
     private static let termGraceSeconds: TimeInterval = 2.0
     private static let killGraceSeconds: TimeInterval = 1.0
+    private static let drainGraceSeconds: TimeInterval = 0.5
+    private static let maxDrainOutputBytes = 1_000_000
 
     // MARK: - Private Cleanup
 
-    private func drainPipe(_ pipe: Pipe, assembler: UTF8Assembler, terminalId: String) {
+    /// Drains remaining pipe output on a worker with a hard deadline. A
+    /// descendant that inherited the write end keeps the pipe open without
+    /// EOF after the direct child exits, so this must never block the actor
+    /// synchronously: whatever arrives within the window is kept, the rest is
+    /// dropped when the pipes are closed.
+    private func boundedDrain(_ pipe: Pipe, assembler: UTF8Assembler, terminalId: String) async {
+        pipe.fileHandleForReading.readabilityHandler = nil
         let handle = pipe.fileHandleForReading
-        handle.readabilityHandler = nil
-
-        do {
-            while true {
-                guard let data = try handle.read(upToCount: 65536), !data.isEmpty else {
-                    break
-                }
-                if let output = assembler.decoded(byAppending: data) {
-                    appendOutput(terminalId: terminalId, output: output)
+        let result = DrainResult()
+        DispatchQueue.global(qos: .utility).async {
+            var collected = 0
+            while collected < Self.maxDrainOutputBytes {
+                let chunk = (try? handle.read(upToCount: 65536)) ?? Data()
+                guard !chunk.isEmpty else { break }
+                collected += chunk.count
+                if let output = assembler.decoded(byAppending: chunk) {
+                    result.append(output)
                 }
             }
-        } catch {
-            // File handle already closed
+            if let remainder = assembler.flushRemaining() {
+                result.append(remainder)
+            }
+            result.finish()
         }
-        if let remainder = assembler.flushRemaining() {
-            appendOutput(terminalId: terminalId, output: remainder)
+
+        let deadline = Date().addingTimeInterval(Self.drainGraceSeconds)
+        while !result.isFinished, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        let output = result.snapshot
+        if !output.isEmpty {
+            appendOutput(terminalId: terminalId, output: output)
         }
     }
 
-    private func cleanupProcessPipes(
-        _ process: Process,
-        terminalId: String? = nil,
-        stdoutAssembler: UTF8Assembler? = nil,
-        stderrAssembler: UTF8Assembler? = nil,
-    ) {
+    private func cancelPipeHandlers(_ process: Process) {
         if let outputPipe = process.standardOutput as? Pipe {
-            if let id = terminalId {
-                drainPipe(outputPipe, assembler: stdoutAssembler ?? UTF8Assembler(), terminalId: id)
-            } else {
-                outputPipe.fileHandleForReading.readabilityHandler = nil
-            }
+            outputPipe.fileHandleForReading.readabilityHandler = nil
+        }
+        if let errorPipe = process.standardError as? Pipe {
+            errorPipe.fileHandleForReading.readabilityHandler = nil
+        }
+    }
+
+    private func closeProcessPipes(_ process: Process) {
+        if let outputPipe = process.standardOutput as? Pipe {
             try? outputPipe.fileHandleForReading.close()
         }
         if let errorPipe = process.standardError as? Pipe {
-            if let id = terminalId {
-                drainPipe(errorPipe, assembler: stderrAssembler ?? UTF8Assembler(), terminalId: id)
-            } else {
-                errorPipe.fileHandleForReading.readabilityHandler = nil
-            }
             try? errorPipe.fileHandleForReading.close()
+        }
+    }
+
+    /// Thread-safe drain outcome shared between the worker and the actor.
+    private final class DrainResult: @unchecked Sendable {
+        private let lock = NSLock()
+        private var storage = ""
+        private var finished = false
+
+        func append(_ text: String) {
+            lock.withLock { storage += text }
+        }
+
+        func finish() {
+            lock.withLock { finished = true }
+        }
+
+        var snapshot: String {
+            lock.withLock { storage }
+        }
+
+        var isFinished: Bool {
+            lock.withLock { finished }
         }
     }
 
@@ -411,14 +444,19 @@ public actor TerminalDelegate {
 
         let didExit = await boundedTeardown(state.process)
 
-        // Only drain remaining pipe bytes once the process has exited; draining
-        // a live pipe would block this actor on a peer that stays silent.
-        cleanupProcessPipes(
-            state.process,
-            terminalId: didExit ? terminalId.value : nil,
-            stdoutAssembler: state.stdoutAssembler,
-            stderrAssembler: state.stderrAssembler,
-        )
+        // Only drain remaining pipe bytes once the process has exited, and
+        // even then through the bounded window: a descendant that inherited
+        // the write end can keep the pipe open without EOF indefinitely.
+        if didExit {
+            if let outputPipe = state.process.standardOutput as? Pipe {
+                await boundedDrain(outputPipe, assembler: state.stdoutAssembler, terminalId: terminalId.value)
+            }
+            if let errorPipe = state.process.standardError as? Pipe {
+                await boundedDrain(errorPipe, assembler: state.stderrAssembler, terminalId: terminalId.value)
+            }
+        }
+        cancelPipeHandlers(state.process)
+        closeProcessPipes(state.process)
         state = terminals[terminalId.value] ?? state
 
         let exitCode = terminalExitCode(state.process)
@@ -443,12 +481,16 @@ public actor TerminalDelegate {
     public func cleanup() async {
         for (terminalId, state) in terminals {
             let didExit = await boundedTeardown(state.process)
-            cleanupProcessPipes(
-                state.process,
-                terminalId: didExit ? terminalId : nil,
-                stdoutAssembler: state.stdoutAssembler,
-                stderrAssembler: state.stderrAssembler,
-            )
+            if didExit {
+                if let outputPipe = state.process.standardOutput as? Pipe {
+                    await boundedDrain(outputPipe, assembler: state.stdoutAssembler, terminalId: terminalId)
+                }
+                if let errorPipe = state.process.standardError as? Pipe {
+                    await boundedDrain(errorPipe, assembler: state.stderrAssembler, terminalId: terminalId)
+                }
+            }
+            cancelPipeHandlers(state.process)
+            closeProcessPipes(state.process)
             let exitCode = terminalExitCode(state.process)
             for waiter in state.exitWaiters {
                 waiter.resume(returning: (exitCode, nil))

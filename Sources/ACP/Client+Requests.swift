@@ -474,3 +474,44 @@ public extension Client {
         )
     }
 }
+
+// MARK: - Inbound Request Errors
+
+public extension Client {
+    struct InboundRouteError: Error {
+        let code: Int
+        let message: String
+        let data: AnyCodable?
+    }
+
+    static func inboundRouteError(from error: Error) -> InboundRouteError {
+        if let jsonError = error as? JSONRPCError {
+            return InboundRouteError(code: jsonError.code, message: jsonError.message, data: jsonError.data)
+        }
+        if let clientError = error as? ClientError {
+            switch clientError {
+            case .unknownMethod:
+                return InboundRouteError(code: -32601, message: "Method not found", data: nil)
+            case .invalidParams:
+                return InboundRouteError(code: -32602, message: "Invalid params", data: nil)
+            case .invalidResponse:
+                return InboundRouteError(code: -32601, message: "Method not found", data: nil)
+            case .unsupportedCapability, .delegateNotSet:
+                // A privileged request beyond the negotiated capabilities is
+                // answered as unsupported, mirroring method-not-supported.
+                return InboundRouteError(
+                    code: -32601,
+                    message: "Method not supported by negotiated capabilities",
+                    data: nil,
+                )
+            default:
+                break
+            }
+        }
+        if error is DecodingError {
+            return InboundRouteError(code: -32602, message: "Invalid params", data: nil)
+        }
+        // Fixed, payload-free internal error message.
+        return InboundRouteError(code: -32603, message: "Internal error", data: nil)
+    }
+}

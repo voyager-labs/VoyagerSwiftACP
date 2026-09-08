@@ -38,6 +38,9 @@ public actor Agent {
     private var inboundRequests: [RequestId: InboundContext] = [:]
     private var isClosed = false
 
+    /// Ceiling for concurrently suspended inbound client requests.
+    static let maxInflightInboundRequests = 32
+
     /// Session work is only legal after a successful `initialize` handshake
     /// (protocol version and capabilities negotiated); peer requests that skip
     /// it are refused locally instead of reaching the delegate.
@@ -270,6 +273,18 @@ public actor Agent {
                     id: request.id,
                     code: -32600,
                     message: "Request id already in flight",
+                )
+            }
+            return
+        }
+        // Suspended handlers each hold a task and context; cap the concurrency
+        // so a peer cannot grow them without bound.
+        guard inboundRequests.count < Self.maxInflightInboundRequests else {
+            Task { [weak self] in
+                try? await self?.sendErrorResponse(
+                    id: request.id,
+                    code: -32000,
+                    message: "Inbound request limit reached",
                 )
             }
             return

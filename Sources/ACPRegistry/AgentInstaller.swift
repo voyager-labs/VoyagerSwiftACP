@@ -33,12 +33,14 @@ public actor AgentInstaller {
         case let .binary(target):
             return try await installBinary(agent: agent, target: target)
         case let .npx(pkg):
+            // `Process.executableURL` needs a real path, so bare launcher
+            // names go through /usr/bin/env with the launcher as argv[0].
             return InstalledAgent(
                 id: agent.id,
                 name: agent.name,
                 version: agent.version,
-                executablePath: "npx",
-                arguments: [pkg.package] + (pkg.args ?? []),
+                executablePath: "/usr/bin/env",
+                arguments: ["npx", pkg.package] + (pkg.args ?? []),
                 environment: pkg.env ?? [:],
             )
         case let .uvx(pkg):
@@ -46,8 +48,8 @@ public actor AgentInstaller {
                 id: agent.id,
                 name: agent.name,
                 version: agent.version,
-                executablePath: "uvx",
-                arguments: [pkg.package] + (pkg.args ?? []),
+                executablePath: "/usr/bin/env",
+                arguments: ["uvx", pkg.package] + (pkg.args ?? []),
                 environment: pkg.env ?? [:],
             )
         }
