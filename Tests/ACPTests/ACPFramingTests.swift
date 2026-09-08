@@ -56,8 +56,8 @@ final class ACPFramingTests: XCTestCase {
         let request = try JSONDecoder().decode(JSONRPCRequest.self, from: frame)
         XCTAssertEqual(request.method, "initialize")
         XCTAssertEqual(request.jsonrpc, "2.0")
-        // The frame carries the ACP newline framing.
-        XCTAssertEqual(frame.last, 0x0A)
+        // The client supplies JSON; the transport owns wire delimiters.
+        XCTAssertFalse(frame.contains(0x0A))
 
         try await transport.pushJSON(TestFrames.response(
             id: requestID(request.id),

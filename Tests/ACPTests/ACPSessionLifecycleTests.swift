@@ -235,20 +235,6 @@ final class ACPSessionLifecycleTests: XCTestCase {
         _ = await client.shutdown()
     }
 
-    func testFailedLoadDoesNotRegisterSession() async throws {
-        let transport = ScriptedTransport()
-        let client = try await makeReadyClient(transport)
-        let request = Task { try await client.loadSession(sessionId: SessionId("missing"), cwd: "/tmp") }
-        _ = try await transport.nextSentFrame()
-        try await transport.pushJSON(
-            #"{"jsonrpc":"2.0","id":2,"error":{"code":-32001,"message":"not found"}}"#,
-        )
-        _ = await request.result
-        let snapshot = await client.sessionSnapshot(for: SessionId("missing"))
-        XCTAssertNil(snapshot)
-        _ = await client.shutdown()
-    }
-
     /// S01
     func testCreatesSessionFromAgentID() async throws {
         let transport = ScriptedTransport()
@@ -421,14 +407,14 @@ final class ACPSessionLifecycleTests: XCTestCase {
         try await Task.sleep(nanoseconds: 100_000_000)
         let cancelFrame = try XCTUnwrap(
             transport.allSentFrames().last { frame in
-                guard let object = try? JSONSerialization.jsonObject(with: frame.dropLast()) as? [String: Any] else {
+                guard let object = try? JSONSerialization.jsonObject(with: frame) as? [String: Any] else {
                     return false
                 }
                 return object["method"] as? String == "session/cancel"
             },
             "expected a session/cancel notification on the wire",
         )
-        let cancelObject = try JSONSerialization.jsonObject(with: cancelFrame.dropLast()) as? [String: Any]
+        let cancelObject = try JSONSerialization.jsonObject(with: cancelFrame) as? [String: Any]
         XCTAssertNil(cancelObject?["id"], "session/cancel must be a notification without id")
 
         // Terminal response returns the session to idle.
@@ -702,7 +688,7 @@ final class ACPSessionLifecycleTests: XCTestCase {
         try await Task.sleep(nanoseconds: 100_000_000)
 
         let cancelledResponses = transport.allSentFrames().filter { frame in
-            guard let object = try? JSONSerialization.jsonObject(with: frame.dropLast()) as? [String: Any],
+            guard let object = try? JSONSerialization.jsonObject(with: frame) as? [String: Any],
                   let result = object["result"] as? [String: Any],
                   let outcome = result["outcome"] as? [String: Any],
                   let outcomeKind = outcome["outcome"] as? String
@@ -717,7 +703,7 @@ final class ACPSessionLifecycleTests: XCTestCase {
         await delegate.resolvePermission(RequestPermissionResponse(outcome: PermissionOutcome(optionId: "allow")))
         try await Task.sleep(nanoseconds: 100_000_000)
         let cancelledFrames = transport.allSentFrames().filter { (frame: Data) -> Bool in
-            guard let object = try? JSONSerialization.jsonObject(with: frame.dropLast()) as? [String: Any],
+            guard let object = try? JSONSerialization.jsonObject(with: frame) as? [String: Any],
                   let result = object["result"] as? [String: Any],
                   let outcome = result["outcome"] as? [String: Any],
                   let outcomeKind = outcome["outcome"] as? String

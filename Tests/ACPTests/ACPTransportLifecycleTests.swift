@@ -47,6 +47,7 @@ final class ACPTransportLifecycleTests: XCTestCase {
     private func echoAgent() throws {
         try createAgent(script: """
         while read -r line; do
+            [ -n "$line" ] || exit 64
             id=$(echo "$line" | grep -o '"id":[0-9]*' | grep -o '[0-9]*')
             method=$(echo "$line" | grep -o '"method":"[^"]*"' | sed 's/"method":"\\([^"]*\\)"/\\1/')
             if [ "$method" = "initialize" ]; then
@@ -62,6 +63,24 @@ final class ACPTransportLifecycleTests: XCTestCase {
 
     private func initialize(_ client: Client) async throws {
         _ = try await client.initialize(capabilities: makeCapabilities(), timeout: 5)
+    }
+
+    /// L18: A strict stdio peer accepts consecutive requests without empty frames.
+    func testClientWritesExactlyOneLinePerRequest() async throws {
+        try echoAgent()
+        let client = Client()
+        try await client.launch(agentPath: agentPath)
+        do {
+            try await initialize(client)
+            let session = try await client.newSession(workingDirectory: "/tmp", timeout: 5)
+            let response = try await client.sendPrompt(sessionId: session.sessionId, content: [], timeout: 5)
+            XCTAssertEqual(response.stopReason, .endTurn)
+        } catch {
+            _ = await client.shutdown()
+            throw error
+        }
+        let evidence = await client.shutdown()
+        XCTAssertTrue(evidence.cleanupComplete)
     }
 
     /// L01

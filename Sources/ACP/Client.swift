@@ -62,6 +62,8 @@ public actor Client {
     private var responseSinks: [RequestId: @Sendable (JSONRPCResponse) async throws -> Void] = [:]
 
     private var sessions: [SessionId: SessionSnapshot] = [:]
+    /// Load history precedes its response; only pending loads authorize replay.
+    private var loadRequestSessions: [RequestId: SessionId] = [:]
     private var promptRequestSessions: [RequestId: SessionId] = [:]
     private var startedWrites: Set<RequestId> = []
     private var cancellationWatchers: [SessionId: Task<Void, Never>] = [:]
@@ -658,6 +660,9 @@ extension Client {
                 if method == "session/prompt", let sessionId = Self.extractSessionID(from: paramsValue) {
                     promptRequestSessions[requestIdentifier] = sessionId
                 }
+                if method == "session/load", let sessionId = Self.extractSessionID(from: paramsValue) {
+                    loadRequestSessions[requestIdentifier] = sessionId
+                }
                 if let sink {
                     responseSinks[requestIdentifier] = sink
                 }
@@ -728,6 +733,7 @@ extension Client {
         let retainTurn = sessionId != nil && startedWrites.contains(id)
         pendingRequests.complete(id: id, .failure(error), cancelWrite: !retainTurn)
         responseSinks.removeValue(forKey: id)
+        loadRequestSessions.removeValue(forKey: id)
         if retainTurn, let sessionId {
             do {
                 try await cancelSession(sessionId: sessionId)
@@ -756,9 +762,8 @@ extension Client {
     }
 
     private func encodeFrame(_ message: some Encodable) throws -> Data {
-        var data = try encoder.encode(message)
-        data.append(0x0A)
-        return data
+        // The transport owns framing (stdio appends exactly one LF).
+        try encoder.encode(message)
     }
 }
 
@@ -794,6 +799,7 @@ extension Client {
 
         pendingRequests.failAll(ClientError.connectionClosed)
         responseSinks.removeAll()
+        loadRequestSessions.removeAll()
         promptRequestSessions.removeAll()
         startedWrites.removeAll()
         cancelInboundHandlers()
@@ -881,6 +887,7 @@ extension Client {
             logger.debug("Ignoring response for unknown request id")
             return
         }
+        loadRequestSessions.removeValue(forKey: response.id)
         if let sink = responseSinks.removeValue(forKey: response.id) {
             do {
                 try await sink(response)
@@ -939,7 +946,7 @@ extension Client {
             throw ClientError.protocolViolation("session/update is missing the update object")
         }
 
-        guard sessions[sessionId] != nil else {
+        guard sessions[sessionId] != nil || loadRequestSessions.values.contains(sessionId) else {
             throw ClientError.protocolViolation("session/update for unknown session")
         }
         guard let variant = updateObject["sessionUpdate"] as? String else {
@@ -1111,6 +1118,7 @@ extension Client {
 
         pendingRequests.failAll(mappedPendingError(for: evidence ?? TransportTermination.genericClosure()))
         responseSinks.removeAll()
+        loadRequestSessions.removeAll()
         promptRequestSessions.removeAll()
         startedWrites.removeAll()
         cancelInboundHandlers()
@@ -1162,6 +1170,7 @@ extension Client {
         pendingRequests.failAll(error)
         connectionState = .closing
         responseSinks.removeAll()
+        loadRequestSessions.removeAll()
         promptRequestSessions.removeAll()
         startedWrites.removeAll()
         cancelInboundHandlers()
