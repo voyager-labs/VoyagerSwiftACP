@@ -10,12 +10,12 @@ import ACPModel
 import XCTest
 
 final class ACPSessionLifecycleTests: XCTestCase {
-    private static let capabilities = ClientCapabilities(
+    static let capabilities = ClientCapabilities(
         fs: FileSystemCapabilities(readTextFile: true, writeTextFile: true),
         terminal: true,
     )
 
-    private func requestID(_ id: RequestId) -> Int {
+    func requestID(_ id: RequestId) -> Int {
         if case let .number(value) = id {
             return value
         }
@@ -23,7 +23,7 @@ final class ACPSessionLifecycleTests: XCTestCase {
     }
 
     @discardableResult
-    private func respondToNextRequest(
+    func respondToNextRequest(
         _ transport: ScriptedTransport,
         result: @autoclosure () throws -> String,
     ) async throws -> RequestId {
@@ -33,7 +33,7 @@ final class ACPSessionLifecycleTests: XCTestCase {
         return request.id
     }
 
-    private func makeReadyClient(
+    func makeReadyClient(
         _ transport: ScriptedTransport,
         initResult: String = #"{"protocolVersion":1,"agentCapabilities":{"sessionCapabilities":{"close":{}}}}"#,
         configuration: ClientConfiguration = .default,
@@ -46,8 +46,8 @@ final class ACPSessionLifecycleTests: XCTestCase {
         return client
     }
 
-    private func createSession(_ client: Client, _ transport: ScriptedTransport,
-                               id: String = "s1") async throws -> SessionId
+    func createSession(_ client: Client, _ transport: ScriptedTransport,
+                       id: String = "s1") async throws -> SessionId
     {
         let task = Task { try await client.newSession(workingDirectory: "/tmp", timeout: 5) }
         _ = try await respondToNextRequest(transport, result: #"{"sessionId":"\#(id)"}"#)
@@ -160,6 +160,7 @@ final class ACPSessionLifecycleTests: XCTestCase {
             method: "session/update",
             params: #"{"sessionId":"unknown","update":{"sessionUpdate":"future_update"}}"#,
         ))
+        try await transport.pushJSON(TestFrames.response(id: 2, result: #"{"sessionId":"different"}"#))
         let result = await pending.result
         guard case let .failure(error) = result,
               let clientError = error as? ClientError,

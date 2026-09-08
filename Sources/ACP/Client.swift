@@ -64,6 +64,7 @@ public actor Client {
     private var sessions: [SessionId: SessionSnapshot] = [:]
     /// Load history precedes its response; only pending loads authorize replay.
     private var loadRequestSessions: [RequestId: SessionId] = [:]
+    private var sessionOpening: SessionOpening?
     private var promptRequestSessions: [RequestId: SessionId] = [:]
     private var startedWrites: Set<RequestId> = []
     private var cancellationWatchers: [SessionId: Task<Void, Never>] = [:]
@@ -80,6 +81,21 @@ public actor Client {
     private var ingressTask: Task<Void, Never>?
     private var shutdownTask: Task<TransportTermination, Never>?
     private(set) var lastTermination: TransportTermination?
+
+    private var notificationHandler: (@Sendable (JSONRPCNotification) async throws -> Void)?
+
+    /// Installs an ordered notification consumer before start/launch. When set,
+    /// notifications are delivered here instead of through `notifications`.
+    /// Delivery completes before the next ingress frame (including responses).
+    /// The handler must not await an RPC on this client: doing so blocks ingress.
+    public func setNotificationHandler(
+        _ handler: @escaping @Sendable (JSONRPCNotification) async throws -> Void,
+    ) throws {
+        guard connectionState == .idle, !connectionOpened else {
+            throw ClientError.invalidParams("notification handler must be configured before connection opens")
+        }
+        notificationHandler = handler
+    }
 
     private let notificationQueue: BoundedStream<JSONRPCNotification>
     private let notificationStream: AsyncStream<JSONRPCNotification>
@@ -350,6 +366,8 @@ public extension Client {
         guard workingDirectory.hasPrefix("/") else {
             throw ClientError.invalidParams("cwd must be an absolute path")
         }
+        try beginSessionOpening(sessionId: nil)
+        defer { sessionOpening = nil }
         let request = NewSessionRequest(
             cwd: workingDirectory,
             additionalDirectories: additionalDirectories,
@@ -374,6 +392,7 @@ public extension Client {
             throw ClientError.protocolViolation("agent reused session id")
         }
         sessions[decoded.sessionId] = SessionSnapshot(sessionId: decoded.sessionId, state: .idle, lastStopReason: nil)
+        try await finishSessionOpening(sessionId: decoded.sessionId)
     }
 
     func sendPrompt(
@@ -485,6 +504,8 @@ public extension Client {
         mcpServers: [MCPServerConfig] = [],
     ) async throws -> LoadSessionResponse {
         try ensureReadyForSessionOperation()
+        try beginSessionOpening(sessionId: sessionId)
+        defer { sessionOpening = nil }
         let request = LoadSessionRequest(
             sessionId: sessionId,
             cwd: cwd,
@@ -493,7 +514,7 @@ public extension Client {
         )
 
         let response = try await sendRequest(method: "session/load", params: request, sink: { response in
-            await self.adoptSession(from: response, fallback: sessionId)
+            try await self.registerOpeningLoad(response, fallback: sessionId)
         })
 
         if let error = response.error {
@@ -504,8 +525,7 @@ public extension Client {
             throw ClientError.agentError(error)
         }
 
-        let extractedSessionId = extractSessionId(from: response.result) ?? sessionId
-        let effectiveSessionId = extractedSessionId
+        let effectiveSessionId = extractSessionId(from: response.result) ?? sessionId
 
         guard let result = response.result else {
             try registerSessionOnLoad(effectiveSessionId)
@@ -542,6 +562,61 @@ public extension Client {
             models: nil,
             configOptions: nil,
         )
+    }
+
+    private func beginSessionOpening(sessionId: SessionId?) throws {
+        guard sessionOpening == nil else {
+            throw ClientError.invalidParams("a session opening is already in progress")
+        }
+        sessionOpening = SessionOpening(sessionId: sessionId)
+    }
+
+    private func registerOpeningLoad(_ response: JSONRPCResponse, fallback: SessionId) async throws {
+        if let error = response.error, !isSessionAlreadyActive(error) { return }
+        let effectiveID = extractSessionId(from: response.result) ?? fallback
+        try registerSessionOnLoad(effectiveID)
+        try await finishSessionOpening(sessionId: effectiveID)
+    }
+
+    private func finishSessionOpening(sessionId: SessionId) async throws {
+        guard let opening = sessionOpening else { return }
+        if let expected = opening.sessionId, expected != sessionId {
+            throw ClientError.protocolViolation("session response does not match early updates")
+        }
+        // Keep the opening guard until the API returns; ingress is serialized
+        // through this sink so all staged updates precede subsequent frames.
+        sessionOpening?.completed = true
+        sessionOpening?.notifications.removeAll()
+        sessionOpening?.byteCount = 0
+        for notification in opening.notifications {
+            guard let id = opening.requestId, pendingRequests.contains(id) else {
+                throw CancellationError()
+            }
+            await publishNotification(notification)
+            guard isConnectionLive else {
+                throw ClientError.protocolViolation("session opening delivery failed")
+            }
+        }
+    }
+
+    private func stageOpeningUpdate(_ notification: JSONRPCNotification) throws -> Bool {
+        guard let sessionId = Self.extractSessionID(from: notification.params) else {
+            throw ClientError.protocolViolation("session/update is missing sessionId")
+        }
+        let registered = sessions[sessionId] != nil
+        if try sessionOpening?.stage(
+            notification,
+            sessionId: sessionId,
+            registered: registered,
+            byteBudget: configuration.notificationByteBudget,
+            encoder: encoder,
+        ) == true {
+            return true
+        }
+        guard registered else {
+            throw ClientError.protocolViolation("session/update for unknown session")
+        }
+        return false
     }
 
     func resumeSession(
@@ -663,6 +738,9 @@ extension Client {
                 if method == "session/load", let sessionId = Self.extractSessionID(from: paramsValue) {
                     loadRequestSessions[requestIdentifier] = sessionId
                 }
+                if method == "session/new" || method == "session/load" {
+                    sessionOpening?.requestId = requestIdentifier
+                }
                 if let sink {
                     responseSinks[requestIdentifier] = sink
                 }
@@ -729,6 +807,11 @@ extension Client {
 
     private func abandonRequest(id: RequestId, error: Error) async {
         guard pendingRequests.contains(id) else { return }
+        if sessionOpening?.requestId == id {
+            sessionOpening?.completed = true
+            sessionOpening?.notifications.removeAll()
+            sessionOpening?.byteCount = 0
+        }
         let sessionId = promptRequestSessions[id]
         let retainTurn = sessionId != nil && startedWrites.contains(id)
         pendingRequests.complete(id: id, .failure(error), cancelWrite: !retainTurn)
@@ -762,7 +845,7 @@ extension Client {
     }
 
     private func encodeFrame(_ message: some Encodable) throws -> Data {
-        // The transport owns framing (stdio appends exactly one LF).
+        // Transport owns framing; stdio appends LF and WebSocket owns its message boundary.
         try encoder.encode(message)
     }
 }
@@ -800,6 +883,7 @@ extension Client {
         pendingRequests.failAll(ClientError.connectionClosed)
         responseSinks.removeAll()
         loadRequestSessions.removeAll()
+        sessionOpening = nil
         promptRequestSessions.removeAll()
         startedWrites.removeAll()
         cancelInboundHandlers()
@@ -909,7 +993,8 @@ extension Client {
     private func handleInboundNotification(_ notification: JSONRPCNotification) async {
         if notification.method == "session/update" {
             do {
-                try await validateSessionUpdate(notification)
+                try SessionOpening.validateUpdate(notification, decoder: decoder)
+                if try stageOpeningUpdate(notification) { return }
             } catch let clientError as ClientError {
                 await failConnection(clientError)
                 return
@@ -919,17 +1004,22 @@ extension Client {
             }
         }
 
-        let byteCount = (try? encoder.encode(notification).count) ?? 0
-        guard notificationQueue.yield(notification, byteCount: byteCount) else {
-            await failConnection(.protocolViolation("notification byte budget exceeded"))
-            return
-        }
+        await publishNotification(notification)
+    }
 
+    private func publishNotification(_ notification: JSONRPCNotification) async {
+        let byteCount = (try? encoder.encode(notification).count) ?? 0
         do {
+            if let notificationHandler {
+                try await notificationHandler(notification)
+            } else if !notificationQueue.yield(notification, byteCount: byteCount) {
+                await failConnection(.protocolViolation("notification byte budget exceeded"))
+                return
+            }
             try await requestRouter.routeNotification(notification)
         } catch {
             // Invalid params on a known notification is a typed protocol failure.
-            await failConnection(ClientError.protocolViolation("invalid notification params"))
+            await failConnection(ClientError.protocolViolation("notification delivery failed"))
         }
     }
 
@@ -962,7 +1052,6 @@ extension Client {
         let updateData = try JSONSerialization.data(withJSONObject: updateObject)
         _ = try decoder.decode(SessionUpdate.self, from: updateData)
     }
-
     private func dispatchInbound(_ request: JSONRPCRequest) {
         var context = InboundRequestContext(
             sessionId: Self.extractSessionID(from: request.params),
@@ -1119,6 +1208,7 @@ extension Client {
         pendingRequests.failAll(mappedPendingError(for: evidence ?? TransportTermination.genericClosure()))
         responseSinks.removeAll()
         loadRequestSessions.removeAll()
+        sessionOpening = nil
         promptRequestSessions.removeAll()
         startedWrites.removeAll()
         cancelInboundHandlers()
@@ -1171,6 +1261,7 @@ extension Client {
         connectionState = .closing
         responseSinks.removeAll()
         loadRequestSessions.removeAll()
+        sessionOpening = nil
         promptRequestSessions.removeAll()
         startedWrites.removeAll()
         cancelInboundHandlers()
