@@ -1,8 +1,7 @@
-import XCTest
 @testable import ACPRegistry
+import XCTest
 
 final class RegistryTests: XCTestCase {
-
     // MARK: - Type Tests
 
     func testRegistryAgentDecoding() throws {
@@ -23,7 +22,7 @@ final class RegistryTests: XCTestCase {
         }
         """
 
-        let data = json.data(using: .utf8)!
+        let data = try XCTUnwrap(json.data(using: .utf8))
         let agent = try JSONDecoder().decode(RegistryAgent.self, from: data)
 
         XCTAssertEqual(agent.id, "claude-acp")
@@ -55,7 +54,7 @@ final class RegistryTests: XCTestCase {
         }
         """
 
-        let data = json.data(using: .utf8)!
+        let data = try XCTUnwrap(json.data(using: .utf8))
         let agent = try JSONDecoder().decode(RegistryAgent.self, from: data)
 
         XCTAssertNotNil(agent.distribution.binary)
@@ -68,12 +67,30 @@ final class RegistryTests: XCTestCase {
     }
 
     func testBinaryArchiveKindDetection() throws {
-        XCTAssertEqual(AgentInstaller.binaryArchiveKind(for: URL(string: "https://example.com/agent.zip")!), .zip)
-        XCTAssertEqual(AgentInstaller.binaryArchiveKind(for: URL(string: "https://example.com/agent.tar.gz")!), .tarGzip)
-        XCTAssertEqual(AgentInstaller.binaryArchiveKind(for: URL(string: "https://example.com/agent.tgz")!), .tarGzip)
-        XCTAssertEqual(AgentInstaller.binaryArchiveKind(for: URL(string: "https://example.com/agent.tar.bz2")!), .tarBzip2)
-        XCTAssertEqual(AgentInstaller.binaryArchiveKind(for: URL(string: "https://example.com/agent.tbz2")!), .tarBzip2)
-        XCTAssertEqual(AgentInstaller.binaryArchiveKind(for: URL(string: "https://example.com/agent")!), .rawBinary)
+        XCTAssertEqual(
+            try AgentInstaller.binaryArchiveKind(for: XCTUnwrap(URL(string: "https://example.com/agent.zip"))),
+            .zip,
+        )
+        XCTAssertEqual(
+            try AgentInstaller.binaryArchiveKind(for: XCTUnwrap(URL(string: "https://example.com/agent.tar.gz"))),
+            .tarGzip,
+        )
+        XCTAssertEqual(
+            try AgentInstaller.binaryArchiveKind(for: XCTUnwrap(URL(string: "https://example.com/agent.tgz"))),
+            .tarGzip,
+        )
+        XCTAssertEqual(
+            try AgentInstaller.binaryArchiveKind(for: XCTUnwrap(URL(string: "https://example.com/agent.tar.bz2"))),
+            .tarBzip2,
+        )
+        XCTAssertEqual(
+            try AgentInstaller.binaryArchiveKind(for: XCTUnwrap(URL(string: "https://example.com/agent.tbz2"))),
+            .tarBzip2,
+        )
+        XCTAssertEqual(
+            try AgentInstaller.binaryArchiveKind(for: XCTUnwrap(URL(string: "https://example.com/agent"))),
+            .rawBinary,
+        )
     }
 
     func testRegistryDecoding() throws {
@@ -104,7 +121,7 @@ final class RegistryTests: XCTestCase {
         }
         """
 
-        let data = json.data(using: .utf8)!
+        let data = try XCTUnwrap(json.data(using: .utf8))
         let registry = try JSONDecoder().decode(Registry.self, from: data)
 
         XCTAssertEqual(registry.version, "1.0.0")
@@ -147,11 +164,11 @@ final class RegistryTests: XCTestCase {
     func testDistributionPrefersBinary() {
         let distribution = Distribution(
             binary: ["darwin-aarch64": BinaryTarget(archive: "https://example.com/a.tar.gz", cmd: "./a")],
-            npx: PackageDistribution(package: "test")
+            npx: PackageDistribution(package: "test"),
         )
 
         let platform = Platform(os: .darwin, arch: .aarch64)
-        if case .binary(let target) = distribution.preferred(for: platform) {
+        if case let .binary(target) = distribution.preferred(for: platform) {
             XCTAssertEqual(target.cmd, "./a")
         } else {
             XCTFail("Expected binary distribution")
@@ -161,11 +178,11 @@ final class RegistryTests: XCTestCase {
     func testDistributionFallsBackToNpx() {
         let distribution = Distribution(
             binary: ["linux-x86_64": BinaryTarget(archive: "https://example.com/a.tar.gz", cmd: "./a")],
-            npx: PackageDistribution(package: "test-pkg")
+            npx: PackageDistribution(package: "test-pkg"),
         )
 
         let platform = Platform(os: .darwin, arch: .aarch64)
-        if case .npx(let pkg) = distribution.preferred(for: platform) {
+        if case let .npx(pkg) = distribution.preferred(for: platform) {
             XCTAssertEqual(pkg.package, "test-pkg")
         } else {
             XCTFail("Expected npx distribution")
@@ -174,11 +191,11 @@ final class RegistryTests: XCTestCase {
 
     func testDistributionFallsBackToUvx() {
         let distribution = Distribution(
-            uvx: PackageDistribution(package: "python-agent")
+            uvx: PackageDistribution(package: "python-agent"),
         )
 
         let platform = Platform(os: .darwin, arch: .aarch64)
-        if case .uvx(let pkg) = distribution.preferred(for: platform) {
+        if case let .uvx(pkg) = distribution.preferred(for: platform) {
             XCTAssertEqual(pkg.package, "python-agent")
         } else {
             XCTFail("Expected uvx distribution")
@@ -187,7 +204,7 @@ final class RegistryTests: XCTestCase {
 
     func testDistributionReturnsNilWhenUnsupported() {
         let distribution = Distribution(
-            binary: ["windows-x86_64": BinaryTarget(archive: "https://example.com/a.zip", cmd: "a.exe")]
+            binary: ["windows-x86_64": BinaryTarget(archive: "https://example.com/a.zip", cmd: "a.exe")],
         )
 
         let platform = Platform(os: .darwin, arch: .aarch64)
@@ -203,7 +220,7 @@ final class RegistryTests: XCTestCase {
             version: "1.0.0",
             executablePath: "/usr/local/bin/test",
             arguments: ["--acp"],
-            environment: ["KEY": "value"]
+            environment: ["KEY": "value"],
         )
 
         let data = try JSONEncoder().encode(installed)
@@ -215,22 +232,58 @@ final class RegistryTests: XCTestCase {
         XCTAssertEqual(decoded.environment["KEY"], "value")
     }
 
-    // MARK: - Registry Client Tests
+    // MARK: - Registry Client Tests (offline)
 
-    func testRegistryClientFetchFromNetwork() async throws {
-        let client = RegistryClient()
-
-        // This test requires network access
-        let registry = try await client.fetch()
-
-        XCTAssertFalse(registry.version.isEmpty)
-        XCTAssertFalse(registry.agents.isEmpty)
-        XCTAssertFalse(registry.agents[0].id.isEmpty)
-        XCTAssertFalse(registry.agents[0].name.isEmpty)
+    private func makeOfflineRegistryClient() -> RegistryClient {
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("voy-886-registry-\(UUID().uuidString)", isDirectory: true)
+        addTeardownBlock {
+            if FileManager.default.fileExists(atPath: tempDirectory.path) {
+                try FileManager.default.removeItem(at: tempDirectory)
+            }
+            RegistryURLProtocol.reset()
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RegistryURLProtocol.self]
+        return RegistryClient(
+            session: URLSession(configuration: configuration),
+            cacheDirectory: tempDirectory,
+        )
     }
 
-    func testRegistryClientAgentLookup() async throws {
-        let client = RegistryClient()
+    private func installHandler() {
+        let payload = """
+        {"version":"1.0.0","agents":[{"id":"fixture-agent","name":"Fixture Agent","version":"1.0.0","description":"offline fixture","distribution":{"npx":{"package":"fixture"}}}],"extensions":[]}
+        """
+        RegistryURLProtocol.handler = { request in
+            let response = try XCTUnwrap(HTTPURLResponse(
+                url: XCTUnwrap(request.url),
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: ["Content-Type": "application/json"],
+            ))
+            return (response, Data(payload.utf8))
+        }
+    }
+
+    /// Replaced network-dependent `testRegistryClientFetchFromNetwork`: the
+    /// required suite must run without external network access.
+    func testRegistryClientFetchOffline() async throws {
+        installHandler()
+        let client = makeOfflineRegistryClient()
+
+        let registry = try await client.fetch()
+
+        XCTAssertEqual(registry.version, "1.0.0")
+        XCTAssertFalse(registry.agents.isEmpty)
+        XCTAssertEqual(registry.agents[0].id, "fixture-agent")
+        XCTAssertEqual(registry.agents[0].name, "Fixture Agent")
+    }
+
+    /// Replaced network-dependent `testRegistryClientAgentLookup`.
+    func testRegistryClientAgentLookupOffline() async throws {
+        installHandler()
+        let client = makeOfflineRegistryClient()
         let registry = try await client.fetch()
         let knownAgent = try XCTUnwrap(registry.agents.first)
 
@@ -243,28 +296,43 @@ final class RegistryTests: XCTestCase {
         XCTAssertNil(notFound)
     }
 
-    func testRegistryClientCaching() async throws {
-        let client = RegistryClient()
+    /// Replaced network-dependent `testRegistryClientCaching`; also proves the
+    /// disk cache stays inside the injected, test-local cache directory.
+    func testRegistryClientCachingIsTestLocal() async throws {
+        installHandler()
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("voy-886-registry-\(UUID().uuidString)", isDirectory: true)
+        addTeardownBlock {
+            if FileManager.default.fileExists(atPath: tempDirectory.path) {
+                try FileManager.default.removeItem(at: tempDirectory)
+            }
+            RegistryURLProtocol.reset()
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RegistryURLProtocol.self]
+        let client = RegistryClient(
+            session: URLSession(configuration: configuration),
+            cacheDirectory: tempDirectory,
+        )
 
-        // First fetch
         let registry1 = try await client.fetch()
-
-        // Second fetch should use cache
         let registry2 = try await client.fetch()
 
         XCTAssertEqual(registry1.version, registry2.version)
         XCTAssertEqual(registry1.agents.count, registry2.agents.count)
+
+        let contents = try FileManager.default.contentsOfDirectory(atPath: tempDirectory.path)
+        XCTAssertFalse(contents.isEmpty, "cache must live in the injected test-local directory")
     }
 
-    func testRegistryClientForceRefresh() async throws {
-        let client = RegistryClient()
+    /// Replaced network-dependent `testRegistryClientForceRefresh`.
+    func testRegistryClientForceRefreshOffline() async throws {
+        installHandler()
+        let client = makeOfflineRegistryClient()
 
-        // Fetch with cache
         _ = try await client.fetch()
-
-        // Force refresh
         let registry = try await client.fetch(forceRefresh: true)
 
-        XCTAssertFalse(registry.agents.isEmpty)
+        XCTAssertEqual(registry.agents.first?.id, "fixture-agent")
     }
 }
