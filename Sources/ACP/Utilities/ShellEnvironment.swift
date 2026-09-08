@@ -11,16 +11,27 @@ public enum ShellEnvironment: Sendable {
         var isLoading = false
     }
 
+    /// Thread-safe byte buffer that retains at most `capacity` bytes and
+    /// discards anything beyond, so a chatty login shell cannot grow the
+    /// process memory without bound while it is being drained.
     private final class DataBox: @unchecked Sendable {
         private let lock = NSLock()
         private var storage = Data()
+        private let capacity: Int
+
+        init(capacity: Int) {
+            self.capacity = capacity
+        }
 
         var data: Data {
             lock.withLock { storage }
         }
 
         func append(_ value: Data) {
-            lock.withLock { storage.append(value) }
+            lock.lock()
+            defer { lock.unlock() }
+            guard storage.count < capacity else { return }
+            storage.append(value.prefix(capacity - storage.count))
         }
     }
 
@@ -28,6 +39,7 @@ public enum ShellEnvironment: Sendable {
     private static let termGraceSeconds: TimeInterval = 2.0
     private static let killGraceSeconds: TimeInterval = 1.0
     private static let drainGraceSeconds: TimeInterval = 2.0
+    private static let retainedOutputByteLimit = 1_000_000
 
     private static let state = ShellCacheState()
 
@@ -142,11 +154,12 @@ public enum ShellEnvironment: Sendable {
 
         // Drain both pipes concurrently while the shell runs: waiting for exit
         // before reading deadlocks on any login shell whose rc prints more
-        // than the pipe capacity.
-        let outputBox = DataBox()
+        // than the pipe capacity. Retention is capped so a chatty rc cannot
+        // grow the process memory without bound; stderr is never retained.
+        let outputBox = DataBox(capacity: Self.retainedOutputByteLimit)
         let drainGroup = DispatchGroup()
         drain(pipe: pipe, into: outputBox, group: drainGroup)
-        drain(pipe: errorPipe, into: DataBox(), group: drainGroup)
+        drain(pipe: errorPipe, into: DataBox(capacity: 0), group: drainGroup)
 
         do {
             try process.run()
@@ -198,10 +211,14 @@ public enum ShellEnvironment: Sendable {
         let handle = pipe.fileHandleForReading
         group.enter()
         DispatchQueue.global(qos: .utility).async {
-            // Blocks until EOF; the shell's exit (bounded above) closes the
-            // write end, so this always completes.
-            let data = (try? handle.readToEnd()) ?? Data()
-            box.append(data)
+            // Chunked until EOF — the shell's exit (bounded above) closes the
+            // write end, so this always completes — with the box enforcing the
+            // retention cap beyond which bytes are discarded.
+            while true {
+                let chunk = (try? handle.read(upToCount: 65536)) ?? nil
+                guard let chunk, !chunk.isEmpty else { break }
+                box.append(chunk)
+            }
             group.leave()
         }
     }

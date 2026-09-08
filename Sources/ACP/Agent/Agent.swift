@@ -262,6 +262,19 @@ public actor Agent {
     }
 
     private func dispatchInbound(_ request: JSONRPCRequest) {
+        // A peer reusing an in-flight request id would have whichever handler
+        // finished first answer for both; refuse the duplicate explicitly.
+        guard inboundRequests[request.id] == nil else {
+            Task { [weak self] in
+                try? await self?.sendErrorResponse(
+                    id: request.id,
+                    code: -32600,
+                    message: "Request id already in flight",
+                )
+            }
+            return
+        }
+
         var context = InboundContext()
         let task = Task { [weak self] () in
             guard let self else { return }

@@ -35,7 +35,10 @@ public extension Client {
             let data = try encoder.encode(result)
             return try decoder.decode(AuthenticateResponse.self, from: data)
         } catch {
-            return AuthenticateResponse(success: true, error: nil)
+            // Only nil/null/empty results are compatibility successes; a
+            // nonempty result that fails to decode is a protocol failure and
+            // must never be reported as an authenticated success.
+            throw ClientError.invalidResponse
         }
     }
 

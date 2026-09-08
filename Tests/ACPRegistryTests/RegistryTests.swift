@@ -502,4 +502,17 @@ final class RegistryTests: XCTestCase {
         )
         XCTAssertEqual(entries.count, 1, "no staging directory may remain after a failed update")
     }
+
+    /// Archive detection uses the URL path only: signed CDN URLs with query
+    /// strings must still classify as archives, not raw binaries.
+    func testArchiveKindIgnoresQueryAndFragment() throws {
+        let zipWithURL = try XCTUnwrap(URL(string: "https://cdn.example.com/agent.zip?token=abc&expires=1"))
+        XCTAssertEqual(AgentInstaller.binaryArchiveKind(for: zipWithURL), .zip)
+
+        let tarWithURL = try XCTUnwrap(URL(string: "https://cdn.example.com/agent.tar.gz?sig=ff"))
+        XCTAssertEqual(AgentInstaller.binaryArchiveKind(for: tarWithURL), .tarGzip)
+
+        let rawWithURL = try XCTUnwrap(URL(string: "https://cdn.example.com/agent?token=abc"))
+        XCTAssertEqual(AgentInstaller.binaryArchiveKind(for: rawWithURL), .rawBinary)
+    }
 }

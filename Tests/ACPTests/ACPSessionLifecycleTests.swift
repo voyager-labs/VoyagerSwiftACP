@@ -524,6 +524,32 @@ final class ACPSessionLifecycleTests: XCTestCase {
         _ = await client.shutdown()
     }
 
+    /// A nonempty authenticate result that fails to decode is a protocol
+    /// failure; it must never be reported as an authenticated success.
+    func testMalformedAuthenticateResultThrows() async throws {
+        let transport = ScriptedTransport()
+        let client = try await makeReadyClient(transport)
+
+        let authTask = Task { try await client.authenticate(authMethodId: "codex") }
+        let frame = try await transport.nextSentFrame()
+        let request = try JSONDecoder().decode(JSONRPCRequest.self, from: frame)
+        try await transport.pushJSON(
+            #"{"jsonrpc":"2.0","id":\#(requestID(request.id)),"result":{"unexpected":true}}"#,
+        )
+
+        do {
+            _ = try await authTask.value
+            XCTFail("expected invalidResponse for a malformed auth result")
+        } catch let error as ClientError {
+            guard case .invalidResponse = error else {
+                return XCTFail("expected invalidResponse, got \(error)")
+            }
+        }
+
+        await transport.finish()
+        _ = await client.shutdown()
+    }
+
     /// S10
     func testPromptWhileCancellingRejected() async throws {
         let transport = ScriptedTransport()

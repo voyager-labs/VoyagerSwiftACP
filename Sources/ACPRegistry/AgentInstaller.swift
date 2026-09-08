@@ -198,16 +198,32 @@ public actor AgentInstaller {
             let data = try JSONEncoder().encode(installed)
             try data.write(to: stagedMetadataFile)
 
-            // Promote: replace any live installation only after staging holds
-            // a fully validated copy. The remove + rename pair happens on one
-            // volume, so the window without a live directory is minimal.
+            // Promote through a backup so a failure between the two renames
+            // can restore the previous installation instead of losing both.
+            let backupDir = try containedPath(".backup-\(UUID().uuidString)", inside: installDirectory)
+            var backedUp = false
             if FileManager.default.fileExists(atPath: agentDir.path) {
-                try FileManager.default.removeItem(at: agentDir)
+                try FileManager.default.moveItem(at: agentDir, to: backupDir)
+                backedUp = true
             }
-            try FileManager.default.moveItem(at: stagingDir, to: agentDir)
+            do {
+                try FileManager.default.moveItem(at: stagingDir, to: agentDir)
+            } catch {
+                // The staging rename failed with the live directory moved
+                // aside: put the previous installation back before failing.
+                if backedUp, !FileManager.default.fileExists(atPath: agentDir.path) {
+                    try? FileManager.default.moveItem(at: backupDir, to: agentDir)
+                }
+                throw error
+            }
+            if backedUp {
+                try? FileManager.default.removeItem(at: backupDir)
+            }
 
             return installed
         } catch {
+            // Only staging is cleaned here: a leftover backup may be the last
+            // remaining copy of the previous installation.
             try? FileManager.default.removeItem(at: stagingDir)
             throw error
         }
@@ -259,11 +275,35 @@ public actor AgentInstaller {
         }
 
         try process.run()
-        process.waitUntilExit()
+
+        // Drain stderr concurrently and bound the wait: an extractor that
+        // writes more than the pipe capacity must not deadlock this actor,
+        // and a hung extractor must not block it forever.
+        let diagnostics = CappedBuffer(capacity: Self.extractorDiagnosticByteLimit)
+        let drainStatus = DrainStatus()
+        drain(pipe: pipe, into: diagnostics, status: drainStatus)
+
+        let exited = await waitForExit(process, timeout: Self.extractionTimeoutSeconds)
+        if !exited {
+            process.terminate()
+            let terminatedAfterTerm = await waitForExit(process, timeout: Self.termGraceSeconds)
+            if !terminatedAfterTerm {
+                if process.processIdentifier > 0 {
+                    kill(process.processIdentifier, SIGKILL)
+                }
+                _ = await waitForExit(process, timeout: Self.killGraceSeconds)
+            }
+        }
+        // Process death closes the write end, so the drain completes; give it
+        // a bounded window to finish collecting the last diagnostics.
+        let drainDeadline = Date().addingTimeInterval(Self.drainGraceSeconds)
+        while !drainStatus.isFinished, Date() < drainDeadline {
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+        try? pipe.fileHandleForReading.close()
 
         if process.terminationStatus != 0 {
-            let errorData = pipe.fileHandleForReading.readDataToEndOfFile()
-            let errorMessage = String(data: errorData, encoding: .utf8) ?? "Unknown error"
+            let errorMessage = String(data: diagnostics.data, encoding: .utf8) ?? "Unknown error"
             throw RegistryError.extractionFailed(NSError(
                 domain: "ACPRegistry",
                 code: Int(process.terminationStatus),
@@ -272,18 +312,84 @@ public actor AgentInstaller {
         }
     }
 
-    static func binaryArchiveKind(for archiveURL: URL) -> BinaryArchiveKind {
-        let urlString = archiveURL.absoluteString.lowercased()
+    private static let extractionTimeoutSeconds: TimeInterval = 120.0
+    private static let termGraceSeconds: TimeInterval = 2.0
+    private static let killGraceSeconds: TimeInterval = 1.0
+    private static let drainGraceSeconds: TimeInterval = 2.0
+    private static let extractorDiagnosticByteLimit = 65536
 
-        if urlString.hasSuffix(".zip") {
+    private func waitForExit(_ process: Process, timeout: TimeInterval) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while process.isRunning, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+        return !process.isRunning
+    }
+
+    private func drain(pipe: Pipe, into buffer: CappedBuffer, status: DrainStatus) {
+        let handle = pipe.fileHandleForReading
+        DispatchQueue.global(qos: .utility).async {
+            while true {
+                let chunk = (try? handle.read(upToCount: 65536)) ?? nil
+                guard let chunk, !chunk.isEmpty else { break }
+                buffer.append(chunk)
+            }
+            status.finish()
+        }
+    }
+
+    /// Completion flag for a background drain worker.
+    private final class DrainStatus: @unchecked Sendable {
+        private let lock = NSLock()
+        private var finished = false
+
+        func finish() {
+            lock.withLock { finished = true }
+        }
+
+        var isFinished: Bool {
+            lock.withLock { finished }
+        }
+    }
+
+    /// Thread-safe byte buffer that retains at most `capacity` bytes and
+    /// discards the rest, so chatty subprocess output cannot grow unbounded.
+    private final class CappedBuffer: @unchecked Sendable {
+        private let lock = NSLock()
+        private var storage = Data()
+        private let capacity: Int
+
+        init(capacity: Int) {
+            self.capacity = capacity
+        }
+
+        var data: Data {
+            lock.withLock { storage }
+        }
+
+        func append(_ value: Data) {
+            lock.lock()
+            defer { lock.unlock() }
+            guard storage.count < capacity else { return }
+            storage.append(value.prefix(capacity - storage.count))
+        }
+    }
+
+    static func binaryArchiveKind(for archiveURL: URL) -> BinaryArchiveKind {
+        // Detect from the percent-decoded URL path only: query strings and
+        // fragments (signed CDN URLs like `agent.zip?token=…`) must not make a
+        // real archive fall through to raw-binary execution.
+        let path = archiveURL.path.lowercased()
+
+        if path.hasSuffix(".zip") {
             return .zip
         }
 
-        if urlString.hasSuffix(".tar.gz") || urlString.hasSuffix(".tgz") {
+        if path.hasSuffix(".tar.gz") || path.hasSuffix(".tgz") {
             return .tarGzip
         }
 
-        if urlString.hasSuffix(".tar.bz2") || urlString.hasSuffix(".tbz2") {
+        if path.hasSuffix(".tar.bz2") || path.hasSuffix(".tbz2") {
             return .tarBzip2
         }
 

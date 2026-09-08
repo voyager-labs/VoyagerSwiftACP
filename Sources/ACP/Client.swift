@@ -81,6 +81,13 @@ public actor Client {
     private var shutdownTask: Task<TransportTermination, Never>?
     private(set) var lastTermination: TransportTermination?
 
+    deinit {
+        // A released client must not leave the ingress task holding the
+        // transport (and a silent child) alive forever: cancellation ends the
+        // `for await`, and the task's defer closes the transport.
+        ingressTask?.cancel()
+    }
+
     private let notificationQueue: BoundedStream<JSONRPCNotification>
     private let notificationStream: AsyncStream<JSONRPCNotification>
 
@@ -451,10 +458,18 @@ public extension Client {
             state: .cancelling,
             lastStopReason: session.lastStopReason,
         )
-        try await writeNotification(
-            method: "session/cancel",
-            params: CancelSessionRequest(sessionId: sessionId),
-        )
+        do {
+            try await writeNotification(
+                method: "session/cancel",
+                params: CancelSessionRequest(sessionId: sessionId),
+            )
+        } catch {
+            // The cancel never reached the wire: restore the prompting state
+            // so the session stays usable and cancellable instead of being
+            // parked in `.cancelling` with no watcher.
+            sessions[sessionId] = session
+            throw error
+        }
         await resolvePendingPermissions(sessionId: sessionId)
         startCancellationWatcher(sessionId, nanoseconds: graceNanoseconds)
     }
@@ -845,6 +860,12 @@ extension Client {
         guard ingressTask == nil else { return }
         let transport = transport
         ingressTask = Task { [weak self] in
+            // The task is the transport's last owner: whenever it ends —
+            // stream end, cancellation, or a deallocated client — the
+            // transport is closed so a silent child cannot outlive the caller.
+            defer {
+                Task { await transport.close() }
+            }
             for await frame in transport.messages {
                 guard let self else { break }
                 await ingest(frame)
@@ -964,6 +985,16 @@ extension Client {
     }
 
     private func dispatchInbound(_ request: JSONRPCRequest) {
+        // A peer reusing an in-flight request id would collide its second
+        // result with the first; refuse the duplicate instead of overwriting
+        // the running context.
+        guard inboundRequests[request.id] == nil else {
+            Task { [weak self] in
+                await self?.refuseDuplicateInbound(request.id)
+            }
+            return
+        }
+
         var context = InboundRequestContext(
             sessionId: Self.extractSessionID(from: request.params),
             method: request.method,
@@ -974,6 +1005,12 @@ extension Client {
         }
         context.task = task
         inboundRequests[request.id] = context
+    }
+
+    private func refuseDuplicateInbound(_ id: RequestId) async {
+        let rpcError = JSONRPCError(code: -32600, message: "Request id already in flight", data: nil)
+        let response = JSONRPCResponse(id: id, result: nil, error: rpcError)
+        try? await writeFrame(response)
     }
 
     private func runInboundRequest(_ request: JSONRPCRequest) async {

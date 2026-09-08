@@ -381,6 +381,67 @@ final class ACPAgentTests: XCTestCase {
         _ = await startTask.result
     }
 
+    /// A peer reusing an in-flight request id gets an explicit -32600 for the
+    /// duplicate instead of having both handlers race for one response.
+    func testDuplicateInflightRequestIDIsRefused() async throws {
+        let transport = ScriptedTransport()
+        let agent = Agent(transport: transport)
+        let delegate = RecordingAgentDelegate()
+        await agent.setDelegate(delegate)
+
+        let startTask = Task {
+            await agent.start()
+        }
+        defer {
+            startTask.cancel()
+        }
+
+        try await pushInitialize(transport, id: 40)
+
+        // Park the first request inside the delegate so the id is guaranteed
+        // to still be in flight when the duplicate arrives.
+        await delegate.suspendNextPromptTurn()
+
+        let prompt = JSONRPCRequest(
+            id: .number(41),
+            method: "session/prompt",
+            params: AnyCodable(["sessionId": "session-1", "prompt": [[
+                "type": "text",
+                "text": "hi",
+            ]]] as [String: any Sendable]),
+        )
+        try await transport.pushFrame(JSONEncoder().encode(prompt))
+        await delegate.waitUntilPromptStarted()
+
+        let duplicate = JSONRPCRequest(
+            id: .number(41),
+            method: "session/prompt",
+            params: AnyCodable(["sessionId": "session-1", "prompt": [[
+                "type": "text",
+                "text": "hi",
+            ]]] as [String: any Sendable]),
+        )
+        try await transport.pushFrame(JSONEncoder().encode(duplicate))
+
+        let refusalData = try await transport.nextSentFrame()
+        let refusal = try JSONDecoder().decode(JSONRPCResponse.self, from: refusalData)
+        XCTAssertEqual(refusal.id, .number(41))
+        XCTAssertEqual(refusal.error?.code, -32600)
+
+        // Releasing the original turn answers it normally.
+        await delegate.releasePromptTurn(with: SessionPromptResponse(stopReason: .cancelled))
+        let resultData = try await transport.nextSentFrame()
+        let resultResponse = try JSONDecoder().decode(JSONRPCResponse.self, from: resultData)
+        XCTAssertEqual(resultResponse.id, .number(41))
+        XCTAssertNil(resultResponse.error)
+        let resultPayload = try JSONEncoder().encode(XCTUnwrap(resultResponse.result))
+        let promptResponse = try JSONDecoder().decode(SessionPromptResponse.self, from: resultPayload)
+        XCTAssertEqual(promptResponse.stopReason, .cancelled)
+
+        await transport.finish()
+        _ = await startTask.result
+    }
+
     func testInvalidEnvelopeAnswers32600WithNullID() async throws {
         let transport = ScriptedTransport()
         let agent = Agent(transport: transport)
