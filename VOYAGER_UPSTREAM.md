@@ -28,11 +28,44 @@
 
 ## Two-way subtree sync
 
-For app-to-fork push-back, preserve subtree ancestry and avoid squashed imports:
+For app-to-fork push-back, preserve subtree ancestry and avoid squashed imports.
+The app worktree has no `voyager-swift-acp` remote alias; use the fork URL directly:
 
 ```bash
-git subtree pull --prefix=apps/macos/Packages/VoyagerSwiftACP voyager-swift-acp production
-git subtree push --prefix=apps/macos/Packages/VoyagerSwiftACP voyager-swift-acp production
+git subtree pull --prefix=apps/macos/Packages/VoyagerSwiftACP git@github.com:voyager-labs/VoyagerSwiftACP.git production
+git subtree push --prefix=apps/macos/Packages/VoyagerSwiftACP git@github.com:voyager-labs/VoyagerSwiftACP.git production
 ```
 
 Run package tests in the fork and app integration tests before publishing or updating the fork's default branch.
+
+## Upstream-compatible behavior changes (VOY-886)
+
+The VOY-886 candidate intentionally diverges from upstream `main` in the areas below.
+These patches require review and promotion before they are available on `production`.
+Upstream leniency conflicts with strict ACP v1 conformance; every change is
+covered by the conformance suites in `docs/CONFORMANCE.md`:
+
+| Area | Upstream behavior | Voyager `production` behavior |
+|---|---|---|
+| JSON-RPC envelope | Malformed `id` demoted to notification; `jsonrpc` version accepted loosely | Strict `"2.0"` envelope; malformed `id` rejected; null-id messages remain requests |
+| `protocolVersion` | Coerced strings/null/bool to `1` | Integer `0...65535` only; unsupported versions fail initialization |
+| Client capabilities | `fs`/`terminal` required on decode | Omitted capabilities default to "not supported"; wrong types rejected |
+| stdio framing | Non-JSON stdout discarded and resynchronized | LF-delimited strict framing; malformed/oversized frames fail the connection with typed evidence |
+| Params shape | `params: null` tolerated on requests | `params` must be omitted, an object, or an array |
+| `AnyCodable` encoding | Unsupported values silently encoded as `null` | Unsupported values throw `EncodingError` |
+| Subprocess lifecycle | `terminate()` did not await child exit | Bounded shutdown (TERM 2s → KILL 1s) with immutable `TransportTermination` evidence |
+| Process registry | Automatic disk registry writes on launch | Removed from the default path; `ProcessRegistry` remains an opt-in utility |
+| Request correlation | Timeout task group could leave continuations unsettled | Single-completion pending table; deadline tasks settle at the actual deadline |
+| Debug stream | `DebugMessage.rawData` exposed raw wire bytes | Metadata-only by default; compatibility rawData/jsonString expose sanitizer output only |
+| Agent ingress | Request handlers awaited inline, blocking cancel processing | Handlers run in tracked tasks; `-32601/-32602/-32603` error mapping per JSON-RPC |
+| Swift language mode | tools 5.9, Swift 5 mode | tools 6.0, Swift 6 language mode with strict concurrency |
+## Candidate provenance
+
+- Upstream source baseline: `9498537769d1309b6519fbb87d0c22fcf9317f3e`.
+- Fork production baseline: `3097d3b9e8f3192c70a41ad180ead063f0448ae0`.
+- App imports preserve the fork commits as merge parents (non-squashed).
+- The candidate adds strict wire validation, transport injection, bounded queues,
+  request/session lifecycle handling, Swift 6 isolation, and offline fixtures.
+- CI package/consumer jobs, API comparison, fork production promotion, and the
+  subsequent app subtree sync remain separate promotion gates. Local checks do
+  not constitute evidence that those remote gates have run.

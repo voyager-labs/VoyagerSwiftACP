@@ -30,7 +30,8 @@ Add to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/voyager-labs/VoyagerSwiftACP", from: "1.0.0")
+    // Voyager consumes the fork's production branch; no release tag exists yet.
+    .package(url: "https://github.com/voyager-labs/VoyagerSwiftACP", branch: "production")
 ]
 ```
 
@@ -366,10 +367,15 @@ case .toolCall(let toolCall):
 
 ## Debug Mode
 
-Enable debug streaming to inspect raw JSON-RPC messages:
+The debug stream is metadata-only by default: direction, byte count, method, and
+timestamp. Raw wire bytes are surfaced only when you install a sanitizer —
+without one, no payload is ever retained or emitted.
 
 ```swift
-await client.enableDebugStream()
+await client.enableDebugStream(sanitizer: { data in
+    // Return a payload-free summary; return nil to omit the preview.
+    "frame: \(data.count) bytes"
+})
 
 Task {
     guard let stream = await client.debugMessages else { return }
@@ -377,7 +383,10 @@ Task {
     for await message in stream {
         let direction = message.direction == .outgoing ? "→" : "←"
         let method = message.method ?? "response"
-        print("\(direction) \(method): \(message.jsonString ?? "")")
+        print("\(direction) \(method) (\(message.byteCount) bytes)")
+        if let preview = message.rawPreview {
+            print("  preview: \(preview)")
+        }
     }
 }
 
@@ -397,7 +406,7 @@ do {
 } catch ClientError.requestTimeout {
     print("Request timed out")
 } catch ClientError.agentError(let rpcError) {
-    print("Agent error: \(rpcError.message) (code: \(rpcError.code))")
+    print("Agent error code: \(rpcError.code)")
 } catch ClientError.delegateNotSet {
     print("No delegate set to handle agent requests")
 } catch ClientError.invalidResponse {
@@ -559,28 +568,19 @@ if let method = agent.distribution.preferred(for: .current) {
 ## Requirements
 
 - macOS 12.0+, iOS 15.0+, tvOS 15.0+, watchOS 8.0+
-- Swift 5.9+
+- Swift 6.0+ toolchain (Swift 6 language mode, strict concurrency)
 
 > **Note:** Process spawning (stdio transport for launching agents) is only available on macOS. Other platforms can use WebSocket transport or implement custom transports.
 
 ## Protocol Reference
 
-This SDK implements the [Agent Client Protocol](https://agentclientprotocol.com/) specification.
+This SDK implements the [Agent Client Protocol](https://agentclientprotocol.com/)
+v1 specification. The package's conformance contracts (wire envelope, framing,
+initialization, session lifecycle, cancellation, shutdown evidence, diagnostics)
+are documented in [`docs/CONFORMANCE.md`](docs/CONFORMANCE.md).
 
-See the `reference/` directory for:
-- `reference/agent-client-protocol/` - Protocol specification
-- `reference/rust-sdk/` - Reference Rust implementation
-- `reference/registry/` - Agent registry specification
-- `reference/typescript-sdk/` - Official TypeScript SDK
-- `reference/python-sdk/` - Official Python SDK
-- `reference/kotlin-sdk/` - Official Kotlin SDK
-- `reference/PARSING_LOGIC_COMPARISON.md` - Cross-SDK JSON-RPC parsing behavior matrix
-
-Those directories are tracked as git submodules. Refresh them with:
-
-```bash
-git submodule update --init --remote reference/agent-client-protocol reference/rust-sdk reference/registry reference/typescript-sdk reference/python-sdk reference/kotlin-sdk
-```
+The upstream `reference/` protocol submodules were removed during vendoring;
+consult the protocol documentation online.
 
 ## License
 
