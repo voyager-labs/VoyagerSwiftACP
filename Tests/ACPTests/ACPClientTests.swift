@@ -1,8 +1,7 @@
-import XCTest
 @testable import ACP
+import XCTest
 
 final class ACPClientTests: XCTestCase {
-
     // MARK: - SessionId Tests
 
     func testSessionIdEncoding() throws {
@@ -15,7 +14,7 @@ final class ACPClientTests: XCTestCase {
 
     func testSessionIdDecoding() throws {
         let json = "\"test-session-456\""
-        let data = json.data(using: .utf8)!
+        let data = try XCTUnwrap(json.data(using: .utf8))
         let decoder = JSONDecoder()
         let sessionId = try decoder.decode(SessionId.self, from: data)
         XCTAssertEqual(sessionId.value, "test-session-456")
@@ -57,14 +56,14 @@ final class ACPClientTests: XCTestCase {
 
     func testRequestIdDecodingNumber() throws {
         let json = "42"
-        let data = json.data(using: .utf8)!
+        let data = try XCTUnwrap(json.data(using: .utf8))
         let requestId = try JSONDecoder().decode(RequestId.self, from: data)
         XCTAssertEqual(requestId, .number(42))
     }
 
     func testRequestIdDecodingString() throws {
         let json = "\"req-999\""
-        let data = json.data(using: .utf8)!
+        let data = try XCTUnwrap(json.data(using: .utf8))
         let requestId = try JSONDecoder().decode(RequestId.self, from: data)
         XCTAssertEqual(requestId, .string("req-999"))
     }
@@ -94,7 +93,7 @@ final class ACPClientTests: XCTestCase {
         let json = """
         {"type": "text", "text": "Hello from JSON"}
         """
-        let data = json.data(using: .utf8)!
+        let data = try XCTUnwrap(json.data(using: .utf8))
         let content = try JSONDecoder().decode(TextContent.self, from: data)
         XCTAssertEqual(content.text, "Hello from JSON")
     }
@@ -105,11 +104,11 @@ final class ACPClientTests: XCTestCase {
         let json = """
         {"type": "text", "text": "Test message"}
         """
-        let data = json.data(using: .utf8)!
+        let data = try XCTUnwrap(json.data(using: .utf8))
         let decoder = JSONDecoder()
         let block = try decoder.decode(ContentBlock.self, from: data)
 
-        if case .text(let text) = block {
+        if case let .text(text) = block {
             XCTAssertEqual(text.text, "Test message")
         } else {
             XCTFail("Expected text content block")
@@ -120,10 +119,10 @@ final class ACPClientTests: XCTestCase {
         let json = """
         {"type": "image", "data": "iVBORw0KGgo=", "mimeType": "image/png"}
         """
-        let data = json.data(using: .utf8)!
+        let data = try XCTUnwrap(json.data(using: .utf8))
         let block = try JSONDecoder().decode(ContentBlock.self, from: data)
 
-        if case .image(let image) = block {
+        if case let .image(image) = block {
             XCTAssertEqual(image.data, "iVBORw0KGgo=")
             XCTAssertEqual(image.mimeType, "image/png")
         } else {
@@ -139,7 +138,7 @@ final class ACPClientTests: XCTestCase {
         let data = try encoder.encode(original)
         let decoded = try decoder.decode(ContentBlock.self, from: data)
 
-        if case .text(let text) = decoded {
+        if case let .text(text) = decoded {
             XCTAssertEqual(text.text, "Round trip test")
         } else {
             XCTFail("Expected text content block")
@@ -152,7 +151,7 @@ final class ACPClientTests: XCTestCase {
         let request = JSONRPCRequest(
             id: .number(1),
             method: "test/method",
-            params: AnyCodable(["key": "value"])
+            params: AnyCodable(["key": "value"]),
         )
 
         let encoder = JSONEncoder()
@@ -168,7 +167,7 @@ final class ACPClientTests: XCTestCase {
         let json = """
         {"jsonrpc": "2.0", "id": 42, "method": "session/new", "params": {"cwd": "/tmp"}}
         """
-        let data = json.data(using: .utf8)!
+        let data = try XCTUnwrap(json.data(using: .utf8))
         let request = try JSONDecoder().decode(JSONRPCRequest.self, from: data)
 
         XCTAssertEqual(request.id, .number(42))
@@ -179,7 +178,7 @@ final class ACPClientTests: XCTestCase {
         let json = """
         {"jsonrpc": "2.0", "id": "abc-123", "method": "initialize", "params": {}}
         """
-        let data = json.data(using: .utf8)!
+        let data = try XCTUnwrap(json.data(using: .utf8))
         let request = try JSONDecoder().decode(JSONRPCRequest.self, from: data)
 
         XCTAssertEqual(request.id, .string("abc-123"))
@@ -191,7 +190,7 @@ final class ACPClientTests: XCTestCase {
         let json = """
         {"jsonrpc": "2.0", "id": 1, "result": {"sessionId": "session-123"}}
         """
-        let data = json.data(using: .utf8)!
+        let data = try XCTUnwrap(json.data(using: .utf8))
         let response = try JSONDecoder().decode(JSONRPCResponse.self, from: data)
 
         XCTAssertEqual(response.id, .number(1))
@@ -203,7 +202,7 @@ final class ACPClientTests: XCTestCase {
         let json = """
         {"jsonrpc": "2.0", "id": 1, "error": {"code": -32600, "message": "Invalid Request"}}
         """
-        let data = json.data(using: .utf8)!
+        let data = try XCTUnwrap(json.data(using: .utf8))
         let response = try JSONDecoder().decode(JSONRPCResponse.self, from: data)
 
         XCTAssertEqual(response.id, .number(1))
@@ -219,7 +218,7 @@ final class ACPClientTests: XCTestCase {
         let json = """
         {"jsonrpc": "2.0", "method": "session/update", "params": {"sessionId": "s1"}}
         """
-        let data = json.data(using: .utf8)!
+        let data = try XCTUnwrap(json.data(using: .utf8))
         let notification = try JSONDecoder().decode(JSONRPCNotification.self, from: data)
 
         XCTAssertEqual(notification.method, "session/update")
@@ -230,7 +229,7 @@ final class ACPClientTests: XCTestCase {
         let json = """
         {"jsonrpc": "2.0", "method": "heartbeat"}
         """
-        let data = json.data(using: .utf8)!
+        let data = try XCTUnwrap(json.data(using: .utf8))
         let notification = try JSONDecoder().decode(JSONRPCNotification.self, from: data)
 
         XCTAssertEqual(notification.method, "heartbeat")
@@ -256,7 +255,7 @@ final class ACPClientTests: XCTestCase {
 
         for kind in kinds {
             let data = try encoder.encode(kind)
-            let decoded = String(data: data, encoding: .utf8)!.replacingOccurrences(of: "\"", with: "")
+            let decoded = try XCTUnwrap(String(data: data, encoding: .utf8)?.replacingOccurrences(of: "\"", with: ""))
             XCTAssertEqual(decoded, kind.rawValue)
         }
     }
@@ -272,7 +271,7 @@ final class ACPClientTests: XCTestCase {
 
         let decoder = JSONDecoder()
         for (json, expected) in testCases {
-            let data = json.data(using: .utf8)!
+            let data = try XCTUnwrap(json.data(using: .utf8))
             let result = try decoder.decode(ToolKind.self, from: data)
             XCTAssertEqual(result, expected)
         }
@@ -291,7 +290,7 @@ final class ACPClientTests: XCTestCase {
         let encoder = JSONEncoder()
         for (status, expected) in cases {
             let data = try encoder.encode(status)
-            let decoded = String(data: data, encoding: .utf8)!.replacingOccurrences(of: "\"", with: "")
+            let decoded = try XCTUnwrap(String(data: data, encoding: .utf8)?.replacingOccurrences(of: "\"", with: ""))
             XCTAssertEqual(decoded, expected)
         }
     }
@@ -307,7 +306,7 @@ final class ACPClientTests: XCTestCase {
 
         let decoder = JSONDecoder()
         for (json, expected) in testCases {
-            let data = json.data(using: .utf8)!
+            let data = try XCTUnwrap(json.data(using: .utf8))
             let result = try decoder.decode(StopReason.self, from: data)
             XCTAssertEqual(result, expected)
         }
@@ -346,7 +345,7 @@ final class ACPClientTests: XCTestCase {
     func testClientCapabilitiesEncoding() throws {
         let capabilities = ClientCapabilities(
             fs: FileSystemCapabilities(readTextFile: true, writeTextFile: true),
-            terminal: true
+            terminal: true,
         )
 
         let encoder = JSONEncoder()
@@ -362,7 +361,7 @@ final class ACPClientTests: XCTestCase {
     func testClientCapabilitiesMinimal() throws {
         let capabilities = ClientCapabilities(
             fs: FileSystemCapabilities(readTextFile: false, writeTextFile: false),
-            terminal: false
+            terminal: false,
         )
         let encoder = JSONEncoder()
         let data = try encoder.encode(capabilities)
@@ -381,7 +380,7 @@ final class ACPClientTests: XCTestCase {
 
     func testTerminalIdDecoding() throws {
         let json = "\"term-456\""
-        let data = json.data(using: .utf8)!
+        let data = try XCTUnwrap(json.data(using: .utf8))
         let terminalId = try JSONDecoder().decode(TerminalId.self, from: data)
         XCTAssertEqual(terminalId.value, "term-456")
     }
@@ -402,7 +401,7 @@ final class ACPClientTests: XCTestCase {
             sessionId: "session-1",
             args: ["-la"],
             cwd: "/tmp",
-            env: [EnvVariable(name: "FOO", value: "bar")]
+            env: [EnvVariable(name: "FOO", value: "bar")],
         )
 
         let data = try JSONEncoder().encode(request)
@@ -418,7 +417,7 @@ final class ACPClientTests: XCTestCase {
         let response = TerminalOutputResponse(
             output: "file1.txt\nfile2.txt",
             exitStatus: TerminalExitStatus(exitCode: 0),
-            truncated: false
+            truncated: false,
         )
 
         let data = try JSONEncoder().encode(response)
@@ -439,7 +438,7 @@ final class ACPClientTests: XCTestCase {
             kind: .read,
             status: .completed,
             content: [.content(.text(TextContent(text: "file contents")))],
-            locations: [ToolLocation(path: "/tmp/file.txt", line: 1)]
+            locations: [ToolLocation(path: "/tmp/file.txt", line: 1)],
         )
 
         let data = try JSONEncoder().encode(toolCall)
@@ -461,7 +460,7 @@ final class ACPClientTests: XCTestCase {
             "content": []
         }
         """
-        let data = json.data(using: .utf8)!
+        let data = try XCTUnwrap(json.data(using: .utf8))
         let toolCall = try JSONDecoder().decode(ToolCall.self, from: data)
 
         XCTAssertEqual(toolCall.toolCallId, "call-456")
@@ -480,13 +479,13 @@ final class ACPClientTests: XCTestCase {
 
     // MARK: - ToolCallContent Tests
 
-    func testToolCallContentDiff() throws {
+    func testToolCallContentDiff() {
         let diff = ToolCallDiff(path: "/tmp/file.txt", oldText: "old", newText: "new")
         let content = ToolCallContent.diff(diff)
 
         XCTAssertEqual(content.displayText, "Modified: /tmp/file.txt")
 
-        if let block = content.asContentBlock, case .text(let text) = block {
+        if let block = content.asContentBlock, case let .text(text) = block {
             XCTAssertTrue(text.text.contains("/tmp/file.txt"))
             XCTAssertTrue(text.text.contains("new"))
         } else {
@@ -509,7 +508,7 @@ final class ACPClientTests: XCTestCase {
             content: "Implement feature",
             priority: .high,
             status: .inProgress,
-            activeForm: "Implementing feature"
+            activeForm: "Implementing feature",
         )
 
         let data = try JSONEncoder().encode(entry)
@@ -541,11 +540,11 @@ final class ACPClientTests: XCTestCase {
         let json = """
         {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "Hello"}}
         """
-        let data = json.data(using: .utf8)!
+        let data = try XCTUnwrap(json.data(using: .utf8))
         let update = try JSONDecoder().decode(SessionUpdate.self, from: data)
 
         XCTAssertEqual(update.sessionUpdateType, "agent_message_chunk")
-        if case .agentMessageChunk(let block) = update, case .text(let text) = block {
+        if case let .agentMessageChunk(block) = update, case let .text(text) = block {
             XCTAssertEqual(text.text, "Hello")
         } else {
             XCTFail("Expected agent message chunk with text")
@@ -561,7 +560,7 @@ final class ACPClientTests: XCTestCase {
             "content": []
         }
         """
-        let data = json.data(using: .utf8)!
+        let data = try XCTUnwrap(json.data(using: .utf8))
         let update = try JSONDecoder().decode(SessionUpdate.self, from: data)
 
         XCTAssertEqual(update.sessionUpdateType, "tool_call")
@@ -573,7 +572,7 @@ final class ACPClientTests: XCTestCase {
         let json = """
         {"sessionUpdate": "current_mode_update", "currentModeId": "plan_mode"}
         """
-        let data = json.data(using: .utf8)!
+        let data = try XCTUnwrap(json.data(using: .utf8))
         let update = try JSONDecoder().decode(SessionUpdate.self, from: data)
 
         XCTAssertEqual(update.sessionUpdateType, "current_mode_update")
@@ -589,7 +588,7 @@ final class ACPClientTests: XCTestCase {
             ]
         }
         """
-        let data = json.data(using: .utf8)!
+        let data = try XCTUnwrap(json.data(using: .utf8))
         let update = try JSONDecoder().decode(SessionUpdate.self, from: data)
 
         XCTAssertEqual(update.sessionUpdateType, "available_commands_update")
@@ -605,7 +604,7 @@ final class ACPClientTests: XCTestCase {
             "updatedAt": "2026-03-09T12:00:00Z"
         }
         """
-        let data = json.data(using: .utf8)!
+        let data = try XCTUnwrap(json.data(using: .utf8))
         let update = try JSONDecoder().decode(SessionUpdate.self, from: data)
 
         XCTAssertEqual(update.sessionUpdateType, "session_info_update")
@@ -620,12 +619,12 @@ final class ACPClientTests: XCTestCase {
             "title": null
         }
         """
-        let data = json.data(using: .utf8)!
+        let data = try XCTUnwrap(json.data(using: .utf8))
         let update = try JSONDecoder().decode(SessionUpdate.self, from: data)
 
         XCTAssertEqual(update.sessionUpdateType, "session_info_update")
-        XCTAssertTrue(update.sessionInfo?.titleUpdate.isClear == true)
-        XCTAssertTrue(update.sessionInfo?.updatedAtUpdate.isOmitted == true)
+        XCTAssertEqual(update.sessionInfo?.titleUpdate.isClear, true)
+        XCTAssertEqual(update.sessionInfo?.updatedAtUpdate.isOmitted, true)
     }
 
     func testSessionInfoUpdateEncodesExplicitNull() throws {
@@ -633,9 +632,9 @@ final class ACPClientTests: XCTestCase {
         let data = try JSONEncoder().encode(update)
         let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
 
-        XCTAssertTrue(json?.keys.contains("title") == true)
+        XCTAssertEqual(json?.keys.contains("title"), true)
         XCTAssertTrue((json?["title"] is NSNull))
-        XCTAssertFalse(json?.keys.contains("updatedAt") == true)
+        XCTAssertNotEqual(json?.keys.contains("updatedAt"), true)
     }
 
     func testSessionUpdateUsageUpdate() throws {
@@ -647,12 +646,12 @@ final class ACPClientTests: XCTestCase {
             "cost": {"amount": 0.42, "currency": "USD"}
         }
         """
-        let data = json.data(using: .utf8)!
+        let data = try XCTUnwrap(json.data(using: .utf8))
         let update = try JSONDecoder().decode(SessionUpdate.self, from: data)
 
         XCTAssertEqual(update.sessionUpdateType, "usage_update")
         XCTAssertEqual(update.usage?.used, 4096)
-        XCTAssertEqual(update.usage?.size, 200000)
+        XCTAssertEqual(update.usage?.size, 200_000)
         XCTAssertEqual(update.usage?.cost?.currency, "USD")
     }
 
@@ -671,12 +670,12 @@ final class ACPClientTests: XCTestCase {
             ]
         }
         """
-        let data = json.data(using: .utf8)!
+        let data = try XCTUnwrap(json.data(using: .utf8))
         let config = try JSONDecoder().decode(SessionConfigOption.self, from: data)
 
         XCTAssertEqual(config.id.value, "config-1")
         XCTAssertEqual(config.name, "Theme")
-        if case .select(let select) = config.kind {
+        if case let .select(select) = config.kind {
             XCTAssertEqual(select.currentValue.value, "dark")
         } else {
             XCTFail("Expected select kind")
@@ -693,12 +692,12 @@ final class ACPClientTests: XCTestCase {
             "category": "thought_level"
         }
         """
-        let data = json.data(using: .utf8)!
+        let data = try XCTUnwrap(json.data(using: .utf8))
         let config = try JSONDecoder().decode(SessionConfigOption.self, from: data)
 
         XCTAssertEqual(config.id.value, "config-2")
         XCTAssertEqual(config.category, "thought_level")
-        if case .boolean(let toggle) = config.kind {
+        if case let .boolean(toggle) = config.kind {
             XCTAssertTrue(toggle.currentValue)
         } else {
             XCTFail("Expected boolean kind")
@@ -709,7 +708,7 @@ final class ACPClientTests: XCTestCase {
         let request = SetSessionConfigOptionRequest(
             sessionId: SessionId("session-1"),
             configId: SessionConfigId("config-2"),
-            value: true
+            value: true,
         )
 
         let data = try JSONEncoder().encode(request)
@@ -735,7 +734,7 @@ final class ACPClientTests: XCTestCase {
             "nextCursor": "cursor-2"
         }
         """
-        let data = json.data(using: .utf8)!
+        let data = try XCTUnwrap(json.data(using: .utf8))
         let response = try JSONDecoder().decode(ListSessionsResponse.self, from: data)
 
         XCTAssertEqual(response.sessions.count, 1)
@@ -788,7 +787,7 @@ final class ACPClientTests: XCTestCase {
         let encoder = JSONEncoder()
         let decoder = JSONDecoder()
 
-        let dictValue = AnyCodable(["key": "value", "number": 123] as [String: Any])
+        let dictValue = AnyCodable(["key": "value", "number": 123] as [String: any Sendable])
         let data = try encoder.encode(dictValue)
         let decoded = try decoder.decode(AnyCodable.self, from: data)
 
@@ -833,7 +832,7 @@ final class ACPClientTests: XCTestCase {
             }
         }
         """
-        let data = json.data(using: .utf8)!
+        let data = try XCTUnwrap(json.data(using: .utf8))
         let request = try JSONDecoder().decode(RequestPermissionRequest.self, from: data)
 
         XCTAssertEqual(request.sessionId.value, "session-1")
@@ -854,7 +853,7 @@ final class ACPClientTests: XCTestCase {
             ]
         }
         """
-        let data = json.data(using: .utf8)!
+        let data = try XCTUnwrap(json.data(using: .utf8))
         XCTAssertThrowsError(try JSONDecoder().decode(RequestPermissionRequest.self, from: data))
     }
 

@@ -1,70 +1,476 @@
-//
-//  ProcessManager.swift
-//  ACP
-//
-//  Manages subprocess lifecycle, I/O pipes, and message serialization
-//
-
 #if os(macOS)
-import Foundation
-import Darwin
-import os.log
 import ACPModel
+import Darwin
+import Foundation
+import os.log
 
 actor ACPProcessManager {
-    // MARK: - Properties
+    // MARK: - State
+
+    private enum LifecycleState: Equatable {
+        case idle
+        case running
+        case closing
+        case closed
+        case failed
+    }
+
+    /// Events emitted by the output pipeline. `finished` is delivered exactly
+    /// once when the frame stream ends for any reason.
+    enum PipelineEvent {
+        case frame(Data)
+        case finished
+    }
 
     private var process: Process?
     private var processGroupId: pid_t?
-    private var stdinPipe: Pipe?
-    private var stdoutPipe: Pipe?
-    private var stderrPipe: Pipe?
+    private var stdinHandle: FileHandle?
+    private var stdoutHandle: FileHandle?
+    private var stderrHandle: FileHandle?
+    private var state: LifecycleState = .idle
+    private var terminationEvidence: TransportTermination?
 
-    private var readBuffer: Data = Data()
-    private var largeBufferDumpCount: Int = 0
-    private var lastLargeBufferDumpSize: Int = 0
+    private(set) var eventSink: (@Sendable (PipelineEvent) -> Bool)?
+    private var frameFinished = false
+    private var stdoutReader: FramedInput?
+    private let stderrDrain: StderrDrain
 
-    private let encoder: JSONEncoder
-    private let decoder: JSONDecoder
+    private let configuration: TransportConfiguration
     private let logger: Logger
 
-    private static let largeBufferWarningThreshold = 200000
-    private static let largeBufferDumpMinGrowth = 8192
-    private static let maxLargeBufferDumps = 3
-
-    private var onDataReceived: ((Data) async -> Void)?
-    private var onTermination: ((Int32) async -> Void)?
-
-    private enum OutputChunk: Sendable {
-        case stdout(Data)
-        case stderr(Data)
-    }
-
-    private var outputContinuation: AsyncStream<OutputChunk>.Continuation?
-    private var outputConsumerTask: Task<Void, Never>?
-    private var stderrLineContinuation: AsyncStream<String>.Continuation?
-    private var stderrLineStream: AsyncStream<String>?
-    private var stderrBuffer = Data()
+    /// Ignores SIGPIPE process-wide so writes to a dead child's stdin surface as
+    /// typed write errors instead of terminating the host.
+    private static let sigpipeGuard: Void = {
+        signal(SIGPIPE, SIG_IGN)
+    }()
 
     // MARK: - Initialization
 
-    init(encoder: JSONEncoder, decoder: JSONDecoder) {
-        self.encoder = encoder
-        self.decoder = decoder
-        self.logger = Logger.forCategory("ACPProcessManager")
+    init(configuration: TransportConfiguration) {
+        self.configuration = configuration
+        stderrDrain = StderrDrain(byteBudget: configuration.queuedByteBudget)
+        logger = Logger.forCategory("ACPProcessManager")
     }
 
-    // MARK: - Process Lifecycle
+    func setEventSink(_ sink: (@Sendable (PipelineEvent) -> Bool)?) {
+        eventSink = sink
+    }
 
-    func launch(agentPath: String, arguments: [String] = [], workingDirectory: String? = nil, environment customEnvironment: [String: String]? = nil) throws {
-        guard process == nil else {
-            throw ClientError.invalidResponse
+    // MARK: - Lifecycle
+
+    var isRunning: Bool {
+        state == .running
+    }
+
+    var processIdentifier: Int32? {
+        guard state == .running, let pid = process?.processIdentifier, pid > 0 else {
+            return nil
         }
+        return pid
+    }
+
+    var processGroupIdentifier: Int32? {
+        guard state == .running else { return nil }
+        return processGroupId
+    }
+
+    var stderrLines: AsyncStream<String>? {
+        guard state == .running else { return nil }
+        return stderrDrain.subscribe()
+    }
+
+    /// Terminal evidence. The reason is sticky; exit status and cleanup flags are
+    /// refined as they become known.
+    var termination: TransportTermination? {
+        terminationEvidence
+    }
+
+    func launch(
+        executablePath: String,
+        arguments: [String] = [],
+        workingDirectory: String? = nil,
+        environment customEnvironment: [String: String]? = nil,
+    ) throws {
+        guard state == .idle else {
+            throw ClientError.transportFailure(.startup("process manager already owns a child"))
+        }
+        try configuration.validated()
+        _ = Self.sigpipeGuard
 
         let proc = Process()
 
-        let resolvedPath = (try? FileManager.default.destinationOfSymbolicLink(atPath: agentPath)) ?? agentPath
-        let actualPath = resolvedPath.hasPrefix("/") ? resolvedPath : ((agentPath as NSString).deletingLastPathComponent as NSString).appendingPathComponent(resolvedPath)
+        Self.configureExecutable(proc, executablePath: executablePath, arguments: arguments)
+        Self.configureEnvironment(
+            proc,
+            executablePath: executablePath,
+            workingDirectory: workingDirectory,
+            customEnvironment: customEnvironment,
+        )
+
+        let stdin = Pipe()
+        let stdout = Pipe()
+        let stderr = Pipe()
+
+        proc.standardInput = stdin
+        proc.standardOutput = stdout
+        proc.standardError = stderr
+
+        stdinHandle = stdin.fileHandleForWriting
+        stdoutHandle = stdout.fileHandleForReading
+        stderrHandle = stderr.fileHandleForReading
+
+        do {
+            try proc.run()
+        } catch {
+            // Startup failure: reclaim every pipe and handler that was created.
+            stopReadHandlers()
+            closeAllHandles()
+            state = .failed
+            terminationEvidence = TransportTermination(
+                reason: .failure(.startup("failed to launch executable")),
+                cleanupComplete: true,
+            )
+            throw ClientError.transportFailure(.startup("failed to launch executable"))
+        }
+
+        process = proc
+        processGroupId = nil
+        if proc.processIdentifier > 0 {
+            let pid = proc.processIdentifier
+            if setpgid(pid, pid) == 0 {
+                processGroupId = pid
+            } else {
+                logger.warning("Failed to set process group for pid=\(pid)")
+            }
+        }
+
+        proc.terminationHandler = { [weak self] terminated in
+            let exitCode = terminated.terminationStatus
+            Task { await self?.handleNaturalExit(exitCode: exitCode) }
+        }
+
+        state = .running
+        startReadHandlers()
+    }
+
+    // MARK: - I/O
+
+    /// Writes one raw JSON frame (the newline is appended here).
+    func write(_ data: Data) async throws {
+        guard state == .running, let stdin = stdinHandle else {
+            throw ClientError.transportFailure(.write("process is not running"))
+        }
+        var lineData = data
+        lineData.append(0x0A)
+
+        // Dup the descriptor so an in-flight write stays valid even if a
+        // concurrent shutdown closes the owned handle.
+        let fd = Darwin.dup(stdin.fileDescriptor)
+        guard fd >= 0 else {
+            throw ClientError.transportFailure(.write("could not duplicate stdin descriptor"))
+        }
+        let payload = lineData
+        defer {
+            close(fd)
+        }
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            // Blocking pipe writes run on a dedicated serial queue, never on a
+            // cooperative executor or this actor.
+            Self.writeQueue.async {
+                switch Self.writeToFileDescriptor(fd: fd, data: payload) {
+                case .success:
+                    continuation.resume()
+                case let .failure(failure):
+                    continuation.resume(throwing: failure)
+                }
+            }
+        }
+    }
+
+    private static let writeQueue = DispatchQueue(label: "com.acp.processmanager.write", qos: .userInitiated)
+
+    private enum WriteOutcome {
+        case success
+        case failure(Error)
+    }
+
+    nonisolated private static func writeToFileDescriptor(fd: Int32, data: Data) -> WriteOutcome {
+        // SIGPIPE is ignored process-wide, so a dead child's stdin surfaces as a
+        // thrown error here instead of a signal.
+        let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: false)
+        do {
+            try handle.write(contentsOf: data)
+            return .success
+        } catch {
+            return .failure(ClientError.transportFailure(.write("write to child stdin failed")))
+        }
+    }
+
+    // MARK: - Shutdown
+
+    /// Bounded teardown: block new writes, close stdin, SIGTERM, wait up to 2s,
+    /// SIGKILL, wait up to 1s. Returns immutable terminal evidence where
+    /// `cleanupComplete` reflects whether the direct child exit was confirmed.
+    func shutdown() async -> TransportTermination {
+        switch state {
+        case .closed:
+            return terminationEvidence ?? .genericClosure()
+        case .failed where process?.isRunning != true:
+            return terminationEvidence ?? .genericClosure()
+        case .failed, .idle:
+            state = .closed
+            let evidence = TransportTermination(reason: .explicitClose, cleanupComplete: true)
+            terminationEvidence = evidence
+            return evidence
+        case .closing, .running:
+            break
+        }
+
+        state = .closing
+        let proc = process
+        let pgid = processGroupId
+
+        stopReadHandlers()
+        stopPipelines()
+
+        if let stdin = stdinHandle {
+            try? stdin.close()
+            stdinHandle = nil
+        }
+
+        if let proc, proc.isRunning {
+            if let pgid {
+                _ = killpg(pgid, SIGTERM)
+            } else {
+                proc.terminate()
+            }
+        }
+
+        var exited = await waitForExit(proc, timeout: 2.0)
+        if !exited, let proc, proc.processIdentifier > 0 {
+            if let pgid {
+                _ = killpg(pgid, SIGKILL)
+            } else {
+                _ = kill(proc.processIdentifier, SIGKILL)
+            }
+            exited = await waitForExit(proc, timeout: 1.0)
+        }
+
+        closeAllHandles()
+        process = nil
+        processGroupId = nil
+
+        let evidence = shutdownEvidence(proc, exited: exited)
+
+        settleTermination(evidence)
+        emitFinished()
+        finishStderrStream()
+        state = exited ? .closed : .failed
+        return terminationEvidence ?? evidence
+    }
+
+    private func shutdownEvidence(_ proc: Process?, exited: Bool) -> TransportTermination {
+        if exited, let proc {
+            let signalNumber: Int32? = proc.terminationReason == .uncaughtSignal ? proc.terminationStatus : nil
+            return TransportTermination(
+                reason: naturalReason ?? .explicitClose,
+                exitStatus: proc.terminationStatus,
+                terminationSignal: signalNumber,
+                cleanupComplete: true,
+            )
+        } else if naturalReason == nil {
+            return TransportTermination(
+                reason: .failure(.shutdownTimeout),
+                exitStatus: nil,
+                terminationSignal: nil,
+                cleanupComplete: false,
+            )
+        } else {
+            return TransportTermination(
+                reason: naturalReason ?? .explicitClose,
+                exitStatus: nil,
+                terminationSignal: nil,
+                cleanupComplete: false,
+            )
+        }
+    }
+
+    private var naturalReason: TransportTermination.Reason?
+    /// Exit code observed by Foundation's termination handler before the relay
+    /// finished draining; the relay settles the evidence once frames are out.
+    private var pendingExitCode: Int32?
+
+    private func waitForExit(_ proc: Process?, timeout: TimeInterval) async -> Bool {
+        guard let proc else { return true }
+        let deadline = Date().addingTimeInterval(timeout)
+        while proc.isRunning, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+        return !proc.isRunning
+    }
+
+    // MARK: - Pipelines
+
+    private func startReadHandlers() {
+        guard let stdoutHandle else { return }
+        let sink = eventSink
+        let reader = FramedInput(
+            handle: stdoutHandle,
+            configuration: configuration,
+            receive: { sink?(.frame($0)) ?? false },
+            ended: { [weak self] failure in
+                Task { await self?.stdoutEnded(failure) }
+            },
+        )
+        stdoutReader = reader
+        reader.start()
+
+        let drain = stderrDrain
+        stderrHandle?.readabilityHandler = { handle in
+            let data = handle.availableData
+            if data.isEmpty {
+                handle.readabilityHandler = nil
+                drain.finish()
+            } else {
+                drain.receive(data)
+            }
+        }
+    }
+
+    private func stopReadHandlers() {
+        stdoutReader?.stop()
+        stdoutReader = nil
+        stderrHandle?.readabilityHandler = nil
+    }
+
+    private func stopPipelines() {
+        stderrDrain.finish()
+    }
+
+    private func stdoutEnded(_ failure: TransportFailure?) async {
+        if let failure {
+            settleTermination(TransportTermination(reason: .failure(failure), cleanupComplete: false))
+            emitFinished()
+            _ = await shutdown()
+        } else {
+            await stdoutPipelineEnded()
+        }
+    }
+
+    /// The relay finished draining stdout. Complete frames were already yielded;
+    /// now the terminal evidence is recorded and the frame stream finishes.
+    private func stdoutPipelineEnded() async {
+        if let exitCode = pendingExitCode {
+            // Natural exit: complete frames are out, so report the exit.
+            settleTermination(TransportTermination(
+                reason: .processExit(exitCode),
+                exitStatus: exitCode,
+                terminationSignal: nil,
+                cleanupComplete: true,
+            ))
+            emitFinished()
+            finishStderrStream()
+            closeAllHandles()
+            state = .closed
+            return
+        }
+
+        guard state == .running else {
+            emitFinished()
+            return
+        }
+        let childAlive = process?.isRunning == true
+        settleTermination(TransportTermination(
+            reason: childAlive ? .stdoutEOF : (process?.terminationStatus)
+                .map(TransportTermination.Reason.processExit) ?? .stdoutEOF,
+            exitStatus: childAlive ? nil : process?.terminationStatus,
+            terminationSignal: nil,
+            cleanupComplete: !childAlive,
+        ))
+        emitFinished()
+        finishStderrStream()
+
+        if childAlive {
+            // EOF while the child is alive bounds the child teardown through the
+            // regular shutdown path (state stays .running so shutdown proceeds).
+            _ = await shutdown()
+        } else {
+            closeAllHandles()
+            state = .closed
+        }
+    }
+
+    /// Record process exit without cutting off unread stdout. The reader owns EOF.
+    private func handleNaturalExit(exitCode: Int32) async {
+        try? stdinHandle?.close()
+        stdinHandle = nil
+
+        if frameFinished {
+            // The relay already ended the frame stream (EOF path); refine the
+            // recorded evidence with the observed exit.
+            settleTermination(TransportTermination(
+                reason: naturalReason ?? .processExit(exitCode),
+                exitStatus: exitCode,
+                terminationSignal: nil,
+                cleanupComplete: true,
+            ))
+            closeAllHandles()
+            state = .closed
+            return
+        }
+
+        pendingExitCode = exitCode
+    }
+
+    private func settleTermination(_ evidence: TransportTermination) {
+        if let existing = terminationEvidence {
+            // The reason is sticky; status fields are refined as they become known
+            // (e.g. stdoutEOF evidence gains the exit status after the bounded kill).
+            terminationEvidence = TransportTermination(
+                reason: existing.reason,
+                exitStatus: evidence.exitStatus ?? existing.exitStatus,
+                terminationSignal: evidence.terminationSignal ?? existing.terminationSignal,
+                cleanupComplete: existing.cleanupComplete || evidence.cleanupComplete,
+            )
+            return
+        }
+        terminationEvidence = evidence
+        naturalReason = evidence.reason
+    }
+
+    private func emitFinished() {
+        guard !frameFinished else { return }
+        frameFinished = true
+        _ = eventSink?(.finished)
+        eventSink = nil
+    }
+
+    private func finishStderrStream() {
+        stderrDrain.finish()
+    }
+
+    private func closeAllHandles() {
+        stopReadHandlers()
+        try? stdinHandle?.close()
+        stdinHandle = nil
+        if let stdout = stdoutHandle {
+            try? stdout.close()
+        }
+        if let stderr = stderrHandle {
+            try? stderr.close()
+        }
+        stdoutHandle = nil
+        stderrHandle = nil
+    }
+}
+
+private extension ACPProcessManager {
+    static func configureExecutable(_ proc: Process, executablePath: String, arguments: [String]) {
+        let resolvedPath = (try? FileManager.default.destinationOfSymbolicLink(atPath: executablePath)) ??
+            executablePath
+        let actualPath = resolvedPath
+            .hasPrefix("/") ? resolvedPath : ((executablePath as NSString).deletingLastPathComponent as NSString)
+            .appendingPathComponent(resolvedPath)
 
         let isNodeScript: Bool = {
             guard let handle = FileHandle(forReadingAtPath: actualPath) else { return false }
@@ -76,11 +482,11 @@ actor ACPProcessManager {
 
         if isNodeScript {
             let searchPaths = [
-                (agentPath as NSString).deletingLastPathComponent,
+                (executablePath as NSString).deletingLastPathComponent,
                 (actualPath as NSString).deletingLastPathComponent,
                 "/opt/homebrew/bin",
                 "/usr/local/bin",
-                "/usr/bin"
+                "/usr/bin",
             ]
 
             var foundNode: String?
@@ -96,17 +502,20 @@ actor ACPProcessManager {
                 proc.executableURL = URL(fileURLWithPath: nodePath)
                 proc.arguments = [actualPath] + arguments
             } else {
-                proc.executableURL = URL(fileURLWithPath: agentPath)
+                proc.executableURL = URL(fileURLWithPath: executablePath)
                 proc.arguments = arguments
             }
         } else {
-            proc.executableURL = URL(fileURLWithPath: agentPath)
+            proc.executableURL = URL(fileURLWithPath: executablePath)
             proc.arguments = arguments
         }
+    }
 
+    static func configureEnvironment(
+        _ proc: Process, executablePath: String, workingDirectory: String?, customEnvironment: [String: String]?,
+    ) {
         var environment = ShellEnvironment.loadUserShellEnvironment()
 
-        // Merge custom environment variables (override shell env)
         if let customEnvironment {
             for (key, value) in customEnvironment {
                 environment[key] = value
@@ -119,7 +528,7 @@ actor ACPProcessManager {
             proc.currentDirectoryURL = URL(fileURLWithPath: workingDirectory)
         }
 
-        let agentDir = (agentPath as NSString).deletingLastPathComponent
+        let agentDir = (executablePath as NSString).deletingLastPathComponent
 
         if let existingPath = environment["PATH"] {
             environment["PATH"] = "\(agentDir):\(existingPath)"
@@ -128,432 +537,7 @@ actor ACPProcessManager {
         }
 
         proc.environment = environment
-
-        let stdin = Pipe()
-        let stdout = Pipe()
-        let stderr = Pipe()
-
-        proc.standardInput = stdin
-        proc.standardOutput = stdout
-        proc.standardError = stderr
-
-        stdinPipe = stdin
-        stdoutPipe = stdout
-        stderrPipe = stderr
-
-        proc.terminationHandler = { [weak self] process in
-            Task {
-                await self?.handleTermination(exitCode: process.terminationStatus)
-            }
-        }
-
-        try proc.run()
-        process = proc
-        processGroupId = nil
-        if proc.processIdentifier > 0 {
-            let pid = proc.processIdentifier
-            if setpgid(pid, pid) == 0 {
-                processGroupId = pid
-            } else {
-                logger.warning("Failed to set process group for pid=\(pid): \(String(cString: strerror(errno)))")
-            }
-        }
-        if proc.processIdentifier > 0 {
-            let pid = proc.processIdentifier
-            let pgid = processGroupId
-            Task {
-                await ProcessRegistry.shared.recordProcess(pid: pid, pgid: pgid, agentPath: actualPath)
-            }
-        }
-
-        startOutputProcessing()
-        startReading()
-        startReadingStderr()
-    }
-
-    func isRunning() -> Bool {
-        return process?.isRunning == true
-    }
-
-    func processIdentifier() -> Int32? {
-        guard process?.isRunning == true, let pid = process?.processIdentifier, pid > 0 else {
-            return nil
-        }
-        return pid
-    }
-
-    func processGroupIdentifier() -> Int32? {
-        guard process?.isRunning == true else { return nil }
-        return processGroupId
-    }
-
-    func stderrLines() -> AsyncStream<String>? {
-        guard process != nil else { return nil }
-        return stderrLineStream
-    }
-
-    func terminate() async {
-        let proc = process
-        let pgid = processGroupId
-        let pid = proc?.processIdentifier
-
-        stdoutPipe?.fileHandleForReading.readabilityHandler = nil
-        stderrPipe?.fileHandleForReading.readabilityHandler = nil
-
-        try? stdinPipe?.fileHandleForWriting.close()
-        try? stdoutPipe?.fileHandleForReading.close()
-        try? stderrPipe?.fileHandleForReading.close()
-
-        await finishOutputProcessing()
-
-        if let proc, proc.isRunning {
-            if let pgid {
-                _ = killpg(pgid, SIGTERM)
-            } else {
-                proc.terminate()
-            }
-        }
-
-        if let proc {
-            let exited = await waitForExit(proc, timeout: 2.0)
-            if !exited, proc.processIdentifier > 0 {
-                if let pgid {
-                    _ = killpg(pgid, SIGKILL)
-                } else {
-                    _ = kill(proc.processIdentifier, SIGKILL)
-                }
-            }
-        }
-        await ProcessRegistry.shared.removeProcess(pid: pid, pgid: pgid)
-        process = nil
-        processGroupId = nil
-
-        stdinPipe = nil
-        stdoutPipe = nil
-        stderrPipe = nil
-
-        readBuffer.removeAll()
-    }
-
-    // MARK: - I/O Operations
-
-    func writeMessage<T: Encodable>(_ message: T) async throws {
-        guard let stdin = stdinPipe?.fileHandleForWriting else {
-            throw ClientError.processNotRunning
-        }
-
-        let data = try encoder.encode(message)
-
-        var lineData = data
-        lineData.append(0x0A)
-
-        try stdin.write(contentsOf: lineData)
-    }
-
-    // MARK: - Callbacks
-
-    func setDataReceivedCallback(_ callback: @escaping (Data) async -> Void) {
-        self.onDataReceived = callback
-    }
-
-    func setTerminationCallback(_ callback: @escaping (Int32) async -> Void) {
-        self.onTermination = callback
-    }
-
-    // MARK: - Private Methods
-
-    private func startOutputProcessing() {
-        var stderrContinuation: AsyncStream<String>.Continuation!
-        stderrLineStream = AsyncStream { stderrContinuation = $0 }
-        stderrLineContinuation = stderrContinuation
-        stderrBuffer.removeAll(keepingCapacity: true)
-
-        var outputContinuation: AsyncStream<OutputChunk>.Continuation!
-        let outputStream = AsyncStream<OutputChunk>(bufferingPolicy: .unbounded) {
-            outputContinuation = $0
-        }
-        self.outputContinuation = outputContinuation
-        outputConsumerTask = Task { [weak self] in
-            for await chunk in outputStream {
-                guard let self else { return }
-                await self.processOutput(chunk)
-            }
-        }
-    }
-
-    private func startReading() {
-        guard let stdout = stdoutPipe?.fileHandleForReading,
-              let outputContinuation else { return }
-
-        stdout.readabilityHandler = { handle in
-            let data = handle.availableData
-
-            guard !data.isEmpty else {
-                handle.readabilityHandler = nil
-                return
-            }
-
-            outputContinuation.yield(.stdout(data))
-        }
-    }
-
-    private func startReadingStderr() {
-        guard let stderr = stderrPipe?.fileHandleForReading,
-              let outputContinuation else { return }
-
-        stderr.readabilityHandler = { handle in
-            let data = handle.availableData
-            guard !data.isEmpty else {
-                handle.readabilityHandler = nil
-                return
-            }
-            outputContinuation.yield(.stderr(data))
-        }
-    }
-
-    private func processOutput(_ chunk: OutputChunk) async {
-        switch chunk {
-        case .stdout(let data):
-            await processIncomingData(data)
-        case .stderr(let data):
-            processStderrData(data)
-        }
-    }
-
-    private func processStderrData(_ data: Data) {
-        stderrBuffer.append(data)
-
-        while let newlineIndex = stderrBuffer.firstIndex(of: 0x0A) {
-            var line = Data(stderrBuffer[..<newlineIndex])
-            let removeCount = stderrBuffer.distance(from: stderrBuffer.startIndex, to: newlineIndex) + 1
-            stderrBuffer.removeFirst(min(removeCount, stderrBuffer.count))
-            if line.last == 0x0D {
-                line.removeLast()
-            }
-            stderrLineContinuation?.yield(String(decoding: line, as: UTF8.self))
-        }
-    }
-
-    private func finishOutputProcessing() async {
-        outputContinuation?.finish()
-        if let outputConsumerTask {
-            await outputConsumerTask.value
-        }
-        outputConsumerTask = nil
-        outputContinuation = nil
-
-        if !stderrBuffer.isEmpty {
-            stderrLineContinuation?.yield(String(decoding: stderrBuffer, as: UTF8.self))
-            stderrBuffer.removeAll(keepingCapacity: true)
-        }
-        stderrLineContinuation?.finish()
-        stderrLineContinuation = nil
-        stderrLineStream = nil
-    }
-
-    private func processIncomingData(_ data: Data) async {
-        readBuffer.append(data)
-
-        await drainBufferedMessages()
-    }
-
-    private func handleTermination(exitCode: Int32) async {
-        let pid = process?.processIdentifier
-        let pgid = processGroupId
-        await drainAndClosePipes()
-        logger.info("Agent process terminated with code: \(exitCode)")
-        await ProcessRegistry.shared.removeProcess(pid: pid, pgid: pgid)
-        await onTermination?(exitCode)
-    }
-
-    private func drainAndClosePipes() async {
-        if let stdoutHandle = stdoutPipe?.fileHandleForReading {
-            stdoutHandle.readabilityHandler = nil
-            do {
-                while true {
-                    guard let chunk = try stdoutHandle.read(upToCount: 65536), !chunk.isEmpty else {
-                        break
-                    }
-                    outputContinuation?.yield(.stdout(chunk))
-                }
-            } catch {
-                // Handle already closed or invalid file handles safely
-            }
-            try? stdoutHandle.close()
-        }
-
-        if let stderrHandle = stderrPipe?.fileHandleForReading {
-            stderrHandle.readabilityHandler = nil
-            do {
-                while true {
-                    guard let chunk = try stderrHandle.read(upToCount: 65536), !chunk.isEmpty else {
-                        break
-                    }
-                    outputContinuation?.yield(.stderr(chunk))
-                }
-            } catch {
-                // Handle already closed or invalid file handles safely
-            }
-            try? stderrHandle.close()
-        }
-
-        await finishOutputProcessing()
-        await flushRemainingBufferIfNeeded()
-
-        try? stdinPipe?.fileHandleForWriting.close()
-
-        stdinPipe = nil
-        stdoutPipe = nil
-        stderrPipe = nil
-        process = nil
-        processGroupId = nil
-        readBuffer.removeAll()
-    }
-
-    // MARK: - JSON Message Parsing
-
-    private func drainBufferedMessages() async {
-        while let message = popNextMessage() {
-            await onDataReceived?(message)
-        }
-    }
-
-    private func popNextMessage() -> Data? {
-        let whitespace: Set<UInt8> = [0x20, 0x09, 0x0D, 0x0A]
-        parseLoop: while true {
-            while let first = readBuffer.first, whitespace.contains(first) {
-                readBuffer.removeFirst()
-            }
-
-            guard !readBuffer.isEmpty else {
-                return nil
-            }
-
-            guard let first = readBuffer.first else { return nil }
-
-            if first != 0x7B && first != 0x5B {
-                if let jsonStart = readBuffer.firstIndex(where: { $0 == 0x7B || $0 == 0x5B }) {
-                    let dropCount = readBuffer.distance(from: readBuffer.startIndex, to: jsonStart)
-                    if dropCount > 0 {
-                        readBuffer.removeFirst(min(dropCount, readBuffer.count))
-                        logger.debug("Discarded \(dropCount) non-JSON prefix bytes before JSON start")
-                    }
-                    continue
-                }
-
-                if let newline = readBuffer.firstIndex(of: 0x0A) {
-                    let dropped = readBuffer.prefix(upTo: newline)
-                    let removeCount = readBuffer.distance(from: readBuffer.startIndex, to: newline) + 1
-                    readBuffer.removeFirst(min(removeCount, readBuffer.count))
-                    if !dropped.isEmpty {
-                        logger.debug("Discarded non-JSON stdout line (\(dropped.count) bytes)")
-                    }
-                    continue
-                }
-
-                if readBuffer.count > 4096 {
-                    logger.warning("Discarding \(self.readBuffer.count) bytes of non-JSON stdout")
-                    self.readBuffer.removeAll(keepingCapacity: true)
-                }
-                return nil
-            }
-            let bytes = Array(readBuffer)
-
-            var depth = 0
-            var inString = false
-            var escaped = false
-
-            for endIndex in 0..<bytes.count {
-                let byte = bytes[endIndex]
-
-                if inString {
-                    if escaped {
-                        escaped = false
-                        continue
-                    }
-                    if byte == 0x5C {
-                        escaped = true
-                        continue
-                    }
-                    if byte == 0x22 {
-                        inString = false
-                    }
-                    continue
-                }
-
-                if byte == 0x22 {
-                    inString = true
-                    continue
-                }
-
-                if byte == 0x7B || byte == 0x5B {
-                    depth += 1
-                } else if byte == 0x7D || byte == 0x5D {
-                    depth -= 1
-                    if depth == 0 {
-                        let candidate = Data(bytes[0...endIndex])
-                        if isValidJSONObjectMessage(candidate) {
-                            let removeCount = min(endIndex + 1, readBuffer.count)
-                            readBuffer.removeFirst(removeCount)
-                            return candidate
-                        }
-
-                        // Malformed JSON-like object: drop one byte and retry to re-sync.
-                        logger.warning("Discarded malformed JSON-like segment (\(candidate.count) bytes)")
-                        readBuffer.removeFirst(min(1, readBuffer.count))
-                        continue parseLoop
-                    }
-                }
-            }
-
-            if let newline = readBuffer.firstIndex(of: 0x0A) {
-                let line = Data(readBuffer.prefix(upTo: newline))
-                if !line.isEmpty, !isValidJSONObjectMessage(line) {
-                    let removeCount = readBuffer.distance(from: readBuffer.startIndex, to: newline) + 1
-                    readBuffer.removeFirst(min(removeCount, readBuffer.count))
-                    logger.warning("Discarded malformed JSON stdout line (\(line.count) bytes)")
-                    continue
-                }
-            }
-
-            if readBuffer.count > Self.largeBufferWarningThreshold {
-                logger.warning("Large buffer (\(self.readBuffer.count) bytes) without complete JSON message")
-            }
-
-            return nil
-        }
-    }
-
-    private func isValidJSONObjectMessage(_ data: Data) -> Bool {
-        guard let object = try? JSONSerialization.jsonObject(with: data) else {
-            return false
-        }
-
-        if object is [String: Any] || object is [Any] {
-            return true
-        }
-
-        return false
-    }
-
-    private func flushRemainingBufferIfNeeded() async {
-        await drainBufferedMessages()
-
-        if !readBuffer.isEmpty {
-            let remaining = readBuffer
-            readBuffer.removeAll(keepingCapacity: true)
-            if !remaining.isEmpty {
-                await onDataReceived?(remaining)
-            }
-        }
-    }
-
-    private func waitForExit(_ proc: Process, timeout: TimeInterval) async -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-        while proc.isRunning, Date() < deadline {
-            try? await Task.sleep(nanoseconds: 50_000_000)
-        }
-        return !proc.isRunning
     }
 }
+
 #endif

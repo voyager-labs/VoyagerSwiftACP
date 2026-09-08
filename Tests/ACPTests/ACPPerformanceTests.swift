@@ -1,45 +1,55 @@
-import XCTest
 @testable import ACP
+import XCTest
 
 // MARK: - Mock Delegate for Testing
 
 final class MockClientDelegate: ClientDelegate, Sendable {
-    func handleFileReadRequest(_ path: String, sessionId: String, line: Int?, limit: Int?) async throws -> ReadTextFileResponse {
+    func handleFileReadRequest(_: String, sessionId _: String, line _: Int?,
+                               limit _: Int?) async throws -> ReadTextFileResponse
+    {
         ReadTextFileResponse(content: "mock content", totalLines: 1)
     }
 
-    func handleFileWriteRequest(_ path: String, content: String, sessionId: String) async throws -> WriteTextFileResponse {
+    func handleFileWriteRequest(_: String, content _: String,
+                                sessionId _: String) async throws -> WriteTextFileResponse
+    {
         WriteTextFileResponse()
     }
 
-    func handleTerminalCreate(command: String, sessionId: String, args: [String]?, cwd: String?, env: [EnvVariable]?, outputByteLimit: Int?) async throws -> CreateTerminalResponse {
+    func handleTerminalCreate(
+        command _: String,
+        sessionId _: String,
+        args _: [String]?,
+        cwd _: String?,
+        env _: [EnvVariable]?,
+        outputByteLimit _: Int?,
+    ) async throws -> CreateTerminalResponse {
         CreateTerminalResponse(terminalId: TerminalId("mock-term"))
     }
 
-    func handleTerminalOutput(terminalId: TerminalId, sessionId: String) async throws -> TerminalOutputResponse {
+    func handleTerminalOutput(terminalId _: TerminalId, sessionId _: String) async throws -> TerminalOutputResponse {
         TerminalOutputResponse(output: "", exitStatus: nil, truncated: false)
     }
 
-    func handleTerminalWaitForExit(terminalId: TerminalId, sessionId: String) async throws -> WaitForExitResponse {
+    func handleTerminalWaitForExit(terminalId _: TerminalId, sessionId _: String) async throws -> WaitForExitResponse {
         WaitForExitResponse(exitCode: 0)
     }
 
-    func handleTerminalKill(terminalId: TerminalId, sessionId: String) async throws -> KillTerminalResponse {
+    func handleTerminalKill(terminalId _: TerminalId, sessionId _: String) async throws -> KillTerminalResponse {
         KillTerminalResponse()
     }
 
-    func handleTerminalRelease(terminalId: TerminalId, sessionId: String) async throws -> ReleaseTerminalResponse {
+    func handleTerminalRelease(terminalId _: TerminalId, sessionId _: String) async throws -> ReleaseTerminalResponse {
         ReleaseTerminalResponse()
     }
 
-    func handlePermissionRequest(request: RequestPermissionRequest) async throws -> RequestPermissionResponse {
+    func handlePermissionRequest(request _: RequestPermissionRequest) async throws -> RequestPermissionResponse {
         RequestPermissionResponse(outcome: PermissionOutcome(optionId: "allow"))
     }
 }
 
 /// Performance and memory leak tests
 final class ACPPerformanceTests: XCTestCase {
-
     var tempDir: URL!
     var mockAgentPath: String!
 
@@ -51,7 +61,7 @@ final class ACPPerformanceTests: XCTestCase {
     }
 
     override func tearDown() async throws {
-        if let tempDir = tempDir {
+        if let tempDir {
             try? FileManager.default.removeItem(at: tempDir)
         }
         try await super.tearDown()
@@ -69,7 +79,7 @@ final class ACPPerformanceTests: XCTestCase {
     private func makeCapabilities() -> ClientCapabilities {
         ClientCapabilities(
             fs: FileSystemCapabilities(readTextFile: true, writeTextFile: true),
-            terminal: true
+            terminal: true,
         )
     }
 
@@ -115,7 +125,7 @@ final class ACPPerformanceTests: XCTestCase {
         // Track weak references to verify deallocation
         var weakClients: [() -> Client?] = []
 
-        for _ in 0..<5 {
+        for _ in 0 ..< 5 {
             weak var weakClient: Client?
 
             try await {
@@ -147,10 +157,16 @@ final class ACPPerformanceTests: XCTestCase {
     /// Test notification stream doesn't retain client
     func testNotificationStreamNoRetainCycle() async throws {
         try createMockAgent(script: """
-        read -r line
-        id=$(echo "$line" | grep -o '"id":[0-9]*' | grep -o '[0-9]*')
-        echo '{"jsonrpc":"2.0","id":'$id',"result":{"protocolVersion":1,"agentCapabilities":{}}}'
-        echo '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Hello"}}}}'
+        while read -r line; do
+            id=$(echo "$line" | grep -o '"id":[0-9]*' | grep -o '[0-9]*')
+            method=$(echo "$line" | grep -o '"method":"[^"]*"' | sed 's/"method":"\\([^"]*\\)"/\\1/')
+            if [ "$method" = "initialize" ]; then
+                echo '{"jsonrpc":"2.0","id":'$id',"result":{"protocolVersion":1,"agentCapabilities":{}}}'
+            elif [ "$method" = "session/new" ]; then
+                echo '{"jsonrpc":"2.0","id":'$id',"result":{"sessionId":"session-123"}}'
+                echo '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"session-123","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Hello"}}}}'
+            fi
+        done
         """)
 
         weak var weakClient: Client?
@@ -166,20 +182,24 @@ final class ACPPerformanceTests: XCTestCase {
 
             // Start listening task
             let listenTask = Task {
+                var matched = false
                 for await notification in notifications {
                     if notification.method == "session/update" {
-                        receivedNotification = true
+                        matched = true
                         break
                     }
                 }
+                return matched
             }
 
             _ = try await client.initialize(capabilities: makeCapabilities(), timeout: 5.0)
+            // Register the session so the agent update targets a tracked session.
+            _ = try await client.newSession(workingDirectory: "/tmp", timeout: 5.0)
 
             // Wait for notification
             try await Task.sleep(nanoseconds: 200_000_000)
 
-            listenTask.cancel()
+            receivedNotification = await listenTask.value
             await client.terminate()
         }()
 
@@ -240,7 +260,7 @@ final class ACPPerformanceTests: XCTestCase {
         _ = try await client.initialize(capabilities: makeCapabilities(), timeout: 5.0)
 
         // Create many sessions
-        for i in 0..<20 {
+        for i in 0 ..< 20 {
             let session = try await client.newSession(workingDirectory: "/tmp/\(i)", timeout: 5.0)
             XCTAssertFalse(session.sessionId.value.isEmpty)
         }
@@ -271,10 +291,10 @@ final class ACPPerformanceTests: XCTestCase {
         let session = try await client.newSession(workingDirectory: "/tmp", timeout: 5.0)
 
         // Send many prompts rapidly
-        for i in 0..<10 {
+        for i in 0 ..< 10 {
             let response = try await client.sendPrompt(
                 sessionId: session.sessionId,
-                content: [.text(TextContent(text: "Prompt \(i)"))]
+                content: [.text(TextContent(text: "Prompt \(i)"))],
             )
             XCTAssertEqual(response.stopReason, .endTurn)
         }
@@ -315,7 +335,7 @@ final class ACPPerformanceTests: XCTestCase {
 
         let start = CFAbsoluteTimeGetCurrent()
 
-        for _ in 0..<100 {
+        for _ in 0 ..< 100 {
             _ = try encoder.encode(contentBlock)
         }
 
@@ -341,12 +361,12 @@ final class ACPPerformanceTests: XCTestCase {
             ]
         }
         """
-        let data = json.data(using: .utf8)!
+        let data = try XCTUnwrap(json.data(using: .utf8))
         let decoder = JSONDecoder()
 
         let start = CFAbsoluteTimeGetCurrent()
 
-        for _ in 0..<100 {
+        for _ in 0 ..< 100 {
             _ = try decoder.decode(SessionUpdate.self, from: data)
         }
 
@@ -369,7 +389,7 @@ final class ACPPerformanceTests: XCTestCase {
         // Get initial file descriptor count
         let initialFDs = getOpenFileDescriptorCount()
 
-        for _ in 0..<3 {
+        for _ in 0 ..< 3 {
             let client = Client()
             try await client.launch(agentPath: mockAgentPath)
             _ = try await client.initialize(capabilities: makeCapabilities(), timeout: 5.0)
@@ -385,7 +405,11 @@ final class ACPPerformanceTests: XCTestCase {
         let finalFDs = getOpenFileDescriptorCount()
 
         // Should not have significant FD leak (allow small margin for system activity)
-        XCTAssertLessThanOrEqual(finalFDs, initialFDs + 5, "File descriptors should be cleaned up (initial: \(initialFDs), final: \(finalFDs))")
+        XCTAssertLessThanOrEqual(
+            finalFDs,
+            initialFDs + 5,
+            "File descriptors should be cleaned up (initial: \(initialFDs), final: \(finalFDs))",
+        )
     }
 
     /// Test process cleanup after termination
@@ -398,7 +422,7 @@ final class ACPPerformanceTests: XCTestCase {
         done
         """)
 
-        for _ in 0..<3 {
+        for _ in 0 ..< 3 {
             let client = Client()
             try await client.launch(agentPath: mockAgentPath)
 
@@ -422,7 +446,7 @@ final class ACPPerformanceTests: XCTestCase {
 
     private func getOpenFileDescriptorCount() -> Int {
         var count = 0
-        for fd in 0..<1024 {
+        for fd in 0 ..< 1024 {
             var statbuf = stat()
             if fstat(Int32(fd), &statbuf) == 0 {
                 count += 1

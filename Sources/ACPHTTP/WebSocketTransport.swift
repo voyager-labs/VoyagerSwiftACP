@@ -1,14 +1,7 @@
-//
-//  WebSocketTransport.swift
-//  ACPHTTP
-//
-//  WebSocket-based transport for network communication
-//
-
-import Foundation
-import os.log
 import ACP
 import ACPModel
+import Foundation
+import os.log
 
 /// Transport implementation using WebSocket for network communication.
 /// Works on all Apple platforms (iOS, macOS, tvOS, watchOS).
@@ -27,7 +20,7 @@ public actor WebSocketTransport: Transport {
 
     // MARK: - Transport Protocol
 
-    public nonisolated var messages: AsyncStream<Data> {
+    nonisolated public var messages: AsyncStream<Data> {
         messageStream
     }
 
@@ -40,13 +33,13 @@ public actor WebSocketTransport: Transport {
     public init(url: URL, session: URLSession = .shared) {
         self.url = url
         self.session = session
-        self.logger = Logger.forCategory("WebSocketTransport")
+        logger = Logger.forCategory("WebSocketTransport")
 
         var continuation: AsyncStream<Data>.Continuation!
-        self.messageStream = AsyncStream { cont in
+        messageStream = AsyncStream { cont in
             continuation = cont
         }
-        self.messageContinuation = continuation
+        messageContinuation = continuation
     }
 
     // MARK: - Connection
@@ -92,10 +85,10 @@ public actor WebSocketTransport: Transport {
                     let message = try await webSocket.receive()
 
                     switch message {
-                    case .data(let data):
+                    case let .data(data):
                         messageContinuation?.yield(data)
 
-                    case .string(let text):
+                    case let .string(text):
                         if let data = text.data(using: .utf8) {
                             messageContinuation?.yield(data)
                         }
@@ -117,91 +110,29 @@ public actor WebSocketTransport: Transport {
 
 // MARK: - WebSocket Client
 
-/// Convenience wrapper for using WebSocket transport with the ACP Client
+/// Convenience wrapper for using WebSocket transport with the ACP Client.
+/// The WebSocket transport is injected into the client, so there is exactly one
+/// reader of the message stream.
 public actor WebSocketClient {
     private let transport: WebSocketTransport
     private let client: Client
-    private let decoder: JSONDecoder
-    private let encoder: JSONEncoder
 
     public init(url: URL) {
-        self.transport = WebSocketTransport(url: url)
-        self.client = Client()
-        self.decoder = JSONDecoder()
-        self.encoder = JSONEncoder()
+        transport = WebSocketTransport(url: url)
+        client = Client(transport: transport)
     }
 
-    /// Connect to the WebSocket server and initialize the client
+    /// Connect to the WebSocket server, start the client ingress, and initialize.
     public func connect(
         capabilities: ClientCapabilities,
-        clientInfo: ClientInfo? = nil
+        clientInfo: ClientInfo? = nil,
     ) async throws -> InitializeResponse {
         try await transport.connect()
-
-        // Start message handling
-        Task {
-            for await data in transport.messages {
-                await handleMessage(data)
-            }
-        }
-
-        // Send initialize request
-        return try await initialize(capabilities: capabilities, clientInfo: clientInfo)
+        try await client.start()
+        return try await client.initialize(capabilities: capabilities, clientInfo: clientInfo)
     }
 
     public func close() async {
-        await transport.close()
-        await client.terminate()
-    }
-
-    // MARK: - Private
-
-    private func handleMessage(_ data: Data) async {
-        // Forward to client's message handling
-        // This would need integration with the client's internal message handling
-    }
-
-    private func initialize(
-        capabilities: ClientCapabilities,
-        clientInfo: ClientInfo?
-    ) async throws -> InitializeResponse {
-        let info = clientInfo ?? ClientInfo(
-            name: "ACP",
-            title: "ACP WebSocket Client",
-            version: "1.0.0"
-        )
-
-        let request = InitializeRequest(
-            protocolVersion: 1,
-            clientCapabilities: capabilities,
-            clientInfo: info
-        )
-
-        let paramsData = try encoder.encode(request)
-        let params = try decoder.decode(AnyCodable.self, from: paramsData)
-
-        let rpcRequest = JSONRPCRequest(
-            id: .number(1),
-            method: "initialize",
-            params: params
-        )
-
-        let requestData = try encoder.encode(rpcRequest)
-        try await transport.send(requestData)
-
-        // Wait for response
-        for await data in transport.messages {
-            let message = try decoder.decode(Message.self, from: data)
-            if case .response(let response) = message {
-                if let result = response.result {
-                    let resultData = try encoder.encode(result)
-                    return try decoder.decode(InitializeResponse.self, from: resultData)
-                } else if let error = response.error {
-                    throw ClientError.agentError(error)
-                }
-            }
-        }
-
-        throw ClientError.connectionClosed
+        _ = await client.shutdown()
     }
 }

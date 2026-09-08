@@ -1,27 +1,19 @@
-//
-//  ACPModelTests.swift
-//  ACPModelTests
-//
-//  Tests for ACPModel types
-//
-
-import XCTest
 @testable import ACPModel
+import XCTest
 
 final class ACPModelTests: XCTestCase {
-
     // MARK: - Message Tests
 
     func testJSONRPCRequestEncoding() throws {
         let request = JSONRPCRequest(
             id: .number(1),
             method: "test/method",
-            params: AnyCodable(["key": "value"])
+            params: AnyCodable(["key": "value"]),
         )
 
         let encoder = JSONEncoder()
         let data = try encoder.encode(request)
-        let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
 
         XCTAssertEqual(json["jsonrpc"] as? String, "2.0")
         XCTAssertEqual(json["id"] as? Int, 1)
@@ -38,7 +30,7 @@ final class ACPModelTests: XCTestCase {
         """
 
         let decoder = JSONDecoder()
-        let response = try decoder.decode(JSONRPCResponse.self, from: json.data(using: .utf8)!)
+        let response = try decoder.decode(JSONRPCResponse.self, from: XCTUnwrap(json.data(using: .utf8)))
 
         XCTAssertEqual(response.id, .number(1))
         XCTAssertNotNil(response.result)
@@ -58,52 +50,98 @@ final class ACPModelTests: XCTestCase {
 
         let decoder = JSONDecoder()
 
-        let request = try decoder.decode(Message.self, from: requestJson.data(using: .utf8)!)
-        if case .request(let r) = request {
+        let request = try decoder.decode(Message.self, from: XCTUnwrap(requestJson.data(using: .utf8)))
+        if case let .request(r) = request {
             XCTAssertEqual(r.method, "test")
         } else {
             XCTFail("Expected request")
         }
 
-        let notification = try decoder.decode(Message.self, from: notificationJson.data(using: .utf8)!)
-        if case .notification(let n) = notification {
-            XCTAssertEqual(n.method, "notify")
+        let notification = try decoder.decode(Message.self, from: XCTUnwrap(notificationJson.data(using: .utf8)))
+        if case let .notification(decodedNotification) = notification {
+            XCTAssertEqual(decodedNotification.method, "notify")
         } else {
             XCTFail("Expected notification")
         }
 
-        let response = try decoder.decode(Message.self, from: responseJson.data(using: .utf8)!)
-        if case .response(let r) = response {
+        let response = try decoder.decode(Message.self, from: XCTUnwrap(responseJson.data(using: .utf8)))
+        if case let .response(r) = response {
             XCTAssertEqual(r.id, .number(1))
         } else {
             XCTFail("Expected response")
         }
     }
 
-    func testMessageWithNullIdDecodesAsNotification() throws {
-        let notificationWithNullId = """
+    // Replaced lenient test `testMessageWithNullIdDecodesAsNotification`.
+    // ACP v1 strict contract: a method with an `id` key is a request, including
+    // `id: null`; null IDs are never demoted to notifications.
+    func testMessageWithNullIdRemainsRequest() throws {
+        let requestWithNullId = """
         {"jsonrpc":"2.0","id":null,"method":"session/update","params":{"sessionId":"s1"}}
         """
 
-        let message = try JSONDecoder().decode(Message.self, from: notificationWithNullId.data(using: .utf8)!)
-        if case .notification(let notification) = message {
-            XCTAssertEqual(notification.method, "session/update")
+        let message = try JSONDecoder().decode(Message.self, from: XCTUnwrap(requestWithNullId.data(using: .utf8)))
+        if case let .request(request) = message {
+            XCTAssertEqual(request.id, .null)
+            XCTAssertEqual(request.method, "session/update")
         } else {
-            XCTFail("Expected notification for null id")
+            XCTFail("Expected request for null id")
         }
     }
 
-    func testMessageWithInvalidIdTypeDecodesAsNotification() throws {
+    /// Replaced lenient test `testMessageWithInvalidIdTypeDecodesAsNotification`.
+    /// ACP v1 strict contract: malformed IDs are rejected, not demoted.
+    func testMessageWithInvalidIdTypeIsRejected() throws {
         let notificationWithInvalidId = """
         {"jsonrpc":"2.0","id":{"bad":true},"method":"session/update","params":{"sessionId":"s1"}}
         """
 
-        let message = try JSONDecoder().decode(Message.self, from: notificationWithInvalidId.data(using: .utf8)!)
-        if case .notification(let notification) = message {
-            XCTAssertEqual(notification.method, "session/update")
-        } else {
-            XCTFail("Expected notification for invalid id type")
+        XCTAssertThrowsError(try JSONDecoder().decode(
+            Message.self,
+            from: XCTUnwrap(notificationWithInvalidId.data(using: .utf8)),
+        ))
+    }
+
+    /// Replaced lenient test `testInitializeProtocolVersionDecodingIsLenient`.
+    /// ACP v1 strict contract: protocolVersion is an integer in 0...65535;
+    /// strings and date-like values are rejected, not coerced to 1.
+    func testInitializeProtocolVersionDecodingIsStrict() throws {
+        let requestJson = """
+        {
+            "protocolVersion": "2025-03-26",
+            "clientCapabilities": {
+                "fs": {"readTextFile": true, "writeTextFile": true},
+                "terminal": true
+            }
         }
+        """
+        let responseJson = """
+        {
+            "protocolVersion": "1",
+            "agentCapabilities": {}
+        }
+        """
+
+        XCTAssertThrowsError(try JSONDecoder().decode(
+            InitializeRequest.self,
+            from: XCTUnwrap(requestJson.data(using: .utf8)),
+        ))
+        XCTAssertThrowsError(try JSONDecoder().decode(
+            InitializeResponse.self,
+            from: XCTUnwrap(responseJson.data(using: .utf8)),
+        ))
+
+        let validResponse = """
+        {
+            "protocolVersion": 1,
+            "agentCapabilities": {}
+        }
+        """
+        let response = try JSONDecoder().decode(
+            InitializeResponse.self,
+            from: XCTUnwrap(validResponse.data(using: .utf8)),
+        )
+        XCTAssertEqual(response.protocolVersion, 1)
     }
 
     // MARK: - Session Tests
@@ -121,36 +159,11 @@ final class ACPModelTests: XCTestCase {
         let info = ClientInfo(name: "TestClient", title: "Test", version: "1.0.0")
         let encoder = JSONEncoder()
         let data = try encoder.encode(info)
-        let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
 
         XCTAssertEqual(json["name"] as? String, "TestClient")
         XCTAssertEqual(json["title"] as? String, "Test")
         XCTAssertEqual(json["version"] as? String, "1.0.0")
-    }
-
-    func testInitializeProtocolVersionDecodingIsLenient() throws {
-        let requestJson = """
-        {
-            "protocolVersion": "2025-03-26",
-            "clientCapabilities": {
-                "fs": {"readTextFile": true, "writeTextFile": true},
-                "terminal": true
-            }
-        }
-        """
-        let responseJson = """
-        {
-            "protocolVersion": "1",
-            "agentCapabilities": {}
-        }
-        """
-
-        let decoder = JSONDecoder()
-        let request = try decoder.decode(InitializeRequest.self, from: requestJson.data(using: .utf8)!)
-        let response = try decoder.decode(InitializeResponse.self, from: responseJson.data(using: .utf8)!)
-
-        XCTAssertEqual(request.protocolVersion, 1)
-        XCTAssertEqual(response.protocolVersion, 1)
     }
 
     func testSessionInfoAdditionalDirectoriesDecoding() throws {
@@ -163,7 +176,7 @@ final class ACPModelTests: XCTestCase {
         }
         """
 
-        let info = try JSONDecoder().decode(SessionInfo.self, from: json.data(using: .utf8)!)
+        let info = try JSONDecoder().decode(SessionInfo.self, from: XCTUnwrap(json.data(using: .utf8)))
 
         XCTAssertEqual(info.sessionId.value, "session-123")
         XCTAssertEqual(info.cwd, "/tmp/project")
@@ -175,7 +188,7 @@ final class ACPModelTests: XCTestCase {
         let request = CloseSessionRequest(sessionId: SessionId("session-123"))
         let encoder = JSONEncoder()
         let data = try encoder.encode(request)
-        let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
 
         XCTAssertEqual(json["sessionId"] as? String, "session-123")
     }
@@ -184,11 +197,11 @@ final class ACPModelTests: XCTestCase {
         let request = NewSessionRequest(
             cwd: "/tmp/project",
             additionalDirectories: ["/tmp/shared"],
-            mcpServers: []
+            mcpServers: [],
         )
         let encoder = JSONEncoder()
         let data = try encoder.encode(request)
-        let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
 
         XCTAssertEqual(json["cwd"] as? String, "/tmp/project")
         XCTAssertEqual(json["additionalDirectories"] as? [String], ["/tmp/shared"])
@@ -199,7 +212,7 @@ final class ACPModelTests: XCTestCase {
         let response = CloseSessionResponse()
         let encoder = JSONEncoder()
         let data = try encoder.encode(response)
-        let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
 
         XCTAssertTrue(json.isEmpty)
     }
@@ -209,11 +222,11 @@ final class ACPModelTests: XCTestCase {
             sessionId: SessionId("session-123"),
             cwd: "/tmp/project",
             additionalDirectories: ["/tmp/shared"],
-            mcpServers: []
+            mcpServers: [],
         )
         let encoder = JSONEncoder()
         let data = try encoder.encode(request)
-        let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
 
         XCTAssertEqual(json["sessionId"] as? String, "session-123")
         XCTAssertEqual(json["cwd"] as? String, "/tmp/project")
@@ -230,7 +243,7 @@ final class ACPModelTests: XCTestCase {
         }
         """
 
-        let request = try JSONDecoder().decode(ResumeSessionRequest.self, from: json.data(using: .utf8)!)
+        let request = try JSONDecoder().decode(ResumeSessionRequest.self, from: XCTUnwrap(json.data(using: .utf8)))
 
         XCTAssertEqual(request.sessionId.value, "session-123")
         XCTAssertEqual(request.cwd, "/tmp/project")
@@ -242,7 +255,7 @@ final class ACPModelTests: XCTestCase {
         let response = ResumeSessionResponse()
         let encoder = JSONEncoder()
         let data = try encoder.encode(response)
-        let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
 
         XCTAssertTrue(json.isEmpty)
     }
@@ -252,8 +265,10 @@ final class ACPModelTests: XCTestCase {
         let response = DeleteSessionResponse()
         let encoder = JSONEncoder()
 
-        let requestJson = try JSONSerialization.jsonObject(with: encoder.encode(request)) as! [String: Any]
-        let responseJson = try JSONSerialization.jsonObject(with: encoder.encode(response)) as! [String: Any]
+        let requestJson = try XCTUnwrap(try JSONSerialization
+            .jsonObject(with: encoder.encode(request)) as? [String: Any])
+        let responseJson = try XCTUnwrap(try JSONSerialization
+            .jsonObject(with: encoder.encode(response)) as? [String: Any])
 
         XCTAssertEqual(requestJson["sessionId"] as? String, "session-123")
         XCTAssertTrue(responseJson.isEmpty)
@@ -261,8 +276,10 @@ final class ACPModelTests: XCTestCase {
 
     func testLogoutRequestAndResponseEncoding() throws {
         let encoder = JSONEncoder()
-        let requestJson = try JSONSerialization.jsonObject(with: encoder.encode(LogoutRequest())) as! [String: Any]
-        let responseJson = try JSONSerialization.jsonObject(with: encoder.encode(LogoutResponse())) as! [String: Any]
+        let requestJson = try XCTUnwrap(try JSONSerialization
+            .jsonObject(with: encoder.encode(LogoutRequest())) as? [String: Any])
+        let responseJson = try XCTUnwrap(try JSONSerialization
+            .jsonObject(with: encoder.encode(LogoutResponse())) as? [String: Any])
 
         XCTAssertTrue(requestJson.isEmpty)
         XCTAssertTrue(responseJson.isEmpty)
@@ -280,7 +297,10 @@ final class ACPModelTests: XCTestCase {
         }
         """
 
-        let capabilities = try JSONDecoder().decode(AgentCapabilities.self, from: json.data(using: .utf8)!)
+        let capabilities = try JSONDecoder().decode(
+            AgentCapabilities.self,
+            from: XCTUnwrap(json.data(using: .utf8)),
+        )
 
         XCTAssertNotNil(capabilities.auth?.logout)
         XCTAssertNotNil(capabilities.sessionCapabilities?.additionalDirectories)
@@ -292,7 +312,7 @@ final class ACPModelTests: XCTestCase {
         let response = LoadSessionResponse()
         let encoder = JSONEncoder()
         let data = try encoder.encode(response)
-        let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
 
         XCTAssertNil(json["sessionId"])
     }
@@ -301,7 +321,7 @@ final class ACPModelTests: XCTestCase {
         let response = KillTerminalResponse()
         let encoder = JSONEncoder()
         let data = try encoder.encode(response)
-        let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
 
         XCTAssertNil(json["success"])
     }
@@ -310,7 +330,7 @@ final class ACPModelTests: XCTestCase {
         let response = ReleaseTerminalResponse()
         let encoder = JSONEncoder()
         let data = try encoder.encode(response)
-        let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
 
         XCTAssertNil(json["success"])
     }
@@ -319,7 +339,7 @@ final class ACPModelTests: XCTestCase {
         let response = SetModeResponse()
         let encoder = JSONEncoder()
         let data = try encoder.encode(response)
-        let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
 
         XCTAssertNil(json["success"])
     }
@@ -328,7 +348,7 @@ final class ACPModelTests: XCTestCase {
         let response = SetModelResponse()
         let encoder = JSONEncoder()
         let data = try encoder.encode(response)
-        let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
 
         XCTAssertNil(json["success"])
     }
@@ -340,13 +360,13 @@ final class ACPModelTests: XCTestCase {
             toolCall: ToolCallUpdate(
                 toolCallId: "tool-123",
                 status: .pending,
-                title: "Read /tmp/file.txt"
-            )
+                title: "Read /tmp/file.txt",
+            ),
         )
 
         let encoder = JSONEncoder()
         let data = try encoder.encode(request)
-        let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
         let toolCall = try XCTUnwrap(json["toolCall"] as? [String: Any])
 
         XCTAssertNil(json["message"])
@@ -372,7 +392,7 @@ final class ACPModelTests: XCTestCase {
         """
 
         let decoder = JSONDecoder()
-        let request = try decoder.decode(RequestPermissionRequest.self, from: json.data(using: .utf8)!)
+        let request = try decoder.decode(RequestPermissionRequest.self, from: XCTUnwrap(json.data(using: .utf8)))
 
         XCTAssertEqual(request.sessionId.value, "session-123")
         XCTAssertEqual(request.toolCall.toolCallId, "tool-123")
@@ -387,7 +407,7 @@ final class ACPModelTests: XCTestCase {
         let content = TextContent(text: "Hello, world!")
         let encoder = JSONEncoder()
         let data = try encoder.encode(content)
-        let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
 
         XCTAssertEqual(json["type"] as? String, "text")
         XCTAssertEqual(json["text"] as? String, "Hello, world!")
@@ -399,9 +419,9 @@ final class ACPModelTests: XCTestCase {
         """
 
         let decoder = JSONDecoder()
-        let block = try decoder.decode(ContentBlock.self, from: textJson.data(using: .utf8)!)
+        let block = try decoder.decode(ContentBlock.self, from: XCTUnwrap(textJson.data(using: .utf8)))
 
-        if case .text(let content) = block {
+        if case let .text(content) = block {
             XCTAssertEqual(content.text, "Hello")
         } else {
             XCTFail("Expected text content")
@@ -430,15 +450,15 @@ final class ACPModelTests: XCTestCase {
         let capabilities = ClientCapabilities(
             fs: FileSystemCapabilities(readTextFile: true, writeTextFile: true),
             terminal: true,
-            meta: nil
+            meta: nil,
         )
 
         let encoder = JSONEncoder()
         let data = try encoder.encode(capabilities)
-        let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
 
         XCTAssertEqual(json["terminal"] as? Bool, true)
-        let fs = json["fs"] as! [String: Any]
+        let fs = try XCTUnwrap(json["fs"] as? [String: Any])
         XCTAssertEqual(fs["readTextFile"] as? Bool, true)
         XCTAssertEqual(fs["writeTextFile"] as? Bool, true)
     }
@@ -448,16 +468,20 @@ final class ACPModelTests: XCTestCase {
             fs: FileSystemCapabilities(readTextFile: true, writeTextFile: false),
             terminal: false,
             session: ClientSessionCapabilities(
-                configOptions: SessionConfigOptionsCapabilities(boolean: BooleanConfigOptionCapabilities())
+                configOptions: SessionConfigOptionsCapabilities(boolean: BooleanConfigOptionCapabilities()),
             ),
             plan: PlanCapabilities(),
             auth: AuthCapabilities(terminal: true),
-            elicitation: ElicitationCapabilities(form: ElicitationFormCapabilities(), url: ElicitationUrlCapabilities()),
+            elicitation: ElicitationCapabilities(
+                form: ElicitationFormCapabilities(),
+                url: ElicitationUrlCapabilities(),
+            ),
             nes: ClientNesCapabilities(jump: NesJumpCapabilities(), rename: NesRenameCapabilities()),
-            positionEncodings: [.utf8, .utf16]
+            positionEncodings: [.utf8, .utf16],
         )
 
-        let json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(capabilities)) as! [String: Any]
+        let json = try XCTUnwrap(try JSONSerialization
+            .jsonObject(with: JSONEncoder().encode(capabilities)) as? [String: Any])
 
         XCTAssertNotNil(json["session"])
         XCTAssertNotNil(json["plan"])
@@ -487,7 +511,10 @@ final class ACPModelTests: XCTestCase {
         }
         """
 
-        let capabilities = try JSONDecoder().decode(AgentCapabilities.self, from: json.data(using: .utf8)!)
+        let capabilities = try JSONDecoder().decode(
+            AgentCapabilities.self,
+            from: XCTUnwrap(json.data(using: .utf8)),
+        )
 
         XCTAssertEqual(capabilities.mcpCapabilities?.acp, true)
         XCTAssertNotNil(capabilities.providers)
@@ -499,7 +526,7 @@ final class ACPModelTests: XCTestCase {
 
     func testDraftMCPServerAcpEncodingAndLegacyDecode() throws {
         let config = MCPServerConfig.acp(MCPAcpServerConfig(name: "Client MCP", serverId: "server-1"))
-        let json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(config)) as! [String: Any]
+        let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: JSONEncoder().encode(config)) as? [String: Any])
 
         XCTAssertEqual(json["type"] as? String, "acp")
         XCTAssertEqual(json["name"] as? String, "Client MCP")
@@ -508,9 +535,9 @@ final class ACPModelTests: XCTestCase {
         let legacy = """
         {"type":"acp","name":"Client MCP","id":"legacy-server"}
         """
-        let decoded = try JSONDecoder().decode(MCPServerConfig.self, from: legacy.data(using: .utf8)!)
+        let decoded = try JSONDecoder().decode(MCPServerConfig.self, from: XCTUnwrap(legacy.data(using: .utf8)))
 
-        if case .acp(let acp) = decoded {
+        if case let .acp(acp) = decoded {
             XCTAssertEqual(acp.serverId.value, "legacy-server")
         } else {
             XCTFail("Expected ACP MCP server config")
@@ -538,11 +565,11 @@ final class ACPModelTests: XCTestCase {
         """
 
         let decoder = JSONDecoder()
-        let update = try decoder.decode(SessionUpdate.self, from: itemsJson.data(using: .utf8)!)
-        let removed = try decoder.decode(SessionUpdate.self, from: removedJson.data(using: .utf8)!)
+        let update = try decoder.decode(SessionUpdate.self, from: XCTUnwrap(itemsJson.data(using: .utf8)))
+        let removed = try decoder.decode(SessionUpdate.self, from: XCTUnwrap(removedJson.data(using: .utf8)))
 
         XCTAssertEqual(update.sessionUpdateType, "plan_update")
-        if case .items(let items) = update.planUpdate?.plan {
+        if case let .items(items) = update.planUpdate?.plan {
             XCTAssertEqual(items.planId, "p1")
             XCTAssertEqual(items.entries.first?.content, "Ship draft support")
         } else {
@@ -551,7 +578,8 @@ final class ACPModelTests: XCTestCase {
 
         XCTAssertEqual(removed.planRemoved?.planId, "p1")
 
-        let encoded = try JSONSerialization.jsonObject(with: JSONEncoder().encode(update)) as! [String: Any]
+        let encoded = try XCTUnwrap(try JSONSerialization
+            .jsonObject(with: JSONEncoder().encode(update)) as? [String: Any])
         let encodedPlan = encoded["plan"] as? [String: Any]
         XCTAssertEqual(encoded["sessionUpdate"] as? String, "plan_update")
         XCTAssertEqual(encodedPlan?["planId"] as? String, "p1")
@@ -562,15 +590,15 @@ final class ACPModelTests: XCTestCase {
             providerId: "anthropic",
             supported: [.anthropic, .openai],
             required: true,
-            current: ProviderCurrentConfig(apiType: .anthropic, baseUrl: "https://api.anthropic.com")
+            current: ProviderCurrentConfig(apiType: .anthropic, baseUrl: "https://api.anthropic.com"),
         )
         let elicitation = CreateElicitationRequest(
             mode: "form",
             message: "Choose model",
             sessionId: SessionId("session-1"),
             requestedSchema: ElicitationSchema(
-                properties: ["model": AnyCodable(["type": "string"])]
-            )
+                properties: ["model": AnyCodable(["type": "string"])],
+            ),
         )
         let suggestion = NesSuggestion(
             kind: "edit",
@@ -580,11 +608,11 @@ final class ACPModelTests: XCTestCase {
                 NesTextEdit(
                     range: ACPModel.TextRange(
                         start: TextPosition(line: 1, character: 0),
-                        end: TextPosition(line: 1, character: 3)
+                        end: TextPosition(line: 1, character: 3),
                     ),
-                    newText: "let"
-                )
-            ]
+                    newText: "let",
+                ),
+            ],
         )
         let suggestRequest = SuggestNesRequest(
             sessionId: SessionId("session-1"),
@@ -601,13 +629,13 @@ final class ACPModelTests: XCTestCase {
                         uri: "file:///tmp/main.swift",
                         range: ACPModel.TextRange(
                             start: TextPosition(line: 1, character: 0),
-                            end: TextPosition(line: 1, character: 3)
+                            end: TextPosition(line: 1, character: 3),
                         ),
                         severity: .warning,
-                        message: "Replace var with let"
+                        message: "Replace var with let",
                     ),
-                ]
-            )
+                ],
+            ),
         )
         let document = DidFocusDocumentNotification(
             sessionId: SessionId("session-1"),
@@ -616,22 +644,31 @@ final class ACPModelTests: XCTestCase {
             position: TextPosition(line: 1, character: 4),
             visibleRange: ACPModel.TextRange(
                 start: TextPosition(line: 0, character: 0),
-                end: TextPosition(line: 20, character: 0)
-            )
+                end: TextPosition(line: 20, character: 0),
+            ),
         )
 
         let encoder = JSONEncoder()
-        let providerJson = try JSONSerialization.jsonObject(with: encoder.encode(ListProvidersResponse(providers: [provider]))) as! [String: Any]
-        let elicitationJson = try JSONSerialization.jsonObject(with: encoder.encode(elicitation)) as! [String: Any]
-        let suggestionJson = try JSONSerialization.jsonObject(with: encoder.encode(SuggestNesResponse(suggestions: [suggestion]))) as! [String: Any]
-        let suggestRequestJson = try JSONSerialization.jsonObject(with: encoder.encode(suggestRequest)) as! [String: Any]
-        let documentJson = try JSONSerialization.jsonObject(with: encoder.encode(document)) as! [String: Any]
+        let providerJson = try XCTUnwrap(try JSONSerialization
+            .jsonObject(with: encoder.encode(ListProvidersResponse(providers: [provider]))) as? [String: Any])
+        let elicitationJson = try XCTUnwrap(try JSONSerialization
+            .jsonObject(with: encoder.encode(elicitation)) as? [String: Any])
+        let suggestionJson = try XCTUnwrap(try JSONSerialization
+            .jsonObject(with: encoder.encode(SuggestNesResponse(suggestions: [suggestion]))) as? [String: Any])
+        let suggestRequestJson = try XCTUnwrap(try JSONSerialization
+            .jsonObject(with: encoder.encode(suggestRequest)) as? [String: Any])
+        let documentJson = try XCTUnwrap(try JSONSerialization
+            .jsonObject(with: encoder.encode(document)) as? [String: Any])
 
         XCTAssertEqual(((providerJson["providers"] as? [[String: Any]])?.first)?["providerId"] as? String, "anthropic")
         XCTAssertEqual(elicitationJson["mode"] as? String, "form")
         XCTAssertEqual(((suggestionJson["suggestions"] as? [[String: Any]])?.first)?["kind"] as? String, "edit")
-        XCTAssertEqual(((suggestRequestJson["context"] as? [String: Any])?["diagnostics"] as? [[String: Any]])?.first?["severity"] as? String, "warning")
-        XCTAssertEqual(documentJson["visibleRange"] as? [String: Any] != nil, true)
+        XCTAssertEqual(
+            ((suggestRequestJson["context"] as? [String: Any])?["diagnostics"] as? [[String: Any]])?
+                .first?["severity"] as? String,
+            "warning",
+        )
+        XCTAssertEqual(documentJson["visibleRange"] is [String: Any], true)
     }
 
     // MARK: - AnyCodable Tests
@@ -654,9 +691,9 @@ final class ACPModelTests: XCTestCase {
 
     func testAnyCodableWithDict() throws {
         let encoder = JSONEncoder()
-        let value = AnyCodable(["key": "value", "number": 123] as [String: Any])
+        let value = AnyCodable(["key": "value", "number": 123] as [String: any Sendable])
         let data = try encoder.encode(value)
-        let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
 
         XCTAssertEqual(json["key"] as? String, "value")
         XCTAssertEqual(json["number"] as? Int, 123)
@@ -669,14 +706,14 @@ final class ACPModelTests: XCTestCase {
             protocolVersion: 1,
             clientCapabilities: ClientCapabilities(
                 fs: FileSystemCapabilities(readTextFile: true, writeTextFile: true),
-                terminal: true
+                terminal: true,
             ),
-            clientInfo: ClientInfo(name: "Test", title: nil, version: "1.0")
+            clientInfo: ClientInfo(name: "Test", title: nil, version: "1.0"),
         )
 
         let encoder = JSONEncoder()
         let data = try encoder.encode(request)
-        let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
 
         XCTAssertEqual(json["protocolVersion"] as? Int, 1)
         XCTAssertNotNil(json["clientCapabilities"])
@@ -686,12 +723,12 @@ final class ACPModelTests: XCTestCase {
     func testSessionPromptRequestEncoding() throws {
         let request = SessionPromptRequest(
             sessionId: SessionId("session-1"),
-            prompt: [.text(TextContent(text: "Hello"))]
+            prompt: [.text(TextContent(text: "Hello"))],
         )
 
         let encoder = JSONEncoder()
         let data = try encoder.encode(request)
-        let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
 
         XCTAssertEqual(json["sessionId"] as? String, "session-1")
         XCTAssertNotNil(json["prompt"])

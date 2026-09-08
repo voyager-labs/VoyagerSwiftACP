@@ -1,9 +1,8 @@
-import XCTest
 @testable import ACP
+import XCTest
 
 /// E2E tests using a mock agent script that responds to JSON-RPC messages
 final class ACPE2ETests: XCTestCase {
-
     var mockAgentPath: String!
     var tempDir: URL!
 
@@ -17,7 +16,7 @@ final class ACPE2ETests: XCTestCase {
     }
 
     override func tearDown() async throws {
-        if let tempDir = tempDir {
+        if let tempDir {
             try? FileManager.default.removeItem(at: tempDir)
         }
         try await super.tearDown()
@@ -37,7 +36,7 @@ final class ACPE2ETests: XCTestCase {
     private func makeCapabilities() -> ClientCapabilities {
         ClientCapabilities(
             fs: FileSystemCapabilities(readTextFile: true, writeTextFile: true),
-            terminal: true
+            terminal: true,
         )
     }
 
@@ -72,7 +71,7 @@ final class ACPE2ETests: XCTestCase {
         let response = try await client.initialize(
             protocolVersion: 1,
             capabilities: makeCapabilities(),
-            timeout: 5.0
+            timeout: 5.0,
         )
 
         XCTAssertEqual(response.protocolVersion, 1)
@@ -103,7 +102,7 @@ final class ACPE2ETests: XCTestCase {
 
         let session = try await client.newSession(
             workingDirectory: "/tmp",
-            timeout: 5.0
+            timeout: 5.0,
         )
 
         XCTAssertEqual(session.sessionId.value, "session-123")
@@ -198,7 +197,7 @@ final class ACPE2ETests: XCTestCase {
         let response = try await client.loadSession(
             sessionId: SessionId("session-123"),
             cwd: "/tmp/project",
-            mcpServers: []
+            mcpServers: [],
         )
 
         XCTAssertNil(response.sessionId)
@@ -244,7 +243,7 @@ final class ACPE2ETests: XCTestCase {
         let resume = try await client.resumeSession(
             sessionId: SessionId("session-123"),
             cwd: "/tmp/project",
-            additionalDirectories: ["/tmp/shared"]
+            additionalDirectories: ["/tmp/shared"],
         )
         XCTAssertEqual(resume.modes?.currentModeId, "chat")
 
@@ -265,8 +264,10 @@ final class ACPE2ETests: XCTestCase {
 
             if [ "$method" = "initialize" ]; then
                 echo '{"jsonrpc":"2.0","id":'$id',"result":{"protocolVersion":1,"agentCapabilities":{}}}'
-                # Send a notification after response
-                echo '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Hello from agent"}}}}'
+            elif [ "$method" = "session/new" ]; then
+                echo '{"jsonrpc":"2.0","id":'$id',"result":{"sessionId":"session-123"}}'
+                # Known variant for a registered session is delivered as-is.
+                echo '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"session-123","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Hello from agent"}}}}'
             fi
         done
         """)
@@ -279,16 +280,17 @@ final class ACPE2ETests: XCTestCase {
         // Start listening for notifications before sending request
         let notificationTask = Task {
             var receivedNotification = false
-            for await notification in notificationStream {
-                if notification.method == "session/update" {
-                    receivedNotification = true
-                    break
-                }
+            for await notification in notificationStream where notification.method == "session/update" {
+                receivedNotification = true
+                break
             }
             return receivedNotification
         }
 
         _ = try await client.initialize(capabilities: makeCapabilities(), timeout: 5.0)
+        // Register the session so the agent update targets a tracked session.
+        let session = try await client.newSession(workingDirectory: "/tmp", timeout: 5.0)
+        XCTAssertEqual(session.sessionId.value, "session-123")
 
         // Give time for notification to arrive
         try await Task.sleep(nanoseconds: 500_000_000)
@@ -324,16 +326,18 @@ final class ACPE2ETests: XCTestCase {
         await client.terminate()
     }
 
-    func testInitializeWithNonJSONPrefixSameLine() async throws {
+    /// Replaced recovery fixture `testInitializeWithNonJSONPrefixSameLine`.
+    /// Strict ACP stdio framing: a non-JSON stdout line is a typed malformed
+    /// frame failure, not something to resynchronize past.
+    func testNonJSONStdoutPrefixFailsConnection() async throws {
         try createMockAgent(script: """
         while read -r line; do
             id=$(echo "$line" | grep -o '"id":[0-9]*' | grep -o '[0-9]*')
             method=$(echo "$line" | grep -o '"method":"[^"]*"' | sed 's/"method":"\\([^"]*\\)"/\\1/')
 
             if [ "$method" = "initialize" ]; then
-                # Non-JSON prefix on the same stdout line before a valid JSON message.
-                printf 'NONJSON_PREFIX'
-                echo '{"jsonrpc":"2.0","id":'$id',"result":{"protocolVersion":1,"agentCapabilities":{},"agentInfo":{"name":"MockAgent","version":"1.0.0"}}}'
+                printf 'NONJSON_PREFIX\n'
+                echo '{"jsonrpc":"2.0","id":'$id',"result":{"protocolVersion":1,"agentCapabilities":{}}}'
                 break
             fi
         done
@@ -342,29 +346,36 @@ final class ACPE2ETests: XCTestCase {
         let client = Client()
         try await client.launch(agentPath: mockAgentPath)
 
-        let response = try await client.initialize(
-            protocolVersion: 1,
-            capabilities: makeCapabilities(),
-            timeout: 5.0
-        )
+        do {
+            _ = try await client.initialize(
+                protocolVersion: 1,
+                capabilities: makeCapabilities(),
+                timeout: 5.0,
+            )
+            XCTFail("expected malformed frame failure")
+        } catch let error as ClientError {
+            guard case .transportFailure(.malformedFrame) = error else {
+                return XCTFail("expected transportFailure(.malformedFrame), got \(error)")
+            }
+        }
 
-        XCTAssertEqual(response.protocolVersion, 1)
-        XCTAssertEqual(response.agentInfo?.name, "MockAgent")
-
-        await client.terminate()
+        let evidence = await client.shutdown()
+        guard case .failure(.malformedFrame) = evidence.reason else {
+            return XCTFail("expected malformed frame evidence, got \(evidence.reason)")
+        }
     }
 
-    func testInitializeRecoversAfterMalformedJSONLine() async throws {
+    /// Replaced recovery fixture `testInitializeRecoversAfterMalformedJSONLine`.
+    /// Strict ACP stdio framing: a truncated JSON line terminates the connection
+    /// with a typed failure instead of being discarded.
+    func testMalformedJSONLineFailsConnection() async throws {
         try createMockAgent(script: """
         while read -r line; do
             id=$(echo "$line" | grep -o '"id":[0-9]*' | grep -o '[0-9]*')
             method=$(echo "$line" | grep -o '"method":"[^"]*"' | sed 's/"method":"\\([^"]*\\)"/\\1/')
 
             if [ "$method" = "initialize" ]; then
-                # Malformed JSON line that should be discarded.
                 echo '{"jsonrpc":"2.0","id":'$id',"result":'
-                # Valid response must still be parsed.
-                echo '{"jsonrpc":"2.0","id":'$id',"result":{"protocolVersion":1,"agentCapabilities":{},"agentInfo":{"name":"RecoveredAgent","version":"1.0.0"}}}'
                 break
             fi
         done
@@ -373,14 +384,18 @@ final class ACPE2ETests: XCTestCase {
         let client = Client()
         try await client.launch(agentPath: mockAgentPath)
 
-        let response = try await client.initialize(
-            protocolVersion: 1,
-            capabilities: makeCapabilities(),
-            timeout: 5.0
-        )
-
-        XCTAssertEqual(response.protocolVersion, 1)
-        XCTAssertEqual(response.agentInfo?.name, "RecoveredAgent")
+        do {
+            _ = try await client.initialize(
+                protocolVersion: 1,
+                capabilities: makeCapabilities(),
+                timeout: 5.0,
+            )
+            XCTFail("expected malformed frame failure")
+        } catch let error as ClientError {
+            guard case .transportFailure(.malformedFrame) = error else {
+                return XCTFail("expected transportFailure(.malformedFrame), got \(error)")
+            }
+        }
 
         await client.terminate()
     }
@@ -426,13 +441,14 @@ final class ACPE2ETests: XCTestCase {
 
         try await client.launch(agentPath: mockAgentPath)
 
-        var debugMessages: [DebugMessage] = []
         let debugTask = Task {
-            guard let stream = await client.debugMessages else { return }
+            var collected: [DebugMessage] = []
+            guard let stream = await client.debugMessages else { return collected }
             for await message in stream {
-                debugMessages.append(message)
-                if debugMessages.count >= 2 { break }
+                collected.append(message)
+                if collected.count >= 2 { break }
             }
+            return collected
         }
 
         _ = try await client.initialize(capabilities: makeCapabilities(), timeout: 5.0)
@@ -441,7 +457,8 @@ final class ACPE2ETests: XCTestCase {
         try await Task.sleep(nanoseconds: 500_000_000)
 
         await client.terminate()
-        debugTask.cancel()
+
+        let debugMessages = await debugTask.value
 
         XCTAssertGreaterThanOrEqual(debugMessages.count, 1)
 
@@ -496,7 +513,7 @@ final class ACPE2ETests: XCTestCase {
             _ = try await client.initialize(capabilities: makeCapabilities(), timeout: 5.0)
             XCTFail("Should have thrown agent error")
         } catch let error as ClientError {
-            if case .agentError(let rpcError) = error {
+            if case let .agentError(rpcError) = error {
                 XCTAssertEqual(rpcError.code, -32600)
                 XCTAssertEqual(rpcError.message, "Invalid request")
             } else {
@@ -532,7 +549,7 @@ final class ACPE2ETests: XCTestCase {
 
         let response = try await client.sendPrompt(
             sessionId: session.sessionId,
-            content: [.text(TextContent(text: "Hello, agent!"))]
+            content: [.text(TextContent(text: "Hello, agent!"))],
         )
 
         XCTAssertEqual(response.stopReason, .endTurn)
@@ -548,6 +565,8 @@ final class ACPE2ETests: XCTestCase {
 
             if [ "$method" = "initialize" ]; then
                 echo '{"jsonrpc":"2.0","id":'$id',"result":{"protocolVersion":1,"agentCapabilities":{}}}'
+            elif [ "$method" = "session/new" ]; then
+                echo '{"jsonrpc":"2.0","id":'$id',"result":{"sessionId":"session-123"}}'
             elif [ "$method" = "session/prompt" ]; then
                 printf '%s\n%s\n' \
                     '{"jsonrpc":"2.0","id":900,"method":"session/request_permission","params":{"sessionId":"session-123","options":[{"kind":"allow_once","name":"Allow once","optionId":"allow"}],"toolCall":{"toolCallId":"tc-1","status":"pending","title":"Run command"}}}' \
@@ -561,11 +580,12 @@ final class ACPE2ETests: XCTestCase {
         await client.setDelegate(delegate)
         try await client.launch(agentPath: mockAgentPath)
         _ = try await client.initialize(capabilities: makeCapabilities(), timeout: 5.0)
+        let session = try await client.newSession(workingDirectory: "/tmp", timeout: 5.0)
 
         let promptTask = Task {
             try await client.sendPrompt(
-                sessionId: SessionId("session-123"),
-                content: [.text(TextContent(text: "Continue"))]
+                sessionId: session.sessionId,
+                content: [.text(TextContent(text: "Continue"))],
             )
         }
         await delegate.waitUntilRequested()
@@ -587,6 +607,9 @@ final class ACPE2ETests: XCTestCase {
 
     func testClientForwardsCompleteStderrLinesAcrossChunks() async throws {
         try createMockAgent(script: """
+        read -r line
+        id=$(echo "$line" | grep -o '"id":[0-9]*' | grep -o '[0-9]*')
+        echo '{"jsonrpc":"2.0","id":'$id',"result":{"protocolVersion":1,"agentCapabilities":{}}}'
         printf 'first' >&2
         sleep 0.05
         printf ' line\nsecond line\n' >&2
@@ -611,6 +634,7 @@ final class ACPE2ETests: XCTestCase {
             return lines
         }
 
+        _ = try await client.initialize(capabilities: makeCapabilities(), timeout: 5)
         let lines = await linesTask.value
         XCTAssertEqual(lines, ["first line", "second line"])
         await client.terminate()
@@ -675,7 +699,7 @@ final class ACPE2ETests: XCTestCase {
         await fulfillment(of: [collected], timeout: 5.0)
 
         let values = try await valuesTask.value
-        XCTAssertEqual(values, Array(0..<2000))
+        XCTAssertEqual(values, Array(0 ..< 2000))
         await transport.close()
     }
 }
@@ -694,12 +718,12 @@ private actor BlockingPermissionDelegate: ClientDelegate {
 
     func resolvePermission() {
         permissionContinuation?.resume(
-            returning: RequestPermissionResponse(outcome: PermissionOutcome(optionId: "allow"))
+            returning: RequestPermissionResponse(outcome: PermissionOutcome(optionId: "allow")),
         )
         permissionContinuation = nil
     }
 
-    func handlePermissionRequest(request: RequestPermissionRequest) async throws -> RequestPermissionResponse {
+    func handlePermissionRequest(request _: RequestPermissionRequest) async throws -> RequestPermissionResponse {
         requestReceived = true
         requestWaiters.forEach { $0.resume() }
         requestWaiters.removeAll()
@@ -709,39 +733,54 @@ private actor BlockingPermissionDelegate: ClientDelegate {
         }
     }
 
-    func handleFileReadRequest(_ path: String, sessionId: String, line: Int?, limit: Int?) async throws -> ReadTextFileResponse {
-        fatalError("Not used in this test")
+    func handleFileReadRequest(
+        _: String,
+        sessionId _: String,
+        line _: Int?,
+        limit _: Int?,
+    ) async throws -> ReadTextFileResponse {
+        throw ClientError.unknownMethod("unused test callback")
     }
 
-    func handleFileWriteRequest(_ path: String, content: String, sessionId: String) async throws -> WriteTextFileResponse {
-        fatalError("Not used in this test")
+    func handleFileWriteRequest(
+        _: String,
+        content _: String,
+        sessionId _: String,
+    ) async throws -> WriteTextFileResponse {
+        throw ClientError.unknownMethod("unused test callback")
     }
 
-    func handleTerminalCreate(command: String, sessionId: String, args: [String]?, cwd: String?, env: [EnvVariable]?, outputByteLimit: Int?) async throws -> CreateTerminalResponse {
-        fatalError("Not used in this test")
+    func handleTerminalCreate(
+        command _: String,
+        sessionId _: String,
+        args _: [String]?,
+        cwd _: String?,
+        env _: [EnvVariable]?,
+        outputByteLimit _: Int?,
+    ) async throws -> CreateTerminalResponse {
+        throw ClientError.unknownMethod("unused test callback")
     }
 
-    func handleTerminalOutput(terminalId: TerminalId, sessionId: String) async throws -> TerminalOutputResponse {
-        fatalError("Not used in this test")
+    func handleTerminalOutput(terminalId _: TerminalId, sessionId _: String) async throws -> TerminalOutputResponse {
+        throw ClientError.unknownMethod("unused test callback")
     }
 
-    func handleTerminalWaitForExit(terminalId: TerminalId, sessionId: String) async throws -> WaitForExitResponse {
-        fatalError("Not used in this test")
+    func handleTerminalWaitForExit(terminalId _: TerminalId, sessionId _: String) async throws -> WaitForExitResponse {
+        throw ClientError.unknownMethod("unused test callback")
     }
 
-    func handleTerminalKill(terminalId: TerminalId, sessionId: String) async throws -> KillTerminalResponse {
-        fatalError("Not used in this test")
+    func handleTerminalKill(terminalId _: TerminalId, sessionId _: String) async throws -> KillTerminalResponse {
+        throw ClientError.unknownMethod("unused test callback")
     }
 
-    func handleTerminalRelease(terminalId: TerminalId, sessionId: String) async throws -> ReleaseTerminalResponse {
-        fatalError("Not used in this test")
+    func handleTerminalRelease(terminalId _: TerminalId, sessionId _: String) async throws -> ReleaseTerminalResponse {
+        throw ClientError.unknownMethod("unused test callback")
     }
 }
 
 // MARK: - Delegate Tests
 
 final class ACPDelegateTests: XCTestCase {
-
     var tempDir: URL!
 
     override func setUp() async throws {
@@ -752,7 +791,7 @@ final class ACPDelegateTests: XCTestCase {
     }
 
     override func tearDown() async throws {
-        if let tempDir = tempDir {
+        if let tempDir {
             try? FileManager.default.removeItem(at: tempDir)
         }
         try await super.tearDown()
@@ -781,7 +820,7 @@ final class ACPDelegateTests: XCTestCase {
 
     func testFileSystemDelegateReadWithLineOffset() async throws {
         let testFilePath = tempDir.appendingPathComponent("multiline.txt").path
-        let content = (1...10).map { "Line \($0)" }.joined(separator: "\n")
+        let content = (1 ... 10).map { "Line \($0)" }.joined(separator: "\n")
         try content.write(toFile: testFilePath, atomically: true, encoding: .utf8)
 
         let delegate = FileSystemDelegate()
@@ -795,7 +834,12 @@ final class ACPDelegateTests: XCTestCase {
         let delegate = FileSystemDelegate()
 
         do {
-            _ = try await delegate.handleFileReadRequest("/nonexistent/path/file.txt", sessionId: "s1", line: nil, limit: nil)
+            _ = try await delegate.handleFileReadRequest(
+                "/nonexistent/path/file.txt",
+                sessionId: "s1",
+                line: nil,
+                limit: nil,
+            )
             XCTFail("Should have thrown error for nonexistent file")
         } catch {
             // Expected
@@ -806,7 +850,6 @@ final class ACPDelegateTests: XCTestCase {
 // MARK: - Integration Tests for Types
 
 final class ACPTypeIntegrationTests: XCTestCase {
-
     func testFullJSONRPCMessageRoundTrip() throws {
         let request = JSONRPCRequest(
             id: .number(42),
@@ -814,9 +857,9 @@ final class ACPTypeIntegrationTests: XCTestCase {
             params: AnyCodable([
                 "sessionId": "session-123",
                 "prompt": [
-                    ["type": "text", "text": "Hello, agent!"]
-                ]
-            ] as [String: Any])
+                    ["type": "text", "text": "Hello, agent!"],
+                ],
+            ] as [String: any Sendable]),
         )
 
         let encoder = JSONEncoder()
@@ -832,7 +875,7 @@ final class ACPTypeIntegrationTests: XCTestCase {
     func testSessionUpdateNotificationRoundTrip() throws {
         let notification = SessionUpdateNotification(
             sessionId: SessionId("session-123"),
-            update: .agentMessageChunk(.text(TextContent(text: "Hello!")))
+            update: .agentMessageChunk(.text(TextContent(text: "Hello!"))),
         )
 
         let encoder = JSONEncoder()
@@ -852,7 +895,7 @@ final class ACPTypeIntegrationTests: XCTestCase {
             title: "Read File",
             kind: .read,
             content: [.content(.text(TextContent(text: "file contents")))],
-            locations: [ToolLocation(path: "/tmp/file.txt", line: 10)]
+            locations: [ToolLocation(path: "/tmp/file.txt", line: 10)],
         )
 
         let encoder = JSONEncoder()
@@ -885,7 +928,7 @@ final class ACPTypeIntegrationTests: XCTestCase {
         }
         """
 
-        let data = json.data(using: .utf8)!
+        let data = try XCTUnwrap(json.data(using: .utf8))
         let update = try JSONDecoder().decode(SessionUpdate.self, from: data)
 
         XCTAssertEqual(update.toolCallId, "call-abc-123")
@@ -908,7 +951,7 @@ final class ACPTypeIntegrationTests: XCTestCase {
         }
         """
 
-        let data = json.data(using: .utf8)!
+        let data = try XCTUnwrap(json.data(using: .utf8))
         let response = try JSONDecoder().decode(InitializeResponse.self, from: data)
 
         XCTAssertEqual(response.protocolVersion, 1)
@@ -937,7 +980,7 @@ final class ACPTypeIntegrationTests: XCTestCase {
         }
         """
 
-        let data = json.data(using: .utf8)!
+        let data = try XCTUnwrap(json.data(using: .utf8))
         let response = try JSONDecoder().decode(NewSessionResponse.self, from: data)
 
         XCTAssertEqual(response.sessionId.value, "session-456")
@@ -963,7 +1006,7 @@ final class ACPTypeIntegrationTests: XCTestCase {
         }
         """
 
-        let data = json.data(using: .utf8)!
+        let data = try XCTUnwrap(json.data(using: .utf8))
         let request = try JSONDecoder().decode(RequestPermissionRequest.self, from: data)
 
         XCTAssertEqual(request.sessionId.value, "session-123")

@@ -1,10 +1,3 @@
-//
-//  Capabilities.swift
-//  ACPModel
-//
-//  Agent Client Protocol - Capability Types
-//
-
 import Foundation
 
 // MARK: - Client Capabilities
@@ -29,7 +22,7 @@ public struct ClientCapabilities: Codable, Sendable {
         auth: AuthCapabilities? = nil,
         elicitation: ElicitationCapabilities? = nil,
         nes: ClientNesCapabilities? = nil,
-        positionEncodings: [PositionEncodingKind]? = nil
+        positionEncodings: [PositionEncodingKind]? = nil,
     ) {
         self.fs = fs
         self.terminal = terminal
@@ -53,6 +46,22 @@ public struct ClientCapabilities: Codable, Sendable {
         case nes
         case positionEncodings
     }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        // Omitted capabilities default to "not supported"; wrong-typed booleans
+        // and objects are rejected rather than coerced.
+        fs = try container.decodeIfPresent(FileSystemCapabilities.self, forKey: .fs)
+            ?? FileSystemCapabilities(readTextFile: false, writeTextFile: false)
+        terminal = try container.decodeIfPresent(Bool.self, forKey: .terminal) ?? false
+        meta = try container.decodeIfPresent([String: AnyCodable].self, forKey: .meta)
+        session = try container.decodeIfPresent(ClientSessionCapabilities.self, forKey: .session)
+        plan = try container.decodeIfPresent(PlanCapabilities.self, forKey: .plan)
+        auth = try container.decodeIfPresent(AuthCapabilities.self, forKey: .auth)
+        elicitation = try container.decodeIfPresent(ElicitationCapabilities.self, forKey: .elicitation)
+        nes = try container.decodeIfPresent(ClientNesCapabilities.self, forKey: .nes)
+        positionEncodings = try container.decodeIfPresent([PositionEncodingKind].self, forKey: .positionEncodings)
+    }
 }
 
 public struct FileSystemCapabilities: Codable, Sendable {
@@ -70,6 +79,13 @@ public struct FileSystemCapabilities: Codable, Sendable {
         self.readTextFile = readTextFile
         self.writeTextFile = writeTextFile
         self._meta = _meta
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        readTextFile = try container.decodeIfPresent(Bool.self, forKey: .readTextFile) ?? false
+        writeTextFile = try container.decodeIfPresent(Bool.self, forKey: .writeTextFile) ?? false
+        _meta = try container.decodeIfPresent([String: AnyCodable].self, forKey: ._meta)
     }
 }
 
@@ -107,7 +123,7 @@ public struct AgentCapabilities: Codable, Sendable {
         positionEncoding: PositionEncodingKind? = nil,
         promptCapabilities: PromptCapabilities? = nil,
         providers: ProvidersCapabilities? = nil,
-        sessionCapabilities: SessionCapabilities? = nil
+        sessionCapabilities: SessionCapabilities? = nil,
     ) {
         self._meta = _meta
         self.auth = auth
@@ -182,7 +198,12 @@ public struct PromptCapabilities: Codable, Sendable {
         case _meta
     }
 
-    public init(audio: Bool? = nil, embeddedContext: Bool? = nil, image: Bool? = nil, _meta: [String: AnyCodable]? = nil) {
+    public init(
+        audio: Bool? = nil,
+        embeddedContext: Bool? = nil,
+        image: Bool? = nil,
+        _meta: [String: AnyCodable]? = nil,
+    ) {
         self.audio = audio
         self.embeddedContext = embeddedContext
         self.image = image
@@ -206,7 +227,7 @@ public struct SessionCapabilities: Codable, Sendable {
         delete: SessionDeleteCapabilities? = nil,
         fork: SessionForkCapabilities? = nil,
         list: SessionListCapabilities? = nil,
-        resume: SessionResumeCapabilities? = nil
+        resume: SessionResumeCapabilities? = nil,
     ) {
         self._meta = _meta
         self.additionalDirectories = additionalDirectories
@@ -322,7 +343,7 @@ public struct ElicitationCapabilities: Codable, Sendable {
     public init(
         form: ElicitationFormCapabilities? = nil,
         url: ElicitationUrlCapabilities? = nil,
-        _meta: [String: AnyCodable]? = nil
+        _meta: [String: AnyCodable]? = nil,
     ) {
         self.form = form
         self.url = url
@@ -356,7 +377,7 @@ public struct ClientNesCapabilities: Codable, Sendable {
         jump: NesJumpCapabilities? = nil,
         rename: NesRenameCapabilities? = nil,
         searchAndReplace: NesSearchAndReplaceCapabilities? = nil,
-        _meta: [String: AnyCodable]? = nil
+        _meta: [String: AnyCodable]? = nil,
     ) {
         self.jump = jump
         self.rename = rename
@@ -407,7 +428,7 @@ public struct NesCapabilities: Codable, Sendable {
     public init(
         events: NesEventCapabilities? = nil,
         context: NesContextCapabilities? = nil,
-        _meta: [String: AnyCodable]? = nil
+        _meta: [String: AnyCodable]? = nil,
     ) {
         self.events = events
         self.context = context
@@ -439,7 +460,7 @@ public struct NesDocumentEventCapabilities: Codable, Sendable {
         didClose: NesDocumentDidCloseCapabilities? = nil,
         didSave: NesDocumentDidSaveCapabilities? = nil,
         didFocus: NesDocumentDidFocusCapabilities? = nil,
-        _meta: [String: AnyCodable]? = nil
+        _meta: [String: AnyCodable]? = nil,
     ) {
         self.didOpen = didOpen
         self.didChange = didChange
@@ -508,7 +529,7 @@ public struct NesContextCapabilities: Codable, Sendable {
         userActions: NesUserActionsCapabilities? = nil,
         openFiles: NesOpenFilesCapabilities? = nil,
         diagnostics: NesDiagnosticsCapabilities? = nil,
-        _meta: [String: AnyCodable]? = nil
+        _meta: [String: AnyCodable]? = nil,
     ) {
         self.recentFiles = recentFiles
         self.relatedSnippets = relatedSnippets

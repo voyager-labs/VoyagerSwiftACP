@@ -1,52 +1,35 @@
-//
-//  ShellEnvironment.swift
-//  ACP
-//
-//  Shell environment loading utility
-//
-
 #if os(macOS)
 import Foundation
 import os.log
 
 public enum ShellEnvironment: Sendable {
-    private static let cacheLock = NSLock()
-    private static let cacheCondition = NSCondition()
-    private static var cachedEnvironment: [String: String]?
-    private static var isLoading = false
+    private final class ShellCacheState: @unchecked Sendable {
+        /// Invariant: `condition` guards `cachedEnvironment` and `isLoading`;
+        /// every read and write happens while holding the condition's lock.
+        let condition = NSCondition()
+        var cachedEnvironment: [String: String]?
+        var isLoading = false
+    }
+
+    private static let state = ShellCacheState()
 
     /// Get user's shell environment (cached after first load)
     /// Warning: On main thread, returns immediately with potentially incomplete environment.
     /// Use `loadUserShellEnvironmentAsync()` for guaranteed complete environment.
     public static func loadUserShellEnvironment() -> [String: String] {
-        cacheLock.lock()
-        defer { cacheLock.unlock() }
-
-        if let cached = cachedEnvironment {
-            return cached
-        }
-
         if Thread.isMainThread {
             DispatchQueue.global(qos: .utility).async {
-                _ = loadUserShellEnvironment()
+                _ = loadUserShellEnvironmentBlocking()
             }
             return ProcessInfo.processInfo.environment
         }
-
-        let env = loadEnvironmentFromShell()
-        cachedEnvironment = env
-
-        cacheCondition.lock()
-        cacheCondition.broadcast()
-        cacheCondition.unlock()
-
-        return env
+        return loadUserShellEnvironmentBlocking()
     }
 
     /// Async version that guarantees the full user shell environment is loaded.
     /// Safe to call from any context (main thread, actors, etc.)
     public static func loadUserShellEnvironmentAsync() async -> [String: String] {
-        if let cached = cachedEnvironmentSnapshot() {
+        if let cached = cachedSnapshot() {
             return cached
         }
 
@@ -58,47 +41,35 @@ public enum ShellEnvironment: Sendable {
         }
     }
 
-    private static func cachedEnvironmentSnapshot() -> [String: String]? {
-        cacheLock.lock()
-        defer { cacheLock.unlock() }
-        return cachedEnvironment
-    }
-
     /// Blocking version that waits for environment to be loaded.
     /// Do NOT call from main thread - use loadUserShellEnvironmentAsync() instead.
     public static func loadUserShellEnvironmentBlocking() -> [String: String] {
-        cacheLock.lock()
+        state.condition.lock()
 
-        if let cached = cachedEnvironment {
-            cacheLock.unlock()
+        if let cached = state.cachedEnvironment {
+            state.condition.unlock()
             return cached
         }
 
-        if isLoading {
-            cacheLock.unlock()
-
-            cacheCondition.lock()
-            while cachedEnvironment == nil {
-                cacheCondition.wait()
+        if state.isLoading {
+            while state.cachedEnvironment == nil {
+                state.condition.wait()
             }
-            let env = cachedEnvironment!
-            cacheCondition.unlock()
+            let env = state.cachedEnvironment!
+            state.condition.unlock()
             return env
         }
 
-        isLoading = true
-        cacheLock.unlock()
+        state.isLoading = true
+        state.condition.unlock()
 
         let env = loadEnvironmentFromShell()
 
-        cacheLock.lock()
-        cachedEnvironment = env
-        isLoading = false
-        cacheLock.unlock()
-
-        cacheCondition.lock()
-        cacheCondition.broadcast()
-        cacheCondition.unlock()
+        state.condition.lock()
+        state.cachedEnvironment = env
+        state.isLoading = false
+        state.condition.broadcast()
+        state.condition.unlock()
 
         return env
     }
@@ -106,16 +77,22 @@ public enum ShellEnvironment: Sendable {
     /// Preload environment in background (call at app launch)
     public static func preloadEnvironment() {
         DispatchQueue.global(qos: .userInitiated).async {
-            _ = loadUserShellEnvironment()
+            _ = loadUserShellEnvironmentBlocking()
         }
     }
 
     /// Force reload of environment (e.g., after user changes shell config)
     public static func reloadEnvironment() {
-        cacheLock.lock()
-        cachedEnvironment = nil
-        cacheLock.unlock()
+        state.condition.lock()
+        state.cachedEnvironment = nil
+        state.condition.unlock()
         preloadEnvironment()
+    }
+
+    private static func cachedSnapshot() -> [String: String]? {
+        state.condition.lock()
+        defer { state.condition.unlock() }
+        return state.cachedEnvironment
     }
 
     private static func loadEnvironmentFromShell() -> [String: String] {
@@ -126,16 +103,15 @@ public enum ShellEnvironment: Sendable {
         process.executableURL = URL(fileURLWithPath: shell)
 
         let shellName = (shell as NSString).lastPathComponent
-        let arguments: [String]
-        switch shellName {
+        let arguments: [String] = switch shellName {
         case "fish":
-            arguments = ["-l", "-c", "env"]
+            ["-l", "-c", "env"]
         case "zsh", "bash":
-            arguments = ["-l", "-i", "-c", "env"]
+            ["-l", "-i", "-c", "env"]
         case "sh":
-            arguments = ["-l", "-c", "env"]
+            ["-l", "-c", "env"]
         default:
-            arguments = ["-c", "env"]
+            ["-c", "env"]
         }
 
         process.arguments = arguments

@@ -1,4 +1,4 @@
-// swift-tools-version: 5.9
+// swift-tools-version: 6.0
 import PackageDescription
 
 let package = Package(
@@ -7,53 +7,59 @@ let package = Package(
         .macOS(.v12),
         .iOS(.v15),
         .tvOS(.v15),
-        .watchOS(.v8)
+        .watchOS(.v8),
     ],
     products: [
         .library(name: "ACPModel", targets: ["ACPModel"]),
         .library(name: "ACP", targets: ["ACP"]),
         .library(name: "ACPHTTP", targets: ["ACPHTTP"]),
-        .library(name: "ACPRegistry", targets: ["ACPRegistry"])
+        .library(name: "ACPRegistry", targets: ["ACPRegistry"]),
     ],
     targets: [
         // Core model types (platform-independent)
         .target(
             name: "ACPModel",
-            path: "Sources/ACPModel"
+            path: "Sources/ACPModel",
         ),
         // Main ACP client/agent runtime
         .target(
             name: "ACP",
             dependencies: ["ACPModel"],
-            path: "Sources/ACP"
+            path: "Sources/ACP",
         ),
         // HTTP/WebSocket transport (optional)
         .target(
             name: "ACPHTTP",
             dependencies: ["ACP", "ACPModel"],
-            path: "Sources/ACPHTTP"
+            path: "Sources/ACPHTTP",
         ),
         // Agent registry (macOS only)
         .target(
             name: "ACPRegistry",
-            path: "Sources/ACPRegistry"
+            path: "Sources/ACPRegistry",
         ),
         // Tests
         .testTarget(
             name: "ACPTests",
-            dependencies: ["ACP", "ACPModel"]
+            dependencies: ["ACP", "ACPModel"],
+            resources: [
+                .copy("Fixtures"),
+            ],
         ),
         .testTarget(
             name: "ACPModelTests",
-            dependencies: ["ACPModel"]
+            dependencies: ["ACPModel"],
+            resources: [
+                .copy("Fixtures"),
+            ],
         ),
         .testTarget(
             name: "ACPHTTPTests",
-            dependencies: ["ACPHTTP", "ACP", "ACPModel"]
+            dependencies: ["ACPHTTP", "ACP", "ACPModel"],
         ),
         .testTarget(
             name: "ACPRegistryTests",
-            dependencies: ["ACPRegistry"]
-        )
-    ]
+            dependencies: ["ACPRegistry"],
+        ),
+    ],
 )

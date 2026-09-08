@@ -1,10 +1,86 @@
-import XCTest
 @testable import ACP
+import XCTest
 
 final class ACPAgentTests: XCTestCase {
+    func testMalformedJSONAnswersParseErrorAndCloses() async throws {
+        let transport = ScriptedTransport()
+        let agent = Agent(transport: transport)
+        try await transport.pushFrame(Data("{broken".utf8))
+        await transport.finish()
+
+        await agent.start()
+
+        let frames = transport.allSentFrames()
+        XCTAssertEqual(frames.count, 1)
+        let response = try JSONDecoder().decode(JSONRPCResponse.self, from: XCTUnwrap(frames.first))
+        XCTAssertEqual(response.id, .null)
+        XCTAssertEqual(response.error?.code, -32700)
+        XCTAssertTrue(transport.wasClosed)
+    }
+
+    func testInvalidKnownNotificationsFailPendingWithoutResponse() async throws {
+        let notifications = [
+            #"{"jsonrpc":"2.0","method":"session/cancel","params":{}}"#,
+            #"{"jsonrpc":"2.0","method":"session/cancel","params":{"sessionId":7}}"#,
+            #"{"jsonrpc":"2.0","method":"$/cancel_request","params":{}}"#,
+            #"{"jsonrpc":"2.0","method":"document/didOpen","params":{}}"#,
+        ]
+        for notification in notifications {
+            let transport = ScriptedTransport()
+            let agent = Agent(transport: transport)
+            let pending = Task { try await agent.connectMcp(serverId: McpServerAcpId("server")) }
+            _ = try await transport.nextSentFrame()
+            try await transport.pushJSON(notification)
+            await transport.finish()
+
+            await agent.start()
+
+            do {
+                _ = try await pending.value
+                XCTFail("Invalid notification must fail pending request")
+            } catch let error as ClientError {
+                guard case .protocolViolation = error else {
+                    return XCTFail("Expected protocol violation, got \(error)")
+                }
+            }
+            XCTAssertTrue(transport.wasClosed)
+            XCTAssertEqual(transport.allSentFrames().count, 1, "Notifications must not receive responses")
+        }
+    }
+
+    func testInvalidBooleanIDIsNotRecoveredAsInteger() async throws {
+        let transport = ScriptedTransport()
+        let agent = Agent(transport: transport)
+        try await transport.pushJSON(#"{"jsonrpc":"2.0","id":true,"method":"initialize","params":{}}"#)
+        await transport.finish()
+        await agent.start()
+        let frame = try XCTUnwrap(transport.allSentFrames().first)
+        let response = try JSONDecoder().decode(JSONRPCResponse.self, from: frame)
+        XCTAssertEqual(response.id, .null)
+        XCTAssertEqual(response.error?.code, -32600)
+    }
+
+    func testAgentNegotiatesVersionOneAndPreservesDelegateMetadata() async throws {
+        let transport = ScriptedTransport()
+        let agent = Agent(transport: transport)
+        let delegate = EchoVersionAgentDelegate()
+        await agent.setDelegate(delegate)
+        let start = Task { await agent.start() }
+        try await transport.pushJSON(TestFrames.request(
+            id: 1, method: "initialize", params: #"{"protocolVersion":2,"clientCapabilities":{}}"#,
+        ))
+        let frame = try await transport.nextSentFrame()
+        let response = try JSONDecoder().decode(JSONRPCResponse.self, from: frame)
+        let result = try XCTUnwrap(response.result)
+        let initialized = try JSONDecoder().decode(InitializeResponse.self, from: JSONEncoder().encode(result))
+        XCTAssertEqual(initialized.protocolVersion, 1)
+        XCTAssertEqual(initialized._meta?["marker"]?.value as? String, "preserved")
+        await transport.finish()
+        await start.value
+    }
 
     func testCloseSessionInvokesCancelBeforeClose() async throws {
-        let transport = TestTransport()
+        let transport = ScriptedTransport()
         let agent = Agent(transport: transport)
         let delegate = RecordingAgentDelegate()
         await agent.setDelegate(delegate)
@@ -19,12 +95,12 @@ final class ACPAgentTests: XCTestCase {
         let request = JSONRPCRequest(
             id: .number(1),
             method: "session/close",
-            params: AnyCodable(["sessionId": "session-123"])
+            params: AnyCodable(["sessionId": "session-123"]),
         )
         let requestData = try JSONEncoder().encode(request)
-        await transport.pushMessage(requestData)
+        try await transport.pushFrame(requestData)
 
-        let responseData = try await transport.nextSentMessage()
+        let responseData = try await transport.nextSentFrame()
         let response = try JSONDecoder().decode(JSONRPCResponse.self, from: responseData)
         let events = await delegate.recordedEvents()
 
@@ -40,7 +116,7 @@ final class ACPAgentTests: XCTestCase {
     }
 
     func testResumeSessionRoutesToDelegate() async throws {
-        let transport = TestTransport()
+        let transport = ScriptedTransport()
         let agent = Agent(transport: transport)
         let delegate = RecordingAgentDelegate()
         await agent.setDelegate(delegate)
@@ -59,12 +135,12 @@ final class ACPAgentTests: XCTestCase {
                 "sessionId": "session-123",
                 "cwd": "/tmp/project",
                 "additionalDirectories": ["/tmp/shared"],
-            ])
+            ] as [String: any Sendable]),
         )
         let requestData = try JSONEncoder().encode(request)
-        await transport.pushMessage(requestData)
+        try await transport.pushFrame(requestData)
 
-        let responseData = try await transport.nextSentMessage()
+        let responseData = try await transport.nextSentFrame()
         let response = try JSONDecoder().decode(JSONRPCResponse.self, from: responseData)
         let events = await delegate.recordedEvents()
         let result = try XCTUnwrap(response.result)
@@ -83,7 +159,7 @@ final class ACPAgentTests: XCTestCase {
     }
 
     func testDeleteSessionRoutesToDelegate() async throws {
-        let transport = TestTransport()
+        let transport = ScriptedTransport()
         let agent = Agent(transport: transport)
         let delegate = RecordingAgentDelegate()
         await agent.setDelegate(delegate)
@@ -98,12 +174,12 @@ final class ACPAgentTests: XCTestCase {
         let request = JSONRPCRequest(
             id: .number(3),
             method: "session/delete",
-            params: AnyCodable(["sessionId": "session-123"])
+            params: AnyCodable(["sessionId": "session-123"]),
         )
         let requestData = try JSONEncoder().encode(request)
-        await transport.pushMessage(requestData)
+        try await transport.pushFrame(requestData)
 
-        let responseData = try await transport.nextSentMessage()
+        let responseData = try await transport.nextSentFrame()
         let response = try JSONDecoder().decode(JSONRPCResponse.self, from: responseData)
         let events = await delegate.recordedEvents()
 
@@ -118,7 +194,7 @@ final class ACPAgentTests: XCTestCase {
     }
 
     func testLogoutRoutesWithoutParamsToDelegate() async throws {
-        let transport = TestTransport()
+        let transport = ScriptedTransport()
         let agent = Agent(transport: transport)
         let delegate = RecordingAgentDelegate()
         await agent.setDelegate(delegate)
@@ -133,12 +209,12 @@ final class ACPAgentTests: XCTestCase {
         let request = JSONRPCRequest(
             id: .number(4),
             method: "logout",
-            params: nil
+            params: nil,
         )
         let requestData = try JSONEncoder().encode(request)
-        await transport.pushMessage(requestData)
+        try await transport.pushFrame(requestData)
 
-        let responseData = try await transport.nextSentMessage()
+        let responseData = try await transport.nextSentFrame()
         let response = try JSONDecoder().decode(JSONRPCResponse.self, from: responseData)
         let events = await delegate.recordedEvents()
 
@@ -146,28 +222,109 @@ final class ACPAgentTests: XCTestCase {
         XCTAssertNil(response.error)
         XCTAssertEqual(events, ["logout"])
 
-        let nullParamsRequest = JSONRPCRequest(
-            id: .number(5),
-            method: "logout",
-            params: AnyCodable(NSNull())
-        )
-        let nullParamsRequestData = try JSONEncoder().encode(nullParamsRequest)
-        await transport.pushMessage(nullParamsRequestData)
+        // Strict ACP v1 wire contract: `params: null` is neither omitted nor
+        // structured, so the request is rejected with -32600 instead of routed.
+        // The request is expressed as raw wire JSON because the typed model now
+        // refuses to encode that shape at all.
+        try await transport.pushJSON(#"{"jsonrpc":"2.0","id":5,"method":"logout","params":null}"#)
 
-        let nullParamsResponseData = try await transport.nextSentMessage()
+        let nullParamsResponseData = try await transport.nextSentFrame()
         let nullParamsResponse = try JSONDecoder().decode(JSONRPCResponse.self, from: nullParamsResponseData)
         let nullParamsEvents = await delegate.recordedEvents()
 
         XCTAssertEqual(nullParamsResponse.id, .number(5))
-        XCTAssertNil(nullParamsResponse.error)
-        XCTAssertEqual(nullParamsEvents, ["logout", "logout"])
+        XCTAssertEqual(nullParamsResponse.error?.code, -32600)
+        XCTAssertEqual(nullParamsEvents, ["logout"])
+
+        await transport.finish()
+        _ = await startTask.result
+    }
+
+    func testUnknownMethodAnswers32601AndKeepsConnection() async throws {
+        let transport = ScriptedTransport()
+        let agent = Agent(transport: transport)
+        let delegate = RecordingAgentDelegate()
+        await agent.setDelegate(delegate)
+
+        let startTask = Task {
+            await agent.start()
+        }
+        defer {
+            startTask.cancel()
+        }
+
+        try await transport.pushJSON(#"{"jsonrpc":"2.0","id":10,"method":"totally/unknown","params":{}}"#)
+
+        let responseData = try await transport.nextSentFrame()
+        let response = try JSONDecoder().decode(JSONRPCResponse.self, from: responseData)
+
+        XCTAssertEqual(response.id, .number(10))
+        XCTAssertEqual(response.error?.code, -32601)
+
+        // The connection is still usable: a known method still routes.
+        let logoutRequest = JSONRPCRequest(id: .number(11), method: "logout", params: nil)
+        try await transport.pushFrame(JSONEncoder().encode(logoutRequest))
+        let logoutResponseData = try await transport.nextSentFrame()
+        let logoutResponse = try JSONDecoder().decode(JSONRPCResponse.self, from: logoutResponseData)
+        XCTAssertNil(logoutResponse.error)
+
+        await transport.finish()
+        _ = await startTask.result
+    }
+
+    func testInvalidParamsAnswers32602() async throws {
+        let transport = ScriptedTransport()
+        let agent = Agent(transport: transport)
+        let delegate = RecordingAgentDelegate()
+        await agent.setDelegate(delegate)
+
+        let startTask = Task {
+            await agent.start()
+        }
+        defer {
+            startTask.cancel()
+        }
+
+        // NewSessionRequest requires `cwd`; this params object omits it.
+        try await transport.pushJSON(#"{"jsonrpc":"2.0","id":12,"method":"session/new","params":{}}"#)
+
+        let responseData = try await transport.nextSentFrame()
+        let response = try JSONDecoder().decode(JSONRPCResponse.self, from: responseData)
+
+        XCTAssertEqual(response.id, .number(12))
+        XCTAssertEqual(response.error?.code, -32602)
+
+        await transport.finish()
+        _ = await startTask.result
+    }
+
+    func testInvalidEnvelopeAnswers32600WithNullID() async throws {
+        let transport = ScriptedTransport()
+        let agent = Agent(transport: transport)
+
+        let startTask = Task {
+            await agent.start()
+        }
+        defer {
+            startTask.cancel()
+        }
+
+        // Valid JSON object, invalid JSON-RPC envelope (wrong version). The id
+        // is recoverable, so the -32600 response echoes it instead of null.
+        try await transport.pushJSON(#"{"jsonrpc":"1.0","id":7,"method":"session/prompt","params":{}}"#)
+
+        let responseData = try await transport.nextSentFrame()
+        let response = try JSONDecoder().decode(JSONRPCResponse.self, from: responseData)
+
+        XCTAssertEqual(response.id, .number(7))
+        XCTAssertEqual(response.error?.code, -32600)
 
         await transport.finish()
         _ = await startTask.result
     }
 
     func testCancelRequestNotificationRoutesToDelegate() async throws {
-        let transport = TestTransport()
+        let transport = ScriptedTransport()
         let agent = Agent(transport: transport)
         let delegate = RecordingAgentDelegate()
         await agent.setDelegate(delegate)
@@ -181,10 +338,10 @@ final class ACPAgentTests: XCTestCase {
 
         let notification = JSONRPCNotification(
             method: "$/cancel_request",
-            params: AnyCodable(["requestId": 99])
+            params: AnyCodable(["requestId": 99]),
         )
         let notificationData = try JSONEncoder().encode(notification)
-        await transport.pushMessage(notificationData)
+        try await transport.pushFrame(notificationData)
 
         try await Task.sleep(nanoseconds: 100_000_000)
         let events = await delegate.recordedEvents()
@@ -195,8 +352,59 @@ final class ACPAgentTests: XCTestCase {
         _ = await startTask.result
     }
 
+    func testAgentProcessesCancelWhilePromptSuspended() async throws {
+        let transport = ScriptedTransport()
+        let agent = Agent(transport: transport)
+        let delegate = RecordingAgentDelegate()
+        await agent.setDelegate(delegate)
+
+        let startTask = Task {
+            await agent.start()
+        }
+        defer {
+            startTask.cancel()
+        }
+
+        // Suspend the prompt inside the delegate.
+        await delegate.suspendNextPromptTurn()
+
+        let prompt = JSONRPCRequest(
+            id: .number(20),
+            method: "session/prompt",
+            params: AnyCodable(["sessionId": "session-1", "prompt": [[
+                "type": "text",
+                "text": "hi",
+            ]]] as [String: any Sendable]),
+        )
+        try await transport.pushFrame(JSONEncoder().encode(prompt))
+        await delegate.waitUntilPromptStarted()
+
+        // While the prompt handler is suspended, a cancel must still be processed.
+        let cancel = JSONRPCNotification(
+            method: "session/cancel",
+            params: AnyCodable(["sessionId": "session-1"]),
+        )
+        try await transport.pushFrame(JSONEncoder().encode(cancel))
+
+        await delegate.waitUntilCancelRecorded()
+
+        // Release the prompt turn; the agent maps the cancelled prompt to a
+        // `.cancelled` response for the original request id.
+        await delegate.releasePromptTurn(with: SessionPromptResponse(stopReason: .cancelled))
+
+        let responseData = try await transport.nextSentFrame()
+        let response = try JSONDecoder().decode(JSONRPCResponse.self, from: responseData)
+        XCTAssertEqual(response.id, .number(20))
+        let resultData = try JSONEncoder().encode(XCTUnwrap(response.result))
+        let promptResponse = try JSONDecoder().decode(SessionPromptResponse.self, from: resultData)
+        XCTAssertEqual(promptResponse.stopReason, .cancelled)
+
+        await transport.finish()
+        _ = await startTask.result
+    }
+
     func testDraftAgentRequestsRouteToDelegate() async throws {
-        let transport = TestTransport()
+        let transport = ScriptedTransport()
         let agent = Agent(transport: transport)
         let delegate = RecordingAgentDelegate()
         await agent.setDelegate(delegate)
@@ -215,13 +423,13 @@ final class ACPAgentTests: XCTestCase {
                 "sessionId": "session-123",
                 "cwd": "/tmp/fork",
                 "additionalDirectories": ["/tmp/shared"],
-            ])
+            ] as [String: any Sendable]),
         )
-        await transport.pushMessage(try JSONEncoder().encode(forkRequest))
+        try await transport.pushFrame(JSONEncoder().encode(forkRequest))
 
-        let forkResponseData = try await transport.nextSentMessage()
+        let forkResponseData = try await transport.nextSentFrame()
         let forkResponse = try JSONDecoder().decode(JSONRPCResponse.self, from: forkResponseData)
-        let forkResultData = try JSONEncoder().encode(try XCTUnwrap(forkResponse.result))
+        let forkResultData = try JSONEncoder().encode(XCTUnwrap(forkResponse.result))
         let forkResult = try JSONDecoder().decode(ForkSessionResponse.self, from: forkResultData)
 
         XCTAssertEqual(forkResponse.id, .number(6))
@@ -231,13 +439,13 @@ final class ACPAgentTests: XCTestCase {
         let providerRequest = JSONRPCRequest(
             id: .number(7),
             method: "providers/list",
-            params: AnyCodable([String: String]())
+            params: AnyCodable([String: String]()),
         )
-        await transport.pushMessage(try JSONEncoder().encode(providerRequest))
+        try await transport.pushFrame(JSONEncoder().encode(providerRequest))
 
-        let providerResponseData = try await transport.nextSentMessage()
+        let providerResponseData = try await transport.nextSentFrame()
         let providerResponse = try JSONDecoder().decode(JSONRPCResponse.self, from: providerResponseData)
-        let providerResultData = try JSONEncoder().encode(try XCTUnwrap(providerResponse.result))
+        let providerResultData = try JSONEncoder().encode(XCTUnwrap(providerResponse.result))
         let providerResult = try JSONDecoder().decode(ListProvidersResponse.self, from: providerResultData)
 
         XCTAssertEqual(providerResult.providers.first?.providerId.value, "anthropic")
@@ -251,13 +459,13 @@ final class ACPAgentTests: XCTestCase {
                 "version": 1,
                 "position": ["line": 0, "character": 0],
                 "triggerKind": "manual",
-            ] as [String: Any])
+            ] as [String: any Sendable]),
         )
-        await transport.pushMessage(try JSONEncoder().encode(nesRequest))
+        try await transport.pushFrame(JSONEncoder().encode(nesRequest))
 
-        let nesResponseData = try await transport.nextSentMessage()
+        let nesResponseData = try await transport.nextSentFrame()
         let nesResponse = try JSONDecoder().decode(JSONRPCResponse.self, from: nesResponseData)
-        let nesResultData = try JSONEncoder().encode(try XCTUnwrap(nesResponse.result))
+        let nesResultData = try JSONEncoder().encode(XCTUnwrap(nesResponse.result))
         let nesResult = try JSONDecoder().decode(SuggestNesResponse.self, from: nesResultData)
 
         XCTAssertEqual(nesResult.suggestions.first?.id, "sug-1")
@@ -268,11 +476,11 @@ final class ACPAgentTests: XCTestCase {
             params: AnyCodable([
                 "connectionId": "conn-1",
                 "method": "tools/list",
-            ])
+            ]),
         )
-        await transport.pushMessage(try JSONEncoder().encode(mcpRequest))
+        try await transport.pushFrame(JSONEncoder().encode(mcpRequest))
 
-        let mcpResponseData = try await transport.nextSentMessage()
+        let mcpResponseData = try await transport.nextSentFrame()
         let mcpResponse = try JSONDecoder().decode(JSONRPCResponse.self, from: mcpResponseData)
         let mcpResult = try XCTUnwrap(mcpResponse.result?.value as? [String: Any])
 
@@ -289,7 +497,7 @@ final class ACPAgentTests: XCTestCase {
     }
 
     func testDraftAgentNotificationsRouteToDelegate() async throws {
-        let transport = TestTransport()
+        let transport = ScriptedTransport()
         let agent = Agent(transport: transport)
         let delegate = RecordingAgentDelegate()
         await agent.setDelegate(delegate)
@@ -307,9 +515,9 @@ final class ACPAgentTests: XCTestCase {
                 "sessionId": "nes-1",
                 "id": "sug-1",
                 "reason": "ignored",
-            ])
+            ]),
         )
-        await transport.pushMessage(try JSONEncoder().encode(reject))
+        try await transport.pushFrame(JSONEncoder().encode(reject))
 
         let document = JSONRPCNotification(
             method: "document/didFocus",
@@ -322,18 +530,18 @@ final class ACPAgentTests: XCTestCase {
                     "start": ["line": 0, "character": 0],
                     "end": ["line": 20, "character": 0],
                 ],
-            ] as [String: Any])
+            ] as [String: any Sendable]),
         )
-        await transport.pushMessage(try JSONEncoder().encode(document))
+        try await transport.pushFrame(JSONEncoder().encode(document))
 
         let mcp = JSONRPCNotification(
             method: "mcp/message",
             params: AnyCodable([
                 "connectionId": "conn-1",
                 "method": "notifications/tools/list_changed",
-            ])
+            ]),
         )
-        await transport.pushMessage(try JSONEncoder().encode(mcp))
+        try await transport.pushFrame(JSONEncoder().encode(mcp))
 
         try await Task.sleep(nanoseconds: 100_000_000)
         let events = await delegate.recordedEvents()
@@ -347,7 +555,7 @@ final class ACPAgentTests: XCTestCase {
     }
 
     func testAgentCanInitiateClientDraftRequests() async throws {
-        let transport = TestTransport()
+        let transport = ScriptedTransport()
         let agent = Agent(transport: transport)
 
         let startTask = Task {
@@ -361,14 +569,14 @@ final class ACPAgentTests: XCTestCase {
             try await agent.connectMcp(serverId: "server-1")
         }
 
-        let connectRequestData = try await transport.nextSentMessage()
+        let connectRequestData = try await transport.nextSentFrame()
         let connectRequest = try JSONDecoder().decode(JSONRPCRequest.self, from: connectRequestData)
         XCTAssertEqual(connectRequest.method, "mcp/connect")
 
-        await transport.pushMessage(try JSONEncoder().encode(JSONRPCResponse(
+        try await transport.pushFrame(JSONEncoder().encode(JSONRPCResponse(
             id: connectRequest.id,
             result: AnyCodable(["connectionId": "conn-1"]),
-            error: nil
+            error: nil,
         )))
 
         let connectResponse = try await connectTask.value
@@ -379,18 +587,18 @@ final class ACPAgentTests: XCTestCase {
                 mode: "form",
                 message: "Need input",
                 requestId: .number(99),
-                requestedSchema: ElicitationSchema()
+                requestedSchema: ElicitationSchema(),
             ))
         }
 
-        let elicitationRequestData = try await transport.nextSentMessage()
+        let elicitationRequestData = try await transport.nextSentFrame()
         let elicitationRequest = try JSONDecoder().decode(JSONRPCRequest.self, from: elicitationRequestData)
         XCTAssertEqual(elicitationRequest.method, "elicitation/create")
 
-        await transport.pushMessage(try JSONEncoder().encode(JSONRPCResponse(
+        try await transport.pushFrame(JSONEncoder().encode(JSONRPCResponse(
             id: elicitationRequest.id,
-            result: AnyCodable(["action": "accept", "content": ["value": "ok"]]),
-            error: nil
+            result: AnyCodable(["action": "accept", "content": ["value": "ok"]] as [String: any Sendable]),
+            error: nil,
         )))
 
         let elicitationResponse = try await elicitationTask.value
@@ -402,14 +610,14 @@ final class ACPAgentTests: XCTestCase {
     }
 
     func testClientRequestRouterRoutesDraftMethods() async throws {
-        let router = ACPRequestRouter(encoder: JSONEncoder(), decoder: JSONDecoder())
+        let router = ACPRequestRouter()
         let delegate = RecordingClientDelegate()
-        await router.setDelegate(delegate)
+        router.setDelegate(delegate)
 
         let connect = JSONRPCRequest(
             id: .number(1),
             method: "mcp/connect",
-            params: AnyCodable(["serverId": "server-1"])
+            params: AnyCodable(["serverId": "server-1"]),
         )
         let connectResult = try await router.routeRequest(connect)
         let connectData = try JSONEncoder().encode(connectResult)
@@ -426,7 +634,7 @@ final class ACPAgentTests: XCTestCase {
                 "requestId": 12,
                 "elicitationId": "elicit-1",
                 "url": "https://example.com",
-            ] as [String: Any])
+            ] as [String: any Sendable]),
         )
         let elicitationResult = try await router.routeRequest(elicitation)
         let elicitationData = try JSONEncoder().encode(elicitationResult)
@@ -436,14 +644,14 @@ final class ACPAgentTests: XCTestCase {
 
         try await router.routeNotification(JSONRPCNotification(
             method: "mcp/message",
-            params: AnyCodable(["connectionId": "conn-1", "method": "notifications/progress"])
+            params: AnyCodable(["connectionId": "conn-1", "method": "notifications/progress"]),
         ))
         try await router.routeNotification(JSONRPCNotification(
             method: "elicitation/complete",
-            params: AnyCodable(["elicitationId": "elicit-1"])
+            params: AnyCodable(["elicitationId": "elicit-1"]),
         ))
 
-        let events = await delegate.recordedEvents()
+        let events = await delegate.events
         XCTAssertEqual(events, [
             "mcp-connect:server-1",
             "elicitation-create:url",
@@ -453,213 +661,20 @@ final class ACPAgentTests: XCTestCase {
     }
 }
 
-private actor TestTransport: Transport {
-    private let messageContinuation: AsyncStream<Data>.Continuation
-    nonisolated let messages: AsyncStream<Data>
-
-    private var sentMessages: [Data] = []
-    private var sentContinuation: CheckedContinuation<Data, Error>?
-    private var connected = true
-
-    init() {
-        var continuation: AsyncStream<Data>.Continuation!
-        self.messages = AsyncStream { streamContinuation in
-            continuation = streamContinuation
-        }
-        self.messageContinuation = continuation
-    }
-
-    func send(_ data: Data) async throws {
-        if let continuation = sentContinuation {
-            sentContinuation = nil
-            continuation.resume(returning: data)
-        } else {
-            sentMessages.append(data)
-        }
-    }
-
-    func close() async {
-        connected = false
-        messageContinuation.finish()
-    }
-
-    var isConnected: Bool {
-        get async { connected }
-    }
-
-    func pushMessage(_ data: Data) {
-        messageContinuation.yield(data)
-    }
-
-    func finish() {
-        connected = false
-        messageContinuation.finish()
-    }
-
-    func nextSentMessage() async throws -> Data {
-        if !sentMessages.isEmpty {
-            return sentMessages.removeFirst()
-        }
-
-        return try await withCheckedThrowingContinuation { continuation in
-            sentContinuation = continuation
-        }
-    }
-}
-
-private actor RecordingAgentDelegate: AgentDelegate {
-    private var events: [String] = []
-
+private actor EchoVersionAgentDelegate: AgentDelegate {
     func handleInitialize(_ request: InitializeRequest) async throws -> InitializeResponse {
-        fatalError("Not used in this test")
-    }
-
-    func handleNewSession(_ request: NewSessionRequest) async throws -> NewSessionResponse {
-        fatalError("Not used in this test")
-    }
-
-    func handlePrompt(_ request: SessionPromptRequest) async throws -> SessionPromptResponse {
-        fatalError("Not used in this test")
-    }
-
-    func handleCancel(_ sessionId: SessionId) async throws {
-        events.append("cancel:\(sessionId.value)")
-    }
-
-    func handleLoadSession(_ request: LoadSessionRequest) async throws -> LoadSessionResponse {
-        fatalError("Not used in this test")
-    }
-
-    func handleResumeSession(_ request: ResumeSessionRequest) async throws -> ResumeSessionResponse {
-        let additionalDirectories = request.additionalDirectories?.joined(separator: ",") ?? ""
-        events.append("resume:\(request.sessionId.value):\(request.cwd):\(additionalDirectories)")
-        return ResumeSessionResponse(
-            modes: ModesInfo(
-                currentModeId: "chat",
-                availableModes: [ModeInfo(id: "chat", name: "Chat")]
-            )
+        InitializeResponse(
+            protocolVersion: request.protocolVersion,
+            agentCapabilities: AgentCapabilities(),
+            _meta: ["marker": AnyCodable("preserved")],
         )
     }
 
-    func handleListSessions(_ request: ListSessionsRequest) async throws -> ListSessionsResponse {
-        fatalError("Not used in this test")
+    func handleNewSession(_: NewSessionRequest) async throws -> NewSessionResponse {
+        throw ClientError.invalidResponse
     }
 
-    func handleDeleteSession(_ request: DeleteSessionRequest) async throws -> DeleteSessionResponse {
-        events.append("delete:\(request.sessionId.value)")
-        return DeleteSessionResponse()
-    }
-
-    func handleCloseSession(_ request: CloseSessionRequest) async throws -> CloseSessionResponse {
-        events.append("close:\(request.sessionId.value)")
-        return CloseSessionResponse()
-    }
-
-    func handleLogout(_ request: LogoutRequest) async throws -> LogoutResponse {
-        events.append("logout")
-        return LogoutResponse()
-    }
-
-    func handleCancelRequest(_ request: CancelRequestNotification) async throws {
-        events.append("cancel-request:\(request.requestId.description)")
-    }
-
-    func handleForkSession(_ request: ForkSessionRequest) async throws -> ForkSessionResponse {
-        let additionalDirectories = request.additionalDirectories?.joined(separator: ",") ?? ""
-        events.append("fork:\(request.sessionId.value):\(request.cwd):\(additionalDirectories)")
-        return ForkSessionResponse(sessionId: SessionId("session-forked"))
-    }
-
-    func handleListProviders(_ request: ListProvidersRequest) async throws -> ListProvidersResponse {
-        events.append("providers-list")
-        return ListProvidersResponse(providers: [
-            ProviderInfo(providerId: "anthropic", supported: [.anthropic], required: false),
-        ])
-    }
-
-    func handleSuggestNes(_ request: SuggestNesRequest) async throws -> SuggestNesResponse {
-        events.append("nes-suggest:\(request.sessionId.value):\(request.triggerKind.value)")
-        return SuggestNesResponse(suggestions: [
-            NesSuggestion(kind: "jump", id: "sug-1", uri: request.uri, position: request.position),
-        ])
-    }
-
-    func handleRejectNes(_ notification: RejectNesNotification) async throws {
-        events.append("nes-reject:\(notification.sessionId.value):\(notification.id):\(notification.reason?.value ?? "")")
-    }
-
-    func handleDidFocusDocument(_ notification: DidFocusDocumentNotification) async throws {
-        events.append("document-focus:\(notification.sessionId.value):\(notification.uri)")
-    }
-
-    func handleMcpMessage(_ request: MessageMcpRequest) async throws -> MessageMcpResponse {
-        events.append("mcp-message:\(request.connectionId.value):\(request.method)")
-        return AnyCodable(["ok": true])
-    }
-
-    func handleMcpNotification(_ notification: MessageMcpNotification) async throws {
-        events.append("mcp-notification:\(notification.connectionId.value):\(notification.method)")
-    }
-
-    func recordedEvents() -> [String] {
-        events
-    }
-}
-
-private actor RecordingClientDelegate: ClientDelegate {
-    private var events: [String] = []
-
-    func handleFileReadRequest(_ path: String, sessionId: String, line: Int?, limit: Int?) async throws -> ReadTextFileResponse {
-        fatalError("Not used in this test")
-    }
-
-    func handleFileWriteRequest(_ path: String, content: String, sessionId: String) async throws -> WriteTextFileResponse {
-        fatalError("Not used in this test")
-    }
-
-    func handleTerminalCreate(command: String, sessionId: String, args: [String]?, cwd: String?, env: [EnvVariable]?, outputByteLimit: Int?) async throws -> CreateTerminalResponse {
-        fatalError("Not used in this test")
-    }
-
-    func handleTerminalOutput(terminalId: TerminalId, sessionId: String) async throws -> TerminalOutputResponse {
-        fatalError("Not used in this test")
-    }
-
-    func handleTerminalWaitForExit(terminalId: TerminalId, sessionId: String) async throws -> WaitForExitResponse {
-        fatalError("Not used in this test")
-    }
-
-    func handleTerminalKill(terminalId: TerminalId, sessionId: String) async throws -> KillTerminalResponse {
-        fatalError("Not used in this test")
-    }
-
-    func handleTerminalRelease(terminalId: TerminalId, sessionId: String) async throws -> ReleaseTerminalResponse {
-        fatalError("Not used in this test")
-    }
-
-    func handlePermissionRequest(request: RequestPermissionRequest) async throws -> RequestPermissionResponse {
-        fatalError("Not used in this test")
-    }
-
-    func handleMcpConnect(_ request: ConnectMcpRequest) async throws -> ConnectMcpResponse {
-        events.append("mcp-connect:\(request.serverId.value)")
-        return ConnectMcpResponse(connectionId: "conn-1")
-    }
-
-    func handleMcpNotification(_ notification: MessageMcpNotification) async throws {
-        events.append("mcp-notification:\(notification.connectionId.value):\(notification.method)")
-    }
-
-    func handleCreateElicitation(_ request: CreateElicitationRequest) async throws -> CreateElicitationResponse {
-        events.append("elicitation-create:\(request.mode)")
-        return CreateElicitationResponse(action: "decline")
-    }
-
-    func handleCompleteElicitation(_ notification: CompleteElicitationNotification) async throws {
-        events.append("elicitation-complete:\(notification.elicitationId.value)")
-    }
-
-    func recordedEvents() -> [String] {
-        events
+    func handlePrompt(_: SessionPromptRequest) async throws -> SessionPromptResponse {
+        throw ClientError.invalidResponse
     }
 }

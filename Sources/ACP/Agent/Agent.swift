@@ -1,196 +1,6 @@
-//
-//  Agent.swift
-//  ACP
-//
-//  Agent runtime for building ACP-compliant agents (server mode)
-//
-
+import ACPModel
 import Foundation
 import os.log
-import ACPModel
-
-/// Protocol for handling agent operations
-public protocol AgentDelegate: AnyObject, Sendable {
-    /// Handle initialization request from client
-    func handleInitialize(_ request: InitializeRequest) async throws -> InitializeResponse
-
-    /// Handle new session request
-    func handleNewSession(_ request: NewSessionRequest) async throws -> NewSessionResponse
-
-    /// Handle prompt request - the main interaction point
-    func handlePrompt(_ request: SessionPromptRequest) async throws -> SessionPromptResponse
-
-    /// Handle session cancellation
-    func handleCancel(_ sessionId: SessionId) async throws
-
-    /// Handle session load request
-    func handleLoadSession(_ request: LoadSessionRequest) async throws -> LoadSessionResponse
-
-    /// Handle session resume request
-    func handleResumeSession(_ request: ResumeSessionRequest) async throws -> ResumeSessionResponse
-
-    /// Handle session listing request
-    func handleListSessions(_ request: ListSessionsRequest) async throws -> ListSessionsResponse
-
-    /// Handle session delete request
-    func handleDeleteSession(_ request: DeleteSessionRequest) async throws -> DeleteSessionResponse
-
-    /// Handle session close request
-    func handleCloseSession(_ request: CloseSessionRequest) async throws -> CloseSessionResponse
-
-    /// Handle logout request
-    func handleLogout(_ request: LogoutRequest) async throws -> LogoutResponse
-
-    /// Handle protocol-level request cancellation notification
-    func handleCancelRequest(_ request: CancelRequestNotification) async throws
-
-    /// Handle fork session request
-    func handleForkSession(_ request: ForkSessionRequest) async throws -> ForkSessionResponse
-
-    /// Handle provider listing request
-    func handleListProviders(_ request: ListProvidersRequest) async throws -> ListProvidersResponse
-
-    /// Handle provider configuration request
-    func handleSetProvider(_ request: SetProviderRequest) async throws -> SetProviderResponse
-
-    /// Handle provider disable request
-    func handleDisableProvider(_ request: DisableProviderRequest) async throws -> DisableProviderResponse
-
-    /// Handle NES session start request
-    func handleStartNes(_ request: StartNesRequest) async throws -> StartNesResponse
-
-    /// Handle NES suggestion request
-    func handleSuggestNes(_ request: SuggestNesRequest) async throws -> SuggestNesResponse
-
-    /// Handle NES close request
-    func handleCloseNes(_ request: CloseNesRequest) async throws -> CloseNesResponse
-
-    /// Handle NES accepted suggestion notification
-    func handleAcceptNes(_ notification: AcceptNesNotification) async throws
-
-    /// Handle NES rejected suggestion notification
-    func handleRejectNes(_ notification: RejectNesNotification) async throws
-
-    /// Handle document open notification
-    func handleDidOpenDocument(_ notification: DidOpenDocumentNotification) async throws
-
-    /// Handle document change notification
-    func handleDidChangeDocument(_ notification: DidChangeDocumentNotification) async throws
-
-    /// Handle document close notification
-    func handleDidCloseDocument(_ notification: DidCloseDocumentNotification) async throws
-
-    /// Handle document save notification
-    func handleDidSaveDocument(_ notification: DidSaveDocumentNotification) async throws
-
-    /// Handle document focus notification
-    func handleDidFocusDocument(_ notification: DidFocusDocumentNotification) async throws
-
-    /// Handle MCP-over-ACP request message
-    func handleMcpMessage(_ request: MessageMcpRequest) async throws -> MessageMcpResponse
-
-    /// Handle MCP-over-ACP notification message
-    func handleMcpNotification(_ notification: MessageMcpNotification) async throws
-}
-
-/// Default implementations for optional delegate methods
-extension AgentDelegate {
-    public func handleCancel(_ sessionId: SessionId) async throws {
-        // Default: no-op
-    }
-
-    public func handleLoadSession(_ request: LoadSessionRequest) async throws -> LoadSessionResponse {
-        throw ClientError.invalidResponse
-    }
-
-    public func handleResumeSession(_ request: ResumeSessionRequest) async throws -> ResumeSessionResponse {
-        throw ClientError.invalidResponse
-    }
-
-    public func handleListSessions(_ request: ListSessionsRequest) async throws -> ListSessionsResponse {
-        throw ClientError.invalidResponse
-    }
-
-    public func handleDeleteSession(_ request: DeleteSessionRequest) async throws -> DeleteSessionResponse {
-        throw ClientError.invalidResponse
-    }
-
-    public func handleCloseSession(_ request: CloseSessionRequest) async throws -> CloseSessionResponse {
-        throw ClientError.invalidResponse
-    }
-
-    public func handleLogout(_ request: LogoutRequest) async throws -> LogoutResponse {
-        throw ClientError.invalidResponse
-    }
-
-    public func handleCancelRequest(_ request: CancelRequestNotification) async throws {
-        // Default: no-op
-    }
-
-    public func handleForkSession(_ request: ForkSessionRequest) async throws -> ForkSessionResponse {
-        throw ClientError.invalidResponse
-    }
-
-    public func handleListProviders(_ request: ListProvidersRequest) async throws -> ListProvidersResponse {
-        throw ClientError.invalidResponse
-    }
-
-    public func handleSetProvider(_ request: SetProviderRequest) async throws -> SetProviderResponse {
-        throw ClientError.invalidResponse
-    }
-
-    public func handleDisableProvider(_ request: DisableProviderRequest) async throws -> DisableProviderResponse {
-        throw ClientError.invalidResponse
-    }
-
-    public func handleStartNes(_ request: StartNesRequest) async throws -> StartNesResponse {
-        throw ClientError.invalidResponse
-    }
-
-    public func handleSuggestNes(_ request: SuggestNesRequest) async throws -> SuggestNesResponse {
-        throw ClientError.invalidResponse
-    }
-
-    public func handleCloseNes(_ request: CloseNesRequest) async throws -> CloseNesResponse {
-        throw ClientError.invalidResponse
-    }
-
-    public func handleAcceptNes(_ notification: AcceptNesNotification) async throws {
-        // Default: no-op
-    }
-
-    public func handleRejectNes(_ notification: RejectNesNotification) async throws {
-        // Default: no-op
-    }
-
-    public func handleDidOpenDocument(_ notification: DidOpenDocumentNotification) async throws {
-        // Default: no-op
-    }
-
-    public func handleDidChangeDocument(_ notification: DidChangeDocumentNotification) async throws {
-        // Default: no-op
-    }
-
-    public func handleDidCloseDocument(_ notification: DidCloseDocumentNotification) async throws {
-        // Default: no-op
-    }
-
-    public func handleDidSaveDocument(_ notification: DidSaveDocumentNotification) async throws {
-        // Default: no-op
-    }
-
-    public func handleDidFocusDocument(_ notification: DidFocusDocumentNotification) async throws {
-        // Default: no-op
-    }
-
-    public func handleMcpMessage(_ request: MessageMcpRequest) async throws -> MessageMcpResponse {
-        throw ClientError.invalidResponse
-    }
-
-    public func handleMcpNotification(_ notification: MessageMcpNotification) async throws {
-        // Default: no-op
-    }
-}
 
 /// Incoming request from a client that the agent must handle
 public struct AgentRequest: Sendable {
@@ -215,16 +25,24 @@ public actor Agent {
     private let decoder: JSONDecoder
 
     private weak var delegate: AgentDelegate?
-    private var pendingRequests: [RequestId: CheckedContinuation<JSONRPCResponse, Error>] = [:]
-    private var nextRequestId: Int = 1
+    private var pendingRequests = PendingRequestTable<JSONRPCResponse>()
+    private var nextRequestID = 1
 
     private var requestContinuation: AsyncStream<AgentRequest>.Continuation?
     private let requestStream: AsyncStream<AgentRequest>
 
+    private struct InboundContext {
+        var task: Task<Void, Never>?
+    }
+
+    private var inboundRequests: [RequestId: InboundContext] = [:]
+    private var isClosed = false
+
     // MARK: - Public API
 
-    /// Stream of incoming requests from the client
-    public nonisolated var requests: AsyncStream<AgentRequest> {
+    /// Stream of incoming requests from the client (methods without a built-in
+    /// delegate route).
+    nonisolated public var requests: AsyncStream<AgentRequest> {
         requestStream
     }
 
@@ -232,28 +50,29 @@ public actor Agent {
 
     public init(transport: any Transport) {
         self.transport = transport
-        self.logger = Logger.forCategory("Agent")
-        self.encoder = JSONEncoder()
-        self.encoder.outputFormatting = [.withoutEscapingSlashes]
-        self.decoder = JSONDecoder()
+        logger = Logger.forCategory("Agent")
+        encoder = JSONEncoder()
+        encoder.outputFormatting = [.withoutEscapingSlashes]
+        decoder = JSONDecoder()
 
         var continuation: AsyncStream<AgentRequest>.Continuation!
-        self.requestStream = AsyncStream { cont in
+        requestStream = AsyncStream { cont in
             continuation = cont
         }
-        self.requestContinuation = continuation
+        requestContinuation = continuation
     }
 
     public func setDelegate(_ delegate: AgentDelegate?) {
         self.delegate = delegate
     }
 
-    /// Start processing incoming messages from the transport
+    /// Start processing incoming messages from the transport. Returns when the
+    /// transport's message stream ends.
     public func start() async {
-        for await data in transport.messages {
-            await handleMessage(data)
+        for await frame in transport.messages {
+            await ingest(frame)
         }
-        requestContinuation?.finish()
+        await ingressDidEnd()
     }
 
     /// Send a session update notification to the client
@@ -301,7 +120,7 @@ public actor Agent {
     public func sendMcpMessage(
         connectionId: McpConnectionId,
         method: String,
-        params: AnyCodable? = nil
+        params: AnyCodable? = nil,
     ) async throws -> MessageMcpResponse {
         let request = MessageMcpRequest(connectionId: connectionId, method: method, params: params)
         let response = try await sendRequest(method: "mcp/message", params: request)
@@ -321,11 +140,11 @@ public actor Agent {
     public func sendMcpMessageNotification(
         connectionId: McpConnectionId,
         method: String,
-        params: AnyCodable? = nil
+        params: AnyCodable? = nil,
     ) async throws {
         try await sendNotification(
             method: "mcp/message",
-            params: MessageMcpNotification(connectionId: connectionId, method: method, params: params)
+            params: MessageMcpNotification(connectionId: connectionId, method: method, params: params),
         )
     }
 
@@ -333,7 +152,11 @@ public actor Agent {
     public func disconnectMcp(connectionId: McpConnectionId) async throws -> DisconnectMcpResponse {
         let request = DisconnectMcpRequest(connectionId: connectionId)
         let response = try await sendRequest(method: "mcp/disconnect", params: request)
-        return try decodeEmptyTolerantResponse(DisconnectMcpResponse.self, from: response, emptyValue: DisconnectMcpResponse())
+        return try decodeEmptyTolerantResponse(
+            DisconnectMcpResponse.self,
+            from: response,
+            emptyValue: DisconnectMcpResponse(),
+        )
     }
 
     /// Request structured user input from the client.
@@ -346,51 +169,326 @@ public actor Agent {
     public func completeElicitation(elicitationId: ElicitationId) async throws {
         try await sendNotification(
             method: "elicitation/complete",
-            params: CompleteElicitationNotification(elicitationId: elicitationId)
+            params: CompleteElicitationNotification(elicitationId: elicitationId),
         )
     }
 
-    /// Close the agent
+    /// Close the agent and fail every outbound pending request exactly once.
     public func close() async {
+        await close(failure: ClientError.connectionClosed)
+    }
+
+    private func close(failure: ClientError) async {
+        guard !isClosed else { return }
+        isClosed = true
+
         await transport.close()
-        for (_, continuation) in pendingRequests {
-            continuation.resume(throwing: ClientError.connectionClosed)
-        }
-        pendingRequests.removeAll()
+        pendingRequests.failAll(failure)
+        cancelInboundTasks()
         requestContinuation?.finish()
     }
 
-    // MARK: - Private Methods
+    // MARK: - Ingress
 
-    private func handleMessage(_ data: Data) async {
+    private func ingest(_ frame: Data) async {
+        guard !isClosed else { return }
+
+        let message: Message
         do {
-            let message = try decoder.decode(Message.self, from: data)
-
-            switch message {
-            case .request(let request):
-                await handleRequest(request)
-            case .notification(let notification):
-                await handleNotification(notification)
-            case .response(let response):
-                await handleResponse(response)
-            }
+            message = try decoder.decode(Message.self, from: frame)
         } catch {
-            logger.error("Failed to decode message: \(error.localizedDescription)")
+            guard (try? decoder.decode(AnyCodable.self, from: frame)) != nil else {
+                try? await sendErrorResponse(id: .null, code: -32700, message: "Parse error")
+                await close(failure: .protocolViolation("malformed JSON"))
+                return
+            }
+            // A well-framed but structurally invalid envelope: answer -32600,
+            // echoing the id when it is recoverable as a valid RequestId, and
+            // keep the connection.
+            try? await sendErrorResponse(
+                id: Self.recoverRequestID(from: frame) ?? .null,
+                code: -32600,
+                message: "Invalid Request",
+            )
+            return
+        }
+
+        switch message {
+        case let .request(request):
+            dispatchInbound(request)
+        case let .notification(notification):
+            await handleNotification(notification)
+        case let .response(response):
+            handleResponse(response)
         }
     }
 
-    private func handleRequest(_ request: JSONRPCRequest) async {
+    private func ingressDidEnd() async {
+        let evidence = await transport.termination
+
+        if !isClosed {
+            if case .failure(.malformedFrame) = evidence?.reason {
+                // The peer sent a frame we could not parse; respond with a
+                // best-effort parse error before terminating the connection.
+                try? await sendErrorResponse(id: .null, code: -32700, message: "Parse error")
+            }
+            isClosed = true
+            await transport.close()
+        }
+
+        pendingRequests.failAll(ClientError.connectionClosed)
+        cancelInboundTasks()
+        requestContinuation?.finish()
+    }
+
+    /// Best-effort id recovery from a raw frame whose envelope otherwise failed
+    /// to decode.
+    private static func recoverRequestID(from frame: Data) -> RequestId? {
+        struct EnvelopeID: Decodable {
+            let id: RequestId
+        }
+        return try? JSONDecoder().decode(EnvelopeID.self, from: frame).id
+    }
+
+    private func dispatchInbound(_ request: JSONRPCRequest) {
+        var context = InboundContext()
+        let task = Task { [weak self] () in
+            guard let self else { return }
+            await processInbound(request)
+        }
+        context.task = task
+        inboundRequests[request.id] = context
+    }
+
+    private func processInbound(_ request: JSONRPCRequest) async {
         do {
-            let response = try await routeRequest(request)
-            try await sendResponse(id: request.id, result: response)
+            let result = try await routeRequest(request)
+            try await sendResponseIfOpen(id: request.id, result: result)
         } catch {
-            try? await sendErrorResponse(
-                id: request.id,
-                code: -32603,
-                message: error.localizedDescription
+            if error is CancellationError, request.method == "session/prompt" {
+                // A cancelled prompt turn ends with a cancelled stop reason.
+                let cancelled = SessionPromptResponse(stopReason: .cancelled)
+                if let data = try? encoder.encode(cancelled),
+                   let result = try? decoder.decode(AnyCodable.self, from: data)
+                {
+                    try? await sendResponseIfOpen(id: request.id, result: result)
+                    await finishInbound(request.id)
+                    return
+                }
+            }
+            let payload = Self.errorPayload(from: error)
+            try? await sendErrorResponseIfOpen(
+                id: request.id, code: payload.code, message: payload.message, data: payload.data,
             )
         }
+        await finishInbound(request.id)
     }
+
+    private func finishInbound(_ id: RequestId) async {
+        inboundRequests.removeValue(forKey: id)
+    }
+
+    private func sendResponseIfOpen(id: RequestId, result: AnyCodable) async throws {
+        guard inboundRequests[id] != nil, !isClosed else { return }
+        let response = JSONRPCResponse(id: id, result: result, error: nil)
+        let data = try encoder.encode(response)
+        try await transport.send(data)
+    }
+
+    private func sendErrorResponseIfOpen(id: RequestId, code: Int, message: String, data: AnyCodable?) async throws {
+        guard inboundRequests[id] != nil, !isClosed else { return }
+        try await sendErrorResponse(id: id, code: code, message: message, data: data)
+    }
+
+    private func cancelInboundTasks() {
+        for (_, context) in inboundRequests {
+            context.task?.cancel()
+        }
+        inboundRequests.removeAll()
+    }
+
+    /// Maps handler failures to JSON-RPC error payloads. A delegate's explicit
+    /// `JSONRPCError` preserves code/message/data; everything else collapses to a
+    /// fixed, payload-free internal error message.
+    private static func errorPayload(from error: Error) -> JSONRPCError {
+        if let jsonError = error as? JSONRPCError {
+            return jsonError
+        }
+        if let clientError = error as? ClientError {
+            switch clientError {
+            case let .unknownMethod(method):
+                return JSONRPCError(code: -32601, message: "Method not found", data: AnyCodable(["method": method]))
+            case .invalidParams:
+                return JSONRPCError(code: -32602, message: "Invalid params", data: nil)
+            default:
+                break
+            }
+        }
+        if error is DecodingError {
+            return JSONRPCError(code: -32602, message: "Invalid params", data: nil)
+        }
+        return JSONRPCError(code: -32603, message: "Internal error", data: nil)
+    }
+
+    // MARK: - Outbound Requests
+
+    private func handleResponse(_ response: JSONRPCResponse) {
+        guard pendingRequests.contains(response.id) else {
+            logger.debug("Ignoring response for unknown request id")
+            return
+        }
+        pendingRequests.complete(id: response.id, .success(response))
+    }
+
+    private func sendRequest(method: String, params: some Encodable) async throws -> JSONRPCResponse {
+        guard !isClosed else {
+            throw ClientError.connectionClosed
+        }
+        let requestID = nextRequestID
+        guard requestID > 0, requestID < Int.max else {
+            throw ClientError.requestIDExhausted
+        }
+        nextRequestID += 1
+        let requestIdentifier = RequestId.number(requestID)
+
+        let paramsData = try encoder.encode(params)
+        let paramsValue = try decoder.decode(AnyCodable.self, from: paramsData)
+
+        let request = JSONRPCRequest(
+            id: requestIdentifier,
+            method: method,
+            params: paramsValue,
+        )
+
+        return try await withTaskCancellationHandler(operation: {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<JSONRPCResponse, Error>) in
+                // Actor-isolated body: registration happens before suspension.
+                pendingRequests.register(id: requestIdentifier, continuation: continuation)
+                let writeTask = Task { [weak self] () in
+                    guard let self else { return }
+                    await performWrite(id: requestIdentifier, request: request)
+                }
+                pendingRequests.attachWriteTask(id: requestIdentifier, task: writeTask)
+            }
+        }, onCancel: { [weak self] in
+            Task { await self?.callerCancelled(requestID: requestID) }
+        })
+    }
+
+    private func callerCancelled(requestID: Int) {
+        pendingRequests.complete(id: .number(requestID), .failure(CancellationError()))
+    }
+
+    private func performWrite(id: RequestId, request: JSONRPCRequest) async {
+        guard !Task.isCancelled else { return }
+        do {
+            let data = try encoder.encode(request)
+            try await transport.send(data)
+        } catch {
+            if pendingRequests.contains(id) {
+                pendingRequests.complete(id: id, .failure(ClientError.transportFailure(.write("request write failed"))))
+            }
+        }
+    }
+
+    private func sendNotification(method: String, params: some Encodable) async throws {
+        let paramsData = try encoder.encode(params)
+        let paramsValue = try decoder.decode(AnyCodable.self, from: paramsData)
+
+        let notification = JSONRPCNotification(
+            method: method,
+            params: paramsValue,
+        )
+        let data = try encoder.encode(notification)
+        try await transport.send(data)
+    }
+
+    private func sendResponse(id: RequestId, result: AnyCodable) async throws {
+        let response = JSONRPCResponse(id: id, result: result, error: nil)
+        let data = try encoder.encode(response)
+        try await transport.send(data)
+    }
+
+    private func sendErrorResponse(id: RequestId, code: Int, message: String, data: AnyCodable? = nil) async throws {
+        let error = JSONRPCError(code: code, message: message, data: data)
+        let response = JSONRPCResponse(id: id, result: nil, error: error)
+        let encoded = try encoder.encode(response)
+        try await transport.send(encoded)
+    }
+
+    // MARK: - Decoding Helpers
+
+    private func decodeResponse<T: Decodable>(_ type: T.Type, from response: JSONRPCResponse) throws -> T {
+        if let error = response.error {
+            throw ClientError.agentError(error)
+        }
+
+        guard let result = response.result, !(result.value is NSNull) else {
+            throw ClientError.invalidResponse
+        }
+
+        let data = try encoder.encode(result)
+        return try decoder.decode(type, from: data)
+    }
+
+    private func decodeEmptyTolerantResponse<T: Decodable>(
+        _ type: T.Type,
+        from response: JSONRPCResponse,
+        emptyValue: @autoclosure () -> T,
+    ) throws -> T {
+        if let error = response.error {
+            throw ClientError.agentError(error)
+        }
+
+        if response.result == nil || (response.result?.value is NSNull) {
+            return emptyValue()
+        }
+
+        if let dict = response.result?.value as? [String: Any], dict.isEmpty {
+            return emptyValue()
+        }
+
+        guard let result = response.result else {
+            throw ClientError.invalidResponse
+        }
+
+        let data = try encoder.encode(result)
+        return try decoder.decode(type, from: data)
+    }
+
+    private func decodeParams<T: Decodable>(_ type: T.Type, from params: AnyCodable?) throws -> T {
+        guard let params, !(params.value is NSNull) else {
+            throw ClientError.invalidParams("missing params")
+        }
+        let data = try encoder.encode(params)
+        do {
+            return try decoder.decode(type, from: data)
+        } catch {
+            throw ClientError.invalidParams("params could not be decoded")
+        }
+    }
+
+    private func decodeParamsIfPresent<T: Decodable>(_ type: T.Type, from params: AnyCodable?) throws -> T {
+        guard let params, !(params.value is NSNull) else {
+            return try decoder.decode(type, from: Data("{}".utf8))
+        }
+        let data = try encoder.encode(params)
+        do {
+            return try decoder.decode(type, from: data)
+        } catch {
+            throw ClientError.invalidParams("params could not be decoded")
+        }
+    }
+
+    private func encodeResult(_ result: some Encodable) throws -> AnyCodable {
+        let data = try encoder.encode(result)
+        return try decoder.decode(AnyCodable.self, from: data)
+    }
+}
+
+/// Inbound dispatch shares the Agent actor isolation and private state.
+extension Agent {
+    // MARK: - Routing
 
     private func routeRequest(_ request: JSONRPCRequest) async throws -> AnyCodable {
         guard let delegate else {
@@ -401,7 +499,13 @@ public actor Agent {
         case "initialize":
             let params = try decodeParams(InitializeRequest.self, from: request.params)
             let response = try await delegate.handleInitialize(params)
-            return try encodeResult(response)
+            return try encodeResult(InitializeResponse(
+                protocolVersion: 1,
+                agentCapabilities: response.agentCapabilities,
+                agentInfo: response.agentInfo,
+                authMethods: response.authMethods,
+                _meta: response._meta,
+            ))
 
         case "session/new":
             let params = try decodeParams(NewSessionRequest.self, from: request.params)
@@ -433,15 +537,25 @@ public actor Agent {
             let response = try await delegate.handleListSessions(params)
             return try encodeResult(response)
 
-        case "session/delete":
-            let params = try decodeParams(DeleteSessionRequest.self, from: request.params)
-            let response = try await delegate.handleDeleteSession(params)
-            return try encodeResult(response)
-
         case "session/close":
             let params = try decodeParams(CloseSessionRequest.self, from: request.params)
             try await delegate.handleCancel(params.sessionId)
             let response = try await delegate.handleCloseSession(params)
+            return try encodeResult(response)
+
+        default:
+            return try await routeExtensionRequest(request, delegate: delegate)
+        }
+    }
+
+    private func routeExtensionRequest(
+        _ request: JSONRPCRequest,
+        delegate: any AgentDelegate,
+    ) async throws -> AnyCodable {
+        switch request.method {
+        case "session/delete":
+            let params = try decodeParams(DeleteSessionRequest.self, from: request.params)
+            let response = try await delegate.handleDeleteSession(params)
             return try encodeResult(response)
 
         case "logout":
@@ -484,188 +598,65 @@ public actor Agent {
             return try await delegate.handleMcpMessage(params)
 
         default:
-            // Emit to request stream for custom handling
+            // Emit to request stream for custom handling; the wire answer is -32601.
             requestContinuation?.yield(AgentRequest(
                 id: request.id,
                 method: request.method,
-                params: request.params
+                params: request.params,
             ))
-            throw ClientError.invalidResponse
+            throw ClientError.unknownMethod(request.method)
         }
     }
 
     private func handleNotification(_ notification: JSONRPCNotification) async {
+        do {
+            try await routeNotification(notification)
+        } catch {
+            await close(failure: .protocolViolation("invalid notification params"))
+        }
+    }
+
+    private func routeNotification(_ notification: JSONRPCNotification) async throws {
         switch notification.method {
         case "session/cancel":
-            if let params = notification.params,
-               let dict = params.value as? [String: Any],
-               let sessionIdValue = dict["sessionId"] as? String {
-                let sessionId = SessionId(sessionIdValue)
-                try? await delegate?.handleCancel(sessionId)
-            }
+            let request = try decodeParams(CancelSessionRequest.self, from: notification.params)
+            try? await delegate?.handleCancel(request.sessionId)
         case "$/cancel_request":
-            if let request = try? decodeParams(CancelRequestNotification.self, from: notification.params) {
-                try? await delegate?.handleCancelRequest(request)
-            }
+            let request = try decodeParams(CancelRequestNotification.self, from: notification.params)
+            try? await delegate?.handleCancelRequest(request)
         case "nes/accept":
-            if let notification = try? decodeParams(AcceptNesNotification.self, from: notification.params) {
-                try? await delegate?.handleAcceptNes(notification)
-            }
+            let request = try decodeParams(AcceptNesNotification.self, from: notification.params)
+            try? await delegate?.handleAcceptNes(request)
         case "nes/reject":
-            if let notification = try? decodeParams(RejectNesNotification.self, from: notification.params) {
-                try? await delegate?.handleRejectNes(notification)
-            }
-        case "document/didOpen":
-            if let notification = try? decodeParams(DidOpenDocumentNotification.self, from: notification.params) {
-                try? await delegate?.handleDidOpenDocument(notification)
-            }
-        case "document/didChange":
-            if let notification = try? decodeParams(DidChangeDocumentNotification.self, from: notification.params) {
-                try? await delegate?.handleDidChangeDocument(notification)
-            }
-        case "document/didClose":
-            if let notification = try? decodeParams(DidCloseDocumentNotification.self, from: notification.params) {
-                try? await delegate?.handleDidCloseDocument(notification)
-            }
-        case "document/didSave":
-            if let notification = try? decodeParams(DidSaveDocumentNotification.self, from: notification.params) {
-                try? await delegate?.handleDidSaveDocument(notification)
-            }
-        case "document/didFocus":
-            if let notification = try? decodeParams(DidFocusDocumentNotification.self, from: notification.params) {
-                try? await delegate?.handleDidFocusDocument(notification)
-            }
+            let request = try decodeParams(RejectNesNotification.self, from: notification.params)
+            try? await delegate?.handleRejectNes(request)
         case "mcp/message":
-            if let notification = try? decodeParams(MessageMcpNotification.self, from: notification.params) {
-                try? await delegate?.handleMcpNotification(notification)
-            }
+            let request = try decodeParams(MessageMcpNotification.self, from: notification.params)
+            try? await delegate?.handleMcpNotification(request)
         default:
-            logger.debug("Unhandled notification: \(notification.method)")
+            try await routeDocumentNotification(notification)
         }
     }
 
-    private func handleResponse(_ response: JSONRPCResponse) async {
-        guard let continuation = pendingRequests.removeValue(forKey: response.id) else {
-            logger.warning("Received response for unknown request id=\(response.id)")
-            return
+    private func routeDocumentNotification(_ notification: JSONRPCNotification) async throws {
+        switch notification.method {
+        case "document/didOpen":
+            let request = try decodeParams(DidOpenDocumentNotification.self, from: notification.params)
+            try? await delegate?.handleDidOpenDocument(request)
+        case "document/didChange":
+            let request = try decodeParams(DidChangeDocumentNotification.self, from: notification.params)
+            try? await delegate?.handleDidChangeDocument(request)
+        case "document/didClose":
+            let request = try decodeParams(DidCloseDocumentNotification.self, from: notification.params)
+            try? await delegate?.handleDidCloseDocument(request)
+        case "document/didSave":
+            let request = try decodeParams(DidSaveDocumentNotification.self, from: notification.params)
+            try? await delegate?.handleDidSaveDocument(request)
+        case "document/didFocus":
+            let request = try decodeParams(DidFocusDocumentNotification.self, from: notification.params)
+            try? await delegate?.handleDidFocusDocument(request)
+        default:
+            logger.debug("Unhandled notification method class")
         }
-        continuation.resume(returning: response)
-    }
-
-    private func sendRequest<T: Encodable>(method: String, params: T) async throws -> JSONRPCResponse {
-        let requestId = RequestId.number(nextRequestId)
-        nextRequestId += 1
-
-        let paramsData = try encoder.encode(params)
-        let paramsValue = try decoder.decode(AnyCodable.self, from: paramsData)
-
-        let request = JSONRPCRequest(
-            id: requestId,
-            method: method,
-            params: paramsValue
-        )
-
-        return try await withCheckedThrowingContinuation { continuation in
-            pendingRequests[requestId] = continuation
-
-            Task {
-                do {
-                    let data = try self.encoder.encode(request)
-                    try await self.transport.send(data)
-                } catch {
-                    await self.failRequest(id: requestId, error: error)
-                }
-            }
-        }
-    }
-
-    private func sendNotification<T: Encodable>(method: String, params: T) async throws {
-        let paramsData = try encoder.encode(params)
-        let paramsValue = try decoder.decode(AnyCodable.self, from: paramsData)
-
-        let notification = JSONRPCNotification(
-            method: method,
-            params: paramsValue
-        )
-        let data = try encoder.encode(notification)
-        try await transport.send(data)
-    }
-
-    private func failRequest(id: RequestId, error: Error) async {
-        if let continuation = pendingRequests.removeValue(forKey: id) {
-            continuation.resume(throwing: error)
-        }
-    }
-
-    private func decodeResponse<T: Decodable>(_ type: T.Type, from response: JSONRPCResponse) throws -> T {
-        if let error = response.error {
-            throw ClientError.agentError(error)
-        }
-
-        guard let result = response.result else {
-            throw ClientError.invalidResponse
-        }
-
-        let data = try encoder.encode(result)
-        return try decoder.decode(type, from: data)
-    }
-
-    private func decodeEmptyTolerantResponse<T: Decodable>(
-        _ type: T.Type,
-        from response: JSONRPCResponse,
-        emptyValue: @autoclosure () -> T
-    ) throws -> T {
-        if let error = response.error {
-            throw ClientError.agentError(error)
-        }
-
-        if response.result == nil || (response.result?.value is NSNull) {
-            return emptyValue()
-        }
-
-        if let dict = response.result?.value as? [String: Any], dict.isEmpty {
-            return emptyValue()
-        }
-
-        guard let result = response.result else {
-            throw ClientError.invalidResponse
-        }
-
-        let data = try encoder.encode(result)
-        return try decoder.decode(type, from: data)
-    }
-
-    private func sendResponse(id: RequestId, result: AnyCodable) async throws {
-        let response = JSONRPCResponse(id: id, result: result, error: nil)
-        let data = try encoder.encode(response)
-        try await transport.send(data)
-    }
-
-    private func sendErrorResponse(id: RequestId, code: Int, message: String) async throws {
-        let error = JSONRPCError(code: code, message: message, data: nil)
-        let response = JSONRPCResponse(id: id, result: nil, error: error)
-        let data = try encoder.encode(response)
-        try await transport.send(data)
-    }
-
-    private func decodeParams<T: Decodable>(_ type: T.Type, from params: AnyCodable?) throws -> T {
-        guard let params else {
-            throw ClientError.invalidResponse
-        }
-        let data = try encoder.encode(params)
-        return try decoder.decode(type, from: data)
-    }
-
-    private func decodeParamsIfPresent<T: Decodable>(_ type: T.Type, from params: AnyCodable?) throws -> T {
-        guard let params, !(params.value is NSNull) else {
-            return try decoder.decode(type, from: Data("{}".utf8))
-        }
-        let data = try encoder.encode(params)
-        return try decoder.decode(type, from: data)
-    }
-
-    private func encodeResult<T: Encodable>(_ result: T) throws -> AnyCodable {
-        let data = try encoder.encode(result)
-        return try decoder.decode(AnyCodable.self, from: data)
     }
 }
