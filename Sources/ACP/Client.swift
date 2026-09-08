@@ -1244,7 +1244,9 @@ extension Client {
         }
     }
 
-    private func ensureReadyForSessionOperation() throws {
+    /// Typed session APIs share this guard: only the negotiated `.ready` state
+    /// may put a session operation on the wire.
+    func ensureReadyForSessionOperation() throws {
         switch connectionState {
         case .ready:
             return
@@ -1326,6 +1328,12 @@ extension Client {
         from response: JSONRPCResponse,
         emptyValue: @autoclosure () -> T,
     ) throws -> T {
+        // A JSON-RPC error response has no result, so the error must win before
+        // the empty-result compatibility path can report success.
+        if let error = response.error {
+            throw ClientError.agentError(error)
+        }
+
         if response.result == nil || (response.result?.value is NSNull) {
             return emptyValue()
         }

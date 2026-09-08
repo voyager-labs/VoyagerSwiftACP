@@ -11,6 +11,24 @@ public enum ShellEnvironment: Sendable {
         var isLoading = false
     }
 
+    private final class DataBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var storage = Data()
+
+        var data: Data {
+            lock.withLock { storage }
+        }
+
+        func append(_ value: Data) {
+            lock.withLock { storage.append(value) }
+        }
+    }
+
+    private static let shellLoadTimeoutSeconds: TimeInterval = 10.0
+    private static let termGraceSeconds: TimeInterval = 2.0
+    private static let killGraceSeconds: TimeInterval = 1.0
+    private static let drainGraceSeconds: TimeInterval = 2.0
+
     private static let state = ShellCacheState()
 
     /// Get user's shell environment (cached after first load)
@@ -122,31 +140,78 @@ public enum ShellEnvironment: Sendable {
         process.standardOutput = pipe
         process.standardError = errorPipe
 
-        var shellEnv: [String: String] = [:]
+        // Drain both pipes concurrently while the shell runs: waiting for exit
+        // before reading deadlocks on any login shell whose rc prints more
+        // than the pipe capacity.
+        let outputBox = DataBox()
+        let drainGroup = DispatchGroup()
+        drain(pipe: pipe, into: outputBox, group: drainGroup)
+        drain(pipe: errorPipe, into: DataBox(), group: drainGroup)
 
         do {
             try process.run()
-            process.waitUntilExit()
-
-            let data = (try? pipe.fileHandleForReading.readToEnd()) ?? Data()
-            try? pipe.fileHandleForReading.close()
-            try? errorPipe.fileHandleForReading.close()
-            if let output = String(data: data, encoding: .utf8) {
-                for line in output.split(separator: "\n") {
-                    if let equalsIndex = line.firstIndex(of: "=") {
-                        let key = String(line[..<equalsIndex])
-                        let value = String(line[line.index(after: equalsIndex)...])
-                        shellEnv[key] = value
-                    }
-                }
-            }
         } catch {
             try? pipe.fileHandleForReading.close()
             try? errorPipe.fileHandleForReading.close()
             return ProcessInfo.processInfo.environment
         }
 
+        // A hung login shell is bounded: TERM, then KILL, then give up.
+        let deadline = Date().addingTimeInterval(Self.shellLoadTimeoutSeconds)
+        while process.isRunning, Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.02)
+        }
+        if process.isRunning {
+            process.terminate()
+            if !waitForExit(process, timeout: Self.termGraceSeconds) {
+                if process.processIdentifier > 0 {
+                    kill(process.processIdentifier, SIGKILL)
+                }
+                _ = waitForExit(process, timeout: Self.killGraceSeconds)
+            }
+        }
+        // Process death (or kill) closes the write ends, so the drains finish.
+        _ = drainGroup.wait(timeout: .now() + Self.drainGraceSeconds)
+        try? pipe.fileHandleForReading.close()
+        try? errorPipe.fileHandleForReading.close()
+
+        let shellEnv = Self.parseEnvironmentOutput(outputBox.data)
         return shellEnv.isEmpty ? ProcessInfo.processInfo.environment : shellEnv
+    }
+
+    private static func parseEnvironmentOutput(_ output: Data) -> [String: String] {
+        var shellEnv: [String: String] = [:]
+        guard let text = String(data: output, encoding: .utf8) else {
+            return shellEnv
+        }
+        for line in text.split(separator: "\n") {
+            if let equalsIndex = line.firstIndex(of: "=") {
+                let key = String(line[..<equalsIndex])
+                let value = String(line[line.index(after: equalsIndex)...])
+                shellEnv[key] = value
+            }
+        }
+        return shellEnv
+    }
+
+    private static func drain(pipe: Pipe, into box: DataBox, group: DispatchGroup) {
+        let handle = pipe.fileHandleForReading
+        group.enter()
+        DispatchQueue.global(qos: .utility).async {
+            // Blocks until EOF; the shell's exit (bounded above) closes the
+            // write end, so this always completes.
+            let data = (try? handle.readToEnd()) ?? Data()
+            box.append(data)
+            group.leave()
+        }
+    }
+
+    private static func waitForExit(_ process: Process, timeout: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while process.isRunning, Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.02)
+        }
+        return !process.isRunning
     }
 
     private static func getLoginShell() -> String {

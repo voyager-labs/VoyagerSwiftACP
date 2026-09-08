@@ -6,6 +6,11 @@ import os.log
 /// Transport implementation using WebSocket for network communication.
 /// Works on all Apple platforms (iOS, macOS, tvOS, watchOS).
 public actor WebSocketTransport: Transport {
+    /// Mirrors the stdio transport defaults so both wire paths share one
+    /// resource policy.
+    public static let defaultMaxFrameBytes = 16 * 1024 * 1024
+    public static let defaultQueuedByteBudget = 16 * 1024 * 1024
+
     // MARK: - Properties
 
     private var webSocket: URLSessionWebSocketTask?
@@ -13,17 +18,15 @@ public actor WebSocketTransport: Transport {
     private let url: URL
     private let logger: Logger
 
-    private var messageContinuation: AsyncStream<Data>.Continuation?
-    private let messageStream: AsyncStream<Data>
+    private let messageQueue: BoundedStream<Data>
+    nonisolated public let messages: AsyncStream<Data>
+    private let queuedByteBudget: Int
+    private let maxFrameBytes: Int
 
     private var connected = false
     private var terminationEvidence: TransportTermination?
 
     // MARK: - Transport Protocol
-
-    nonisolated public var messages: AsyncStream<Data> {
-        messageStream
-    }
 
     public var isConnected: Bool {
         connected
@@ -35,16 +38,21 @@ public actor WebSocketTransport: Transport {
 
     // MARK: - Initialization
 
-    public init(url: URL, session: URLSession = .shared) {
+    public init(
+        url: URL,
+        session: URLSession = .shared,
+        maxFrameBytes: Int = WebSocketTransport.defaultMaxFrameBytes,
+        queuedByteBudget: Int = WebSocketTransport.defaultQueuedByteBudget,
+    ) {
         self.url = url
         self.session = session
+        self.maxFrameBytes = maxFrameBytes
+        self.queuedByteBudget = queuedByteBudget
         logger = Logger.forCategory("WebSocketTransport")
 
-        var continuation: AsyncStream<Data>.Continuation!
-        messageStream = AsyncStream { cont in
-            continuation = cont
-        }
-        messageContinuation = continuation
+        let queue = BoundedStream<Data>(byteBudget: queuedByteBudget)
+        messageQueue = queue
+        messages = queue.stream
     }
 
     // MARK: - Connection
@@ -79,7 +87,7 @@ public actor WebSocketTransport: Transport {
         if terminationEvidence == nil {
             terminationEvidence = TransportTermination(reason: .explicitClose, cleanupComplete: false)
         }
-        messageContinuation?.finish()
+        messageQueue.finish()
     }
 
     // MARK: - Private Methods
@@ -94,11 +102,11 @@ public actor WebSocketTransport: Transport {
 
                     switch message {
                     case let .data(data):
-                        messageContinuation?.yield(data)
+                        guard enqueue(data) else { return }
 
                     case let .string(text):
                         if let data = text.data(using: .utf8) {
-                            messageContinuation?.yield(data)
+                            guard enqueue(data) else { return }
                         }
 
                     @unknown default:
@@ -115,10 +123,35 @@ public actor WebSocketTransport: Transport {
                         reason: .failure(.read("websocket receive failed")),
                         cleanupComplete: false,
                     )
-                    messageContinuation?.finish()
+                    messageQueue.finish()
                 }
             }
         }
+    }
+
+    /// Bounds a remote peer's ingress: oversized frames and an exhausted queued
+    /// byte budget both become sticky typed failures instead of unbounded
+    /// memory growth.
+    private func enqueue(_ data: Data) -> Bool {
+        if data.count > maxFrameBytes {
+            terminateWithFailure(.frameLimit(maxFrameBytes), message: "WebSocket frame exceeds limit")
+            return false
+        }
+        guard messageQueue.yield(data, byteCount: data.count) else {
+            terminateWithFailure(.bufferOverflow(queuedByteBudget), message: "WebSocket receive budget exceeded")
+            return false
+        }
+        return true
+    }
+
+    private func terminateWithFailure(_ failure: TransportFailure, message: String) {
+        guard connected else { return }
+        logger.error("\(message, privacy: .public)")
+        connected = false
+        webSocket?.cancel(with: .goingAway, reason: nil)
+        webSocket = nil
+        terminationEvidence = TransportTermination(reason: .failure(failure), cleanupComplete: false)
+        messageQueue.finish(discard: true)
     }
 }
 

@@ -38,6 +38,17 @@ public actor Agent {
     private var inboundRequests: [RequestId: InboundContext] = [:]
     private var isClosed = false
 
+    /// Session work is only legal after a successful `initialize` handshake
+    /// (protocol version and capabilities negotiated); peer requests that skip
+    /// it are refused locally instead of reaching the delegate.
+    private enum InitializationPhase {
+        case awaitingInitialize
+        case initializing
+        case initialized
+    }
+
+    private var initializationPhase: InitializationPhase = .awaitingInitialize
+
     // MARK: - Public API
 
     /// Stream of incoming requests from the client (methods without a built-in
@@ -320,6 +331,10 @@ public actor Agent {
                 return JSONRPCError(code: -32601, message: "Method not found", data: AnyCodable(["method": method]))
             case .invalidParams:
                 return JSONRPCError(code: -32602, message: "Invalid params", data: nil)
+            case .notInitialized:
+                return JSONRPCError(code: -32002, message: "Not initialized", data: nil)
+            case .alreadyInitialized, .initializationInProgress:
+                return JSONRPCError(code: -32600, message: "Initialize already in progress or completed", data: nil)
             default:
                 break
             }
@@ -497,47 +512,46 @@ extension Agent {
 
         switch request.method {
         case "initialize":
-            let params = try decodeParams(InitializeRequest.self, from: request.params)
-            let response = try await delegate.handleInitialize(params)
-            return try encodeResult(InitializeResponse(
-                protocolVersion: 1,
-                agentCapabilities: response.agentCapabilities,
-                agentInfo: response.agentInfo,
-                authMethods: response.authMethods,
-                _meta: response._meta,
-            ))
+            return try await handleInitializeRequest(request, delegate: delegate)
 
         case "session/new":
+            try requireInitialized()
             let params = try decodeParams(NewSessionRequest.self, from: request.params)
             let response = try await delegate.handleNewSession(params)
             return try encodeResult(response)
 
         case "session/prompt":
+            try requireInitialized()
             let params = try decodeParams(SessionPromptRequest.self, from: request.params)
             let response = try await delegate.handlePrompt(params)
             return try encodeResult(response)
 
         case "session/load":
+            try requireInitialized()
             let params = try decodeParams(LoadSessionRequest.self, from: request.params)
             let response = try await delegate.handleLoadSession(params)
             return try encodeResult(response)
 
         case "session/resume":
+            try requireInitialized()
             let params = try decodeParams(ResumeSessionRequest.self, from: request.params)
             let response = try await delegate.handleResumeSession(params)
             return try encodeResult(response)
 
         case "session/fork":
+            try requireInitialized()
             let params = try decodeParams(ForkSessionRequest.self, from: request.params)
             let response = try await delegate.handleForkSession(params)
             return try encodeResult(response)
 
         case "session/list":
+            try requireInitialized()
             let params = try decodeParams(ListSessionsRequest.self, from: request.params)
             let response = try await delegate.handleListSessions(params)
             return try encodeResult(response)
 
         case "session/close":
+            try requireInitialized()
             let params = try decodeParams(CloseSessionRequest.self, from: request.params)
             try await delegate.handleCancel(params.sessionId)
             let response = try await delegate.handleCloseSession(params)
@@ -548,10 +562,63 @@ extension Agent {
         }
     }
 
+    private func requireInitialized() throws {
+        guard initializationPhase == .initialized else {
+            throw ClientError.notInitialized
+        }
+    }
+
+    /// Runs the one-time initialize handshake. A concurrent handshake and a
+    /// second completed handshake are refused; a failed one stays retryable.
+    private func handleInitializeRequest(
+        _ request: JSONRPCRequest,
+        delegate: any AgentDelegate,
+    ) async throws -> AnyCodable {
+        switch initializationPhase {
+        case .initializing:
+            throw ClientError.initializationInProgress
+        case .initialized:
+            throw ClientError.alreadyInitialized
+        case .awaitingInitialize:
+            break
+        }
+        let params = try decodeParams(InitializeRequest.self, from: request.params)
+        initializationPhase = .initializing
+        do {
+            let response = try await delegate.handleInitialize(params)
+            initializationPhase = .initialized
+            return try encodeResult(InitializeResponse(
+                protocolVersion: 1,
+                agentCapabilities: response.agentCapabilities,
+                agentInfo: response.agentInfo,
+                authMethods: response.authMethods,
+                _meta: response._meta,
+            ))
+        } catch {
+            initializationPhase = .awaitingInitialize
+            throw error
+        }
+    }
+
+    /// Session-scoped extensions drive external work, so they wait for the
+    /// handshake like core session requests. Pure routing extensions (logout,
+    /// providers/*) and unknown methods keep their documented pre-initialize
+    /// behavior.
+    private func requireInitializedForExtension(_ method: String) throws {
+        switch method {
+        case "session/delete", "nes/start", "nes/suggest", "nes/close", "mcp/message":
+            try requireInitialized()
+        default:
+            break
+        }
+    }
+
     private func routeExtensionRequest(
         _ request: JSONRPCRequest,
         delegate: any AgentDelegate,
     ) async throws -> AnyCodable {
+        try requireInitializedForExtension(request.method)
+
         switch request.method {
         case "session/delete":
             let params = try decodeParams(DeleteSessionRequest.self, from: request.params)
@@ -617,6 +684,15 @@ extension Agent {
     }
 
     private func routeNotification(_ notification: JSONRPCNotification) async throws {
+        // Cancellation must stay receivable during any phase (including a
+        // prompt turn); every other notification assumes a negotiated session.
+        switch notification.method {
+        case "session/cancel", "$/cancel_request":
+            break
+        default:
+            try requireInitialized()
+        }
+
         switch notification.method {
         case "session/cancel":
             let request = try decodeParams(CancelSessionRequest.self, from: notification.params)

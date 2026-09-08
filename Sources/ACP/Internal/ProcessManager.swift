@@ -24,6 +24,11 @@ actor ACPProcessManager {
 
     private var process: Process?
     private var processGroupId: pid_t?
+    /// True when post-spawn `setpgid` lost the race with a fast exec, so the
+    /// child (and any descendants) stayed in the host's process group and
+    /// group-scoped TERM/KILL cannot reach it. Surfaced as launch evidence
+    /// instead of a swallowed warning.
+    private var processGroupIsolationFailed = false
     private var stdinHandle: FileHandle?
     private var stdoutHandle: FileHandle?
     private var stderrHandle: FileHandle?
@@ -34,6 +39,11 @@ actor ACPProcessManager {
     private var frameFinished = false
     private var stdoutReader: FramedInput?
     private let stderrDrain: StderrDrain
+
+    /// Serial write queue owned by this manager instance: a blocked writer on
+    /// one stuck child can no longer stall every other ACP connection in the
+    /// process behind a shared static queue.
+    private let writeQueue = DispatchQueue(label: "com.acp.processmanager.write", qos: .userInitiated)
 
     private let configuration: TransportConfiguration
     private let logger: Logger
@@ -72,6 +82,12 @@ actor ACPProcessManager {
     var processGroupIdentifier: Int32? {
         guard state == .running else { return nil }
         return processGroupId
+    }
+
+    /// False when post-spawn `setpgid` failed and the child could not be moved
+    /// into its own group; shutdown can then only signal the direct child.
+    var isProcessGroupIsolated: Bool {
+        processGroupId != nil
     }
 
     var stderrLines: AsyncStream<String>? {
@@ -134,15 +150,7 @@ actor ACPProcessManager {
         }
 
         process = proc
-        processGroupId = nil
-        if proc.processIdentifier > 0 {
-            let pid = proc.processIdentifier
-            if setpgid(pid, pid) == 0 {
-                processGroupId = pid
-            } else {
-                logger.warning("Failed to set process group for pid=\(pid)")
-            }
-        }
+        isolateProcessGroup(proc)
 
         proc.terminationHandler = { [weak self] terminated in
             let exitCode = terminated.terminationStatus
@@ -151,6 +159,23 @@ actor ACPProcessManager {
 
         state = .running
         startReadHandlers()
+    }
+
+    /// Moves the child into its own process group. Foundation `Process` offers
+    /// no pre-exec hook, so the move can lose the race against a fast exec; the
+    /// unisolated launch is recorded instead of silently degrading shutdown.
+    private func isolateProcessGroup(_ proc: Process) {
+        processGroupId = nil
+        processGroupIsolationFailed = false
+        guard proc.processIdentifier > 0 else { return }
+        let pid = proc.processIdentifier
+        if setpgid(pid, pid) == 0 {
+            processGroupId = pid
+        } else {
+            processGroupIsolationFailed = true
+            logger
+                .error("Process group isolation failed for pid=\(pid); shutdown will only signal the direct child")
+        }
     }
 
     // MARK: - I/O
@@ -174,9 +199,9 @@ actor ACPProcessManager {
             close(fd)
         }
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            // Blocking pipe writes run on a dedicated serial queue, never on a
-            // cooperative executor or this actor.
-            Self.writeQueue.async {
+            // Blocking pipe writes run on this manager's dedicated serial
+            // queue, never on a cooperative executor or this actor.
+            writeQueue.async {
                 switch Self.writeToFileDescriptor(fd: fd, data: payload) {
                 case .success:
                     continuation.resume()
@@ -186,8 +211,6 @@ actor ACPProcessManager {
             }
         }
     }
-
-    private static let writeQueue = DispatchQueue(label: "com.acp.processmanager.write", qos: .userInitiated)
 
     private enum WriteOutcome {
         case success

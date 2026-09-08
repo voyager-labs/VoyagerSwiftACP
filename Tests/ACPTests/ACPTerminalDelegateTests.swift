@@ -86,5 +86,65 @@ final class ACPTerminalDelegateTests: XCTestCase {
         let stillRunning = await delegate.isRunning(terminalId: created.terminalId)
         XCTAssertFalse(stillRunning)
     }
+
+    // MARK: - Launch Failure Rollback
+
+    /// `Process.run()` throwing after the state was staged must roll the
+    /// terminal back so repeated failures cannot leak handles or memory.
+    func testFailedCreateRollsBackTerminalState() async throws {
+        let delegate = TerminalDelegate()
+
+        // /dev/null exists but is not executable, so `run()` throws at spawn.
+        do {
+            _ = try await delegate.handleTerminalCreate(
+                command: "/dev/null",
+                sessionId: "session-rollback",
+                args: nil,
+                cwd: nil,
+                env: nil,
+                outputByteLimit: nil,
+            )
+            XCTFail("expected a launch failure for a non-executable path")
+        } catch {
+            // expected
+        }
+
+        let count = await delegate.activeTerminalCount
+        XCTAssertEqual(count, 0, "a failed launch must not retain terminal state")
+        await delegate.cleanup()
+    }
+}
+
+/// Multi-byte UTF-8 output split across pipe chunks must decode as one
+/// character instead of being dropped with a failed whole-chunk decode.
+final class UTF8AssemblerTests: XCTestCase {
+    func testSplitMultibyteCharacterSurvivesChunkBoundary() {
+        let assembler = UTF8Assembler()
+        let character = "한" // 3-byte UTF-8 sequence
+        let bytes = Array(character.utf8)
+        XCTAssertGreaterThanOrEqual(bytes.count, 3)
+
+        XCTAssertNil(assembler.decoded(byAppending: Data(bytes.prefix(1))), "an incomplete sequence yields nothing yet")
+        let output = assembler.decoded(byAppending: Data(bytes.suffix(from: 1)))
+        XCTAssertEqual(output, character)
+    }
+
+    func testTrailingIncompleteSequenceIsCarriedAndFlushed() {
+        let assembler = UTF8Assembler()
+        let bytes = Array("a한b".utf8) // [a, ED 85 9C, b]
+
+        // The multi-byte character is split across two chunks: only the
+        // complete prefix decodes, the carried bytes complete it next chunk.
+        XCTAssertEqual(assembler.decoded(byAppending: Data(bytes.prefix(3))), "a")
+        XCTAssertEqual(assembler.decoded(byAppending: Data([bytes[3]])), "한")
+        XCTAssertEqual(assembler.decoded(byAppending: Data([bytes[4]])), "b")
+        XCTAssertNil(assembler.flushRemaining())
+    }
+
+    func testInvalidBytesDecodeAsReplacementCharactersInline() {
+        let assembler = UTF8Assembler()
+        XCTAssertEqual(assembler.decoded(byAppending: Data([0x61, 0xFF])), "a\u{FFFD}")
+        XCTAssertNil(assembler.flushRemaining())
+    }
 }
 #endif

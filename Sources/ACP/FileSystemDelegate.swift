@@ -1,17 +1,9 @@
-//
-//  FileSystemDelegate.swift
-//  ACP
-//
-//  Default file system delegate implementation
-//
-
+import ACPModel
 import Foundation
 import os.log
-import ACPModel
 
 /// Actor responsible for handling file system operations for agent sessions
 public actor FileSystemDelegate {
-
     private let logger = Logger.forCategory("FileSystemDelegate")
 
     // MARK: - Initialization
@@ -21,18 +13,29 @@ public actor FileSystemDelegate {
     // MARK: - File Operations
 
     /// Handle file read request from agent
-    public func handleFileReadRequest(_ path: String, sessionId: String, line: Int?, limit: Int?) async throws -> ReadTextFileResponse {
+    ///
+    /// `line` and `limit` are peer-supplied integers: they are clamped to safe
+    /// ranges with overflow-free arithmetic so a hostile value (Int.min, a
+    /// negative limit, a line past EOF) yields an empty window instead of an
+    /// index trap in the host process.
+    public func handleFileReadRequest(
+        _ path: String,
+        sessionId _: String,
+        line: Int?,
+        limit: Int?,
+    ) async throws -> ReadTextFileResponse {
         let url = URL(fileURLWithPath: path)
         let content = try String(contentsOf: url, encoding: .utf8)
         let lines = content.components(separatedBy: .newlines)
 
         let filteredContent: String
         if let startLine = line, let lineLimit = limit {
-            let startIdx = max(0, startLine - 1)
-            let endIdx = min(lines.count, startIdx + lineLimit)
-            filteredContent = lines[startIdx..<endIdx].joined(separator: "\n")
+            let startIdx = Self.clampedStartIndex(startLine, lineCount: lines.count)
+            let windowLength = max(0, min(lineLimit, lines.count - startIdx))
+            let endIdx = startIdx + windowLength
+            filteredContent = lines[startIdx ..< endIdx].joined(separator: "\n")
         } else if let startLine = line {
-            let startIdx = max(0, startLine - 1)
+            let startIdx = Self.clampedStartIndex(startLine, lineCount: lines.count)
             filteredContent = lines[startIdx...].joined(separator: "\n")
         } else {
             filteredContent = content
@@ -41,9 +44,19 @@ public actor FileSystemDelegate {
         return ReadTextFileResponse(content: filteredContent, totalLines: lines.count, _meta: nil)
     }
 
+    private static func clampedStartIndex(_ startLine: Int, lineCount: Int) -> Int {
+        // `max(1, ...)` first so `startLine - 1` cannot overflow for Int.min.
+        let normalizedLine = max(1, startLine)
+        return min(normalizedLine - 1, lineCount)
+    }
+
     /// Handle file write request from agent
     /// Per ACP spec: Client MUST create the file if it doesn't exist
-    public func handleFileWriteRequest(_ path: String, content: String, sessionId: String) async throws -> WriteTextFileResponse {
+    public func handleFileWriteRequest(
+        _ path: String,
+        content: String,
+        sessionId _: String,
+    ) async throws -> WriteTextFileResponse {
         logger.info("Write request for: \(path) (\(content.count) chars)")
         let url = URL(fileURLWithPath: path)
         let fileManager = FileManager.default

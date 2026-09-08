@@ -448,4 +448,58 @@ final class RegistryTests: XCTestCase {
         let isInstalled = await context.installer.isInstalled(agentWithTraversalId)
         XCTAssertFalse(isInstalled)
     }
+
+    /// An update that fails mid-flight (404 download) must leave the existing
+    /// installation untouched: staging happens outside the live directory.
+    func testFailedUpdatePreservesLiveInstall() async throws {
+        let context = makeOfflineInstaller()
+        let agent = makeBinaryInstallAgent(archive: "https://registry.fixture/agent")
+        let installDirectory = context.installDirectory
+        let liveAgentDir = installDirectory.appendingPathComponent(agent.id)
+        let liveExecutable = liveAgentDir.appendingPathComponent("agent")
+        let liveMetadata = liveAgentDir.appendingPathComponent("metadata.json")
+
+        var downloadCount = 0
+        RegistryURLProtocol.handler = { request in
+            downloadCount += 1
+            let statusCode = downloadCount == 1 ? 200 : 404
+            let body = downloadCount == 1 ? Data("#!/bin/sh\necho live\n".utf8) : Data("<html>not found</html>".utf8)
+            let response = try XCTUnwrap(HTTPURLResponse(
+                url: XCTUnwrap(request.url),
+                statusCode: statusCode,
+                httpVersion: nil,
+                headerFields: ["Content-Type": "application/octet-stream"],
+            ))
+            return (response, body)
+        }
+
+        // First install succeeds (raw binary: the URL has no archive suffix).
+        _ = try await context.installer.install(agent)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: liveExecutable.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: liveMetadata.path))
+
+        // Second install (update) fails at download; the live copy must survive.
+        do {
+            _ = try await context.installer.install(agent)
+            XCTFail("expected httpError for the 404 update")
+        } catch let error as RegistryError {
+            guard case .httpError = error else {
+                return XCTFail("Unexpected RegistryError: \(error)")
+            }
+        }
+
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: liveExecutable.path),
+            "the failed update must not delete the live installation",
+        )
+        let liveData = try Data(contentsOf: liveExecutable)
+        XCTAssertEqual(String(data: liveData, encoding: .utf8), "#!/bin/sh\necho live\n")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: liveMetadata.path))
+
+        let entries = try FileManager.default.contentsOfDirectory(
+            at: installDirectory,
+            includingPropertiesForKeys: nil,
+        )
+        XCTAssertEqual(entries.count, 1, "no staging directory may remain after a failed update")
+    }
 }

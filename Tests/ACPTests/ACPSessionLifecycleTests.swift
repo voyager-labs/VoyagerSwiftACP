@@ -476,6 +476,54 @@ final class ACPSessionLifecycleTests: XCTestCase {
         _ = await client.shutdown()
     }
 
+    /// Typed session APIs refuse to reach the wire before the initialize
+    /// handshake reaches `.ready`.
+    func testSessionApiBeforeReadyIsLocalRefusal() async throws {
+        let transport = ScriptedTransport()
+        let client = Client(transport: transport)
+        try await client.start()
+
+        do {
+            _ = try await client.setMode(sessionId: SessionId("s1"), modeId: "code")
+            XCTFail("expected notInitialized")
+        } catch let error as ClientError {
+            guard case .notInitialized = error else {
+                return XCTFail("expected notInitialized, got \(error)")
+            }
+        }
+        XCTAssertTrue(transport.allSentFrames().isEmpty, "the refusal must not write to the wire")
+
+        await transport.finish()
+        _ = await client.shutdown()
+    }
+
+    /// An agent error on `session/close` must surface as a thrown agent error,
+    /// never as an empty-success conversion of the session state.
+    func testCloseSessionErrorSurfacesAsAgentError() async throws {
+        let transport = ScriptedTransport()
+        let client = try await makeReadyClient(transport)
+        let sessionId = try await createSession(client, transport)
+
+        let closeTask = Task { try await client.closeSession(sessionId: sessionId) }
+        let frame = try await transport.nextSentFrame()
+        let request = try JSONDecoder().decode(JSONRPCRequest.self, from: frame)
+        try await transport.pushJSON(
+            #"{"jsonrpc":"2.0","id":\#(requestID(request.id)),"error":{"code":-32050,"message":"close failed"}}"#,
+        )
+
+        do {
+            _ = try await closeTask.value
+            XCTFail("expected agentError")
+        } catch let error as ClientError {
+            guard case .agentError = error else {
+                return XCTFail("expected agentError, got \(error)")
+            }
+        }
+
+        await transport.finish()
+        _ = await client.shutdown()
+    }
+
     /// S10
     func testPromptWhileCancellingRejected() async throws {
         let transport = ScriptedTransport()

@@ -140,68 +140,77 @@ public actor AgentInstaller {
             throw RegistryError.downloadFailed(URLError(.badURL))
         }
 
-        // Create agent directory
+        // Validate the final live layout up front (id and cmd containment).
         let agentDir = try containedAgentDirectory(agent.id)
-        try FileManager.default.createDirectory(at: agentDir, withIntermediateDirectories: true)
-
-        // Determine executable path
         let executablePath = try containedPath(target.cmd, inside: agentDir).path
 
-        // Download archive
-        let (tempURL, response) = try await session.download(from: archiveURL)
-
-        // A completed download is not a successful download: only a 2xx HTTP
-        // response may be promoted to an executable payload.
-        guard let httpResponse = response as? HTTPURLResponse else {
-            try? FileManager.default.removeItem(at: tempURL)
-            try? FileManager.default.removeItem(at: agentDir)
-            throw RegistryError.invalidResponse
-        }
-        guard (200 ..< 300).contains(httpResponse.statusCode) else {
-            try? FileManager.default.removeItem(at: tempURL)
-            try? FileManager.default.removeItem(at: agentDir)
-            throw RegistryError.httpError(statusCode: httpResponse.statusCode)
-        }
+        // Stage beside the live install so a failed download, extraction, or
+        // metadata write can never destroy an existing installation.
+        let stagingDir = try containedPath(".staging-\(UUID().uuidString)", inside: installDirectory)
+        let stagedExecutablePath = try containedPath(target.cmd, inside: stagingDir).path
 
         do {
+            try FileManager.default.createDirectory(at: stagingDir, withIntermediateDirectories: true)
+
+            // Download archive
+            let (tempURL, response) = try await session.download(from: archiveURL)
+
+            // A completed download is not a successful download: only a 2xx
+            // HTTP response may be promoted to an executable payload.
+            guard let httpResponse = response as? HTTPURLResponse else {
+                try? FileManager.default.removeItem(at: tempURL)
+                throw RegistryError.invalidResponse
+            }
+            guard (200 ..< 300).contains(httpResponse.statusCode) else {
+                try? FileManager.default.removeItem(at: tempURL)
+                throw RegistryError.httpError(statusCode: httpResponse.statusCode)
+            }
+
             // Extract archive or install raw binary directly.
             try await installBinaryPayload(
                 from: tempURL,
-                to: agentDir,
-                executablePath: executablePath,
+                to: stagingDir,
+                executablePath: stagedExecutablePath,
                 archiveURL: archiveURL,
             )
-        } catch {
+
+            // Clean up temp file
             try? FileManager.default.removeItem(at: tempURL)
-            try? FileManager.default.removeItem(at: agentDir)
+
+            // Make executable and remove quarantine
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o755],
+                ofItemAtPath: stagedExecutablePath,
+            )
+            removeQuarantineAttribute(from: stagedExecutablePath)
+
+            let installed = InstalledAgent(
+                id: agent.id,
+                name: agent.name,
+                version: agent.version,
+                executablePath: executablePath,
+                arguments: target.args ?? [],
+                environment: target.env ?? [:],
+            )
+
+            // Save metadata into staging so the promoted directory is complete.
+            let stagedMetadataFile = stagingDir.appendingPathComponent("metadata.json")
+            let data = try JSONEncoder().encode(installed)
+            try data.write(to: stagedMetadataFile)
+
+            // Promote: replace any live installation only after staging holds
+            // a fully validated copy. The remove + rename pair happens on one
+            // volume, so the window without a live directory is minimal.
+            if FileManager.default.fileExists(atPath: agentDir.path) {
+                try FileManager.default.removeItem(at: agentDir)
+            }
+            try FileManager.default.moveItem(at: stagingDir, to: agentDir)
+
+            return installed
+        } catch {
+            try? FileManager.default.removeItem(at: stagingDir)
             throw error
         }
-
-        // Clean up temp file
-        try? FileManager.default.removeItem(at: tempURL)
-
-        // Make executable and remove quarantine
-        try FileManager.default.setAttributes(
-            [.posixPermissions: 0o755],
-            ofItemAtPath: executablePath,
-        )
-        removeQuarantineAttribute(from: executablePath)
-
-        let installed = InstalledAgent(
-            id: agent.id,
-            name: agent.name,
-            version: agent.version,
-            executablePath: executablePath,
-            arguments: target.args ?? [],
-            environment: target.env ?? [:],
-        )
-
-        // Save metadata
-        let metadataFile = agentDir.appendingPathComponent("metadata.json")
-        let data = try JSONEncoder().encode(installed)
-        try data.write(to: metadataFile)
-
-        return installed
     }
 
     private func installBinaryPayload(

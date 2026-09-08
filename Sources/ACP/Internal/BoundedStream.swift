@@ -2,7 +2,10 @@ import Foundation
 
 /// A single-consumer stream whose queued elements are limited by bytes.
 /// The lock protects the queue, waiter, and terminal state across synchronous I/O callbacks.
-final class BoundedStream<Element: Sendable>: @unchecked Sendable {
+///
+/// Public so the ACPHTTP transports reuse the exact byte-budget mechanism the
+/// stdio transports rely on instead of growing a divergent copy.
+public final class BoundedStream<Element: Sendable>: @unchecked Sendable {
     private let lock = NSLock()
     private let byteBudget: Int
     private var queue: [(Element, Int)?] = []
@@ -11,20 +14,20 @@ final class BoundedStream<Element: Sendable>: @unchecked Sendable {
     private var finished = false
     private var waiter: CheckedContinuation<Element?, Never>?
 
-    init(byteBudget: Int) {
+    public init(byteBudget: Int) {
         self.byteBudget = byteBudget
     }
 
-    var stream: AsyncStream<Element> {
+    public var stream: AsyncStream<Element> {
         AsyncStream(unfolding: { await self.next() }, onCancel: { self.finish(discard: true) })
     }
 
-    var bufferedByteCount: Int {
+    public var bufferedByteCount: Int {
         lock.withLock { bytes }
     }
 
     @discardableResult
-    func yield(_ element: Element, byteCount: Int) -> Bool {
+    public func yield(_ element: Element, byteCount: Int) -> Bool {
         lock.lock()
         guard !finished, byteCount >= 0, byteCount <= byteBudget - bytes else {
             lock.unlock()
@@ -42,7 +45,7 @@ final class BoundedStream<Element: Sendable>: @unchecked Sendable {
         return true
     }
 
-    func finish(discard: Bool = false) {
+    public func finish(discard: Bool = false) {
         lock.lock()
         finished = true
         if discard {
