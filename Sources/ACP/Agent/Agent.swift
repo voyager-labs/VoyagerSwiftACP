@@ -179,6 +179,14 @@ public actor Agent {
         return try decodeResponse(CreateElicitationResponse.self, from: response)
     }
 
+    /// Asks the client to decide a tool-permission request and awaits the
+    /// correlated response. The generic API carries only the protocol payload;
+    /// provider policy lives above this layer.
+    public func requestPermission(_ request: RequestPermissionRequest) async throws -> RequestPermissionResponse {
+        let response = try await sendRequest(method: "session/request_permission", params: request)
+        return try decodeResponse(RequestPermissionResponse.self, from: response)
+    }
+
     /// Notify the client that a URL-based elicitation completed.
     public func completeElicitation(elicitationId: ElicitationId) async throws {
         try await sendNotification(
@@ -628,13 +636,25 @@ extension Agent {
         }
     }
 
+    /// Decodes the session config change and routes it to the typed delegate
+    /// method; the response carries the agent's refreshed config options.
+    private func handleSetConfigOptionRequest(
+        _ request: JSONRPCRequest,
+        delegate: any AgentDelegate,
+    ) async throws -> AnyCodable {
+        let params = try decodeParams(SetSessionConfigOptionRequest.self, from: request.params)
+        let response = try await delegate.handleSetSessionConfigOption(params)
+        return try encodeResult(response)
+    }
+
     /// Session-scoped extensions drive external work, so they wait for the
     /// handshake like core session requests. Pure routing extensions (logout,
     /// providers/*) and unknown methods keep their documented pre-initialize
     /// behavior.
     private func requireInitializedForExtension(_ method: String) throws {
         switch method {
-        case "session/delete", "nes/start", "nes/suggest", "nes/close", "mcp/message":
+        case "session/delete", "nes/start", "nes/suggest", "nes/close", "mcp/message",
+             "session/set_config_option":
             try requireInitialized()
         default:
             break
@@ -648,6 +668,9 @@ extension Agent {
         try requireInitializedForExtension(request.method)
 
         switch request.method {
+        case "session/set_config_option":
+            return try await handleSetConfigOptionRequest(request, delegate: delegate)
+
         case "session/delete":
             let params = try decodeParams(DeleteSessionRequest.self, from: request.params)
             let response = try await delegate.handleDeleteSession(params)

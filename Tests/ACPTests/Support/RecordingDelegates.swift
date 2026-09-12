@@ -6,6 +6,7 @@ actor RecordingAgentDelegate: AgentDelegate {
     private(set) var events: [String] = []
     private var promptStartedWaiters: [CheckedContinuation<Void, Never>] = []
     private var cancelWaiters: [CheckedContinuation<Void, Never>] = []
+    private var cancelRequestWaiters: [CheckedContinuation<Void, Never>] = []
     private var promptSuspension: CheckedContinuation<SessionPromptResponse, Error>?
     private var holdNextPrompt = false
 
@@ -77,6 +78,8 @@ actor RecordingAgentDelegate: AgentDelegate {
 
     func handleCancelRequest(_ request: CancelRequestNotification) async throws {
         events.append("cancel-request:\(request.requestId.description)")
+        cancelRequestWaiters.forEach { $0.resume() }
+        cancelRequestWaiters.removeAll()
     }
 
     func handleForkSession(_ request: ForkSessionRequest) async throws -> ForkSessionResponse {
@@ -117,6 +120,13 @@ actor RecordingAgentDelegate: AgentDelegate {
         events.append("mcp-notification:\(notification.connectionId.value):\(notification.method)")
     }
 
+    func handleSetSessionConfigOption(_ request: SetSessionConfigOptionRequest) async throws
+        -> SetSessionConfigOptionResponse
+    {
+        events.append("config:\(request.configId.value)")
+        return SetSessionConfigOptionResponse(configOptions: [])
+    }
+
     // MARK: - Controls
 
     func recordedEvents() -> [String] {
@@ -142,6 +152,12 @@ actor RecordingAgentDelegate: AgentDelegate {
     func waitUntilCancelRecorded() async {
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             cancelWaiters.append(continuation)
+        }
+    }
+
+    func waitUntilCancelRequestRecorded() async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            cancelRequestWaiters.append(continuation)
         }
     }
 }

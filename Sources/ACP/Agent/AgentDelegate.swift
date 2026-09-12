@@ -82,6 +82,11 @@ public protocol AgentDelegate: AnyObject, Sendable {
 
     /// Handle MCP-over-ACP notification message
     func handleMcpNotification(_ notification: MessageMcpNotification) async throws
+
+    /// Handle session config option changes from the client (VOY-700 generic
+    /// gap: the wire method previously fell through to the custom stream).
+    func handleSetSessionConfigOption(_ request: SetSessionConfigOptionRequest) async throws
+        -> SetSessionConfigOptionResponse
 }
 
 /// Default implementations for optional delegate methods
@@ -180,5 +185,11 @@ public extension AgentDelegate {
 
     func handleMcpNotification(_: MessageMcpNotification) async throws {
         // Default: no-op
+    }
+
+    /// Handle session config option changes from the client. The default keeps
+    /// the method explicitly unsupported on the wire.
+    func handleSetSessionConfigOption(_: SetSessionConfigOptionRequest) async throws -> SetSessionConfigOptionResponse {
+        throw ClientError.unknownMethod("session/set_config_option")
     }
 }

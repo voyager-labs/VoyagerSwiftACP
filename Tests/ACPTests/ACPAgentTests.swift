@@ -810,6 +810,206 @@ final class ACPAgentTests: XCTestCase {
             "elicitation-complete:elicit-1",
         ])
     }
+
+    // MARK: - Generic permission and session-config routes (VOY-700)
+
+    /// session/request_permission round-trips through the agent's pending
+    /// request table with concurrent requests correlated by id.
+    /// - 검증 내용: 두 동시 permission 요청이 교차 순서 응답에서 정확히 상관되는지 확인합니다.
+    /// - 사전 조건: ScriptedTransport로 붙은 agent와 pending table이 제공됩니다.
+    /// - 기대 결과: 각 await는 자신의 id 응답으로 정산되고 wire method는 session/request_permission입니다.
+    func testRequestPermissionRoundTripsThroughAgentPendingTable() async throws {
+        let transport = ScriptedTransport()
+        let agent = Agent(transport: transport)
+        let startTask = Task {
+            await agent.start()
+        }
+        defer {
+            startTask.cancel()
+        }
+
+        let firstTask = Task {
+            try await agent.requestPermission(RequestPermissionRequest(
+                options: [PermissionOption(kind: "allow_once", name: "Allow", optionId: "opt-allow")],
+                sessionId: SessionId("perm-session"),
+                toolCall: ToolCallUpdate(toolCallId: "tool-1", title: "Read file"),
+            ))
+        }
+        let secondTask = Task {
+            try await agent.requestPermission(RequestPermissionRequest(
+                options: [PermissionOption(kind: "reject_once", name: "Deny", optionId: "opt-deny")],
+                sessionId: SessionId("perm-session"),
+                toolCall: ToolCallUpdate(toolCallId: "tool-2", title: "Write file"),
+            ))
+        }
+
+        let firstRequestData = try await transport.nextSentFrame()
+        let firstRequest = try JSONDecoder().decode(JSONRPCRequest.self, from: firstRequestData)
+        XCTAssertEqual(firstRequest.method, "session/request_permission")
+        let secondRequestData = try await transport.nextSentFrame()
+        let secondRequest = try JSONDecoder().decode(JSONRPCRequest.self, from: secondRequestData)
+        XCTAssertEqual(secondRequest.method, "session/request_permission")
+        XCTAssertNotEqual(firstRequest.id, secondRequest.id)
+
+        // 어느 task가 먼저 id를 배정받았는지와 무관하게 payload로 frame을 식별하고,
+        // 응답은 요청과 반대 순서로 반환해 pending table의 id 상관을 강제한다.
+        func toolCallId(of request: JSONRPCRequest) -> String? {
+            guard let params = request.params?.value as? [String: Any],
+                  let toolCall = params["toolCall"] as? [String: Any] else { return nil }
+            return toolCall["toolCallId"] as? String
+        }
+        func outcomeFrame(_ request: JSONRPCRequest, optionId: String) -> JSONRPCResponse {
+            JSONRPCResponse(
+                id: request.id,
+                result: AnyCodable(["outcome": ["outcome": "selected", "optionId": optionId]]),
+                error: nil,
+            )
+        }
+        guard let allowRequest = [firstRequest, secondRequest].first(where: { toolCallId(of: $0) == "tool-1" }),
+              let denyRequest = [firstRequest, secondRequest].first(where: { toolCallId(of: $0) == "tool-2" })
+        else {
+            XCTFail("both permission requests must carry their tool call id")
+            return
+        }
+        try await transport.pushFrame(JSONEncoder().encode(outcomeFrame(denyRequest, optionId: "opt-deny")))
+        try await transport.pushFrame(JSONEncoder().encode(outcomeFrame(allowRequest, optionId: "opt-allow")))
+
+        let first = try await firstTask.value
+        let second = try await secondTask.value
+        XCTAssertEqual(first.outcome.optionId, "opt-allow")
+        XCTAssertEqual(second.outcome.optionId, "opt-deny")
+
+        await transport.finish()
+        _ = await startTask.result
+    }
+
+    /// A pending permission request settles exactly once when the agent's
+    /// request lifecycle ends, and cancellation notifications keep routing
+    /// while a permission is outstanding.
+    /// - 검증 내용: 진행 중 permission 위에 $/cancel_request 라우팅과 close 정산을 확인합니다.
+    /// - 사전 조건: 응답 없는 permission 요청이 pending table에 유지됩니다.
+    /// - 기대 결과: cancel 요청은 delegate에 기록되고 close는 pending을 connectionClosed로 한 번 정산합니다.
+    func testRequestPermissionCancellationAndCloseSettlePendingRequest() async throws {
+        let transport = ScriptedTransport()
+        let agent = Agent(transport: transport)
+        let delegate = RecordingAgentDelegate()
+        await agent.setDelegate(delegate)
+        let startTask = Task {
+            await agent.start()
+        }
+        defer {
+            startTask.cancel()
+        }
+
+        let pending = Task {
+            try await agent.requestPermission(RequestPermissionRequest(
+                options: [PermissionOption(kind: "allow_once", name: "Allow", optionId: "opt-allow")],
+                sessionId: SessionId("perm-session"),
+                toolCall: ToolCallUpdate(toolCallId: "tool-1", title: "Read file"),
+            ))
+        }
+        _ = try await transport.nextSentFrame()
+
+        try await transport.pushJSON(
+            #"{"jsonrpc":"2.0","method":"$/cancel_request","params":{"requestId":1}}"#,
+        )
+        await delegate.waitUntilCancelRequestRecorded()
+
+        await agent.close()
+        do {
+            _ = try await pending.value
+            XCTFail("a pending permission request must not survive close")
+        } catch {
+            guard case ClientError.connectionClosed = error else {
+                return XCTFail("expected connectionClosed, got \(error)")
+            }
+        }
+
+        await transport.finish()
+        _ = await startTask.result
+    }
+
+    /// session/set_config_option waits for the handshake and routes to the
+    /// typed delegate method once initialized.
+    /// - 검증 내용: 초기화 전 -32002, 초기화 후 delegate 왕복과 응답 인코딩을 확인합니다.
+    /// - 사전 조건: config recorder delegate가 붙은 agent가 제공됩니다.
+    /// - 기대 결과: 초기화 전에는 Not initialized, 이후에는 delegate 응답이 wire로 돌아갑니다.
+    func testSetConfigOptionRequiresInitializeAndReturnsDelegateResponse() async throws {
+        let transport = ScriptedTransport()
+        let agent = Agent(transport: transport)
+        let delegate = RecordingAgentDelegate()
+        await agent.setDelegate(delegate)
+        let startTask = Task {
+            await agent.start()
+        }
+        defer {
+            startTask.cancel()
+        }
+
+        try await transport.pushJSON(
+            #"{"jsonrpc":"2.0","id":20,"method":"session/set_config_option","params":{"sessionId":"s","configId":"model","value":"claude-opus"}}"#,
+        )
+        let beforeData = try await transport.nextSentFrame()
+        let before = try JSONDecoder().decode(JSONRPCResponse.self, from: beforeData)
+        XCTAssertEqual(before.id, .number(20))
+        XCTAssertEqual(before.error?.code, -32002)
+
+        try await pushInitialize(transport, id: 21)
+        try await transport.pushJSON(
+            #"{"jsonrpc":"2.0","id":22,"method":"session/set_config_option","params":{"sessionId":"s","configId":"model","value":"claude-opus"}}"#,
+        )
+        let afterData = try await transport.nextSentFrame()
+        let after = try JSONDecoder().decode(JSONRPCResponse.self, from: afterData)
+        XCTAssertEqual(after.id, .number(22))
+        XCTAssertNil(after.error)
+        let events = await delegate.recordedEvents()
+        print("DEBUG-EVENTS: \(events)")
+        print("DEBUG-ERROR: \(String(describing: after.error))")
+        XCTAssertTrue(events.contains("config:model"))
+
+        await transport.finish()
+        _ = await startTask.result
+    }
+
+    /// With the default delegate the typed route answers an explicit
+    /// unsupported error and does not leak the request into the custom stream.
+    /// - 검증 내용: 기본 delegate에서 -32601 응답과 requests stream 비사용을 확인합니다.
+    /// - 사전 조건: config 기본 구현을 유지하는 delegate가 붙어 있습니다.
+    /// - 기대 결과: -32601로 응답되고 requests stream은 이후 알려진 unknown method만 운반합니다.
+    func testSetConfigOptionDefaultDelegateRemainsExplicitlyUnsupported() async throws {
+        let transport = ScriptedTransport()
+        let agent = Agent(transport: transport)
+        let delegate = EchoVersionAgentDelegate()
+        await agent.setDelegate(delegate)
+        let startTask = Task {
+            await agent.start()
+        }
+        defer {
+            startTask.cancel()
+        }
+        let customRequests = Task {
+            await agent.requests.first(where: { _ in true })
+        }
+
+        try await pushInitialize(transport, id: 30)
+        try await transport.pushJSON(
+            #"{"jsonrpc":"2.0","id":31,"method":"session/set_config_option","params":{"sessionId":"s","configId":"model","value":"claude-opus"}}"#,
+        )
+        let responseData = try await transport.nextSentFrame()
+        let response = try JSONDecoder().decode(JSONRPCResponse.self, from: responseData)
+        XCTAssertEqual(response.id, .number(31))
+        XCTAssertEqual(response.error?.code, -32601)
+
+        // 요청 처리는 순서대로 진행된다. 뒤이은 미지정 method가 custom stream에
+        // 도착하면, 그보다 앞선 config 요청이 stream으로 새지 않았음이 확정된다.
+        try await transport.pushJSON(#"{"jsonrpc":"2.0","id":32,"method":"totally/unknown","params":{}}"#)
+        _ = try await transport.nextSentFrame()
+        let firstCustom = try await customRequests.value
+        XCTAssertEqual(firstCustom?.method, "totally/unknown")
+
+        await transport.finish()
+        _ = await startTask.result
+    }
 }
 
 private actor EchoVersionAgentDelegate: AgentDelegate {
